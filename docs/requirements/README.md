@@ -408,7 +408,7 @@ requirements above must let that platform:
 
 ## 9. What changed from SOW 0.1
 
-SOW 0.1 listed 267 requirements in a flat list with no priorities. This revision has 164: it merges
+SOW 0.1 listed 267 requirements in a flat list with no priorities. This revision has 178, each with a priority and a release: it merges
 duplicates, assigns every requirement a priority and a release, and aligns the scope with what
 products of this class deliver.
 
