@@ -1,6 +1,6 @@
 # 0017. Administration API: specification first, CLI before console
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-11
 
 ## Context

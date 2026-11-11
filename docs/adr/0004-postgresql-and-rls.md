@@ -1,6 +1,6 @@
 # 0004. PostgreSQL as system of record, with forced row-level security
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-11
 
 ## Context

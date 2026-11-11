@@ -1,6 +1,6 @@
 # 0012. Limits: reserve and settle, with in-process or Valkey counters
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-11
 
 ## Context

@@ -1,6 +1,6 @@
 # 0019. Configuration: static settings in a file, dynamic state in the database
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-11
 
 ## Context

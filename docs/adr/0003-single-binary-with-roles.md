@@ -1,6 +1,6 @@
 # 0003. One binary with three roles; separate planes
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-11
 
 ## Context

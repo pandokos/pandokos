@@ -1,6 +1,6 @@
 # 0005. Data-plane authentication: virtual keys and trusted token issuers
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-11
 
 ## Context
