@@ -1,0 +1,53 @@
+# Architecture decision records
+
+Each record states one decision, its context, its consequences and the alternatives that were
+rejected. A decision is changed by a new record that supersedes the old one.
+
+A record is *proposed* until its pull request is merged by the maintainer, then *accepted*.
+
+| No. | Decision | Status |
+|---|---|---|
+| [0001](0001-record-architecture-decisions.md) | Record architecture decisions | accepted |
+| [0002](0002-implementation-language-go.md) | Implementation language: Go | proposed |
+| [0003](0003-single-binary-with-roles.md) | One binary with three roles; separate planes | proposed |
+| [0004](0004-postgresql-and-rls.md) | PostgreSQL as system of record, with forced row-level security | proposed |
+| [0005](0005-data-plane-authentication.md) | Data-plane authentication: virtual keys and trusted token issuers | proposed |
+| [0006](0006-human-authentication-external-oidc.md) | People authenticate through an external OIDC provider only | proposed |
+| [0007](0007-authorization-rbac.md) | Authorization: role-based, with a permission catalogue defined in code | proposed |
+| [0008](0008-vault-envelope-encryption.md) | Vault: built-in envelope encryption with a pluggable key-encryption key | proposed |
+| [0009](0009-native-passthrough-by-api-family.md) | Native passthrough organized by API family; no translation | proposed |
+| [0010](0010-usage-extraction.md) | Usage extraction from responses and streams | proposed |
+| [0011](0011-pricing-source.md) | Prices: versioned in the database, seeded from an open dataset | proposed |
+| [0012](0012-limits-and-budget-reservation.md) | Limits: reserve and settle, with in-process or Valkey counters | proposed |
+| [0013](0013-ledger-and-audit.md) | Usage ledger and audit log: append-only tables in PostgreSQL | proposed |
+| [0014](0014-billing-outbox.md) | Events for external systems: transactional outbox and CloudEvents webhooks | proposed |
+| [0015](0015-observability.md) | Observability: OpenTelemetry, pinned GenAI conventions, no content | proposed |
+| [0016](0016-cells-pool-silo-bridge.md) | Pool, silo and bridge as deployments of cells | proposed |
+| [0017](0017-admin-api-spec-first.md) | Administration API: specification first, CLI before console | proposed |
+| [0018](0018-supply-chain.md) | Supply chain: few dependencies, minimal image, signed releases | proposed |
+| [0019](0019-configuration.md) | Configuration: static settings in a file, dynamic state in the database | proposed |
+| [0020](0020-error-contract.md) | Error contract: the shape of the API being called | proposed |
+
+## Questions from SOW 0.1 and where they were decided
+
+| Open question in SOW 0.1 (§23) | Decided in |
+|---|---|
+| 1. Language and framework | 0002 |
+| 2. Database and row-level security strategy | 0004 |
+| 3. Redis or another system for counters | 0012 |
+| 4. Vault architecture and key management | 0008 |
+| 5. Separation of control and data plane | 0003 |
+| 6, 7. Service-account authentication, mTLS, JWT, SPIFFE, DPoP | 0005 |
+| 8. Federated identity, tenants and roles | 0006 |
+| 9. RBAC model and granularity | 0007 |
+| 10. What the platform admin can do with credentials | 0007, 0008 |
+| 11, 12. Provider APIs and degree of transparency | 0009 |
+| 13. Token extraction, streaming | 0010 |
+| 14. Price list source and versioning | 0011 |
+| 15. Budget reservation under concurrency | 0012 |
+| 16. Audit retention and immutability | 0013 |
+| 17, 18. Billing events and vendor integration | 0014 |
+| 19. Kubernetes topologies and silos | 0016 |
+| 20. Service-level objectives | Targets in requirement GW-17; validated in epic 10 |
+| 21. Backup, recovery, cryptographic erasure | 0008, data model; procedures in epics 6 and 10 |
+| 22. Trust boundaries and threats | [Security model](../architecture/security-model.md) |

@@ -2,7 +2,7 @@
 
 Open-source multi-tenant LLM proxy: governed access to AI providers with BYOK, secrets vault, quotas, audit and OpenTelemetry.
 
-> **Status: early design phase.** There is no runnable release yet. The scope and requirements are being defined; see [Roadmap](#roadmap).
+> **Status: design phase.** There is no runnable release yet. Requirements, architecture and plan are written and open for review; see [Documentation](#documentation) and [Roadmap](#roadmap).
 
 ## What it is
 
@@ -41,14 +41,24 @@ Pandokos is deliberately not an identity provider, an agent or workflow framewor
 6. Separation between control plane and data plane.
 7. Operational portability: simple single-host installs and distributed deployments, without requiring Kubernetes.
 
+## Documentation
+
+- [Requirements](docs/requirements/README.md): what Pandokos must guarantee, by release.
+- [Architecture](docs/architecture/overview.md), with the [data model](docs/architecture/data-model.md) and the [security model](docs/architecture/security-model.md).
+- [Decision records](docs/adr/README.md): why it is built this way.
+- [Planning](planning/roadmap.md): epics and sprints.
+
 ## Roadmap
 
-1. Secure foundations: tenant model, row-level security, authentication, RBAC, audit.
-2. Proxy and vault: first provider, streaming, encrypted vault, BYOK.
-3. Governance and metering: usage ledger, pricing, quotas, OpenTelemetry.
-4. Platform-funded credentials and billing events.
-5. Advanced deployments: pool, silo and bridge models, Kubernetes.
-6. Hardening and open-source maturity: threat model, SBOM, signed releases.
+| Release | Theme |
+|---|---|
+| v0.1 | Core BYOK: tenants, virtual keys, vault, OpenAI and Anthropic passthrough with streaming, usage ledger |
+| v0.2 | Governance: OIDC sign-in, roles, rate limits and budgets, reports, tenant deletion |
+| v0.3 | Platform-funded credentials and billing events |
+| v0.4 | Scale-out: replicas, Kubernetes, dedicated cells, more providers |
+| v1.0 | Hardening: security review, measured performance, tested recovery |
+
+Details are in the [roadmap](planning/roadmap.md).
 
 ## The name
 
