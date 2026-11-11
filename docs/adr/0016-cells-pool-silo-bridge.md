@@ -1,6 +1,6 @@
 # 0016. Pool, silo and bridge as deployments of cells
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-11
 
 ## Context

@@ -1,6 +1,6 @@
 # 0008. Vault: built-in envelope encryption with a pluggable key-encryption key
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-11
 
 ## Context

@@ -1,6 +1,6 @@
 # 0009. Native passthrough organized by API family; no translation
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-11
 
 ## Context
