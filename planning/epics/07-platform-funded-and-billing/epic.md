@@ -29,8 +29,9 @@ intent record for platform-funded calls.
 - Rating rule: percentage markup or per-model price, versioned; upstream cost, rule version and
   chargeable amount stored apart.
 - Decision and implementation of the durable intent record.
+- Console pages for platform credentials, funding modes and rating rules.
 
-Requirements: VLT-02 (platform), FND-01, FND-03 to FND-05.
+Requirements: VLT-02 (platform), FND-01, FND-03 to FND-05, CON-03 (funding), CON-08.
 
 Exit: a tenant calls a platform-funded model and no API or error reveals the credential; without
 a budget the call is refused; a tenant set to BYOK without a credential is refused and never
@@ -43,6 +44,7 @@ served with the platform's key.
 - CloudEvents format and versioned event types; external customer reference per tenant.
 - Signed webhook destination; pull export of events.
 - Receiver example that shows idempotent handling.
+- Console pages for event destinations, delivery state and replay.
 - Failure tests: worker crash in mid-delivery, receiver outage, duplicate delivery.
 
 Requirements: BIL-01 to BIL-04, BIL-07.

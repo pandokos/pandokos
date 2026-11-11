@@ -4,7 +4,8 @@
 - Requirements: [docs/requirements](../docs/requirements/README.md) · Architecture:
   [docs/architecture](../docs/architecture/overview.md)
 
-Ten epics, twenty-seven sprints, five releases. Sprints are ordered; an epic can start when the
+Eleven epics, thirty sprints, five releases. Epic numbers are identifiers, not an order: epic 11
+belongs to v0.2. Sprints are ordered; an epic can start when the
 epics it depends on are done, unless noted.
 
 ## Releases
@@ -12,7 +13,7 @@ epics it depends on are done, unless noted.
 | Release | Theme | Epics | Sprints |
 |---|---|---|---|
 | **v0.1** | Core BYOK | 1, 2, 3 and sprint 4.1 | 9 |
-| **v0.2** | Governance | rest of 4, 5, 6 | 7 |
+| **v0.2** | Governance and console | rest of 4, 5, 6, 11 | 10 |
 | **v0.3** | Platform-funded and billing | 7 | 3 |
 | **v0.4** | Scale-out | 8, 9 | 5 |
 | **v1.0** | Hardening | 10 | 3 |
@@ -29,6 +30,10 @@ flowchart LR
     E4 --> V02((v0.2))
     E5 --> V02
     E6 --> V02
+    E4 --> E11[11 Console]
+    E5 --> E11
+    E6 --> E11
+    E11 --> V02
     V02 --> E7[7 Platform-funded and billing]
     E7 --> V03((v0.3))
     V03 --> E8[8 Scale-out]
@@ -56,8 +61,8 @@ flowchart LR
 | 3.3 | Anthropic and OpenAI-compatible providers | The Anthropic family; any OpenAI-compatible endpoint by configuration; SDK compatibility suite; Compose reference |
 | **4** | **[Identity federation and RBAC](epics/04-identity-and-rbac/epic.md)** | |
 | 4.1 | Trusted token issuers | JWTs from registered issuers authenticate calls; the tenant comes from the registration or from a claim — *in v0.1* |
-| 4.2 | Users and OIDC | People administer through an external OIDC provider; memberships in several tenants; local disable |
-| 4.3 | Roles | All built-in roles, custom roles, platform roles, support actions with reason |
+| 4.2 | Users, local accounts and sessions | People sign in with a local account or through an external OIDC provider and obtain a session; memberships in several tenants; local disable |
+| 4.3 | Roles | All built-in roles, custom roles, platform roles, support actions with reason; the API reports a user's effective permissions |
 | **5** | **[Limits and budgets](epics/05-limits-and-budgets/epic.md)** | |
 | 5.1 | Reserve and settle | The limiter interface with in-process counters; request and token rate limits; concurrency; the 429 contract |
 | 5.2 | Quotas and budgets | Periodic quotas and monetary budgets with reservation; scopes; soft thresholds; reconciliation from the ledger |
@@ -65,6 +70,10 @@ flowchart LR
 | 6.1 | Metrics and conventions | OTLP metrics, GenAI attributes at a pinned version, Prometheus endpoint, cardinality policy |
 | 6.2 | Reports and audit reading | Usage rollups and report API; audit reading with hash chain and verification; retention; exports |
 | 6.3 | Tenant deletion and key rotation | Staged deletion with cryptographic erasure; rotation of the key-encryption key; backup and restore guide |
+| **11** | **[Console](epics/11-console/epic.md)** — *in v0.2* | |
+| 11.1 | Shell and sign-in | The console embedded in the binary: sign-in page, session, navigation built from permissions, tenant switch, security headers |
+| 11.2 | Tenant area | Members and roles, service accounts and keys, credentials, model access, limits, usage, audit |
+| 11.3 | Platform area | Tenants, catalogue and prices, users and platform roles, platform limits and audit; first-run experience |
 | **7** | **[Platform-funded access and billing](epics/07-platform-funded-and-billing/epic.md)** | |
 | 7.1 | Platform credentials and funding modes | Operator-owned credentials; explicit funding mode; mandatory budgets; rating rule |
 | 7.2 | Outbox and delivery | Billable events through the outbox to a signed webhook; retries, dead letters, replay; export |
@@ -83,8 +92,8 @@ flowchart LR
 
 ## After 1.0
 
-Not planned in detail: a web console; Bedrock, Vertex AI and Cohere; billing vendor adapters;
-batch and file endpoints; a Kubernetes operator for cells; certificate-bound tokens; sealing
+Not planned in detail: Bedrock, Vertex AI and Cohere; billing vendor adapters;
+batch and file endpoints; identity providers configured per tenant for console sign-in; a Kubernetes operator for cells; certificate-bound tokens; sealing
 credentials with public keys.
 
 ## What can change this plan

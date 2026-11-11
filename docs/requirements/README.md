@@ -28,8 +28,9 @@ These are constraints on every requirement and every design decision.
    and secret encryption each hold on their own.
 3. **The tenant is never taken on trust.** It derives from a verified credential or a server-side
    association, never from a header or parameter the caller controls.
-4. **Not an identity provider.** Pandokos federates with external IdPs and issues its own
-   credentials only for technical identities.
+4. **Not an identity provider.** Pandokos federates with external IdPs. Its own credentials are
+   virtual keys for technical identities and minimal local accounts for signing in to its console.
+   It never authenticates people on behalf of other systems.
 5. **Secrets are write-only.** A provider credential can be written, replaced and revoked, never
    read back.
 6. **Least privilege**, including for the platform administrator and for the product's own
@@ -58,7 +59,10 @@ APIs; a billing, invoicing or payment system; a model host; a general-purpose AP
 | Platform | One installation of Pandokos, run by an operator |
 | Tenant | A customer organization, logically isolated from the others |
 | Platform admin | Privileged identity of the platform; belongs to no tenant |
-| User | A person, authenticated by an external IdP, with roles in one or more tenants |
+| User | A person, authenticated by an external IdP or by a local account, with roles in one or more tenants or in the platform |
+| Local account | A username and password kept by Pandokos for one user, valid only for the console |
+| Console | The web application for administering the platform and the tenants |
+| Session | What a person obtains by signing in to the console. It is accepted only by the administration API |
 | Service account | A non-human identity owned by one tenant |
 | Virtual key | A credential issued by Pandokos to a service account. It is not a provider key |
 | Trusted issuer | An external token issuer (IdP, workload identity) whose signed tokens Pandokos accepts |
@@ -83,7 +87,7 @@ Requirements are assigned to the release that first delivers them.
 | Release | Theme | What a user can do at the end |
 |---|---|---|
 | **R1 — v0.1** | Core BYOK | Run one container with PostgreSQL, create tenants and virtual keys, store BYOK credentials, call OpenAI and Anthropic through stock SDKs with streaming, and read a usage record with cost for every call |
-| **R2 — v0.2** | Governance | Sign in with an external IdP, manage roles, enforce rate limits and budgets, read reports, delete a tenant cleanly |
+| **R2 — v0.2** | Governance | Sign in to the web console with a local account or an external IdP, administer the platform and the tenants from it, manage roles, enforce rate limits and budgets, read reports, delete a tenant cleanly |
 | **R3 — v0.3** | Platform-funded and billing | Offer operator-paid models with budgets and markup, and deliver billable events to an external system |
 | **R4 — v0.4** | Scale-out | Run several replicas, deploy on Kubernetes, dedicate a cell to a tenant, add Gemini and Azure OpenAI |
 | **R5 — v1.0** | Hardening | Rely on reviewed security, measured performance, tested recovery and a stable upgrade policy |
@@ -114,7 +118,7 @@ SOW 0.1; *new* marks requirements added in this revision.
 
 | ID | Requirement | Pri | Rel | Source |
 |---|---|---|---|---|
-| IAM-01 | Pandokos stores no passwords and implements no MFA, account recovery or self-registration | M | R1 | §6.1 |
+| IAM-01 | Pandokos is not an identity provider for other systems: it issues no tokens for third-party applications and offers no self-registration, no account recovery by email and no MFA of its own. Installations that need those use an external IdP | M | R1 | §6.1 |
 | IAM-02 | A tenant can create service accounts with an identifier, status, roles and validity dates | M | R1 | AUTH-S-01 |
 | IAM-03 | Pandokos issues virtual keys for service accounts. A key is shown once, stored only as a hash, identified by a non-secret key ID, and carries a recognizable prefix and checksum so secret scanners can detect it | M | R1 | AUTH-S-05, AUTH-S-10, new |
 | IAM-04 | A virtual key always belongs to exactly one tenant and can be restricted by scope, model allow-list, expiry and limits | M | R1 | AUTH-S-05, AUTH-S-06 |
@@ -122,15 +126,20 @@ SOW 0.1; *new* marks requirements added in this revision.
 | IAM-06 | Pandokos accepts signed access tokens (JWT) from registered trusted issuers and validates signature, issuer, audience, expiry and required claims | M | R1 | AUTH-S-02, AUTH-H-03, SEC-DP-02 |
 | IAM-07 | A trusted issuer is either bound to one tenant, or registered at platform level with the tenant read from a configured claim and limited to an explicit list of tenants. There is no implicit wildcard | M | R1 | AUTH-S-07 |
 | IAM-08 | Token subjects map to service accounts or users by explicit rules. An unmapped subject is rejected | M | R1 | AUTH-H-04 |
-| IAM-09 | People access the administration API with tokens from an external OpenID Connect provider. Interactive clients use the authorization code flow with PKCE | M | R2 | AUTH-H-01, AUTH-H-02 |
+| IAM-09 | People sign in to the console through an external OpenID Connect provider, with the authorization code flow and PKCE, or with a local account (IAM-18). Both lead to the same kind of user record, roles and session | M | R2 | AUTH-H-01, AUTH-H-02 |
 | IAM-10 | A federated identity links to a local user record with memberships in one or more tenants. The active tenant of a request is explicit and validated against the memberships | M | R2 | AUTH-H-04, AUTH-H-05 |
-| IAM-11 | A user can be disabled locally whatever the IdP says, with effect within a documented bound | M | R2 | AUTH-H-06, AUTH-H-10 |
+| IAM-11 | A user can be disabled locally whatever the IdP says. Their sessions end within a documented bound | M | R2 | AUTH-H-06, AUTH-H-10 |
 | IAM-12 | Groups or roles asserted by the IdP can be mapped to Pandokos roles by explicit, optional rules | S | R2 | AUTH-H-07 |
-| IAM-13 | An installation without an IdP is administered with admin-scoped virtual keys and the CLI. There is no local password login | M | R1 | replaces AUTH-H-08 |
-| IAM-14 | The first platform admin credential is created by an explicit initialization command, is single-purpose and expires. Pandokos warns while it is still active | M | R1 | SEC-CP-03, SEC-CP-04 |
+| IAM-13 | An installation without an IdP is fully usable: automation and the CLI use admin-scoped virtual keys, people use local accounts in the console | M | R1 (keys), R2 (accounts) | AUTH-H-08 |
+| IAM-14 | The first platform admin is created by an explicit initialization command: an expiring admin key and, from R2, a local account whose generated password must be changed at first sign-in. There are no default credentials. Pandokos warns while the bootstrap key is still active | M | R1 | SEC-CP-03, SEC-CP-04 |
 | IAM-15 | Callers can authenticate with mutual TLS; the certificate identity (including a SPIFFE ID) maps to a service account | S | R4 | AUTH-S-04 |
 | IAM-16 | Access tokens can be bound to the client certificate (RFC 8705) | C | later | AUTH-S-03 |
 | IAM-17 | Sensitive administrative operations can require a minimum authentication strength or freshness asserted by the IdP | C | R5 | AUTH-H-09 |
+| IAM-18 | Pandokos keeps local accounts, a username and a password, so that people can sign in to the console without an IdP. Accounts are created by an administrator. The mechanism is on by default and can be switched off when an IdP is configured | M | R2 | AUTH-H-08 |
+| IAM-19 | Passwords are stored only as a memory-hard salted hash. A minimum length applies. A generated or reset password must be changed at the next sign-in. A password is reset by an administrator or from the host CLI; there is no self-registration and no recovery by email | M | R2 | new |
+| IAM-20 | Failed sign-ins are throttled per account and per source and are audited. The response does not reveal whether the username exists | M | R2 | AUD-01, new |
+| IAM-21 | Signing in creates a server-side session carried by a cookie that scripts cannot read. Sessions have an idle and an absolute lifetime, can be revoked, end on sign-out, password change and disabling of the user, and are protected against cross-site request forgery. Local and IdP sign-in produce the same session | M | R2 | AUTH-H-10, new |
+| IAM-22 | Only people sign in interactively, and a session is accepted only by the administration API on behalf of the console. A session or a password never authenticates an inference request, and a service account cannot sign in to the console | M | R2 | new |
 
 ### 5.3 Authorization
 
@@ -146,6 +155,7 @@ SOW 0.1; *new* marks requirements added in this revision.
 | AZ-08 | No platform role can read, export or replace a tenant's secret. A platform admin can see credential metadata and can disable or revoke a tenant credential, with a reason, on the audit record | M | R1 | SYS-08, SYS-09, SYS-10 |
 | AZ-09 | A platform admin acting inside a tenant (its users, roles or keys) performs an explicit support action that requires a reason, is audited in the tenant's log and can be disabled by configuration | S | R2 | SYS-03, SYS-11, SYS-12 |
 | AZ-10 | Managing credentials, managing identities and viewing costs can be granted separately | M | R2 | §7.2 |
+| AZ-11 | The administration API tells a signed-in user who they are, which tenants they belong to and which permissions they hold in each, so that a client can offer only what is allowed. Hiding a function in a client is never the control: the API checks every request | M | R2 | new |
 
 ### 5.4 Vault and provider credentials
 
@@ -294,7 +304,7 @@ SOW 0.1; *new* marks requirements added in this revision.
 | API-05 | Create operations accept an idempotency key | S | R2 | API-12 |
 | API-06 | A tenant can be administered by an external system through a tenant-scoped service account that holds no platform privilege | M | R1 | API-14, API-15 |
 | API-07 | An integrator can ask whether a tenant is currently able to call a given provider and model (credential present and valid, model allowed, tenant active, budget available) | S | R1 | new |
-| API-08 | A web console is optional and uses only the public administration API | C | later | §22 |
+| API-08 | The web console uses only the documented administration API, which includes the sign-in and session endpoints. It has no private or privileged path | M | R2 | §22 |
 
 ### 5.14 Security
 
@@ -337,6 +347,20 @@ SOW 0.1; *new* marks requirements added in this revision.
 | PRV-02 | The documentation states what data is sent to providers, telemetry collectors and billing destinations | M | R1 | NFR-PRIV-05 |
 | PRV-03 | Caller metadata is bounded in number and size, and a tenant can restrict the accepted keys | S | R2 | NFR-PRIV-04 |
 
+### 5.17 Console
+
+| ID | Requirement | Pri | Rel | Source |
+|---|---|---|---|---|
+| CON-01 | Pandokos ships a web console, embedded in the product and served on the administration listener. It can be switched off | M | R2 | §22 |
+| CON-02 | Tenant area, for tenant roles: members and roles, service accounts and virtual keys, provider credentials, model access, limits, usage and cost, audit log | M | R2 | new |
+| CON-03 | Platform area, for platform roles: tenants and their lifecycle, providers, models and prices, users and platform roles, platform limits, platform audit log; platform credentials and funding modes when they exist | M | R2, R3 (funding) | new |
+| CON-04 | Every function of the console is profiled by roles and permissions: an area, a page or an action appears only when the user's effective permissions (AZ-11) include the permission that the underlying API call requires. The map from console functions to permissions is documented and tested | M | R2 | new |
+| CON-05 | A user who belongs to several tenants chooses the tenant to work in. A user with a platform role reaches the platform area. Each area shows only its own scope, and a platform role alone gives no view into a tenant's data | M | R2 | AUTH-H-05 |
+| CON-06 | The console never displays a stored secret. A new virtual key is shown once; a provider credential is a write-only field | M | R2 | VAULT-05 |
+| CON-07 | The console is served with a strict content security policy, loads nothing from third parties and keeps no credential in browser storage | M | R2 | new |
+| CON-08 | From R3 on, a feature with an administrative surface ships its console page in the same release | S | R3 | new |
+| CON-09 | Interface text is kept apart from code so it can be translated; English comes first. The console is usable from the keyboard | C | R2 | new |
+
 ## 6. Use cases
 
 | ID | Use case | Release | Main requirements |
@@ -348,13 +372,15 @@ SOW 0.1; *new* marks requirements added in this revision.
 | UC-05 | A workload calls with a token from a trusted issuer that carries the tenant | R1 | IAM-06 to 08, TEN-02 |
 | UC-06 | A tenant rotates a provider credential or a virtual key without downtime | R1 | VLT-03, IAM-05 |
 | UC-07 | A caller of tenant A tries to reach a resource of tenant B | R1 | TEN-02 to 08 |
-| UC-08 | A user signs in through the IdP and administers a tenant | R2 | IAM-09 to 12, AZ-03 |
+| UC-08 | A user signs in to the console through the IdP and administers a tenant with the functions their role allows | R2 | IAM-09 to 12, AZ-03, CON-02, CON-04 |
 | UC-09 | A request exceeds a rate limit or a budget | R2 | LIM-01 to 09 |
 | UC-10 | A platform admin inspects the credential metadata of a tenant | R1 | AZ-08, VLT-04 |
 | UC-11 | A platform admin deletes a tenant | R2 | TEN-11, VLT-11 |
 | UC-12 | A tenant calls a platform-funded model | R3 | FND-03 to 05, LIM-03 |
 | UC-13 | Usage is delivered to an external billing system | R3 | BIL-01 to 04 |
 | UC-14 | An operator dedicates a cell to a tenant | R4 | OPS-06, OPS-07 |
+| UC-15 | With no IdP, a platform admin signs in with a local account, creates a tenant and a local account for its administrator | R2 | IAM-18 to 22, CON-03 |
+| UC-16 | A user with a limited role (for example usage viewer) signs in and finds only the pages of that role | R2 | AZ-11, CON-04 |
 
 ## 7. Acceptance per release
 
@@ -370,8 +396,9 @@ OTLP collector. (9) Revocation times of keys and credentials are documented and 
 image is minimal, scanned, signed and ships an SBOM. (11) The threat model states the limits of
 protection against whoever controls host, database and keys.
 
-**R2 — v0.2.** A user signs in with an external OIDC provider; roles gate every administrative
-route; rate limits and budgets hold under concurrent load within the documented bound; reports
+**R2 — v0.2.** A person signs in to the console with a local account and, where one is configured,
+through an external OIDC provider; the console offers each user only the functions of their roles,
+and the API refuses the others whatever the client sends; roles gate every administrative route; rate limits and budgets hold under concurrent load within the documented bound; reports
 answer who spent what; a tenant is deleted with cryptographic erasure and a completion record; the
 key-encryption key is rotated without tenant action; backup and restore are documented.
 
@@ -408,7 +435,7 @@ requirements above must let that platform:
 
 ## 9. What changed from SOW 0.1
 
-SOW 0.1 listed 267 requirements in a flat list with no priorities. This revision has 178, each with a priority and a release: it merges
+SOW 0.1 listed 267 requirements in a flat list with no priorities. This revision has 179, each with a priority and a release, and 16 use cases: it merges
 duplicates, assigns every requirement a priority and a release, and aligns the scope with what
 products of this class deliver.
 
@@ -420,7 +447,7 @@ privacy; SSRF protections under proxy and security. Each is now stated once.
 
 | SOW 0.1 | Now | Why |
 |---|---|---|
-| Optional local authentication for users (AUTH-H-08) | Removed. Without an IdP, administration uses admin-scoped keys and the CLI (IAM-13) | Local passwords are the first step toward becoming an identity provider, which principle 4 forbids |
+| Optional local authentication for users (AUTH-H-08) | Kept and made precise: minimal local accounts, valid for the console only (IAM-18 to IAM-22), with no self-registration, recovery by email or MFA | Without an IdP people still need a way to sign in. The stated limits keep the feature short of an identity provider |
 | DPoP, HTTP message signatures, token exchange inside the proxy (§6.4) | Not implemented. Token exchange happens at the IdP and Pandokos validates the resulting token | Sender-constrained tokens are covered by mutual TLS (IAM-15, IAM-16); the others add protocol surface with no caller that needs them |
 | SCIM provisioning | Out of scope | Users are provisioned on first mapped sign-in or through the API |
 | Rate limits per role (§11.1) | Removed | Limits attach to tenant, key, provider and model; roles are an authorization concept |
@@ -436,7 +463,9 @@ explicit rule against silent fallback between funding modes (FND-01) and between
 (VLT-01); mandatory budgets for platform-funded use (FND-04); limit headers (LIM-09); an
 anti-escalation rule for role grants (AZ-04); detectable key format (IAM-03); canary-secret tests
 (VLT-14); egress address checks (GW-06); atomic audit (AUD-03); a tenant capability check for
-integrators (API-07); graceful draining (OPS-12); refreshing prices from an open dataset (CAT-09).
+integrators (API-07); graceful draining (OPS-12); refreshing prices from an open dataset (CAT-09). A web console with a platform area and a tenant
+area, profiled by permissions (5.17, AZ-11), and the sessions behind it (IAM-21, IAM-22): SOW 0.1
+mentioned a dashboard only in passing.
 
 **Rescoped.** The fifteen named providers became three tiers by API family (CAT-02): supporting
 the OpenAI wire protocol covers most of the list with one adapter. The unified OpenAI-compatible

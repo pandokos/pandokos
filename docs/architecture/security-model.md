@@ -35,8 +35,10 @@ flowchart LR
 
 1. **Caller to gateway.** Untrusted. Everything the caller sends is input: path, headers, body,
    metadata, trace context. Only a verified credential establishes identity and tenant.
-2. **Administrator to admin API.** Authenticated by the identity provider or an admin key;
-   authorized per operation. The admin port is not meant for the public internet.
+2. **Administrator to admin API.** People hold a console session, obtained through the identity
+   provider or a local account. Automation uses admin keys or tokens. Every operation is
+   authorized. The console runs in the user's browser and is untrusted: what it hides is not a
+   control. The admin port is not meant for the public internet.
 3. **Process to database.** Each role connects with its own least-privileged database role. The
    database enforces tenant isolation independently of the application.
 4. **Process to KEK provider.** Whoever holds the key-encryption key and the database can decrypt
@@ -72,6 +74,12 @@ disk the operator's database administrators can read, and by auditing every admi
 | A bug omits a tenant filter | Forced row-level security under non-owner roles (TEN-04, TEN-05). The isolation suite (TEN-07) |
 | A stolen virtual key | Keys are scoped, can expire, carry limits, are revocable within a bound, and have a detectable format so scanners find leaks (IAM-03 to 05) |
 | A stolen bearer token | Short lifetimes, audience validation. Mutual TLS for stronger binding (IAM-15, IAM-16) |
+| Password guessing against local accounts | Throttling per account and source, uniform responses, audit of failures (IAM-20). Memory-hard hashes (IAM-19). No default credentials (IAM-14). Local accounts can be switched off (IAM-18) |
+| A stolen or forged console session | Random 256-bit tokens stored as hashes; cookie not readable by scripts, sent over TLS only and never cross-site; idle and absolute lifetimes; revocation (IAM-21) |
+| Cross-site request forgery against the console | Same-site cookie, plus a required custom header and an origin check on every state-changing request (IAM-21) |
+| Script injection in the console | A strict content security policy without inline script, no third-party resources, a framework that escapes output by default, no credential in browser storage (CON-07) |
+| A console user reaches functions beyond their role | The API authorizes every call. The console's profiling is derived from the same permissions and is tested against them (AZ-11, CON-04) |
+| A console session is used to call models | Sessions are accepted only on the administration listener; the gateway's database role cannot read them (IAM-22) |
 | The database or a backup is copied | Credentials are ciphertext under per-tenant keys wrapped by a key that is not in the database (VLT-09, VLT-13). Virtual keys are stored as hashes |
 | The key-encryption key leaks | Rotation by re-wrapping (VLT-10). The leak alone exposes nothing without the database |
 | A ciphertext is copied onto another tenant's row | The tenant and credential IDs are bound into the ciphertext as associated data, so decryption fails (VLT-07) |
@@ -110,3 +118,7 @@ A virtual key looks like `pdk_<key id>_<secret><checksum>`. The key ID is public
 key is found and named in logs. The secret has 256 bits of entropy, which is why a plain SHA-256
 hash is sufficient storage: there is nothing to brute-force. The checksum lets scanners and the
 gateway reject malformed strings without a lookup.
+
+A local account's password is chosen by a person and is therefore guessable: it is stored with
+Argon2id, a deliberately slow, memory-hard hash, with a per-account salt. This is the opposite
+trade-off from virtual keys, and the reason the two are never verified by the same code path.

@@ -31,7 +31,7 @@ erDiagram
 | Group | Tables | Scope |
 |---|---|---|
 | Platform | `tenant`, `platform_role_assignment`, `provider`, `endpoint`, `model`, `price_version`, `rating_rule`, `platform_credential`, `platform_issuer`, `kek_version` | global |
-| Identity | `app_user`, `membership`, `service_account`, `virtual_key`, `trusted_issuer`, `subject_mapping`, `role`, `role_permission`, `role_assignment` | tenant (`app_user` is global, memberships are tenant-scoped) |
+| Identity | `app_user`, `local_account`, `console_session`, `membership`, `service_account`, `virtual_key`, `trusted_issuer`, `subject_mapping`, `role`, `role_permission`, `role_assignment` | tenant (`app_user`, `local_account` and `console_session` are global, memberships are tenant-scoped) |
 | Vault | `tenant_data_key`, `provider_credential` | tenant |
 | Policy | `model_grant`, `funding_mode`, `limit_rule` | tenant |
 | Records | `usage_record`, `usage_correction`, `audit_event`, `platform_audit_event` | tenant, except the platform audit |
@@ -82,6 +82,25 @@ Three details make this hold:
 - **Append-only records.** `usage_record` and `audit_event` grant `INSERT` and `SELECT` only. No
   runtime role holds `UPDATE`, `DELETE` or `TRUNCATE` on them. Retention is carried out by the
   worker dropping whole expired partitions through a dedicated, audited function.
+
+## People and sessions
+
+A person is one `app_user` row, global because a person can belong to several tenants. How they
+sign in is either a federated identity (issuer and subject) or a `local_account` row: username,
+password hash with its parameters, a must-change flag, failure counters. A user has one sign-in
+method.
+
+`console_session` holds one row per open session: the hash of the session token, the user, the
+creation and last-use times, and the sign-in method. The token itself exists only in the browser's
+cookie.
+
+These three tables are readable and writable by the admin database role only. The gateway role
+has no grant on them: the data plane cannot see passwords or sessions, which is what makes
+"a console session never authenticates inference" a property of the database and not only of the
+code.
+
+What a user may do in a tenant is still in `membership` and `role_assignment`, under row-level
+security like every other tenant table.
 
 ## Usage ledger
 

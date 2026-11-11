@@ -33,7 +33,8 @@ appears only when the deployment needs it.
 flowchart LR
     subgraph callers[Callers]
         app[Applications and agents<br/>provider SDKs]
-        ops[Operators, back ends, CLI]
+        ops[Back ends, automation, CLI]
+        ppl[People<br/>web console in a browser]
     end
     subgraph pandokos[Pandokos]
         gw[Gateway<br/>data plane]
@@ -49,7 +50,8 @@ flowchart LR
     bill[Billing system]
 
     app -->|native provider API| gw
-    ops -->|REST| adm
+    ops -->|REST, keys or tokens| adm
+    ppl -->|REST, session cookie| adm
     gw -->|native provider API| prov
     gw --- pg
     adm --- pg
@@ -71,7 +73,7 @@ run any combination of three roles ([ADR 0003](../adr/0003-single-binary-with-ro
 | Role | Plane | Does | Listens |
 |---|---|---|---|
 | `gateway` | data | Authenticates callers, authorizes, enforces limits, injects the provider credential, forwards, extracts usage | inference port |
-| `admin` | control | Administration API for tenants, identities, roles, catalogue, credentials, limits, reports | admin port |
+| `admin` | control | Administration API for tenants, identities, roles, catalogue, credentials, limits, reports. Serves the web console and handles sign-in and sessions | admin port |
 | `worker` | background | Billing delivery, retention, tenant deletion, price refresh, key re-wrapping, counter reconciliation | none |
 
 Two more commands exist: `migrate` (schema changes, with owner credentials) and `init` (first
@@ -212,6 +214,7 @@ revocation takes, so these numbers are part of the product's contract (IAM-05, V
 | Catalogue and tenant state | 30 s | `NOTIFY` |
 | Unwrapped tenant data key | 5 min | `NOTIFY` on tenant deletion or key rotation |
 | Decrypted provider credential | 60 s | `NOTIFY` on credential change |
+| Console session | 30 s | `NOTIFY` on sign-out, password change or disabling of the user |
 
 **Documented bound: a revocation takes effect within 60 seconds on every instance**, and in
 practice within a second when notifications are flowing. The bound is tested.
@@ -259,7 +262,7 @@ The rule: when Pandokos cannot verify that a request is allowed, it does not for
 | PostgreSQL | Continues from caches until they expire, then refuses. Usage records wait in a bounded memory buffer; when it fills, the instance reports not ready and refuses new requests | Unavailable |
 | Valkey | Refuses by default. Configurable to continue with per-instance counters | Unaffected |
 | KEK provider | Continues while data keys are cached, then refuses | Credential writes fail |
-| Identity provider | Tokens verify while the JWKS is cached. Virtual keys unaffected | As for tokens |
+| Identity provider | Tokens verify while the JWKS is cached. Virtual keys unaffected | Sign-in through the IdP is unavailable. Open sessions, local accounts and keys are unaffected |
 | OTLP collector | Unaffected; telemetry is dropped | Unaffected |
 | Billing destination | Unaffected; events wait in the outbox | Unaffected |
 | Provider | The provider's error is returned unchanged | Credential validation fails |
@@ -274,6 +277,8 @@ The rule: when Pandokos cannot verify that a request is allowed, it does not for
 | Counters | In process for one instance; Valkey for several | [0012](../adr/0012-limits-and-budget-reservation.md) |
 | Cryptography | Go standard library: AES-256-GCM, HKDF, SHA-256 | [0008](../adr/0008-vault-envelope-encryption.md) |
 | Tokens | OIDC discovery and JWKS with a small, widely used library | [0005](../adr/0005-data-plane-authentication.md), [0006](../adr/0006-human-authentication-external-oidc.md) |
+| People sign-in | External OIDC or local accounts (Argon2id), server-side sessions | [0006](../adr/0006-human-authentication-external-oidc.md), [0022](../adr/0022-local-accounts-and-sessions.md) |
+| Console | React and TypeScript single-page application, built to static files embedded in the binary; client generated from the OpenAPI document | [0021](../adr/0021-web-console.md) |
 | Admin API | OpenAPI 3.1 written first; server interfaces and CLI client generated | [0017](../adr/0017-admin-api-spec-first.md) |
 | Telemetry | OpenTelemetry Go SDK, OTLP, `log/slog` | [0015](../adr/0015-observability.md) |
 | Prices | Open price dataset, imported and versioned, with overrides | [0011](../adr/0011-pricing-source.md) |
@@ -301,6 +306,7 @@ internal/
   store/                 database access, RLS sessions, migrations
   telemetry/  config/
 api/openapi/             administration API specification
+web/console/             console source; its build output is embedded in the binary
 deploy/compose/  deploy/helm/
 docs/                    requirements, architecture, ADRs
 planning/                roadmap, epics, sprints
@@ -310,7 +316,51 @@ test/                    isolation suite, SDK compatibility suite, fixtures
 Everything under `internal/` is private: the only public contracts are the HTTP APIs, the
 configuration file and the event format.
 
-## 12. Open questions
+## 12. Web console
+
+The console is how people administer Pandokos ([ADR 0021](../adr/0021-web-console.md)). It is a
+single-page application whose built files are embedded in the binary and served by the `admin`
+role on the administration listener, so the single container stays single.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Browser (console)
+    participant A as Admin API
+    participant I as Identity provider
+    B->>A: Sign in (username and password)
+    Note over B,I: or: redirect to the IdP, code flow with PKCE, back to the Admin API
+    A-->>B: Session cookie (not readable by scripts)
+    B->>A: GET /v1/me
+    A-->>B: Identity, memberships, permissions per tenant, platform permissions
+    B->>B: Build navigation from the permissions
+    B->>A: API calls with the cookie
+    A->>A: Authorize every call
+```
+
+**Two areas.** The *platform area* is for platform roles: tenants, catalogue and prices, users and
+platform roles, platform limits and audit. The *tenant area* is for tenant roles: members and
+roles, service accounts and keys, provider credentials, model access, limits, usage, audit. A
+user sees the areas their roles give them; someone who belongs to several tenants switches
+between them.
+
+**Sign-in.** People are the only ones who sign in. They use a local account or an external
+identity provider ([ADR 0006](../adr/0006-human-authentication-external-oidc.md),
+[ADR 0022](../adr/0022-local-accounts-and-sessions.md)); either way the result is the same
+server-side session, carried by a cookie. A session is accepted only by the administration API.
+The gateway does not know what a session is, so signing in to the console can never be used to
+call a model. Service accounts and virtual keys cannot sign in.
+
+**Profiling.** After sign-in the console asks the API who the user is and which permissions they
+hold (`GET /v1/me`). Every route, page and button of the console declares the permission it
+needs, the same `resource:action` string that the corresponding API operation requires, and is
+shown only if the user holds it. This is a convenience, not the control: the API authorizes each
+call on its own, so a modified console gains nothing.
+
+**No privileges of its own.** The console calls only the documented administration API. It holds
+no key, and there is no endpoint reserved for it.
+
+## 13. Open questions
 
 These do not block the first release and are tracked for the sprint that needs the answer.
 
@@ -320,6 +370,5 @@ These do not block the first release and are tracked for the sprint that needs t
 2. **Durable intent for platform-funded calls.** Writing a pending ledger row before forwarding
    would close the window in which a crash loses a billable record, at the cost of one database
    round trip per call. To be decided with the billing epic.
-3. **Web console technology.** Deferred until the administration API is stable.
-4. **Batch and file endpoints.** Asynchronous provider APIs report usage out of band and need
+3. **Batch and file endpoints.** Asynchronous provider APIs report usage out of band and need
    their own metering design.

@@ -12,7 +12,7 @@ A record is *proposed* until its pull request is merged by the maintainer, then 
 | [0003](0003-single-binary-with-roles.md) | One binary with three roles; separate planes | proposed |
 | [0004](0004-postgresql-and-rls.md) | PostgreSQL as system of record, with forced row-level security | proposed |
 | [0005](0005-data-plane-authentication.md) | Data-plane authentication: virtual keys and trusted token issuers | proposed |
-| [0006](0006-human-authentication-external-oidc.md) | People authenticate through an external OIDC provider only | proposed |
+| [0006](0006-human-authentication-external-oidc.md) | People sign in to the console only, through an external OIDC provider or a local account | proposed |
 | [0007](0007-authorization-rbac.md) | Authorization: role-based, with a permission catalogue defined in code | proposed |
 | [0008](0008-vault-envelope-encryption.md) | Vault: built-in envelope encryption with a pluggable key-encryption key | proposed |
 | [0009](0009-native-passthrough-by-api-family.md) | Native passthrough organized by API family; no translation | proposed |
@@ -27,6 +27,8 @@ A record is *proposed* until its pull request is merged by the maintainer, then 
 | [0018](0018-supply-chain.md) | Supply chain: few dependencies, minimal image, signed releases | proposed |
 | [0019](0019-configuration.md) | Configuration: static settings in a file, dynamic state in the database | proposed |
 | [0020](0020-error-contract.md) | Error contract: the shape of the API being called | proposed |
+| [0021](0021-web-console.md) | Web console: embedded single-page application, profiled by permissions | proposed |
+| [0022](0022-local-accounts-and-sessions.md) | Local accounts and console sessions | proposed |
 
 ## Questions from SOW 0.1 and where they were decided
 
@@ -38,7 +40,7 @@ A record is *proposed* until its pull request is merged by the maintainer, then 
 | 4. Vault architecture and key management | 0008 |
 | 5. Separation of control and data plane | 0003 |
 | 6, 7. Service-account authentication, mTLS, JWT, SPIFFE, DPoP | 0005 |
-| 8. Federated identity, tenants and roles | 0006 |
+| 8. Federated identity, tenants and roles | 0006, 0022 |
 | 9. RBAC model and granularity | 0007 |
 | 10. What the platform admin can do with credentials | 0007, 0008 |
 | 11, 12. Provider APIs and degree of transparency | 0009 |

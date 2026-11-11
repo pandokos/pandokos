@@ -53,7 +53,7 @@ Pandokos is deliberately not an identity provider, an agent or workflow framewor
 | Release | Theme |
 |---|---|
 | v0.1 | Core BYOK: tenants, virtual keys, vault, OpenAI and Anthropic passthrough with streaming, usage ledger |
-| v0.2 | Governance: OIDC sign-in, roles, rate limits and budgets, reports, tenant deletion |
+| v0.2 | Governance and web console: sign-in with local accounts or OIDC, roles, rate limits and budgets, reports, tenant deletion |
 | v0.3 | Platform-funded credentials and billing events |
 | v0.4 | Scale-out: replicas, Kubernetes, dedicated cells, more providers |
 | v1.0 | Hardening: security review, measured performance, tested recovery |

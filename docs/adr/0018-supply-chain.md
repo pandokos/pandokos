@@ -30,6 +30,10 @@ needs rules of its own (SEC-06).
 - Multi-architecture images (amd64, arm64).
 - The image is scanned in CI.
 
+**Console.** The front-end toolchain and its packages are needed only at build time. They are
+locked, audited in CI and built in the pipeline; what ships is static files embedded in the binary.
+No JavaScript runtime runs on the server.
+
 **Release.**
 
 - Releases are built only by the CI pipeline from a tagged commit.

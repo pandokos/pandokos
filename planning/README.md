@@ -38,6 +38,8 @@ A sprint is done when:
   permission and has a cross-tenant negative test;
 - no secret or content appears in any output (the canary tests pass);
 - lint, vulnerability check and the full test suite pass in CI;
+- from v0.3 on, a feature with an administrative surface has its console page, gated by the same
+  permission as its API operation;
 - user-facing behaviour is documented, the OpenAPI specification is current, and any decision
   taken along the way has its ADR.
 
