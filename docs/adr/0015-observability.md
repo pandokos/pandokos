@@ -1,6 +1,6 @@
 # 0015. Observability: OpenTelemetry, pinned GenAI conventions, no content
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-11
 
 ## Context

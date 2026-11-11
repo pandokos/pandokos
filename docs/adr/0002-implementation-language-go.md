@@ -1,6 +1,6 @@
 # 0002. Implementation language: Go
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-11
 
 ## Context

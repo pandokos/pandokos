@@ -1,6 +1,6 @@
 # 0007. Authorization: role-based, with a permission catalogue defined in code
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-11
 
 ## Context

@@ -1,6 +1,6 @@
 # 0011. Prices: versioned in the database, seeded from an open dataset
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-11
 
 ## Context

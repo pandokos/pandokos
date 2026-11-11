@@ -1,6 +1,6 @@
 # 0020. Error contract: the shape of the API being called
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-11
 
 ## Context

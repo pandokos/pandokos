@@ -1,6 +1,6 @@
 # 0013. Usage ledger and audit log: append-only tables in PostgreSQL
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-11
 
 ## Context

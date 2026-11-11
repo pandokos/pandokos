@@ -1,6 +1,6 @@
 # 0018. Supply chain: few dependencies, minimal image, signed releases
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-11
 
 ## Context

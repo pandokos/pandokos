@@ -1,6 +1,6 @@
 # 0006. People sign in to the console only, through an external OIDC provider or a local account
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-11
 
 ## Context

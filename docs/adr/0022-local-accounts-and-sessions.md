@@ -1,6 +1,6 @@
 # 0022. Local accounts and console sessions
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-11
 
 ## Context
