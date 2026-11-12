@@ -59,21 +59,22 @@ func (h *Handler) modifyResponse(resp *http.Response) error {
 		}
 	}
 	resp.Header = allowed
+	resp.Trailer = nil // provider trailers are dropped; the wrappers drop them again at the end of the body
 
 	contentType := resp.Header.Get("Content-Type")
 	switch {
 	case resp.StatusCode == http.StatusOK && strings.HasPrefix(contentType, "text/event-stream"):
-		st.streamBody = newStreamBody(resp.Body, openai.NewStreamReader(st.strip))
+		st.streamBody = newStreamBody(resp, openai.NewStreamReader(st.strip))
 		resp.Body = st.streamBody
 		if st.strip {
 			resp.Header.Del("Content-Length")
 			resp.ContentLength = -1
 		}
 	case resp.StatusCode == http.StatusOK && strings.HasPrefix(contentType, "application/json"):
-		st.teeBody = &teeBody{src: resp.Body}
+		st.teeBody = &teeBody{src: resp.Body, trailers: trailerGuard{resp}}
 		resp.Body = st.teeBody
 	default:
-		st.countBody = &countBody{src: resp.Body}
+		st.countBody = &countBody{src: resp.Body, trailers: trailerGuard{resp}}
 		resp.Body = st.countBody
 	}
 	return nil

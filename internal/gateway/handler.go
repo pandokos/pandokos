@@ -130,7 +130,7 @@ func (h *Handler) fail(st *reqState, code family.ErrorCode) {
 // ServeHTTP handles one request.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	st := &reqState{start: time.Now(), id: NewRequestID(), callerCx: r.Context(), method: logMethod(r.Method)}
-	st.sw = &statusWriter{ResponseWriter: w}
+	st.sw = &statusWriter{ResponseWriter: w, requestID: st.id}
 	w.Header().Set(family.HeaderRequestID, st.id)
 	defer func() { h.finish(st, recover()) }()
 

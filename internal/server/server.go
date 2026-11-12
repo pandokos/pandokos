@@ -117,7 +117,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 		s.logger.Debug("request",
 			"request_id", gateway.NewRequestID(),
 			"method", r.Method,
-			"route", r.Method+" "+r.URL.Path,
+			"route", "GET "+r.URL.Path, // fixed labels: HEAD is served as GET
 			"status", rec.code,
 			"outcome", "ok",
 			"duration_ms", time.Since(start).Milliseconds())

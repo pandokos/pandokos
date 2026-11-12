@@ -62,7 +62,7 @@ the response. The provider also adds `"usage":null` to every other chunk when th
 that member is left in place. If the caller asked for usage itself, nothing is added or removed
 ([ADR 0024](../adr/0024-openai-stream-usage-option.md)).
 
-Pandokos adds the header `X-Pandokos-Request-Id` to every response.
+Pandokos adds the header `X-Pandokos-Request-Id` to every response of the proxied route and to every error it raises (the health endpoints carry none). Provider informational (1xx) responses and trailers are dropped, so no provider header reaches the caller outside the allow-list.
 
 ## Errors raised by Pandokos
 
@@ -89,7 +89,7 @@ header values, bodies and query strings never appear. Values of sensitive keys a
 
 | Field | Present | Meaning |
 |---|---|---|
-| `request_id` | always | 32 hexadecimal characters; the same value as the response header |
+| `request_id` | always | 32 hexadecimal characters; the same value as the response header wherever that header is sent (not on the health endpoints) |
 | `method` | always | the HTTP method, or `OTHER` |
 | `route` | always | `POST /openai/v1/chat/completions`, `GET /healthz`, `GET /readyz` or `unmatched` |
 | `status` | always | status sent to the caller, 0 if none |
