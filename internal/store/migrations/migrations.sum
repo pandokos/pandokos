@@ -1,0 +1,2 @@
+# One line per migration: file name and SHA-256. A merged migration is never edited.
+0001_init.sql 65c99c31f10957fea5532b6f286f4adca30d489e8bc63dee0508b92238e67db5

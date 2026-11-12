@@ -25,7 +25,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.24.7"
+          go-version: "1.25.14"
       - run: make fmt-check
       - run: make vet
       - run: make tidy
@@ -40,7 +40,7 @@ jobs:
       matrix:
         include:
           - name: floor
-            go-version: "1.24.7"
+            go-version: "1.25.14"
             go-version-file: ""
           - name: release
             go-version: ""
@@ -54,8 +54,16 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
           go-version-file: ${{ matrix.go-version-file }}
+      - name: Start PostgreSQL and PgBouncer
+        run: |
+          sh test/db/up.sh
+          echo "::add-mask::$(cat local/testdb/postgres_password)"
+          cat local/testdb/env >> "$GITHUB_ENV"
       - run: go build ./...
       - run: go test -race -count=1 ./...
+      - name: Database logs
+        if: failure()
+        run: docker compose -f test/db/compose.yaml logs --no-color --tail 200
 
   sdk:
     runs-on: ubuntu-24.04
@@ -120,10 +128,18 @@ jobs:
           build-args: |
             VERSION=ci
             COMMIT=${{ github.sha }}
+      - name: Start PostgreSQL and PgBouncer
+        run: |
+          sh test/db/up.sh
+          echo "::add-mask::$(cat local/testdb/postgres_password)"
+          cat local/testdb/env >> "$GITHUB_ENV"
       - name: Container tests
         run: go test -tags container -count=1 ./test/container/
         env:
           PANDOKOS_TEST_IMAGE: pandokos:ci
+      - name: Database logs
+        if: failure()
+        run: docker compose -f test/db/compose.yaml logs --no-color --tail 200
       - name: SBOM
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:

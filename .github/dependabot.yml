@@ -16,3 +16,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  - package-ecosystem: docker-compose
+    directory: /test/db
+    schedule:
+      interval: weekly
