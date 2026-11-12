@@ -3,7 +3,7 @@ id: SPRINT-1.1
 title: Walking skeleton
 epic: EPIC-1
 release: v0.1
-status: in-progress
+status: done
 design: frozen 2026-11-11
 ---
 
@@ -1196,3 +1196,14 @@ says.
 | O-4 | ADR 0018 says releases sign "images and binaries". This sprint releases the image only, as the epic lists. If binary archives are wanted for v0.1 they need a sprint item |
 | O-5 | ADR 0020 has no code for a request the caller never finishes sending, nor for a malformed body. The skeleton closes the connection in the first case and lets the provider answer in the second. 3.1 needs the model from the body and will need a `bad_request`-like code: an ADR 0020 amendment |
 | O-6 | OPS-12 (drain on shutdown) and GW-16 (size and duration limits) are implemented here but claimed by no sprint in the epic files; they should be claimed where they are completed |
+
+### Maintainer decisions on the open points (2026-11-12)
+
+| # | Decision |
+|---|---|
+| O-1 | Confirmed: releases build with the toolchain of ADR 0025 (1.27.4). The floor was raised to Go 1.25 by sprint 1.2 |
+| O-2 | Provider traffic does not honour `HTTPS_PROXY` until sprint 3.1, which decides it together with the egress guard |
+| O-3 | SEC-01 (native TLS on listeners) is assigned to sprint 1.3, together with the admin listener |
+| O-4 | v0.1 releases the signed image only; binary archives are not in v0.1 |
+| O-5 | The ADR 0020 amendment (a `bad_request`-like code) is made in sprint 3.1 |
+| O-6 | OPS-12 and GW-16 are claimed by sprint 3.1, which completes them |
