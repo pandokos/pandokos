@@ -41,12 +41,32 @@ func tlsConfig(o ConnOptions) (*tls.Config, error) {
 	}
 }
 
+// neutral gives every keyword that a libpq environment variable can set an explicit value, which
+// takes precedence over the variable. The empty values are the driver's own defaults. Nothing
+// here names a file, so nothing is read from the file system at parse time.
+const neutral = "passfile='' sslrootcert='' sslcert='' sslkey='' sslpassword='' " +
+	"sslcertmode=disable sslnegotiation='' sslsni='' target_session_attrs=any timezone='' options='' " +
+	"min_protocol_version='' max_protocol_version='' channel_binding='' require_auth='' application_name='' "
+
+// serviceVariables cannot be neutralised: a service file would override the connection settings.
+var serviceVariables = []string{"PGSERVICE", "PGSERVICEFILE"}
+
+func refuseServiceVariables() error {
+	for _, name := range serviceVariables {
+		if os.Getenv(name) != "" {
+			return fmt.Errorf("store: environment variable %s is set; Pandokos does not use libpq service files, unset it", name)
+		}
+	}
+	return nil
+}
+
 func dsn(o ConnOptions) string {
 	seconds := int(o.ConnectTimeout / time.Second)
 	if seconds < 1 {
 		seconds = 1
 	}
-	return "host=" + quoteValue(o.Host) +
+	return neutral +
+		"host=" + quoteValue(o.Host) +
 		" port=" + strconv.Itoa(o.Port) +
 		" dbname=" + quoteValue(o.Database) +
 		" user=" + quoteValue(o.User) +
@@ -56,6 +76,9 @@ func dsn(o ConnOptions) string {
 // connConfig builds the driver configuration. The password is never part of a string, and
 // nothing that libpq environment variables can set survives.
 func connConfig(o ConnOptions, applicationName string) (*pgx.ConnConfig, error) {
+	if err := refuseServiceVariables(); err != nil {
+		return nil, err
+	}
 	tc, err := tlsConfig(o)
 	if err != nil {
 		return nil, err
@@ -77,6 +100,8 @@ func connConfig(o ConnOptions, applicationName string) (*pgx.ConnConfig, error) 
 	cfg.AfterConnect = nil
 	cfg.KerberosSrvName = ""
 	cfg.KerberosSpn = ""
+	cfg.SSLNegotiation, cfg.SSLCertMode = "", "disable"
+	cfg.MinProtocolVersion, cfg.MaxProtocolVersion, cfg.ChannelBinding, cfg.RequireAuth = "", "", "", ""
 	cfg.DefaultQueryExecMode = pgx.QueryExecModeExec
 	cfg.StatementCacheCapacity = 0
 	cfg.DescriptionCacheCapacity = 0
