@@ -1,0 +1,190 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/pandokos/pandokos
+
+jobs:
+  check-tag:
+    if: github.repository == 'pandokos/pandokos'
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: v
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          if ! printf '%s' "$TAG" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'; then
+            echo "not a semantic version tag: $TAG"; exit 1
+          fi
+          ok=false
+          for ref in $(git for-each-ref --format='%(refname)' refs/remotes/origin/main 'refs/remotes/origin/release/*'); do
+            if git merge-base --is-ancestor "$GITHUB_SHA" "$ref"; then ok=true; fi
+          done
+          if [ "$ok" != true ]; then echo "the tagged commit is not on main or a release branch"; exit 1; fi
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          case "$TAG" in
+            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *)   echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+  ci:
+    needs: check-tag
+    uses: ./.github/workflows/ci.yml
+
+  image:
+    needs: [check-tag, ci]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: tags
+        env:
+          VERSION: ${{ needs.check-tag.outputs.version }}
+          PRERELEASE: ${{ needs.check-tag.outputs.prerelease }}
+        run: |
+          set -eu
+          {
+            echo "tags<<EOF"
+            echo "${IMAGE}:${VERSION}"
+            if [ "$PRERELEASE" = false ]; then
+              echo "${IMAGE}:${VERSION%.*}"
+              echo "${IMAGE}:latest"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: false
+          sbom: false
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.title=pandokos
+            org.opencontainers.image.description=Multi-tenant LLM proxy
+            org.opencontainers.image.source=https://github.com/pandokos/pandokos
+            org.opencontainers.image.licenses=Apache-2.0
+            org.opencontainers.image.version=${{ needs.check-tag.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          build-args: |
+            VERSION=${{ needs.check-tag.outputs.version }}
+            COMMIT=${{ github.sha }}
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: v3.1.4
+      - name: Sign the image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"
+      - name: SBOM
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          artifact-name: sbom.spdx.json
+          upload-artifact: true
+          upload-release-assets: false
+      - name: Attest the SBOM
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign attest --yes --type spdxjson --predicate sbom.spdx.json "${IMAGE}@${DIGEST}"
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  verify:
+    needs: [check-tag, image]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    env:
+      DIGEST: ${{ needs.image.outputs.digest }}
+      VERSION: ${{ needs.check-tag.outputs.version }}
+      IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}
+      ISSUER: https://token.actions.githubusercontent.com
+    steps:
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: v3.1.4
+      - name: Verify the signature
+        run: cosign verify "${IMAGE}@${DIGEST}" --certificate-identity "$IDENTITY" --certificate-oidc-issuer "$ISSUER" > /dev/null
+      - name: Verify the SBOM attestation
+        run: cosign verify-attestation "${IMAGE}@${DIGEST}" --type spdxjson --certificate-identity "$IDENTITY" --certificate-oidc-issuer "$ISSUER" > /dev/null
+      - name: Verify the build provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh attestation verify "oci://${IMAGE}@${DIGEST}" --repo "$GITHUB_REPOSITORY"
+      - name: Verify the platforms
+        run: |
+          set -eu
+          docker buildx imagetools inspect "${IMAGE}@${DIGEST}" > platforms.txt
+          grep -q 'linux/amd64' platforms.txt
+          grep -q 'linux/arm64' platforms.txt
+      - name: Verify the version
+        run: |
+          set -eu
+          out=$(docker run --rm "${IMAGE}@${DIGEST}" version)
+          echo "$out"
+          test "$(printf '%s' "$out" | cut -d' ' -f2)" = "$VERSION"
+
+  publish:
+    needs: [check-tag, image, verify]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+      PRERELEASE: ${{ needs.check-tag.outputs.prerelease }}
+      DIGEST: ${{ needs.image.outputs.digest }}
+    steps:
+      - run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name sbom.spdx.json
+      - run: |
+          set -eu
+          flag=""
+          if [ "$PRERELEASE" = true ]; then flag="--prerelease"; fi
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" $flag \
+            --notes "Image: \`${IMAGE}@${DIGEST}\`. Verification: docs/operations/container.md." \
+            sbom.spdx.json

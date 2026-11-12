@@ -12,7 +12,21 @@ Use GitHub's private vulnerability reporting instead:
 2. Choose **Report a vulnerability**.
 3. Describe the problem, the affected version or commit, and the steps to reproduce it.
 
-You will receive an acknowledgement as soon as possible. Please give us reasonable time to fix the problem before disclosing it publicly.
+You will receive an acknowledgement as described in the [response process](#response-process). Please give us reasonable time to fix the problem before disclosing it publicly.
+
+## Response process
+
+What happens after a report:
+
+- A report is acknowledged within 3 working days.
+- Triage (confirmed or not, severity, affected versions) is done within 10 working days.
+- The fix is prepared in a private fork attached to a GitHub security advisory, with a test that
+  reproduces the problem.
+- The fix is released as a new version from `main` and, for the supported minor version, from its
+  maintenance branch (see [CONTRIBUTING.md](CONTRIBUTING.md)). Tags are never moved.
+- The advisory is published with the release, and a CVE is requested through GitHub when the
+  problem affects released versions. The reporter is credited unless they prefer otherwise.
+- If a fix needs longer than 90 days, the reporter is told why and when to expect it.
 
 ## Scope
 
