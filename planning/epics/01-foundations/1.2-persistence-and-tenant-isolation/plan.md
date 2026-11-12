@@ -1100,6 +1100,11 @@ next and verify both together.
 
 ### C5. `internal/store/` — `feat: store with tenant transactions and start-up check`
 
+> **Amended at review.** The `dsn` / `connConfig` code block below predates the review. The
+> connection string also carries the keywords that neutralise libpq environment variables, the
+> env-derived fields are reset after parsing, and `PGSERVICE` / `PGSERVICEFILE` are refused by
+> name. `sprint.md` §5.7 and `internal/store/conn.go` are authoritative.
+
 Files: `doc.go` (delete the blank import of A1, keep the package comment), `conn.go`,
 `db.go`, `tx.go`, `check.go`, `migrate.go`.
 
