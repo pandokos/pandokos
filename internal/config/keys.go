@@ -86,6 +86,59 @@ var keyTable = []keyDef{
 		setDuration(func(c *Config) *Duration { return &c.Upstream.ConnectTimeout })),
 	def("shutdown.drain_timeout", "duration", "30s", "Time in-flight requests get to finish after a termination signal",
 		setDuration(func(c *Config) *Duration { return &c.Shutdown.DrainTimeout })),
+	def("database.address", "host:port", "", "Address of PostgreSQL, or of the connection pooler in front of it (required)",
+		setString(func(c *Config) *string { return &c.Database.Address })),
+	def("database.name", "name", "pandokos", "Database name",
+		setString(func(c *Config) *string { return &c.Database.Name })),
+	def("database.tls.mode", "verify-full, disable", "verify-full", "TLS towards the database: verified (certificate chain and host name) or none",
+		setString(func(c *Config) *string { return &c.Database.TLS.Mode })),
+	def("database.tls.ca_file", "path", "", "PEM file with the certificate authorities to trust; empty means the system roots",
+		setString(func(c *Config) *string { return &c.Database.TLS.CAFile })),
+	def("database.connect_timeout", "duration", "5s", "Time allowed to establish one database connection",
+		setDuration(func(c *Config) *Duration { return &c.Database.ConnectTimeout })),
+	def("database.gateway.user", "name", "pandokos_gateway", "Database user of the gateway role",
+		setString(func(c *Config) *string { return &c.Database.Gateway.User })),
+	def("database.gateway.password_file", "path", "", "File with that user's password (required by serve)",
+		setString(func(c *Config) *string { return &c.Database.Gateway.PasswordFile })),
+	def("database.gateway.max_connections", "integer", "10", "Size limit of the gateway pool",
+		func(c *Config, v string) error {
+			n, err := parseInt(v)
+			if err != nil {
+				return err
+			}
+			c.Database.Gateway.MaxConnections = int(n)
+			return nil
+		}),
+	def("database.admin.user", "name", "pandokos_admin", "Database user of the admin role",
+		setString(func(c *Config) *string { return &c.Database.Admin.User })),
+	def("database.admin.password_file", "path", "", "File with that user's password (required by serve)",
+		setString(func(c *Config) *string { return &c.Database.Admin.PasswordFile })),
+	def("database.admin.max_connections", "integer", "10", "Size limit of the admin pool",
+		func(c *Config, v string) error {
+			n, err := parseInt(v)
+			if err != nil {
+				return err
+			}
+			c.Database.Admin.MaxConnections = int(n)
+			return nil
+		}),
+	def("database.worker.user", "name", "pandokos_worker", "Database user of the worker role",
+		setString(func(c *Config) *string { return &c.Database.Worker.User })),
+	def("database.worker.password_file", "path", "", "File with that user's password (required by serve)",
+		setString(func(c *Config) *string { return &c.Database.Worker.PasswordFile })),
+	def("database.worker.max_connections", "integer", "5", "Size limit of the worker pool",
+		func(c *Config, v string) error {
+			n, err := parseInt(v)
+			if err != nil {
+				return err
+			}
+			c.Database.Worker.MaxConnections = int(n)
+			return nil
+		}),
+	def("database.owner.user", "name", "pandokos_owner", "Database user of pandokos migrate",
+		setString(func(c *Config) *string { return &c.Database.Owner.User })),
+	def("database.owner.password_file", "path", "", "File with that user's password (required by migrate, never read by serve)",
+		setString(func(c *Config) *string { return &c.Database.Owner.PasswordFile })),
 	def("skeleton.access_token_file", "path", "", "File with the static token callers must present (required)",
 		setString(func(c *Config) *string { return &c.Skeleton.AccessTokenFile })),
 	def("skeleton.openai.base_url", "URL", "https://api.openai.com/v1", "Provider base URL, in the form SDKs use (ends with /v1)",
