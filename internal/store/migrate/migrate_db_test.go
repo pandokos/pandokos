@@ -222,7 +222,7 @@ func TestMismatchRefused(t *testing.T) {
 			// row of version 2 a longer binary would see a different migration 2, so the newer case
 			// uses the binary as it is.)
 			longer := withExtra(t, "CREATE TABLE pandokos.zz_never (i integer)")
-			if c.want == migrate.ErrSchemaNewer {
+			if errors.Is(c.want, migrate.ErrSchemaNewer) {
 				longer = ms
 			}
 			if _, err := migrate.Apply(ctx(t), conn, longer, "v"); !errors.Is(err, c.want) {

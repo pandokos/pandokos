@@ -2,6 +2,7 @@ package isolation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -114,7 +115,7 @@ func Lint(ctx context.Context, conn *pgx.Conn, spec Spec) ([]Finding, error) {
   FROM pg_catalog.pg_attribute a
  WHERE a.attrelid = $1::regclass AND a.attname = 'tenant_id' AND NOT a.attisdropped`, qualified(r.name)).Scan(&notNull, &typ)
 		switch {
-		case err == pgx.ErrNoRows:
+		case errors.Is(err, pgx.ErrNoRows):
 			add("L-03", r.name, "no column tenant_id")
 		case err != nil:
 			return nil, err

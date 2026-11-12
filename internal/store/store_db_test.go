@@ -87,7 +87,7 @@ func seed(t *testing.T, d *dbtest.Database) (a, b tenant.ID) {
 	return a, b
 }
 
-func scalarInt(t *testing.T, c context.Context, tx store.Tx, q string, args ...any) int {
+func scalarInt(c context.Context, t *testing.T, tx store.Tx, q string, args ...any) int {
 	t.Helper()
 	var n int
 	if err := tx.QueryRow(c, q, args...).Scan(&n); err != nil {
@@ -286,7 +286,7 @@ func TestWithTenant(t *testing.T) {
 		// With a pool of one the next transaction reuses the connection.
 		one := openSized(t, d, store.RoleAdmin, 1)
 		if err := one.WithTenant(ctx(t), a, func(c context.Context, tx store.Tx) error {
-			if n := scalarInt(t, c, tx, "SELECT count(*) FROM pandokos.service_account"); n != 3 {
+			if n := scalarInt(c, t, tx, "SELECT count(*) FROM pandokos.service_account"); n != 3 {
 				t.Errorf("tenant A sees %d rows", n)
 			}
 			return nil
@@ -301,7 +301,7 @@ func TestWithTenant(t *testing.T) {
 			if setting != "" {
 				t.Errorf("the tenant setting survived the transaction: %q", setting)
 			}
-			if n := scalarInt(t, c, tx, "SELECT count(*) FROM pandokos.service_account"); n != 0 {
+			if n := scalarInt(c, t, tx, "SELECT count(*) FROM pandokos.service_account"); n != 0 {
 				t.Errorf("a platform transaction sees %d service accounts", n)
 			}
 			return nil
@@ -393,13 +393,13 @@ func TestPlatform(t *testing.T) {
 		seed(t, d)
 		adm := openSized(t, d, store.RoleAdmin, 1)
 		if err := adm.Platform(ctx(t), func(c context.Context, tx store.Tx) error {
-			if n := scalarInt(t, c, tx, "SELECT count(*) FROM pandokos.tenant"); n != 2 {
+			if n := scalarInt(c, t, tx, "SELECT count(*) FROM pandokos.tenant"); n != 2 {
 				t.Errorf("admin sees %d tenants, want 2", n)
 			}
 			if _, err := tx.Exec(c, "INSERT INTO pandokos.tenant (name) VALUES ('tenant-c')"); err != nil {
 				t.Errorf("admin cannot create a tenant: %v", err)
 			}
-			if n := scalarInt(t, c, tx, "SELECT count(*) FROM pandokos.service_account"); n != 0 {
+			if n := scalarInt(c, t, tx, "SELECT count(*) FROM pandokos.service_account"); n != 0 {
 				t.Errorf("admin sees %d service accounts in platform scope", n)
 			}
 			return nil
@@ -423,7 +423,7 @@ func TestPlatform(t *testing.T) {
 
 		wk := d.Open(t, store.RoleWorker)
 		if err := wk.Platform(ctx(t), func(c context.Context, tx store.Tx) error {
-			if n := scalarInt(t, c, tx, "SELECT count(*) FROM pandokos.tenant"); n != 4 {
+			if n := scalarInt(c, t, tx, "SELECT count(*) FROM pandokos.tenant"); n != 4 {
 				t.Errorf("worker sees %d tenants, want 4", n)
 			}
 			return nil
@@ -476,7 +476,7 @@ func TestTenantContextDoesNotLeak(t *testing.T) {
 		wg.Wait()
 		// Between transactions the pool shows nothing.
 		if err := db.Platform(ctx(t), func(c context.Context, tx store.Tx) error {
-			if n := scalarInt(t, c, tx, "SELECT count(*) FROM pandokos.service_account"); n != 0 {
+			if n := scalarInt(c, t, tx, "SELECT count(*) FROM pandokos.service_account"); n != 0 {
 				t.Errorf("a platform transaction sees %d service accounts", n)
 			}
 			return nil
@@ -538,7 +538,7 @@ func TestNoSessionState(t *testing.T) {
 				}
 			}
 			if strings.HasSuffix(t.Name(), "/direct") {
-				if n := scalarInt(t, c, tx, "SELECT count(*) FROM pg_catalog.pg_prepared_statements"); n != 0 {
+				if n := scalarInt(c, t, tx, "SELECT count(*) FROM pg_catalog.pg_prepared_statements"); n != 0 {
 					t.Errorf("%d prepared statements exist on the connection", n)
 				}
 			}
