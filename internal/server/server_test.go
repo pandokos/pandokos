@@ -52,7 +52,10 @@ func startServer(t *testing.T, mutate func(*config.Config)) (*Server, *fakeprovi
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- srv.Serve(ctx) }()
+	go func() {
+		done <- srv.Serve(ctx)
+		close(done) // a second receive, in the cleanup, returns at once
+	}()
 	t.Cleanup(func() {
 		cancel()
 		select {
