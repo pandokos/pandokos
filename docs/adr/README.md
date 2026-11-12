@@ -29,6 +29,9 @@ A record is *proposed* until its pull request is merged by the maintainer, then 
 | [0020](0020-error-contract.md) | Error contract: the shape of the API being called | accepted |
 | [0021](0021-web-console.md) | Web console: embedded single-page application, profiled by permissions | accepted |
 | [0022](0022-local-accounts-and-sessions.md) | Local accounts and console sessions | accepted |
+| [0023](0023-test-dependencies-in-nested-modules.md) | Test-only dependencies live in nested modules | proposed |
+| [0024](0024-openai-stream-usage-option.md) | OpenAI chat streams: how usage is requested and what is removed | proposed |
+| [0025](0025-go-toolchain.md) | Go toolchain: language floor and release toolchain | proposed |
 
 ## Questions from SOW 0.1 and where they were decided
 

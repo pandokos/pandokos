@@ -1,7 +1,7 @@
 ---
 id: EPIC-1
 title: Foundations
-status: todo
+status: in-progress
 release: v0.1
 depends_on: []
 ---

@@ -1,0 +1,97 @@
+version: "2"
+run:
+  timeout: 5m
+  tests: true
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - depguard
+    - errorlint
+    - forbidigo
+    - gosec
+    - misspell
+    - nilerr
+    - noctx
+    - revive
+    - unconvert
+    - unparam
+  settings:
+    depguard:
+      rules:
+        all:
+          list-mode: strict
+          files:
+            - $all
+          allow:
+            - $gostd
+            - github.com/pandokos/pandokos
+            - go.yaml.in/yaml/v3
+        product-does-not-import-tests:
+          list-mode: lax
+          files:
+            - "**/cmd/**"
+            - "**/internal/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/pandokos/pandokos/test
+              desc: product code must not import test helpers
+        family-is-a-leaf:
+          list-mode: lax
+          files:
+            - "**/internal/family/**"
+          deny:
+            - pkg: github.com/pandokos/pandokos/internal/gateway
+              desc: families do not know the gateway
+            - pkg: github.com/pandokos/pandokos/internal/server
+              desc: families do not know the server
+            - pkg: github.com/pandokos/pandokos/internal/config
+              desc: families receive plain values
+        gateway-takes-plain-values:
+          list-mode: lax
+          files:
+            - "**/internal/gateway/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/pandokos/pandokos/internal/server
+              desc: the gateway does not know the server
+            - pkg: github.com/pandokos/pandokos/internal/config
+              desc: the gateway receives plain values through Options
+    forbidigo:
+      forbid:
+        - pattern: '^(fmt\.Print(|f|ln)|print|println)$'
+          msg: write to the injected io.Writer or use the slog logger
+        - pattern: '^log\.(Print|Fatal|Panic)(|f|ln)$'
+          msg: use log/slog
+        - pattern: '^httputil\.Dump(Request|RequestOut|Response)$'
+          msg: dumps contain credentials and content
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: error-return
+        - name: error-strings
+        - name: context-as-argument
+        - name: unused-parameter
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - bodyclose
+          - gosec
+          - noctx
+          - unparam
+      - path: ^test/
+        linters:
+          - gosec
+          - noctx
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/pandokos/pandokos

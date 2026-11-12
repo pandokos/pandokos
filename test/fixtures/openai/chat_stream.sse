@@ -1,0 +1,10 @@
+data: {"id":"chatcmpl-fixture0002","object":"chat.completion.chunk","created":1700000000,"model":"fake-basic","system_fingerprint":"fp_fixture","choices":[{"index":0,"delta":{"role":"assistant","content":"","refusal":null},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-fixture0002","object":"chat.completion.chunk","created":1700000000,"model":"fake-basic","system_fingerprint":"fp_fixture","choices":[{"index":0,"delta":{"content":"pandokos-canary-completion-5f2a9c"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-fixture0002","object":"chat.completion.chunk","created":1700000000,"model":"fake-basic","system_fingerprint":"fp_fixture","choices":[{"index":0,"delta":{"content":" end"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-fixture0002","object":"chat.completion.chunk","created":1700000000,"model":"fake-basic","system_fingerprint":"fp_fixture","choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"stop"}]}
+
+data: [DONE]
+

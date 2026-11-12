@@ -1,0 +1,143 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.24.7"
+      - run: make fmt-check
+      - run: make vet
+      - run: make tidy
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.5.0
+
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: floor
+            go-version: "1.24.7"
+            go-version-file: ""
+          - name: release
+            go-version: ""
+            go-version-file: .go-version
+    name: test (${{ matrix.name }})
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ matrix.go-version }}
+          go-version-file: ${{ matrix.go-version-file }}
+      - run: go build ./...
+      - run: go test -race -count=1 ./...
+
+  sdk:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+          cache-dependency-path: test/sdk/go.sum
+      - run: go vet ./...
+        working-directory: test/sdk
+      - run: go mod tidy -diff
+        working-directory: test/sdk
+      - run: go test -race -count=1 ./...
+        working-directory: test/sdk
+
+  vuln:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 -test ./...
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 -test ./...
+        working-directory: test/sdk
+
+  image:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build both platforms
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          provenance: false
+          sbom: false
+          build-args: |
+            VERSION=ci
+            COMMIT=${{ github.sha }}
+      - name: Load the amd64 image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: pandokos:ci
+          provenance: false
+          sbom: false
+          build-args: |
+            VERSION=ci
+            COMMIT=${{ github.sha }}
+      - name: Container tests
+        run: go test -tags container -count=1 ./test/container/
+        env:
+          PANDOKOS_TEST_IMAGE: pandokos:ci
+      - name: SBOM
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: pandokos:ci
+          format: spdx-json
+          output-file: sbom.spdx.json
+          artifact-name: sbom-ci.spdx.json
+          upload-artifact: true
+          upload-release-assets: false
+      - name: Scan
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: pandokos:ci
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: true
+          output-format: table

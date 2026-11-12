@@ -292,6 +292,10 @@ The rule: when Pandokos cannot verify that a request is allowed, it does not for
 ```
 cmd/pandokos/            entry point and subcommands
 internal/
+  buildinfo/             version and commit set at link time
+  secret/                a string type that cannot be printed, secret files
+  health/                liveness and readiness
+  server/                listeners, wiring, graceful shutdown
   gateway/               request pipeline of the data plane
   family/                one package per API family: openai, anthropic, gemini
   authn/  authz/         authentication mechanisms, permission catalogue
@@ -311,6 +315,10 @@ deploy/compose/  deploy/helm/
 docs/                    requirements, architecture, ADRs
 planning/                roadmap, epics, sprints
 test/                    isolation suite, SDK compatibility suite, fixtures
+  fakeprovider/  e2e/    fake upstream used by every level; tests of the built binary
+  repo/  container/      repository conformance tests; tests against a built image
+  sdk/                   nested Go module: official provider SDK suites
+docs/operations/         configuration reference, running and verifying the container image
 ```
 
 Everything under `internal/` is private: the only public contracts are the HTTP APIs, the
