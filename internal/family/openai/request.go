@@ -70,7 +70,10 @@ func splice(b []byte, start, end int, ins string) []byte {
 	return append(out, b[end:]...)
 }
 
-// PrepareRequest: see the doc comment in sprint.md §5.7.
+// PrepareRequest inspects a chat completions request body. For a stream that does not ask
+// for usage it returns the body with the option added and strip=true. In every other case
+// it returns body unchanged (the same slice). The change is a splice: every byte outside the
+// inserted or replaced range is forwarded as received.
 func PrepareRequest(body []byte) (out []byte, stream, strip bool) {
 	members, closeIdx, err := scanObject(body)
 	if err != nil {

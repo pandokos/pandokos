@@ -69,7 +69,7 @@ func (s *Server) Health() *health.State { return s.health }
 
 // Listen binds the inference listener. After it returns, InferenceAddr is valid.
 func (s *Server) Listen() error {
-	ln, err := net.Listen("tcp", s.cfg.Listeners.Inference.Address)
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", s.cfg.Listeners.Inference.Address)
 	if err != nil {
 		return fmt.Errorf("listen on the inference address: %w", err)
 	}

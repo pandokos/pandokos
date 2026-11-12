@@ -43,15 +43,14 @@ type Options struct {
 
 // Handler is the inference handler.
 type Handler struct {
-	logger       *slog.Logger
-	baseURL      *url.URL
-	providerKey  secret.Secret
-	accessToken  secret.Secret
-	maxBody      int64
-	readTimeout  time.Duration
-	maxDuration  time.Duration
-	proxy        *httputil.ReverseProxy
-	transportSet bool
+	logger      *slog.Logger
+	baseURL     *url.URL
+	providerKey secret.Secret
+	accessToken secret.Secret
+	maxBody     int64
+	readTimeout time.Duration
+	maxDuration time.Duration
+	proxy       *httputil.ReverseProxy
 }
 
 // New validates the options and returns a Handler.

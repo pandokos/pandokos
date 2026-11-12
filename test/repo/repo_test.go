@@ -146,7 +146,8 @@ func TestDependencies(t *testing.T) {
 		if d.IsDir() && (d.Name() == ".git" || rel == filepath.Join("test", "sdk") || rel == "planning" || rel == "docs") {
 			return fs.SkipDir
 		}
-		if d.IsDir() || !(d.Name() == "go.mod" || d.Name() == "go.sum" || strings.HasSuffix(d.Name(), ".go")) || rel == filepath.Join("test", "repo", "repo_test.go") {
+		isSource := d.Name() == "go.mod" || d.Name() == "go.sum" || strings.HasSuffix(d.Name(), ".go")
+		if d.IsDir() || !isSource || rel == filepath.Join("test", "repo", "repo_test.go") {
 			return nil
 		}
 		b, err := os.ReadFile(path)

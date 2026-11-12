@@ -57,7 +57,7 @@ func FuzzReadUsage(f *testing.F) {
 	f.Add(fixtures.Read("chat_completion_details.json"))
 	f.Add([]byte(`{"usage":{"prompt_tokens":-1}}`))
 	f.Add([]byte(``))
-	f.Fuzz(func(t *testing.T, b []byte) {
+	f.Fuzz(func(_ *testing.T, b []byte) {
 		_, _, _ = ReadUsage(b)
 	})
 }

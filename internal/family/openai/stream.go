@@ -14,7 +14,8 @@ type chunk struct {
 	Usage   *wireUsage `json:"usage"`
 }
 
-// StreamReader: see sprint.md §5.7.
+// StreamReader reads usage from a chat completions event stream, incrementally. With strip
+// set it also removes the usage-only event; otherwise it is a pure tee.
 type StreamReader struct {
 	strip    bool
 	failed   bool
@@ -25,8 +26,11 @@ type StreamReader struct {
 	hasUsage bool
 }
 
+// NewStreamReader returns a reader; strip says whether usage-only events are removed.
 func NewStreamReader(strip bool) *StreamReader { return &StreamReader{strip: strip} }
 
+// Filter takes the next bytes of the stream and returns the bytes to forward; the result is
+// valid until the next call.
 func (r *StreamReader) Filter(p []byte) []byte {
 	if r.failed {
 		return p
@@ -64,6 +68,7 @@ func (r *StreamReader) Filter(p []byte) []byte {
 	return r.out
 }
 
+// Flush returns the bytes still held at the end of the stream.
 func (r *StreamReader) Flush() []byte {
 	if !r.strip || r.failed {
 		return nil
