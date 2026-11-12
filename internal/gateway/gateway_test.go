@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
+	"net/textproto"
 	"net/url"
 	"regexp"
 	"runtime"
@@ -798,5 +800,113 @@ func TestRequestLogFields(t *testing.T) {
 	testutil.AssertNoCanary(t, "logs", all)
 	if !strings.Contains(all, `"route":"POST /openai/v1/chat/completions"`) {
 		t.Error("route missing")
+	}
+}
+
+// rawUpstream serves handler as the provider and returns a gateway in front of it.
+func rawUpstream(t *testing.T, handler http.HandlerFunc) *harness {
+	t.Helper()
+	ts := httptest.NewServer(handler)
+	t.Cleanup(ts.Close)
+	base, _ := url.Parse(ts.URL + "/v1")
+	logs := &testutil.LogBuffer{}
+	tr := NewTransport(2 * time.Second)
+	t.Cleanup(tr.CloseIdleConnections)
+	g, err := New(Options{
+		Logger: telemetry.NewLogger(logs, "debug"), BaseURL: base,
+		ProviderKey: secret.New(fixtures.CanaryProviderKey), AccessToken: secret.New(fixtures.CanaryAccessToken),
+		MaxRequestBodyBytes: 1 << 20, RequestBodyReadTimeout: 2 * time.Second, MaxRequestDuration: 10 * time.Second,
+		Transport: tr,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(g)
+	t.Cleanup(srv.Close)
+	return &harness{srv: srv, logs: logs}
+}
+
+func TestInformationalResponsesAreDropped(t *testing.T) {
+	h := rawUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Set-Cookie", "early=1")
+		w.Header().Set("X-Pandokos-Error", "spoofed")
+		w.Header().Set("Link", "</x>; rel=preload")
+		w.WriteHeader(http.StatusEarlyHints)
+		w.Header().Del("Set-Cookie")
+		w.Header().Del("X-Pandokos-Error")
+		w.Header().Del("Link")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	})
+	var got1xx []int
+	var seen http.Header
+	ctx := httptrace.WithClientTrace(ctx5(t), &httptrace.ClientTrace{
+		Got1xxResponse: func(code int, hdr textproto.MIMEHeader) error {
+			got1xx = append(got1xx, code)
+			seen = http.Header(hdr)
+			return nil
+		},
+	})
+	resp, err := h.request(ctx, t, http.MethodPost, route, chat("fake-basic", false), authed())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if len(got1xx) != 0 {
+		t.Errorf("an informational response reached the caller: %v %v", got1xx, seen)
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	for _, n := range []string{"Set-Cookie", "X-Pandokos-Error", "Link"} {
+		if v := resp.Header.Values(n); len(v) != 0 {
+			t.Errorf("%s reached the caller: %v", n, v)
+		}
+	}
+	if id := resp.Header.Get("X-Pandokos-Request-Id"); len(id) != 32 {
+		t.Errorf("request id missing on the final response: %q", id)
+	}
+}
+
+func TestProviderTrailersAreDropped(t *testing.T) {
+	for _, mode := range []string{"json", "stream", "error"} {
+		t.Run(mode, func(t *testing.T) {
+			h := rawUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				w.Header().Set("Trailer", "X-Pandokos-Error, Set-Cookie")
+				status := 200
+				switch mode {
+				case "json":
+					w.Header().Set("Content-Type", "application/json")
+				case "stream":
+					w.Header().Set("Content-Type", "text/event-stream")
+				case "error":
+					w.Header().Set("Content-Type", "text/plain")
+					status = 500
+				}
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte("data: [DONE]\n\n"))
+				w.Header().Set("X-Pandokos-Error", "spoofed")
+				w.Header().Set("Set-Cookie", "late=1")
+			})
+			resp, err := h.request(ctx5(t), t, http.MethodPost, route, chat("fake-basic", mode == "stream"), authed())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+				t.Fatal(err)
+			}
+			if len(resp.Trailer) != 0 {
+				t.Errorf("trailers reached the caller: %v", resp.Trailer)
+			}
+			for _, n := range []string{"X-Pandokos-Error", "Set-Cookie", "Trailer"} {
+				if v := resp.Header.Values(n); len(v) != 0 {
+					t.Errorf("%s reached the caller: %v", n, v)
+				}
+			}
+		})
 	}
 }

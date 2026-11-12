@@ -570,6 +570,15 @@ func TestWarnings(t *testing.T) {
 			t.Errorf("unexpected warning for %s: %s", u, m)
 		}
 	}
+	t.Run("unknown environment variable", func(t *testing.T) {
+		w := warn(t, "PANDOKOS_BOGUS=x")
+		if w["environment"] != "unknown variable PANDOKOS_BOGUS ignored" {
+			t.Errorf("environment warning: %q", w["environment"])
+		}
+		if m, ok := warn(t)["environment"]; ok {
+			t.Errorf("unexpected environment warning: %s", m)
+		}
+	})
 	for _, a := range []string{"127.0.0.1:0", "localhost:8080", "[::1]:8080"} {
 		if m, ok := warn(t, envOf[kAddr]+"="+a)[kAddr]; ok {
 			t.Errorf("unexpected warning for %s: %s", a, m)

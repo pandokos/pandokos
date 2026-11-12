@@ -222,3 +222,32 @@ func TestListenFailure(t *testing.T) {
 		t.Fatal("expected a listen error")
 	}
 }
+
+func TestHealthRequestLogUsesFixedRoute(t *testing.T) {
+	srv, _, logs, _, _ := startServer(t, nil)
+	testutil.Eventually(t, 5*time.Second, "readiness", func() bool { return get(t, srv, "/readyz") == 200 })
+	for _, c := range []struct{ method, path, route string }{
+		{"GET", "/healthz", "GET /healthz"},
+		{"HEAD", "/healthz", "GET /healthz"},
+		{"HEAD", "/readyz", "GET /readyz"},
+	} {
+		req, _ := http.NewRequest(c.method, "http://"+srv.InferenceAddr().String()+c.path, nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		found := false
+		for _, l := range logs.Find(t, "request") {
+			if l["route"] == c.route && l["method"] == c.method && l["level"] == "DEBUG" && l["status"] == float64(200) {
+				found = true
+			}
+			if r, _ := l["route"].(string); r == "HEAD /healthz" || r == "HEAD /readyz" {
+				t.Errorf("route label %q is not a fixed label", r)
+			}
+		}
+		if !found {
+			t.Errorf("no debug request line for %s %s with route %q", c.method, c.path, c.route)
+		}
+	}
+}
