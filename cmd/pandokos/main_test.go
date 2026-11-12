@@ -33,7 +33,9 @@ func TestVersion(t *testing.T) {
 func TestHelp(t *testing.T) {
 	for _, args := range [][]string{{"help"}, {"-h"}, {"--help"}} {
 		code, out, errs := runCmd(t, nil, args...)
-		if code != 0 || !strings.Contains(out, "serve") || !strings.Contains(out, "config check") || errs != "" {
+		if code != 0 || !strings.Contains(out, "serve") || !strings.Contains(out, "config check") || errs != "" ||
+			!strings.Contains(out, "migrate [--config FILE]") || !strings.Contains(out, "migrate status [--config FILE]") ||
+			!strings.Contains(out, "[--for serve|migrate]") {
 			t.Errorf("%v: code %d, stdout %q, stderr %q", args, code, out, errs)
 		}
 	}
@@ -65,11 +67,29 @@ func writeConfig(t *testing.T, content string) string {
 	return p
 }
 
+// secretEnv is a valid environment for the serve purpose: the skeleton secrets and the database
+// settings, with the three runtime password files.
 func secretEnv(t *testing.T) []string {
 	t.Helper()
 	return []string{
 		"PANDOKOS_SKELETON_ACCESS_TOKEN_FILE=" + testutil.WriteSecret(t, "token", fixtures.CanaryAccessToken),
 		"PANDOKOS_SKELETON_OPENAI_API_KEY_FILE=" + testutil.WriteSecret(t, "key", fixtures.CanaryProviderKey),
+		"PANDOKOS_DATABASE_ADDRESS=127.0.0.1:5432",
+		"PANDOKOS_DATABASE_TLS_MODE=disable",
+		"PANDOKOS_DATABASE_GATEWAY_PASSWORD_FILE=" + testutil.WriteSecret(t, "db_gateway", "pw-gateway-test"),
+		"PANDOKOS_DATABASE_ADMIN_PASSWORD_FILE=" + testutil.WriteSecret(t, "db_admin", "pw-admin-test"),
+		"PANDOKOS_DATABASE_WORKER_PASSWORD_FILE=" + testutil.WriteSecret(t, "db_worker", "pw-worker-test"),
+	}
+}
+
+// migrateEnv is a valid environment for the migrate purpose: the address and the owner password
+// file only.
+func migrateEnv(t *testing.T) []string {
+	t.Helper()
+	return []string{
+		"PANDOKOS_DATABASE_ADDRESS=127.0.0.1:5432",
+		"PANDOKOS_DATABASE_TLS_MODE=disable",
+		"PANDOKOS_DATABASE_OWNER_PASSWORD_FILE=" + testutil.WriteSecret(t, "db_owner", "pw-owner-test"),
 	}
 }
 
@@ -145,4 +165,72 @@ func TestServeRejectsInvalidConfiguration(t *testing.T) {
 	}
 	testutil.AssertNoCanary(t, "stdout", out)
 	testutil.AssertNoCanary(t, "stderr", errs)
+}
+
+// TestMigrateUsage is T-117.
+func TestMigrateUsage(t *testing.T) {
+	const message = "pandokos: migrate takes no argument other than status"
+	for _, args := range [][]string{{"migrate", "extra"}, {"migrate", "status", "extra"}, {"migrate", "--config", "x.yaml", "extra"}} {
+		code, out, errs := runCmd(t, migrateEnv(t), args...)
+		if code != 2 || out != "" || !strings.Contains(errs, message) || !strings.Contains(errs, "migrate status [--config FILE]") {
+			t.Errorf("%v: code %d, stdout %q, stderr %q", args, code, out, errs)
+		}
+	}
+	for _, args := range [][]string{{"migrate", "--bogus"}, {"migrate", "status", "--bogus"}} {
+		if code, out, errs := runCmd(t, migrateEnv(t), args...); code != 2 || out != "" || errs == "" {
+			t.Errorf("%v: code %d, stdout %q, stderr %q", args, code, out, errs)
+		}
+	}
+	t.Run("invalid configuration", func(t *testing.T) {
+		for _, args := range [][]string{{"migrate"}, {"migrate", "status"}} {
+			code, out, errs := runCmd(t, nil, args...)
+			if code != 1 || out != "" {
+				t.Fatalf("%v: code %d, stdout %q", args, code, out)
+			}
+			for _, want := range []string{"error: database.address: must be set", "error: database.owner.password_file: must be set"} {
+				if !strings.Contains(errs, want) {
+					t.Errorf("%v: stderr lacks %q: %q", args, want, errs)
+				}
+			}
+			if strings.Contains(errs, "skeleton.") || strings.Contains(errs, "database.gateway") {
+				t.Errorf("%v: migrate asked for a secret it does not need: %q", args, errs)
+			}
+		}
+	})
+	t.Run("help lists the commands", func(t *testing.T) {
+		code, out, _ := runCmd(t, nil, "help")
+		if code != 0 || !strings.Contains(out, "migrate [--config FILE]          Apply pending schema migrations, then exit") ||
+			!strings.Contains(out, "migrate status [--config FILE]   Show applied and pending migrations, then exit") {
+			t.Errorf("code %d, stdout %q", code, out)
+		}
+	})
+}
+
+// TestConfigCheckFor is T-118.
+func TestConfigCheckFor(t *testing.T) {
+	t.Run("migrate needs only the owner password", func(t *testing.T) {
+		code, out, errs := runCmd(t, migrateEnv(t), "config", "check", "--for", "migrate")
+		if code != 0 || strings.TrimSpace(out) != "configuration OK" {
+			t.Fatalf("code %d, stdout %q, stderr %q", code, out, errs)
+		}
+	})
+	t.Run("serve needs the runtime passwords", func(t *testing.T) {
+		for _, args := range [][]string{{"config", "check", "--for", "serve"}, {"config", "check"}} {
+			code, _, errs := runCmd(t, migrateEnv(t), args...)
+			if code != 1 || !strings.Contains(errs, "error: database.gateway.password_file: must be set") {
+				t.Errorf("%v: code %d, stderr %q", args, code, errs)
+			}
+		}
+		for _, args := range [][]string{{"config", "check", "--for", "serve"}, {"config", "check"}} {
+			if code, out, errs := runCmd(t, secretEnv(t), args...); code != 0 || !strings.Contains(out, "configuration OK") {
+				t.Errorf("%v: code %d, stdout %q, stderr %q", args, code, out, errs)
+			}
+		}
+	})
+	t.Run("unknown purpose", func(t *testing.T) {
+		code, out, errs := runCmd(t, secretEnv(t), "config", "check", "--for", "nope")
+		if code != 2 || out != "" || !strings.Contains(errs, "pandokos: --for must be serve or migrate") {
+			t.Errorf("code %d, stdout %q, stderr %q", code, out, errs)
+		}
+	})
 }

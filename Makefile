@@ -8,7 +8,10 @@ LDFLAGS := -s -w -buildid= -X $(PKG)/internal/buildinfo.Version=$(VERSION) -X $(
 GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.9.0
 FUZZTIME ?= 30s
 
-.PHONY: help build test test-sdk test-container fuzz bench fmt fmt-check vet lint tidy vuln image check clean
+# Loads local/testdb/env (written by make db-up) unless the variable is already set.
+DBENV = set -a; if [ -z "$$PANDOKOS_TEST_DATABASE_URL" ] && [ -f local/testdb/env ]; then . ./local/testdb/env; fi; set +a;
+
+.PHONY: help build test test-sdk test-container fuzz bench fmt fmt-check vet lint tidy vuln image check clean db-up db-down test-nodb migrations-sum
 
 help: ## Show the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -16,14 +19,26 @@ help: ## Show the targets
 build: ## Build bin/pandokos
 	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o bin/pandokos ./cmd/pandokos
 
-test: ## Unit, integration, end-to-end and repository tests, with the race detector
-	go test -race -count=1 ./...
+test: ## All tests of the root module, with the race detector (needs make db-up)
+	@$(DBENV) go test -race -count=1 ./...
+
+test-nodb: ## The same without the tests that need PostgreSQL (local use only, refused in CI)
+	PANDOKOS_TEST_NO_DATABASE=1 PANDOKOS_TEST_NO_POOLER=1 go test -race -count=1 ./...
 
 test-sdk: ## Official SDK suite (nested module, release toolchain)
 	cd test/sdk && GOTOOLCHAIN=go$(RELEASE_GO) go test -race -count=1 ./...
 
-test-container: ## Tests against a built image: make image first
-	PANDOKOS_TEST_IMAGE=$(IMAGE) go test -tags container -count=1 ./test/container/
+test-container: ## Tests against a built image: make image and make db-up first
+	@$(DBENV) PANDOKOS_TEST_IMAGE=$(IMAGE) go test -tags container -count=1 ./test/container/
+
+db-up: ## Start the test PostgreSQL and PgBouncer (Docker)
+	sh test/db/up.sh
+
+db-down: ## Stop them and discard the data
+	docker compose -f test/db/compose.yaml down -v
+
+migrations-sum: ## Rewrite the checksum file of the migrations
+	@cd internal/store/migrations/sql && for f in *.sql; do printf '%s %s\n' "$$f" "$$(sha256sum "$$f" | cut -d' ' -f1)"; done > ../migrations.sum
 
 fuzz: ## Run each fuzz target for FUZZTIME
 	go test ./internal/family/openai/ -run '^$$' -fuzz '^FuzzPrepareRequest$$' -fuzztime $(FUZZTIME)

@@ -47,27 +47,46 @@ erDiagram
    `app.tenant_id` with `set_config(..., true)`, which lasts until the transaction ends and so is
    safe behind a transaction-mode connection pooler. When the setting is absent the policy
    compares with `NULL` and no row is visible: the failure mode is an empty result, never a leak.
+   This protects against a missing application filter, not against arbitrary SQL on a runtime
+   connection: the application names the tenant, so SQL injected into a statement could name
+   another. Product queries are therefore static SQL, never built from strings.
 4. **Runtime roles own nothing and cannot bypass policies.** Only the migration role owns tables.
 5. **Identifiers are random** (UUIDv7), so they cannot be enumerated or guessed across tenants.
 6. **Money is decimal**, never floating point. Token counts are 64-bit integers.
+7. **Global tables are listed, and those that describe tenants have explicit policies.** A
+   transaction acts for a tenant, or in platform scope, or sees nothing.
 
 ```sql
-ALTER TABLE provider_credential ENABLE ROW LEVEL SECURITY;
-ALTER TABLE provider_credential FORCE ROW LEVEL SECURITY;
+ALTER TABLE pandokos.service_account ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pandokos.service_account FORCE ROW LEVEL SECURITY;
 
-CREATE POLICY tenant_isolation ON provider_credential
-    USING      (tenant_id = current_setting('app.tenant_id', true)::uuid)
-    WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
+CREATE POLICY tenant_isolation ON pandokos.service_account
+    USING      (tenant_id = (SELECT pandokos.current_tenant_id()))
+    WITH CHECK (tenant_id = (SELECT pandokos.current_tenant_id()));
 ```
 
+The policy reads the tenant through `pandokos.current_tenant_id()` and not through
+`current_setting('app.tenant_id', true)::uuid`: after a transaction that set the value, a reused
+connection reports the setting as the empty string, not as absent, and an empty string is not a
+UUID. The function returns `NULL` for an empty setting and fails on a malformed one. The scalar
+sub-select makes PostgreSQL evaluate the function once per statement. A second transaction-local
+setting, `app.scope = 'platform'`, read through `pandokos.platform_scope()`, marks a platform
+session; the policies of the `tenant` table are written in terms of it
+([ADR 0027](../adr/0027-database-roles-and-session-context.md)).
+
 ## Database roles
+
+The four names below are **privilege roles**: they cannot log in and have no password. The
+database users that Pandokos connects as are members of exactly one of them, and the privileges
+are granted to the role, so users and passwords can change without a migration. The
+[database guide](../operations/database.md) shows how to create them.
 
 | Role | Used by | Can | Cannot |
 |---|---|---|---|
 | `pandokos_owner` | `migrate` only | Own and alter the schema | Be used at run time |
 | `pandokos_gateway` | gateway | Read identities, catalogue, policy and credentials of the session tenant; call the key lookup function; insert usage and outbox rows | Write identities, catalogue or credentials; read or change audit; update or delete usage |
 | `pandokos_admin` | admin API | Read and write the session tenant's configuration; write platform tables when acting as platform; insert audit rows; read usage and audit | Read the ciphertext of tenant credentials when acting as platform; update or delete usage or audit |
-| `pandokos_worker` | worker | List tenants; run one job for one tenant inside that tenant's session; manage outbox deliveries | Run a statement over several tenants' data at once |
+| `pandokos_worker` | worker | List tenants (in platform scope); run one job for one tenant inside that tenant's session; manage outbox deliveries | Run a statement over several tenants' data at once |
 
 Three details make this hold:
 
@@ -150,10 +169,12 @@ worker claims them with `FOR UPDATE SKIP LOCKED`, delivers, and records the atte
 
 The isolation suite (TEN-07) runs against a real PostgreSQL in CI and has three layers:
 
-1. **Schema lint.** Every table is either on the list of global tables or has `tenant_id`, forced
-   row-level security and a policy. A new table that is neither fails the build.
-2. **SQL-level tests.** For each tenant table and each runtime role: with tenant A's session,
-   select, insert, update and delete against tenant B's rows must see nothing and change nothing;
-   with no session, the same.
+1. **Schema lint** ([`test/isolation`](../../test/isolation)). Every table is either on the list of
+   global tables or has `tenant_id`, forced row-level security and a policy. A new table that is
+   neither fails the build, and so does a tenant table without an entry in the isolation tests.
+2. **SQL-level tests.** For each tenant table, taken from the catalogue, and each runtime role:
+   with tenant A's session, select, insert, update and delete against tenant B's rows must see
+   nothing and change nothing; with no session, the same. They run directly and through a
+   transaction-mode pooler.
 3. **API-level tests.** For each route: a principal of tenant A addressing a resource of tenant B
    by ID receives the same response as for a resource that does not exist.

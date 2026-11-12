@@ -23,6 +23,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, environ [
 	switch args[0] {
 	case "serve":
 		return runServe(ctx, args[1:], stdout, stderr, environ)
+	case "migrate":
+		return runMigrate(ctx, args[1:], stdout, stderr, environ)
 	case "config":
 		return runConfig(args[1:], stdout, stderr, environ)
 	case "version":
