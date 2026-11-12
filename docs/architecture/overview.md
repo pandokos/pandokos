@@ -307,15 +307,17 @@ internal/
   outbox/  billing/      event relay and destinations
   admin/                 administration API handlers
   worker/                background jobs
-  store/                 database access, RLS sessions, migrations
+  store/                 database access: pools per role, tenant transactions, migrator, embedded migrations
   telemetry/  config/
 api/openapi/             administration API specification
 web/console/             console source; its build output is embedded in the binary
-deploy/compose/  deploy/helm/
+deploy/compose/  deploy/helm/  deploy/postgres/   (postgres: the SQL that creates the privilege roles)
 docs/                    requirements, architecture, ADRs
 planning/                roadmap, epics, sprints
 test/                    isolation suite, SDK compatibility suite, fixtures
   fakeprovider/  e2e/    fake upstream used by every level; tests of the built binary
+  db/  dbtest/           PostgreSQL and PgBouncer for tests; one database per test
+  isolation/             schema lint and SQL-level isolation tests
   repo/  container/      repository conformance tests; tests against a built image
   sdk/                   nested Go module: official provider SDK suites
 docs/operations/         configuration reference, running and verifying the container image

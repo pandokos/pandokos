@@ -12,11 +12,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/pandokos/pandokos/test/dbtest"
 	"github.com/pandokos/pandokos/test/fakeprovider"
 	"github.com/pandokos/pandokos/test/fixtures"
 	"github.com/pandokos/pandokos/test/testutil"
@@ -50,9 +52,11 @@ func TestMain(m *testing.M) {
 }
 
 type opts struct {
-	level   string
-	baseURL string
-	env     []string
+	level     string
+	baseURL   string
+	env       []string
+	db        *dbtest.Database // nil: a new database of the test
+	noMigrate bool             // true: the database is used as it is
 }
 
 type proc struct {
@@ -64,6 +68,7 @@ type proc struct {
 	addr   string
 	cfg    string
 	env    []string
+	db     *dbtest.Database
 }
 
 func baseEnv(t *testing.T, baseURL string, extra []string) []string {
@@ -107,8 +112,15 @@ func completeLines(b *testutil.LogBuffer, msg string) []map[string]any {
 func startBinary(t *testing.T, o opts) *proc {
 	t.Helper()
 	p := &proc{stdout: &testutil.LogBuffer{}, stderr: &testutil.LogBuffer{}, exited: make(chan struct{})}
+	if o.db == nil {
+		o.db = dbtest.New(t)
+	}
+	if !o.noMigrate {
+		o.db.Migrate(t)
+	}
+	p.db = o.db
 	p.cfg = writeConfig(t, o.level)
-	p.env = baseEnv(t, o.baseURL, o.env)
+	p.env = baseEnv(t, o.baseURL, append(append([]string{}, o.env...), o.db.Env(t)...))
 	p.cmd = exec.Command(binary, "serve", "--config", p.cfg)
 	p.cmd.Env = p.env
 	p.cmd.Stdout, p.cmd.Stderr = p.stdout, p.stderr
@@ -151,6 +163,43 @@ func startBinary(t *testing.T, o opts) *proc {
 		return resp.StatusCode == 200
 	})
 	return p
+}
+
+// runBinary runs the binary with the given environment and arguments to completion, with a 20 s
+// deadline, for commands that exit (migrate, migrate status, a serve that must fail).
+func runBinary(t *testing.T, env []string, args ...string) (code int, stdout, stderr string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd.Env = append([]string{"PATH=" + os.Getenv("PATH")}, env...)
+	var out, errb bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	err := cmd.Run()
+	var ee *exec.ExitError
+	switch {
+	case ctx.Err() != nil:
+		t.Fatalf("pandokos %s did not exit within 20 s\nstdout: %s", strings.Join(args, " "), out.String())
+	case errors.As(err, &ee):
+		code = ee.ExitCode()
+	case err != nil:
+		t.Fatal(err)
+	}
+	return code, out.String(), errb.String()
+}
+
+// serveEnv is the environment of a serve process on database d, without a fake provider.
+func serveEnv(t *testing.T, d *dbtest.Database, extra ...string) []string {
+	t.Helper()
+	return append(baseEnv(t, "http://127.0.0.1:1/v1", d.Env(t)), extra...)
+}
+
+// logLines decodes the JSON log lines of stdout whose msg matches.
+func logLines(t *testing.T, stdout, msg string) []map[string]any {
+	t.Helper()
+	b := &testutil.LogBuffer{}
+	_, _ = b.Write([]byte(stdout))
+	return b.Find(t, msg)
 }
 
 func (p *proc) stop(t *testing.T) int {
@@ -282,6 +331,7 @@ func TestCanaries(t *testing.T) {
 
 			for i, b := range outputs {
 				testutil.AssertNoCanary(t, fmt.Sprintf("process output %d", i), b.String())
+				testutil.AssertAbsent(t, fmt.Sprintf("process output %d", i), b.String(), append(p.db.Passwords(), unreachable.db.Passwords()...)...)
 			}
 			for label, text := range responses {
 				if strings.Contains(text, fixtures.CanaryProviderKey) {
@@ -301,5 +351,188 @@ func TestCanaries(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestMigrateCommand(t *testing.T) { // T-160
+	d := dbtest.New(t)
+	// The default listener address warns that it serves plain HTTP; this test wants an empty stderr.
+	env := append(d.Env(t), "PANDOKOS_LISTENERS_INFERENCE_ADDRESS=127.0.0.1:0")
+	appliedLine := regexp.MustCompile(`^0001_init  applied \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$`)
+
+	code, out, errs := runBinary(t, env, "migrate", "status")
+	if code != 1 || errs != "" || out != "0001_init  pending\nschema is at version 0; this binary needs version 1\n" {
+		t.Fatalf("status before: code %d, stdout %q, stderr %q", code, out, errs)
+	}
+	code, out, errs = runBinary(t, env, "migrate")
+	if code != 0 || errs != "" || out != "applied 0001_init\nschema is at version 1\n" {
+		t.Fatalf("migrate: code %d, stdout %q, stderr %q", code, out, errs)
+	}
+	code, out, errs = runBinary(t, env, "migrate")
+	if code != 0 || errs != "" || out != "schema is at version 1\n" {
+		t.Fatalf("second migrate: code %d, stdout %q, stderr %q", code, out, errs)
+	}
+	code, out, errs = runBinary(t, env, "migrate", "status")
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if code != 0 || errs != "" || len(lines) != 2 || !appliedLine.MatchString(lines[0]) || lines[1] != "schema is at version 1; this binary needs version 1" {
+		t.Fatalf("status after: code %d, stdout %q, stderr %q", code, out, errs)
+	}
+	testutil.AssertAbsent(t, "migrate output", out+errs, d.Passwords()...)
+}
+
+func TestServeRefusesUnmigratedDatabase(t *testing.T) { // T-161
+	d := dbtest.New(t)
+	start := time.Now()
+	code, out, errs := runBinary(t, serveEnv(t, d), "serve", "--config", writeConfig(t, "info"))
+	if code != 1 || time.Since(start) > 10*time.Second {
+		t.Fatalf("code %d after %v\nstdout: %s\nstderr: %s", code, time.Since(start), out, errs)
+	}
+	failed := logLines(t, out, "startup failed")
+	if len(failed) != 1 || !strings.Contains(fmt.Sprint(failed[0]["error"]), `run "pandokos migrate"`) {
+		t.Fatalf("startup failed lines: %v\nstdout: %s", failed, out)
+	}
+	if len(logLines(t, out, "listening")) != 0 {
+		t.Error("the process listened")
+	}
+
+	d.Migrate(t)
+	if _, err := d.Super(t).Exec(context.Background(), "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (2, 'future', repeat('0', 64), 'x')"); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errs = runBinary(t, serveEnv(t, d), "serve", "--config", writeConfig(t, "info"))
+	failed = logLines(t, out, "startup failed")
+	if code != 1 || len(failed) != 1 || !strings.Contains(fmt.Sprint(failed[0]["error"]), "upgrade Pandokos") {
+		t.Fatalf("with a newer schema: code %d, stdout %s, stderr %s", code, out, errs)
+	}
+	if len(logLines(t, out, "listening")) != 0 {
+		t.Error("the process listened")
+	}
+}
+
+func TestServeReadinessFollowsDatabase(t *testing.T) { // T-162
+	d := dbtest.New(t)
+	up := fakeprovider.New(t)
+	p := startBinary(t, opts{level: "info", baseURL: up.BaseURL(), db: d})
+	status := func(path string) int {
+		resp, err := http.Get(p.url(path))
+		if err != nil {
+			return -1
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if status("/readyz") != 200 {
+		t.Fatal("not ready at the start")
+	}
+	d.SetAcceptingConnections(t, false)
+	testutil.Eventually(t, 10*time.Second, "readiness to fail", func() bool { return status("/readyz") == 503 })
+	if status("/healthz") != 200 {
+		t.Error("liveness must not depend on the database")
+	}
+	found := false
+	for _, l := range completeLines(p.stdout, "readiness check failed") {
+		if c, _ := l["check"].(string); strings.HasPrefix(c, "database-") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no readiness check failed line for a database check: %s", p.stdout.String())
+	}
+	d.SetAcceptingConnections(t, true)
+	testutil.Eventually(t, 15*time.Second, "readiness to recover", func() bool { return status("/readyz") == 200 })
+	if status("/healthz") != 200 {
+		t.Error("liveness failed")
+	}
+	if code := p.stop(t); code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+}
+
+func TestServeBehindPooler(t *testing.T) { // T-163
+	d := dbtest.New(t)
+	pooled := d.Pooled(t)
+	code, out, errs := runBinary(t, pooled.Env(t), "migrate")
+	if code != 0 || !strings.Contains(out, "schema is at version 1") {
+		t.Fatalf("migrate through the pooler: code %d, stdout %q, stderr %q", code, out, errs)
+	}
+	up := fakeprovider.New(t)
+	p := startBinary(t, opts{level: "info", baseURL: up.BaseURL(), db: pooled, noMigrate: true})
+	if code := p.stop(t); code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+}
+
+func TestServeRefusesPrivilegedUser(t *testing.T) { // T-164
+	d := dbtest.NewMigrated(t)
+	su := d.CreateLogin(t, "su", "SUPERUSER")
+	env := serveEnv(t, d,
+		"PANDOKOS_DATABASE_GATEWAY_USER="+su.User,
+		"PANDOKOS_DATABASE_GATEWAY_PASSWORD_FILE="+testutil.WriteSecret(t, "su_password", su.Password.Reveal()),
+	)
+	code, out, errs := runBinary(t, env, "serve", "--config", writeConfig(t, "info"))
+	failed := logLines(t, out, "startup failed")
+	if code != 1 || len(failed) != 1 || !strings.Contains(fmt.Sprint(failed[0]["error"]), "is a superuser; a runtime role must not be") {
+		t.Fatalf("code %d, stdout %s, stderr %s", code, out, errs)
+	}
+	if len(logLines(t, out, "listening")) != 0 {
+		t.Error("the process listened")
+	}
+	testutil.AssertAbsent(t, "output", out+errs, su.Password.Reveal())
+}
+
+func TestDatabaseCanaries(t *testing.T) { // T-165
+	d := dbtest.New(t)
+	wrong := fmt.Sprintf("wrong-%d", time.Now().UnixNano()) // a string that is not a real password
+	secrets := append(d.Passwords(), wrong)
+	type output struct{ where, text string }
+	var outputs []output
+	collect := func(where, out, errs string) {
+		outputs = append(outputs, output{where + " stdout", out}, output{where + " stderr", errs})
+	}
+
+	// (a) a wrong password.
+	envWrong := serveEnv(t, d, "PANDOKOS_DATABASE_GATEWAY_PASSWORD_FILE="+testutil.WriteSecret(t, "wrong_password", wrong))
+	d.Migrate(t)
+	code, out, errs := runBinary(t, envWrong, "serve", "--config", writeConfig(t, "debug"))
+	if code != 1 {
+		t.Errorf("serve with a wrong password: code %d", code)
+	}
+	collect("serve wrong password", out, errs)
+
+	// (b) an unreachable address.
+	envDown := serveEnv(t, d, "PANDOKOS_DATABASE_ADDRESS=127.0.0.1:1")
+	code, out, errs = runBinary(t, envDown, "serve", "--config", writeConfig(t, "debug"))
+	if code != 1 {
+		t.Errorf("serve with an unreachable database: code %d", code)
+	}
+	collect("serve unreachable", out, errs)
+	code, out, errs = runBinary(t, append(d.Env(t), "PANDOKOS_DATABASE_ADDRESS=127.0.0.1:1"), "migrate")
+	if code != 1 {
+		t.Errorf("migrate with an unreachable database: code %d", code)
+	}
+	collect("migrate unreachable", out, errs)
+
+	// (c) a normal run.
+	code, out, errs = runBinary(t, d.Env(t), "migrate")
+	if code != 0 {
+		t.Errorf("migrate: code %d: %s", code, errs)
+	}
+	collect("migrate", out, errs)
+	code, out, errs = runBinary(t, d.Env(t), "migrate", "status")
+	if code != 0 {
+		t.Errorf("migrate status: code %d: %s", code, errs)
+	}
+	collect("migrate status", out, errs)
+	up := fakeprovider.New(t)
+	p := startBinary(t, opts{level: "debug", baseURL: up.BaseURL(), db: d, noMigrate: true})
+	exchange(t, "POST", p.url("/openai/v1/chat/completions"), authHeader(), chatBody("fake-basic", false, fixtures.CanaryPrompt))
+	if code := p.stop(t); code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+	collect("serve", p.stdout.String(), p.stderr.String())
+
+	for _, o := range outputs {
+		testutil.AssertAbsent(t, o.where, o.text, secrets...)
+		testutil.AssertNoCanary(t, o.where, o.text)
 	}
 }

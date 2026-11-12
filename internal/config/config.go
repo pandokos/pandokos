@@ -41,6 +41,7 @@ type Config struct {
 	Limits    Limits    `yaml:"limits"`
 	Upstream  Upstream  `yaml:"upstream"`
 	Shutdown  Shutdown  `yaml:"shutdown"`
+	Database  Database  `yaml:"database"`
 	Skeleton  Skeleton  `yaml:"skeleton"`
 }
 
@@ -79,6 +80,45 @@ type Shutdown struct {
 	DrainTimeout Duration `yaml:"drain_timeout"`
 }
 
+// Database configures the connection to PostgreSQL: one address, one database, and one database
+// user per process role, each with its password in a file.
+type Database struct {
+	Address        string        `yaml:"address"`
+	Name           string        `yaml:"name"`
+	TLS            DatabaseTLS   `yaml:"tls"`
+	ConnectTimeout Duration      `yaml:"connect_timeout"`
+	Gateway        DatabaseRole  `yaml:"gateway"`
+	Admin          DatabaseRole  `yaml:"admin"`
+	Worker         DatabaseRole  `yaml:"worker"`
+	Owner          DatabaseOwner `yaml:"owner"`
+
+	Host string `yaml:"-"` // filled by Load from Address
+	Port int    `yaml:"-"` // filled by Load from Address
+}
+
+// DatabaseTLS configures TLS towards the database.
+type DatabaseTLS struct {
+	Mode   string `yaml:"mode"`
+	CAFile string `yaml:"ca_file"`
+}
+
+// DatabaseRole configures the database user and pool of one runtime role.
+type DatabaseRole struct {
+	User           string `yaml:"user"`
+	PasswordFile   string `yaml:"password_file"`
+	MaxConnections int    `yaml:"max_connections"`
+
+	Password secret.Secret `yaml:"-"` // filled by Load when the purpose is serve
+}
+
+// DatabaseOwner configures the database user of the migrate command.
+type DatabaseOwner struct {
+	User         string `yaml:"user"`
+	PasswordFile string `yaml:"password_file"`
+
+	Password secret.Secret `yaml:"-"` // filled by Load when the purpose is migrate
+}
+
 // Skeleton is the temporary section of the walking skeleton; later sprints remove it.
 type Skeleton struct {
 	AccessTokenFile string         `yaml:"access_token_file"`
@@ -96,10 +136,21 @@ type SkeletonOpenAI struct {
 	APIKey        secret.Secret `yaml:"-"` // filled by Load
 }
 
+// Purpose says which command the configuration is loaded for. It decides which secrets are
+// required and read. The zero value is PurposeServe.
+type Purpose int
+
+// The purposes of a configuration.
+const (
+	PurposeServe   Purpose = iota // serve and config check: runtime secrets
+	PurposeMigrate                // migrate and migrate status: the owner's password only
+)
+
 // Source says where Load reads from.
 type Source struct {
 	File    string   // "" means no file
 	Environ []string // "NAME=value" pairs, as os.Environ()
+	Purpose Purpose  // which secrets are required and read
 }
 
 // Warning is a condition that does not prevent start.
@@ -137,6 +188,15 @@ func Defaults() *Config {
 		},
 		Upstream: Upstream{ConnectTimeout: Duration(10 * time.Second)},
 		Shutdown: Shutdown{DrainTimeout: Duration(30 * time.Second)},
+		Database: Database{
+			Name:           "pandokos",
+			TLS:            DatabaseTLS{Mode: "verify-full"},
+			ConnectTimeout: Duration(5 * time.Second),
+			Gateway:        DatabaseRole{User: "pandokos_gateway", MaxConnections: 10},
+			Admin:          DatabaseRole{User: "pandokos_admin", MaxConnections: 10},
+			Worker:         DatabaseRole{User: "pandokos_worker", MaxConnections: 5},
+			Owner:          DatabaseOwner{User: "pandokos_owner"},
+		},
 		Skeleton: Skeleton{OpenAI: SkeletonOpenAI{BaseURL: "https://api.openai.com/v1"}},
 	}
 }

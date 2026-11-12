@@ -60,7 +60,13 @@ func Load(src Source) (*Config, []Warning, error) {
 	}
 
 	problems = append(problems, validate(cfg)...)
-	problems = append(problems, loadSecrets(cfg)...)
+	switch src.Purpose {
+	case PurposeMigrate:
+		problems = append(problems, loadDatabaseSecrets(cfg, true)...)
+	default:
+		problems = append(problems, loadSecrets(cfg)...)
+		problems = append(problems, loadDatabaseSecrets(cfg, false)...)
+	}
 
 	if len(problems) > 0 {
 		return nil, nil, &ValidationError{Problems: problems}
@@ -72,7 +78,7 @@ func warnings(cfg *Config, env map[string]string, known map[string]bool) []Warni
 	ws := listenerAndURLWarnings(cfg)
 	var unknown []string
 	for name := range env {
-		if known[name] || strings.HasPrefix(name, "PANDOKOS_SERVICE_") || strings.HasPrefix(name, "PANDOKOS_PORT") {
+		if known[name] || strings.HasPrefix(name, "PANDOKOS_SERVICE_") || strings.HasPrefix(name, "PANDOKOS_PORT") || reServiceLink.MatchString(name) {
 			continue
 		}
 		unknown = append(unknown, name)
@@ -83,6 +89,10 @@ func warnings(cfg *Config, env map[string]string, known map[string]bool) []Warni
 	}
 	return ws
 }
+
+// reServiceLink matches the variables Kubernetes injects for a Service whose name ends in a
+// word of ours (a Service "pandokos-database" gives PANDOKOS_DATABASE_SERVICE_HOST and so on).
+var reServiceLink = regexp.MustCompile(`^PANDOKOS_[A-Z0-9_]*(_SERVICE_HOST|_SERVICE_PORT(_[A-Z0-9_]+)?|_PORT|_PORT_[0-9]+_(TCP|UDP)(_(PROTO|PORT|ADDR))?)$`)
 
 var (
 	reUnknownField = regexp.MustCompile(`^line (\d+): field (\S+) not found in type `)

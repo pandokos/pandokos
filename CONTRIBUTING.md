@@ -16,6 +16,7 @@ Significant design choices are recorded as short Architecture Decision Records i
 - Keep each pull request focused on a single change.
 - Include tests. Any change touching tenant data must include negative tests showing that one tenant cannot read, modify or delete another tenant's data.
 - Never include secrets, credentials, prompts or completions in code, tests, logs or fixtures.
+- Tests that need PostgreSQL fail when it is missing. `make db-up` starts a throwaway PostgreSQL and PgBouncer in Docker; `make test` uses them; `make test-nodb` runs the rest.
 - Describe what changed and why.
 
 ## Branches and releases

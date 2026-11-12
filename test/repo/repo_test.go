@@ -5,7 +5,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -123,11 +125,12 @@ func TestDependencies(t *testing.T) {
 			direct = append(direct, strings.Fields(line)[0])
 		}
 	}
-	if len(direct) != 1 || direct[0] != "go.yaml.in/yaml/v3" {
-		t.Errorf("direct requirements = %v, want only go.yaml.in/yaml/v3", direct)
+	sort.Strings(direct)
+	if want := []string{"github.com/jackc/pgx/v5", "go.yaml.in/yaml/v3"}; !reflect.DeepEqual(direct, want) {
+		t.Errorf("direct requirements = %v, want exactly %v", direct, want)
 	}
-	if !regexp.MustCompile(`(?m)^go 1\.24\.0$`).MatchString(gomod) {
-		t.Error("go.mod must declare go 1.24.0")
+	if !regexp.MustCompile(`(?m)^go 1\.25\.0$`).MatchString(gomod) {
+		t.Error("go.mod must declare go 1.25.0")
 	}
 	if regexp.MustCompile(`(?m)^toolchain\b`).MatchString(gomod) {
 		t.Error("go.mod must not have a toolchain line")
@@ -281,6 +284,128 @@ func TestNoForbiddenStrings(t *testing.T) {
 		})
 		if err != nil {
 			t.Fatal(err)
+		}
+	}
+}
+
+// TestTestDatabasePinned is T-R8: the test containers are pinned and bound to the loopback.
+func TestTestDatabasePinned(t *testing.T) {
+	text := read(t, "test/db/compose.yaml")
+	image := regexp.MustCompile(`^\s*image:\s*(\S+)`)
+	pinned := regexp.MustCompile(`^\S+:\S+@sha256:[0-9a-f]{64}$`)
+	n, postgres := 0, false
+	inPorts := false
+	for _, line := range strings.Split(text, "\n") {
+		if m := image.FindStringSubmatch(line); m != nil {
+			n++
+			if !pinned.MatchString(m[1]) {
+				t.Errorf("image not pinned by digest: %s", m[1])
+			}
+			if strings.HasPrefix(m[1], "postgres:16") {
+				postgres = true
+			}
+		}
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case trimmed == "ports:":
+			inPorts = true
+		case inPorts && strings.HasPrefix(trimmed, "- "):
+			if !strings.HasPrefix(strings.TrimPrefix(trimmed, "- "), `"127.0.0.1:`) {
+				t.Errorf("a published port is not bound to 127.0.0.1: %s", trimmed)
+			}
+		default:
+			inPorts = false
+		}
+	}
+	if n == 0 {
+		t.Error("no image found")
+	}
+	if !postgres {
+		t.Error("the PostgreSQL image must be major version 16")
+	}
+}
+
+// TestDatabaseGuide is T-R9: the operations guide carries the role script and the messages.
+func TestDatabaseGuide(t *testing.T) {
+	doc := read(t, "docs/operations/database.md")
+	if script := strings.TrimSpace(read(t, "deploy/postgres/roles.sql")); !strings.Contains(doc, script) {
+		t.Error("database.md does not contain deploy/postgres/roles.sql verbatim")
+	}
+	for _, want := range []string{
+		"pandokos_owner", "pandokos_gateway", "pandokos_admin", "pandokos_worker",
+		"pandokos migrate", "pandokos migrate status",
+		"is a superuser; a runtime role must not be",
+		"has BYPASSRLS; a runtime role must not",
+		"is not a member of",
+		"a runtime role must not own the schema",
+		"each role needs its own database user",
+		"a runtime role must own nothing",
+		`the database has no Pandokos schema; run "pandokos migrate"`,
+		"the database schema is older than this binary",
+		"the database schema is newer than this binary",
+		"a migration recorded in the database differs from this binary",
+		"pool_mode = transaction",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("database.md lacks %q", want)
+		}
+	}
+}
+
+// TestStoreIsTheOnlyDatabaseAccess is T-R10.
+func TestStoreIsTheOnlyDatabaseAccess(t *testing.T) {
+	exported := regexp.MustCompile(`func \(db \*DB\) [A-Z]\w*\([^)]*\) [^{]*(pgxpool\.|pgx\.Conn|pgx\.Tx)`)
+	for _, dir := range []string{"cmd", "internal"} {
+		err := filepath.WalkDir(filepath.Join(root(t), dir), func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") {
+				return err
+			}
+			b, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			rel, _ := filepath.Rel(root(t), path)
+			rel = filepath.ToSlash(rel)
+			text := string(b)
+			if !strings.HasPrefix(rel, "internal/store/") && strings.Contains(text, `"github.com/jackc/pgx`) {
+				t.Errorf("%s imports the database driver; only internal/store may", rel)
+			}
+			if !strings.HasSuffix(rel, "_test.go") && rel != "internal/store/tx.go" &&
+				(strings.Contains(text, "app.tenant_id") || strings.Contains(text, "app.scope")) {
+				t.Errorf("%s names a tenant context setting; only internal/store/tx.go may", rel)
+			}
+			if rel == "internal/store/db.go" && exported.MatchString(text) {
+				t.Errorf("%s exports a method that returns a pool, a connection or a transaction", rel)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestCIRunsDatabaseSuite is T-R11: CI starts the database for the test and image jobs and
+// cannot skip the database tests.
+func TestCIRunsDatabaseSuite(t *testing.T) {
+	text := read(t, ".github/workflows/ci.yml")
+	jobs := map[string]string{}
+	header := regexp.MustCompile(`^  ([a-z-]+):$`)
+	current := ""
+	for _, line := range strings.Split(text, "\n") {
+		if m := header.FindStringSubmatch(line); m != nil {
+			current = m[1]
+		}
+		jobs[current] += line + "\n"
+	}
+	for _, job := range []string{"test", "image"} {
+		if !strings.Contains(jobs[job], "test/db/up.sh") {
+			t.Errorf("job %s does not run test/db/up.sh", job)
+		}
+	}
+	for _, forbidden := range []string{"PANDOKOS_TEST_NO_DATABASE", "PANDOKOS_TEST_NO_POOLER"} {
+		if strings.Contains(text, forbidden) {
+			t.Errorf("ci.yml mentions %s: database tests cannot be skipped in CI", forbidden)
 		}
 	}
 }

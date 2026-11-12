@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -9,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"go.yaml.in/yaml/v3"
 
 	"github.com/pandokos/pandokos/test/fixtures"
 	"github.com/pandokos/pandokos/test/testutil"
@@ -19,14 +23,62 @@ const (
 	envAPIKey = "PANDOKOS_SKELETON_OPENAI_API_KEY_FILE"
 )
 
-// validSource returns a Source with secret files and an environment that sets only the two
-// *_FILE variables.
+func randomSecret(t *testing.T) string {
+	t.Helper()
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		t.Fatal(err)
+	}
+	return "pw-" + hex.EncodeToString(b)
+}
+
+// dbServeEnv sets the database variables that the serve purpose needs: the address, the TLS mode
+// (disable, so that no CA file is needed) and the three runtime password files.
+func dbServeEnv(t *testing.T) []string {
+	t.Helper()
+	return []string{
+		"PANDOKOS_DATABASE_ADDRESS=127.0.0.1:5432",
+		"PANDOKOS_DATABASE_TLS_MODE=disable",
+		"PANDOKOS_DATABASE_GATEWAY_PASSWORD_FILE=" + testutil.WriteSecret(t, "db_gateway", randomSecret(t)),
+		"PANDOKOS_DATABASE_ADMIN_PASSWORD_FILE=" + testutil.WriteSecret(t, "db_admin", randomSecret(t)),
+		"PANDOKOS_DATABASE_WORKER_PASSWORD_FILE=" + testutil.WriteSecret(t, "db_worker", randomSecret(t)),
+	}
+}
+
+// validSource returns a Source for the serve purpose with every secret file and the database
+// settings in the environment.
 func validSource(t *testing.T) Source {
 	t.Helper()
-	return Source{Environ: []string{
+	return Source{Environ: append([]string{
 		envToken + "=" + testutil.WriteSecret(t, "token", fixtures.CanaryAccessToken),
 		envAPIKey + "=" + testutil.WriteSecret(t, "key", fixtures.CanaryProviderKey),
+	}, dbServeEnv(t)...)}
+}
+
+// validMigrateSource returns a Source for the migrate purpose: the address, the TLS mode and
+// the owner password file only.
+func validMigrateSource(t *testing.T) Source {
+	t.Helper()
+	return Source{Purpose: PurposeMigrate, Environ: []string{
+		"PANDOKOS_DATABASE_ADDRESS=127.0.0.1:5432",
+		"PANDOKOS_DATABASE_TLS_MODE=disable",
+		"PANDOKOS_DATABASE_OWNER_PASSWORD_FILE=" + testutil.WriteSecret(t, "db_owner", randomSecret(t)),
 	}}
+}
+
+// without returns environ minus the variables with the given names.
+func without(environ []string, names ...string) []string {
+	var out []string
+outer:
+	for _, e := range environ {
+		for _, n := range names {
+			if strings.HasPrefix(e, n+"=") {
+				continue outer
+			}
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 func writeFile(t *testing.T, content string) string {
@@ -85,6 +137,22 @@ func TestDefaults(t *testing.T) {
 		{"limits.max_request_duration", time.Duration(d.Limits.MaxRequestDuration), 10 * time.Minute},
 		{"upstream.connect_timeout", time.Duration(d.Upstream.ConnectTimeout), 10 * time.Second},
 		{"shutdown.drain_timeout", time.Duration(d.Shutdown.DrainTimeout), 30 * time.Second},
+		{"database.address", d.Database.Address, ""},
+		{"database.name", d.Database.Name, "pandokos"},
+		{"database.tls.mode", d.Database.TLS.Mode, "verify-full"},
+		{"database.tls.ca_file", d.Database.TLS.CAFile, ""},
+		{"database.connect_timeout", time.Duration(d.Database.ConnectTimeout), 5 * time.Second},
+		{"database.gateway.user", d.Database.Gateway.User, "pandokos_gateway"},
+		{"database.gateway.password_file", d.Database.Gateway.PasswordFile, ""},
+		{"database.gateway.max_connections", d.Database.Gateway.MaxConnections, 10},
+		{"database.admin.user", d.Database.Admin.User, "pandokos_admin"},
+		{"database.admin.password_file", d.Database.Admin.PasswordFile, ""},
+		{"database.admin.max_connections", d.Database.Admin.MaxConnections, 10},
+		{"database.worker.user", d.Database.Worker.User, "pandokos_worker"},
+		{"database.worker.password_file", d.Database.Worker.PasswordFile, ""},
+		{"database.worker.max_connections", d.Database.Worker.MaxConnections, 5},
+		{"database.owner.user", d.Database.Owner.User, "pandokos_owner"},
+		{"database.owner.password_file", d.Database.Owner.PasswordFile, ""},
 		{"skeleton.access_token_file", d.Skeleton.AccessTokenFile, ""},
 		{"skeleton.openai.base_url", d.Skeleton.OpenAI.BaseURL, "https://api.openai.com/v1"},
 		{"skeleton.openai.api_key_file", d.Skeleton.OpenAI.APIKeyFile, ""},
@@ -107,12 +175,30 @@ var wantKeys = []string{
 	"limits.max_request_duration",
 	"upstream.connect_timeout",
 	"shutdown.drain_timeout",
+	"database.address",
+	"database.name",
+	"database.tls.mode",
+	"database.tls.ca_file",
+	"database.connect_timeout",
+	"database.gateway.user",
+	"database.gateway.password_file",
+	"database.gateway.max_connections",
+	"database.admin.user",
+	"database.admin.password_file",
+	"database.admin.max_connections",
+	"database.worker.user",
+	"database.worker.password_file",
+	"database.worker.max_connections",
+	"database.owner.user",
+	"database.owner.password_file",
 	"skeleton.access_token_file",
 	"skeleton.openai.base_url",
 	"skeleton.openai.api_key_file",
 }
 
-var wantDefaultText = []string{"info", "0.0.0.0:8080", "10s", "120s", "65536", "10485760", "30s", "10m", "10s", "30s", "", "https://api.openai.com/v1", ""}
+var wantDefaultText = []string{"info", "0.0.0.0:8080", "10s", "120s", "65536", "10485760", "30s", "10m", "10s", "30s",
+	"", "pandokos", "verify-full", "", "5s", "pandokos_gateway", "", "10", "pandokos_admin", "", "10", "pandokos_worker", "", "5", "pandokos_owner", "",
+	"", "https://api.openai.com/v1", ""}
 
 func leafKeys(t reflect.Type, prefix string, out *[]string) {
 	for i := 0; i < t.NumField(); i++ {
@@ -146,6 +232,15 @@ func TestKeysTable(t *testing.T) {
 		seenEnv[k.Env] = true
 		if strings.HasPrefix(k.Name, "service") || strings.HasPrefix(k.Name, "port") {
 			t.Errorf("key %s starts with a reserved prefix", k.Name)
+		}
+		segments := strings.Split(k.Name, ".")
+		if segments[len(segments)-1] == "port" {
+			t.Errorf("key %s has port as its last segment: Kubernetes service links would collide", k.Name)
+		}
+		for _, seg := range segments {
+			if strings.HasPrefix(seg, "service_") {
+				t.Errorf("key %s has a segment that starts with service_", k.Name)
+			}
 		}
 		if k.Type == "" || k.Description == "" {
 			t.Errorf("%s: type or description empty", k.Name)
@@ -193,6 +288,22 @@ func keyCases(t *testing.T) []keyCase {
 		{key: "limits.max_request_duration", a: "41s", b: "42s"},
 		{key: "upstream.connect_timeout", a: "5s", b: "6s"},
 		{key: "shutdown.drain_timeout", a: "7s", b: "8s"},
+		{key: "database.address", a: "db-a.example.test:5432", b: "db-b.example.test:6432"},
+		{key: "database.name", a: "dba", b: "dbb"},
+		{key: "database.tls.mode", a: "disable", b: "verify-full"},
+		{key: "database.tls.ca_file", a: testutil.WriteCA(t), b: testutil.WriteCA(t)},
+		{key: "database.connect_timeout", a: "3s", b: "4s"},
+		{key: "database.gateway.user", a: "gw-a", b: "gw-b"},
+		{key: "database.gateway.password_file", a: mk("gwp_a", "pw-gateway-a"), b: mk("gwp_b", "pw-gateway-b")},
+		{key: "database.gateway.max_connections", a: "21", b: "22", yamlInt: true},
+		{key: "database.admin.user", a: "adm-a", b: "adm-b"},
+		{key: "database.admin.password_file", a: mk("adp_a", "pw-admin-a"), b: mk("adp_b", "pw-admin-b")},
+		{key: "database.admin.max_connections", a: "31", b: "32", yamlInt: true},
+		{key: "database.worker.user", a: "wk-a", b: "wk-b"},
+		{key: "database.worker.password_file", a: mk("wkp_a", "pw-worker-a"), b: mk("wkp_b", "pw-worker-b")},
+		{key: "database.worker.max_connections", a: "41", b: "42", yamlInt: true},
+		{key: "database.owner.user", a: "own-a", b: "own-b"},
+		{key: "database.owner.password_file", a: mk("owp_a", "pw-owner-a"), b: mk("owp_b", "pw-owner-b")},
 		{key: "skeleton.access_token_file", a: mk("ta", strings.Repeat("a", 40)), b: mk("tb", strings.Repeat("b", 40))},
 		{key: "skeleton.openai.base_url", a: "http://127.0.0.1:1/v1", b: "http://127.0.0.1:2/v1"},
 		{key: "skeleton.openai.api_key_file", a: mk("ka", "key-a"), b: mk("kb", "key-b")},
@@ -238,6 +349,38 @@ func field(c *Config, key string) string {
 		return time.Duration(c.Upstream.ConnectTimeout).String()
 	case "shutdown.drain_timeout":
 		return time.Duration(c.Shutdown.DrainTimeout).String()
+	case "database.address":
+		return c.Database.Address
+	case "database.name":
+		return c.Database.Name
+	case "database.tls.mode":
+		return c.Database.TLS.Mode
+	case "database.tls.ca_file":
+		return c.Database.TLS.CAFile
+	case "database.connect_timeout":
+		return time.Duration(c.Database.ConnectTimeout).String()
+	case "database.gateway.user":
+		return c.Database.Gateway.User
+	case "database.gateway.password_file":
+		return c.Database.Gateway.PasswordFile
+	case "database.gateway.max_connections":
+		return strconv.Itoa(c.Database.Gateway.MaxConnections)
+	case "database.admin.user":
+		return c.Database.Admin.User
+	case "database.admin.password_file":
+		return c.Database.Admin.PasswordFile
+	case "database.admin.max_connections":
+		return strconv.Itoa(c.Database.Admin.MaxConnections)
+	case "database.worker.user":
+		return c.Database.Worker.User
+	case "database.worker.password_file":
+		return c.Database.Worker.PasswordFile
+	case "database.worker.max_connections":
+		return strconv.Itoa(c.Database.Worker.MaxConnections)
+	case "database.owner.user":
+		return c.Database.Owner.User
+	case "database.owner.password_file":
+		return c.Database.Owner.PasswordFile
 	case "skeleton.access_token_file":
 		return c.Skeleton.AccessTokenFile
 	case "skeleton.openai.base_url":
@@ -259,16 +402,63 @@ func normalize(key, v string) string {
 	return v
 }
 
+// yamlOf renders the "a" value of every case, except the keys in skip, as one YAML document.
+func yamlOf(t *testing.T, cases []keyCase, skip ...string) string {
+	t.Helper()
+	root := map[string]any{}
+outer:
+	for _, kc := range cases {
+		for _, k := range skip {
+			if kc.key == k {
+				continue outer
+			}
+		}
+		parts := strings.Split(kc.key, ".")
+		m := root
+		for _, p := range parts[:len(parts)-1] {
+			sub, ok := m[p].(map[string]any)
+			if !ok {
+				sub = map[string]any{}
+				m[p] = sub
+			}
+			m = sub
+		}
+		if kc.yamlInt {
+			n, err := strconv.Atoi(kc.a)
+			if err != nil {
+				t.Fatal(err)
+			}
+			m[parts[len(parts)-1]] = n
+		} else {
+			m[parts[len(parts)-1]] = kc.a
+		}
+	}
+	b, err := yaml.Marshal(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func caseOf(t *testing.T, cases []keyCase, key string) keyCase {
+	t.Helper()
+	for _, kc := range cases {
+		if kc.key == key {
+			return kc
+		}
+	}
+	t.Fatalf("no case for %s", key)
+	return keyCase{}
+}
+
 func TestLoadFile(t *testing.T) {
 	cases := keyCases(t)
-	var sb strings.Builder
-	sb.WriteString("log:\n  level: debug\n")
-	sb.WriteString("listeners:\n  inference:\n    address: '127.0.0.1:1111'\n    read_header_timeout: 11s\n    idle_timeout: 21s\n    max_header_bytes: 8192\n")
-	sb.WriteString("limits:\n  max_request_body_bytes: 2048\n  request_body_read_timeout: 31s\n  max_request_duration: 41s\n")
-	sb.WriteString("upstream:\n  connect_timeout: 5s\nshutdown:\n  drain_timeout: 7s\n")
-	sb.WriteString("skeleton:\n  access_token_file: " + cases[10].a + "\n  openai:\n    base_url: http://127.0.0.1:1/v1\n    api_key_file: " + cases[12].a + "\n")
-	c, _ := mustLoad(t, Source{File: writeFile(t, sb.String())})
+	// The CA file is only valid with TLS mode verify-full, which the other cases do not use.
+	c, _ := mustLoad(t, Source{File: writeFile(t, yamlOf(t, cases, "database.tls.ca_file"))})
 	for _, kc := range cases {
+		if kc.key == "database.tls.ca_file" {
+			continue
+		}
 		if got, want := field(c, kc.key), normalize(kc.key, kc.a); got != want {
 			t.Errorf("%s: got %q, want %q", kc.key, got, want)
 		}
@@ -279,6 +469,27 @@ func TestLoadFile(t *testing.T) {
 	if c.Skeleton.OpenAI.ParsedBaseURL == nil || c.Skeleton.OpenAI.ParsedBaseURL.Host != "127.0.0.1:1" {
 		t.Error("ParsedBaseURL not filled")
 	}
+	d := c.Database
+	if d.Host != "db-a.example.test" || d.Port != 5432 {
+		t.Errorf("Host and Port: %q %d", d.Host, d.Port)
+	}
+	if d.Gateway.Password.Reveal() != "pw-gateway-a" || d.Admin.Password.Reveal() != "pw-admin-a" || d.Worker.Password.Reveal() != "pw-worker-a" {
+		t.Error("the runtime passwords were not read from their files")
+	}
+	if !d.Owner.Password.IsZero() {
+		t.Error("serve must not read the owner password file")
+	}
+
+	t.Run("CA file", func(t *testing.T) {
+		src := validSource(t)
+		src.Environ = without(src.Environ, "PANDOKOS_DATABASE_TLS_MODE")
+		ca := caseOf(t, cases, "database.tls.ca_file").a
+		src.File = writeFile(t, "database:\n  tls:\n    ca_file: "+ca+"\n")
+		got, _ := mustLoad(t, src)
+		if got.Database.TLS.Mode != "verify-full" || got.Database.TLS.CAFile != ca {
+			t.Errorf("TLS: %+v", got.Database.TLS)
+		}
+	})
 }
 
 func TestEnvironmentOverridesFile(t *testing.T) {
@@ -292,12 +503,11 @@ func TestEnvironmentOverridesFile(t *testing.T) {
 			}
 			// The base environment sets the two secret files, except the one under test, so the
 			// file value is the only competitor of the environment value.
-			var base []string
-			for _, e := range validSource(t).Environ {
-				if !strings.HasPrefix(e, envName+"=") {
-					base = append(base, e)
-				}
+			drop := []string{envName}
+			if kc.key == "database.tls.ca_file" {
+				drop = append(drop, "PANDOKOS_DATABASE_TLS_MODE") // the CA file needs verify-full
 			}
+			base := without(validSource(t).Environ, drop...)
 			file := writeFile(t, yamlFor(kc.key, kc.a, kc.yamlInt))
 			load := func(extra ...string) *Config {
 				c, _ := mustLoad(t, Source{File: file, Environ: append(append([]string{}, base...), extra...)})
@@ -391,6 +601,8 @@ func TestUnknownEnvironment(t *testing.T) {
 		"PANDOKOS_SERVICE_HOST=10.0.0.1",
 		"PANDOKOS_PORT=tcp://10.0.0.1:8080",
 		"PANDOKOS_PORT_8080_TCP=tcp://10.0.0.1:8080",
+		"PANDOKOS_DATABASE_PORT=tcp://10.0.0.1:5432",
+		"PANDOKOS_FOO_SERVICE_HOST=10.0.0.1",
 		"PANDOKOS_CONFIG=/nonexistent/ignored-here",
 		"OTHER=1",
 	)
@@ -501,10 +713,10 @@ func TestSecretFiles(t *testing.T) {
 	other := func(name, content string) string { return testutil.WriteSecret(t, name, content) }
 	t.Run("read and trimmed", func(t *testing.T) {
 		src := good
-		src.Environ = []string{
+		src.Environ = append([]string{
 			envToken + "=" + writeFile(t, "  "+fixtures.CanaryAccessToken+" \n\n"),
 			envAPIKey + "=" + writeFile(t, "\t"+fixtures.CanaryProviderKey+"\r\n"),
-		}
+		}, dbServeEnv(t)...)
 		c, _ := mustLoad(t, src)
 		if c.Skeleton.AccessToken.Reveal() != fixtures.CanaryAccessToken || c.Skeleton.OpenAI.APIKey.Reveal() != fixtures.CanaryProviderKey {
 			t.Error("secrets not trimmed or not read")
@@ -526,7 +738,7 @@ func TestSecretFiles(t *testing.T) {
 	}
 	for _, b := range bad {
 		t.Run(b.name, func(t *testing.T) {
-			_, _, err := Load(Source{Environ: b.environ})
+			_, _, err := Load(Source{Environ: append(b.environ, dbServeEnv(t)...)})
 			if err == nil || !hasProblem(err, b.key) {
 				t.Fatalf("expected a problem under %s, got %v", b.key, err)
 			}
@@ -603,5 +815,293 @@ func TestDuration(t *testing.T) {
 		if err == nil {
 			t.Errorf("%s: expected an error", in)
 		}
+	}
+}
+
+func problemMessage(err error, key string) (string, bool) {
+	var ve *ValidationError
+	if !errors.As(err, &ve) {
+		return "", false
+	}
+	for _, p := range ve.Problems {
+		if p.Key == key {
+			return p.Message, true
+		}
+	}
+	return "", false
+}
+
+// TestDatabaseValidation is T-113: one case per rule of sprint.md section 5.2.
+func TestDatabaseValidation(t *testing.T) {
+	const (
+		nameMsg = "must be 1 to 63 characters: letters, digits, underscore, dot, hyphen"
+		portMsg = "the port must be an integer between 1 and 65535"
+		hostMsg = "the host must be an IP address or a host name"
+		rangeMs = "must be between 1 and 1000"
+	)
+	envOf := map[string]string{}
+	for _, k := range Keys() {
+		envOf[k.Name] = k.Env
+	}
+	dir := t.TempDir()
+	mkfile := func(name string, content []byte) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	notPEM := mkfile("not-pem", []byte("this is not a certificate\n"))
+	huge := mkfile("huge", []byte(strings.Repeat("x", 1048577)))
+	ca := testutil.WriteCA(t)
+	long := strings.Repeat("a", 64)
+
+	type row struct {
+		name, key string
+		file      string   // YAML of the file
+		env       []string // extra environment
+		dropTLS   bool     // remove the TLS mode of the base environment (so verify-full applies)
+		want      string
+		prefix    bool // want is a prefix of the message
+	}
+	rows := []row{
+		{name: "address empty", key: "database.address", file: "database:\n  address: ''\n", want: "must be set"},
+		{name: "address without port", key: "database.address", file: "database:\n  address: nohost\n", want: "must be host:port"},
+		{name: "port zero", key: "database.address", file: "database:\n  address: 'db:0'\n", want: portMsg},
+		{name: "port too large", key: "database.address", file: "database:\n  address: 'db:70000'\n", want: portMsg},
+		{name: "host empty", key: "database.address", file: "database:\n  address: ':5432'\n", want: hostMsg},
+		{name: "host is a path", key: "database.address", file: "database:\n  address: '/var/run/postgresql:5432'\n", want: hostMsg},
+		{name: "tls mode", key: "database.tls.mode", env: []string{envOf["database.tls.mode"] + "=require"}, want: "must be verify-full or disable"},
+		{name: "ca file with disable", key: "database.tls.ca_file", env: []string{envOf["database.tls.ca_file"] + "=" + ca}, want: "is only used when database.tls.mode is verify-full"},
+		{name: "ca file missing", key: "database.tls.ca_file", dropTLS: true, env: []string{envOf["database.tls.ca_file"] + "=/nonexistent/ca.pem"}, want: "cannot read the file: ", prefix: true},
+		{name: "ca file without certificate", key: "database.tls.ca_file", dropTLS: true, env: []string{envOf["database.tls.ca_file"] + "=" + notPEM}, want: "the file contains no PEM certificate"},
+		{name: "ca file too large", key: "database.tls.ca_file", dropTLS: true, env: []string{envOf["database.tls.ca_file"] + "=" + huge}, want: "the file is larger than 1048576 bytes"},
+		{name: "connect timeout", key: "database.connect_timeout", env: []string{envOf["database.connect_timeout"] + "=0s"}, want: "must be greater than zero"},
+		{name: "admin equals gateway", key: "database.admin.user",
+			env:  []string{envOf["database.gateway.user"] + "=same-user", envOf["database.admin.user"] + "=same-user"},
+			want: "must differ from database.gateway.user: each role needs its own database user"},
+		{name: "worker equals admin", key: "database.worker.user",
+			env:  []string{envOf["database.admin.user"] + "=same-user", envOf["database.worker.user"] + "=same-user"},
+			want: "must differ from database.admin.user: each role needs its own database user"},
+		{name: "owner equals worker", key: "database.owner.user",
+			env:  []string{envOf["database.worker.user"] + "=same-user", envOf["database.owner.user"] + "=same-user"},
+			want: "must differ from database.worker.user: each role needs its own database user"},
+		{name: "owner equals gateway", key: "database.owner.user",
+			env:  []string{envOf["database.gateway.user"] + "=same-user", envOf["database.owner.user"] + "=same-user"},
+			want: "must differ from database.gateway.user: each role needs its own database user"},
+	}
+	for _, key := range []string{"database.name", "database.gateway.user", "database.admin.user", "database.worker.user", "database.owner.user"} {
+		parts := strings.Split(key, ".")
+		render := func(v string) string {
+			if len(parts) == 2 {
+				return "database:\n  " + parts[1] + ": '" + v + "'\n"
+			}
+			return "database:\n  " + parts[1] + ":\n    " + parts[2] + ": '" + v + "'\n"
+		}
+		for label, v := range map[string]string{"empty": "", "space": "a b", "leading hyphen": "-x", "64 characters": long} {
+			rows = append(rows, row{name: key + " " + label, key: key, file: render(v), want: nameMsg})
+		}
+	}
+	for _, role := range []string{"gateway", "admin", "worker"} {
+		key := "database." + role + ".max_connections"
+		for _, v := range []string{"0", "1001"} {
+			rows = append(rows, row{name: key + "=" + v, key: key, env: []string{envOf[key] + "=" + v}, want: rangeMs})
+		}
+	}
+	for _, r := range rows {
+		t.Run(r.name, func(t *testing.T) {
+			src := validSource(t)
+			drop := []string{envOf[r.key]}
+			for _, e := range r.env {
+				name, _, _ := strings.Cut(e, "=")
+				drop = append(drop, name)
+			}
+			if r.dropTLS {
+				drop = append(drop, envOf["database.tls.mode"])
+			}
+			src.Environ = append(without(src.Environ, drop...), r.env...)
+			if r.file != "" {
+				src.File = writeFile(t, r.file)
+			}
+			_, _, err := Load(src)
+			msg, ok := problemMessage(err, r.key)
+			if !ok {
+				t.Fatalf("expected a problem under %s, got %v", r.key, err)
+			}
+			if r.prefix && !strings.HasPrefix(msg, r.want) || !r.prefix && msg != r.want {
+				t.Errorf("message %q, want %q", msg, r.want)
+			}
+		})
+	}
+	t.Run("valid values", func(t *testing.T) {
+		for _, a := range []string{"127.0.0.1:5432", "db:5432", "[::1]:5432", "pooler.internal.example:6432", "10.0.0.1:1", "db:65535"} {
+			src := validSource(t)
+			src.Environ = append(without(src.Environ, envOf["database.address"]), envOf["database.address"]+"="+a)
+			c, _ := mustLoad(t, src)
+			if c.Database.Host == "" || c.Database.Port == 0 {
+				t.Errorf("%s: Host and Port were not filled: %q %d", a, c.Database.Host, c.Database.Port)
+			}
+		}
+		src := validSource(t)
+		src.Environ = append(without(src.Environ, envOf["database.tls.mode"]), envOf["database.tls.ca_file"]+"="+ca)
+		mustLoad(t, src) // verify-full with a CA file
+	})
+}
+
+// TestPurpose is T-114.
+func TestPurpose(t *testing.T) {
+	envOf := map[string]string{}
+	for _, k := range Keys() {
+		envOf[k.Name] = k.Env
+	}
+	t.Run("serve reads the runtime secrets and not the owner's", func(t *testing.T) {
+		gw, ad, wk := randomSecret(t), randomSecret(t), randomSecret(t)
+		src := validSource(t)
+		src.Environ = append(without(src.Environ, envOf["database.gateway.password_file"], envOf["database.admin.password_file"], envOf["database.worker.password_file"]),
+			envOf["database.gateway.password_file"]+"="+testutil.WriteSecret(t, "g", gw),
+			envOf["database.admin.password_file"]+"="+testutil.WriteSecret(t, "a", ad),
+			envOf["database.worker.password_file"]+"="+testutil.WriteSecret(t, "w", wk),
+			"PANDOKOS_DATABASE_OWNER_PASSWORD_FILE=/nonexistent/owner",
+		)
+		c, _ := mustLoad(t, src)
+		if c.Database.Gateway.Password.Reveal() != gw || c.Database.Admin.Password.Reveal() != ad || c.Database.Worker.Password.Reveal() != wk {
+			t.Error("runtime passwords not read")
+		}
+		if !c.Database.Owner.Password.IsZero() {
+			t.Error("the owner password must not be read by serve")
+		}
+		if c.Skeleton.AccessToken.IsZero() {
+			t.Error("serve must read the skeleton secrets")
+		}
+		for _, k := range []string{"database.gateway.password_file", "database.admin.password_file", "database.worker.password_file"} {
+			s := validSource(t)
+			s.Environ = without(s.Environ, envOf[k])
+			_, _, err := Load(s)
+			if msg, ok := problemMessage(err, k); !ok || msg != "must be set" {
+				t.Errorf("%s not set: %q %v", k, msg, err)
+			}
+			s.Environ = append(s.Environ, envOf[k]+"=/nonexistent/pw")
+			_, _, err = Load(s)
+			if msg, ok := problemMessage(err, k); !ok || !strings.Contains(msg, "cannot read secret file") {
+				t.Errorf("%s missing file: %q %v", k, msg, err)
+			}
+		}
+	})
+	t.Run("migrate reads the owner secret only", func(t *testing.T) {
+		ow := randomSecret(t)
+		src := validMigrateSource(t)
+		src.Environ = append(without(src.Environ, envOf["database.owner.password_file"]), envOf["database.owner.password_file"]+"="+testutil.WriteSecret(t, "o", ow))
+		// The runtime password files and the skeleton secrets may point to files that do not exist.
+		src.Environ = append(src.Environ,
+			envOf["database.gateway.password_file"]+"=/nonexistent/gateway",
+			envOf["database.admin.password_file"]+"=/nonexistent/admin",
+			envOf["database.worker.password_file"]+"=/nonexistent/worker",
+			envToken+"=/nonexistent/token",
+			envAPIKey+"=/nonexistent/key",
+		)
+		c, _ := mustLoad(t, src)
+		if c.Database.Owner.Password.Reveal() != ow {
+			t.Error("the owner password was not read")
+		}
+		if !c.Database.Gateway.Password.IsZero() || !c.Database.Admin.Password.IsZero() || !c.Database.Worker.Password.IsZero() || !c.Skeleton.AccessToken.IsZero() {
+			t.Error("migrate must not read the other secrets")
+		}
+		// And it needs none of them to be set.
+		mustLoad(t, validMigrateSource(t))
+
+		s := validMigrateSource(t)
+		s.Environ = without(s.Environ, envOf["database.owner.password_file"])
+		_, _, err := Load(s)
+		if msg, ok := problemMessage(err, "database.owner.password_file"); !ok || msg != "must be set" {
+			t.Errorf("owner file not set: %q %v", msg, err)
+		}
+		s.Environ = append(s.Environ, envOf["database.owner.password_file"]+"=/nonexistent/owner")
+		_, _, err = Load(s)
+		if msg, ok := problemMessage(err, "database.owner.password_file"); !ok || !strings.Contains(msg, "cannot read secret file") {
+			t.Errorf("owner file missing: %q %v", msg, err)
+		}
+	})
+	t.Run("the format rules apply to both purposes", func(t *testing.T) {
+		s := validMigrateSource(t)
+		s.Environ = append(s.Environ, "PANDOKOS_LOG_LEVEL=verbose")
+		if _, _, err := Load(s); !hasProblem(err, "log.level") {
+			t.Errorf("got %v", err)
+		}
+	})
+	t.Run("no problem text contains a password", func(t *testing.T) {
+		pw := randomSecret(t)
+		s := validSource(t)
+		s.Environ = append(s.Environ,
+			envOf["database.admin.user"]+"=pandokos_gateway",
+			envOf["database.gateway.max_connections"]+"=0",
+			envOf["database.gateway.password_file"]+"="+testutil.WriteSecret(t, "gw", pw),
+		)
+		_, _, err := Load(s)
+		if err == nil {
+			t.Fatal("expected problems")
+		}
+		testutil.AssertAbsent(t, "error text", err.Error(), pw)
+	})
+}
+
+// TestKubernetesServiceVariables is T-115.
+func TestKubernetesServiceVariables(t *testing.T) {
+	src := validSource(t)
+	src.Environ = append(src.Environ,
+		"PANDOKOS_DATABASE_PORT=tcp://10.0.0.1:5432",
+		"PANDOKOS_DATABASE_PORT_5432_TCP=tcp://10.0.0.1:5432",
+		"PANDOKOS_DATABASE_PORT_5432_TCP_PROTO=tcp",
+		"PANDOKOS_DATABASE_PORT_5432_TCP_PORT=5432",
+		"PANDOKOS_DATABASE_PORT_5432_TCP_ADDR=10.0.0.1",
+		"PANDOKOS_DATABASE_SERVICE_HOST=10.0.0.1",
+		"PANDOKOS_DATABASE_SERVICE_PORT=5432",
+		"PANDOKOS_DATABASE_SERVICE_PORT_POSTGRES=5432",
+	)
+	_, ws := mustLoad(t, src)
+	for _, w := range ws {
+		if w.Key == "environment" {
+			t.Errorf("unexpected warning: %s", w.Message)
+		}
+	}
+	src.Environ = append(src.Environ, "PANDOKOS_DATABASE_FOO=1")
+	_, ws = mustLoad(t, src)
+	var got []string
+	for _, w := range ws {
+		if w.Key == "environment" {
+			got = append(got, w.Message)
+		}
+	}
+	if len(got) != 1 || got[0] != "unknown variable PANDOKOS_DATABASE_FOO ignored" {
+		t.Errorf("environment warnings: %v", got)
+	}
+}
+
+// TestDatabaseWarnings is T-116.
+func TestDatabaseWarnings(t *testing.T) {
+	warn := func(addr string, tlsMode string) (string, bool) {
+		src := validSource(t)
+		src.Environ = without(src.Environ, "PANDOKOS_DATABASE_ADDRESS", "PANDOKOS_DATABASE_TLS_MODE")
+		src.Environ = append(src.Environ, "PANDOKOS_DATABASE_ADDRESS="+addr, "PANDOKOS_DATABASE_TLS_MODE="+tlsMode)
+		_, ws := mustLoad(t, src)
+		for _, w := range ws {
+			if w.Key == "database.tls.mode" {
+				return w.Message, true
+			}
+		}
+		return "", false
+	}
+	if m, ok := warn("db.example.test:5432", "disable"); !ok || m != "the database connection is not encrypted" {
+		t.Errorf("disable with a remote host: %q %v", m, ok)
+	}
+	if m, ok := warn("10.0.0.5:5432", "disable"); !ok || m != "the database connection is not encrypted" {
+		t.Errorf("disable with a private address: %q %v", m, ok)
+	}
+	for _, a := range []string{"127.0.0.1:5432", "[::1]:5432", "localhost:5432"} {
+		if m, ok := warn(a, "disable"); ok {
+			t.Errorf("disable with %s warned: %s", a, m)
+		}
+	}
+	if m, ok := warn("db.example.test:5432", "verify-full"); ok {
+		t.Errorf("verify-full warned: %s", m)
 	}
 }

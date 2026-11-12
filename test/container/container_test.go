@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pandokos/pandokos/test/dbtest"
 	"github.com/pandokos/pandokos/test/fakeprovider"
 	"github.com/pandokos/pandokos/test/fixtures"
 	"github.com/pandokos/pandokos/test/testutil"
@@ -43,6 +44,9 @@ func TestImage(t *testing.T) {
 		t.Fatalf("image configuration: %s", got)
 	}
 
+	// The database: one of the test database, with its four users. The container uses host
+	// networking, so the address is the one the tests use.
+	d := dbtest.New(t)
 	up := fakeprovider.New(t)
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0o755); err != nil {
@@ -53,6 +57,29 @@ func TestImage(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	dbEnv := []string{
+		"-e", "PANDOKOS_DATABASE_ADDRESS=" + net.JoinHostPort(d.Host, strconv.Itoa(d.Port)),
+		"-e", "PANDOKOS_DATABASE_NAME=" + d.Name,
+		"-e", "PANDOKOS_DATABASE_TLS_MODE=disable",
+	}
+	for _, role := range []string{"owner", "gateway", "admin", "worker"} {
+		pw := d.ConnOptions(role).Password.Reveal()
+		if err := os.WriteFile(filepath.Join(dir, "db_"+role), []byte(pw+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		dbEnv = append(dbEnv,
+			"-e", "PANDOKOS_DATABASE_"+strings.ToUpper(role)+"_USER="+d.User(role),
+			"-e", "PANDOKOS_DATABASE_"+strings.ToUpper(role)+"_PASSWORD_FILE=/run/secrets/db_"+role,
+		)
+	}
+	hardened := []string{"--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--network", "host", "-v", dir + ":/run/secrets:ro"}
+
+	// The image creates the schema with its migrate command.
+	migrateArgs := append(append([]string{"run", "--rm"}, hardened...), dbEnv...)
+	if out := docker(t, append(migrateArgs, image, "migrate")...); !strings.Contains(out, "schema is at version 1") {
+		t.Fatalf("migrate output: %q", out)
+	}
+
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -60,13 +87,14 @@ func TestImage(t *testing.T) {
 	port := strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
 	l.Close()
 
-	id := docker(t, "run", "-d", "--network", "host", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-		"-v", dir+":/run/secrets:ro",
+	serveArgs := append(append([]string{"run", "-d"}, hardened...), dbEnv...)
+	serveArgs = append(serveArgs,
 		"-e", "PANDOKOS_LISTENERS_INFERENCE_ADDRESS=127.0.0.1:"+port,
 		"-e", "PANDOKOS_SKELETON_ACCESS_TOKEN_FILE=/run/secrets/access_token",
 		"-e", "PANDOKOS_SKELETON_OPENAI_API_KEY_FILE=/run/secrets/openai_api_key",
 		"-e", "PANDOKOS_SKELETON_OPENAI_BASE_URL="+up.BaseURL(),
 		image)
+	id := docker(t, serveArgs...)
 	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", id).Run() })
 
 	base := "http://127.0.0.1:" + port
@@ -99,7 +127,9 @@ func TestImage(t *testing.T) {
 	if code := docker(t, "inspect", "-f", "{{.State.ExitCode}}", id); code != "0" {
 		t.Errorf("exit code %s", code)
 	}
-	testutil.AssertNoCanary(t, "container logs", docker(t, "logs", id))
+	logs := docker(t, "logs", id)
+	testutil.AssertNoCanary(t, "container logs", logs)
+	testutil.AssertAbsent(t, "container logs", logs, d.Passwords()...)
 
 	if out := docker(t, "run", "--rm", image, "version"); !strings.HasPrefix(out, "pandokos ") {
 		t.Errorf("version output: %q", out)

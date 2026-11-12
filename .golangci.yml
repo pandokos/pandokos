@@ -27,6 +27,38 @@ linters:
             - $gostd
             - github.com/pandokos/pandokos
             - go.yaml.in/yaml/v3
+            - github.com/jackc/pgx/v5
+        pgx-only-in-store:
+          list-mode: lax
+          files:
+            - "**/cmd/**"
+            - "**/internal/**"
+            - "!**/internal/store/**"
+          deny:
+            - pkg: github.com/jackc/pgx/v5
+              desc: only internal/store talks to the database; use store.DB
+        store-takes-plain-values:
+          list-mode: lax
+          files:
+            - "**/internal/store/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/pandokos/pandokos/internal/config
+              desc: the store receives plain values through ConnOptions
+            - pkg: github.com/pandokos/pandokos/internal/server
+              desc: the store does not know the server
+            - pkg: github.com/pandokos/pandokos/internal/gateway
+              desc: the store does not know the gateway
+        tenant-is-a-leaf:
+          list-mode: lax
+          files:
+            - "**/internal/tenant/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/pandokos/pandokos/internal
+              desc: the tenant package imports only the standard library
+            - pkg: github.com/jackc/pgx/v5
+              desc: the tenant package has no database code
         product-does-not-import-tests:
           list-mode: lax
           files:

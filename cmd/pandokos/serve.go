@@ -10,10 +10,13 @@ import (
 	"os/signal"
 	"runtime"
 	"syscall"
+	"time"
 
 	"github.com/pandokos/pandokos/internal/buildinfo"
 	"github.com/pandokos/pandokos/internal/config"
 	"github.com/pandokos/pandokos/internal/server"
+	"github.com/pandokos/pandokos/internal/store"
+	"github.com/pandokos/pandokos/internal/store/migrations"
 	"github.com/pandokos/pandokos/internal/telemetry"
 )
 
@@ -52,10 +55,51 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Warn("configuration warning", "key", w.Key, "warning", w.Message)
 	}
 
+	ms, err := migrations.Load()
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
+	var dbs []*store.DB
+	defer func() {
+		for _, db := range dbs {
+			db.Close()
+		}
+	}()
+	for _, r := range []struct {
+		role store.Role
+		c    config.DatabaseRole
+	}{
+		{store.RoleGateway, cfg.Database.Gateway},
+		{store.RoleAdmin, cfg.Database.Admin},
+		{store.RoleWorker, cfg.Database.Worker},
+	} {
+		db, err := store.Open(store.Options{
+			Conn: connOptions(cfg, r.c.User, r.c.Password), Role: r.role,
+			MaxConns: r.c.MaxConnections, Migrations: ms,
+		})
+		if err != nil {
+			logger.Error("startup failed", "error", err.Error())
+			return 1
+		}
+		dbs = append(dbs, db)
+		cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		err = db.Check(cctx)
+		cancel()
+		if err != nil {
+			logger.Error("startup failed", "error", err.Error())
+			return 1
+		}
+		logger.Info("database ready", "role", string(r.role), "schema_version", len(ms))
+	}
+
 	srv, err := server.New(cfg, logger)
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
+	}
+	for _, db := range dbs {
+		srv.Health().AddCheck("database-"+string(db.Role()), db.Ready)
 	}
 	if err := srv.Listen(); err != nil {
 		logger.Error("startup failed", "error", err.Error())

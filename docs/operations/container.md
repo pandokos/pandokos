@@ -1,7 +1,8 @@
 # Running the container image
 
-This is a pre-release walking skeleton: one static access token, plain HTTP, one endpoint, no
-tenants. It is not for production.
+This is a pre-release: one static access token, plain HTTP, one endpoint, no tenants in the
+product yet. It is not for production. It needs a PostgreSQL 16 database, and nothing else: see the
+[database guide](database.md) to prepare it.
 
 ## The image
 
@@ -16,17 +17,36 @@ tenants. It is not for production.
 
 ## Starting it
 
-Put the two secrets in files (the access token is at least 32 bytes and differs from the provider
-key), then:
+Put the secrets in files: the access token (at least 32 bytes, different from the provider key),
+the provider key, and the passwords of the database users. Starting takes two commands, because
+the schema is created by `migrate` and `serve` refuses to start against a schema it does not
+match:
 
 ```
 docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
+  -v "$PWD/secrets:/run/secrets:ro" \
+  -e PANDOKOS_DATABASE_ADDRESS=db.internal:5432 \
+  -e PANDOKOS_DATABASE_OWNER_USER=acme_owner \
+  -e PANDOKOS_DATABASE_OWNER_PASSWORD_FILE=/run/secrets/db_owner \
+  ghcr.io/pandokos/pandokos:<version> migrate
+
+docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
   -p 8080:8080 \
   -v "$PWD/secrets:/run/secrets:ro" \
+  -e PANDOKOS_DATABASE_ADDRESS=db.internal:5432 \
+  -e PANDOKOS_DATABASE_GATEWAY_USER=acme_gateway \
+  -e PANDOKOS_DATABASE_GATEWAY_PASSWORD_FILE=/run/secrets/db_gateway \
+  -e PANDOKOS_DATABASE_ADMIN_USER=acme_admin \
+  -e PANDOKOS_DATABASE_ADMIN_PASSWORD_FILE=/run/secrets/db_admin \
+  -e PANDOKOS_DATABASE_WORKER_USER=acme_worker \
+  -e PANDOKOS_DATABASE_WORKER_PASSWORD_FILE=/run/secrets/db_worker \
   -e PANDOKOS_SKELETON_ACCESS_TOKEN_FILE=/run/secrets/access_token \
   -e PANDOKOS_SKELETON_OPENAI_API_KEY_FILE=/run/secrets/openai_api_key \
   ghcr.io/pandokos/pandokos:<version>
 ```
+
+`serve` never reads the owner's password file. TLS towards the database is on by default
+(`database.tls.mode`); see the database guide to turn it off for a database on a private network.
 
 The secret files must be readable by user 65532. All settings are described in the
 [configuration reference](configuration.md); `docker run <image> version` prints the version.
@@ -36,7 +56,7 @@ The secret files must be readable by user 65532. All settings are described in t
 | Endpoint | Purpose |
 |---|---|
 | `GET /healthz` | Liveness: 200 whenever the process answers |
-| `GET /readyz` | Readiness: 200 when the listener is bound, the process is not draining and every registered check passes; otherwise 503 |
+| `GET /readyz` | Readiness: 200 when the listener is bound, the process is not draining and every registered check passes, including one check per database role (`database-gateway`, `database-admin`, `database-worker`: the database answers and its schema still matches the binary); otherwise 503 |
 | `POST /openai/v1/chat/completions` | OpenAI chat completions, streaming and not streaming |
 
 Any other path or method gets 404 `endpoint_not_supported`. A caller presents the static access
@@ -146,5 +166,6 @@ dependencies are the same on both platforms.
 ## Limits of this pre-release
 
 One static access token shared by all callers, no rotation; plain HTTP, so terminate TLS in front
-of it; one endpoint; no tenants, no database. Do not expose it to the internet and do not use it
-for production.
+of it; one endpoint; the database holds tenants and service accounts with tested isolation, but
+nothing is proxied through it yet. Do not expose it to the internet and do not use it for
+production.

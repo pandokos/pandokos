@@ -32,6 +32,8 @@ A record is *proposed* until its pull request is merged by the maintainer, then 
 | [0023](0023-test-dependencies-in-nested-modules.md) | Test-only dependencies live in nested modules | proposed |
 | [0024](0024-openai-stream-usage-option.md) | OpenAI chat streams: how usage is requested and what is removed | proposed |
 | [0025](0025-go-toolchain.md) | Go toolchain: language floor and release toolchain | proposed |
+| [0026](0026-schema-migrations.md) | Schema migrations: in-house, forward-only, exact match at start | proposed |
+| [0027](0027-database-roles-and-session-context.md) | Database roles, session context and pooler safety | proposed |
 
 ## Questions from SOW 0.1 and where they were decided
 
