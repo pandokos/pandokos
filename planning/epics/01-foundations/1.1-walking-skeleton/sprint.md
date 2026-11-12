@@ -3,7 +3,7 @@ id: SPRINT-1.1
 title: Walking skeleton
 epic: EPIC-1
 release: v0.1
-status: todo
+status: in-progress
 design: frozen 2026-11-11
 ---
 
