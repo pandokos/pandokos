@@ -10,7 +10,11 @@ import (
 
 // readLedger reports whether the ledger table exists and returns its rows by version.
 func readLedger(ctx context.Context, q Querier) (exists bool, rows []Applied, err error) {
-	if err := q.QueryRow(ctx, "SELECT pg_catalog.to_regclass('pandokos.schema_migration') IS NOT NULL").Scan(&exists); err != nil {
+	// A catalogue query and not to_regclass: to_regclass can answer from a stale negative cache
+	// entry in a transaction that waited for the lock while another migrator created the table.
+	const existsQuery = `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+	 WHERE n.nspname = 'pandokos' AND c.relname = 'schema_migration' AND c.relkind = 'r')`
+	if err := q.QueryRow(ctx, existsQuery).Scan(&exists); err != nil {
 		return false, nil, fmt.Errorf("read the migration ledger: %w", err)
 	}
 	if !exists {

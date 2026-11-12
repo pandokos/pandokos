@@ -218,8 +218,13 @@ func TestMismatchRefused(t *testing.T) {
 			if err := migrate.Check(ctx(t), conn, ms); !errors.Is(err, c.want) {
 				t.Errorf("Check: %v", err)
 			}
-			// A longer binary must not apply anything on top of a bad ledger.
+			// A longer binary must not apply anything on top of a bad ledger. (With an extra ledger
+			// row of version 2 a longer binary would see a different migration 2, so the newer case
+			// uses the binary as it is.)
 			longer := withExtra(t, "CREATE TABLE pandokos.zz_never (i integer)")
+			if c.want == migrate.ErrSchemaNewer {
+				longer = ms
+			}
 			if _, err := migrate.Apply(ctx(t), conn, longer, "v"); !errors.Is(err, c.want) {
 				t.Errorf("Apply: %v", err)
 			}

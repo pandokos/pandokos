@@ -426,13 +426,17 @@ func TestPlatform(t *testing.T) {
 			if n := scalarInt(t, c, tx, "SELECT count(*) FROM pandokos.tenant"); n != 4 {
 				t.Errorf("worker sees %d tenants, want 4", n)
 			}
-			_, err := tx.Exec(c, "INSERT INTO pandokos.tenant (name) VALUES ('tenant-e')")
-			if err == nil {
-				t.Error("the worker created a tenant")
-			}
 			return nil
 		}); err != nil {
 			t.Fatal(err)
+		}
+		// The failed statement aborts its transaction, so it runs in a transaction of its own.
+		err := wk.Platform(ctx(t), func(c context.Context, tx store.Tx) error {
+			_, err := tx.Exec(c, "INSERT INTO pandokos.tenant (name) VALUES ('tenant-e')")
+			return err
+		})
+		if err == nil {
+			t.Error("the worker created a tenant")
 		}
 	})
 }
