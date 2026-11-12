@@ -7,7 +7,7 @@ import (
 
 func TestMatch(t *testing.T) {
 	op, ok := Match("POST", "/chat/completions")
-	if !ok || op != OperationChatCompletions || op != "chat.completions" {
+	if !ok || op != "chat.completions" {
 		t.Fatalf("got %q %v", op, ok)
 	}
 	for _, c := range []struct{ method, path string }{
