@@ -1,0 +1,24 @@
+{
+  "id": "chatcmpl-fixture0001",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "fake-basic",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "pandokos-canary-completion-5f2a9c",
+        "refusal": null
+      },
+      "logprobs": null,
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 9,
+    "completion_tokens": 12,
+    "total_tokens": 21
+  },
+  "system_fingerprint": "fp_fixture"
+}
