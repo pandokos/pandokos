@@ -356,7 +356,8 @@ func TestCanaries(t *testing.T) {
 
 func TestMigrateCommand(t *testing.T) { // T-160
 	d := dbtest.New(t)
-	env := d.Env(t)
+	// The default listener address warns that it serves plain HTTP; this test wants an empty stderr.
+	env := append(d.Env(t), "PANDOKOS_LISTENERS_INFERENCE_ADDRESS=127.0.0.1:0")
 	appliedLine := regexp.MustCompile(`^0001_init  applied \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$`)
 
 	code, out, errs := runBinary(t, env, "migrate", "status")

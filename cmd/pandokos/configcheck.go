@@ -18,17 +18,29 @@ func runConfig(args []string, stdout, stderr io.Writer, environ []string) int {
 	fs := flag.NewFlagSet("config check", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	file := fs.String("config", "", "configuration file")
+	purposeName := fs.String("for", "serve", "which command the configuration is for: serve or migrate")
 	if err := fs.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
 		return 2
 	}
+	var purpose config.Purpose
+	switch *purposeName {
+	case "serve":
+		purpose = config.PurposeServe
+	case "migrate":
+		purpose = config.PurposeMigrate
+	default:
+		fmt.Fprintln(stderr, "pandokos: --for must be serve or migrate")
+		fmt.Fprint(stderr, usage)
+		return 2
+	}
 	path := *file
 	if path == "" {
 		path = config.FileFromEnviron(environ)
 	}
-	_, warnings, err := config.Load(config.Source{File: path, Environ: environ})
+	_, warnings, err := config.Load(config.Source{File: path, Environ: environ, Purpose: purpose})
 	if err != nil {
 		var ve *config.ValidationError
 		if errors.As(err, &ve) {
