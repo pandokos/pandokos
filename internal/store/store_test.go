@@ -4,17 +4,49 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
+	"os"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pandokos/pandokos/internal/secret"
 	"github.com/pandokos/pandokos/internal/store/migrate"
 	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/test/testutil"
 )
+
+// envSummary lists every field of the driver configuration that a libpq environment variable can
+// change, as text, so that two configurations can be compared.
+func envSummary(pc *pgxpool.Config) string {
+	cc := pc.ConnConfig
+	tlsSummary := "none"
+	if cc.TLSConfig != nil {
+		tlsSummary = fmt.Sprintf("min=%x server=%s insecure=%v roots=%v certs=%d", cc.TLSConfig.MinVersion, cc.TLSConfig.ServerName,
+			cc.TLSConfig.InsecureSkipVerify, cc.TLSConfig.RootCAs != nil, len(cc.TLSConfig.Certificates))
+	}
+	return fmt.Sprintf("host=%s port=%d db=%s user=%s pw=%s tls=%s fallbacks=%d params=%v timeout=%v validate=%v after=%v "+
+		"sslneg=%q sslcertmode=%q minproto=%q maxproto=%q binding=%q requireauth=%q krb=%q/%q mode=%v stmt=%d desc=%d",
+		cc.Host, cc.Port, cc.Database, cc.User, cc.Password, tlsSummary, len(cc.Fallbacks), cc.RuntimeParams, cc.ConnectTimeout,
+		cc.ValidateConnect != nil, cc.AfterConnect != nil, cc.SSLNegotiation, cc.SSLCertMode, cc.MinProtocolVersion,
+		cc.MaxProtocolVersion, cc.ChannelBinding, cc.RequireAuth, cc.KerberosSrvName, cc.KerberosSpn,
+		cc.DefaultQueryExecMode, cc.StatementCacheCapacity, cc.DescriptionCacheCapacity)
+}
+
+// hostileEnvironment is every variable that pgx's parseEnvSettings reads (pgconn v5.12.0), with
+// a value that would change or break the connection. PGSERVICE and PGSERVICEFILE are separate:
+// they are refused, not neutralised.
+var hostileEnvironment = map[string]string{
+	"PGHOST": "nowhere.invalid", "PGPORT": "1", "PGDATABASE": "nodb", "PGUSER": "nobody", "PGPASSWORD": "wrong",
+	"PGPASSFILE": "/nonexistent/pgpass", "PGAPPNAME": "x", "PGCONNECT_TIMEOUT": "1", "PGSSLMODE": "require",
+	"PGSSLKEY": "/nonexistent/key", "PGSSLCERT": "/nonexistent/cert", "PGSSLCERTMODE": "require", "PGSSLSNI": "0",
+	"PGSSLROOTCERT": "/nonexistent/root", "PGSSLPASSWORD": "wrong", "PGSSLNEGOTIATION": "direct",
+	"PGTARGETSESSIONATTRS": "read-only", "PGTZ": "Mars/Base", "PGOPTIONS": "-c statement_timeout=1",
+	"PGMINPROTOCOLVERSION": "3.2", "PGMAXPROTOCOLVERSION": "3.0", "PGCHANNELBINDING": "require", "PGREQUIREAUTH": "none",
+}
 
 func dummyMigrations() []migrate.Migration {
 	return []migrate.Migration{{Version: 1, Name: "init", SQL: "SELECT 1", Checksum: "0000000000000000000000000000000000000000000000000000000000000000"}}
@@ -34,6 +66,58 @@ func validOptions() Options {
 
 // TestConnConfig is T-107.
 func TestConnConfig(t *testing.T) {
+	t.Run("every libpq variable is neutralised", func(t *testing.T) {
+		for k := range hostileEnvironment {
+			t.Setenv(k, "") // registers the restore of the original value
+			os.Unsetenv(k)
+		}
+		clean, err := poolConfig(validOptions())
+		if err != nil {
+			t.Fatal(err)
+		}
+		cleanVerify := validOptions()
+		cleanVerify.Conn.TLSMode = "verify-full"
+		cleanV, err := poolConfig(cleanVerify)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for k, v := range hostileEnvironment {
+			t.Setenv(k, v)
+		}
+		got, err := poolConfig(validOptions())
+		if err != nil {
+			t.Fatalf("a libpq variable broke the configuration: %v", err)
+		}
+		if envSummary(got) != envSummary(clean) {
+			t.Errorf("the environment changed the configuration:\n got %s\nwant %s", envSummary(got), envSummary(clean))
+		}
+		gotV, err := poolConfig(cleanVerify)
+		if err != nil {
+			t.Fatalf("a libpq variable broke the verify-full configuration: %v", err)
+		}
+		if envSummary(gotV) != envSummary(cleanV) {
+			t.Errorf("the environment changed the verify-full configuration:\n got %s\nwant %s", envSummary(gotV), envSummary(cleanV))
+		}
+	})
+	t.Run("service variables are refused", func(t *testing.T) {
+		for _, name := range []string{"PGSERVICE", "PGSERVICEFILE"} {
+			t.Run(name, func(t *testing.T) {
+				t.Setenv(name, "x")
+				db, err := Open(validOptions())
+				if err == nil {
+					db.Close()
+					t.Fatal("Open must fail")
+				}
+				want := "store: environment variable " + name + " is set; Pandokos does not use libpq service files, unset it"
+				if err.Error() != want {
+					t.Errorf("error %q, want %q", err.Error(), want)
+				}
+				if _, err := Migrate(context.Background(), validOptions().Conn, dummyMigrations(), "x"); err == nil || err.Error() != want {
+					t.Errorf("Migrate error %v, want %q", err, want)
+				}
+			})
+		}
+	})
 	t.Run("environment", func(t *testing.T) {
 		for k, v := range map[string]string{
 			"PGHOST": "nowhere.invalid", "PGPORT": "1", "PGUSER": "nobody", "PGPASSWORD": "wrong",
