@@ -39,3 +39,7 @@ the pull request fail until both agree.
   downloads a toolchain, and offline environments stop working.
 - Raising the floor to the current release at once: correct in the long run, deferred because the
   baseline development environment has go1.24.7 (sprint 1.1, open point O-1).
+
+## History
+
+- 2026-11: the language floor is raised to Go 1.25.0, required by the PostgreSQL driver (sprint 1.2, decision D-1).
