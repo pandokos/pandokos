@@ -12,6 +12,8 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/pandokos/pandokos/internal/secret"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/migrate"
@@ -435,8 +437,13 @@ func TestPlatform(t *testing.T) {
 			_, err := tx.Exec(c, "INSERT INTO pandokos.tenant (name) VALUES ('tenant-e')")
 			return err
 		})
-		if err == nil {
-			t.Error("the worker created a tenant")
+		var pe *pgconn.PgError
+		if !errors.As(err, &pe) || pe.Code != "42501" {
+			t.Errorf("the worker's insert gave %v, want SQLSTATE 42501", err)
+		}
+		var n int
+		if err := d.Super(t).QueryRow(ctx(t), "SELECT count(*) FROM pandokos.tenant WHERE name = 'tenant-e'").Scan(&n); err != nil || n != 0 {
+			t.Errorf("tenant-e exists: %d, %v", n, err)
 		}
 	})
 }

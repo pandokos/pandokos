@@ -404,6 +404,10 @@ stateDiagram-v2
 | `suspended` | `deleting` | Deletion requested |
 | `deleting` | `deleted` | Deletion completed; the row stays and never changes again |
 
+**Amended at review.** "An `UPDATE` that leaves the state unchanged is allowed" applies to the
+non-terminal states only: any update of a `deleted` tenant, including one that keeps the state, is
+refused with `23514`.
+
 Every other pair, including a state to itself, is not a transition (`CanTransition` is false; an
 `UPDATE` that leaves the state unchanged is allowed by the database because it is not a state
 change). `deleting` cannot be undone. The database enforces the same table with a trigger
@@ -515,6 +519,10 @@ func Apply(ctx context.Context, conn *pgx.Conn, ms []Migration, pandokosVersion 
 `pandokos.schema_migration`, created by migration 0001 itself (SQL in section 5.5): `version`,
 `name`, `checksum`, `applied_at`, `applied_by` (the session user), `pandokos_version`. "The
 ledger does not exist" (`to_regclass('pandokos.schema_migration')` is null) means version 0.
+
+**Amended at review.** "The ledger does not exist" is decided by a query on `pg_class` and
+`pg_namespace`, not by `to_regclass`: a migrator that waited for the advisory lock could answer
+from a stale negative catalog cache entry and run migration 0001 again.
 
 Comparing the ledger with the migrations of the binary (pure function, used by `ReadStatus`,
 `Check` and `Apply`):
@@ -1006,6 +1014,19 @@ and `Migrate` use it. The exact code is in plan.md (C5). Its rules:
   Pandokos connects as or how: host, port, database, user, password, TLS, fallback hosts,
   run-time parameters, connection validation and Kerberos settings are all overwritten after
   parsing (T-107);
+- **Amended at review.** The driver reads every variable of its `parseEnvSettings` (pgconn
+  v5.12.0: also `PGPASSFILE`, `PGSSLKEY`, `PGSSLCERT`, `PGSSLCERTMODE`, `PGSSLSNI`,
+  `PGSSLROOTCERT`, `PGSSLPASSWORD`, `PGSSLNEGOTIATION`, `PGTZ`, `PGMINPROTOCOLVERSION`,
+  `PGMAXPROTOCOLVERSION`, `PGCHANNELBINDING`, `PGREQUIREAUTH`, `PGCONNECT_TIMEOUT`). The
+  connection string therefore gives each of them an explicit keyword, which takes precedence
+  over the variable and names no file, so nothing is read or fails at parse time; the fields
+  derived from them (SSL negotiation, certificate mode, protocol versions, channel binding,
+  required authentication) are reset after parsing. `PGSERVICE` and `PGSERVICEFILE` cannot be
+  neutralised (an explicit empty `service` makes the driver read a service file): when either is
+  set, `Open` and `Migrate` fail with
+  `store: environment variable <NAME> is set; Pandokos does not use libpq service files, unset it`.
+  The process environment is never changed. T-107 sets every variable to a hostile value and
+  compares the result with a clean environment.
 - the only run-time parameter sent at connection start is `application_name`:
   `pandokos-gateway`, `pandokos-admin`, `pandokos-worker`, `pandokos-migrate`;
 - `DefaultQueryExecMode = pgx.QueryExecModeExec`, statement cache and description cache

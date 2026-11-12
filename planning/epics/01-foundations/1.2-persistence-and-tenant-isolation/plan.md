@@ -568,7 +568,7 @@ var Preflight = preflight
   is 0, and the same for `pg_proc`.
 - T-122: `Apply` the real set; then `Apply(withExtra("CREATE TABLE pandokos.zz_one (i integer)"))`:
   `Result.Applied` has one element; the table exists.
-- T-123: `withExtra("CREATE TABLE pandokos.zz_two (i integer); SELECT 1/0; CREATE TABLE pandokos.zz_three (i integer)")`:
+- T-123 (amended at review: the ledger existence check is a `pg_class` query, see sprint.md §5.4): `withExtra("CREATE TABLE pandokos.zz_two (i integer); SELECT 1/0; CREATE TABLE pandokos.zz_three (i integer)")`:
   error contains `migration 0002_extra`; neither table exists; ledger at version 1.
 - T-124: tamper through `d.Super` (`UPDATE … SET checksum = repeat('0', 64)`;
   `INSERT … (version, name, checksum, pandokos_version) VALUES (99, 'future', repeat('0', 64), 'x')`;
@@ -894,7 +894,7 @@ have the same `Code`, `ConstraintName` and `Message`.
 - T-146: through `d.Super` (the trigger applies to everyone). For each pair (from, to) of
   `tenant.States()`: create a tenant, walk it to `from` along a fixed path
   (`provisioning`; `→active`; `→active→suspended`; `→deleting`; `→deleting→deleted`), attempt
-  `UPDATE … SET state = to`; when `from == to` the update must succeed (no state change);
+  `UPDATE … SET state = to`; when `from == to` the update must succeed (no state change), except for `deleted`, where every update is refused with `23514` (amended at review, sprint.md §5.3);
   otherwise it must succeed exactly when `tenant.CanTransition(from, to)`, and a refusal has
   SQLSTATE `23514`. Also: `INSERT … (name, state) VALUES ('x', 'active')` → `23514`;
   `DELETE` → `23001`; `UPDATE … SET id = pandokos.uuid_v7()` → `23514`; any update of a
@@ -990,7 +990,7 @@ Files: `migrate.go` (constants, types, errors), `load.go` (`Load`), `compare.go`
   expressions of sprint.md §5.4 compiled with `(?i)`; checksum
   `hex.EncodeToString(sha256.Sum256(content))`; sort by version; check `1..n`.
 - `readLedger(ctx, q) (exists bool, rows []Applied, err error)`:
-  `SELECT pg_catalog.to_regclass('pandokos.schema_migration') IS NOT NULL`; when true,
+  `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ...)` for the table `pandokos.schema_migration` (amended at review: not `to_regclass`, sprint.md §5.4); when true,
   `SELECT version, name, checksum, applied_at FROM pandokos.schema_migration ORDER BY version`.
 - `compare(applied []Applied, ms []Migration) (pending []Migration, err error)`: the table of
   sprint.md §5.4. Order of checks: gaps (`ErrLedger`, detail

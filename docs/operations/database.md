@@ -107,8 +107,26 @@ ALTER ROLE pandokos_worker  LOGIN;
 \password pandokos_worker
 ```
 
-Do not make any of these roles a superuser, give it `BYPASSRLS`, `CREATEROLE`, `CREATEDB` or
-`REPLICATION`, or make one a member of another: `pandokos migrate` and `pandokos serve` refuse.
+Do not make any of these roles a superuser, give it `BYPASSRLS`, or make one a member of another:
+`pandokos migrate` (privilege roles that are superusers or have `BYPASSRLS`) and `pandokos serve`
+(database users that are superusers, have `BYPASSRLS`, or belong to the wrong roles) refuse at run
+time. The roles must also not have `CREATEROLE`, `CREATEDB` or `REPLICATION`; `roles.sql` creates
+them without those attributes, and the schema lint of the test suite checks it, but nothing checks
+it at run time.
+
+**Exact grants after migration 0001.** A privilege that is not in this table is not granted.
+
+| Object | `pandokos_owner` | `pandokos_gateway` | `pandokos_admin` | `pandokos_worker` | `PUBLIC` |
+|---|---|---|---|---|---|
+| schema `pandokos` | owner | `USAGE` | `USAGE` | `USAGE` | none |
+| `schema_migration` | owner | `SELECT` | `SELECT` | `SELECT` | none |
+| `tenant` | owner, subject to the policies (it has none: it sees no row) | `SELECT` | `SELECT`, `INSERT (name, display_name)`, `UPDATE (name, display_name, state)` | `SELECT` | none |
+| `service_account` | owner, subject to the policy | `SELECT` | `SELECT`, `INSERT (tenant_id, name, description, state, valid_from, valid_until)`, `UPDATE (name, description, state, valid_from, valid_until)`, `DELETE` | none | none |
+| `uuid_v7()`, `current_tenant_id()`, `platform_scope()` | owner | `EXECUTE` | `EXECUTE` | `EXECUTE` | none |
+| `tenant_guard()`, `row_guard()` | owner | none | none | none | none |
+
+No runtime role holds `TRUNCATE`, `REFERENCES` or `TRIGGER` on anything, `CREATE` on the schema or
+on the database, or membership in another Pandokos role.
 
 ## 3. Configuration
 
@@ -234,6 +252,8 @@ without a transaction-mode pooler such as PgBouncer. There is no configuration s
 | Advisory locks | Transaction-level only |
 | `search_path` | Not used: every name is schema-qualified |
 | Connection start parameters | Only `application_name` |
+| Statements outside a transaction | Only in the start-up check and readiness: single read-only statements on global objects |
+| Temporary tables, cursors `WITH HOLD`, session advisory locks | Not used; forbidden by this design |
 | `LISTEN` / `NOTIFY` | Not used yet. A listener needs a session, so a later release will need one direct connection for notifications |
 
 What you must provide when a pooler is in front of PostgreSQL:
@@ -270,6 +290,10 @@ operator's, outside the security boundary the product enforces.
 ## 8. Unsupported
 
 - libpq environment variables (`PGHOST`, `PGUSER`, `PGPASSWORD`, `PGSSLMODE`, `PGOPTIONS`, ...) are
-  not a configuration interface. Pandokos overwrites whatever they set.
+  not a configuration interface. Pandokos gives every setting that the driver reads from them an
+  explicit value, so none of them changes how it connects. Two cannot be neutralised: if
+  `PGSERVICE` or `PGSERVICEFILE` is set, `serve` and `migrate` refuse to connect with
+  `store: environment variable PGSERVICE is set; Pandokos does not use libpq service files, unset
+  it`. Unset the variable.
 - Statement-mode pooling.
 - PostgreSQL older than 16.
