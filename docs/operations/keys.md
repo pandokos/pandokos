@@ -24,8 +24,12 @@ secret scanners is:
 pdk_[tp][a-z2-7]{16}_[a-z2-7]{59}
 ```
 
-Register it as a custom pattern in the secret scanning of your repositories. A key is shown once,
-when it is created; there is no way to read it back.
+Use it in the secret scanner of your repositories: as a custom pattern in GitHub secret scanning
+where your plan offers custom patterns, or as a rule of a scanner run in CI. The Pandokos
+repository itself scans its whole history with gitleaks in CI (`make secrets`, rule in
+`.gitleaks.toml`); copy that rule if you use gitleaks. A key found in a repository must be
+revoked: removing it from the history is not enough. A key is shown once, when it is created;
+there is no way to read it back.
 
 ## First run
 

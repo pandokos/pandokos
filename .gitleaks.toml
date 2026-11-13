@@ -1,0 +1,13 @@
+# Secret scanning of the repository and of its history: `make secrets`, run in CI.
+# The default rules of gitleaks cover provider keys and other common secrets; the rule below adds
+# the keys Pandokos issues (docs/operations/keys.md). Never allowlist a real key: revoke it.
+title = "pandokos"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "pandokos-key"
+description = "Pandokos platform or virtual key"
+regex = '''pdk_[tp][a-z2-7]{16}_[a-z2-7]{59}'''
+keywords = ["pdk_"]

@@ -41,8 +41,9 @@ No JavaScript runtime runs on the server.
   build provenance. Verification instructions are part of the installation guide.
 - GitHub Actions are pinned to commit hashes, and workflow permissions are minimal.
 
-**Repository.** Protected main branch, required reviews and status checks, secret scanning with
-the `pdk_` key pattern registered, private vulnerability reporting.
+**Repository.** Protected main branch, required reviews and status checks, GitHub secret scanning
+with its default patterns, a gitleaks scan of the whole history in CI with the `pdk_` key rule
+(`make secrets`, `.gitleaks.toml`), private vulnerability reporting.
 
 ## Consequences
 
