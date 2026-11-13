@@ -491,3 +491,28 @@ func TestNoKeyMaterialInTheRepository(t *testing.T) {
 		t.Error("the compose file does not mount the TLS directory from local/")
 	}
 }
+
+// TestSecretScanning checks that the history of the repository is scanned for keys in CI, with
+// the same expression the product documents for secret scanners.
+func TestSecretScanning(t *testing.T) {
+	cfg := read(t, ".gitleaks.toml")
+	if !strings.Contains(cfg, "regex = '''"+authn.Pattern+"'''") {
+		t.Errorf(".gitleaks.toml has no rule with the regular expression %s", authn.Pattern)
+	}
+	if !strings.Contains(cfg, "useDefault = true") {
+		t.Error(".gitleaks.toml does not extend the default rules")
+	}
+	if !regexp.MustCompile(`(?m)^secrets:`).MatchString(read(t, "Makefile")) {
+		t.Error("Makefile has no secrets target")
+	}
+	ci := workflows(t)["ci.yml"]
+	if !strings.Contains(ci, "make secrets") {
+		t.Error("ci.yml has no job that runs make secrets")
+	}
+	if !strings.Contains(ci, "fetch-depth: 0") {
+		t.Error("ci.yml does not fetch the full history for the secret scan")
+	}
+	if !strings.Contains(read(t, "CONTRIBUTING.md"), "make secrets") {
+		t.Error("CONTRIBUTING.md does not mention make secrets")
+	}
+}
