@@ -39,6 +39,7 @@ type API struct {
 	mu          sync.Mutex
 	secrets     []string
 	super       *pgx.Conn
+	root        testing.TB
 }
 
 // Response is a raw response.
@@ -61,7 +62,7 @@ func New(tb testing.TB, mutate ...func(*admin.Options)) *API {
 // view of a Database.
 func NewOn(tb testing.TB, d *dbtest.Database, mutate ...func(*admin.Options)) *API {
 	tb.Helper()
-	a := &API{DB: d, Logs: &testutil.LogBuffer{}}
+	a := &API{DB: d, Logs: &testutil.LogBuffer{}, root: tb}
 	a.Admin = d.Open(tb, store.RoleAdmin)
 	logger := telemetry.NewLogger(a.Logs, "debug")
 	auth, err := authn.New(authn.Options{
@@ -211,7 +212,7 @@ func (a *API) Super(tb testing.TB) *pgx.Conn {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.super == nil {
-		a.super = a.DB.Super(tb)
+		a.super = a.DB.Super(a.root) // on the test that made the API: a sub-test would close it too early
 	}
 	return a.super
 }
