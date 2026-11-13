@@ -6,12 +6,14 @@ IMAGE ?= pandokos:dev
 PKG := github.com/pandokos/pandokos
 LDFLAGS := -s -w -buildid= -X $(PKG)/internal/buildinfo.Version=$(VERSION) -X $(PKG)/internal/buildinfo.Commit=$(COMMIT)
 GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.9.0
+SQLC := github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
+GENERATED := internal/adminapi internal/store/queries
 FUZZTIME ?= 30s
 
 # Loads local/testdb/env (written by make db-up) unless the variable is already set.
 DBENV = set -a; if [ -z "$$PANDOKOS_TEST_DATABASE_URL" ] && [ -f local/testdb/env ]; then . ./local/testdb/env; fi; set +a;
 
-.PHONY: help build test test-sdk test-container fuzz bench fmt fmt-check vet lint tidy vuln image check clean db-up db-down test-nodb migrations-sum
+.PHONY: help build test test-sdk test-container fuzz bench fmt fmt-check vet lint tidy vuln image check clean db-up db-down test-nodb migrations-sum generate generate-check
 
 help: ## Show the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -39,6 +41,13 @@ db-down: ## Stop them and discard the data
 
 migrations-sum: ## Rewrite the checksum file of the migrations
 	@cd internal/store/migrations/sql && for f in *.sql; do printf '%s %s\n' "$$f" "$$(sha256sum "$$f" | cut -d' ' -f1)"; done > ../migrations.sum
+
+generate: ## Regenerate internal/adminapi (apigen) and internal/store/queries (sqlc)
+	go run ./internal/apigen -spec api/openapi/admin.v1.yaml -out internal/adminapi/adminapi.gen.go
+	CGO_ENABLED=0 GOTOOLCHAIN=go$(RELEASE_GO) go run $(SQLC) generate
+
+generate-check: generate ## Fail if the generated code is not what is committed
+	@test -z "$$(git status --porcelain -- $(GENERATED))" || { git status --porcelain -- $(GENERATED); echo "generated code is not current: run make generate and commit the result"; exit 1; }
 
 fuzz: ## Run each fuzz target for FUZZTIME
 	go test ./internal/family/openai/ -run '^$$' -fuzz '^FuzzPrepareRequest$$' -fuzztime $(FUZZTIME)
@@ -70,7 +79,7 @@ vuln: ## govulncheck with the release toolchain
 image: ## Build the container image for the local platform
 	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) -t $(IMAGE) .
 
-check: fmt-check vet lint tidy test test-sdk vuln ## Everything a pull request must pass, except the image
+check: fmt-check vet lint tidy generate-check test test-sdk vuln ## Everything a pull request must pass, except the image
 
 clean: ## Remove build output
 	rm -rf bin dist
