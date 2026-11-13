@@ -44,13 +44,13 @@ const (
 	VirtualKeyRevoke    = "virtual_key:revoke"
 	ModelInvoke         = "model:invoke"
 
-	CredentialRead         = "credential:read"
-	CredentialWrite        = "credential:write"
-	CredentialRotate       = "credential:rotate"
-	CredentialDelete       = "credential:delete"
-	CredentialUse          = "credential:use"
-	TenantCredentialRead   = "tenant_credential:read"
-	TenantCredentialRevoke = "tenant_credential:revoke"
+	CredentialRead         = "credential:read"          //nolint:gosec // a permission name, not a credential
+	CredentialWrite        = "credential:write"         //nolint:gosec // a permission name, not a credential
+	CredentialRotate       = "credential:rotate"        //nolint:gosec // a permission name, not a credential
+	CredentialDelete       = "credential:delete"        //nolint:gosec // a permission name, not a credential
+	CredentialUse          = "credential:use"           //nolint:gosec // a permission name, not a credential
+	TenantCredentialRead   = "tenant_credential:read"   //nolint:gosec // a permission name, not a credential
+	TenantCredentialRevoke = "tenant_credential:revoke" //nolint:gosec // a permission name, not a credential
 )
 
 var catalogue = []Permission{

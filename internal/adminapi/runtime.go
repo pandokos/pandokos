@@ -237,6 +237,10 @@ func decodeBody(r *http.Request, limit int64, bodyRequired bool, required []stri
 			return invalidField(te.Field, "has the wrong type")
 		}
 		if name, ok := strings.CutPrefix(err.Error(), "json: unknown field "); ok {
+			if carriesSecret(dst) {
+				// A secret put in the place of a member name must not come back in the answer.
+				return invalidField("body", "has a member that is not part of this body")
+			}
 			return invalidField(strings.Trim(name, `"`), "is not a member of this body")
 		}
 		if name := wrongMember(members, dst); name != "" {
@@ -245,6 +249,22 @@ func decodeBody(r *http.Request, limit int64, bodyRequired bool, required []stri
 		return invalidField("body", "does not match the schema")
 	}
 	return nil
+}
+
+// carriesSecret reports whether the body type has a member named secret: the unknown members of
+// such a body are not quoted, because a caller may have put the secret where a name belongs.
+func carriesSecret(dst any) bool {
+	t := reflect.TypeOf(dst)
+	if t == nil || t.Kind() != reflect.Pointer || t.Elem().Kind() != reflect.Struct {
+		return false
+	}
+	st := t.Elem()
+	for i := range st.NumField() {
+		if name, _, _ := strings.Cut(st.Field(i).Tag.Get("json"), ","); name == "secret" {
+			return true
+		}
+	}
+	return false
 }
 
 // wrongMember names the member of the body that does not decode into its field, for the errors

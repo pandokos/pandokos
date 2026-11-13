@@ -1008,7 +1008,7 @@ func TestExitScenario(t *testing.T) {
 	}
 	for _, x := range ts {
 		got := auditActions(t, p.db, "SELECT action FROM pandokos.audit_event WHERE tenant_id = $1::uuid ORDER BY occurred_at, action", x.id)
-		if want := "service_account.create,virtual_key.create,service_account.create,virtual_key.create"; strings.Join(got, ",") != want {
+		if want := "data_key.create,service_account.create,virtual_key.create,service_account.create,virtual_key.create"; strings.Join(got, ",") != want {
 			t.Errorf("tenant log: %v, want %s", got, want)
 		}
 	}
