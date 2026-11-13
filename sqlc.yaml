@@ -16,9 +16,9 @@ sql:
           - db_type: uuid
             nullable: true
             go_type: {type: string, pointer: true}
-          - db_type: pg_catalog.timestamptz
+          - db_type: timestamptz
             go_type: time.Time
-          - db_type: pg_catalog.timestamptz
+          - db_type: timestamptz
             nullable: true
             go_type: {import: time, type: Time, pointer: true}
           - db_type: jsonb
