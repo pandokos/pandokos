@@ -191,6 +191,9 @@ func Lint(ctx context.Context, conn *pgx.Conn, spec Spec) ([]Finding, error) {
 	if err := lintRoles(ctx, conn, add); err != nil {
 		return nil, err
 	}
+	if err := lintAppendOnly(ctx, conn, spec, add); err != nil {
+		return nil, err
+	}
 
 	for name := range spec.Global {
 		if !tables[name] {
@@ -399,7 +402,8 @@ func lintFunctions(ctx context.Context, conn *pgx.Conn, spec Spec, add func(rule
 	rows, err := conn.Query(ctx, `SELECT p.proname::text, p.prosecdef, pg_catalog.pg_get_userbyid(p.proowner)::text,
        ARRAY(SELECT CASE WHEN a.grantee = 0 THEN 'public' ELSE pg_catalog.pg_get_userbyid(a.grantee)::text END
                FROM aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) AS a
-              WHERE a.privilege_type = 'EXECUTE' ORDER BY 1)::text[]
+              WHERE a.privilege_type = 'EXECUTE' ORDER BY 1)::text[],
+       COALESCE('search_path=pg_catalog, pg_temp' = ANY (p.proconfig), false)
   FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
  WHERE n.nspname = 'pandokos'
  ORDER BY 1`)
@@ -410,16 +414,21 @@ func lintFunctions(ctx context.Context, conn *pgx.Conn, spec Spec, add func(rule
 		name, owner string
 		definer     bool
 		executors   []string
+
+		hasSearchPath bool
 	}
 	funcs, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (fn, error) {
 		var f fn
-		err := r.Scan(&f.name, &f.definer, &f.owner, &f.executors)
+		err := r.Scan(&f.name, &f.definer, &f.owner, &f.executors, &f.hasSearchPath)
 		return f, err
 	})
 	if err != nil {
 		return err
 	}
 	for _, f := range funcs {
+		if f.definer && !f.hasSearchPath {
+			add("L-18", f.name, "SECURITY DEFINER without search_path = pg_catalog, pg_temp")
+		}
 		if f.definer && !contains(spec.SecurityDefiner, f.name) {
 			add("L-14", f.name, "SECURITY DEFINER and not listed in Spec.SecurityDefiner")
 		}
@@ -493,6 +502,61 @@ func lintRoles(ctx context.Context, conn *pgx.Conn, add func(rule, object, forma
 		}
 		if createDB {
 			add("L-15", role, "the role has CREATE on the database")
+		}
+	}
+	return nil
+}
+
+// lintAppendOnly is L-17: no runtime role or PUBLIC can change or remove a row of an append-only
+// table, and the table has the enabled triggers that stop everybody else.
+func lintAppendOnly(ctx context.Context, conn *pgx.Conn, spec Spec, add func(rule, object, format string, args ...any)) error {
+	for _, table := range spec.AppendOnly {
+		for _, grantee := range append(append([]string{}, runtimeRoleNames...), "public") {
+			var held bool
+			who := grantee
+			if err := conn.QueryRow(ctx, `SELECT pg_catalog.has_any_column_privilege($2, $1::regclass, 'UPDATE')
+    OR pg_catalog.has_table_privilege($2, $1::regclass, 'UPDATE')
+    OR pg_catalog.has_table_privilege($2, $1::regclass, 'DELETE')
+    OR pg_catalog.has_table_privilege($2, $1::regclass, 'TRUNCATE')`, schema+"."+pgx.Identifier{table}.Sanitize(), who).Scan(&held); err != nil {
+				return err
+			}
+			if held {
+				add("L-17", table, "%s holds UPDATE, DELETE or TRUNCATE on an append-only table", grantee)
+			}
+		}
+		rows, err := conn.Query(ctx, `SELECT t.tgtype::int, p.proname::text, t.tgenabled::text
+  FROM pg_catalog.pg_trigger t JOIN pg_catalog.pg_proc p ON p.oid = t.tgfoid
+ WHERE t.tgrelid = $1::regclass AND NOT t.tgisinternal`, schema+"."+pgx.Identifier{table}.Sanitize())
+		if err != nil {
+			return err
+		}
+		rowTrigger, truncTrigger := false, false
+		for rows.Next() {
+			var tgtype int
+			var fn, enabled string
+			if err := rows.Scan(&tgtype, &fn, &enabled); err != nil {
+				return err
+			}
+			if fn != "append_only" || enabled == "D" {
+				continue
+			}
+			const row, before, del, upd, trunc = 1, 2, 8, 16, 32
+			if tgtype&row != 0 && tgtype&before != 0 && tgtype&del != 0 && tgtype&upd != 0 {
+				rowTrigger = true
+			}
+			if tgtype&row == 0 && tgtype&before != 0 && tgtype&trunc != 0 {
+				truncTrigger = true
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		if !rowTrigger {
+			add("L-17", table, "no enabled BEFORE UPDATE OR DELETE row trigger that executes pandokos.append_only()")
+		}
+		if !truncTrigger {
+			add("L-17", table, "no enabled BEFORE TRUNCATE statement trigger that executes pandokos.append_only()")
 		}
 	}
 	return nil

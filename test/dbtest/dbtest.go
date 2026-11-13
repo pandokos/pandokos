@@ -194,6 +194,20 @@ func (d *Database) Pooled(tb testing.TB) *Database {
 	return &cp
 }
 
+// CAFile returns the file with the certificate authority of the test PostgreSQL. It fails or
+// skips the test according to the gate (missing variable: fail; opt-out variable outside CI: skip).
+func CAFile(tb testing.TB) string {
+	tb.Helper()
+	f := os.Getenv(EnvDatabaseCAFile)
+	switch act, msg := gate(EnvDatabaseCAFile, EnvNoDatabaseTLS, f, os.Getenv(EnvNoDatabaseTLS), os.Getenv("CI")); act {
+	case skip:
+		tb.Skip(msg)
+	case fail:
+		tb.Fatal(msg)
+	}
+	return f
+}
+
 // EachMode runs fn in a sub-test "direct" and in a sub-test "pooler", each with its own
 // migrated database; the pooler one is reached through PgBouncer.
 func EachMode(t *testing.T, fn func(t *testing.T, d *Database)) {

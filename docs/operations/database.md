@@ -254,7 +254,7 @@ without a transaction-mode pooler such as PgBouncer. There is no configuration s
 | Connection start parameters | Only `application_name` |
 | Statements outside a transaction | Only in the start-up check and readiness: single read-only statements on global objects |
 | Temporary tables, cursors `WITH HOLD`, session advisory locks | Not used; forbidden by this design |
-| `LISTEN` / `NOTIFY` | Not used yet. A listener needs a session, so a later release will need one direct connection for notifications |
+| `LISTEN` / `NOTIFY` | One dedicated connection of the gateway user, outside the pool, to `database.direct_address` when set (else `database.address`): the principal cache listens for revocations. It proves itself with probes sent from a second connection; behind a transaction pooler without a direct address the probe fails and the cache lifetime is the bound (`cache invalidation unavailable`) |
 
 What you must provide when a pooler is in front of PostgreSQL:
 
@@ -297,3 +297,15 @@ operator's, outside the security boundary the product enforces.
   it`. Unset the variable.
 - Statement-mode pooling.
 - PostgreSQL older than 16.
+
+## 9. Grants of migration 0002
+
+Migration `0002_identity_audit` adds role assignments, virtual keys, platform keys and two audit
+tables. The gateway reads `role_assignment` and `virtual_key` and can call the key lookup function;
+it holds no privilege on `platform_key`, the directory of key IDs or the audit tables. The admin
+role writes them with column-level grants (a key can only be revoked, once; audit rows can only be
+inserted, and their ID and time are the database's). Nobody, the owner included, can change or
+remove an audit row: triggers refuse it. Forced row-level security hides audit rows from the
+owner too. `DELETE` on `service_account` is revoked: service accounts are disabled, never deleted.
+If `database.address` is a pooler in transaction mode, set `database.direct_address` (see
+[keys](keys.md)).

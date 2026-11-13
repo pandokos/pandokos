@@ -18,6 +18,7 @@ type keyDef struct {
 var (
 	errNotDuration = errors.New("not a valid duration such as 30s")
 	errNotInteger  = errors.New("not an integer")
+	errNotBoolean  = errors.New("not a boolean (true or false)")
 )
 
 func setString(f func(c *Config) *string) func(*Config, string) error {
@@ -31,6 +32,17 @@ func setDuration(f func(c *Config) *Duration) func(*Config, string) error {
 			return errNotDuration
 		}
 		*f(c) = Duration(d)
+		return nil
+	}
+}
+
+func setBool(f func(c *Config) *bool) func(*Config, string) error {
+	return func(c *Config, v string) error {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return errNotBoolean
+		}
+		*f(c) = b
 		return nil
 	}
 }
@@ -69,6 +81,35 @@ var keyTable = []keyDef{
 			c.Listeners.Inference.MaxHeaderBytes = int(n)
 			return nil
 		}),
+	def("listeners.inference.tls.cert_file", "path", "", "PEM file with the server certificate and any intermediate certificates; with key_file, turns TLS on",
+		setString(func(c *Config) *string { return &c.Listeners.Inference.TLS.CertFile })),
+	def("listeners.inference.tls.key_file", "path", "", "PEM file with the private key of the certificate",
+		setString(func(c *Config) *string { return &c.Listeners.Inference.TLS.KeyFile })),
+	def("listeners.inference.tls.min_version", "TLS1.2, TLS1.3", "TLS1.2", "Lowest protocol version accepted",
+		setString(func(c *Config) *string { return &c.Listeners.Inference.TLS.MinVersion })),
+	def("listeners.admin.address", "host:port", "127.0.0.1:8081", "Listen address of the administration API",
+		setString(func(c *Config) *string { return &c.Listeners.Admin.Address })),
+	def("listeners.admin.read_header_timeout", "duration", "10s", "Time allowed to read request headers",
+		setDuration(func(c *Config) *Duration { return &c.Listeners.Admin.ReadHeaderTimeout })),
+	def("listeners.admin.idle_timeout", "duration", "120s", "Keep-alive idle time",
+		setDuration(func(c *Config) *Duration { return &c.Listeners.Admin.IdleTimeout })),
+	def("listeners.admin.max_header_bytes", "integer", "65536", "Maximum size of request headers",
+		func(c *Config, v string) error {
+			n, err := parseInt(v)
+			if err != nil {
+				return err
+			}
+			c.Listeners.Admin.MaxHeaderBytes = int(n)
+			return nil
+		}),
+	def("listeners.admin.tls.cert_file", "path", "", "PEM file with the server certificate and any intermediate certificates; with key_file, turns TLS on",
+		setString(func(c *Config) *string { return &c.Listeners.Admin.TLS.CertFile })),
+	def("listeners.admin.tls.key_file", "path", "", "PEM file with the private key of the certificate",
+		setString(func(c *Config) *string { return &c.Listeners.Admin.TLS.KeyFile })),
+	def("listeners.admin.tls.min_version", "TLS1.2, TLS1.3", "TLS1.2", "Lowest protocol version accepted",
+		setString(func(c *Config) *string { return &c.Listeners.Admin.TLS.MinVersion })),
+	def("listeners.admin.allow_plaintext", "boolean", "false", "Acknowledges that the administration API is served without TLS on an address that is not loopback because TLS ends in front of it",
+		setBool(func(c *Config) *bool { return &c.Listeners.Admin.AllowPlaintext })),
 	def("limits.max_request_body_bytes", "integer", "10485760", "Larger bodies get 413 request_too_large",
 		func(c *Config, v string) error {
 			n, err := parseInt(v)
@@ -86,8 +127,12 @@ var keyTable = []keyDef{
 		setDuration(func(c *Config) *Duration { return &c.Upstream.ConnectTimeout })),
 	def("shutdown.drain_timeout", "duration", "30s", "Time in-flight requests get to finish after a termination signal",
 		setDuration(func(c *Config) *Duration { return &c.Shutdown.DrainTimeout })),
+	def("cache.principal_ttl", "duration", "30s", "Lifetime of a cached principal in the gateway: the upper bound on the time a revocation or a suspension takes to reach the inference listener",
+		setDuration(func(c *Config) *Duration { return &c.Cache.PrincipalTTL })),
 	def("database.address", "host:port", "", "Address of PostgreSQL, or of the connection pooler in front of it (required)",
 		setString(func(c *Config) *string { return &c.Database.Address })),
+	def("database.direct_address", "host:port", "", "Address of PostgreSQL itself, used only by the notification listener; set it when database.address is a pooler in transaction mode",
+		setString(func(c *Config) *string { return &c.Database.DirectAddress })),
 	def("database.name", "name", "pandokos", "Database name",
 		setString(func(c *Config) *string { return &c.Database.Name })),
 	def("database.tls.mode", "verify-full, disable", "verify-full", "TLS towards the database: verified (certificate chain and host name) or none",
@@ -139,8 +184,6 @@ var keyTable = []keyDef{
 		setString(func(c *Config) *string { return &c.Database.Owner.User })),
 	def("database.owner.password_file", "path", "", "File with that user's password (required by migrate, never read by serve)",
 		setString(func(c *Config) *string { return &c.Database.Owner.PasswordFile })),
-	def("skeleton.access_token_file", "path", "", "File with the static token callers must present (required)",
-		setString(func(c *Config) *string { return &c.Skeleton.AccessTokenFile })),
 	def("skeleton.openai.base_url", "URL", "https://api.openai.com/v1", "Provider base URL, in the form SDKs use (ends with /v1)",
 		setString(func(c *Config) *string { return &c.Skeleton.OpenAI.BaseURL })),
 	def("skeleton.openai.api_key_file", "path", "", "File with the provider API key (required)",

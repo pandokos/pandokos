@@ -1,7 +1,7 @@
 ---
 id: EPIC-1
 title: Foundations
-status: in-progress
+status: done
 release: v0.1
 depends_on: []
 ---
@@ -78,7 +78,8 @@ runtime role is shown unable to read or change tenant B's rows.
 
 Requirements: TEN-02, TEN-08, TEN-09, TEN-10, IAM-01 to IAM-05, IAM-13, IAM-14, AZ-01, AZ-02,
 AZ-03 (first roles), AZ-06 and AZ-07 (platform admin), AUD-01 to AUD-03, AUD-04 (append-only),
-AUD-07, API-01 to API-04, API-06, SEC-03, SEC-04.
+AUD-07, API-01 to API-04, API-06, SEC-01 (native TLS on listeners, from sprint 1.1 O-3), SEC-03,
+SEC-04.
 
 Exit: from an empty database, the CLI creates two tenants, each with a service account and a key;
 a key of one tenant cannot address the other; a revoked key stops working within the bound; each

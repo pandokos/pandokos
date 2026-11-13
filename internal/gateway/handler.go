@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/family"
 	"github.com/pandokos/pandokos/internal/family/openai"
 	"github.com/pandokos/pandokos/internal/secret"
@@ -29,12 +30,23 @@ const (
 	routeLabel  = "POST /openai/v1/chat/completions"
 )
 
+// Authenticator turns the presented credential into a principal. It returns an error that wraps
+// authz.ErrUnauthenticated or authz.ErrUnavailable.
+type Authenticator interface {
+	Authenticate(ctx context.Context, presented string) (authz.Principal, error)
+}
+
+// routeEntry is one route of the gateway and the permission it requires.
+type routeEntry struct{ Method, Path, Permission string }
+
+var routes = []routeEntry{{Method: "POST", Path: "/openai/v1/chat/completions", Permission: authz.ModelInvoke}}
+
 // Options configures a Handler. The gateway receives plain values, not the configuration.
 type Options struct {
 	Logger                 *slog.Logger      // required
 	BaseURL                *url.URL          // provider base URL, path without trailing slash
 	ProviderKey            secret.Secret     // required
-	AccessToken            secret.Secret     // required
+	Authenticator          Authenticator     // required
 	MaxRequestBodyBytes    int64             // must be positive
 	RequestBodyReadTimeout time.Duration     // must be positive
 	MaxRequestDuration     time.Duration     // must be positive
@@ -46,7 +58,7 @@ type Handler struct {
 	logger      *slog.Logger
 	baseURL     *url.URL
 	providerKey secret.Secret
-	accessToken secret.Secret
+	auth        Authenticator
 	maxBody     int64
 	readTimeout time.Duration
 	maxDuration time.Duration
@@ -62,8 +74,8 @@ func New(o Options) (*Handler, error) {
 		return nil, errors.New("gateway: BaseURL is required")
 	case o.ProviderKey.IsZero():
 		return nil, errors.New("gateway: ProviderKey is required")
-	case o.AccessToken.IsZero():
-		return nil, errors.New("gateway: AccessToken is required")
+	case o.Authenticator == nil:
+		return nil, errors.New("gateway: Authenticator is required")
 	case o.Transport == nil:
 		return nil, errors.New("gateway: Transport is required")
 	case o.MaxRequestBodyBytes <= 0:
@@ -77,7 +89,7 @@ func New(o Options) (*Handler, error) {
 		logger:      o.Logger,
 		baseURL:     o.BaseURL,
 		providerKey: o.ProviderKey,
-		accessToken: o.AccessToken,
+		auth:        o.Authenticator,
 		maxBody:     o.MaxRequestBodyBytes,
 		readTimeout: o.RequestBodyReadTimeout,
 		maxDuration: o.MaxRequestDuration,
@@ -99,6 +111,9 @@ type reqState struct {
 
 	matched bool
 	method  string
+
+	principal *authz.Principal
+	keyID     string // from a failed authentication, when the key parsed
 
 	bodyRead     bool
 	stream       bool
@@ -141,9 +156,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	st.matched = true
 
-	cred, ok := openai.InboundCredential(r.Header)
-	if !ok || !h.accessToken.Equal(cred) {
-		h.fail(st, family.CodeUnauthenticated)
+	if !h.authenticate(r, st) {
 		return
 	}
 
@@ -174,6 +187,52 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	req.TransferEncoding = nil
 	req.GetBody = nil
 	h.proxy.ServeHTTP(st.sw, req)
+}
+
+// authenticate runs step 4: the credential, then the decision. It answers and returns false when
+// the request is refused.
+func (h *Handler) authenticate(r *http.Request, st *reqState) bool {
+	cred, ok := openai.InboundCredential(r.Header)
+	if !ok {
+		h.logger.Warn("authentication failed", "listener", "inference", "request_id", st.id, "reason", "malformed")
+		h.fail(st, family.CodeUnauthenticated)
+		return false
+	}
+	p, err := h.auth.Authenticate(r.Context(), cred)
+	switch {
+	case errors.Is(err, authz.ErrUnavailable):
+		h.fail(st, family.CodeUnavailable)
+		return false
+	case err != nil:
+		reason, keyID, tenantID := "unauthenticated", "", ""
+		var d interface {
+			Detail() (string, string, string)
+		}
+		if errors.As(err, &d) {
+			reason, keyID, tenantID = d.Detail()
+		}
+		st.keyID = keyID
+		attrs := []any{"listener", "inference", "request_id", st.id, "reason", reason}
+		if keyID != "" {
+			attrs = append(attrs, "key_id", keyID)
+		}
+		if tenantID != "" {
+			attrs = append(attrs, "tenant_id", tenantID)
+		}
+		h.logger.Warn("authentication failed", attrs...)
+		h.fail(st, family.CodeUnauthenticated)
+		return false
+	}
+	st.principal = &p
+	switch authz.Decide(p, routes[0].Permission, authz.Target{TenantID: p.TenantID}) {
+	case authz.Allow:
+		return true
+	case authz.DenyTenantState:
+		h.fail(st, family.CodeTenantSuspended)
+	default:
+		h.fail(st, family.CodeForbidden)
+	}
+	return false
 }
 
 // readBody reads the request body under the read deadline and the size limit.
@@ -272,6 +331,11 @@ func (h *Handler) logRequest(st *reqState, outcome string) {
 		attrs = append(attrs, "error_code", string(st.errCode))
 	}
 	attrs = append(attrs, "duration_ms", time.Since(st.start).Milliseconds())
+	if p := st.principal; p != nil {
+		attrs = append(attrs, "tenant_id", p.TenantID.String(), "service_account_id", p.ID, "key_id", p.KeyID)
+	} else if st.keyID != "" {
+		attrs = append(attrs, "key_id", st.keyID)
+	}
 	if st.matched {
 		attrs = append(attrs, "provider", openai.Name, "operation", openai.OperationChatCompletions)
 	}

@@ -59,13 +59,13 @@ func Load(src Source) (*Config, []Warning, error) {
 		}
 	}
 
-	problems = append(problems, validate(cfg)...)
+	problems = append(problems, validate(cfg, src.Purpose)...)
 	switch src.Purpose {
-	case PurposeMigrate:
-		problems = append(problems, loadDatabaseSecrets(cfg, true)...)
+	case PurposeMigrate, PurposeInit:
+		problems = append(problems, loadDatabaseSecrets(cfg, src.Purpose)...)
 	default:
 		problems = append(problems, loadSecrets(cfg)...)
-		problems = append(problems, loadDatabaseSecrets(cfg, false)...)
+		problems = append(problems, loadDatabaseSecrets(cfg, src.Purpose)...)
 	}
 
 	if len(problems) > 0 {
@@ -78,7 +78,7 @@ func warnings(cfg *Config, env map[string]string, known map[string]bool) []Warni
 	ws := listenerAndURLWarnings(cfg)
 	var unknown []string
 	for name := range env {
-		if known[name] || strings.HasPrefix(name, "PANDOKOS_SERVICE_") || strings.HasPrefix(name, "PANDOKOS_PORT") || reServiceLink.MatchString(name) {
+		if known[name] || strings.HasPrefix(name, "PANDOKOS_CLI_") || strings.HasPrefix(name, "PANDOKOS_SERVICE_") || strings.HasPrefix(name, "PANDOKOS_PORT") || reServiceLink.MatchString(name) {
 			continue
 		}
 		unknown = append(unknown, name)
