@@ -3,7 +3,7 @@ id: SPRINT-1.3
 title: Service accounts, virtual keys, authorization core, audit
 epic: EPIC-1
 release: v0.1
-status: in-progress
+status: done
 design: frozen 2026-11-12
 ---
 
