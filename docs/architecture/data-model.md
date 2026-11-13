@@ -86,7 +86,7 @@ are granted to the role, so users and passwords can change without a migration. 
 |---|---|---|---|
 | `pandokos_owner` | `migrate` only | Own and alter the schema | Be used at run time |
 | `pandokos_gateway` | gateway | Read identities, catalogue, policy and credentials of the session tenant (not platform keys); call the key lookup function, which crosses the policy for one fact only: the tenant of a key ID; insert usage and outbox rows | Write identities, catalogue or credentials; read or change audit; update or delete usage |
-| `pandokos_admin` | admin API | Read and write the session tenant's configuration; write platform tables when acting as platform; insert audit rows (it cannot read them yet); read usage | Read the ciphertext of tenant credentials when acting as platform; update or delete usage or audit |
+| `pandokos_admin` | admin API | Read and write the session tenant's configuration; write platform tables when acting as platform; insert audit rows (it cannot read them yet); read usage | Read the sealed secret of a credential, in any session (it holds no `SELECT` on that column); update or delete usage or audit |
 | `pandokos_worker` | worker | List tenants (in platform scope); run one job for one tenant inside that tenant's session; manage outbox deliveries | Run a statement over several tenants' data at once |
 
 Three details make this hold:
@@ -98,10 +98,19 @@ Three details make this hold:
   the key (hash, scopes, expiry, service account, roles) is then read in that tenant's session,
   under the ordinary policy. The function takes one key ID and returns at most one tenant ID: it
   cannot list, and a key ID is 80 random bits.
-- **Platform administrators and tenant secrets.** When the admin API acts for a platform
-  administrator it uses a session without a tenant and reads credential metadata through a view
-  that omits the ciphertext columns. The rule "the platform admin cannot read tenant secrets"
-  (AZ-08) is therefore enforced by column privileges as well as by the API.
+- **Platform administrators and tenant secrets.** The admin role holds no `SELECT` on the sealed
+  secret of a credential in any session, so the rule "the platform admin cannot read tenant secrets"
+  (AZ-08) rests on the database and not on handler code ([ADR 0034](../adr/0034-credential-model-and-platform-oversight.md)).
+  A platform administrator names a tenant: the operation runs in that tenant's session, reads
+  metadata through the view `provider_credential_metadata` (which runs with the caller's rights) and
+  writes its audit row in the tenant's log. Vault tables carry the canonical tenant policy only, so a
+  transaction in platform scope sees none of their rows; the price is that a platform administrator
+  cannot search all tenants by fingerprint or hint. If incident response needs it, it will come later
+  as one audited `SECURITY DEFINER` function (maintainer decision on open point O-1, sprint 2.1).
+  `kek_version` stays in the platform group: it is global and readable by every runtime role.
+- **Pinning a key to a credential.** `virtual_key.credential_id` is set when a key is created, can
+  only be cleared afterwards (deleting the credential clears it), and is read with the key into the
+  principal; a pinned key uses that credential for its provider and the default for any other.
 - **Append-only records.** `usage_record` and `audit_event` grant `INSERT` and `SELECT` only. No
   runtime role holds `UPDATE`, `DELETE` or `TRUNCATE` on them. Retention is carried out by the
   worker dropping whole expired partitions through a dedicated, audited function.
