@@ -14,6 +14,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"reflect"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -238,9 +239,35 @@ func decodeBody(r *http.Request, limit int64, bodyRequired bool, required []stri
 		if name, ok := strings.CutPrefix(err.Error(), "json: unknown field "); ok {
 			return invalidField(strings.Trim(name, `"`), "is not a member of this body")
 		}
+		if name := wrongMember(members, dst); name != "" {
+			return invalidField(name, "is not a valid value")
+		}
 		return invalidField("body", "does not match the schema")
 	}
 	return nil
+}
+
+// wrongMember names the member of the body that does not decode into its field, for the errors
+// that encoding/json reports without a field name (a malformed date-time, for one). It returns
+// "" when no single member is at fault.
+func wrongMember(members map[string]json.RawMessage, dst any) string {
+	t := reflect.TypeOf(dst)
+	if t == nil || t.Kind() != reflect.Pointer || t.Elem().Kind() != reflect.Struct {
+		return ""
+	}
+	st := t.Elem()
+	for i := range st.NumField() {
+		f := st.Field(i)
+		name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+		raw, ok := members[name]
+		if !ok || name == "" || name == "-" {
+			continue
+		}
+		if json.Unmarshal(raw, reflect.New(f.Type).Interface()) != nil {
+			return name
+		}
+	}
+	return ""
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

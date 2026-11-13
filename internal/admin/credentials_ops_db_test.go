@@ -294,6 +294,7 @@ func TestCredentialAudit(t *testing.T) {
 		if _, err := api.Super(t).Exec(ctx(t), `DELETE FROM pandokos.tenant_data_key WHERE tenant_id = $1::uuid`, old.tenant.ID); err != nil {
 			t.Fatal(err)
 		}
+		seenRows := seenIDs(t, api) // the tenant's creation audited its first data key; count what the writes add
 		var wg sync.WaitGroup
 		statuses := make([]int, 6)
 		for i := range statuses {
@@ -315,7 +316,7 @@ func TestCredentialAudit(t *testing.T) {
 			t.Errorf("%d data keys after six first writes", keys)
 		}
 		for _, r := range auditRows(t, api) {
-			if r.TenantID == old.tenant.ID && r.Action == "data_key.create" {
+			if !seenRows[r.ID] && r.TenantID == old.tenant.ID && r.Action == "data_key.create" {
 				creates++
 			}
 		}
@@ -434,7 +435,7 @@ func TestValidationAtWrite(t *testing.T) {
 			t.Fatalf("the provider received %+v", reqs)
 		}
 		for name := range reqs[0].Header {
-			if name != "Authorization" && name != "User-Agent" && name != "Accept-Encoding" {
+			if name != "Authorization" && name != "User-Agent" && name != "Accept-Encoding" && name != "Connection" { // Connection: close, as the validator opens no reused connection
 				t.Errorf("the validation request carries the header %s", name)
 			}
 		}
@@ -447,6 +448,7 @@ func TestValidationAtWrite(t *testing.T) {
 		if rep.ValidatedAt == nil || rep.RotatedAt == nil {
 			t.Errorf("replace with validation: %+v", rep)
 		}
+		rep = adminapi.Credential{} // a member that is absent leaves the old value in a reused struct
 		ok(t, w.do(t, "PUT", w.path(c.ID, "secret"), w.admin, map[string]any{"secret": fixtures.CanaryCredential}), 200, &rep)
 		if rep.ValidatedAt != nil {
 			t.Errorf("replace without validation kept validated_at %v", rep.ValidatedAt)

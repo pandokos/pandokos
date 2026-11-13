@@ -103,6 +103,10 @@ func (s *server) CreateTenant(ctx context.Context, in adminapi.CreateTenantInput
 			if err := bind(ctx, tid); err != nil {
 				return err
 			}
+			created, kekVersion, err := s.sealer.EnsureDataKey(ctx, tx, tid)
+			if err != nil {
+				return err
+			}
 			sa, err := q.CreateServiceAccount(ctx, queries.CreateServiceAccountParams{TenantID: t.ID, Name: saName})
 			if err != nil {
 				return err
@@ -134,6 +138,12 @@ func (s *server) CreateTenant(ctx context.Context, in adminapi.CreateTenantInput
 				Outcome: "success", RequestID: st.id, Detail: vkDetail}); err != nil {
 				return err
 			}
+			if created {
+				if err := audit.RecordTenant(ctx, tx, tid, audit.Event{Actor: actor, Action: "data_key.create", ResourceType: "data_key", ResourceID: "1",
+					Outcome: "success", RequestID: st.id, Detail: map[string]any{"version": 1, "kek_version": kekVersion}}); err != nil {
+					return err
+				}
+			}
 			active, err := q.SetTenantState(ctx, queries.SetTenantStateParams{ID: t.ID, State: "active"})
 			if err != nil {
 				return err
@@ -148,7 +158,7 @@ func (s *server) CreateTenant(ctx context.Context, in adminapi.CreateTenantInput
 				Tenant:              tenantOut(active),
 				AdminServiceAccount: saOut.out(),
 				AdminKey: adminapi.VirtualKeyCreated{
-					Key:    vkRow{vk.KeyID, vk.TenantID, vk.ServiceAccountID, vk.Description, vk.Scopes, vk.Scoped, vk.ExpiresAt, vk.RevokedAt, vk.CreatedAt, vk.State}.out(),
+					Key:    vkRow{vk.KeyID, vk.TenantID, vk.ServiceAccountID, vk.Description, vk.Scopes, vk.Scoped, vk.ExpiresAt, vk.RevokedAt, vk.CreatedAt, vk.State, vk.CredentialID}.out(),
 					Secret: revealOnce(key),
 				},
 			}
