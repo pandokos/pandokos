@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"io"
 	"net"
@@ -14,11 +15,9 @@ import (
 	"github.com/pandokos/pandokos/internal/secret"
 )
 
-const minTokenBytes = 32
-
 var hostName = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$`)
 
-func validate(c *Config) []Problem {
+func validate(c *Config, purpose Purpose) []Problem {
 	var ps []Problem
 	add := func(key, msg string) { ps = append(ps, Problem{Key: key, Message: msg}) }
 
@@ -31,6 +30,13 @@ func validate(c *Config) []Problem {
 	if msg := checkAddress(c.Listeners.Inference.Address); msg != "" {
 		add("listeners.inference.address", msg)
 	}
+	ps = append(ps, validateAdmin(c)...)
+	for _, l := range []struct {
+		name string
+		tls  *ListenerTLS
+	}{{"inference", &c.Listeners.Inference.TLS}, {"admin", &c.Listeners.Admin.TLS}} {
+		ps = append(ps, validateTLS(l.name, l.tls, purpose == PurposeServe)...)
+	}
 
 	for _, d := range []struct {
 		key string
@@ -42,6 +48,8 @@ func validate(c *Config) []Problem {
 		{"limits.max_request_duration", c.Limits.MaxRequestDuration},
 		{"upstream.connect_timeout", c.Upstream.ConnectTimeout},
 		{"shutdown.drain_timeout", c.Shutdown.DrainTimeout},
+		{"listeners.admin.read_header_timeout", c.Listeners.Admin.ReadHeaderTimeout},
+		{"listeners.admin.idle_timeout", c.Listeners.Admin.IdleTimeout},
 		{"database.connect_timeout", c.Database.ConnectTimeout},
 	} {
 		if time.Duration(d.v) <= 0 {
@@ -51,6 +59,12 @@ func validate(c *Config) []Problem {
 
 	if n := c.Listeners.Inference.MaxHeaderBytes; n < 4096 || n > 1048576 {
 		add("listeners.inference.max_header_bytes", "must be between 4096 and 1048576")
+	}
+	if n := c.Listeners.Admin.MaxHeaderBytes; n < 4096 || n > 1048576 {
+		add("listeners.admin.max_header_bytes", "must be between 4096 and 1048576")
+	}
+	if d := time.Duration(c.Cache.PrincipalTTL); d < time.Second || d > time.Minute {
+		add("cache.principal_ttl", "must be between 1s and 60s")
 	}
 	if n := c.Limits.MaxRequestBodyBytes; n < 1 || n > 104857600 {
 		add("limits.max_request_body_bytes", "must be between 1 and 104857600")
@@ -79,6 +93,13 @@ func validateDatabase(c *Config) []Problem {
 
 	if msg := checkDatabaseAddress(d); msg != "" {
 		add("database.address", msg)
+	}
+	if d.DirectAddress == "" {
+		d.DirectHost, d.DirectPort = d.Host, d.Port
+	} else if host, port, msg := checkHostPort(d.DirectAddress); msg != "" {
+		add("database.direct_address", msg)
+	} else {
+		d.DirectHost, d.DirectPort = host, port
 	}
 	const nameMsg = "must be 1 to 63 characters: letters, digits, underscore, dot, hyphen"
 	if !databaseName.MatchString(d.Name) {
@@ -134,19 +155,122 @@ func checkDatabaseAddress(d *Database) string {
 	if d.Address == "" {
 		return "must be set"
 	}
-	host, port, err := net.SplitHostPort(d.Address)
-	if err != nil {
-		return "must be host:port"
+	host, port, msg := checkHostPort(d.Address)
+	if msg != "" {
+		return msg
 	}
-	n, err := strconv.Atoi(port)
+	d.Host, d.Port = host, port
+	return ""
+}
+
+// checkHostPort applies the three address rules of the database addresses.
+func checkHostPort(addr string) (host string, port int, msg string) {
+	host, ps, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", 0, "must be host:port"
+	}
+	n, err := strconv.Atoi(ps)
 	if err != nil || n < 1 || n > 65535 {
-		return "the port must be an integer between 1 and 65535"
+		return "", 0, "the port must be an integer between 1 and 65535"
 	}
 	if host == "" || (net.ParseIP(host) == nil && !hostName.MatchString(host)) {
-		return "the host must be an IP address or a host name"
+		return "", 0, "the host must be an IP address or a host name"
 	}
-	d.Host, d.Port = host, n
-	return ""
+	return host, n, ""
+}
+
+// validateAdmin applies the rules of the administration listener.
+func validateAdmin(c *Config) []Problem {
+	var ps []Problem
+	a := &c.Listeners.Admin
+	if msg := checkAddress(a.Address); msg != "" {
+		ps = append(ps, Problem{"listeners.admin.address", msg})
+		return ps
+	}
+	host, port, _ := net.SplitHostPort(a.Address) //nolint:errcheck // checkAddress accepted it
+	if a.Address == c.Listeners.Inference.Address && port != "0" {
+		ps = append(ps, Problem{"listeners.admin.address", "must differ from listeners.inference.address"})
+	}
+	tlsOn := a.TLS.CertFile != "" && a.TLS.KeyFile != ""
+	if !isLoopback(host) && !tlsOn && !a.AllowPlaintext {
+		ps = append(ps, Problem{"listeners.admin.address", "the administration API must not be served without TLS on a non-loopback address: set listeners.admin.tls.cert_file and key_file, or set listeners.admin.allow_plaintext when TLS ends in front of it"})
+	}
+	return ps
+}
+
+const (
+	minTLS12 = "TLS1.2"
+	minTLS13 = "TLS1.3"
+)
+
+// validateTLS applies the TLS rules of one listener. With load, the files are read and the
+// certificate is checked and loaded into t.Certificate.
+func validateTLS(name string, t *ListenerTLS, load bool) []Problem {
+	var ps []Problem
+	pre := "listeners." + name + ".tls."
+	add := func(key, msg string) { ps = append(ps, Problem{Key: pre + key, Message: msg}) }
+	if t.MinVersion != minTLS12 && t.MinVersion != minTLS13 {
+		add("min_version", "must be TLS1.2 or TLS1.3")
+	}
+	switch {
+	case t.CertFile != "" && t.KeyFile == "":
+		add("key_file", "must be set when "+pre+"cert_file is set")
+		return ps
+	case t.CertFile == "" && t.KeyFile != "":
+		add("cert_file", "must be set when "+pre+"key_file is set")
+		return ps
+	case t.CertFile == "" || !load:
+		return ps
+	}
+	certPEM, msg := readLimited(t.CertFile)
+	if msg != "" {
+		add("cert_file", msg)
+	}
+	keyPEM, msg := readLimited(t.KeyFile)
+	if msg != "" {
+		add("key_file", msg)
+	}
+	if certPEM == nil || keyPEM == nil {
+		return ps
+	}
+	pair, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		add("cert_file", "the certificate and the key are not a valid pair")
+		return ps
+	}
+	leaf, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		add("cert_file", "the certificate and the key are not a valid pair")
+		return ps
+	}
+	pair.Leaf = leaf
+	now := time.Now()
+	switch {
+	case now.Before(leaf.NotBefore):
+		add("cert_file", "the certificate is not valid before "+leaf.NotBefore.UTC().Format(time.RFC3339))
+	case now.After(leaf.NotAfter):
+		add("cert_file", "the certificate expired on "+leaf.NotAfter.UTC().Format(time.RFC3339))
+	default:
+		t.Certificate = &pair
+	}
+	return ps
+}
+
+// readLimited reads a file of at most maxCAFileBytes; the message never holds file content.
+func readLimited(path string) ([]byte, string) {
+	f, err := os.Open(path) //nolint:gosec // the path is operator configuration
+	if err != nil {
+		return nil, "cannot read the file: " + err.Error()
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, maxCAFileBytes+1))
+	if err != nil {
+		return nil, "cannot read the file: " + err.Error()
+	}
+	if len(b) > maxCAFileBytes {
+		return nil, "the file is larger than 1048576 bytes"
+	}
+	return b, ""
 }
 
 func checkCAFile(path string) string {
@@ -171,7 +295,7 @@ func checkCAFile(path string) string {
 // loadDatabaseSecrets reads the password files the purpose needs: the three runtime passwords
 // for serve, the owner's for migrate. A file that the purpose does not need is not read and
 // need not exist.
-func loadDatabaseSecrets(c *Config, migrate bool) []Problem {
+func loadDatabaseSecrets(c *Config, purpose Purpose) []Problem {
 	var ps []Problem
 	read := func(key, path string) secret.Secret {
 		if path == "" {
@@ -186,8 +310,12 @@ func loadDatabaseSecrets(c *Config, migrate bool) []Problem {
 		return s
 	}
 	d := &c.Database
-	if migrate {
+	switch purpose {
+	case PurposeMigrate:
 		d.Owner.Password = read("database.owner.password_file", d.Owner.PasswordFile)
+		return ps
+	case PurposeInit:
+		d.Admin.Password = read("database.admin.password_file", d.Admin.PasswordFile)
 		return ps
 	}
 	d.Gateway.Password = read("database.gateway.password_file", d.Gateway.PasswordFile)
@@ -248,8 +376,26 @@ func listenerAndURLWarnings(c *Config) []Warning {
 	if u := c.Skeleton.OpenAI.ParsedBaseURL; u != nil && u.Scheme == "http" && !isLoopback(u.Hostname()) {
 		ws = append(ws, Warning{Key: "skeleton.openai.base_url", Message: "the provider key is sent without TLS"})
 	}
-	if host, _, err := net.SplitHostPort(c.Listeners.Inference.Address); err == nil && !isLoopback(host) {
-		ws = append(ws, Warning{Key: "listeners.inference.address", Message: "the listener serves plain HTTP; terminate TLS in front of it"})
+	if host, _, err := net.SplitHostPort(c.Listeners.Inference.Address); err == nil && !isLoopback(host) && !(c.Listeners.Inference.TLS.CertFile != "" && c.Listeners.Inference.TLS.KeyFile != "") {
+		ws = append(ws, Warning{Key: "listeners.inference.address", Message: "the listener serves plain HTTP; set listeners.inference.tls.cert_file and key_file, or terminate TLS in front of it"})
+	}
+	a := c.Listeners.Admin
+	if host, _, err := net.SplitHostPort(a.Address); err == nil {
+		tlsOn := a.TLS.CertFile != "" && a.TLS.KeyFile != ""
+		if !isLoopback(host) && !tlsOn && a.AllowPlaintext {
+			ws = append(ws, Warning{Key: "listeners.admin.address", Message: "the administration API is served without TLS; keys travel in clear text unless TLS ends in front of it"})
+		}
+		if a.AllowPlaintext && (tlsOn || isLoopback(host)) {
+			ws = append(ws, Warning{Key: "listeners.admin.allow_plaintext", Message: "has no effect"})
+		}
+	}
+	for _, l := range []struct {
+		name string
+		tls  ListenerTLS
+	}{{"inference", c.Listeners.Inference.TLS}, {"admin", c.Listeners.Admin.TLS}} {
+		if l.tls.Certificate != nil && l.tls.Certificate.Leaf != nil && time.Until(l.tls.Certificate.Leaf.NotAfter) < 14*24*time.Hour {
+			ws = append(ws, Warning{Key: "listeners." + l.name + ".tls.cert_file", Message: "the certificate expires on " + l.tls.Certificate.Leaf.NotAfter.UTC().Format(time.RFC3339)})
+		}
 	}
 	if c.Database.TLS.Mode == "disable" && c.Database.Host != "" && !isLoopback(c.Database.Host) {
 		ws = append(ws, Warning{Key: "database.tls.mode", Message: "the database connection is not encrypted"})
@@ -257,36 +403,18 @@ func listenerAndURLWarnings(c *Config) []Warning {
 	return ws
 }
 
-// loadSecrets reads the secret files and cross-checks them.
+// loadSecrets reads the provider key.
 func loadSecrets(c *Config) []Problem {
-	var ps []Problem
-	add := func(key, msg string) { ps = append(ps, Problem{Key: key, Message: msg}) }
-	const tokenKey, apiKey = "skeleton.access_token_file", "skeleton.openai.api_key_file"
-
-	var token, provider secret.Secret
-	tokenOK, providerOK := false, false
-
-	if c.Skeleton.AccessTokenFile == "" {
-		add(tokenKey, "must be set")
-	} else if s, err := secret.ReadFile(c.Skeleton.AccessTokenFile); err != nil {
-		add(tokenKey, err.Error())
-	} else if len(s.Reveal()) < minTokenBytes {
-		add(tokenKey, "the token must be at least 32 bytes long")
-	} else {
-		token, tokenOK = s, true
+	const apiKey = "skeleton.openai.api_key_file"
+	switch {
+	case c.Skeleton.OpenAI.APIKeyFile == "":
+		return []Problem{{Key: apiKey, Message: "must be set"}}
+	default:
+		s, err := secret.ReadFile(c.Skeleton.OpenAI.APIKeyFile)
+		if err != nil {
+			return []Problem{{Key: apiKey, Message: err.Error()}}
+		}
+		c.Skeleton.OpenAI.APIKey = s
 	}
-
-	if c.Skeleton.OpenAI.APIKeyFile == "" {
-		add(apiKey, "must be set")
-	} else if s, err := secret.ReadFile(c.Skeleton.OpenAI.APIKeyFile); err != nil {
-		add(apiKey, err.Error())
-	} else {
-		provider, providerOK = s, true
-	}
-
-	if tokenOK && providerOK && token.Equal(provider.Reveal()) {
-		add(tokenKey, "the access token must differ from the provider key")
-	}
-	c.Skeleton.AccessToken, c.Skeleton.OpenAI.APIKey = token, provider
-	return ps
+	return nil
 }
