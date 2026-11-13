@@ -117,7 +117,11 @@ flowchart TB
 A virtual key looks like `pdk_<key id>_<secret><checksum>`. The key ID is public and is how the
 key is found and named in logs. The secret has 256 bits of entropy, which is why a plain SHA-256
 hash is sufficient storage: there is nothing to brute-force. The checksum lets scanners and the
-gateway reject malformed strings without a lookup.
+gateway reject malformed strings without a lookup. The layout is 81 characters: `pdk_`, a key ID of
+17 characters (kind letter `t` or `p`, 16 characters), `_`, a 52-character secret and a 7-character
+CRC-32 checksum, in lower-case base32; the pattern is in [keys](../operations/keys.md). Only the
+SHA-256 of the secret is stored, and only a key ID can be looked up without a tenant: the lookup
+function returns the tenant of a key ID and nothing else.
 
 A local account's password is chosen by a person and is therefore guessable: it is stored with
 Argon2id, a deliberately slow, memory-hard hash, with a per-account salt. This is the opposite

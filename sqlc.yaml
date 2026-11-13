@@ -1,0 +1,25 @@
+version: "2"
+sql:
+  - engine: postgresql
+    schema: internal/store/migrations/sql
+    queries: internal/store/queries/sql
+    gen:
+      go:
+        package: queries
+        out: internal/store/queries
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+        emit_empty_slices: true
+        overrides:
+          - db_type: uuid
+            go_type: string
+          - db_type: uuid
+            nullable: true
+            go_type: {type: string, pointer: true}
+          - db_type: timestamptz
+            go_type: time.Time
+          - db_type: timestamptz
+            nullable: true
+            go_type: {import: time, type: Time, pointer: true}
+          - db_type: jsonb
+            go_type: string

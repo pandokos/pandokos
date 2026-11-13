@@ -8,6 +8,11 @@ const (
 	EnvPoolerAddr  = "PANDOKOS_TEST_POOLER_ADDR"
 	EnvNoDatabase  = "PANDOKOS_TEST_NO_DATABASE"
 	EnvNoPooler    = "PANDOKOS_TEST_NO_POOLER"
+
+	// EnvDatabaseCAFile names the file with the certificate authority of the test PostgreSQL
+	// (sprint 1.3, section 7.2); EnvNoDatabaseTLS opts out of the tests that need it.
+	EnvDatabaseCAFile = "PANDOKOS_TEST_DATABASE_CA_FILE"
+	EnvNoDatabaseTLS  = "PANDOKOS_TEST_NO_DATABASE_TLS"
 )
 
 type action int

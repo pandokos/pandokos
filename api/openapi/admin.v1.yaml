@@ -1,0 +1,937 @@
+# Pandokos administration API, version 1. This document is the source of truth (ADR 0017):
+# internal/adminapi is generated from it by `make generate`. It uses the subset of OpenAPI 3.1
+# that internal/apigen accepts (docs/reference/admin-api.md).
+openapi: 3.1.0
+info:
+  title: Pandokos administration API
+  version: 0.1.0
+  description: >-
+    Control plane of Pandokos. Every operation needs a virtual key or a platform key in the
+    Authorization header and one permission, named in x-pandokos-permission.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+security:
+  - key: []
+tags:
+  - name: identity
+  - name: tenants
+  - name: service-accounts
+  - name: virtual-keys
+  - name: platform-keys
+paths:
+  /v1/me:
+    get:
+      operationId: getMe
+      tags: [identity]
+      summary: Who the caller is and what it may do
+      x-pandokos-permission: identity:read
+      responses:
+        "200": {$ref: '#/components/responses/Me'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants:
+    get:
+      operationId: listTenants
+      tags: [tenants]
+      summary: List tenants
+      x-pandokos-permission: tenant:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/NamedSort'}
+        - name: state
+          in: query
+          description: Only tenants in this state.
+          schema: {$ref: '#/components/schemas/TenantState'}
+        - name: name
+          in: query
+          description: Only the tenant with exactly this name.
+          schema: {$ref: '#/components/schemas/Name'}
+      responses:
+        "200": {$ref: '#/components/responses/TenantList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: createTenant
+      tags: [tenants]
+      summary: Create a tenant with its first administrator
+      description: >-
+        Creates the tenant, a service account with the role tenant-admin and one virtual key for
+        it, and activates the tenant, in one transaction. The key is returned once.
+      x-pandokos-permission: tenant:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TenantCreate'}
+      responses:
+        "201": {$ref: '#/components/responses/TenantCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: getTenant
+      tags: [tenants]
+      summary: Read a tenant
+      x-pandokos-permission: tenant:read
+      responses:
+        "200": {$ref: '#/components/responses/Tenant'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    patch:
+      operationId: updateTenant
+      tags: [tenants]
+      summary: Change the name or the display name of a tenant
+      x-pandokos-permission: tenant:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TenantUpdate'}
+      responses:
+        "200": {$ref: '#/components/responses/Tenant'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/suspend:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    post:
+      operationId: suspendTenant
+      tags: [tenants]
+      summary: Suspend a tenant
+      description: >-
+        Blocks inference and administration by the tenant's identities and keeps its data.
+        Suspending a suspended tenant succeeds and changes nothing.
+      x-pandokos-permission: tenant:suspend
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/Tenant'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/reactivate:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    post:
+      operationId: reactivateTenant
+      tags: [tenants]
+      summary: Reactivate a suspended tenant
+      description: Reactivating an active tenant succeeds and changes nothing.
+      x-pandokos-permission: tenant:suspend
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/Tenant'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/service-accounts:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: listServiceAccounts
+      tags: [service-accounts]
+      summary: List the service accounts of a tenant
+      x-pandokos-permission: service_account:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/NamedSort'}
+        - name: state
+          in: query
+          description: Only service accounts in this state.
+          schema: {$ref: '#/components/schemas/ServiceAccountState'}
+        - name: name
+          in: query
+          description: Only the service account with exactly this name.
+          schema: {$ref: '#/components/schemas/Name'}
+      responses:
+        "200": {$ref: '#/components/responses/ServiceAccountList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: createServiceAccount
+      tags: [service-accounts]
+      summary: Create a service account
+      x-pandokos-permission: service_account:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ServiceAccountCreate'}
+      responses:
+        "201": {$ref: '#/components/responses/ServiceAccountCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/service-accounts/{service_account}:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/ServiceAccount'}
+    get:
+      operationId: getServiceAccount
+      tags: [service-accounts]
+      summary: Read a service account
+      x-pandokos-permission: service_account:read
+      responses:
+        "200": {$ref: '#/components/responses/ServiceAccount'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    patch:
+      operationId: updateServiceAccount
+      tags: [service-accounts]
+      summary: Change a service account
+      description: >-
+        Members that are absent are left as they are. valid_from and valid_until accept null,
+        which removes the bound. roles replaces the whole set of roles.
+      x-pandokos-permission: service_account:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ServiceAccountUpdate'}
+      responses:
+        "200": {$ref: '#/components/responses/ServiceAccount'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/service-accounts/{service_account}/disable:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/ServiceAccount'}
+    post:
+      operationId: disableServiceAccount
+      tags: [service-accounts]
+      summary: Disable a service account
+      description: >-
+        Every key of the service account stops working. A service account is never deleted.
+        Disabling a disabled service account succeeds and changes nothing.
+      x-pandokos-permission: service_account:write
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/ServiceAccount'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/service-accounts/{service_account}/enable:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/ServiceAccount'}
+    post:
+      operationId: enableServiceAccount
+      tags: [service-accounts]
+      summary: Enable a disabled service account
+      description: Enabling an active service account succeeds and changes nothing.
+      x-pandokos-permission: service_account:write
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/ServiceAccount'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/virtual-keys:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: listVirtualKeys
+      tags: [virtual-keys]
+      summary: List the virtual keys of a tenant
+      x-pandokos-permission: virtual_key:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/Sort'}
+        - name: state
+          in: query
+          description: Only keys in this state.
+          schema: {$ref: '#/components/schemas/KeyState'}
+        - name: service_account_id
+          in: query
+          description: Only the keys of this service account.
+          schema: {$ref: '#/components/schemas/ID'}
+      responses:
+        "200": {$ref: '#/components/responses/VirtualKeyList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: createVirtualKey
+      tags: [virtual-keys]
+      summary: Issue a virtual key for a service account
+      description: >-
+        The key is returned once and is stored only as a hash. A service account can hold
+        several active keys.
+      x-pandokos-permission: virtual_key:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VirtualKeyCreate'}
+      responses:
+        "201": {$ref: '#/components/responses/VirtualKeyCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/virtual-keys/{key}:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/VirtualKey'}
+    get:
+      operationId: getVirtualKey
+      tags: [virtual-keys]
+      summary: Read the metadata of a virtual key
+      x-pandokos-permission: virtual_key:read
+      responses:
+        "200": {$ref: '#/components/responses/VirtualKey'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/virtual-keys/{key}/revoke:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/VirtualKey'}
+    post:
+      operationId: revokeVirtualKey
+      tags: [virtual-keys]
+      summary: Revoke a virtual key
+      description: >-
+        Takes effect on every instance within the documented bound. A revocation cannot be
+        undone. Revoking a revoked key succeeds and changes nothing.
+      x-pandokos-permission: virtual_key:revoke
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/VirtualKey'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/platform-keys:
+    get:
+      operationId: listPlatformKeys
+      tags: [platform-keys]
+      summary: List platform keys
+      x-pandokos-permission: platform_key:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/Sort'}
+        - name: state
+          in: query
+          description: Only keys in this state.
+          schema: {$ref: '#/components/schemas/KeyState'}
+      responses:
+        "200": {$ref: '#/components/responses/PlatformKeyList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: createPlatformKey
+      tags: [platform-keys]
+      summary: Issue a platform key with the role platform-admin
+      description: The key is returned once and is stored only as a hash.
+      x-pandokos-permission: platform_key:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PlatformKeyCreate'}
+      responses:
+        "201": {$ref: '#/components/responses/PlatformKeyCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/platform-keys/{key}:
+    parameters:
+      - {$ref: '#/components/parameters/PlatformKey'}
+    get:
+      operationId: getPlatformKey
+      tags: [platform-keys]
+      summary: Read the metadata of a platform key
+      x-pandokos-permission: platform_key:read
+      responses:
+        "200": {$ref: '#/components/responses/PlatformKey'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/platform-keys/{key}/revoke:
+    parameters:
+      - {$ref: '#/components/parameters/PlatformKey'}
+    post:
+      operationId: revokePlatformKey
+      tags: [platform-keys]
+      summary: Revoke a platform key
+      description: A revocation cannot be undone. Revoking a revoked key succeeds and changes nothing.
+      x-pandokos-permission: platform_key:revoke
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/PlatformKey'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+components:
+  securitySchemes:
+    key:
+      type: http
+      scheme: bearer
+      description: A virtual key or a platform key (pdk_…).
+  parameters:
+    Tenant:
+      name: tenant
+      in: path
+      required: true
+      description: Tenant ID.
+      schema: {$ref: '#/components/schemas/ID'}
+    ServiceAccount:
+      name: service_account
+      in: path
+      required: true
+      description: Service account ID.
+      schema: {$ref: '#/components/schemas/ID'}
+    VirtualKey:
+      name: key
+      in: path
+      required: true
+      description: Key ID of a virtual key (the public part of the key).
+      schema: {$ref: '#/components/schemas/VirtualKeyID'}
+    PlatformKey:
+      name: key
+      in: path
+      required: true
+      description: Key ID of a platform key (the public part of the key).
+      schema: {$ref: '#/components/schemas/PlatformKeyID'}
+    Limit:
+      name: limit
+      in: query
+      description: Maximum number of items in the page.
+      schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+    Cursor:
+      name: cursor
+      in: query
+      description: The next_cursor of the previous page. It is valid only with the same sort and filters.
+      schema: {type: string, minLength: 1, maxLength: 512}
+    Sort:
+      name: sort
+      in: query
+      description: Order of the items. A leading minus means descending.
+      schema: {$ref: '#/components/schemas/Sort'}
+    NamedSort:
+      name: sort
+      in: query
+      description: Order of the items. A leading minus means descending.
+      schema: {$ref: '#/components/schemas/NamedSort'}
+  responses:
+    Me:
+      description: The caller.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Me'}
+    Tenant:
+      description: The tenant.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Tenant'}
+    TenantCreated:
+      description: The tenant, its first service account and that account's key.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/TenantCreated'}
+    TenantList:
+      description: One page of tenants.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/TenantList'}
+    ServiceAccount:
+      description: The service account.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ServiceAccount'}
+    ServiceAccountCreated:
+      description: The new service account.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ServiceAccount'}
+    ServiceAccountList:
+      description: One page of service accounts.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ServiceAccountList'}
+    VirtualKey:
+      description: The metadata of the key. The secret is never returned.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/VirtualKey'}
+    VirtualKeyCreated:
+      description: The new key and, this once, its secret.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/VirtualKeyCreated'}
+    VirtualKeyList:
+      description: One page of virtual keys.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/VirtualKeyList'}
+    PlatformKey:
+      description: The metadata of the key. The secret is never returned.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PlatformKey'}
+    PlatformKeyCreated:
+      description: The new key and, this once, its secret.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PlatformKeyCreated'}
+    PlatformKeyList:
+      description: One page of platform keys.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PlatformKeyList'}
+    InvalidRequest:
+      description: 'The request is malformed or breaks a rule of this document. Code: invalid_request.'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Unauthenticated:
+      description: 'The credential is missing, malformed, unknown, expired or revoked. Code: unauthenticated.'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Forbidden:
+      description: 'The caller lacks the permission (code forbidden) or its tenant is not active (code tenant_suspended).'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    NotFound:
+      description: 'The resource does not exist or belongs to another tenant; the two cases are identical. Code: not_found.'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Conflict:
+      description: 'The name is taken (code conflict) or the resource is in a state that does not allow the operation (code invalid_state).'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    RequestTooLarge:
+      description: 'The body is larger than 1048576 bytes. Code: request_too_large.'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    UnsupportedMediaType:
+      description: 'The body is not application/json. Code: unsupported_media_type.'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Internal:
+      description: 'Unexpected failure. Code: internal.'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Unavailable:
+      description: 'Pandokos cannot verify or record the request right now. Code: unavailable.'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+  schemas:
+    ID:
+      type: string
+      description: A UUID in canonical lower-case form.
+      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    Name:
+      type: string
+      description: Lower-case letters, digits and hyphens; 1 to 63 characters; no hyphen at either end.
+      pattern: '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
+    VirtualKeyID:
+      type: string
+      pattern: '^t[a-z2-7]{16}$'
+    PlatformKeyID:
+      type: string
+      pattern: '^p[a-z2-7]{16}$'
+    Sort:
+      type: string
+      enum: [created_at, -created_at]
+      default: created_at
+    NamedSort:
+      type: string
+      enum: [created_at, -created_at, name, -name]
+      default: created_at
+    TenantState:
+      type: string
+      enum: [provisioning, active, suspended, deleting, deleted]
+    ServiceAccountState:
+      type: string
+      enum: [active, disabled]
+    KeyState:
+      type: string
+      description: active, expired (expires_at has passed) or revoked. A revoked key is revoked whatever its expiry.
+      enum: [active, expired, revoked]
+    PrincipalType:
+      type: string
+      enum: [platform, service_account]
+    ProblemCode:
+      type: string
+      description: Stable machine-readable code. Clients must tolerate codes added later.
+      enum:
+        - invalid_request
+        - unauthenticated
+        - forbidden
+        - tenant_suspended
+        - not_found
+        - conflict
+        - invalid_state
+        - request_too_large
+        - unsupported_media_type
+        - internal
+        - unavailable
+    Problem:
+      type: object
+      description: RFC 9457 problem details with the members code, request_id and errors.
+      additionalProperties: false
+      required: [type, title, status, code, detail, request_id]
+      properties:
+        type: {type: string, description: 'urn:pandokos:problem:<code>'}
+        title: {type: string}
+        status: {type: integer}
+        code: {$ref: '#/components/schemas/ProblemCode'}
+        detail: {type: string, description: A fixed sentence for the code. It never holds data of the request or of the system.}
+        request_id: {type: string}
+        errors:
+          type: array
+          description: Present with invalid_request when single members are at fault.
+          items: {$ref: '#/components/schemas/FieldError'}
+    FieldError:
+      type: object
+      additionalProperties: false
+      required: [field, message]
+      properties:
+        field: {type: string, description: 'Name of the body member or of the parameter.'}
+        message: {type: string, description: 'The rule that was broken. It never repeats the value.'}
+    Reason:
+      type: object
+      additionalProperties: false
+      properties:
+        reason: {type: string, maxLength: 500, description: Recorded in the audit log.}
+    TenantRef:
+      type: object
+      additionalProperties: false
+      required: [id, name, state]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        name: {$ref: '#/components/schemas/Name'}
+        state: {$ref: '#/components/schemas/TenantState'}
+    Me:
+      type: object
+      additionalProperties: false
+      required: [principal_type, id, name, key_id, bootstrap, roles, permissions]
+      properties:
+        principal_type: {$ref: '#/components/schemas/PrincipalType'}
+        id: {type: string, description: Service account ID, or the key ID of the platform key.}
+        name: {type: string}
+        key_id: {type: string, description: Key ID of the credential in use.}
+        bootstrap: {type: boolean, description: True when the credential is the bootstrap key created by pandokos init.}
+        tenant: {$ref: '#/components/schemas/TenantRef'}
+        roles:
+          type: array
+          items: {type: string}
+        permissions:
+          type: array
+          description: Effective permissions, after the scopes of the key are applied.
+          items: {type: string}
+    Tenant:
+      type: object
+      additionalProperties: false
+      required: [id, name, display_name, state, created_at, updated_at, state_changed_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        name: {$ref: '#/components/schemas/Name'}
+        display_name: {type: string}
+        state: {$ref: '#/components/schemas/TenantState'}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        state_changed_at: {type: string, format: date-time}
+    TenantCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        display_name: {type: string, maxLength: 200}
+        admin_service_account_name:
+          description: Name of the first service account. Default admin.
+          $ref: '#/components/schemas/Name'
+        admin_key_expires_at:
+          type: string
+          format: date-time
+          description: Expiry of the first key. Absent means that it does not expire.
+    TenantCreated:
+      type: object
+      additionalProperties: false
+      required: [tenant, admin_service_account, admin_key]
+      properties:
+        tenant: {$ref: '#/components/schemas/Tenant'}
+        admin_service_account: {$ref: '#/components/schemas/ServiceAccount'}
+        admin_key: {$ref: '#/components/schemas/VirtualKeyCreated'}
+    TenantUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        display_name: {type: string, maxLength: 200}
+    TenantList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Tenant'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    ServiceAccount:
+      type: object
+      additionalProperties: false
+      required: [id, tenant_id, name, description, state, roles, created_at, updated_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        tenant_id: {$ref: '#/components/schemas/ID'}
+        name: {$ref: '#/components/schemas/Name'}
+        description: {type: string}
+        state: {$ref: '#/components/schemas/ServiceAccountState'}
+        valid_from: {type: string, format: date-time}
+        valid_until: {type: string, format: date-time}
+        roles:
+          type: array
+          items: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ServiceAccountCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        description: {type: string, maxLength: 500}
+        valid_from: {type: string, format: date-time}
+        valid_until: {type: string, format: date-time}
+        roles:
+          type: array
+          description: Names of built-in tenant roles.
+          maxItems: 16
+          uniqueItems: true
+          items: {type: string, pattern: '^[a-z][a-z0-9-]{0,62}$'}
+    ServiceAccountUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        description: {type: string, maxLength: 500}
+        valid_from: {type: [string, "null"], format: date-time}
+        valid_until: {type: [string, "null"], format: date-time}
+        roles:
+          type: array
+          maxItems: 16
+          uniqueItems: true
+          items: {type: string, pattern: '^[a-z][a-z0-9-]{0,62}$'}
+    ServiceAccountList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ServiceAccount'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    VirtualKey:
+      type: object
+      additionalProperties: false
+      required: [id, tenant_id, service_account_id, description, state, created_at]
+      properties:
+        id: {$ref: '#/components/schemas/VirtualKeyID'}
+        tenant_id: {$ref: '#/components/schemas/ID'}
+        service_account_id: {$ref: '#/components/schemas/ID'}
+        description: {type: string}
+        scopes:
+          type: array
+          description: Permissions the key is limited to. Absent means every permission of the service account's roles.
+          items: {type: string}
+        state: {$ref: '#/components/schemas/KeyState'}
+        expires_at: {type: string, format: date-time}
+        revoked_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+    VirtualKeyCreate:
+      type: object
+      additionalProperties: false
+      required: [service_account_id]
+      properties:
+        service_account_id: {$ref: '#/components/schemas/ID'}
+        description: {type: string, maxLength: 200}
+        scopes:
+          type: array
+          minItems: 1
+          maxItems: 32
+          uniqueItems: true
+          items: {type: string, pattern: '^[a-z_]+:[a-z_]+$'}
+        expires_at: {type: string, format: date-time}
+    VirtualKeyCreated:
+      type: object
+      additionalProperties: false
+      required: [key, secret]
+      properties:
+        key: {$ref: '#/components/schemas/VirtualKey'}
+        secret: {type: string, description: 'The complete key (pdk_…). It is returned by this response only.'}
+    VirtualKeyList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/VirtualKey'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    PlatformKey:
+      type: object
+      additionalProperties: false
+      required: [id, description, role, bootstrap, state, created_at]
+      properties:
+        id: {$ref: '#/components/schemas/PlatformKeyID'}
+        description: {type: string}
+        role: {type: string}
+        bootstrap: {type: boolean}
+        state: {$ref: '#/components/schemas/KeyState'}
+        expires_at: {type: string, format: date-time}
+        revoked_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+    PlatformKeyCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        description: {type: string, maxLength: 200}
+        expires_at: {type: string, format: date-time}
+    PlatformKeyCreated:
+      type: object
+      additionalProperties: false
+      required: [key, secret]
+      properties:
+        key: {$ref: '#/components/schemas/PlatformKey'}
+        secret: {type: string, description: 'The complete key (pdk_…). It is returned by this response only.'}
+    PlatformKeyList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/PlatformKey'}
+        next_cursor: {type: string, description: Absent on the last page.}

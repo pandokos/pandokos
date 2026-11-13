@@ -18,7 +18,7 @@ func runConfig(args []string, stdout, stderr io.Writer, environ []string) int {
 	fs := flag.NewFlagSet("config check", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	file := fs.String("config", "", "configuration file")
-	purposeName := fs.String("for", "serve", "which command the configuration is for: serve or migrate")
+	purposeName := fs.String("for", "serve", "which command the configuration is for: serve, migrate or init")
 	if err := fs.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -31,8 +31,10 @@ func runConfig(args []string, stdout, stderr io.Writer, environ []string) int {
 		purpose = config.PurposeServe
 	case "migrate":
 		purpose = config.PurposeMigrate
+	case "init":
+		purpose = config.PurposeInit
 	default:
-		fmt.Fprintln(stderr, "pandokos: --for must be serve or migrate")
+		fmt.Fprintln(stderr, "pandokos: --for must be serve, migrate or init")
 		fmt.Fprint(stderr, usage)
 		return 2
 	}

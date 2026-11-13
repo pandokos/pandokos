@@ -38,7 +38,7 @@ func TestFixturesAreWellFormed(t *testing.T) {
 		}
 		seen[c] = true
 	}
-	if len(CanaryAccessToken) < 32 {
-		t.Errorf("access token canary is %d bytes, want at least 32", len(CanaryAccessToken))
+	if len(Canaries()) != 3 {
+		t.Errorf("Canaries() returns %d values, want 3", len(Canaries()))
 	}
 }

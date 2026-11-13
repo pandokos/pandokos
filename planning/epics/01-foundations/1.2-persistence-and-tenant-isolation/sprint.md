@@ -3,7 +3,7 @@ id: SPRINT-1.2
 title: Persistence and tenant isolation
 epic: EPIC-1
 release: v0.1
-status: in-progress
+status: done
 design: frozen 2026-11-12
 ---
 
@@ -1640,3 +1640,14 @@ The catalogue queries of the lint were run against that schema; their text is in
 | O-4 | `tenant.name` is a lower-case identifier of at most 63 characters, unique among tenants that are not deleted, and changeable by the platform admin. 1.3 exposes it in the API and the CLI: confirm the rule before it becomes a contract |
 | O-5 | `service_account` has `valid_from` and `valid_until` from IAM-02 and a hard `DELETE` grant for the admin role. 1.3 may prefer disabling to deleting once audit records refer to service accounts; the grant would then be removed by a migration |
 | O-6 | The data model page shows the policy with the raw `current_setting` expression and describes the roles as if they were login roles. This sprint updates the page (D-6, D-9). Since the page says its rules are binding, the maintainer should confirm that this is a refinement and not a change of rule |
+
+### Maintainer decisions on the open points (2026-11-12)
+
+| # | Decision |
+|---|---|
+| O-1 | Confirmed: the floor is Go 1.25.0 |
+| O-2 | Confirmed: `verify-full` and `disable` only; no encrypt-without-verify mode. Sprint 1.3, which introduces TLS on listeners, adds an end-to-end TLS test towards PostgreSQL sharing the certificate generator (closes R-6) |
+| O-3 | One installation per PostgreSQL cluster is the only supported layout in v0.1 (or separate login users with `CONNECT` restricted, as the guide says). Prefixed role names are not designed |
+| O-4 | Confirmed as the contract exposed by 1.3: lower-case identifier, at most 63 characters, unique among tenants not deleted, changeable by the platform admin |
+| O-5 | Sprint 1.3 disables service accounts instead of deleting them once audit records refer to them; the hard `DELETE` grant is removed by a 1.3 migration if the design confirms no runtime path needs it |
+| O-6 | Confirmed as a refinement, not a change of rule |

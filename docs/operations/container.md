@@ -40,12 +40,28 @@ docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
   -e PANDOKOS_DATABASE_ADMIN_PASSWORD_FILE=/run/secrets/db_admin \
   -e PANDOKOS_DATABASE_WORKER_USER=acme_worker \
   -e PANDOKOS_DATABASE_WORKER_PASSWORD_FILE=/run/secrets/db_worker \
-  -e PANDOKOS_SKELETON_ACCESS_TOKEN_FILE=/run/secrets/access_token \
   -e PANDOKOS_SKELETON_OPENAI_API_KEY_FILE=/run/secrets/openai_api_key \
   ghcr.io/pandokos/pandokos:<version>
 ```
 
-`serve` never reads the owner's password file. TLS towards the database is on by default
+`serve` never reads the owner's password file.
+
+## The administration API
+
+The administration API listens on port 8081. By default it listens on `127.0.0.1` **inside the
+container**, so it is not reachable from outside, and `docker exec` is the way in:
+
+```
+docker run --rm ... ghcr.io/pandokos/pandokos:<version> init          # the first key, once
+docker exec <container> /pandokos tenant create acme                   # with PANDOKOS_CLI_KEY_FILE set
+```
+
+`init` runs with the same environment as `serve` (it needs the admin database password) and
+prints the bootstrap key once; the API commands read the key from a mounted file
+(`PANDOKOS_CLI_KEY_FILE`). To expose the API, set `PANDOKOS_LISTENERS_ADMIN_ADDRESS=0.0.0.0:8081`
+and either TLS (`listeners.admin.tls.cert_file` and `key_file`, see [TLS](tls.md)) or, when TLS
+ends in front of it, `PANDOKOS_LISTENERS_ADMIN_ALLOW_PLAINTEXT=true`. The image declares
+`EXPOSE 8080 8081`. TLS towards the database is on by default
 (`database.tls.mode`); see the database guide to turn it off for a database on a private network.
 
 The secret files must be readable by user 65532. All settings are described in the

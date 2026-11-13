@@ -6,12 +6,16 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/signal"
 	"runtime"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/pandokos/pandokos/internal/admin"
+	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/buildinfo"
 	"github.com/pandokos/pandokos/internal/config"
 	"github.com/pandokos/pandokos/internal/server"
@@ -19,6 +23,29 @@ import (
 	"github.com/pandokos/pandokos/internal/store/migrations"
 	"github.com/pandokos/pandokos/internal/telemetry"
 )
+
+// warnBootstrap logs "bootstrap key active" at once and then every hour while a bootstrap key is
+// usable (IAM-14). A failure of the query is logged at debug and tried again at the next hour.
+func warnBootstrap(ctx context.Context, logger *slog.Logger, db *store.DB) {
+	t := time.NewTicker(time.Hour)
+	defer t.Stop()
+	for {
+		qctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		keys, err := admin.ActiveBootstrapKeys(qctx, db)
+		cancel()
+		if err != nil {
+			logger.Debug("bootstrap key check failed", "error", err.Error())
+		}
+		for _, k := range keys {
+			logger.Warn("bootstrap key active", "key_id", k.KeyID, "expires_at", k.ExpiresAt.Format(time.RFC3339))
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
 
 func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, environ []string) int {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
@@ -93,7 +120,33 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Info("database ready", "role", string(r.role), "schema_version", len(ms))
 	}
 
-	srv, err := server.New(cfg, logger)
+	gatewayDB, adminDB := dbs[0], dbs[1]
+	gatewayAuth, err := authn.New(authn.Options{DB: gatewayDB, Logger: logger, Kinds: []authn.Kind{authn.KindTenant}, CacheTTL: time.Duration(cfg.Cache.PrincipalTTL)})
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
+	adminAuth, err := authn.New(authn.Options{DB: adminDB, Logger: logger, Kinds: []authn.Kind{authn.KindTenant, authn.KindPlatform}})
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
+	listenConn := connOptions(cfg, cfg.Database.Gateway.User, cfg.Database.Gateway.Password)
+	listenConn.Host, listenConn.Port = cfg.Database.DirectHost, cfg.Database.DirectPort
+	listener, err := store.NewListener(store.ListenerOptions{
+		Conn: listenConn, Role: store.RoleGateway, Logger: logger, Direct: cfg.Database.DirectAddress != "",
+		OnNotify: gatewayAuth.Invalidate, OnReset: gatewayAuth.Flush,
+	})
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
+	adminHandler, err := admin.New(admin.Options{Logger: logger, DB: adminDB, Authenticator: adminAuth})
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
+	srv, err := server.New(server.Options{Config: cfg, Logger: logger, Authenticator: gatewayAuth, Admin: adminHandler})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
@@ -105,6 +158,13 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
+
+	background, stopBackground := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	defer func() { stopBackground(); wg.Wait() }()
+	wg.Add(2)
+	go func() { defer wg.Done(); listener.Run(background) }()
+	go func() { defer wg.Done(); warnBootstrap(background, logger, adminDB) }()
 
 	sigCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()

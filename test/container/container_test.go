@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -52,7 +53,7 @@ func TestImage(t *testing.T) {
 	if err := os.Chmod(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for name, v := range map[string]string{"access_token": fixtures.CanaryAccessToken, "openai_api_key": fixtures.CanaryProviderKey} {
+	for name, v := range map[string]string{"openai_api_key": fixtures.CanaryProviderKey} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(v+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -76,7 +77,7 @@ func TestImage(t *testing.T) {
 
 	// The image creates the schema with its migrate command.
 	migrateArgs := append(append([]string{"run", "--rm"}, hardened...), dbEnv...)
-	if out := docker(t, append(migrateArgs, image, "migrate")...); !strings.Contains(out, "schema is at version 1") {
+	if out := docker(t, append(migrateArgs, image, "migrate")...); !strings.Contains(out, "schema is at version 2") {
 		t.Fatalf("migrate output: %q", out)
 	}
 
@@ -87,10 +88,29 @@ func TestImage(t *testing.T) {
 	port := strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
 	l.Close()
 
+	// init issues the bootstrap key; the image's own CLI does the rest through docker exec.
+	initOut := docker(t, append(append(append([]string{"run", "--rm"}, hardened...), dbEnv...), image, "init")...)
+	reKey := regexp.MustCompile(`(?m)^key: +(pdk_p[a-z2-7]{16}_[a-z2-7]{59})$`)
+	m := reKey.FindStringSubmatch(initOut)
+	if m == nil {
+		t.Fatalf("init output has no key line: %q", initOut)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "platform.key"), []byte(m[1]+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	adminAddr := func() string {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer l.Close()
+		return l.Addr().String()
+	}()
+
 	serveArgs := append(append([]string{"run", "-d"}, hardened...), dbEnv...)
 	serveArgs = append(serveArgs,
 		"-e", "PANDOKOS_LISTENERS_INFERENCE_ADDRESS=127.0.0.1:"+port,
-		"-e", "PANDOKOS_SKELETON_ACCESS_TOKEN_FILE=/run/secrets/access_token",
+		"-e", "PANDOKOS_LISTENERS_ADMIN_ADDRESS="+adminAddr,
 		"-e", "PANDOKOS_SKELETON_OPENAI_API_KEY_FILE=/run/secrets/openai_api_key",
 		"-e", "PANDOKOS_SKELETON_OPENAI_BASE_URL="+up.BaseURL(),
 		image)
@@ -107,11 +127,33 @@ func TestImage(t *testing.T) {
 		return resp.StatusCode == 200
 	})
 
+	// A tenant, a service account and a key, made with the CLI of the image.
+	cli := func(keyFile string, args ...string) string {
+		return docker(t, append([]string{"exec", "-e", "PANDOKOS_CLI_SERVER=http://" + adminAddr, "-e", "PANDOKOS_CLI_KEY_FILE=/run/secrets/" + keyFile, id, "/pandokos"}, args...)...)
+	}
+	reTenantKey := regexp.MustCompile(`(?m)^key: +(pdk_t[a-z2-7]{16}_[a-z2-7]{59})$`)
+	out := cli("platform.key", "tenant", "create", "acme")
+	tm := reTenantKey.FindStringSubmatch(out)
+	tid := regexp.MustCompile(`(?m)^id: ([0-9a-f-]{36})$`).FindStringSubmatch(out)
+	if tm == nil || tid == nil {
+		t.Fatalf("tenant create output: %q", out)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "admin.key"), []byte(tm[1]+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cli("admin.key", "service-account", "create", "--tenant", tid[1], "--role", "inference", "caller")
+	out = cli("admin.key", "key", "create", "--tenant", tid[1], "--service-account", "caller")
+	km := reTenantKey.FindStringSubmatch(out)
+	if km == nil {
+		t.Fatalf("key create output: %q", out)
+	}
+	inferenceKey := km[1]
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, base+"/openai/v1/chat/completions",
 		strings.NewReader(`{"model":"fake-basic","stream":true,"messages":[{"role":"user","content":"`+fixtures.CanaryPrompt+`"}]}`))
-	req.Header.Set("Authorization", "Bearer "+fixtures.CanaryAccessToken)
+	req.Header.Set("Authorization", "Bearer "+inferenceKey)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -130,6 +172,9 @@ func TestImage(t *testing.T) {
 	logs := docker(t, "logs", id)
 	testutil.AssertNoCanary(t, "container logs", logs)
 	testutil.AssertAbsent(t, "container logs", logs, d.Passwords()...)
+	for _, k := range []string{m[1], tm[1], inferenceKey} {
+		testutil.AssertAbsent(t, "container logs", logs, testutil.KeyForms(k)...)
+	}
 
 	if out := docker(t, "run", "--rm", image, "version"); !strings.HasPrefix(out, "pandokos ") {
 		t.Errorf("version output: %q", out)

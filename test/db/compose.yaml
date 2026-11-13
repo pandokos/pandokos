@@ -4,6 +4,16 @@ name: pandokos-testdb
 services:
   postgres:
     image: postgres:16-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -eu
+        mkdir -p /run/pandokos-tls
+        install -o postgres -g postgres -m 0644 /tls/server.pem /run/pandokos-tls/server.pem
+        install -o postgres -g postgres -m 0600 /tls/server.key /run/pandokos-tls/server.key
+        exec docker-entrypoint.sh "$$@"
+      - --
     command:
       - postgres
       - -c
@@ -14,6 +24,14 @@ services:
       - synchronous_commit=off
       - -c
       - full_page_writes=off
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/run/pandokos-tls/server.pem
+      - -c
+      - ssl_key_file=/run/pandokos-tls/server.key
+    volumes:
+      - ../../local/testdb/tls:/tls:ro
     environment:
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
     secrets:

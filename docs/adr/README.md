@@ -34,6 +34,11 @@ A record is *proposed* until its pull request is merged by the maintainer, then 
 | [0025](0025-go-toolchain.md) | Go toolchain: language floor and release toolchain | proposed |
 | [0026](0026-schema-migrations.md) | Schema migrations: in-house, forward-only, exact match at start | proposed |
 | [0027](0027-database-roles-and-session-context.md) | Database roles, session context and pooler safety | proposed |
+| [0028](0028-admin-api-generator.md) | Administration API: in-repository generator and conventions | proposed |
+| [0029](0029-static-sql-sqlc.md) | Static SQL: `sqlc`, text-mode rules, and a test against built SQL | proposed |
+| [0030](0030-keys-format-storage-lookup.md) | Keys: format, storage, lookup, platform keys, revocation bound | proposed |
+| [0031](0031-authorization-core-and-provisioning.md) | Authorization core and tenant provisioning | proposed |
+| [0032](0032-audit-log-first-version.md) | Audit log, first version | proposed |
 
 ## Questions from SOW 0.1 and where they were decided
 

@@ -35,7 +35,7 @@ func TestHelp(t *testing.T) {
 		code, out, errs := runCmd(t, nil, args...)
 		if code != 0 || !strings.Contains(out, "serve") || !strings.Contains(out, "config check") || errs != "" ||
 			!strings.Contains(out, "migrate [--config FILE]") || !strings.Contains(out, "migrate status [--config FILE]") ||
-			!strings.Contains(out, "[--for serve|migrate]") {
+			!strings.Contains(out, "[--for serve|migrate|init]") {
 			t.Errorf("%v: code %d, stdout %q, stderr %q", args, code, out, errs)
 		}
 	}
@@ -67,18 +67,28 @@ func writeConfig(t *testing.T, content string) string {
 	return p
 }
 
-// secretEnv is a valid environment for the serve purpose: the skeleton secrets and the database
+// secretEnv is a valid environment for the serve purpose: the provider key and the database
 // settings, with the three runtime password files.
 func secretEnv(t *testing.T) []string {
 	t.Helper()
 	return []string{
-		"PANDOKOS_SKELETON_ACCESS_TOKEN_FILE=" + testutil.WriteSecret(t, "token", fixtures.CanaryAccessToken),
 		"PANDOKOS_SKELETON_OPENAI_API_KEY_FILE=" + testutil.WriteSecret(t, "key", fixtures.CanaryProviderKey),
 		"PANDOKOS_DATABASE_ADDRESS=127.0.0.1:5432",
 		"PANDOKOS_DATABASE_TLS_MODE=disable",
 		"PANDOKOS_DATABASE_GATEWAY_PASSWORD_FILE=" + testutil.WriteSecret(t, "db_gateway", "pw-gateway-test"),
 		"PANDOKOS_DATABASE_ADMIN_PASSWORD_FILE=" + testutil.WriteSecret(t, "db_admin", "pw-admin-test"),
 		"PANDOKOS_DATABASE_WORKER_PASSWORD_FILE=" + testutil.WriteSecret(t, "db_worker", "pw-worker-test"),
+	}
+}
+
+// initEnv is a valid environment for the init purpose: the address and the admin password file
+// only.
+func initEnv(t *testing.T) []string {
+	t.Helper()
+	return []string{
+		"PANDOKOS_DATABASE_ADDRESS=127.0.0.1:5432",
+		"PANDOKOS_DATABASE_TLS_MODE=disable",
+		"PANDOKOS_DATABASE_ADMIN_PASSWORD_FILE=" + testutil.WriteSecret(t, "db_admin", "pw-admin-test"),
 	}
 }
 
@@ -101,7 +111,7 @@ func TestConfigCheck(t *testing.T) {
 			t.Fatalf("code %d, stdout %q, stderr %q", code, out, errs)
 		}
 		if !strings.Contains(errs, "warning: skeleton.openai.base_url: the provider key is sent without TLS") ||
-			!strings.Contains(errs, "warning: listeners.inference.address: the listener serves plain HTTP; terminate TLS in front of it") {
+			!strings.Contains(errs, "warning: listeners.inference.address: the listener serves plain HTTP; set listeners.inference.tls.cert_file and key_file, or terminate TLS in front of it") {
 			t.Errorf("warnings: %q", errs)
 		}
 		testutil.AssertNoCanary(t, "stdout", out)
@@ -227,10 +237,97 @@ func TestConfigCheckFor(t *testing.T) {
 			}
 		}
 	})
+	t.Run("init needs only the admin password", func(t *testing.T) {
+		code, out, errs := runCmd(t, initEnv(t), "config", "check", "--for", "init")
+		if code != 0 || strings.TrimSpace(out) != "configuration OK" {
+			t.Fatalf("code %d, stdout %q, stderr %q", code, out, errs)
+		}
+		code, _, errs = runCmd(t, migrateEnv(t), "config", "check", "--for", "init")
+		if code != 1 || !strings.Contains(errs, "error: database.admin.password_file: must be set") ||
+			strings.Contains(errs, "database.gateway") || strings.Contains(errs, "skeleton.") {
+			t.Errorf("code %d, stderr %q", code, errs)
+		}
+	})
 	t.Run("unknown purpose", func(t *testing.T) {
 		code, out, errs := runCmd(t, secretEnv(t), "config", "check", "--for", "nope")
-		if code != 2 || out != "" || !strings.Contains(errs, "pandokos: --for must be serve or migrate") {
+		if code != 2 || out != "" || !strings.Contains(errs, "pandokos: --for must be serve, migrate or init") {
 			t.Errorf("code %d, stdout %q, stderr %q", code, out, errs)
+		}
+	})
+}
+
+// TestInitAndClientUsage is T-216.
+func TestInitAndClientUsage(t *testing.T) {
+	t.Run("init flags", func(t *testing.T) {
+		for _, args := range [][]string{
+			{"init", "--ttl", "1m"}, {"init", "--ttl", "4m59s"}, {"init", "--ttl", "721h"}, {"init", "--ttl", "soon"}, {"init", "--ttl", "-1h"},
+			{"init", "extra"}, {"init", "--bogus"}, {"init", "--key-out"},
+		} {
+			code, out, errs := runCmd(t, initEnv(t), args...)
+			if code != 2 || out != "" || errs == "" {
+				t.Errorf("%v: code %d, stdout %q, stderr %q", args, code, out, errs)
+			}
+		}
+		for _, args := range [][]string{{"init", "--ttl", "5m"}, {"init", "--ttl", "720h"}} {
+			// Within the range the command goes on to the database, which is not there: 1, not 2.
+			env := append(initEnv(t), "PANDOKOS_DATABASE_ADDRESS=127.0.0.1:1")
+			if code, _, errs := runCmd(t, env, args...); code != 1 {
+				t.Errorf("%v: code %d, stderr %q", args, code, errs)
+			}
+		}
+	})
+	t.Run("init with an invalid configuration", func(t *testing.T) {
+		code, out, errs := runCmd(t, nil, "init")
+		if code != 1 || out != "" || !strings.Contains(errs, "error: database.address: must be set") || !strings.Contains(errs, "error: database.admin.password_file: must be set") {
+			t.Errorf("code %d, stdout %q, stderr %q", code, out, errs)
+		}
+		if strings.Contains(errs, "database.gateway") || strings.Contains(errs, "database.owner") || strings.Contains(errs, "skeleton.") {
+			t.Errorf("init asked for a secret it does not need: %q", errs)
+		}
+	})
+	t.Run("help lists the new commands", func(t *testing.T) {
+		code, out, _ := runCmd(t, nil, "help")
+		if code != 0 {
+			t.Fatalf("code %d", code)
+		}
+		for _, want := range []string{
+			"init [--config FILE] [--ttl DURATION] [--description TEXT] [--key-out FILE] [--recover]",
+			"Issue the bootstrap platform key, then exit",
+			"whoami",
+			"tenant list|create|get|update|suspend|reactivate",
+			"service-account list|create|get|update|disable|enable",
+			"key list|create|get|revoke",
+			"platform-key list|create|get|revoke",
+			"Administer through the administration API;",
+			`"pandokos <command> --help" lists the flags`,
+			"config check [--config FILE] [--for serve|migrate|init]",
+			"API commands read PANDOKOS_CLI_SERVER, PANDOKOS_CLI_KEY_FILE and PANDOKOS_CLI_CA_FILE.",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("the usage text lacks %q", want)
+			}
+		}
+		if i, j := strings.Index(out, "migrate status"), strings.Index(out, "config check"); i < 0 || j < i || strings.Index(out, "init [--config") <= i || strings.Index(out, "init [--config") >= j {
+			t.Error("the new lines are not between migrate status and config check")
+		}
+	})
+	t.Run("a command group needs a sub-command", func(t *testing.T) {
+		for _, args := range [][]string{
+			{"tenant"}, {"service-account"}, {"key"}, {"platform-key"},
+			{"tenant", "frobnicate"}, {"key", "delete"}, {"platform-key", "list", "extra"},
+		} {
+			code, out, errs := runCmd(t, nil, args...)
+			if code != 2 || out != "" || errs == "" {
+				t.Errorf("%v: code %d, stdout %q, stderr %q", args, code, out, errs)
+			}
+		}
+	})
+	t.Run("a command without a key file is a usage error", func(t *testing.T) {
+		for _, args := range [][]string{{"whoami"}, {"tenant", "list"}} {
+			code, out, errs := runCmd(t, nil, args...)
+			if code != 2 || out != "" || !strings.Contains(errs, "key") {
+				t.Errorf("%v: code %d, stdout %q, stderr %q", args, code, out, errs)
+			}
 		}
 	})
 }

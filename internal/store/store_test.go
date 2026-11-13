@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 	"github.com/pandokos/pandokos/internal/secret"
 	"github.com/pandokos/pandokos/internal/store/migrate"
 	"github.com/pandokos/pandokos/internal/tenant"
-	"github.com/pandokos/pandokos/test/testutil"
+	"github.com/pandokos/pandokos/test/testcert"
 )
 
 // envSummary lists every field of the driver configuration that a libpq environment variable can
@@ -151,7 +152,7 @@ func TestConnConfig(t *testing.T) {
 	t.Run("verify-full", func(t *testing.T) {
 		o := validOptions()
 		o.Conn.TLSMode = "verify-full"
-		o.Conn.TLSCAFile = testutil.WriteCA(t)
+		o.Conn.TLSCAFile, _, _ = testcert.Files(t, []string{"localhost"}, nil)
 		pc, err := poolConfig(o)
 		if err != nil {
 			t.Fatal(err)
@@ -210,7 +211,7 @@ func TestConnConfig(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected an error")
 		}
-		testutil.AssertAbsent(t, "error text", err.Error(), "pw-for-the-test")
+		assertNoPassword(t, err.Error())
 	})
 }
 
@@ -247,7 +248,7 @@ func TestOpenValidatesOptions(t *testing.T) {
 			if time.Since(start) > time.Second {
 				t.Error("Open tried to connect")
 			}
-			testutil.AssertAbsent(t, "error text", err.Error(), "pw-for-the-test")
+			assertNoPassword(t, err.Error())
 		})
 	}
 	t.Run("valid options do not connect", func(t *testing.T) {
@@ -322,5 +323,15 @@ func TestRoleNames(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, migrate.RuntimeRoles) {
 		t.Fatalf("database roles %v, want %v", got, migrate.RuntimeRoles)
+	}
+}
+
+// assertNoPassword fails the test if text contains the password of the tests. It is a local
+// helper: this package cannot import test/testutil, which imports internal/authn and so, through
+// it, this package.
+func assertNoPassword(t *testing.T, text string) {
+	t.Helper()
+	if strings.Contains(text, "pw-for-the-test") {
+		t.Error("the password was found in the error text")
 	}
 }

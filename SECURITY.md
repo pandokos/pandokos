@@ -38,6 +38,9 @@ Particularly relevant to this project:
 - server-side request forgery or forwarding of requests to unauthorized destinations;
 - bypass of quotas, rate limits or budgets.
 
+Keys issued by Pandokos have a recognizable format; a leaked key matches the pattern in
+[docs/operations/keys.md](docs/operations/keys.md) and should be revoked at once.
+
 ## Supported versions
 
 There is no stable release yet. Until the first release, only the `main` branch is considered supported.

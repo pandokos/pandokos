@@ -3,6 +3,7 @@
 package config
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net/url"
 	"strings"
@@ -41,6 +42,7 @@ type Config struct {
 	Limits    Limits    `yaml:"limits"`
 	Upstream  Upstream  `yaml:"upstream"`
 	Shutdown  Shutdown  `yaml:"shutdown"`
+	Cache     Cache     `yaml:"cache"`
 	Database  Database  `yaml:"database"`
 	Skeleton  Skeleton  `yaml:"skeleton"`
 }
@@ -52,15 +54,41 @@ type Log struct {
 
 // Listeners configures the listeners.
 type Listeners struct {
-	Inference Listener `yaml:"inference"`
+	Inference Listener      `yaml:"inference"`
+	Admin     AdminListener `yaml:"admin"`
 }
 
 // Listener configures one HTTP listener.
 type Listener struct {
-	Address           string   `yaml:"address"`
-	ReadHeaderTimeout Duration `yaml:"read_header_timeout"`
-	IdleTimeout       Duration `yaml:"idle_timeout"`
-	MaxHeaderBytes    int      `yaml:"max_header_bytes"`
+	Address           string      `yaml:"address"`
+	ReadHeaderTimeout Duration    `yaml:"read_header_timeout"`
+	IdleTimeout       Duration    `yaml:"idle_timeout"`
+	MaxHeaderBytes    int         `yaml:"max_header_bytes"`
+	TLS               ListenerTLS `yaml:"tls"`
+}
+
+// AdminListener configures the listener of the administration API.
+type AdminListener struct {
+	Address           string      `yaml:"address"`
+	ReadHeaderTimeout Duration    `yaml:"read_header_timeout"`
+	IdleTimeout       Duration    `yaml:"idle_timeout"`
+	MaxHeaderBytes    int         `yaml:"max_header_bytes"`
+	TLS               ListenerTLS `yaml:"tls"`
+	AllowPlaintext    bool        `yaml:"allow_plaintext"`
+}
+
+// ListenerTLS configures native TLS on a listener.
+type ListenerTLS struct {
+	CertFile   string `yaml:"cert_file"`
+	KeyFile    string `yaml:"key_file"`
+	MinVersion string `yaml:"min_version"`
+
+	Certificate *tls.Certificate `yaml:"-"` // filled by Load when the purpose is serve and both files are set
+}
+
+// Cache configures the principal cache of the gateway.
+type Cache struct {
+	PrincipalTTL Duration `yaml:"principal_ttl"`
 }
 
 // Limits configures request limits.
@@ -84,6 +112,7 @@ type Shutdown struct {
 // user per process role, each with its password in a file.
 type Database struct {
 	Address        string        `yaml:"address"`
+	DirectAddress  string        `yaml:"direct_address"`
 	Name           string        `yaml:"name"`
 	TLS            DatabaseTLS   `yaml:"tls"`
 	ConnectTimeout Duration      `yaml:"connect_timeout"`
@@ -94,6 +123,9 @@ type Database struct {
 
 	Host string `yaml:"-"` // filled by Load from Address
 	Port int    `yaml:"-"` // filled by Load from Address
+
+	DirectHost string `yaml:"-"` // filled by Load; equal to Host when DirectAddress is empty
+	DirectPort int    `yaml:"-"`
 }
 
 // DatabaseTLS configures TLS towards the database.
@@ -121,10 +153,7 @@ type DatabaseOwner struct {
 
 // Skeleton is the temporary section of the walking skeleton; later sprints remove it.
 type Skeleton struct {
-	AccessTokenFile string         `yaml:"access_token_file"`
-	OpenAI          SkeletonOpenAI `yaml:"openai"`
-
-	AccessToken secret.Secret `yaml:"-"` // filled by Load
+	OpenAI SkeletonOpenAI `yaml:"openai"`
 }
 
 // SkeletonOpenAI configures the single provider of the walking skeleton.
@@ -144,6 +173,7 @@ type Purpose int
 const (
 	PurposeServe   Purpose = iota // serve and config check: runtime secrets
 	PurposeMigrate                // migrate and migrate status: the owner's password only
+	PurposeInit                   // init and config check --for init: the admin password only
 )
 
 // Source says where Load reads from.
@@ -175,12 +205,22 @@ func (e *ValidationError) Error() string {
 func Defaults() *Config {
 	return &Config{
 		Log: Log{Level: "info"},
-		Listeners: Listeners{Inference: Listener{
-			Address:           "0.0.0.0:8080",
-			ReadHeaderTimeout: Duration(10 * time.Second),
-			IdleTimeout:       Duration(120 * time.Second),
-			MaxHeaderBytes:    65536,
-		}},
+		Listeners: Listeners{
+			Inference: Listener{
+				Address:           "0.0.0.0:8080",
+				ReadHeaderTimeout: Duration(10 * time.Second),
+				IdleTimeout:       Duration(120 * time.Second),
+				MaxHeaderBytes:    65536,
+				TLS:               ListenerTLS{MinVersion: "TLS1.2"},
+			},
+			Admin: AdminListener{
+				Address:           "127.0.0.1:8081",
+				ReadHeaderTimeout: Duration(10 * time.Second),
+				IdleTimeout:       Duration(120 * time.Second),
+				MaxHeaderBytes:    65536,
+				TLS:               ListenerTLS{MinVersion: "TLS1.2"},
+			},
+		},
 		Limits: Limits{
 			MaxRequestBodyBytes:    10485760,
 			RequestBodyReadTimeout: Duration(30 * time.Second),
@@ -188,6 +228,7 @@ func Defaults() *Config {
 		},
 		Upstream: Upstream{ConnectTimeout: Duration(10 * time.Second)},
 		Shutdown: Shutdown{DrainTimeout: Duration(30 * time.Second)},
+		Cache:    Cache{PrincipalTTL: Duration(30 * time.Second)},
 		Database: Database{
 			Name:           "pandokos",
 			TLS:            DatabaseTLS{Mode: "verify-full"},

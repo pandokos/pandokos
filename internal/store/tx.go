@@ -30,7 +30,12 @@ type Tx interface {
 var (
 	ErrNoTenant        = errors.New("store: tenant context required")
 	ErrNoPlatformScope = errors.New("store: this role has no platform scope")
+	ErrNotAdmin        = errors.New("store: only the admin role provisions tenants")
+	// ErrNoRows is what a :one query returns when there is no row.
+	ErrNoRows = pgx.ErrNoRows
 )
+
+type setting struct{ name, value string }
 
 type tx struct{ t pgx.Tx }
 
@@ -52,7 +57,7 @@ func (db *DB) WithTenant(ctx context.Context, id tenant.ID, fn func(ctx context.
 	if id.IsZero() {
 		return ErrNoTenant
 	}
-	return db.inTx(ctx, settingTenant, id.String(), fn)
+	return db.inTx(ctx, []setting{{settingTenant, id.String()}}, fn)
 }
 
 // Platform runs fn in one transaction in platform scope, with no tenant: tenant-scoped tables
@@ -61,10 +66,14 @@ func (db *DB) Platform(ctx context.Context, fn func(ctx context.Context, tx Tx) 
 	if db.role == RoleGateway {
 		return ErrNoPlatformScope
 	}
-	return db.inTx(ctx, settingScope, scopePlatform, fn)
+	return db.inTx(ctx, []setting{{settingScope, scopePlatform}}, fn)
 }
 
-func (db *DB) inTx(ctx context.Context, setting, value string, fn func(ctx context.Context, tx Tx) error) (err error) {
+func (db *DB) inTx(ctx context.Context, settings []setting, fn func(ctx context.Context, tx Tx) error) (err error) {
+	return db.run(ctx, settings, func(ctx context.Context, t pgx.Tx) error { return fn(ctx, tx{t}) })
+}
+
+func (db *DB) run(ctx context.Context, settings []setting, fn func(ctx context.Context, t pgx.Tx) error) (err error) {
 	t, err := db.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("store: begin: %w", err)
@@ -83,14 +92,48 @@ func (db *DB) inTx(ctx context.Context, setting, value string, fn func(ctx conte
 			rollback()
 		}
 	}()
-	if _, err = t.Exec(ctx, "SELECT pg_catalog.set_config($1, $2, true)", setting, value); err != nil {
-		return fmt.Errorf("store: set the transaction context: %w", err)
+	for _, st := range settings {
+		if _, err = t.Exec(ctx, "SELECT pg_catalog.set_config($1, $2, true)", st.name, st.value); err != nil {
+			return fmt.Errorf("store: set the transaction context: %w", err)
+		}
 	}
-	if err = fn(ctx, tx{t}); err != nil {
+	if err = fn(ctx, t); err != nil {
 		return err
 	}
 	if err = t.Commit(ctx); err != nil {
 		return fmt.Errorf("store: commit: %w", err)
 	}
 	return nil
+}
+
+// Unscoped runs fn in one transaction with neither a tenant nor the platform scope: every
+// protected table shows no row. It exists for the key lookup function.
+func (db *DB) Unscoped(ctx context.Context, fn func(ctx context.Context, tx Tx) error) error {
+	return db.inTx(ctx, nil, fn)
+}
+
+// Provision runs fn in one transaction in platform scope. fn may call bind once, with the ID of
+// the tenant it has just created; from then on the transaction is also that tenant's session.
+// Admin role only (ErrNotAdmin). It exists for creating a tenant with its first rows.
+func (db *DB) Provision(ctx context.Context, fn func(ctx context.Context, tx Tx, bind func(ctx context.Context, id tenant.ID) error) error) error {
+	if db.role != RoleAdmin {
+		return ErrNotAdmin
+	}
+	return db.run(ctx, []setting{{settingScope, scopePlatform}}, func(ctx context.Context, t pgx.Tx) error {
+		bound := false
+		bind := func(ctx context.Context, id tenant.ID) error {
+			if id.IsZero() {
+				return ErrNoTenant
+			}
+			if bound {
+				return errors.New("store: bind was already called")
+			}
+			bound = true
+			if _, err := t.Exec(ctx, "SELECT pg_catalog.set_config($1, $2, true)", settingTenant, id.String()); err != nil {
+				return fmt.Errorf("store: set the transaction context: %w", err)
+			}
+			return nil
+		}
+		return fn(ctx, tx{t}, bind)
+	})
 }

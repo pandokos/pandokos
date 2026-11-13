@@ -180,6 +180,9 @@ jobs:
       PRERELEASE: ${{ needs.check-tag.outputs.prerelease }}
       DIGEST: ${{ needs.image.outputs.digest }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name sbom.spdx.json
       - run: |
           set -eu
@@ -187,4 +190,4 @@ jobs:
           if [ "$PRERELEASE" = true ]; then flag="--prerelease"; fi
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" $flag \
             --notes "Image: \`${IMAGE}@${DIGEST}\`. Verification: docs/operations/container.md." \
-            sbom.spdx.json
+            sbom.spdx.json api/openapi/admin.v1.yaml

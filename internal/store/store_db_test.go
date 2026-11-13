@@ -18,6 +18,7 @@ import (
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/migrate"
 	"github.com/pandokos/pandokos/internal/store/migrations"
+	"github.com/pandokos/pandokos/internal/telemetry"
 	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/test/dbtest"
 	"github.com/pandokos/pandokos/test/testutil"
@@ -137,18 +138,20 @@ func TestCheckRefusesSchemaMismatch(t *testing.T) {
 	t.Run("binary ahead", func(t *testing.T) {
 		d := dbtest.NewMigrated(t)
 		err := check(t, d, withExtra(t))
-		want := `database (gateway): the database schema is older than this binary: schema version 1, this binary needs version 2; run "pandokos migrate"`
+		n := len(realSet(t))
+		want := fmt.Sprintf(`database (gateway): the database schema is older than this binary: schema version %d, this binary needs version %d; run "pandokos migrate"`, n, n+1)
 		if err == nil || err.Error() != want || !errors.Is(err, migrate.ErrSchemaOlder) {
 			t.Fatalf("got %v, want %s", err, want)
 		}
 	})
 	t.Run("database ahead", func(t *testing.T) {
 		d := dbtest.NewMigrated(t)
-		if _, err := d.Super(t).Exec(ctx(t), "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (2, 'future', repeat('0', 64), 'x')"); err != nil {
+		n := len(realSet(t))
+		if _, err := d.Super(t).Exec(ctx(t), fmt.Sprintf("INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (%d, 'future', repeat('0', 64), 'x')", n+1)); err != nil {
 			t.Fatal(err)
 		}
 		err := check(t, d, realSet(t))
-		want := "database (gateway): the database schema is newer than this binary: schema version 2, this binary knows version 1; upgrade Pandokos"
+		want := fmt.Sprintf("database (gateway): the database schema is newer than this binary: schema version %d, this binary knows version %d; upgrade Pandokos", n+1, n)
 		if err == nil || err.Error() != want || !errors.Is(err, migrate.ErrSchemaNewer) {
 			t.Fatalf("got %v, want %s", err, want)
 		}
@@ -554,5 +557,357 @@ func TestNoSessionState(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+	})
+}
+
+// TestUnscopedAndProvision is T-231.
+func TestUnscopedAndProvision(t *testing.T) {
+	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
+		a, _ := seed(t, d)
+		super := d.Super(t)
+		const keyID = "tabcdefghijklmnop"
+		if _, err := super.Exec(ctx(t), `WITH sa AS (SELECT id FROM pandokos.service_account WHERE tenant_id = $1::uuid LIMIT 1)
+			INSERT INTO pandokos.virtual_key (tenant_id, service_account_id, key_id, secret_hash)
+			SELECT $1::uuid, sa.id, $2, sha256('x'::bytea) FROM sa`, a.String(), keyID); err != nil {
+			t.Fatal(err)
+		}
+		admin, gateway := d.Open(t, store.RoleAdmin), d.Open(t, store.RoleGateway)
+
+		t.Run("Unscoped sees no row and can call the lookup", func(t *testing.T) {
+			for name, db := range map[string]*store.DB{"admin": admin, "gateway": gateway} {
+				err := db.Unscoped(ctx(t), func(c context.Context, tx store.Tx) error {
+					for _, table := range []string{"tenant", "service_account", "virtual_key", "role_assignment"} {
+						if n := scalarInt(c, t, tx, "SELECT count(*) FROM pandokos."+table); n != 0 {
+							t.Errorf("%s: %d rows of %s are visible with no tenant and no scope", name, n, table)
+						}
+					}
+					var got *string
+					if err := tx.QueryRow(c, "SELECT pandokos.virtual_key_lookup($1::text)::text", keyID).Scan(&got); err != nil {
+						return err
+					}
+					if got == nil || *got != a.String() {
+						t.Errorf("%s: the lookup returned %v, want %s", name, got, a)
+					}
+					if err := tx.QueryRow(c, "SELECT pandokos.virtual_key_lookup($1::text)::text", "tzzzzzzzzzzzzzzzz").Scan(&got); err != nil || got != nil {
+						t.Errorf("%s: the lookup of an unknown key returned %v, %v", name, got, err)
+					}
+					return nil
+				})
+				if err != nil {
+					t.Errorf("%s: %v", name, err)
+				}
+			}
+		})
+
+		t.Run("Provision creates a tenant and its first rows in one transaction", func(t *testing.T) {
+			var id tenant.ID
+			err := admin.Provision(ctx(t), func(c context.Context, tx store.Tx, bind func(context.Context, tenant.ID) error) error {
+				var text string
+				if err := tx.QueryRow(c, "INSERT INTO pandokos.tenant (name) VALUES ('provisioned') RETURNING id::text").Scan(&text); err != nil {
+					return err
+				}
+				var perr error
+				if id, perr = tenant.ParseID(text); perr != nil {
+					return perr
+				}
+				if err := bind(c, id); err != nil {
+					return err
+				}
+				if _, err := tx.Exec(c, "INSERT INTO pandokos.service_account (tenant_id, name) VALUES ($1::uuid, 'first')", id.String()); err != nil {
+					return err
+				}
+				if n := scalarInt(c, t, tx, "SELECT count(*) FROM pandokos.service_account WHERE tenant_id = $1::uuid", id.String()); n != 1 {
+					t.Errorf("the new row is not visible inside the transaction: %d", n)
+				}
+				_, err := tx.Exec(c, "UPDATE pandokos.tenant SET state = 'active' WHERE id = $1::uuid", id.String())
+				return err
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var n int
+			if err := super.QueryRow(ctx(t), "SELECT count(*) FROM pandokos.service_account WHERE tenant_id = $1::uuid AND name = 'first'", id.String()).Scan(&n); err != nil || n != 1 {
+				t.Errorf("committed rows: %d %v", n, err)
+			}
+		})
+
+		t.Run("a failure rolls the whole transaction back", func(t *testing.T) {
+			boom := errors.New("boom")
+			err := admin.Provision(ctx(t), func(c context.Context, tx store.Tx, bind func(context.Context, tenant.ID) error) error {
+				var text string
+				if err := tx.QueryRow(c, "INSERT INTO pandokos.tenant (name) VALUES ('rolled-back') RETURNING id::text").Scan(&text); err != nil {
+					return err
+				}
+				id, _ := tenant.ParseID(text)
+				if err := bind(c, id); err != nil {
+					return err
+				}
+				if _, err := tx.Exec(c, "INSERT INTO pandokos.service_account (tenant_id, name) VALUES ($1::uuid, 'gone')", id.String()); err != nil {
+					return err
+				}
+				return boom
+			})
+			if !errors.Is(err, boom) {
+				t.Fatalf("err = %v", err)
+			}
+			var n int
+			if err := super.QueryRow(ctx(t), "SELECT count(*) FROM pandokos.tenant WHERE name = 'rolled-back'").Scan(&n); err != nil || n != 0 {
+				t.Errorf("the tenant survived the rollback: %d %v", n, err)
+			}
+		})
+
+		t.Run("bind refuses a zero ID and a second call", func(t *testing.T) {
+			err := admin.Provision(ctx(t), func(c context.Context, _ store.Tx, bind func(context.Context, tenant.ID) error) error {
+				if err := bind(c, tenant.ID{}); err == nil {
+					t.Error("bind accepted the zero ID")
+				}
+				if err := bind(c, a); err != nil {
+					t.Errorf("a valid bind failed: %v", err)
+				}
+				if err := bind(c, a); err == nil {
+					t.Error("bind accepted a second call")
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+
+		t.Run("only the admin role provisions", func(t *testing.T) {
+			for _, role := range []store.Role{store.RoleGateway, store.RoleWorker} {
+				db := d.Open(t, role)
+				err := db.Provision(ctx(t), func(context.Context, store.Tx, func(context.Context, tenant.ID) error) error {
+					t.Error("the function ran")
+					return nil
+				})
+				if !errors.Is(err, store.ErrNotAdmin) {
+					t.Errorf("%s: err = %v, want ErrNotAdmin", role, err)
+				}
+			}
+		})
+
+		t.Run("neither setting survives on the connection", func(t *testing.T) {
+			one := openSized(t, d, store.RoleAdmin, 1)
+			if err := one.Provision(ctx(t), func(c context.Context, _ store.Tx, bind func(context.Context, tenant.ID) error) error {
+				return bind(c, a)
+			}); err != nil {
+				t.Fatal(err)
+			}
+			err := one.Unscoped(ctx(t), func(c context.Context, tx store.Tx) error {
+				var tid, scope *string
+				if err := tx.QueryRow(c, "SELECT NULLIF(current_setting('app.tenant_id', true), ''), NULLIF(current_setting('app.scope', true), '')").Scan(&tid, &scope); err != nil {
+					return err
+				}
+				if tid != nil || scope != nil {
+					t.Errorf("settings after Provision: tenant %v, scope %v", tid, scope)
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	})
+}
+
+// listenerRig runs a Listener and collects what it calls.
+type listenerRig struct {
+	mu       sync.Mutex
+	payloads []string
+	resets   int
+	logs     *testutil.LogBuffer
+	cancel   context.CancelFunc
+	done     chan struct{}
+}
+
+func startListener(t *testing.T, conn store.ConnOptions) *listenerRig {
+	t.Helper()
+	r := &listenerRig{logs: &testutil.LogBuffer{}, done: make(chan struct{})}
+	l, err := store.NewListener(store.ListenerOptions{
+		Conn: conn, Role: store.RoleGateway, Logger: telemetry.NewLogger(r.logs, "debug"),
+		OnNotify: func(p string) { r.mu.Lock(); r.payloads = append(r.payloads, p); r.mu.Unlock() },
+		OnReset:  func() { r.mu.Lock(); r.resets++; r.mu.Unlock() },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, cancel := context.WithCancel(context.Background())
+	r.cancel = cancel
+	go func() { l.Run(c); close(r.done) }()
+	t.Cleanup(func() { cancel(); <-r.done })
+	return r
+}
+
+func (r *listenerRig) seen(payload string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, p := range r.payloads {
+		if p == payload {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *listenerRig) resetCount() int { r.mu.Lock(); defer r.mu.Unlock(); return r.resets }
+
+func (r *listenerRig) connected(n int) bool {
+	return strings.Count(r.logs.String(), `"msg":"cache listener connected"`) >= n
+}
+
+// TestListener is T-265.
+func TestListener(t *testing.T) {
+	d := dbtest.NewMigrated(t)
+	super := d.Super(t)
+	r := startListener(t, d.ConnOptions("gateway"))
+	testutil.Eventually(t, 10*time.Second, "the listener to connect", func() bool { return r.connected(1) })
+	if r.resetCount() < 1 {
+		t.Error("OnReset was not called when the listener connected")
+	}
+	line := r.logs.Find(t, "cache listener connected")[0]
+	if line["role"] != "gateway" || line["direct"] != false {
+		t.Errorf("the connected line: %v", line)
+	}
+
+	notify := func(payload string) {
+		t.Helper()
+		if _, err := super.Exec(ctx(t), "SELECT pg_catalog.pg_notify('pandokos_cache', $1)", payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+	notify("tenant:0192f0f0-0000-7000-8000-000000000001")
+	testutil.Eventually(t, 2*time.Second, "the notification", func() bool { return r.seen("tenant:0192f0f0-0000-7000-8000-000000000001") })
+	notify("platform")
+	testutil.Eventually(t, 2*time.Second, "the platform notification", func() bool { return r.seen("platform") })
+	r.mu.Lock()
+	for _, p := range r.payloads {
+		if strings.HasPrefix(p, "probe:") {
+			t.Errorf("a probe reached OnNotify: %s", p)
+		}
+	}
+	r.mu.Unlock()
+
+	// The change triggers of the migration notify through the same channel.
+	a := d.SeedTenant(t, "listened")
+	testutil.Eventually(t, 2*time.Second, "the notification of a tenant change", func() bool { return r.seen("tenant:" + a.String()) })
+
+	// The backend is terminated: the listener reconnects, resets and hears again.
+	before := r.resetCount()
+	if _, err := super.Exec(ctx(t), "SELECT pg_catalog.pg_terminate_backend(pid) FROM pg_catalog.pg_stat_activity WHERE application_name = 'pandokos-gateway-listen' AND datname = $1", d.Name); err != nil {
+		t.Fatal(err)
+	}
+	testutil.Eventually(t, 15*time.Second, "the listener to reconnect", func() bool { return r.connected(2) && r.resetCount() > before })
+	notify("tenant:0192f0f0-0000-7000-8000-000000000002")
+	testutil.Eventually(t, 5*time.Second, "a notification after the reconnection", func() bool { return r.seen("tenant:0192f0f0-0000-7000-8000-000000000002") })
+	if got := len(r.logs.Find(t, "cache listener disconnected")); got < 1 {
+		t.Error("the disconnection was not logged")
+	}
+
+	// Run returns when the context ends.
+	r.cancel()
+	select {
+	case <-r.done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Run did not return after its context ended")
+	}
+}
+
+// TestListenerAndPooler is T-266.
+func TestListenerAndPooler(t *testing.T) {
+	t.Run("through the pooler without a direct address", func(t *testing.T) {
+		d := dbtest.New(t)
+		p := d.Pooled(t)
+		d.Migrate(t)
+		r := startListener(t, p.ConnOptions("gateway"))
+		testutil.Eventually(t, 25*time.Second, "the warning that notifications do not arrive", func() bool {
+			return len(r.logs.Find(t, "cache invalidation unavailable")) >= 1
+		})
+		w := r.logs.Find(t, "cache invalidation unavailable")[0]
+		if w["level"] != "WARN" || w["role"] != "gateway" ||
+			w["detail"] != "notifications do not arrive on this connection; revocation takes up to cache.principal_ttl; set database.direct_address when database.address is a pooler in transaction mode" {
+			t.Errorf("the warning: %v", w)
+		}
+		if r.resetCount() < 1 {
+			t.Error("OnReset was not called")
+		}
+		if len(r.logs.Find(t, "cache listener connected")) < 1 {
+			t.Error("the listener never connected")
+		}
+	})
+
+	t.Run("with the direct address", func(t *testing.T) {
+		d := dbtest.New(t)
+		p := d.Pooled(t)
+		d.Migrate(t)
+		// Queries go through the pooler; the listener goes to PostgreSQL itself.
+		r := startListener(t, d.ConnOptions("gateway"))
+		testutil.Eventually(t, 10*time.Second, "the listener to connect", func() bool { return r.connected(1) })
+		admin := p.Open(t, store.RoleAdmin)
+		for i := 0; i < 3; i++ {
+			payload := fmt.Sprintf("tenant:0192f0f0-0000-7000-8000-00000000010%d", i)
+			if err := admin.Platform(ctx(t), func(c context.Context, tx store.Tx) error {
+				_, err := tx.Exec(c, "SELECT pg_catalog.pg_notify('pandokos_cache', $1)", payload)
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			testutil.Eventually(t, 2*time.Second, "the notification sent through the pooler", func() bool { return r.seen(payload) })
+		}
+		if n := len(r.logs.Find(t, "cache invalidation unavailable")); n != 0 {
+			t.Errorf("a warning with a direct connection: %d", n)
+		}
+	})
+}
+
+func TestErrorClasses(t *testing.T) {
+	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
+		a, _ := seed(t, d)
+		admin := d.Open(t, store.RoleAdmin)
+		err := admin.WithTenant(ctx(t), a, func(c context.Context, tx store.Tx) error {
+			_, err := tx.Exec(c, "INSERT INTO pandokos.service_account (tenant_id, name) VALUES ($1::uuid, 'a-one')", a.String())
+			return err
+		})
+		kind, name, ok := store.ConstraintViolation(err)
+		if !ok || kind != "unique" || name != "service_account_name_key" || store.SQLState(err) != "23505" {
+			t.Errorf("unique: %q %q %v %q", kind, name, ok, store.SQLState(err))
+		}
+		err = admin.WithTenant(ctx(t), a, func(c context.Context, tx store.Tx) error {
+			_, err := tx.Exec(c, "INSERT INTO pandokos.service_account (tenant_id, name, valid_from, valid_until) VALUES ($1::uuid, 'dates', now(), now() - interval '1 day')", a.String())
+			return err
+		})
+		if kind, name, ok := store.ConstraintViolation(err); !ok || kind != "check" || name != "service_account_validity_order" {
+			t.Errorf("check: %q %q %v", kind, name, ok)
+		}
+		err = admin.Platform(ctx(t), func(c context.Context, tx store.Tx) error {
+			_, err := tx.Exec(c, "INSERT INTO pandokos.audit_event (tenant_id, actor_type, action, resource_type, outcome) VALUES ($1::uuid, 'platform', 'x.y', 'x', 'success')", a.String())
+			return err
+		})
+		if store.SQLState(err) != "42501" {
+			t.Errorf("a row-level security violation has SQLSTATE %q", store.SQLState(err))
+		}
+		if _, _, ok := store.ConstraintViolation(err); ok {
+			t.Error("a privilege error is not a constraint violation")
+		}
+		if store.SQLState(errors.New("not a database error")) != "" || store.SQLState(nil) != "" {
+			t.Error("SQLState of a plain error")
+		}
+		if _, _, ok := store.ConstraintViolation(nil); ok {
+			t.Error("ConstraintViolation(nil)")
+		}
+		if store.IsUnavailable(nil) || store.IsUnavailable(errors.New("plain")) || store.IsUnavailable(err) {
+			t.Error("IsUnavailable is true for an error that is not about availability")
+		}
+		for _, e := range []error{context.DeadlineExceeded, context.Canceled, fmt.Errorf("wrapped: %w", context.DeadlineExceeded)} {
+			if !store.IsUnavailable(e) {
+				t.Errorf("IsUnavailable(%v) is false", e)
+			}
+		}
+		d.SetAcceptingConnections(t, false)
+		err = admin.Platform(ctx(t), func(context.Context, store.Tx) error { return nil })
+		if !store.IsUnavailable(err) {
+			t.Errorf("IsUnavailable is false for a database that refuses connections: %v", err)
+		}
+		d.SetAcceptingConnections(t, true)
 	})
 }
