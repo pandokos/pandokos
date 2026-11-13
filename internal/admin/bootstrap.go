@@ -86,3 +86,30 @@ func Bootstrap(ctx context.Context, db *store.DB, o BootstrapOptions) (Bootstrap
 	}
 	return res, nil
 }
+
+// BootstrapKey is a bootstrap key that is still usable.
+type BootstrapKey struct {
+	KeyID     string
+	ExpiresAt time.Time
+}
+
+// ActiveBootstrapKeys returns the bootstrap keys that are neither revoked nor expired, for the
+// warning of IAM-14.
+func ActiveBootstrapKeys(ctx context.Context, db *store.DB) ([]BootstrapKey, error) {
+	var out []BootstrapKey
+	err := db.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
+		rows, err := queries.New(tx).ListPlatformKeys(ctx, queries.ListPlatformKeysParams{
+			State: "active", Sort: "created_at", AfterID: "00000000-0000-0000-0000-000000000000", PageSize: 200,
+		})
+		if err != nil {
+			return err
+		}
+		for _, r := range rows {
+			if r.Bootstrap && r.ExpiresAt != nil {
+				out = append(out, BootstrapKey{KeyID: r.KeyID, ExpiresAt: r.ExpiresAt.UTC()})
+			}
+		}
+		return nil
+	})
+	return out, err
+}

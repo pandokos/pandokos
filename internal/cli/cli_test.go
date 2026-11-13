@@ -328,7 +328,7 @@ func TestCommands(t *testing.T) {
 		r.f.out["listTenants"] = &adminapi.TenantList{Items: []adminapi.Tenant{tenant}}
 		r.f.out["getTenant"] = &tenant
 		mustRun(t, r, "tenant", "get", "acme")
-		if got := r.f.only(t, "listTenants"); !reflect.DeepEqual(got, adminapi.ListTenantsInput{Name: "acme"}) {
+		if got := r.f.only(t, "listTenants"); !reflect.DeepEqual(got, adminapi.ListTenantsInput{Name: "acme", Limit: 50, Sort: adminapi.NamedSortCreatedAt}) {
 			t.Errorf("resolution: %+v", got)
 		}
 		if got := r.f.only(t, "getTenant"); !reflect.DeepEqual(got, adminapi.GetTenantInput{Tenant: tid}) {
@@ -484,7 +484,7 @@ func TestCommands(t *testing.T) {
 		if got := r.f.only(t, "getMe"); !reflect.DeepEqual(got, adminapi.GetMeInput{}) {
 			t.Errorf("getMe: %+v", got)
 		}
-		if got := r.f.only(t, "listServiceAccounts"); !reflect.DeepEqual(got, adminapi.ListServiceAccountsInput{Tenant: tid, Name: "bot"}) {
+		if got := r.f.only(t, "listServiceAccounts"); !reflect.DeepEqual(got, adminapi.ListServiceAccountsInput{Tenant: tid, Name: "bot", Limit: 50, Sort: adminapi.NamedSortCreatedAt}) {
 			t.Errorf("resolution: %+v", got)
 		}
 		if got := r.f.only(t, "getServiceAccount"); !reflect.DeepEqual(got, adminapi.GetServiceAccountInput{Tenant: tid, ServiceAccount: sid}) {
@@ -494,7 +494,7 @@ func TestCommands(t *testing.T) {
 		r = newRig(t)
 		r.f.out["listTenants"] = &adminapi.TenantList{Items: []adminapi.Tenant{tenant}}
 		mustRun(t, r, "service-account", "list", "--tenant", "acme")
-		if got := r.f.only(t, "listServiceAccounts"); !reflect.DeepEqual(got, adminapi.ListServiceAccountsInput{Tenant: tid}) {
+		if got := r.f.only(t, "listServiceAccounts"); !reflect.DeepEqual(got, adminapi.ListServiceAccountsInput{Tenant: tid, Limit: 50, Sort: adminapi.NamedSortCreatedAt}) {
 			t.Errorf("list: %+v", got)
 		}
 	})
