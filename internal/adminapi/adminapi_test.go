@@ -22,6 +22,7 @@ const (
 	sid = "0192f0f0-0000-7000-8000-000000000002"
 	vk  = "tabcdefghijklmnop"
 	pk  = "pabcdefghijklmnop"
+	cid = "0192f0f0-0000-7000-8000-000000000003"
 )
 
 // fake is an adminapi.Server that records the input of every call and answers with zero values.
@@ -117,6 +118,62 @@ func (f *fake) GetPlatformKey(_ context.Context, in adminapi.GetPlatformKeyInput
 func (f *fake) RevokePlatformKey(_ context.Context, in adminapi.RevokePlatformKeyInput) (*adminapi.PlatformKey, error) {
 	f.rec("revokePlatformKey", in)
 	return &adminapi.PlatformKey{}, nil
+}
+func (f *fake) ListTenantCredentials(_ context.Context, in adminapi.ListTenantCredentialsInput) (*adminapi.CredentialList, error) {
+	f.rec("listTenantCredentials", in)
+	return &adminapi.CredentialList{}, nil
+}
+func (f *fake) GetTenantCredential(_ context.Context, in adminapi.GetTenantCredentialInput) (*adminapi.Credential, error) {
+	f.rec("getTenantCredential", in)
+	return &adminapi.Credential{}, nil
+}
+func (f *fake) DisableTenantCredential(_ context.Context, in adminapi.DisableTenantCredentialInput) (*adminapi.Credential, error) {
+	f.rec("disableTenantCredential", in)
+	return &adminapi.Credential{}, nil
+}
+func (f *fake) RevokeTenantCredential(_ context.Context, in adminapi.RevokeTenantCredentialInput) (*adminapi.Credential, error) {
+	f.rec("revokeTenantCredential", in)
+	return &adminapi.Credential{}, nil
+}
+func (f *fake) ListCredentials(_ context.Context, in adminapi.ListCredentialsInput) (*adminapi.CredentialList, error) {
+	f.rec("listCredentials", in)
+	return &adminapi.CredentialList{}, nil
+}
+func (f *fake) CreateCredential(_ context.Context, in adminapi.CreateCredentialInput) (*adminapi.Credential, error) {
+	f.rec("createCredential", in)
+	return &adminapi.Credential{}, nil
+}
+func (f *fake) GetCredential(_ context.Context, in adminapi.GetCredentialInput) (*adminapi.Credential, error) {
+	f.rec("getCredential", in)
+	return &adminapi.Credential{}, nil
+}
+func (f *fake) UpdateCredential(_ context.Context, in adminapi.UpdateCredentialInput) (*adminapi.Credential, error) {
+	f.rec("updateCredential", in)
+	return &adminapi.Credential{}, nil
+}
+func (f *fake) DeleteCredential(_ context.Context, in adminapi.DeleteCredentialInput) (*adminapi.Credential, error) {
+	f.rec("deleteCredential", in)
+	return &adminapi.Credential{}, nil
+}
+func (f *fake) DisableCredential(_ context.Context, in adminapi.DisableCredentialInput) (*adminapi.Credential, error) {
+	f.rec("disableCredential", in)
+	return &adminapi.Credential{}, nil
+}
+func (f *fake) EnableCredential(_ context.Context, in adminapi.EnableCredentialInput) (*adminapi.Credential, error) {
+	f.rec("enableCredential", in)
+	return &adminapi.Credential{}, nil
+}
+func (f *fake) RevokeCredential(_ context.Context, in adminapi.RevokeCredentialInput) (*adminapi.Credential, error) {
+	f.rec("revokeCredential", in)
+	return &adminapi.Credential{}, nil
+}
+func (f *fake) ReplaceCredentialSecret(_ context.Context, in adminapi.ReplaceCredentialSecretInput) (*adminapi.Credential, error) {
+	f.rec("replaceCredentialSecret", in)
+	return &adminapi.Credential{}, nil
+}
+func (f *fake) SetDefaultCredential(_ context.Context, in adminapi.SetDefaultCredentialInput) (*adminapi.Credential, error) {
+	f.rec("setDefaultCredential", in)
+	return &adminapi.Credential{}, nil
 }
 
 var _ adminapi.Server = (*fake)(nil)
@@ -268,7 +325,7 @@ func TestRouterAndClient(t *testing.T) {
 			add("listVirtualKeys", in, func() error { _, err := c.ListVirtualKeys(ctx, in); return err })
 		}
 		{
-			in := adminapi.CreateVirtualKeyInput{Tenant: tid, Body: adminapi.VirtualKeyCreate{ServiceAccountID: sid, Description: "d", Scopes: []string{"model:invoke"}, ExpiresAt: &future}}
+			in := adminapi.CreateVirtualKeyInput{Tenant: tid, Body: adminapi.VirtualKeyCreate{ServiceAccountID: sid, Description: "d", CredentialID: cid, Scopes: []string{"model:invoke"}, ExpiresAt: &future}}
 			add("createVirtualKey", in, func() error { _, err := c.CreateVirtualKey(ctx, in); return err })
 		}
 		{
@@ -295,8 +352,64 @@ func TestRouterAndClient(t *testing.T) {
 			in := adminapi.RevokePlatformKeyInput{Key: pk, Body: adminapi.Reason{Reason: "why"}}
 			add("revokePlatformKey", in, func() error { _, err := c.RevokePlatformKey(ctx, in); return err })
 		}
-		if len(adminapi.Operations) != 21 {
-			t.Fatalf("%d operations, want 21", len(adminapi.Operations))
+		{
+			in := adminapi.ListCredentialsInput{Tenant: tid, Limit: 4, Cursor: "abc", Sort: adminapi.SortMinusCreatedAt, State: adminapi.CredentialStateDisabled, Provider: "openai"}
+			add("listCredentials", in, func() error { _, err := c.ListCredentials(ctx, in); return err })
+		}
+		{
+			in := adminapi.CreateCredentialInput{Tenant: tid, Body: adminapi.CredentialCreate{Provider: "openai", Label: "main", Secret: "synthetic-secret-1", Description: "d", ExpiresAt: &future, ValidateAtWrite: true}}
+			add("createCredential", in, func() error { _, err := c.CreateCredential(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetCredentialInput{Tenant: tid, Credential: cid}
+			add("getCredential", in, func() error { _, err := c.GetCredential(ctx, in); return err })
+		}
+		{
+			in := adminapi.UpdateCredentialInput{Tenant: tid, Credential: cid, Body: adminapi.CredentialUpdate{Label: "other", Description: "d2", ExpiresAt: adminapi.Null[time.Time]()}}
+			add("updateCredential", in, func() error { _, err := c.UpdateCredential(ctx, in); return err })
+		}
+		{
+			in := adminapi.DeleteCredentialInput{Tenant: tid, Credential: cid}
+			add("deleteCredential", in, func() error { _, err := c.DeleteCredential(ctx, in); return err })
+		}
+		{
+			in := adminapi.ReplaceCredentialSecretInput{Tenant: tid, Credential: cid, Body: adminapi.CredentialSecret{Secret: "synthetic-secret-2", ExpiresAt: &future, ValidateAtWrite: true}}
+			add("replaceCredentialSecret", in, func() error { _, err := c.ReplaceCredentialSecret(ctx, in); return err })
+		}
+		{
+			in := adminapi.DisableCredentialInput{Tenant: tid, Credential: cid, Body: adminapi.Reason{Reason: "why"}}
+			add("disableCredential", in, func() error { _, err := c.DisableCredential(ctx, in); return err })
+		}
+		{
+			in := adminapi.EnableCredentialInput{Tenant: tid, Credential: cid, Body: adminapi.Reason{Reason: "why"}}
+			add("enableCredential", in, func() error { _, err := c.EnableCredential(ctx, in); return err })
+		}
+		{
+			in := adminapi.SetDefaultCredentialInput{Tenant: tid, Credential: cid, Body: adminapi.Reason{Reason: "why"}}
+			add("setDefaultCredential", in, func() error { _, err := c.SetDefaultCredential(ctx, in); return err })
+		}
+		{
+			in := adminapi.RevokeCredentialInput{Tenant: tid, Credential: cid, Body: adminapi.Reason{Reason: "why"}}
+			add("revokeCredential", in, func() error { _, err := c.RevokeCredential(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListTenantCredentialsInput{Tenant: tid, Limit: 4, Sort: adminapi.SortCreatedAt, State: adminapi.CredentialStateRevoked, Provider: "anthropic"}
+			add("listTenantCredentials", in, func() error { _, err := c.ListTenantCredentials(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetTenantCredentialInput{Tenant: tid, Credential: cid}
+			add("getTenantCredential", in, func() error { _, err := c.GetTenantCredential(ctx, in); return err })
+		}
+		{
+			in := adminapi.DisableTenantCredentialInput{Tenant: tid, Credential: cid, Body: adminapi.RequiredReason{Reason: "why"}}
+			add("disableTenantCredential", in, func() error { _, err := c.DisableTenantCredential(ctx, in); return err })
+		}
+		{
+			in := adminapi.RevokeTenantCredentialInput{Tenant: tid, Credential: cid, Body: adminapi.RequiredReason{Reason: "why"}}
+			add("revokeTenantCredential", in, func() error { _, err := c.RevokeTenantCredential(ctx, in); return err })
+		}
+		if len(adminapi.Operations) != 35 {
+			t.Fatalf("%d operations, want 35", len(adminapi.Operations))
 		}
 		for _, op := range adminapi.Operations {
 			tc, ok := calls[op.ID]

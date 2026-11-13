@@ -28,6 +28,7 @@ const (
 	sid2 = "0192f0f0-0000-7000-8000-000000000003"
 	vk   = "tabcdefghijklmnop"
 	pk   = "pabcdefghijklmnop"
+	cid  = "0192f0f0-0000-7000-8000-000000000004"
 )
 
 // fakeAPI is an adminapi.Server that records the inputs, returns canned outputs and can fail.
@@ -148,6 +149,48 @@ func (f *fakeAPI) GetPlatformKey(_ context.Context, in adminapi.GetPlatformKeyIn
 func (f *fakeAPI) RevokePlatformKey(_ context.Context, in adminapi.RevokePlatformKeyInput) (*adminapi.PlatformKey, error) {
 	return pick[adminapi.PlatformKey](f, "revokePlatformKey"), f.rec("revokePlatformKey", in)
 }
+func (f *fakeAPI) ListTenantCredentials(_ context.Context, in adminapi.ListTenantCredentialsInput) (*adminapi.CredentialList, error) {
+	return pick[adminapi.CredentialList](f, "listTenantCredentials"), f.rec("listTenantCredentials", in)
+}
+func (f *fakeAPI) GetTenantCredential(_ context.Context, in adminapi.GetTenantCredentialInput) (*adminapi.Credential, error) {
+	return pick[adminapi.Credential](f, "getTenantCredential"), f.rec("getTenantCredential", in)
+}
+func (f *fakeAPI) DisableTenantCredential(_ context.Context, in adminapi.DisableTenantCredentialInput) (*adminapi.Credential, error) {
+	return pick[adminapi.Credential](f, "disableTenantCredential"), f.rec("disableTenantCredential", in)
+}
+func (f *fakeAPI) RevokeTenantCredential(_ context.Context, in adminapi.RevokeTenantCredentialInput) (*adminapi.Credential, error) {
+	return pick[adminapi.Credential](f, "revokeTenantCredential"), f.rec("revokeTenantCredential", in)
+}
+func (f *fakeAPI) ListCredentials(_ context.Context, in adminapi.ListCredentialsInput) (*adminapi.CredentialList, error) {
+	return pick[adminapi.CredentialList](f, "listCredentials"), f.rec("listCredentials", in)
+}
+func (f *fakeAPI) CreateCredential(_ context.Context, in adminapi.CreateCredentialInput) (*adminapi.Credential, error) {
+	return pick[adminapi.Credential](f, "createCredential"), f.rec("createCredential", in)
+}
+func (f *fakeAPI) GetCredential(_ context.Context, in adminapi.GetCredentialInput) (*adminapi.Credential, error) {
+	return pick[adminapi.Credential](f, "getCredential"), f.rec("getCredential", in)
+}
+func (f *fakeAPI) UpdateCredential(_ context.Context, in adminapi.UpdateCredentialInput) (*adminapi.Credential, error) {
+	return pick[adminapi.Credential](f, "updateCredential"), f.rec("updateCredential", in)
+}
+func (f *fakeAPI) DeleteCredential(_ context.Context, in adminapi.DeleteCredentialInput) (*adminapi.Credential, error) {
+	return pick[adminapi.Credential](f, "deleteCredential"), f.rec("deleteCredential", in)
+}
+func (f *fakeAPI) DisableCredential(_ context.Context, in adminapi.DisableCredentialInput) (*adminapi.Credential, error) {
+	return pick[adminapi.Credential](f, "disableCredential"), f.rec("disableCredential", in)
+}
+func (f *fakeAPI) EnableCredential(_ context.Context, in adminapi.EnableCredentialInput) (*adminapi.Credential, error) {
+	return pick[adminapi.Credential](f, "enableCredential"), f.rec("enableCredential", in)
+}
+func (f *fakeAPI) RevokeCredential(_ context.Context, in adminapi.RevokeCredentialInput) (*adminapi.Credential, error) {
+	return pick[adminapi.Credential](f, "revokeCredential"), f.rec("revokeCredential", in)
+}
+func (f *fakeAPI) ReplaceCredentialSecret(_ context.Context, in adminapi.ReplaceCredentialSecretInput) (*adminapi.Credential, error) {
+	return pick[adminapi.Credential](f, "replaceCredentialSecret"), f.rec("replaceCredentialSecret", in)
+}
+func (f *fakeAPI) SetDefaultCredential(_ context.Context, in adminapi.SetDefaultCredentialInput) (*adminapi.Credential, error) {
+	return pick[adminapi.Credential](f, "setDefaultCredential"), f.rec("setDefaultCredential", in)
+}
 
 var _ adminapi.Server = (*fakeAPI)(nil)
 
@@ -261,6 +304,9 @@ var (
 	acct   = adminapi.ServiceAccount{ID: sid, TenantID: tid, Name: "bot", Description: "a bot", State: adminapi.ServiceAccountStateActive, Roles: []string{"inference"}, CreatedAt: t0, UpdatedAt: t0}
 	vkey   = adminapi.VirtualKey{ID: vk, TenantID: tid, ServiceAccountID: sid, Description: "ci", State: adminapi.KeyStateActive, CreatedAt: t0}
 	pkey   = adminapi.PlatformKey{ID: pk, Description: "ops", Role: "platform-admin", State: adminapi.KeyStateActive, CreatedAt: t0}
+	cred   = adminapi.Credential{ID: cid, TenantID: tid, Provider: "openai", Label: "main", Description: "the main one", Owner: adminapi.CredentialOwnerTenant,
+		State: adminapi.CredentialStateActive, IsDefault: true, Fingerprint: "0123456789abcdef0123456789abcdef", Hint: "wxyz",
+		StateChangedAt: t0, StateChangedBy: adminapi.CredentialActorTenant, CreatedAt: t0}
 )
 
 func lineWith(text, prefix string) bool {
@@ -537,6 +583,13 @@ func TestCommands(t *testing.T) {
 		}
 		if code, _, errs := r.run(t, "key", "create", "--tenant", tid); code != 2 || !strings.Contains(errs, "service-account") {
 			t.Errorf("--service-account is required: %d %q", code, errs)
+		}
+		// T-311: key create --credential pins the key to a credential.
+		r.f.got = map[string][]any{}
+		mustRun(t, r, "key", "create", "--tenant", tid, "--service-account", sid, "--credential", cid)
+		wantPin := adminapi.CreateVirtualKeyInput{Tenant: tid, Body: adminapi.VirtualKeyCreate{ServiceAccountID: sid, CredentialID: cid}}
+		if got := r.f.only(t, "createVirtualKey"); !reflect.DeepEqual(got, wantPin) {
+			t.Errorf("create with --credential: %+v", got)
 		}
 	})
 

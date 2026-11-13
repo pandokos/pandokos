@@ -19,7 +19,10 @@ import (
 	"github.com/pandokos/pandokos/test/testutil"
 )
 
-const envAPIKey = "PANDOKOS_SKELETON_OPENAI_API_KEY_FILE"
+const (
+	envAPIKey  = "PANDOKOS_SKELETON_OPENAI_API_KEY_FILE"
+	envKEKFile = "PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE"
+)
 
 func randomSecret(t *testing.T) string {
 	t.Helper()
@@ -49,6 +52,7 @@ func validSource(t *testing.T) Source {
 	t.Helper()
 	return Source{Environ: append([]string{
 		envAPIKey + "=" + testutil.WriteSecret(t, "key", fixtures.CanaryProviderKey),
+		envKEKFile + "=" + testutil.WriteKEK(t),
 	}, dbServeEnv(t)...)}
 }
 
@@ -181,6 +185,8 @@ func TestDefaults(t *testing.T) {
 		{"upstream.connect_timeout", time.Duration(d.Upstream.ConnectTimeout), 10 * time.Second},
 		{"shutdown.drain_timeout", time.Duration(d.Shutdown.DrainTimeout), 30 * time.Second},
 		{"cache.principal_ttl", time.Duration(d.Cache.PrincipalTTL), 30 * time.Second},
+		{"cache.credential_ttl", time.Duration(d.Cache.CredentialTTL), 30 * time.Second},
+		{"cache.data_key_ttl", time.Duration(d.Cache.DataKeyTTL), 5 * time.Minute},
 		{"database.address", d.Database.Address, ""},
 		{"database.direct_address", d.Database.DirectAddress, ""},
 		{"database.name", d.Database.Name, "pandokos"},
@@ -198,6 +204,8 @@ func TestDefaults(t *testing.T) {
 		{"database.worker.max_connections", d.Database.Worker.MaxConnections, 5},
 		{"database.owner.user", d.Database.Owner.User, "pandokos_owner"},
 		{"database.owner.password_file", d.Database.Owner.PasswordFile, ""},
+		{"vault.kek.provider", d.Vault.KEK.Provider, "local"},
+		{"vault.kek.local.key_file", d.Vault.KEK.Local.KeyFile, ""},
 		{"skeleton.openai.base_url", d.Skeleton.OpenAI.BaseURL, "https://api.openai.com/v1"},
 		{"skeleton.openai.api_key_file", d.Skeleton.OpenAI.APIKeyFile, ""},
 	}
@@ -231,6 +239,8 @@ var wantKeys = []string{
 	"upstream.connect_timeout",
 	"shutdown.drain_timeout",
 	"cache.principal_ttl",
+	"cache.credential_ttl",
+	"cache.data_key_ttl",
 	"database.address",
 	"database.direct_address",
 	"database.name",
@@ -248,14 +258,17 @@ var wantKeys = []string{
 	"database.worker.max_connections",
 	"database.owner.user",
 	"database.owner.password_file",
+	"vault.kek.provider",
+	"vault.kek.local.key_file",
 	"skeleton.openai.base_url",
 	"skeleton.openai.api_key_file",
 }
 
 var wantDefaultText = []string{"info", "0.0.0.0:8080", "10s", "120s", "65536", "", "", "TLS1.2",
 	"127.0.0.1:8081", "10s", "120s", "65536", "", "", "TLS1.2", "false",
-	"10485760", "30s", "10m", "10s", "30s", "30s",
+	"10485760", "30s", "10m", "10s", "30s", "30s", "30s", "5m",
 	"", "", "pandokos", "verify-full", "", "5s", "pandokos_gateway", "", "10", "pandokos_admin", "", "10", "pandokos_worker", "", "5", "pandokos_owner", "",
+	"local", "",
 	"https://api.openai.com/v1", ""}
 
 func leafKeys(t reflect.Type, prefix string, out *[]string) {
@@ -357,6 +370,8 @@ func keyCases(t *testing.T) []keyCase {
 		{key: "listeners.admin.tls.min_version", a: "TLS1.3", b: "TLS1.2"},
 		{key: "listeners.admin.allow_plaintext", a: "true", b: "false", yamlBool: true},
 		{key: "cache.principal_ttl", a: "11s", b: "12s"},
+		{key: "cache.credential_ttl", a: "13s", b: "14s"},
+		{key: "cache.data_key_ttl", a: "3m", b: "4m"},
 		{key: "database.direct_address", a: "db-direct-a.example.test:5432", b: "db-direct-b.example.test:6432"},
 		{key: "limits.max_request_body_bytes", a: "2048", b: "4096", yamlInt: true},
 		{key: "limits.request_body_read_timeout", a: "31s", b: "32s"},
@@ -379,6 +394,8 @@ func keyCases(t *testing.T) []keyCase {
 		{key: "database.worker.max_connections", a: "41", b: "42", yamlInt: true},
 		{key: "database.owner.user", a: "own-a", b: "own-b"},
 		{key: "database.owner.password_file", a: mk("owp_a", "pw-owner-a"), b: mk("owp_b", "pw-owner-b")},
+		{key: "vault.kek.provider", a: "local", b: "local"},
+		{key: "vault.kek.local.key_file", a: testutil.WriteKEK(t), b: testutil.WriteKEK(t)},
 		{key: "skeleton.openai.base_url", a: "http://127.0.0.1:1/v1", b: "http://127.0.0.1:2/v1"},
 		{key: "skeleton.openai.api_key_file", a: mk("ka", "key-a"), b: mk("kb", "key-b")},
 	}
@@ -437,6 +454,14 @@ func field(c *Config, key string) string {
 		return strconv.FormatBool(c.Listeners.Admin.AllowPlaintext)
 	case "cache.principal_ttl":
 		return time.Duration(c.Cache.PrincipalTTL).String()
+	case "cache.credential_ttl":
+		return time.Duration(c.Cache.CredentialTTL).String()
+	case "cache.data_key_ttl":
+		return time.Duration(c.Cache.DataKeyTTL).String()
+	case "vault.kek.provider":
+		return c.Vault.KEK.Provider
+	case "vault.kek.local.key_file":
+		return c.Vault.KEK.Local.KeyFile
 	case "database.direct_address":
 		return c.Database.DirectAddress
 	case "limits.max_request_body_bytes":
@@ -565,6 +590,9 @@ func TestLoadFile(t *testing.T) {
 	}
 	if c.Skeleton.OpenAI.APIKey.Reveal() != "key-a" {
 		t.Error("the provider key was not read from its file")
+	}
+	if got, err := os.ReadFile(caseOf(t, cases, "vault.kek.local.key_file").a); err != nil || c.Vault.KEK.Local.Key.Reveal() != strings.TrimSpace(string(got)) {
+		t.Errorf("the key-encryption key was not read from its file: %v", err)
 	}
 	if c.Listeners.Inference.TLS.Certificate == nil || c.Listeners.Admin.TLS.Certificate == nil {
 		t.Error("the listener certificates were not loaded")
@@ -822,6 +850,7 @@ func TestSecretFiles(t *testing.T) {
 	t.Run("read and trimmed", func(t *testing.T) {
 		src := Source{Environ: append([]string{
 			envAPIKey + "=" + writeFile(t, "\t"+fixtures.CanaryProviderKey+"\r\n"),
+			envKEKFile + "=" + testutil.WriteKEK(t),
 		}, dbServeEnv(t)...)}
 		c, _ := mustLoad(t, src)
 		if c.Skeleton.OpenAI.APIKey.Reveal() != fixtures.CanaryProviderKey {
@@ -1096,8 +1125,12 @@ func TestPurpose(t *testing.T) {
 			envOf["database.admin.password_file"]+"=/nonexistent/admin",
 			envOf["database.worker.password_file"]+"=/nonexistent/worker",
 			envAPIKey+"=/nonexistent/key",
+			envKEKFile+"=/nonexistent/kek",
 		)
 		c, _ := mustLoad(t, src)
+		if !c.Vault.KEK.Local.Key.IsZero() {
+			t.Error("migrate must not read the key-encryption key")
+		}
 		if c.Database.Owner.Password.Reveal() != ow {
 			t.Error("the owner password was not read")
 		}
@@ -1486,8 +1519,12 @@ func TestInitPurposeAndNewKeys(t *testing.T) {
 			envOf["database.worker.password_file"]+"=/nonexistent/worker",
 			envOf["database.owner.password_file"]+"=/nonexistent/owner",
 			envAPIKey+"=/nonexistent/key",
+			envKEKFile+"=/nonexistent/kek",
 		)
 		c, _ := mustLoad(t, src)
+		if !c.Vault.KEK.Local.Key.IsZero() {
+			t.Error("init must not read the key-encryption key")
+		}
 		if c.Database.Admin.Password.IsZero() {
 			t.Error("the admin password was not read")
 		}

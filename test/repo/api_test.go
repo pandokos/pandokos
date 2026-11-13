@@ -257,15 +257,18 @@ func internalDeps(t *testing.T, pkg string) []string {
 	return strings.Fields(string(out))
 }
 
-// TestPlanesDoNotImportEachOther is T-R13.
+// TestPlanesDoNotImportEachOther is T-R13, extended by T-R20 (sprint 2.1, section 4).
 func TestPlanesDoNotImportEachOther(t *testing.T) {
 	const mod = "github.com/pandokos/pandokos/internal/"
 	rules := map[string][]string{
-		"gateway":  {"admin", "adminapi", "authn", "cli", "store"},
+		"gateway":  {"admin", "adminapi", "authn", "cli", "store", "vault"},
 		"admin":    {"gateway", "family", "server", "config"},
 		"cli":      {"store", "admin", "config"},
 		"authz":    {"store", "admin", "gateway", "config", "authn"},
 		"adminapi": {"store", "admin", "gateway", "authn", "authz", "config", "cli"},
+		// T-R20: the vault is below the planes and knows neither of them, nor the server, the CLI
+		// or the configuration.
+		"vault": {"admin", "adminapi", "gateway", "family", "server", "cli", "config"},
 	}
 	for pkg, banned := range rules {
 		deps := internalDeps(t, pkg)
@@ -284,6 +287,43 @@ func TestPlanesDoNotImportEachOther(t *testing.T) {
 			t.Errorf("internal/adminapi reaches %s, which is not the standard library", d)
 		}
 	}
+	// The vault imports authz, secret, store, store/queries, tenant and the standard library, and
+	// nothing else of the product; internal/admin may import the vault.
+	t.Run("what the vault imports", func(t *testing.T) {
+		cmd := exec.Command("go", "list", "-f", `{{join .Imports "\n"}}`, "./internal/vault")
+		cmd.Dir = root(t)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("go list ./internal/vault: %v", err)
+		}
+		allowed := map[string]bool{}
+		for _, a := range []string{"authz", "secret", "store", "store/queries", "tenant"} {
+			allowed[mod+a] = true
+		}
+		n := 0
+		for _, imp := range strings.Fields(string(out)) {
+			first, _, _ := strings.Cut(imp, "/")
+			switch {
+			case strings.HasPrefix(imp, mod):
+				n++
+				if !allowed[imp] {
+					t.Errorf("internal/vault imports %s", imp)
+				}
+			case strings.Contains(first, "."):
+				t.Errorf("internal/vault imports %s, which is not the standard library or the product", imp)
+			}
+		}
+		if n == 0 {
+			t.Error("internal/vault imports nothing of the product: the test would prove nothing")
+		}
+		found := false
+		for _, d := range internalDeps(t, "admin") {
+			found = found || d == mod+"vault"
+		}
+		if !found {
+			t.Error("internal/admin does not reach internal/vault")
+		}
+	})
 	// internal/authz and internal/requestid know only the tenant package.
 	for _, pkg := range []string{"authz", "requestid"} {
 		for _, d := range internalDeps(t, pkg) {
@@ -340,6 +380,31 @@ func TestReferenceDocuments(t *testing.T) {
 			}
 		}
 	})
+	t.Run("admin API (sprint 2.1)", func(t *testing.T) {
+		doc := read(t, "docs/reference/admin-api.md")
+		for _, op := range adminapi.Operations {
+			if !strings.Contains(doc, "`"+op.ID+"`") {
+				t.Errorf("admin-api.md does not name the operation %s", op.ID)
+			}
+		}
+		for _, w := range []string{
+			"`credential_rejected`", "`validation_unavailable`", "422", "502",
+			"credential list", "tenant-credential", "kek generate",
+			"write-only", "never returned",
+		} {
+			if !strings.Contains(doc, w) {
+				t.Errorf("admin-api.md lacks %q", w)
+			}
+		}
+	})
+	t.Run("keys (sprint 2.1)", func(t *testing.T) {
+		doc := read(t, "docs/operations/keys.md")
+		for _, w := range []string{"--credential", "credential:use", "model:invoke"} {
+			if !strings.Contains(doc, w) {
+				t.Errorf("keys.md lacks %q", w)
+			}
+		}
+	})
 	t.Run("tls", func(t *testing.T) {
 		doc := read(t, "docs/operations/tls.md")
 		for _, k := range config.Keys() {
@@ -357,7 +422,8 @@ func TestReferenceDocuments(t *testing.T) {
 	})
 }
 
-// TestOpenAPIDocument is T-R15.
+// TestOpenAPIDocument is T-R15, changed in sprint 2.1: the secret of a credential is written by
+// two request bodies and returned by none.
 func TestOpenAPIDocument(t *testing.T) {
 	var doc struct {
 		OpenAPI string                          `yaml:"openapi"`
@@ -436,8 +502,10 @@ func TestOpenAPIDocument(t *testing.T) {
 		}
 	}
 	sort.Strings(withSecret)
-	if strings.Join(withSecret, ",") != "PlatformKeyCreated,VirtualKeyCreated" {
-		t.Errorf("secret occurs in %v, want only the two ...Created schemas", withSecret)
+	// A secret is written by two request bodies (a provider credential is created and replaced)
+	// and returned by the two ...Created schemas, and by no schema of a response about credentials.
+	if strings.Join(withSecret, ",") != "CredentialCreate,CredentialSecret,PlatformKeyCreated,VirtualKeyCreated" {
+		t.Errorf("secret occurs in %v, want only CredentialCreate, CredentialSecret and the two ...Created schemas", withSecret)
 	}
 }
 
@@ -514,5 +582,138 @@ func TestSecretScanning(t *testing.T) {
 	}
 	if !strings.Contains(read(t, "CONTRIBUTING.md"), "make secrets") {
 		t.Error("CONTRIBUTING.md does not mention make secrets")
+	}
+}
+
+// TestCryptographyInOnePlace is T-R21: only internal/vault imports crypto/aes, crypto/cipher and
+// crypto/hkdf, and no package imports a cryptography module that is not the standard library.
+func TestCryptographyInOnePlace(t *testing.T) {
+	only := map[string]bool{"crypto/aes": true, "crypto/cipher": true, "crypto/hkdf": true}
+	seen := map[string]bool{}
+	files := 0
+	err := filepath.WalkDir(root(t), func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(root(t), path)
+		rel = filepath.ToSlash(rel)
+		if d.IsDir() {
+			switch rel {
+			case ".git", "planning", "docs", "local", "test/sdk":
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+		f, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		files++
+		inVault := strings.HasPrefix(rel, "internal/vault/")
+		for _, imp := range f.Imports {
+			p := strings.Trim(imp.Path.Value, `"`)
+			if only[p] {
+				if inVault {
+					seen[p] = !strings.HasSuffix(rel, "_test.go") || seen[p] // the product, not its tests, must use it
+				} else {
+					t.Errorf("%s imports %s: sealing, unsealing and key derivation live in internal/vault only", rel, p)
+				}
+			}
+			first, _, _ := strings.Cut(p, "/")
+			if strings.Contains(first, ".") && strings.Contains(p, "crypto") {
+				t.Errorf("%s imports %s: a cryptography module outside the standard library", rel, p)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files < 100 {
+		t.Errorf("only %d Go files were read", files)
+	}
+	for p := range only {
+		if !seen[p] {
+			t.Errorf("internal/vault does not import %s: the test would prove nothing", p)
+		}
+	}
+	// The module requires no cryptography module either.
+	for _, line := range strings.Split(read(t, "go.mod"), "\n") {
+		if strings.Contains(line, "crypto") {
+			t.Errorf("go.mod requires %s", strings.TrimSpace(line))
+		}
+	}
+	// The linter says the same, so that the rule is checked when code is written.
+	lint := read(t, ".golangci.yml")
+	for p := range only {
+		if !strings.Contains(lint, "pkg: "+p) {
+			t.Errorf(".golangci.yml does not forbid %s outside internal/vault", p)
+		}
+	}
+}
+
+// TestVaultGuide is T-R22: the operations guide of the vault carries the facts an operator needs
+// to survive the loss of the key, and the decision records exist.
+func TestVaultGuide(t *testing.T) {
+	doc := read(t, "docs/operations/vault.md")
+	for _, k := range []string{"vault.kek.provider", "vault.kek.local.key_file", "cache.credential_ttl", "cache.data_key_ttl"} {
+		if !strings.Contains(doc, k) {
+			t.Errorf("vault.md does not name %s", k)
+		}
+	}
+	for _, k := range config.Keys() {
+		switch k.Name {
+		case "vault.kek.provider", "vault.kek.local.key_file", "cache.credential_ttl", "cache.data_key_ttl":
+			if !strings.Contains(doc, k.Env) {
+				t.Errorf("vault.md does not name the variable %s", k.Env)
+			}
+		}
+	}
+	for _, w := range []string{
+		"60 s", "15 m", "30 s", "5 m", // the two bounds and the two defaults
+		"separately",           // the backup rule (VLT-13)
+		"recover-lost-kek.sql", // the recovery script
+		"every tenant must re-enter its provider credentials", // what the loss of the key means
+		"kek generate", "vault ready",
+		"0400", "0440",
+	} {
+		if !strings.Contains(doc, w) {
+			t.Errorf("vault.md lacks %q", w)
+		}
+	}
+	script := read(t, "deploy/postgres/recover-lost-kek.sql")
+	for _, w := range []string{":'kek_version'", "pandokos.provider_credential", "pandokos.tenant_data_key", "pandokos.kek_version", "'revoked'"} {
+		if !strings.Contains(script, w) {
+			t.Errorf("recover-lost-kek.sql lacks %q", w)
+		}
+	}
+	// The permissions, the commands and the codes of the reference pages.
+	perms := read(t, "docs/reference/permissions.md")
+	for _, p := range []string{"credential:read", "credential:write", "credential:rotate", "credential:delete", "credential:use", "tenant_credential:read", "tenant_credential:revoke"} {
+		if !strings.Contains(perms, "`"+p+"`") {
+			t.Errorf("permissions.md does not list %s", p)
+		}
+	}
+	api := read(t, "docs/reference/admin-api.md")
+	for _, w := range []string{"credential_rejected", "validation_unavailable", "tenant-credential", "kek generate"} {
+		if !strings.Contains(api, w) {
+			t.Errorf("admin-api.md lacks %q", w)
+		}
+	}
+	// The decision records.
+	index := read(t, "docs/adr/README.md")
+	for file, title := range map[string]string{
+		"docs/adr/0033-vault-formats-and-key-identifiers.md":       "# 0033. Vault: formats, derived keys, key identifiers, caches",
+		"docs/adr/0034-credential-model-and-platform-oversight.md": "# 0034. Credential model and platform oversight",
+	} {
+		if !strings.HasPrefix(read(t, file), title+"\n") {
+			t.Errorf("%s does not start with %q", file, title)
+		}
+		if !strings.Contains(index, strings.TrimSuffix(filepath.Base(file), ".md")) {
+			t.Errorf("docs/adr/README.md does not list %s", filepath.Base(file))
+		}
 	}
 }

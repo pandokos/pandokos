@@ -31,6 +31,7 @@ type side struct {
 	sa        adminapi.ServiceAccount // inference role
 	key       adminapi.VirtualKeyCreated
 	inference adminapi.VirtualKeyCreated // a key of a service account of its own, for the inference tests
+	cred      adminapi.Credential        // the default openai credential of the tenant
 }
 
 type apiWorld struct {
@@ -62,6 +63,7 @@ func newSide(t *testing.T, api *apitest.API, name string) side {
 		t.Fatal(err)
 	}
 	s.inference = *ik
+	s.cred = api.Credential(t, s.tenant.ID, s.adminKey, "openai", "main")
 	return s
 }
 
@@ -73,7 +75,19 @@ func newAPIWorld(t *testing.T) *apiWorld {
 }
 
 func (s side) params() apitest.Params {
-	return apitest.Params{Tenant: s.tenant.ID, ServiceAccount: s.sa.ID, VirtualKey: s.key.Key.ID, PlatformKey: "pabcdefghijklmnop"}
+	return apitest.Params{Tenant: s.tenant.ID, ServiceAccount: s.sa.ID, VirtualKey: s.key.Key.ID, PlatformKey: "pabcdefghijklmnop", Credential: s.cred.ID}
+}
+
+// fresh is params with a credential of its own when the operation names one: the tests that
+// call every operation in turn would otherwise find the credential deleted, revoked or replaced
+// by an earlier operation. The new credential is not the default of its provider.
+func (w *apiWorld) fresh(t *testing.T, s side, op adminapi.Operation) apitest.Params {
+	t.Helper()
+	p := s.params()
+	if strings.Contains(op.Path, "{credential}") {
+		p.Credential = w.api.Credential(t, s.tenant.ID, s.adminKey, "openai", apitest.UniqueName("extra")).ID
+	}
+	return p
 }
 
 // normalize reduces a response to what must not depend on the resource it names: the status,
@@ -133,6 +147,11 @@ var platformAndSelf = map[string]string{
 	"createPlatformKey": "platform",
 	"getPlatformKey":    "platform",
 	"revokePlatformKey": "platform",
+
+	"listTenantCredentials":   "platform",
+	"getTenantCredential":     "platform",
+	"disableTenantCredential": "platform",
+	"revokeTenantCredential":  "platform",
 }
 
 func scopeOf(t *testing.T, op adminapi.Operation) authz.Scope {
@@ -163,8 +182,8 @@ func TestCrossTenantIndistinguishable(t *testing.T) {
 			}
 			// A's key gets 403 on a platform operation, or 200 on getMe, the same for an
 			// existing and a missing identifier.
-			real := apitest.Params{Tenant: w.b.tenant.ID, ServiceAccount: w.b.sa.ID, VirtualKey: w.b.key.Key.ID, PlatformKey: "pabcdefghijklmnop"}
-			missing := apitest.Params{Tenant: randomUUID(t, w), ServiceAccount: randomUUID(t, w), VirtualKey: randomKeyID(t), PlatformKey: "pabcdefghijklmnoq"}
+			real := apitest.Params{Tenant: w.b.tenant.ID, ServiceAccount: w.b.sa.ID, VirtualKey: w.b.key.Key.ID, PlatformKey: "pabcdefghijklmnop", Credential: w.b.cred.ID}
+			missing := apitest.Params{Tenant: randomUUID(t, w), ServiceAccount: randomUUID(t, w), VirtualKey: randomKeyID(t), PlatformKey: "pabcdefghijklmnoq", Credential: randomUUID(t, w)}
 			cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
 			if op.ID == "createTenant" {
 				cm.Body = cr.Body
@@ -189,8 +208,8 @@ func TestCrossTenantIndistinguishable(t *testing.T) {
 		if strings.Contains(op.Path, "{tenant}") {
 			real, missing := w.a.params(), w.a.params()
 			real.Tenant, missing.Tenant = w.b.tenant.ID, randomUUID(t, w)
-			real.ServiceAccount, real.VirtualKey = w.b.sa.ID, w.b.key.Key.ID
-			missing.ServiceAccount, missing.VirtualKey = randomUUID(t, w), randomKeyID(t)
+			real.ServiceAccount, real.VirtualKey, real.Credential = w.b.sa.ID, w.b.key.Key.ID, w.b.cred.ID
+			missing.ServiceAccount, missing.VirtualKey, missing.Credential = randomUUID(t, w), randomKeyID(t), randomUUID(t, w)
 			cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
 			r1 := w.api.Do(t, cr.Method, cr.Path, w.a.adminKey, cr.Body, nil)
 			r2 := w.api.Do(t, cm.Method, cm.Path, w.a.adminKey, cm.Body, nil)
@@ -207,10 +226,10 @@ func TestCrossTenantIndistinguishable(t *testing.T) {
 		}
 
 		// A second parameter: in A's own tenant, B's resource against a missing one.
-		if strings.Contains(op.Path, "{service_account}") || (strings.Contains(op.Path, "{key}") && !strings.HasPrefix(op.Path, "/v1/platform-keys")) {
+		if strings.Contains(op.Path, "{service_account}") || strings.Contains(op.Path, "{credential}") || (strings.Contains(op.Path, "{key}") && !strings.HasPrefix(op.Path, "/v1/platform-keys")) {
 			real, missing := w.a.params(), w.a.params()
-			real.ServiceAccount, real.VirtualKey = w.b.sa.ID, w.b.key.Key.ID
-			missing.ServiceAccount, missing.VirtualKey = randomUUID(t, w), randomKeyID(t)
+			real.ServiceAccount, real.VirtualKey, real.Credential = w.b.sa.ID, w.b.key.Key.ID, w.b.cred.ID
+			missing.ServiceAccount, missing.VirtualKey, missing.Credential = randomUUID(t, w), randomKeyID(t), randomUUID(t, w)
 			cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
 			r1 := w.api.Do(t, cr.Method, cr.Path, w.a.adminKey, cr.Body, nil)
 			r2 := w.api.Do(t, cm.Method, cm.Path, w.a.adminKey, cm.Body, nil)
@@ -226,7 +245,25 @@ func TestCrossTenantIndistinguishable(t *testing.T) {
 			checked++
 		}
 
-		// A body member that names a resource.
+		// A body member that names a resource: the credential a new key is pinned to.
+		if op.ID == "createVirtualKey" {
+			real, missing := w.a.params(), w.a.params()
+			cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
+			cr.Body.(map[string]any)["credential_id"] = w.b.cred.ID
+			cm.Body.(map[string]any)["credential_id"] = randomUUID(t, w)
+			r1 := w.api.Do(t, cr.Method, cr.Path, w.a.adminKey, cr.Body, nil)
+			r2 := w.api.Do(t, cm.Method, cm.Path, w.a.adminKey, cm.Body, nil)
+			if r1.Status != 400 || r2.Status != 400 {
+				t.Errorf("%s: B's credential gives %d, a missing one %d, want 400\n%s", op.ID, r1.Status, r2.Status, r1.Body)
+			}
+			if normalize(t, r1) != normalize(t, r2) {
+				t.Errorf("%s: B's credential and a missing one differ:\n%s\n%s", op.ID, normalize(t, r1), normalize(t, r2))
+			}
+			if after := w.api.SnapshotTenant(t, w.b.tenant.ID); after != rows {
+				t.Fatalf("%s changed a row of tenant B", op.ID)
+			}
+			checked++
+		}
 		if op.ID == "createVirtualKey" {
 			real, missing := w.a.params(), w.a.params()
 			real.ServiceAccount, missing.ServiceAccount = w.b.sa.ID, randomUUID(t, w)
@@ -326,22 +363,22 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 			continue
 		}
 		// The positive control: A's key does it in A.
-		own := apitest.CallFor(t, op, w.a.params())
+		own := apitest.CallFor(t, op, w.fresh(t, w.a, op))
 		r := w.api.Do(t, own.Method, own.Path, w.a.adminKey, own.Body, nil)
 		if r.Status != 200 && r.Status != 201 {
 			t.Errorf("%s in A: status %d\n%s", op.ID, r.Status, r.Body)
 		}
 		// And none in B.
 		p := w.a.params()
-		p.Tenant, p.ServiceAccount, p.VirtualKey = w.b.tenant.ID, w.b.sa.ID, w.b.key.Key.ID
+		p.Tenant, p.ServiceAccount, p.VirtualKey, p.Credential = w.b.tenant.ID, w.b.sa.ID, w.b.key.Key.ID, w.b.cred.ID
 		other := apitest.CallFor(t, op, p)
 		if r := w.api.Do(t, other.Method, other.Path, w.a.adminKey, other.Body, nil); r.Status != 404 {
 			t.Errorf("%s in B: status %d\n%s", op.ID, r.Status, r.Body)
 		}
 		n++
 	}
-	if n != 10 {
-		t.Errorf("%d tenant operations, want 10", n)
+	if n != 20 {
+		t.Errorf("%d tenant operations, want 20", n)
 	}
 	if _, err := c.GetTenant(ctx(t), adminapi.GetTenantInput{Tenant: w.b.tenant.ID}); err == nil {
 		t.Error("a tenant key read a tenant")
@@ -373,7 +410,7 @@ func TestPlatformKeyHasNoTenantPermission(t *testing.T) {
 			continue
 		}
 		real, missing := w.a.params(), w.a.params()
-		missing.Tenant, missing.ServiceAccount, missing.VirtualKey = randomUUID(t, w), randomUUID(t, w), randomKeyID(t)
+		missing.Tenant, missing.ServiceAccount, missing.VirtualKey, missing.Credential = randomUUID(t, w), randomUUID(t, w), randomKeyID(t), randomUUID(t, w)
 		cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
 		r1 := w.api.Do(t, cr.Method, cr.Path, w.api.PlatformKey(), cr.Body, nil)
 		r2 := w.api.Do(t, cm.Method, cm.Path, w.api.PlatformKey(), cm.Body, nil)
@@ -394,7 +431,7 @@ func TestPlatformKeyHasNoTenantPermission(t *testing.T) {
 func TestTenantAdminIsEnoughAndNoMore(t *testing.T) {
 	w := newAPIWorld(t)
 	for _, op := range adminapi.Operations {
-		call := apitest.CallFor(t, op, w.a.params())
+		call := apitest.CallFor(t, op, w.fresh(t, w.a, op))
 		r := w.api.Do(t, call.Method, call.Path, w.a.adminKey, call.Body, nil)
 		switch scopeOf(t, op) {
 		case authz.ScopeTenant, authz.ScopeSelf:
