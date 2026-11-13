@@ -4,11 +4,15 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pandokos/pandokos/internal/config"
@@ -16,32 +20,60 @@ import (
 	"github.com/pandokos/pandokos/internal/health"
 )
 
-// Server is the Pandokos server of the walking skeleton: one listener, the health endpoints
-// and the inference gateway.
+// Options configure a Server.
+type Options struct {
+	Config        *config.Config        // required
+	Logger        *slog.Logger          // required
+	Authenticator gateway.Authenticator // required: authenticates inference requests
+	Admin         http.Handler          // required: the administration API (admin.New)
+}
+
+// listener is one HTTP listener with its server.
+type listener struct {
+	name string
+	srv  *http.Server
+	ln   net.Listener
+	addr string
+	tls  *config.ListenerTLS
+}
+
+// Server serves two listeners with two handlers: the inference gateway and the administration
+// API. They share the health state, the logger and the shutdown sequence.
 type Server struct {
 	cfg       *config.Config
 	logger    *slog.Logger
 	health    *health.State
 	healthH   http.Handler
 	gw        *gateway.Handler
+	admin     http.Handler
 	transport *http.Transport
-	httpSrv   *http.Server
-	ln        net.Listener
+	inf, adm  *listener
 
 	baseCtx    context.Context
 	cancelBase context.CancelCauseFunc
 }
 
-// New wires logger, health, gateway and the HTTP server. It performs no I/O.
-func New(cfg *config.Config, logger *slog.Logger) (*Server, error) {
-	s := &Server{cfg: cfg, logger: logger, health: health.New(logger)}
+// New wires logger, health, gateway and the two HTTP servers. It performs no I/O.
+func New(o Options) (*Server, error) {
+	switch {
+	case o.Config == nil:
+		return nil, errors.New("server: Config is required")
+	case o.Logger == nil:
+		return nil, errors.New("server: Logger is required")
+	case o.Authenticator == nil:
+		return nil, errors.New("server: Authenticator is required")
+	case o.Admin == nil:
+		return nil, errors.New("server: Admin is required")
+	}
+	cfg, logger := o.Config, o.Logger
+	s := &Server{cfg: cfg, logger: logger, health: health.New(logger), admin: o.Admin}
 	s.healthH = s.health.Handler()
 	s.transport = gateway.NewTransport(time.Duration(cfg.Upstream.ConnectTimeout))
 	gw, err := gateway.New(gateway.Options{
 		Logger:                 logger,
 		BaseURL:                cfg.Skeleton.OpenAI.ParsedBaseURL,
 		ProviderKey:            cfg.Skeleton.OpenAI.APIKey,
-		AccessToken:            cfg.Skeleton.AccessToken,
+		Authenticator:          o.Authenticator,
 		MaxRequestBodyBytes:    cfg.Limits.MaxRequestBodyBytes,
 		RequestBodyReadTimeout: time.Duration(cfg.Limits.RequestBodyReadTimeout),
 		MaxRequestDuration:     time.Duration(cfg.Limits.MaxRequestDuration),
@@ -52,14 +84,35 @@ func New(cfg *config.Config, logger *slog.Logger) (*Server, error) {
 	}
 	s.gw = gw
 	s.baseCtx, s.cancelBase = context.WithCancelCause(context.Background())
-	l := cfg.Listeners.Inference
-	s.httpSrv = &http.Server{
+	errLog := slog.NewLogLogger(logger.Handler(), slog.LevelWarn)
+	base := func(net.Listener) context.Context { return s.baseCtx }
+	l, a := cfg.Listeners.Inference, cfg.Listeners.Admin
+	s.inf = &listener{name: "inference", tls: &cfg.Listeners.Inference.TLS, srv: &http.Server{
 		Handler:           http.HandlerFunc(s.route),
 		ReadHeaderTimeout: time.Duration(l.ReadHeaderTimeout),
 		IdleTimeout:       time.Duration(l.IdleTimeout),
 		MaxHeaderBytes:    l.MaxHeaderBytes,
-		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
-		BaseContext:       func(net.Listener) context.Context { return s.baseCtx },
+		ErrorLog:          errLog,
+		BaseContext:       base,
+	}}
+	s.adm = &listener{name: "admin", tls: &cfg.Listeners.Admin.TLS, srv: &http.Server{
+		Handler:           http.HandlerFunc(s.routeAdmin),
+		ReadHeaderTimeout: time.Duration(a.ReadHeaderTimeout),
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       time.Duration(a.IdleTimeout),
+		MaxHeaderBytes:    a.MaxHeaderBytes,
+		ErrorLog:          errLog,
+		BaseContext:       base,
+	}}
+	for _, x := range []*listener{s.inf, s.adm} {
+		if c := x.tls.Certificate; c != nil {
+			min := uint16(tls.VersionTLS12)
+			if x.tls.MinVersion == "TLS1.3" {
+				min = tls.VersionTLS13
+			}
+			x.srv.TLSConfig = &tls.Config{Certificates: []tls.Certificate{*c}, MinVersion: min}
+		}
 	}
 	return s, nil
 }
@@ -67,23 +120,41 @@ func New(cfg *config.Config, logger *slog.Logger) (*Server, error) {
 // Health returns the health state, so that callers can add checks before Serve.
 func (s *Server) Health() *health.State { return s.health }
 
-// Listen binds the inference listener. After it returns, InferenceAddr is valid.
+// Listen binds the inference listener and then the admin listener. If the second fails the first
+// is closed. After it returns, InferenceAddr and AdminAddr are valid.
 func (s *Server) Listen() error {
-	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", s.cfg.Listeners.Inference.Address)
-	if err != nil {
-		return fmt.Errorf("listen on the inference address: %w", err)
+	for _, x := range []struct {
+		l    *listener
+		addr string
+	}{{s.inf, s.cfg.Listeners.Inference.Address}, {s.adm, s.cfg.Listeners.Admin.Address}} {
+		ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", x.addr)
+		if err != nil {
+			if s.inf.ln != nil && x.l == s.adm {
+				_ = s.inf.ln.Close()
+				s.inf.ln = nil
+			}
+			return fmt.Errorf("listen on the %s address: %w", x.l.name, err)
+		}
+		x.l.ln = ln
+		s.logger.Info("listening", "listener", x.l.name, "address", ln.Addr().String(), "tls", x.l.tls.Certificate != nil)
 	}
-	s.ln = ln
-	s.logger.Info("listening", "listener", "inference", "address", ln.Addr().String())
 	return nil
 }
 
 // InferenceAddr returns the bound address of the inference listener.
 func (s *Server) InferenceAddr() net.Addr {
-	if s.ln == nil {
+	if s.inf.ln == nil {
 		return nil
 	}
-	return s.ln.Addr()
+	return s.inf.ln.Addr()
+}
+
+// AdminAddr returns the bound address of the admin listener.
+func (s *Server) AdminAddr() net.Addr {
+	if s.adm.ln == nil {
+		return nil
+	}
+	return s.adm.ln.Addr()
 }
 
 type statusRecorder struct {
@@ -126,24 +197,50 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	s.gw.ServeHTTP(w, r)
 }
 
-// Serve serves until ctx is done, then shuts down: readiness goes down, in-flight requests
-// drain up to the configured deadline, and what remains is cancelled. It returns nil after a
-// shutdown caused by ctx, and an error if the HTTP server fails for any other reason.
+// routeAdmin sends the health paths to health and everything else to the administration API.
+func (s *Server) routeAdmin(w http.ResponseWriter, r *http.Request) {
+	if p := r.URL.Path; (p == "/healthz" || p == "/readyz") && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w}
+		s.healthH.ServeHTTP(rec, r)
+		s.logger.Debug("admin request",
+			"request_id", gateway.NewRequestID(),
+			"method", r.Method,
+			"operation", strings.TrimPrefix(p, "/"),
+			"status", rec.code,
+			"duration_ms", time.Since(start).Milliseconds())
+		return
+	}
+	s.admin.ServeHTTP(w, r)
+}
+
+// Serve serves both listeners until ctx is done, then shuts down: readiness goes down, in-flight
+// requests drain up to the configured deadline, and what remains is cancelled. It returns nil
+// after a shutdown caused by ctx, and an error if either server fails for another reason.
 func (s *Server) Serve(ctx context.Context) error {
-	if s.ln == nil {
+	if s.inf.ln == nil || s.adm.ln == nil {
 		return errors.New("server: Serve called before Listen")
 	}
 	s.health.SetStarted()
-	errc := make(chan error, 1)
-	go func() { errc <- s.httpSrv.Serve(s.ln) }()
+	errc := make(chan error, 2)
+	serveOne := func(l *listener) {
+		if l.srv.TLSConfig != nil {
+			errc <- l.srv.ServeTLS(l.ln, "", "")
+			return
+		}
+		errc <- l.srv.Serve(l.ln)
+	}
+	go serveOne(s.inf)
+	go serveOne(s.adm)
 
+	var failure error
+	remaining := 2
 	select {
 	case err := <-errc:
-		s.cancelBase(nil)
+		remaining--
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("serve: %w", err)
+			failure = fmt.Errorf("serve: %w", err)
 		}
-		return nil
 	case <-ctx.Done():
 	}
 
@@ -154,20 +251,36 @@ func (s *Server) Serve(ctx context.Context) error {
 
 	drainCtx, cancel := context.WithTimeout(context.Background(), drain)
 	defer cancel()
-	forced := s.httpSrv.Shutdown(drainCtx) != nil
-	if forced {
+	var forced atomic.Bool
+	var wg sync.WaitGroup
+	for _, l := range []*listener{s.inf, s.adm} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if l.srv.Shutdown(drainCtx) != nil {
+				forced.Store(true)
+			}
+		}()
+	}
+	wg.Wait()
+	if forced.Load() {
 		s.cancelBase(gateway.ErrShutdown)
-		_ = s.httpSrv.Close()
+		_ = s.inf.srv.Close()
+		_ = s.adm.srv.Close()
 	} else {
 		s.cancelBase(nil)
 	}
-	<-errc
+	for ; remaining > 0; remaining-- {
+		if err := <-errc; err != nil && !errors.Is(err, http.ErrServerClosed) && failure == nil {
+			failure = fmt.Errorf("serve: %w", err)
+		}
+	}
 	s.transport.CloseIdleConnections()
 
 	level := slog.LevelInfo
-	if forced {
+	if forced.Load() {
 		level = slog.LevelWarn
 	}
-	s.logger.Log(context.Background(), level, "shutdown complete", "forced", forced, "duration_ms", time.Since(start).Milliseconds())
-	return nil
+	s.logger.Log(context.Background(), level, "shutdown complete", "forced", forced.Load(), "duration_ms", time.Since(start).Milliseconds())
+	return failure
 }
