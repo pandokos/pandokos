@@ -23,7 +23,10 @@ func TestNew(t *testing.T) {
 }
 
 func TestHeader(t *testing.T) {
-	if Header != "X-Pandokos-Request-Id" || Header != family.HeaderRequestID {
+	if Header != "X-Pandokos-Request-Id" {
 		t.Errorf("Header = %q", Header)
+	}
+	if got := family.HeaderRequestID; Header != got {
+		t.Errorf("Header = %q, family.HeaderRequestID = %q", Header, got)
 	}
 }
