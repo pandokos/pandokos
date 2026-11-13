@@ -39,5 +39,8 @@ authorization core and provisioning, first audit log). See the [ADR index](../..
 - Sprint 4.3: recovery of a tenant that lost every `tenant-admin` key (support actions, AZ-09).
 - Sprint 8.2: listener certificate reload; `serve --role`.
 - Not scheduled: `--key-stdin` and proxy support for the CLI; prefixed database role names.
-- Maintainer actions outside the repository: register the `pdk_` secret-scanning pattern; verify a
-  tagged release (signature, SBOM, provenance).
+- Maintainer action outside the repository: verify a tagged release (signature, SBOM,
+  provenance).
+- The `pdk_` secret-scanning pattern: GitHub custom patterns need a paid plan for an organization,
+  so the repository scans its history with gitleaks in CI instead (`make secrets`), added after the
+  epic closed.
