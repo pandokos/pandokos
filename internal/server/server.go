@@ -33,7 +33,6 @@ type listener struct {
 	name string
 	srv  *http.Server
 	ln   net.Listener
-	addr string
 	tls  *config.ListenerTLS
 }
 
@@ -111,7 +110,7 @@ func New(o Options) (*Server, error) {
 			if x.tls.MinVersion == "TLS1.3" {
 				min = tls.VersionTLS13
 			}
-			x.srv.TLSConfig = &tls.Config{Certificates: []tls.Certificate{*c}, MinVersion: min}
+			x.srv.TLSConfig = &tls.Config{Certificates: []tls.Certificate{*c}, MinVersion: min} //nolint:gosec // min is TLS 1.2 or 1.3
 		}
 	}
 	return s, nil

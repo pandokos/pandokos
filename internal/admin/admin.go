@@ -209,7 +209,7 @@ func (s *server) recordFailure(ctx context.Context, st *reqState, f *authn.Failu
 }
 
 // fail is the Error hook: the one place where an error becomes a response.
-func (s *server) fail(w http.ResponseWriter, r *http.Request, op *adminapi.Operation, err error) {
+func (s *server) fail(w http.ResponseWriter, r *http.Request, _ *adminapi.Operation, err error) {
 	st := stateOf(r.Context())
 	code := adminapi.ProblemCodeInternal
 	var fields []adminapi.FieldError

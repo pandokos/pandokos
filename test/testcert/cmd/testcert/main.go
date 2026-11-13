@@ -27,7 +27,7 @@ func main() {
 		os.Exit(2)
 	}
 	if current(filepath.Join(*dir, "server.pem")) {
-		fmt.Println("certificate is current")
+		fmt.Fprintln(os.Stdout, "certificate is current")
 		return
 	}
 	var ips []net.IP
@@ -53,7 +53,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "testcert:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("wrote %s/ca.pem, server.pem, server.key\n", *dir)
+	fmt.Fprintf(os.Stdout, "wrote %s/ca.pem, server.pem, server.key\n", *dir)
 }
 
 func split(s string) []string {

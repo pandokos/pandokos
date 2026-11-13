@@ -1123,7 +1123,7 @@ func TestKeyCanaries(t *testing.T) {
 		ts = append(ts, tn{id, af, reKeyLine.FindStringSubmatch(kout)[1]})
 	}
 	var responses []string
-	record := func(status int, text string) { responses = append(responses, text) }
+	record := func(_ int, text string) { responses = append(responses, text) }
 	for _, x := range ts {
 		s, text := exchange(t, "POST", p.url("/openai/v1/chat/completions"), authHeader(x.key), chatBody("fake-basic", false, "x"))
 		if s != 200 {

@@ -376,7 +376,7 @@ func listenerAndURLWarnings(c *Config) []Warning {
 	if u := c.Skeleton.OpenAI.ParsedBaseURL; u != nil && u.Scheme == "http" && !isLoopback(u.Hostname()) {
 		ws = append(ws, Warning{Key: "skeleton.openai.base_url", Message: "the provider key is sent without TLS"})
 	}
-	if host, _, err := net.SplitHostPort(c.Listeners.Inference.Address); err == nil && !isLoopback(host) && !(c.Listeners.Inference.TLS.CertFile != "" && c.Listeners.Inference.TLS.KeyFile != "") {
+	if host, _, err := net.SplitHostPort(c.Listeners.Inference.Address); err == nil && !isLoopback(host) && (c.Listeners.Inference.TLS.CertFile == "" || c.Listeners.Inference.TLS.KeyFile == "") {
 		ws = append(ws, Warning{Key: "listeners.inference.address", Message: "the listener serves plain HTTP; set listeners.inference.tls.cert_file and key_file, or terminate TLS in front of it"})
 	}
 	a := c.Listeners.Admin
@@ -406,15 +406,13 @@ func listenerAndURLWarnings(c *Config) []Warning {
 // loadSecrets reads the provider key.
 func loadSecrets(c *Config) []Problem {
 	const apiKey = "skeleton.openai.api_key_file"
-	switch {
-	case c.Skeleton.OpenAI.APIKeyFile == "":
+	if c.Skeleton.OpenAI.APIKeyFile == "" {
 		return []Problem{{Key: apiKey, Message: "must be set"}}
-	default:
-		s, err := secret.ReadFile(c.Skeleton.OpenAI.APIKeyFile)
-		if err != nil {
-			return []Problem{{Key: apiKey, Message: err.Error()}}
-		}
-		c.Skeleton.OpenAI.APIKey = s
 	}
+	s, err := secret.ReadFile(c.Skeleton.OpenAI.APIKeyFile)
+	if err != nil {
+		return []Problem{{Key: apiKey, Message: err.Error()}}
+	}
+	c.Skeleton.OpenAI.APIKey = s
 	return nil
 }

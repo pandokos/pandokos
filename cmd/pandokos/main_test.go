@@ -307,7 +307,7 @@ func TestInitAndClientUsage(t *testing.T) {
 				t.Errorf("the usage text lacks %q", want)
 			}
 		}
-		if i, j := strings.Index(out, "migrate status"), strings.Index(out, "config check"); i < 0 || j < i || !(strings.Index(out, "init [--config") > i && strings.Index(out, "init [--config") < j) {
+		if i, j := strings.Index(out, "migrate status"), strings.Index(out, "config check"); i < 0 || j < i || strings.Index(out, "init [--config") <= i || strings.Index(out, "init [--config") >= j {
 			t.Error("the new lines are not between migrate status and config check")
 		}
 	})

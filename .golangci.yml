@@ -68,6 +68,7 @@ linters:
           files:
             - "**/cmd/**"
             - "**/internal/**"
+            - "!**/test/**"
             - "!$test"
           deny:
             - pkg: github.com/pandokos/pandokos/test
