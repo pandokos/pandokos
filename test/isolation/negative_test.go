@@ -80,14 +80,18 @@ func TestPositiveControls(t *testing.T) {
 			if err != nil || tag.RowsAffected() < 1 {
 				t.Errorf("admin update: %v, %d rows", err, tag.RowsAffected())
 			}
-			tag, err = tx.Exec(c, `DELETE FROM pandokos.service_account WHERE id::text = $1`, keyA)
-			if err != nil || tag.RowsAffected() != 1 {
-				t.Errorf("admin delete: %v, %d rows", err, tag.RowsAffected())
-			}
 			return nil
 		})
 		if err != nil {
 			t.Fatal(err)
+		}
+		// Service accounts are disabled, never deleted: the admin role's DELETE is refused.
+		err = inSession(t, conn, sessA, func(c context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(c, `DELETE FROM pandokos.service_account WHERE id::text = $1`, keyA)
+			return err
+		})
+		if sqlstate(err) != insufficientPrivilege {
+			t.Errorf("admin delete of a service account: %v, want SQLSTATE %s", err, insufficientPrivilege)
 		}
 	})
 	t.Run("gateway reads", func(t *testing.T) {

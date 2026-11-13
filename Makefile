@@ -53,6 +53,7 @@ fuzz: ## Run each fuzz target for FUZZTIME
 	go test ./internal/family/openai/ -run '^$$' -fuzz '^FuzzPrepareRequest$$' -fuzztime $(FUZZTIME)
 	go test ./internal/family/openai/ -run '^$$' -fuzz '^FuzzReadUsage$$' -fuzztime $(FUZZTIME)
 	go test ./internal/family/openai/ -run '^$$' -fuzz '^FuzzStreamReader$$' -fuzztime $(FUZZTIME)
+	go test ./internal/authn/ -run '^$$' -fuzz '^FuzzParse$$' -fuzztime $(FUZZTIME)
 
 bench: ## Usage reader benchmark
 	go test ./internal/family/openai/ -run '^$$' -bench . -benchmem

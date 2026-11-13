@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -189,14 +190,15 @@ func TestFailedMigrationRollsBack(t *testing.T) {
 
 // TestMismatchRefused is T-124.
 func TestMismatchRefused(t *testing.T) {
+	n := len(realSet(t)) // the migrations of the binary: the next version is n+1
 	cases := []struct {
 		name   string
 		tamper string
 		want   error
 	}{
 		{"checksum", "UPDATE pandokos.schema_migration SET checksum = repeat('0', 64) WHERE version = 1", migrate.ErrChecksum},
-		{"newer", "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (2, 'future', repeat('0', 64), 'x')", migrate.ErrSchemaNewer},
-		{"gap", "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (3, 'future', repeat('0', 64), 'x')", migrate.ErrLedger},
+		{"newer", "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (" + strconv.Itoa(n+1) + ", 'future', repeat('0', 64), 'x')", migrate.ErrSchemaNewer},
+		{"gap", "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (" + strconv.Itoa(n+2) + ", 'future', repeat('0', 64), 'x')", migrate.ErrLedger},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

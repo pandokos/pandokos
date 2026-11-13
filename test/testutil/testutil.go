@@ -4,11 +4,16 @@ package testutil
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base32"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"math/big"
@@ -19,6 +24,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pandokos/pandokos/internal/authn"
+	"github.com/pandokos/pandokos/internal/authz"
+	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/test/fixtures"
 )
 
@@ -179,5 +187,75 @@ func AssertAbsent(tb testing.TB, where, text string, secrets ...string) {
 		if s != "" && strings.Contains(text, s) {
 			tb.Errorf("secret %d found in %s", i, where)
 		}
+	}
+}
+
+// Static is a gateway.Authenticator for in-process tests. It is a concrete type, not
+// gateway.Authenticator itself, because the tests of package gateway import this package.
+type Static struct{ principals map[string]authz.Principal }
+
+// StaticAuthenticator returns an authenticator for in-process tests: the map key is the
+// presented key. Any other credential is authz.ErrUnauthenticated.
+func StaticAuthenticator(principals map[string]authz.Principal) *Static {
+	return &Static{principals: principals}
+}
+
+// Authenticate implements gateway.Authenticator.
+func (s *Static) Authenticate(_ context.Context, presented string) (authz.Principal, error) {
+	if p, ok := s.principals[presented]; ok {
+		return p, nil
+	}
+	return authz.Principal{}, authz.ErrUnauthenticated
+}
+
+// InferencePrincipal returns an active service-account principal of a random tenant with the
+// role inference, for tests that only need a caller that is allowed.
+func InferencePrincipal() authz.Principal {
+	var id tenant.ID
+	if _, err := rand.Read(id[:]); err != nil {
+		panic(err)
+	}
+	id[6] = id[6]&0x0f | 0x70
+	id[8] = id[8]&0x3f | 0x80
+	return authz.Principal{
+		Kind:        authz.KindServiceAccount,
+		ID:          id.String(),
+		Name:        "inference-test",
+		KeyID:       "t" + strings.Repeat("a", 16),
+		TenantID:    id,
+		TenantName:  "tenant-test",
+		TenantState: tenant.StateActive,
+		Roles:       []string{authz.RoleInference},
+	}
+}
+
+// NewKey returns a new virtual key (authn.Generate, kind tenant) as a string.
+func NewKey(tb testing.TB) string {
+	tb.Helper()
+	key, _, _, err := authn.Generate(authn.KindTenant)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return key.Reveal()
+}
+
+// KeyForms returns the forms of a key that must never be found in an output: the key, the 59
+// characters after the second underscore, the 52-character secret, and the SHA-256 of the 32
+// secret bytes in lower-case hexadecimal, standard base64 and URL-safe base64.
+func KeyForms(key string) []string {
+	parts := strings.SplitN(key, "_", 3)
+	if len(parts) != 3 || len(parts[2]) != 59 {
+		return []string{key}
+	}
+	raw, err := base32.NewEncoding("abcdefghijklmnopqrstuvwxyz234567").WithPadding(base32.NoPadding).DecodeString(parts[2][:52])
+	if err != nil {
+		return []string{key, parts[2], parts[2][:52]}
+	}
+	sum := sha256.Sum256(raw)
+	return []string{
+		key, parts[2], parts[2][:52],
+		hex.EncodeToString(sum[:]),
+		base64.StdEncoding.EncodeToString(sum[:]),
+		base64.URLEncoding.EncodeToString(sum[:]),
 	}
 }

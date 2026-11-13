@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pandokos/pandokos/internal/authn"
+	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/secret"
 	"github.com/pandokos/pandokos/internal/telemetry"
 	"github.com/pandokos/pandokos/test/fakeprovider"
@@ -28,6 +31,22 @@ import (
 )
 
 const route = "/openai/v1/chat/completions"
+
+// testKey is a virtual key generated when the tests start; the static authenticator knows it
+// and its principal. No key is written in the source.
+var (
+	testKey       = newTestKey()
+	testPrincipal = testutil.InferencePrincipal()
+	testAuth      = testutil.StaticAuthenticator(map[string]authz.Principal{testKey: testPrincipal})
+)
+
+func newTestKey() string {
+	k, _, _, err := authn.Generate(authn.KindTenant)
+	if err != nil {
+		panic(err)
+	}
+	return k.Reveal()
+}
 
 type harness struct {
 	up   *fakeprovider.Server
@@ -56,7 +75,7 @@ func newHarnessWith(t *testing.T, up *fakeprovider.Server, transport http.RoundT
 		Logger:                 telemetry.NewLogger(logs, "debug"),
 		BaseURL:                base,
 		ProviderKey:            secret.New(fixtures.CanaryProviderKey),
-		AccessToken:            secret.New(fixtures.CanaryAccessToken),
+		Authenticator:          testAuth,
 		MaxRequestBodyBytes:    1 << 20,
 		RequestBodyReadTimeout: 2 * time.Second,
 		MaxRequestDuration:     10 * time.Second,
@@ -99,7 +118,7 @@ func (h *harness) request(ctx context.Context, t *testing.T, method, path string
 }
 
 func authed() http.Header {
-	return http.Header{"Authorization": {"Bearer " + fixtures.CanaryAccessToken}, "Content-Type": {"application/json"}}
+	return http.Header{"Authorization": {"Bearer " + testKey}, "Content-Type": {"application/json"}}
 }
 
 func ctx5(t *testing.T) context.Context {
@@ -170,7 +189,7 @@ func TestNewValidatesOptions(t *testing.T) {
 		base, _ := url.Parse("http://127.0.0.1:1/v1")
 		return Options{
 			Logger: telemetry.NewLogger(io.Discard, "info"), BaseURL: base,
-			ProviderKey: secret.New("k"), AccessToken: secret.New("t"),
+			ProviderKey: secret.New("k"), Authenticator: testAuth,
 			MaxRequestBodyBytes: 1, RequestBodyReadTimeout: 1, MaxRequestDuration: 1,
 			Transport: http.DefaultTransport,
 		}
@@ -179,14 +198,14 @@ func TestNewValidatesOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, mutate := range map[string]func(*Options){
-		"logger":    func(o *Options) { o.Logger = nil },
-		"base url":  func(o *Options) { o.BaseURL = nil },
-		"key":       func(o *Options) { o.ProviderKey = secret.Secret{} },
-		"token":     func(o *Options) { o.AccessToken = secret.Secret{} },
-		"transport": func(o *Options) { o.Transport = nil },
-		"body":      func(o *Options) { o.MaxRequestBodyBytes = 0 },
-		"read":      func(o *Options) { o.RequestBodyReadTimeout = 0 },
-		"duration":  func(o *Options) { o.MaxRequestDuration = 0 },
+		"logger":        func(o *Options) { o.Logger = nil },
+		"base url":      func(o *Options) { o.BaseURL = nil },
+		"key":           func(o *Options) { o.ProviderKey = secret.Secret{} },
+		"authenticator": func(o *Options) { o.Authenticator = nil },
+		"transport":     func(o *Options) { o.Transport = nil },
+		"body":          func(o *Options) { o.MaxRequestBodyBytes = 0 },
+		"read":          func(o *Options) { o.RequestBodyReadTimeout = 0 },
+		"duration":      func(o *Options) { o.MaxRequestDuration = 0 },
 	} {
 		o := good()
 		mutate(&o)
@@ -393,7 +412,7 @@ func TestSlowRequestBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	fmt.Fprintf(conn, "POST %s HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer %s\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{\"model\":", route, fixtures.CanaryAccessToken)
+	fmt.Fprintf(conn, "POST %s HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer %s\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{\"model\":", route, testKey)
 	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	_, err = io.ReadAll(conn)
 	var ne net.Error
@@ -472,10 +491,10 @@ func TestUnauthenticated(t *testing.T) {
 	h := newHarness(t, nil)
 	cases := map[string]http.Header{
 		"no header":    {},
-		"basic":        {"Authorization": {"Basic " + fixtures.CanaryAccessToken}},
+		"basic":        {"Authorization": {"Basic " + testKey}},
 		"wrong token":  {"Authorization": {"Bearer wrong-token"}},
 		"provider key": {"Authorization": {"Bearer " + fixtures.CanaryProviderKey}},
-		"bare token":   {"Authorization": {fixtures.CanaryAccessToken}},
+		"bare token":   {"Authorization": {testKey}},
 	}
 	type shape struct {
 		status      int
@@ -516,7 +535,7 @@ func TestCredentialSwap(t *testing.T) {
 		t.Errorf("provider saw %v", got)
 	}
 	for k, v := range reqs[0].Header {
-		if strings.Contains(strings.Join(v, ","), fixtures.CanaryAccessToken) {
+		if strings.Contains(strings.Join(v, ","), testKey) {
 			t.Errorf("the access token reached the provider in %s", k)
 		}
 	}
@@ -751,7 +770,7 @@ func TestRequestLogFields(t *testing.T) {
 	want := []string{
 		"time", "level", "msg", "request_id", "method", "route", "status", "outcome", "duration_ms", "provider",
 		"operation", "stream", "usage_injected", "upstream_status", "ttfb_ms", "request_bytes", "response_bytes",
-		"usage_source", "usage",
+		"usage_source", "usage", "tenant_id", "service_account_id", "key_id",
 	}
 	var got []string
 	for k := range line {
@@ -767,6 +786,9 @@ func TestRequestLogFields(t *testing.T) {
 		if line[k] != v {
 			t.Errorf("%s = %v, want %q", k, line[k], v)
 		}
+	}
+	if line["tenant_id"] != testPrincipal.TenantID.String() || line["service_account_id"] != testPrincipal.ID || line["key_id"] != testPrincipal.KeyID {
+		t.Errorf("identity fields: %v %v %v", line["tenant_id"], line["service_account_id"], line["key_id"])
 	}
 	for _, k := range []string{"status", "duration_ms", "upstream_status", "ttfb_ms", "request_bytes", "response_bytes"} {
 		if _, ok := line[k].(float64); !ok {
@@ -792,7 +814,7 @@ func TestRequestLogFields(t *testing.T) {
 		t.Errorf("usage keys: %v", ukeys)
 	}
 	all := h.logs.String()
-	for _, leak := range []string{"query-value", "cookie-value", "Bearer", "stream_options", fixtures.CanaryAccessToken} {
+	for _, leak := range []string{"query-value", "cookie-value", "Bearer", "stream_options", testKey} {
 		if strings.Contains(all, leak) {
 			t.Errorf("logs contain %q", leak)
 		}
@@ -814,7 +836,7 @@ func rawUpstream(t *testing.T, handler http.HandlerFunc) *harness {
 	t.Cleanup(tr.CloseIdleConnections)
 	g, err := New(Options{
 		Logger: telemetry.NewLogger(logs, "debug"), BaseURL: base,
-		ProviderKey: secret.New(fixtures.CanaryProviderKey), AccessToken: secret.New(fixtures.CanaryAccessToken),
+		ProviderKey: secret.New(fixtures.CanaryProviderKey), Authenticator: testAuth,
 		MaxRequestBodyBytes: 1 << 20, RequestBodyReadTimeout: 2 * time.Second, MaxRequestDuration: 10 * time.Second,
 		Transport: tr,
 	})
@@ -909,4 +931,167 @@ func TestProviderTrailersAreDropped(t *testing.T) {
 			}
 		})
 	}
+}
+
+// fixedAuth is an Authenticator that returns a given principal or error.
+type fixedAuth struct {
+	p   authz.Principal
+	err error
+}
+
+func (f fixedAuth) Authenticate(context.Context, string) (authz.Principal, error) { return f.p, f.err }
+
+// reasoned is an authentication failure that says why, as authn.Failure does.
+type reasoned struct{ reason, keyID, tenantID string }
+
+func (r reasoned) Error() string                    { return "failure: " + r.reason }
+func (r reasoned) Unwrap() error                    { return authz.ErrUnauthenticated }
+func (r reasoned) Detail() (string, string, string) { return r.reason, r.keyID, r.tenantID }
+
+// TestRouteDeclaresAPermission: the route table names the permission of its one route (T-274).
+func TestRouteDeclaresAPermission(t *testing.T) {
+	if len(routes) != 1 || routes[0].Method != "POST" || routes[0].Path != route || routes[0].Permission != authz.ModelInvoke {
+		t.Errorf("routes = %+v", routes)
+	}
+	if _, ok := authz.Lookup(routes[0].Permission); !ok {
+		t.Error("the permission of the route is not in the catalogue")
+	}
+}
+
+// TestAuthorization is T-267.
+func TestAuthorization(t *testing.T) {
+	active := testutil.InferencePrincipal()
+	noRole := active
+	noRole.Roles = nil
+	scoped := active
+	scoped.Roles = []string{authz.RoleTenantAdmin}
+	scoped.Scopes = []string{authz.VirtualKeyRead}
+	suspended := active
+	suspended.TenantState = "suspended"
+	cases := []struct {
+		name    string
+		auth    fixedAuth
+		status  int
+		code    string
+		message string
+	}{
+		{"no role", fixedAuth{p: noRole}, 403, "forbidden", "Pandokos: the credential does not allow this operation."},
+		{"scopes exclude the permission", fixedAuth{p: scoped}, 403, "forbidden", "Pandokos: the credential does not allow this operation."},
+		{"suspended tenant", fixedAuth{p: suspended}, 403, "tenant_suspended", "Pandokos: the tenant is not active."},
+		{"unavailable", fixedAuth{err: fmt.Errorf("%w: 08006", authz.ErrUnavailable)}, 503, "unavailable", "Pandokos: the request cannot be verified right now."},
+		{"unauthenticated", fixedAuth{err: authz.ErrUnauthenticated}, 401, "unauthenticated", "Pandokos: missing or invalid credential."},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			h := newHarness(t, func(o *Options) { o.Authenticator = c.auth })
+			resp, err := h.request(ctx5(t), t, http.MethodPost, route, chat("fake-basic", false), authed())
+			if err != nil {
+				t.Fatal(err)
+			}
+			b, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode != c.status || resp.Header.Get("X-Pandokos-Error") != c.code {
+				t.Errorf("status %d, error %q: %s", resp.StatusCode, resp.Header.Get("X-Pandokos-Error"), b)
+			}
+			var body struct {
+				Error struct {
+					Message string `json:"message"`
+					Type    string `json:"type"`
+					Code    string `json:"code"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(b, &body); err != nil || body.Error.Message != c.message {
+				t.Errorf("body %s (%v), want the message %q in the OpenAI shape", b, err, c.message)
+			}
+			if n := len(h.up.Requests()); n != 0 {
+				t.Errorf("the provider was contacted %d times", n)
+			}
+			line := h.lastRequestLine(t)
+			if line["error_code"] != c.code || line["outcome"] != "pandokos_error" || line["status"] != float64(c.status) {
+				t.Errorf("request line: %v", line)
+			}
+			if c.auth.p.ID != "" && line["tenant_id"] != c.auth.p.TenantID.String() {
+				t.Errorf("a request refused by the decision names its tenant: %v", line["tenant_id"])
+			}
+		})
+	}
+
+	t.Run("a good principal is forwarded and logged", func(t *testing.T) {
+		h := newHarness(t, func(o *Options) { o.Authenticator = fixedAuth{p: active} })
+		resp, b := h.call(t, chat("fake-basic", false))
+		if resp.StatusCode != 200 || len(b) == 0 || len(h.up.Requests()) != 1 {
+			t.Fatalf("status %d", resp.StatusCode)
+		}
+		line := h.lastRequestLine(t)
+		if line["tenant_id"] != active.TenantID.String() || line["service_account_id"] != active.ID || line["key_id"] != active.KeyID {
+			t.Errorf("identity fields: %v", line)
+		}
+	})
+
+	t.Run("authentication failed is logged with the reason", func(t *testing.T) {
+		const keyID, tenantID = "tabcdefghijklmnop", "0192f0f0-0000-7000-8000-000000000001"
+		h := newHarness(t, func(o *Options) { o.Authenticator = fixedAuth{err: reasoned{"wrong_secret", keyID, tenantID}} })
+		resp, err := h.request(ctx5(t), t, http.MethodPost, route, chat("fake-basic", false), authed())
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 401 {
+			t.Fatalf("status %d", resp.StatusCode)
+		}
+		lines := h.logs.Find(t, "authentication failed")
+		if len(lines) != 1 {
+			t.Fatalf("%d lines", len(lines))
+		}
+		l := lines[0]
+		if l["level"] != "WARN" || l["listener"] != "inference" || l["reason"] != "wrong_secret" || l["key_id"] != keyID || l["tenant_id"] != tenantID || len(fmt.Sprint(l["request_id"])) != 32 {
+			t.Errorf("the line: %v", l)
+		}
+		if _, ok := l["audited"]; ok {
+			t.Error("the inference listener does not audit: no audited field")
+		}
+		testutil.AssertAbsent(t, "logs", h.logs.String(), testKey)
+		req := h.lastRequestLine(t)
+		if req["key_id"] != keyID {
+			t.Errorf("a failed authentication names the key ID in the request line: %v", req["key_id"])
+		}
+	})
+
+	t.Run("a missing or malformed header never reaches the authenticator", func(t *testing.T) {
+		called := 0
+		h := newHarness(t, func(o *Options) { o.Authenticator = countingAuth{n: &called} })
+		for _, hdr := range []http.Header{{}, {"Authorization": {"Basic abc"}}, {"Authorization": {"Bearer"}}} {
+			resp, err := h.request(ctx5(t), t, http.MethodPost, route, chat("fake-basic", false), hdr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+			if resp.StatusCode != 401 {
+				t.Errorf("%v: %d", hdr, resp.StatusCode)
+			}
+		}
+		if called != 0 {
+			t.Errorf("the authenticator was called %d times", called)
+		}
+	})
+
+	t.Run("an unknown path is 404 before authentication", func(t *testing.T) {
+		called := 0
+		h := newHarness(t, func(o *Options) { o.Authenticator = countingAuth{n: &called} })
+		resp, err := h.request(ctx5(t), t, http.MethodPost, "/openai/v1/nope", nil, authed())
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 404 || called != 0 {
+			t.Errorf("status %d, authenticator called %d times", resp.StatusCode, called)
+		}
+	})
+}
+
+type countingAuth struct{ n *int }
+
+func (c countingAuth) Authenticate(context.Context, string) (authz.Principal, error) {
+	*c.n++
+	return authz.Principal{}, authz.ErrUnauthenticated
 }

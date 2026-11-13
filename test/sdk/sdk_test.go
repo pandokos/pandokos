@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"net/url"
 	"testing"
 	"time"
@@ -12,6 +13,8 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 
+	"github.com/pandokos/pandokos/internal/authn"
+	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/config"
 	"github.com/pandokos/pandokos/internal/secret"
 	"github.com/pandokos/pandokos/internal/server"
@@ -20,6 +23,15 @@ import (
 	"github.com/pandokos/pandokos/test/fixtures"
 	"github.com/pandokos/pandokos/test/testutil"
 )
+
+// testKey is generated when the tests start; the static authenticator knows it.
+var testKey = func() string {
+	k, _, _, err := authn.Generate(authn.KindTenant)
+	if err != nil {
+		panic(err)
+	}
+	return k.Reveal()
+}()
 
 func start(t *testing.T) (baseURL string, up *fakeprovider.Server) {
 	t.Helper()
@@ -32,9 +44,12 @@ func start(t *testing.T) (baseURL string, up *fakeprovider.Server) {
 	}
 	cfg.Skeleton.OpenAI.BaseURL = up.BaseURL()
 	cfg.Skeleton.OpenAI.ParsedBaseURL = u
-	cfg.Skeleton.AccessToken = secret.New(fixtures.CanaryAccessToken)
+	cfg.Listeners.Admin.Address = "127.0.0.1:0"
 	cfg.Skeleton.OpenAI.APIKey = secret.New(fixtures.CanaryProviderKey)
-	srv, err := server.New(cfg, telemetry.NewLogger(io.Discard, "info"))
+	srv, err := server.New(server.Options{
+		Config: cfg, Logger: telemetry.NewLogger(io.Discard, "info"), Admin: http.NotFoundHandler(),
+		Authenticator: testutil.StaticAuthenticator(map[string]authz.Principal{testKey: testutil.InferencePrincipal()}),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +94,7 @@ func params(model string) openai.ChatCompletionNewParams {
 
 func TestChatCompletion(t *testing.T) {
 	base, _ := start(t)
-	client := newClient(base, fixtures.CanaryAccessToken)
+	client := newClient(base, testKey)
 	completion, err := client.Chat.Completions.New(ctx10(t), params(fakeprovider.ModelBasic))
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +109,7 @@ func TestChatCompletion(t *testing.T) {
 
 func TestChatCompletionStream(t *testing.T) {
 	base, _ := start(t)
-	client := newClient(base, fixtures.CanaryAccessToken)
+	client := newClient(base, testKey)
 	stream := client.Chat.Completions.NewStreaming(ctx10(t), params(fakeprovider.ModelBasic))
 	acc := openai.ChatCompletionAccumulator{}
 	n := 0
@@ -119,7 +134,7 @@ func TestChatCompletionStream(t *testing.T) {
 
 func TestChatCompletionStreamIncludeUsage(t *testing.T) {
 	base, _ := start(t)
-	client := newClient(base, fixtures.CanaryAccessToken)
+	client := newClient(base, testKey)
 	p := params(fakeprovider.ModelBasic)
 	p.StreamOptions = openai.ChatCompletionStreamOptionsParam{IncludeUsage: openai.Bool(true)}
 	stream := client.Chat.Completions.NewStreaming(ctx10(t), p)
@@ -148,7 +163,7 @@ func TestErrorsAreSDKErrors(t *testing.T) {
 		}
 	})
 	t.Run("provider 429", func(t *testing.T) {
-		client := newClient(base, fixtures.CanaryAccessToken)
+		client := newClient(base, testKey)
 		_, err := client.Chat.Completions.New(ctx10(t), params(fakeprovider.ModelError429))
 		var apiErr *openai.Error
 		if !errors.As(err, &apiErr) || apiErr.StatusCode != 429 {
@@ -159,7 +174,7 @@ func TestErrorsAreSDKErrors(t *testing.T) {
 
 func TestCancelStream(t *testing.T) {
 	base, up := start(t)
-	client := newClient(base, fixtures.CanaryAccessToken)
+	client := newClient(base, testKey)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	stream := client.Chat.Completions.NewStreaming(ctx, params(fakeprovider.ModelGatedStream))
