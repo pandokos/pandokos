@@ -116,7 +116,7 @@ func TestOpenAIValidator(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer "+fixtures.CanaryCredential {
 			t.Errorf("Authorization header is %q", got)
 		}
-		allowed := map[string]bool{"Authorization": true, "User-Agent": true, "Accept-Encoding": true}
+		allowed := map[string]bool{"Authorization": true, "User-Agent": true, "Accept-Encoding": true, "Connection": true} // Connection: close is what DisableKeepAlives sends
 		for name := range r.Header {
 			if !allowed[name] {
 				t.Errorf("the request carries the header %s", name)
