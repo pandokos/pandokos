@@ -24,6 +24,9 @@ const (
 	CodeUpstreamUnreachable  ErrorCode = "upstream_unreachable"   // 502
 	CodeUpstreamTimeout      ErrorCode = "upstream_timeout"       // 504
 	CodeInternal             ErrorCode = "internal"               // 500
+	CodeForbidden            ErrorCode = "forbidden"              // 403
+	CodeTenantSuspended      ErrorCode = "tenant_suspended"       // 403
+	CodeUnavailable          ErrorCode = "unavailable"            // 503
 )
 
 // Status returns the HTTP status of the code.
@@ -39,6 +42,10 @@ func (c ErrorCode) Status() int {
 		return 502
 	case CodeUpstreamTimeout:
 		return 504
+	case CodeForbidden, CodeTenantSuspended:
+		return 403
+	case CodeUnavailable:
+		return 503
 	default:
 		return 500
 	}
@@ -57,6 +64,12 @@ func (c ErrorCode) Message() string {
 		return "Pandokos: the provider could not be reached."
 	case CodeUpstreamTimeout:
 		return "Pandokos: the provider did not answer in time."
+	case CodeForbidden:
+		return "Pandokos: the credential does not allow this operation."
+	case CodeTenantSuspended:
+		return "Pandokos: the tenant is not active."
+	case CodeUnavailable:
+		return "Pandokos: the request cannot be verified right now."
 	default:
 		return "Pandokos: internal error."
 	}

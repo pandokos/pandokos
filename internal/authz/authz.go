@@ -186,7 +186,7 @@ type Decision int
 
 // The decisions.
 const (
-	Deny            Decision = iota // 403 forbidden; the zero value
+	Deny Decision = iota // 403 forbidden; the zero value
 	Allow
 	DenyNotFound    // 404 not_found: the target is another tenant
 	DenyTenantState // 403 tenant_suspended

@@ -29,7 +29,7 @@ var ErrMalformed = errors.New("authn: malformed key")
 const Pattern = `pdk_[tp][a-z2-7]{16}_[a-z2-7]{59}`
 
 const (
-	keyAlphabet     = "abcdefghijklmnopqrstuvwxyz234567"
+	keyAlphabet  = "abcdefghijklmnopqrstuvwxyz234567"
 	keyLength    = 81
 	checksumFrom = 74
 )
