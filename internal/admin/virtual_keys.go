@@ -112,7 +112,7 @@ func (s *server) CreateVirtualKey(ctx context.Context, in adminapi.CreateVirtual
 			}
 			row, err := q.CreateVirtualKey(ctx, queries.CreateVirtualKeyParams{
 				TenantID: tid.String(), ServiceAccountID: b.ServiceAccountID, KeyID: keyID, Description: b.Description, SecretHash: hash[:],
-				Scoped: len(b.Scopes) > 0, Scopes: b.Scopes, ExpiresAt: utcPtr(b.ExpiresAt),
+				Scoped: len(b.Scopes) > 0, Scopes: b.Scopes, ExpiresAt: utcPtr(b.ExpiresAt), CredentialID: nil,
 			})
 			if err != nil {
 				return err

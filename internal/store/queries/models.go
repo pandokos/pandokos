@@ -25,6 +25,12 @@ type PandokosAuditEvent struct {
 	Detail       string
 }
 
+type PandokosKekVersion struct {
+	ID        string
+	Provider  string
+	CreatedAt time.Time
+}
+
 type PandokosPlatformAuditEvent struct {
 	ID           string
 	OccurredAt   time.Time
@@ -52,6 +58,49 @@ type PandokosPlatformKey struct {
 	RevokedAt   *time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+}
+
+type PandokosProviderCredential struct {
+	TenantID       string
+	ID             string
+	Provider       string
+	Label          string
+	Description    string
+	State          string
+	IsDefault      bool
+	KeyVersion     int32
+	Secret         []byte
+	Fingerprint    string
+	Hint           string
+	ExpiresAt      *time.Time
+	ValidatedAt    *time.Time
+	RotatedAt      *time.Time
+	StateChangedAt time.Time
+	StateChangedBy string
+	StateReason    string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+type PandokosProviderCredentialMetadatum struct {
+	TenantID       string
+	ID             string
+	Provider       string
+	Label          string
+	Description    string
+	State          string
+	IsDefault      bool
+	KeyVersion     int32
+	Fingerprint    string
+	Hint           string
+	ExpiresAt      *time.Time
+	ValidatedAt    *time.Time
+	RotatedAt      *time.Time
+	StateChangedAt time.Time
+	StateChangedBy string
+	StateReason    string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 type PandokosRoleAssignment struct {
@@ -94,6 +143,16 @@ type PandokosTenant struct {
 	StateChangedAt time.Time
 }
 
+type PandokosTenantDataKey struct {
+	TenantID   string
+	ID         string
+	Version    int32
+	KekVersion string
+	WrappedKey []byte
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
 type PandokosVirtualKey struct {
 	TenantID         string
 	ID               string
@@ -106,6 +165,7 @@ type PandokosVirtualKey struct {
 	RevokedAt        *time.Time
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	CredentialID     *string
 }
 
 type PandokosVirtualKeyDirectory struct {

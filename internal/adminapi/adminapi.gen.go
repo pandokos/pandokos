@@ -18,13 +18,218 @@ var (
 )
 
 var (
-	re0 = regexp.MustCompile("^p[a-z2-7]{16}$")
-	re1 = regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+	re0 = regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+	re1 = regexp.MustCompile("^[a-z][a-z0-9-]{0,62}$")
 	re2 = regexp.MustCompile("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
-	re3 = regexp.MustCompile("^[a-z][a-z0-9-]{0,62}$")
+	re3 = regexp.MustCompile("^p[a-z2-7]{16}$")
 	re4 = regexp.MustCompile("^t[a-z2-7]{16}$")
 	re5 = regexp.MustCompile("^[a-z_]+:[a-z_]+$")
 )
+
+// Credential is a schema of the administration API.
+type Credential struct {
+	ID          string          `json:"id"`
+	TenantID    string          `json:"tenant_id"`
+	Provider    string          `json:"provider"`
+	Label       string          `json:"label"`
+	Description string          `json:"description"`
+	Owner       CredentialOwner `json:"owner"`
+	State       CredentialState `json:"state"`
+	// Whether calls for the provider use this credential when the key is not pinned to another.
+	IsDefault bool `json:"is_default"`
+	// Keyed hash of the secret, 32 hexadecimal characters. Equal secrets of one tenant have equal fingerprints; it cannot be computed outside Pandokos.
+	Fingerprint string `json:"fingerprint"`
+	// The last four characters of the secret; empty when the secret is shorter than 16 characters.
+	Hint string `json:"hint"`
+	// Expiry as declared by the tenant. Informative.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// When the provider last accepted the current secret.
+	ValidatedAt *time.Time `json:"validated_at,omitempty"`
+	// When the secret was last replaced.
+	RotatedAt      *time.Time      `json:"rotated_at,omitempty"`
+	StateChangedAt time.Time       `json:"state_changed_at"`
+	StateChangedBy CredentialActor `json:"state_changed_by"`
+	// The reason given with the last change of state.
+	StateReason string    `json:"state_reason,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+var requiredCredential = []string{"id", "tenant_id", "provider", "label", "description", "owner", "state", "is_default", "fingerprint", "hint", "state_changed_at", "state_changed_by", "created_at"}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *Credential) Validate() []FieldError {
+	var errs []FieldError
+	if !re0.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !re0.MatchString(v.TenantID) {
+		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !re1.MatchString(v.Provider) {
+		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+	}
+	if !re2.MatchString(v.Label) {
+		errs = append(errs, FieldError{Field: "label", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+	}
+	if !v.Owner.Valid() {
+		errs = append(errs, FieldError{Field: "owner", Message: "must be one of tenant"})
+	}
+	if !v.State.Valid() {
+		errs = append(errs, FieldError{Field: "state", Message: "must be one of active, disabled, revoked"})
+	}
+	if !v.StateChangedBy.Valid() {
+		errs = append(errs, FieldError{Field: "state_changed_by", Message: "must be one of tenant, platform"})
+	}
+	return errs
+}
+
+// CredentialActor: Which side last changed the state of the credential.
+type CredentialActor string
+
+// Values of CredentialActor.
+const (
+	CredentialActorTenant   CredentialActor = "tenant"
+	CredentialActorPlatform CredentialActor = "platform"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v CredentialActor) Valid() bool {
+	switch v {
+	case CredentialActorTenant, CredentialActorPlatform:
+		return true
+	}
+	return false
+}
+
+// CredentialCreate is a schema of the administration API.
+type CredentialCreate struct {
+	Provider string `json:"provider"`
+	Label    string `json:"label"`
+	// The provider API key. Write-only: no operation returns it.
+	Secret      string     `json:"secret"`
+	Description string     `json:"description,omitempty"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+	// Present the secret to the provider before storing it.
+	ValidateAtWrite bool `json:"validate,omitempty"`
+}
+
+var requiredCredentialCreate = []string{"provider", "label", "secret"}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *CredentialCreate) Validate() []FieldError {
+	var errs []FieldError
+	if !re1.MatchString(v.Provider) {
+		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+	}
+	if !re2.MatchString(v.Label) {
+		errs = append(errs, FieldError{Field: "label", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+	}
+	if runeCount(v.Secret) < 8 {
+		errs = append(errs, FieldError{Field: "secret", Message: "length must be at least 8"})
+	}
+	if runeCount(v.Secret) > 8192 {
+		errs = append(errs, FieldError{Field: "secret", Message: "length must be at most 8192"})
+	}
+	if runeCount(v.Description) > 500 {
+		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 500"})
+	}
+	return errs
+}
+
+// CredentialList is a schema of the administration API.
+type CredentialList struct {
+	Items []Credential `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredCredentialList = []string{"items"}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *CredentialList) Validate() []FieldError {
+	var errs []FieldError
+	return errs
+}
+
+// CredentialOwner: Who owns the credential and pays the provider. Credentials of the platform come with a later version.
+type CredentialOwner string
+
+// Values of CredentialOwner.
+const (
+	CredentialOwnerTenant CredentialOwner = "tenant"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v CredentialOwner) Valid() bool {
+	switch v {
+	case CredentialOwnerTenant:
+		return true
+	}
+	return false
+}
+
+// CredentialSecret is a schema of the administration API.
+type CredentialSecret struct {
+	// The new provider API key. Write-only.
+	Secret    string     `json:"secret"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// Present the secret to the provider before storing it.
+	ValidateAtWrite bool `json:"validate,omitempty"`
+}
+
+var requiredCredentialSecret = []string{"secret"}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *CredentialSecret) Validate() []FieldError {
+	var errs []FieldError
+	if runeCount(v.Secret) < 8 {
+		errs = append(errs, FieldError{Field: "secret", Message: "length must be at least 8"})
+	}
+	if runeCount(v.Secret) > 8192 {
+		errs = append(errs, FieldError{Field: "secret", Message: "length must be at most 8192"})
+	}
+	return errs
+}
+
+// CredentialState: active, disabled (can be enabled again) or revoked (final; the sealed secret is destroyed).
+type CredentialState string
+
+// Values of CredentialState.
+const (
+	CredentialStateActive   CredentialState = "active"
+	CredentialStateDisabled CredentialState = "disabled"
+	CredentialStateRevoked  CredentialState = "revoked"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v CredentialState) Valid() bool {
+	switch v {
+	case CredentialStateActive, CredentialStateDisabled, CredentialStateRevoked:
+		return true
+	}
+	return false
+}
+
+// CredentialUpdate is a schema of the administration API.
+type CredentialUpdate struct {
+	Label       string              `json:"label,omitempty"`
+	Description string              `json:"description,omitempty"`
+	ExpiresAt   Nullable[time.Time] `json:"expires_at,omitzero"`
+}
+
+var requiredCredentialUpdate = []string{}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *CredentialUpdate) Validate() []FieldError {
+	var errs []FieldError
+	if v.Label != "" && !re2.MatchString(v.Label) {
+		errs = append(errs, FieldError{Field: "label", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+	}
+	if runeCount(v.Description) > 500 {
+		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 500"})
+	}
+	return errs
+}
 
 // FieldError is a schema of the administration API.
 type FieldError struct {
@@ -125,7 +330,7 @@ var requiredPlatformKey = []string{"id", "description", "role", "bootstrap", "st
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformKey) Validate() []FieldError {
 	var errs []FieldError
-	if !re0.MatchString(v.ID) {
+	if !re3.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^p[a-z2-7]{16}$"})
 	}
 	if !v.State.Valid() {
@@ -219,7 +424,7 @@ var requiredProblem = []string{"type", "title", "status", "code", "detail", "req
 func (v *Problem) Validate() []FieldError {
 	var errs []FieldError
 	if !v.Code.Valid() {
-		errs = append(errs, FieldError{Field: "code", Message: "must be one of invalid_request, unauthenticated, forbidden, tenant_suspended, not_found, conflict, invalid_state, request_too_large, unsupported_media_type, internal, unavailable"})
+		errs = append(errs, FieldError{Field: "code", Message: "must be one of invalid_request, unauthenticated, forbidden, tenant_suspended, not_found, conflict, invalid_state, request_too_large, unsupported_media_type, internal, unavailable, credential_rejected, validation_unavailable"})
 	}
 	return errs
 }
@@ -229,23 +434,25 @@ type ProblemCode string
 
 // Values of ProblemCode.
 const (
-	ProblemCodeInvalidRequest       ProblemCode = "invalid_request"
-	ProblemCodeUnauthenticated      ProblemCode = "unauthenticated"
-	ProblemCodeForbidden            ProblemCode = "forbidden"
-	ProblemCodeTenantSuspended      ProblemCode = "tenant_suspended"
-	ProblemCodeNotFound             ProblemCode = "not_found"
-	ProblemCodeConflict             ProblemCode = "conflict"
-	ProblemCodeInvalidState         ProblemCode = "invalid_state"
-	ProblemCodeRequestTooLarge      ProblemCode = "request_too_large"
-	ProblemCodeUnsupportedMediaType ProblemCode = "unsupported_media_type"
-	ProblemCodeInternal             ProblemCode = "internal"
-	ProblemCodeUnavailable          ProblemCode = "unavailable"
+	ProblemCodeInvalidRequest        ProblemCode = "invalid_request"
+	ProblemCodeUnauthenticated       ProblemCode = "unauthenticated"
+	ProblemCodeForbidden             ProblemCode = "forbidden"
+	ProblemCodeTenantSuspended       ProblemCode = "tenant_suspended"
+	ProblemCodeNotFound              ProblemCode = "not_found"
+	ProblemCodeConflict              ProblemCode = "conflict"
+	ProblemCodeInvalidState          ProblemCode = "invalid_state"
+	ProblemCodeRequestTooLarge       ProblemCode = "request_too_large"
+	ProblemCodeUnsupportedMediaType  ProblemCode = "unsupported_media_type"
+	ProblemCodeInternal              ProblemCode = "internal"
+	ProblemCodeUnavailable           ProblemCode = "unavailable"
+	ProblemCodeCredentialRejected    ProblemCode = "credential_rejected"
+	ProblemCodeValidationUnavailable ProblemCode = "validation_unavailable"
 )
 
 // Valid reports whether v is a value of the enumeration.
 func (v ProblemCode) Valid() bool {
 	switch v {
-	case ProblemCodeInvalidRequest, ProblemCodeUnauthenticated, ProblemCodeForbidden, ProblemCodeTenantSuspended, ProblemCodeNotFound, ProblemCodeConflict, ProblemCodeInvalidState, ProblemCodeRequestTooLarge, ProblemCodeUnsupportedMediaType, ProblemCodeInternal, ProblemCodeUnavailable:
+	case ProblemCodeInvalidRequest, ProblemCodeUnauthenticated, ProblemCodeForbidden, ProblemCodeTenantSuspended, ProblemCodeNotFound, ProblemCodeConflict, ProblemCodeInvalidState, ProblemCodeRequestTooLarge, ProblemCodeUnsupportedMediaType, ProblemCodeInternal, ProblemCodeUnavailable, ProblemCodeCredentialRejected, ProblemCodeValidationUnavailable:
 		return true
 	}
 	return false
@@ -262,6 +469,26 @@ var requiredReason = []string{}
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Reason) Validate() []FieldError {
 	var errs []FieldError
+	if runeCount(v.Reason) > 500 {
+		errs = append(errs, FieldError{Field: "reason", Message: "length must be at most 500"})
+	}
+	return errs
+}
+
+// RequiredReason is a schema of the administration API.
+type RequiredReason struct {
+	// Recorded in the audit log of the tenant and on the credential.
+	Reason string `json:"reason"`
+}
+
+var requiredRequiredReason = []string{"reason"}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *RequiredReason) Validate() []FieldError {
+	var errs []FieldError
+	if runeCount(v.Reason) < 1 {
+		errs = append(errs, FieldError{Field: "reason", Message: "length must be at least 1"})
+	}
 	if runeCount(v.Reason) > 500 {
 		errs = append(errs, FieldError{Field: "reason", Message: "length must be at most 500"})
 	}
@@ -287,10 +514,10 @@ var requiredServiceAccount = []string{"id", "tenant_id", "name", "description", 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ServiceAccount) Validate() []FieldError {
 	var errs []FieldError
-	if !re1.MatchString(v.ID) {
+	if !re0.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re1.MatchString(v.TenantID) {
+	if !re0.MatchString(v.TenantID) {
 		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	if !re2.MatchString(v.Name) {
@@ -330,7 +557,7 @@ func (v *ServiceAccountCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "roles", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Roles {
-		if !re3.MatchString(item) {
+		if !re1.MatchString(item) {
 			errs = append(errs, FieldError{Field: "roles", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 		}
 	}
@@ -397,7 +624,7 @@ func (v *ServiceAccountUpdate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "roles", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Roles {
-		if !re3.MatchString(item) {
+		if !re1.MatchString(item) {
 			errs = append(errs, FieldError{Field: "roles", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 		}
 	}
@@ -438,7 +665,7 @@ var requiredTenant = []string{"id", "name", "display_name", "state", "created_at
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Tenant) Validate() []FieldError {
 	var errs []FieldError
-	if !re1.MatchString(v.ID) {
+	if !re0.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	if !re2.MatchString(v.Name) {
@@ -519,7 +746,7 @@ var requiredTenantRef = []string{"id", "name", "state"}
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantRef) Validate() []FieldError {
 	var errs []FieldError
-	if !re1.MatchString(v.ID) {
+	if !re0.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	if !re2.MatchString(v.Name) {
@@ -578,6 +805,7 @@ type VirtualKey struct {
 	TenantID         string `json:"tenant_id"`
 	ServiceAccountID string `json:"service_account_id"`
 	Description      string `json:"description"`
+	CredentialID     string `json:"credential_id,omitempty"`
 	// Permissions the key is limited to. Absent means every permission of the service account's roles.
 	Scopes    []string   `json:"scopes,omitempty"`
 	State     KeyState   `json:"state"`
@@ -594,11 +822,14 @@ func (v *VirtualKey) Validate() []FieldError {
 	if !re4.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^t[a-z2-7]{16}$"})
 	}
-	if !re1.MatchString(v.TenantID) {
+	if !re0.MatchString(v.TenantID) {
 		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re1.MatchString(v.ServiceAccountID) {
+	if !re0.MatchString(v.ServiceAccountID) {
 		errs = append(errs, FieldError{Field: "service_account_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if v.CredentialID != "" && !re0.MatchString(v.CredentialID) {
+		errs = append(errs, FieldError{Field: "credential_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	if !v.State.Valid() {
 		errs = append(errs, FieldError{Field: "state", Message: "must be one of active, expired, revoked"})
@@ -610,6 +841,7 @@ func (v *VirtualKey) Validate() []FieldError {
 type VirtualKeyCreate struct {
 	ServiceAccountID string     `json:"service_account_id"`
 	Description      string     `json:"description,omitempty"`
+	CredentialID     string     `json:"credential_id,omitempty"`
 	Scopes           []string   `json:"scopes,omitempty"`
 	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
 }
@@ -619,11 +851,14 @@ var requiredVirtualKeyCreate = []string{"service_account_id"}
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *VirtualKeyCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re1.MatchString(v.ServiceAccountID) {
+	if !re0.MatchString(v.ServiceAccountID) {
 		errs = append(errs, FieldError{Field: "service_account_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	if runeCount(v.Description) > 200 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
+	}
+	if v.CredentialID != "" && !re0.MatchString(v.CredentialID) {
+		errs = append(errs, FieldError{Field: "credential_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	if v.Scopes != nil && len(v.Scopes) < 1 {
 		errs = append(errs, FieldError{Field: "scopes", Message: "must have at least 1 items"})
@@ -677,24 +912,38 @@ var Operations = []Operation{
 	{ID: "getMe", Method: "GET", Path: "/v1/me", Permission: "identity:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "listPlatformKeys", Method: "GET", Path: "/v1/platform-keys", Permission: "platform_key:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "createPlatformKey", Method: "POST", Path: "/v1/platform-keys", Permission: "platform_key:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getPlatformKey", Method: "GET", Path: "/v1/platform-keys/{key}", Permission: "platform_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "key", Pattern: re0}}},
-	{ID: "revokePlatformKey", Method: "POST", Path: "/v1/platform-keys/{key}/revoke", Permission: "platform_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "key", Pattern: re0}}},
+	{ID: "getPlatformKey", Method: "GET", Path: "/v1/platform-keys/{key}", Permission: "platform_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "key", Pattern: re3}}},
+	{ID: "revokePlatformKey", Method: "POST", Path: "/v1/platform-keys/{key}/revoke", Permission: "platform_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "key", Pattern: re3}}},
+	{ID: "listTenantCredentials", Method: "GET", Path: "/v1/tenant-credentials/{tenant}", Permission: "tenant_credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
+	{ID: "getTenantCredential", Method: "GET", Path: "/v1/tenant-credentials/{tenant}/{credential}", Permission: "tenant_credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
+	{ID: "disableTenantCredential", Method: "POST", Path: "/v1/tenant-credentials/{tenant}/{credential}/disable", Permission: "tenant_credential:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
+	{ID: "revokeTenantCredential", Method: "POST", Path: "/v1/tenant-credentials/{tenant}/{credential}/revoke", Permission: "tenant_credential:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
 	{ID: "listTenants", Method: "GET", Path: "/v1/tenants", Permission: "tenant:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "createTenant", Method: "POST", Path: "/v1/tenants", Permission: "tenant:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getTenant", Method: "GET", Path: "/v1/tenants/{tenant}", Permission: "tenant:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re1}}},
-	{ID: "updateTenant", Method: "PATCH", Path: "/v1/tenants/{tenant}", Permission: "tenant:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re1}}},
-	{ID: "reactivateTenant", Method: "POST", Path: "/v1/tenants/{tenant}/reactivate", Permission: "tenant:suspend", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re1}}},
-	{ID: "listServiceAccounts", Method: "GET", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re1}}},
-	{ID: "createServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re1}}},
-	{ID: "getServiceAccount", Method: "GET", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}", Permission: "service_account:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re1}, {Name: "service_account", Pattern: re1}}},
-	{ID: "updateServiceAccount", Method: "PATCH", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re1}, {Name: "service_account", Pattern: re1}}},
-	{ID: "disableServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}/disable", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re1}, {Name: "service_account", Pattern: re1}}},
-	{ID: "enableServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}/enable", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re1}, {Name: "service_account", Pattern: re1}}},
-	{ID: "suspendTenant", Method: "POST", Path: "/v1/tenants/{tenant}/suspend", Permission: "tenant:suspend", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re1}}},
-	{ID: "listVirtualKeys", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re1}}},
-	{ID: "createVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re1}}},
-	{ID: "getVirtualKey", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys/{key}", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re1}, {Name: "key", Pattern: re4}}},
-	{ID: "revokeVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys/{key}/revoke", Permission: "virtual_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re1}, {Name: "key", Pattern: re4}}},
+	{ID: "getTenant", Method: "GET", Path: "/v1/tenants/{tenant}", Permission: "tenant:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
+	{ID: "updateTenant", Method: "PATCH", Path: "/v1/tenants/{tenant}", Permission: "tenant:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
+	{ID: "listCredentials", Method: "GET", Path: "/v1/tenants/{tenant}/credentials", Permission: "credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
+	{ID: "createCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials", Permission: "credential:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
+	{ID: "getCredential", Method: "GET", Path: "/v1/tenants/{tenant}/credentials/{credential}", Permission: "credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
+	{ID: "updateCredential", Method: "PATCH", Path: "/v1/tenants/{tenant}/credentials/{credential}", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
+	{ID: "deleteCredential", Method: "DELETE", Path: "/v1/tenants/{tenant}/credentials/{credential}", Permission: "credential:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
+	{ID: "disableCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/disable", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
+	{ID: "enableCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/enable", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
+	{ID: "revokeCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/revoke", Permission: "credential:delete", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
+	{ID: "replaceCredentialSecret", Method: "PUT", Path: "/v1/tenants/{tenant}/credentials/{credential}/secret", Permission: "credential:rotate", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
+	{ID: "setDefaultCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/set-default", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
+	{ID: "reactivateTenant", Method: "POST", Path: "/v1/tenants/{tenant}/reactivate", Permission: "tenant:suspend", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
+	{ID: "listServiceAccounts", Method: "GET", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
+	{ID: "createServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
+	{ID: "getServiceAccount", Method: "GET", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}", Permission: "service_account:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "service_account", Pattern: re0}}},
+	{ID: "updateServiceAccount", Method: "PATCH", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "service_account", Pattern: re0}}},
+	{ID: "disableServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}/disable", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "service_account", Pattern: re0}}},
+	{ID: "enableServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}/enable", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "service_account", Pattern: re0}}},
+	{ID: "suspendTenant", Method: "POST", Path: "/v1/tenants/{tenant}/suspend", Permission: "tenant:suspend", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
+	{ID: "listVirtualKeys", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
+	{ID: "createVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
+	{ID: "getVirtualKey", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys/{key}", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "key", Pattern: re4}}},
+	{ID: "revokeVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys/{key}/revoke", Permission: "virtual_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "key", Pattern: re4}}},
 }
 
 // GetMeInput is the input of getMe.
@@ -725,6 +974,36 @@ type RevokePlatformKeyInput struct {
 	Body Reason
 }
 
+// ListTenantCredentialsInput is the input of listTenantCredentials.
+type ListTenantCredentialsInput struct {
+	Tenant   string          // path
+	Limit    int             // query; the zero value means absent
+	Cursor   string          // query; the zero value means absent
+	Sort     Sort            // query; the zero value means absent
+	State    CredentialState // query; the zero value means absent
+	Provider string          // query; the zero value means absent
+}
+
+// GetTenantCredentialInput is the input of getTenantCredential.
+type GetTenantCredentialInput struct {
+	Tenant     string // path
+	Credential string // path
+}
+
+// DisableTenantCredentialInput is the input of disableTenantCredential.
+type DisableTenantCredentialInput struct {
+	Tenant     string // path
+	Credential string // path
+	Body       RequiredReason
+}
+
+// RevokeTenantCredentialInput is the input of revokeTenantCredential.
+type RevokeTenantCredentialInput struct {
+	Tenant     string // path
+	Credential string // path
+	Body       RequiredReason
+}
+
 // ListTenantsInput is the input of listTenants.
 type ListTenantsInput struct {
 	Limit  int         // query; the zero value means absent
@@ -748,6 +1027,76 @@ type GetTenantInput struct {
 type UpdateTenantInput struct {
 	Tenant string // path
 	Body   TenantUpdate
+}
+
+// ListCredentialsInput is the input of listCredentials.
+type ListCredentialsInput struct {
+	Tenant   string          // path
+	Limit    int             // query; the zero value means absent
+	Cursor   string          // query; the zero value means absent
+	Sort     Sort            // query; the zero value means absent
+	State    CredentialState // query; the zero value means absent
+	Provider string          // query; the zero value means absent
+}
+
+// CreateCredentialInput is the input of createCredential.
+type CreateCredentialInput struct {
+	Tenant string // path
+	Body   CredentialCreate
+}
+
+// GetCredentialInput is the input of getCredential.
+type GetCredentialInput struct {
+	Tenant     string // path
+	Credential string // path
+}
+
+// UpdateCredentialInput is the input of updateCredential.
+type UpdateCredentialInput struct {
+	Tenant     string // path
+	Credential string // path
+	Body       CredentialUpdate
+}
+
+// DeleteCredentialInput is the input of deleteCredential.
+type DeleteCredentialInput struct {
+	Tenant     string // path
+	Credential string // path
+}
+
+// DisableCredentialInput is the input of disableCredential.
+type DisableCredentialInput struct {
+	Tenant     string // path
+	Credential string // path
+	Body       Reason
+}
+
+// EnableCredentialInput is the input of enableCredential.
+type EnableCredentialInput struct {
+	Tenant     string // path
+	Credential string // path
+	Body       Reason
+}
+
+// RevokeCredentialInput is the input of revokeCredential.
+type RevokeCredentialInput struct {
+	Tenant     string // path
+	Credential string // path
+	Body       Reason
+}
+
+// ReplaceCredentialSecretInput is the input of replaceCredentialSecret.
+type ReplaceCredentialSecretInput struct {
+	Tenant     string // path
+	Credential string // path
+	Body       CredentialSecret
+}
+
+// SetDefaultCredentialInput is the input of setDefaultCredential.
+type SetDefaultCredentialInput struct {
+	Tenant     string // path
+	Credential string // path
+	Body       Reason
 }
 
 // ReactivateTenantInput is the input of reactivateTenant.
@@ -846,6 +1195,14 @@ type Server interface {
 	GetPlatformKey(ctx context.Context, in GetPlatformKeyInput) (*PlatformKey, error)
 	// RevokePlatformKey: POST /v1/platform-keys/{key}/revoke. Revoke a platform key
 	RevokePlatformKey(ctx context.Context, in RevokePlatformKeyInput) (*PlatformKey, error)
+	// ListTenantCredentials: GET /v1/tenant-credentials/{tenant}. List the credentials of a tenant as a platform administrator (metadata)
+	ListTenantCredentials(ctx context.Context, in ListTenantCredentialsInput) (*CredentialList, error)
+	// GetTenantCredential: GET /v1/tenant-credentials/{tenant}/{credential}. Read the metadata of a credential of a tenant as a platform administrator
+	GetTenantCredential(ctx context.Context, in GetTenantCredentialInput) (*Credential, error)
+	// DisableTenantCredential: POST /v1/tenant-credentials/{tenant}/{credential}/disable. Disable a credential of a tenant as a platform administrator
+	DisableTenantCredential(ctx context.Context, in DisableTenantCredentialInput) (*Credential, error)
+	// RevokeTenantCredential: POST /v1/tenant-credentials/{tenant}/{credential}/revoke. Revoke a credential of a tenant as a platform administrator
+	RevokeTenantCredential(ctx context.Context, in RevokeTenantCredentialInput) (*Credential, error)
 	// ListTenants: GET /v1/tenants. List tenants
 	ListTenants(ctx context.Context, in ListTenantsInput) (*TenantList, error)
 	// CreateTenant: POST /v1/tenants. Create a tenant with its first administrator
@@ -854,6 +1211,26 @@ type Server interface {
 	GetTenant(ctx context.Context, in GetTenantInput) (*Tenant, error)
 	// UpdateTenant: PATCH /v1/tenants/{tenant}. Change the name or the display name of a tenant
 	UpdateTenant(ctx context.Context, in UpdateTenantInput) (*Tenant, error)
+	// ListCredentials: GET /v1/tenants/{tenant}/credentials. List the provider credentials of a tenant (metadata)
+	ListCredentials(ctx context.Context, in ListCredentialsInput) (*CredentialList, error)
+	// CreateCredential: POST /v1/tenants/{tenant}/credentials. Register a provider credential
+	CreateCredential(ctx context.Context, in CreateCredentialInput) (*Credential, error)
+	// GetCredential: GET /v1/tenants/{tenant}/credentials/{credential}. Read the metadata of a credential
+	GetCredential(ctx context.Context, in GetCredentialInput) (*Credential, error)
+	// UpdateCredential: PATCH /v1/tenants/{tenant}/credentials/{credential}. Change the label, the description or the known expiry of a credential
+	UpdateCredential(ctx context.Context, in UpdateCredentialInput) (*Credential, error)
+	// DeleteCredential: DELETE /v1/tenants/{tenant}/credentials/{credential}. Delete a credential
+	DeleteCredential(ctx context.Context, in DeleteCredentialInput) (*Credential, error)
+	// DisableCredential: POST /v1/tenants/{tenant}/credentials/{credential}/disable. Disable a credential
+	DisableCredential(ctx context.Context, in DisableCredentialInput) (*Credential, error)
+	// EnableCredential: POST /v1/tenants/{tenant}/credentials/{credential}/enable. Enable a disabled credential
+	EnableCredential(ctx context.Context, in EnableCredentialInput) (*Credential, error)
+	// RevokeCredential: POST /v1/tenants/{tenant}/credentials/{credential}/revoke. Revoke a credential
+	RevokeCredential(ctx context.Context, in RevokeCredentialInput) (*Credential, error)
+	// ReplaceCredentialSecret: PUT /v1/tenants/{tenant}/credentials/{credential}/secret. Replace the secret of a credential
+	ReplaceCredentialSecret(ctx context.Context, in ReplaceCredentialSecretInput) (*Credential, error)
+	// SetDefaultCredential: POST /v1/tenants/{tenant}/credentials/{credential}/set-default. Make a credential the default of its provider
+	SetDefaultCredential(ctx context.Context, in SetDefaultCredentialInput) (*Credential, error)
 	// ReactivateTenant: POST /v1/tenants/{tenant}/reactivate. Reactivate a suspended tenant
 	ReactivateTenant(ctx context.Context, in ReactivateTenantInput) (*Tenant, error)
 	// ListServiceAccounts: GET /v1/tenants/{tenant}/service-accounts. List the service accounts of a tenant
@@ -1006,6 +1383,132 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		writeJSON(w, 200, out)
+	case "listTenantCredentials":
+		var in ListTenantCredentialsInput
+		in.Tenant = params["tenant"]
+		q, err := parseQuery(r, "limit", "cursor", "sort", "state", "provider")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		in.Sort = Sort("created_at")
+		if v, ok := q["sort"]; ok {
+			in.Sort = Sort(v)
+		}
+		if in.Sort != "" && !in.Sort.Valid() {
+			errs = append(errs, FieldError{Field: "sort", Message: "must be one of created_at, -created_at"})
+		}
+		if v, ok := q["state"]; ok {
+			in.State = CredentialState(v)
+		}
+		if in.State != "" && !in.State.Valid() {
+			errs = append(errs, FieldError{Field: "state", Message: "must be one of active, disabled, revoked"})
+		}
+		if v, ok := q["provider"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "provider", Message: "must not be empty"})
+			}
+			in.Provider = v
+		}
+		if in.Provider != "" && !re1.MatchString(in.Provider) {
+			errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListTenantCredentials(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "getTenantCredential":
+		var in GetTenantCredentialInput
+		in.Tenant = params["tenant"]
+		in.Credential = params["credential"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GetTenantCredential(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "disableTenantCredential":
+		var in DisableTenantCredentialInput
+		in.Tenant = params["tenant"]
+		in.Credential = params["credential"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredRequiredReason, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.DisableTenantCredential(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "revokeTenantCredential":
+		var in RevokeTenantCredentialInput
+		in.Tenant = params["tenant"]
+		in.Credential = params["credential"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredRequiredReason, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.RevokeTenantCredential(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
 	case "listTenants":
 		var in ListTenantsInput
 		q, err := parseQuery(r, "limit", "cursor", "sort", "state", "name")
@@ -1122,6 +1625,255 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		out, err := h.server.UpdateTenant(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "listCredentials":
+		var in ListCredentialsInput
+		in.Tenant = params["tenant"]
+		q, err := parseQuery(r, "limit", "cursor", "sort", "state", "provider")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		in.Sort = Sort("created_at")
+		if v, ok := q["sort"]; ok {
+			in.Sort = Sort(v)
+		}
+		if in.Sort != "" && !in.Sort.Valid() {
+			errs = append(errs, FieldError{Field: "sort", Message: "must be one of created_at, -created_at"})
+		}
+		if v, ok := q["state"]; ok {
+			in.State = CredentialState(v)
+		}
+		if in.State != "" && !in.State.Valid() {
+			errs = append(errs, FieldError{Field: "state", Message: "must be one of active, disabled, revoked"})
+		}
+		if v, ok := q["provider"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "provider", Message: "must not be empty"})
+			}
+			in.Provider = v
+		}
+		if in.Provider != "" && !re1.MatchString(in.Provider) {
+			errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListCredentials(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "createCredential":
+		var in CreateCredentialInput
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredCredentialCreate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.CreateCredential(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 201, out)
+	case "getCredential":
+		var in GetCredentialInput
+		in.Tenant = params["tenant"]
+		in.Credential = params["credential"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GetCredential(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "updateCredential":
+		var in UpdateCredentialInput
+		in.Tenant = params["tenant"]
+		in.Credential = params["credential"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredCredentialUpdate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.UpdateCredential(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "deleteCredential":
+		var in DeleteCredentialInput
+		in.Tenant = params["tenant"]
+		in.Credential = params["credential"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.DeleteCredential(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "disableCredential":
+		var in DisableCredentialInput
+		in.Tenant = params["tenant"]
+		in.Credential = params["credential"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.DisableCredential(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "enableCredential":
+		var in EnableCredentialInput
+		in.Tenant = params["tenant"]
+		in.Credential = params["credential"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.EnableCredential(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "revokeCredential":
+		var in RevokeCredentialInput
+		in.Tenant = params["tenant"]
+		in.Credential = params["credential"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.RevokeCredential(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "replaceCredentialSecret":
+		var in ReplaceCredentialSecretInput
+		in.Tenant = params["tenant"]
+		in.Credential = params["credential"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredCredentialSecret, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ReplaceCredentialSecret(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "setDefaultCredential":
+		var in SetDefaultCredentialInput
+		in.Tenant = params["tenant"]
+		in.Credential = params["credential"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.SetDefaultCredential(r.Context(), in)
 		if err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -1393,7 +2145,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.ServiceAccountID = v
 		}
-		if in.ServiceAccountID != "" && !re1.MatchString(in.ServiceAccountID) {
+		if in.ServiceAccountID != "" && !re0.MatchString(in.ServiceAccountID) {
 			errs = append(errs, FieldError{Field: "service_account_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 		}
 		if len(errs) > 0 {
@@ -1528,6 +2280,61 @@ func (c *Client) RevokePlatformKey(ctx context.Context, in RevokePlatformKeyInpu
 	return &out, nil
 }
 
+// ListTenantCredentials calls GET /v1/tenant-credentials/{tenant}. List the credentials of a tenant as a platform administrator (metadata)
+func (c *Client) ListTenantCredentials(ctx context.Context, in ListTenantCredentialsInput) (*CredentialList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	if in.Sort != "" {
+		q.Set("sort", string(in.Sort))
+	}
+	if in.State != "" {
+		q.Set("state", string(in.State))
+	}
+	if in.Provider != "" {
+		q.Set("provider", string(in.Provider))
+	}
+	var out CredentialList
+	if err := c.do(ctx, "GET", "/v1/tenant-credentials/"+url.PathEscape(in.Tenant)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetTenantCredential calls GET /v1/tenant-credentials/{tenant}/{credential}. Read the metadata of a credential of a tenant as a platform administrator
+func (c *Client) GetTenantCredential(ctx context.Context, in GetTenantCredentialInput) (*Credential, error) {
+	q := url.Values{}
+	var out Credential
+	if err := c.do(ctx, "GET", "/v1/tenant-credentials/"+url.PathEscape(in.Tenant)+"/"+url.PathEscape(in.Credential)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DisableTenantCredential calls POST /v1/tenant-credentials/{tenant}/{credential}/disable. Disable a credential of a tenant as a platform administrator
+func (c *Client) DisableTenantCredential(ctx context.Context, in DisableTenantCredentialInput) (*Credential, error) {
+	q := url.Values{}
+	var out Credential
+	if err := c.do(ctx, "POST", "/v1/tenant-credentials/"+url.PathEscape(in.Tenant)+"/"+url.PathEscape(in.Credential)+"/disable", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// RevokeTenantCredential calls POST /v1/tenant-credentials/{tenant}/{credential}/revoke. Revoke a credential of a tenant as a platform administrator
+func (c *Client) RevokeTenantCredential(ctx context.Context, in RevokeTenantCredentialInput) (*Credential, error) {
+	q := url.Values{}
+	var out Credential
+	if err := c.do(ctx, "POST", "/v1/tenant-credentials/"+url.PathEscape(in.Tenant)+"/"+url.PathEscape(in.Credential)+"/revoke", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // ListTenants calls GET /v1/tenants. List tenants
 func (c *Client) ListTenants(ctx context.Context, in ListTenantsInput) (*TenantList, error) {
 	q := url.Values{}
@@ -1578,6 +2385,121 @@ func (c *Client) UpdateTenant(ctx context.Context, in UpdateTenantInput) (*Tenan
 	q := url.Values{}
 	var out Tenant
 	if err := c.do(ctx, "PATCH", "/v1/tenants/"+url.PathEscape(in.Tenant)+"", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListCredentials calls GET /v1/tenants/{tenant}/credentials. List the provider credentials of a tenant (metadata)
+func (c *Client) ListCredentials(ctx context.Context, in ListCredentialsInput) (*CredentialList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	if in.Sort != "" {
+		q.Set("sort", string(in.Sort))
+	}
+	if in.State != "" {
+		q.Set("state", string(in.State))
+	}
+	if in.Provider != "" {
+		q.Set("provider", string(in.Provider))
+	}
+	var out CredentialList
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreateCredential calls POST /v1/tenants/{tenant}/credentials. Register a provider credential
+func (c *Client) CreateCredential(ctx context.Context, in CreateCredentialInput) (*Credential, error) {
+	q := url.Values{}
+	var out Credential
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials", q, &in.Body, 201, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetCredential calls GET /v1/tenants/{tenant}/credentials/{credential}. Read the metadata of a credential
+func (c *Client) GetCredential(ctx context.Context, in GetCredentialInput) (*Credential, error) {
+	q := url.Values{}
+	var out Credential
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateCredential calls PATCH /v1/tenants/{tenant}/credentials/{credential}. Change the label, the description or the known expiry of a credential
+func (c *Client) UpdateCredential(ctx context.Context, in UpdateCredentialInput) (*Credential, error) {
+	q := url.Values{}
+	var out Credential
+	if err := c.do(ctx, "PATCH", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeleteCredential calls DELETE /v1/tenants/{tenant}/credentials/{credential}. Delete a credential
+func (c *Client) DeleteCredential(ctx context.Context, in DeleteCredentialInput) (*Credential, error) {
+	q := url.Values{}
+	var out Credential
+	if err := c.do(ctx, "DELETE", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DisableCredential calls POST /v1/tenants/{tenant}/credentials/{credential}/disable. Disable a credential
+func (c *Client) DisableCredential(ctx context.Context, in DisableCredentialInput) (*Credential, error) {
+	q := url.Values{}
+	var out Credential
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"/disable", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// EnableCredential calls POST /v1/tenants/{tenant}/credentials/{credential}/enable. Enable a disabled credential
+func (c *Client) EnableCredential(ctx context.Context, in EnableCredentialInput) (*Credential, error) {
+	q := url.Values{}
+	var out Credential
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"/enable", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// RevokeCredential calls POST /v1/tenants/{tenant}/credentials/{credential}/revoke. Revoke a credential
+func (c *Client) RevokeCredential(ctx context.Context, in RevokeCredentialInput) (*Credential, error) {
+	q := url.Values{}
+	var out Credential
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"/revoke", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ReplaceCredentialSecret calls PUT /v1/tenants/{tenant}/credentials/{credential}/secret. Replace the secret of a credential
+func (c *Client) ReplaceCredentialSecret(ctx context.Context, in ReplaceCredentialSecretInput) (*Credential, error) {
+	q := url.Values{}
+	var out Credential
+	if err := c.do(ctx, "PUT", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"/secret", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// SetDefaultCredential calls POST /v1/tenants/{tenant}/credentials/{credential}/set-default. Make a credential the default of its provider
+func (c *Client) SetDefaultCredential(ctx context.Context, in SetDefaultCredentialInput) (*Credential, error) {
+	q := url.Values{}
+	var out Credential
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"/set-default", q, &in.Body, 200, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

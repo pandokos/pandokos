@@ -116,7 +116,7 @@ func (s *server) CreateTenant(ctx context.Context, in adminapi.CreateTenantInput
 				exp = &u
 			}
 			vk, err := q.CreateVirtualKey(ctx, queries.CreateVirtualKeyParams{
-				TenantID: t.ID, ServiceAccountID: sa.ID, KeyID: keyID, SecretHash: hash[:], ExpiresAt: exp,
+				TenantID: t.ID, ServiceAccountID: sa.ID, KeyID: keyID, SecretHash: hash[:], ExpiresAt: exp, CredentialID: nil,
 			})
 			if err != nil {
 				return err
