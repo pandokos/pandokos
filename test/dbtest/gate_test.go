@@ -56,3 +56,22 @@ func TestGate(t *testing.T) {
 		t.Errorf("the CI message is %q", msg)
 	}
 }
+
+// TestGateCAFile extends T-119 with the pair of variables of the TLS tests.
+func TestGateCAFile(t *testing.T) {
+	if EnvDatabaseCAFile != "PANDOKOS_TEST_DATABASE_CA_FILE" || EnvNoDatabaseTLS != "PANDOKOS_TEST_NO_DATABASE_TLS" {
+		t.Fatal("the names of the variables changed")
+	}
+	if got, msg := gate(EnvDatabaseCAFile, EnvNoDatabaseTLS, "", "", ""); got != fail || !strings.Contains(msg, EnvNoDatabaseTLS) {
+		t.Errorf("missing variable: %d %q", got, msg)
+	}
+	if got, _ := gate(EnvDatabaseCAFile, EnvNoDatabaseTLS, "", "1", ""); got != skip {
+		t.Errorf("opt-out outside CI: %d", got)
+	}
+	if got, _ := gate(EnvDatabaseCAFile, EnvNoDatabaseTLS, "", "1", "true"); got != fail {
+		t.Errorf("opt-out in CI: %d", got)
+	}
+	if got, _ := gate(EnvDatabaseCAFile, EnvNoDatabaseTLS, "/ca.pem", "", "true"); got != run {
+		t.Errorf("present: %d", got)
+	}
+}

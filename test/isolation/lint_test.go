@@ -30,12 +30,15 @@ func TestSchemaLint(t *testing.T) {
 	}
 }
 
-// TestDefaultSpecMatchesDesign is T-142: the spec is the one of sprint.md sections 5.6, 6.1, 6.2.
+// TestDefaultSpecMatchesDesign is T-142: the spec is the one of sprint 1.3, sections 5.10, 6.1.
 func TestDefaultSpecMatchesDesign(t *testing.T) {
 	want := Spec{
 		Global: map[string]GlobalTable{
-			"schema_migration": {Reason: "describes the installation, holds no tenant information"},
-			"tenant":           {Reason: "the list of tenants; protected by its own policies", Restricted: true},
+			"schema_migration":      {Reason: "describes the installation, holds no tenant information"},
+			"tenant":                {Reason: "the list of tenants; protected by its own policies", Restricted: true},
+			"virtual_key_directory": {Reason: "Key ID to tenant, for the lookup function; no runtime role has any privilege on it"},
+			"platform_key":          {Reason: "Credentials of the platform; protected by its own policies", Restricted: true},
+			"platform_audit_event":  {Reason: "Audit log of the platform; protected by its own policies", Restricted: true},
 		},
 		Grants: map[string]map[string][]string{
 			"schema_migration": {
@@ -51,11 +54,35 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 			"service_account": {
 				"pandokos_gateway": {"SELECT"},
 				"pandokos_admin": {
-					"DELETE",
 					"INSERT(description,name,state,tenant_id,valid_from,valid_until)",
 					"SELECT",
 					"UPDATE(description,name,state,valid_from,valid_until)",
 				},
+			},
+			"role_assignment": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin":   {"DELETE", "INSERT(role,service_account_id,tenant_id)", "SELECT"},
+			},
+			"virtual_key": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin": {
+					"INSERT(description,expires_at,key_id,scopes,secret_hash,service_account_id,tenant_id)",
+					"SELECT",
+					"UPDATE(revoked_at)",
+				},
+			},
+			"platform_key": {
+				"pandokos_admin": {
+					"INSERT(bootstrap,description,expires_at,key_id,role,secret_hash)",
+					"SELECT",
+					"UPDATE(revoked_at)",
+				},
+			},
+			"audit_event": {
+				"pandokos_admin": {"INSERT(action,actor_id,actor_name,actor_type,detail,key_id,outcome,reason,request_id,resource_id,resource_type,tenant_id)"},
+			},
+			"platform_audit_event": {
+				"pandokos_admin": {"INSERT(action,actor_id,actor_name,actor_type,detail,key_id,outcome,reason,request_id,resource_id,resource_type)"},
 			},
 		},
 		Fixtures: map[string]Fixture{
@@ -63,14 +90,36 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 				Insert: `INSERT INTO pandokos.service_account (tenant_id, name) VALUES ($1::uuid, 'sa-' || substr(md5(random()::text), 1, 12)) RETURNING id::text`,
 				Update: `description = 'changed'`,
 			},
+			"role_assignment": {
+				Insert: `WITH sa AS (INSERT INTO pandokos.service_account (tenant_id, name)
+            VALUES ($1::uuid, 'sa-' || substr(md5(random()::text), 1, 12)) RETURNING id)
+INSERT INTO pandokos.role_assignment (tenant_id, service_account_id, role)
+SELECT $1::uuid, sa.id, 'inference' FROM sa RETURNING id::text`,
+				Update: `role = 'changed'`,
+			},
+			"virtual_key": {
+				Insert: `WITH sa AS (INSERT INTO pandokos.service_account (tenant_id, name)
+            VALUES ($1::uuid, 'sa-' || substr(md5(random()::text), 1, 12)) RETURNING id)
+INSERT INTO pandokos.virtual_key (tenant_id, service_account_id, key_id, secret_hash)
+SELECT $1::uuid, sa.id, 't' || translate(substr(md5(random()::text), 1, 16), '0189', 'ghij'),
+       sha256(random()::text::bytea) FROM sa RETURNING id::text`,
+				Update: `description = 'changed'`,
+			},
+			"audit_event": {
+				Insert: `INSERT INTO pandokos.audit_event (tenant_id, actor_type, action, resource_type, outcome)
+VALUES ($1::uuid, 'platform', 'test.fixture', 'test', 'success') RETURNING id::text`,
+				Update: `reason = 'changed'`,
+			},
 		},
+		SecurityDefiner: []string{"virtual_key_lookup", "virtual_key_directory_add"},
+		AppendOnly:      []string{"audit_event", "platform_audit_event"},
 	}
 	got := DefaultSpec()
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("DefaultSpec() differs from the design:\n got %+v\nwant %+v", got, want)
 	}
-	if len(got.SecurityDefiner) != 0 || len(got.Views) != 0 {
-		t.Error("no SECURITY DEFINER function and no view is allowed yet")
+	if len(got.Views) != 0 {
+		t.Error("no view is allowed")
 	}
 }
 
@@ -147,6 +196,14 @@ CREATE TABLE pandokos.zz (
 		{name: "public-function", ddl: `CREATE FUNCTION pandokos.zz_g() RETURNS integer LANGUAGE sql RETURN 1;
 GRANT EXECUTE ON FUNCTION pandokos.zz_g() TO PUBLIC;`, rule: "L-14"},
 		{name: "runtime-create", post: `GRANT CREATE ON SCHEMA pandokos TO pandokos_worker`, rule: "L-15"},
+		{name: "append-only-grant", ddl: `GRANT UPDATE ON pandokos.audit_event TO pandokos_admin`, rule: "L-17,L-12"},
+		{name: "append-only-column-grant", ddl: `GRANT UPDATE (reason) ON pandokos.platform_audit_event TO pandokos_admin`, rule: "L-17,L-12"},
+		{name: "append-only-missing-row-trigger", ddl: `DROP TRIGGER audit_event_append_only ON pandokos.audit_event`, rule: "L-17"},
+		{name: "append-only-missing-truncate-trigger", ddl: `DROP TRIGGER platform_audit_event_no_truncate ON pandokos.platform_audit_event`, rule: "L-17"},
+		{name: "append-only-disabled-trigger", ddl: `ALTER TABLE pandokos.audit_event DISABLE TRIGGER audit_event_append_only`, rule: "L-17"},
+		{name: "append-only-wrong-function", ddl: `DROP TRIGGER audit_event_append_only ON pandokos.audit_event;
+CREATE TRIGGER audit_event_append_only BEFORE UPDATE OR DELETE ON pandokos.audit_event FOR EACH ROW EXECUTE FUNCTION pandokos.row_guard();`, rule: "L-17"},
+		{name: "definer-without-search-path", ddl: `ALTER FUNCTION pandokos.virtual_key_lookup(text) RESET search_path`, rule: "L-18"},
 		{name: "no-fixture", ddl: canonicalTable + ok, rule: "L-16", only: true},
 		{name: "stale-spec", spec: func(s *Spec) { s.Fixtures["gone"] = Fixture{Insert: "SELECT 1"} }, rule: "L-16"},
 	}

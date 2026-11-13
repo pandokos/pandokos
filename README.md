@@ -2,7 +2,7 @@
 
 Open-source multi-tenant LLM proxy: governed access to AI providers with BYOK, secrets vault, quotas, audit and OpenTelemetry.
 
-> **Status: walking skeleton on a tested database.** A container image forwards one OpenAI endpoint (chat completions, streaming included) with a provider key read from a file and a static access token, and logs the usage it reads. It needs PostgreSQL: the schema is created by `pandokos migrate`, and a database with tested tenant isolation (forced row-level security, three unprivileged database roles, checked against PostgreSQL directly and through a pooler) exists, but nothing is proxied through it yet and no tenant can be created through a product interface: **not for production**. Requirements, architecture and plan are written and open for review; see [Documentation](#documentation) and [Roadmap](#roadmap).
+> **Status: walking skeleton on a tested database.** A container image forwards one OpenAI endpoint (chat completions, streaming included) with a provider key read from a file and logs the usage it reads. Callers authenticate with virtual keys; `pandokos init` issues the first platform key, and the CLI (a client of the administration API) creates tenants, service accounts and keys (first run: [docs/operations/keys.md](docs/operations/keys.md)). It needs PostgreSQL: the schema is created by `pandokos migrate`, and a database with tested tenant isolation (forced row-level security, three unprivileged database roles, checked against PostgreSQL directly and through a pooler) exists, but nothing is proxied through it yet and the provider key is still the operator's one for every tenant: **not for production**. Requirements, architecture and plan are written and open for review; see [Documentation](#documentation) and [Roadmap](#roadmap).
 
 ## What it is
 
@@ -46,7 +46,9 @@ Pandokos is deliberately not an identity provider, an agent or workflow framewor
 - [Requirements](docs/requirements/README.md): what Pandokos must guarantee, by release.
 - [Architecture](docs/architecture/overview.md), with the [data model](docs/architecture/data-model.md) and the [security model](docs/architecture/security-model.md).
 - [Decision records](docs/adr/README.md): why it is built this way.
-- [Configuration reference](docs/operations/configuration.md), the [database guide](docs/operations/database.md) and [running the container image](docs/operations/container.md), including how to verify a release.
+- [Configuration reference](docs/operations/configuration.md), the [database guide](docs/operations/database.md), [keys, `init` and revocation](docs/operations/keys.md), [TLS](docs/operations/tls.md) and [running the container image](docs/operations/container.md), including how to verify a release.
+- Reference: the [administration API](docs/reference/admin-api.md) and the [permissions and built-in roles](docs/reference/permissions.md).
+- [History](docs/history/README.md): the record of each completed epic, with the designs of its sprints.
 - [Planning](planning/roadmap.md): epics and sprints.
 
 ## Roadmap

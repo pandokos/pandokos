@@ -28,6 +28,10 @@ linters:
             - github.com/pandokos/pandokos
             - go.yaml.in/yaml/v3
             - github.com/jackc/pgx/v5
+            - go/ast
+            - go/format
+            - go/parser
+            - go/token
         pgx-only-in-store:
           list-mode: lax
           files:
@@ -64,6 +68,7 @@ linters:
           files:
             - "**/cmd/**"
             - "**/internal/**"
+            - "!**/test/**"
             - "!$test"
           deny:
             - pkg: github.com/pandokos/pandokos/test
@@ -89,6 +94,54 @@ linters:
               desc: the gateway does not know the server
             - pkg: github.com/pandokos/pandokos/internal/config
               desc: the gateway receives plain values through Options
+            - pkg: github.com/pandokos/pandokos/internal/admin
+              desc: the planes do not import each other (ADR 0003)
+            - pkg: github.com/pandokos/pandokos/internal/authn
+              desc: the gateway sees authentication through gateway.Authenticator
+            - pkg: github.com/pandokos/pandokos/internal/cli
+              desc: the gateway does not know the CLI
+            - pkg: github.com/pandokos/pandokos/internal/store
+              desc: the gateway does not reach the database itself
+        admin-takes-plain-values:
+          list-mode: lax
+          files:
+            - "**/internal/admin/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/pandokos/pandokos/internal/gateway
+              desc: the planes do not import each other (ADR 0003)
+            - pkg: github.com/pandokos/pandokos/internal/family
+              desc: families belong to the data plane
+            - pkg: github.com/pandokos/pandokos/internal/server
+              desc: the handlers do not know the server
+            - pkg: github.com/pandokos/pandokos/internal/config
+              desc: the handlers receive plain values through Options
+        adminapi-is-standard-library-only:
+          list-mode: strict
+          files:
+            - "**/internal/adminapi/**"
+            - "!$test"
+          allow:
+            - $gostd
+        authz-is-a-leaf:
+          list-mode: strict
+          files:
+            - "**/internal/authz/**"
+            - "**/internal/requestid/**"
+            - "!$test"
+          allow:
+            - $gostd
+            - github.com/pandokos/pandokos/internal/tenant
+        cli-is-a-client:
+          list-mode: strict
+          files:
+            - "**/internal/cli/**"
+            - "!$test"
+          allow:
+            - $gostd
+            - github.com/pandokos/pandokos/internal/adminapi
+            - github.com/pandokos/pandokos/internal/secret
+            - github.com/pandokos/pandokos/internal/buildinfo
     forbidigo:
       forbid:
         - pattern: '^(fmt\.Print(|f|ln)|print|println)$'

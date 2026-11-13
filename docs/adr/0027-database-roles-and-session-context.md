@@ -50,3 +50,7 @@ direct connection.
 - A tenant list without policies: any role in any session could list tenants.
 - A configuration switch for pooler mode: two behaviours to test, one more way to misconfigure.
 - Session-level `SET` with a reset query: unsafe behind transaction pooling.
+
+## History
+
+- 2026-11: sprint 1.3 adds the transaction with neither setting (Unscoped), the provisioning transaction with both (ADR 0031), and one LISTEN connection per gateway (ADR 0030).
