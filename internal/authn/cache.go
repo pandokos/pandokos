@@ -122,7 +122,7 @@ func (c *cache) flush(reason string) {
 // invalidate applies a notification payload (sprint 1.3, section 5.8).
 func (c *cache) invalidate(payload string) {
 	switch {
-	case payload == "platform", strings.HasPrefix(payload, "probe:"):
+	case payload == "platform", strings.HasPrefix(payload, "probe:"), strings.HasPrefix(payload, "vault:"):
 		return
 	case strings.HasPrefix(payload, "tenant:") && len(payload) > len("tenant:"):
 		id := strings.TrimPrefix(payload, "tenant:")

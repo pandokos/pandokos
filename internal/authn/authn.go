@@ -202,6 +202,9 @@ func (a *Authenticator) check(e *entry, keyID string, hash [32]byte) (authz.Prin
 	if row.Scoped {
 		p.Scopes = append([]string{}, row.Scopes...)
 	}
+	if row.CredentialID != nil {
+		p.CredentialID = *row.CredentialID
+	}
 	return p, nil
 }
 
