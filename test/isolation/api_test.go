@@ -73,7 +73,7 @@ func newAPIWorld(t *testing.T) *apiWorld {
 }
 
 func (s side) params() apitest.Params {
-	return apitest.Params{Tenant: s.tenant.ID, ServiceAccount: s.sa.ID, VirtualKey: s.key.Key.ID}
+	return apitest.Params{Tenant: s.tenant.ID, ServiceAccount: s.sa.ID, VirtualKey: s.key.Key.ID, PlatformKey: "pabcdefghijklmnop"}
 }
 
 // normalize reduces a response to what must not depend on the resource it names: the status,
@@ -104,7 +104,7 @@ func normalize(t *testing.T, r *apitest.Response) string {
 func randomUUID(t *testing.T, w *apiWorld) string {
 	t.Helper()
 	var id string
-	if err := w.api.DB.Super(t).QueryRow(ctx(t), "SELECT pandokos.uuid_v7()::text").Scan(&id); err != nil {
+	if err := w.api.Super(t).QueryRow(ctx(t), "SELECT pandokos.uuid_v7()::text").Scan(&id); err != nil {
 		t.Fatal(err)
 	}
 	return id

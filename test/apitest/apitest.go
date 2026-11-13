@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/pandokos/pandokos/internal/admin"
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/authn"
@@ -36,6 +38,7 @@ type API struct {
 	platformKey string
 	mu          sync.Mutex
 	secrets     []string
+	super       *pgx.Conn
 }
 
 // Response is a raw response.
@@ -201,12 +204,24 @@ func (a *API) Secrets() []string {
 	return out
 }
 
+// Super returns one superuser connection of the database, made on the first call and kept for the
+// life of the test (a new connection for every call would exhaust the server).
+func (a *API) Super(tb testing.TB) *pgx.Conn {
+	tb.Helper()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.super == nil {
+		a.super = a.DB.Super(tb)
+	}
+	return a.super
+}
+
 // Tables returns the names of the tables of schema pandokos, from the catalogue.
 func (a *API) Tables(tb testing.TB) []string {
 	tb.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	rows, err := a.DB.Super(tb).Query(ctx, `SELECT c.relname FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+	rows, err := a.Super(tb).Query(ctx, `SELECT c.relname FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
 		WHERE n.nspname = 'pandokos' AND c.relkind IN ('r', 'p') ORDER BY 1`)
 	if err != nil {
 		tb.Fatal(err)
@@ -242,7 +257,7 @@ func (a *API) Snapshot(tb testing.TB, exclude ...string) string {
 			continue
 		}
 		var s string
-		if err := a.DB.Super(tb).QueryRow(ctx, `SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text)::text, '[]') FROM pandokos.`+pgxIdent(name)+` t`).Scan(&s); err != nil {
+		if err := a.Super(tb).QueryRow(ctx, `SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text)::text, '[]') FROM pandokos.`+pgxIdent(name)+` t`).Scan(&s); err != nil {
 			tb.Fatalf("snapshot of %s: %v", name, err)
 		}
 		sb.WriteString(name + ": " + s + "\n")
@@ -263,14 +278,14 @@ func (a *API) SnapshotTenant(tb testing.TB, tenantID string) string {
 			col = "id"
 		}
 		var has bool
-		if err := a.DB.Super(tb).QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'pandokos' AND table_name = $1 AND column_name = $2)`, name, col).Scan(&has); err != nil {
+		if err := a.Super(tb).QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'pandokos' AND table_name = $1 AND column_name = $2)`, name, col).Scan(&has); err != nil {
 			tb.Fatal(err)
 		}
 		if !has {
 			continue
 		}
 		var s string
-		if err := a.DB.Super(tb).QueryRow(ctx, `SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text)::text, '[]') FROM pandokos.`+pgxIdent(name)+` t WHERE t.`+col+` = $1::uuid`, tenantID).Scan(&s); err != nil {
+		if err := a.Super(tb).QueryRow(ctx, `SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text)::text, '[]') FROM pandokos.`+pgxIdent(name)+` t WHERE t.`+col+` = $1::uuid`, tenantID).Scan(&s); err != nil {
 			tb.Fatalf("snapshot of %s: %v", name, err)
 		}
 		sb.WriteString(name + ": " + s + "\n")

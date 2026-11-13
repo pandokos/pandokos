@@ -514,16 +514,10 @@ func lintAppendOnly(ctx context.Context, conn *pgx.Conn, spec Spec, add func(rul
 		for _, grantee := range append(append([]string{}, runtimeRoleNames...), "public") {
 			var held bool
 			who := grantee
-			if grantee == "public" {
-				who = "public"
-			}
-			if err := conn.QueryRow(ctx, `SELECT EXISTS (
-  SELECT 1 FROM pg_catalog.pg_attribute a, LATERAL (VALUES ('UPDATE'), ('DELETE'), ('TRUNCATE')) AS p(priv)
-   WHERE a.attrelid = $1::regclass AND a.attnum > 0 AND NOT a.attisdropped
-     AND pg_catalog.has_column_privilege($2, a.attrelid, a.attnum, p.priv)
-) OR pg_catalog.has_table_privilege($2, $1::regclass, 'DELETE')
-  OR pg_catalog.has_table_privilege($2, $1::regclass, 'TRUNCATE')
-  OR pg_catalog.has_table_privilege($2, $1::regclass, 'UPDATE')`, schema+"."+pgx.Identifier{table}.Sanitize(), who).Scan(&held); err != nil {
+			if err := conn.QueryRow(ctx, `SELECT pg_catalog.has_any_column_privilege($2, $1::regclass, 'UPDATE')
+    OR pg_catalog.has_table_privilege($2, $1::regclass, 'UPDATE')
+    OR pg_catalog.has_table_privilege($2, $1::regclass, 'DELETE')
+    OR pg_catalog.has_table_privilege($2, $1::regclass, 'TRUNCATE')`, schema+"."+pgx.Identifier{table}.Sanitize(), who).Scan(&held); err != nil {
 				return err
 			}
 			if held {

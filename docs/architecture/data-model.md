@@ -54,7 +54,8 @@ erDiagram
 5. **Identifiers are random** (UUIDv7), so they cannot be enumerated or guessed across tenants.
 6. **Money is decimal**, never floating point. Token counts are 64-bit integers.
 7. **Global tables are listed, and those that describe tenants have explicit policies.** A
-   transaction acts for a tenant, or in platform scope, or sees nothing.
+   transaction acts for a tenant, or in platform scope, or sees nothing, or, while a tenant is
+   being created, both (`store.Provision`).
 
 ```sql
 ALTER TABLE pandokos.service_account ENABLE ROW LEVEL SECURITY;
@@ -84,8 +85,8 @@ are granted to the role, so users and passwords can change without a migration. 
 | Role | Used by | Can | Cannot |
 |---|---|---|---|
 | `pandokos_owner` | `migrate` only | Own and alter the schema | Be used at run time |
-| `pandokos_gateway` | gateway | Read identities, catalogue, policy and credentials of the session tenant; call the key lookup function; insert usage and outbox rows | Write identities, catalogue or credentials; read or change audit; update or delete usage |
-| `pandokos_admin` | admin API | Read and write the session tenant's configuration; write platform tables when acting as platform; insert audit rows; read usage and audit | Read the ciphertext of tenant credentials when acting as platform; update or delete usage or audit |
+| `pandokos_gateway` | gateway | Read identities, catalogue, policy and credentials of the session tenant (not platform keys); call the key lookup function, which crosses the policy for one fact only: the tenant of a key ID; insert usage and outbox rows | Write identities, catalogue or credentials; read or change audit; update or delete usage |
+| `pandokos_admin` | admin API | Read and write the session tenant's configuration; write platform tables when acting as platform; insert audit rows (it cannot read them yet); read usage | Read the ciphertext of tenant credentials when acting as platform; update or delete usage or audit |
 | `pandokos_worker` | worker | List tenants (in platform scope); run one job for one tenant inside that tenant's session; manage outbox deliveries | Run a statement over several tenants' data at once |
 
 Three details make this hold:

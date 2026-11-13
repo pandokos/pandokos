@@ -112,7 +112,7 @@ func TestTenants(t *testing.T) {
 		expect(t, api.Do(t, "PATCH", "/v1/tenants/"+id, api.PlatformKey(), map[string]any{"name": "defaults"}, nil), 409, adminapi.ProblemCodeConflict)
 		expect(t, api.Do(t, "PATCH", "/v1/tenants/"+id, api.PlatformKey(), map[string]any{}, nil), 400, adminapi.ProblemCodeInvalidRequest)
 		// Reuse after the tenant is deleted (the superuser plays the deletion job of a later sprint).
-		super := api.DB.Super(t)
+		super := api.Super(t)
 		for _, st := range []string{"deleting", "deleted"} {
 			if _, err := super.Exec(ctx(t), "UPDATE pandokos.tenant SET state = $1 WHERE id = $2::uuid", st, id); err != nil {
 				t.Fatal(err)
@@ -149,7 +149,7 @@ func TestTenants(t *testing.T) {
 		}
 		// Reactivating an active tenant, and suspending a suspended one, change nothing.
 		// A tenant that is provisioning, deleting or deleted cannot be suspended or reactivated.
-		super := api.DB.Super(t)
+		super := api.Super(t)
 		var provisioning string
 		if err := super.QueryRow(ctx(t), "INSERT INTO pandokos.tenant (name) VALUES ('stuck') RETURNING id::text").Scan(&provisioning); err != nil {
 			t.Fatal(err)
@@ -357,7 +357,7 @@ func TestVirtualKeys(t *testing.T) {
 		}
 	}
 	// The database holds the SHA-256 of the secret and nothing that contains the secret.
-	super := w.api.DB.Super(t)
+	super := w.api.Super(t)
 	for _, k := range keys {
 		forms := testutil.KeyForms(k.Secret)
 		var stored []byte

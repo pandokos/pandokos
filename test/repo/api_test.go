@@ -99,17 +99,17 @@ func exprText(e ast.Expr) string {
 	return "<expression>"
 }
 
-// stringConsts returns the names of the package-level constants (of every file of the
+// stringConsts returns the names of the constants (package-level or local, of every file of the
 // directory) whose value is a string literal or a + of string literals.
 func stringConsts(files []*ast.File) map[string]bool {
 	consts := map[string]bool{}
 	for changed := true; changed; {
 		changed = false
 		for _, f := range files {
-			for _, d := range f.Decls {
-				g, ok := d.(*ast.GenDecl)
+			ast.Inspect(f, func(n ast.Node) bool {
+				g, ok := n.(*ast.GenDecl)
 				if !ok || g.Tok != token.CONST {
-					continue
+					return true
 				}
 				for _, spec := range g.Specs {
 					vs := spec.(*ast.ValueSpec)
@@ -123,7 +123,8 @@ func stringConsts(files []*ast.File) map[string]bool {
 						}
 					}
 				}
-			}
+				return true
+			})
 		}
 	}
 	return consts
@@ -141,7 +142,7 @@ func f(c C, id string) { c.Query(ctx, fmt.Sprintf("SELECT %s", id)) }`,
 var q = "SELECT 1"
 func f(c C) { c.QueryRow(ctx, q) }`,
 			"a parameter": `package x
-func f(c C, q string) { c.Prepare(ctx, "name", q) }`,
+func f(c C, q string) { c.Exec(ctx, q) }`,
 		} {
 			fset := token.NewFileSet()
 			f, err := parser.ParseFile(fset, "x.go", src, 0)

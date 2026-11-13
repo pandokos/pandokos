@@ -38,7 +38,7 @@ type auditRow struct {
 // auditRows reads both audit logs as superuser.
 func auditRows(t testing.TB, api *apitest.API) []auditRow {
 	t.Helper()
-	rows, err := api.DB.Super(t).Query(ctx(t), `
+	rows, err := api.Super(t).Query(ctx(t), `
 SELECT 'tenant', tenant_id::text, id::text, actor_type, actor_id, actor_name, key_id, action, resource_type, resource_id, outcome, request_id, reason, detail::text FROM pandokos.audit_event
 UNION ALL
 SELECT 'platform', '', id::text, actor_type, actor_id, actor_name, key_id, action, resource_type, resource_id, outcome, request_id, reason, detail::text FROM pandokos.platform_audit_event
@@ -468,7 +468,7 @@ func TestAuditIsAtomic(t *testing.T) {
 
 	// The failing trigger is created after the fixtures exist. Its name sorts before the
 	// stamp trigger, so the failure comes first.
-	super := api.DB.Super(t)
+	super := api.Super(t)
 	for _, q := range []string{
 		`CREATE FUNCTION pandokos.zz_fail() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit is down'; END $$`,
 		`CREATE TRIGGER a_fail BEFORE INSERT ON pandokos.audit_event FOR EACH ROW EXECUTE FUNCTION pandokos.zz_fail()`,
@@ -566,7 +566,7 @@ func TestAuthenticationFailuresAreAudited(t *testing.T) {
 	t.Run("one row per kind of failure", func(t *testing.T) {
 		f := newFixtures(t, freeze)
 		api := f.w.api
-		super := api.DB.Super(t)
+		super := api.Super(t)
 		seen := seenIDs(t, api)
 
 		// A wrong secret for a tenant key.
@@ -645,7 +645,7 @@ func TestAuthenticationFailuresAreAudited(t *testing.T) {
 			}
 		}
 		var n int
-		if err := api.DB.Super(t).QueryRow(ctx(t), `SELECT count(*) FROM pandokos.platform_audit_event WHERE action = 'auth.failure'`).Scan(&n); err != nil {
+		if err := api.Super(t).QueryRow(ctx(t), `SELECT count(*) FROM pandokos.platform_audit_event WHERE action = 'auth.failure'`).Scan(&n); err != nil {
 			t.Fatal(err)
 		}
 		if n != 60 {
