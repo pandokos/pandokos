@@ -49,13 +49,31 @@ func NewListener(o ListenerOptions) (*Listener, error) {
 	return &Listener{o: o}, nil
 }
 
+// probe sends a notification from a second connection and waits for it on the listening one.
+// Sending it on the listening connection itself would succeed behind a transaction pooler that
+// happens to give the same server connection back, and say nothing about notifications of other
+// sessions: they are the ones that must arrive.
 func (l *Listener) probe(ctx context.Context, conn *pgx.Conn) bool {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return false
 	}
 	nonce := "probe:" + hex.EncodeToString(b[:])
-	if _, err := conn.Exec(ctx, "SELECT pg_catalog.pg_notify('pandokos_cache', $1)", nonce); err != nil {
+	cfg, err := connConfig(l.o.Conn, "pandokos-"+string(l.o.Role)+"-listen-probe")
+	if err != nil {
+		return false
+	}
+	cctx, cancel := context.WithTimeout(ctx, l.o.Conn.ConnectTimeout)
+	aux, err := pgx.ConnectConfig(cctx, cfg)
+	cancel()
+	if err != nil {
+		return false
+	}
+	_, err = aux.Exec(ctx, "SELECT pg_catalog.pg_notify('pandokos_cache', $1)", nonce)
+	cc, cancelClose := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	_ = aux.Close(cc)
+	cancelClose()
+	if err != nil {
 		return false
 	}
 	wctx, cancel := context.WithTimeout(ctx, probeWait)

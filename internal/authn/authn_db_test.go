@@ -417,8 +417,9 @@ func TestRevocationBoundWithoutNotifications(t *testing.T) {
 		if err != nil || authz.Decide(p, authz.ModelInvoke, authz.Target{TenantID: p.TenantID}) != authz.Allow {
 			t.Fatalf("%+v %v", p, err)
 		}
-		if _, err := api.Client(c.admin).UpdateServiceAccount(ctx(t), adminapi.UpdateServiceAccountInput{Tenant: c.tenant.ID, ServiceAccount: c.sa.ID, Body: adminapi.ServiceAccountUpdate{Roles: []string{}}}); err != nil {
-			t.Fatal(err)
+		// The generated client leaves an empty array out (omitempty), so this goes raw.
+		if r := api.Do(t, "PATCH", "/v1/tenants/"+c.tenant.ID+"/service-accounts/"+c.sa.ID, c.admin, map[string]any{"roles": []string{}}, nil); r.Status != 200 {
+			t.Fatalf("%d %s", r.Status, r.Body)
 		}
 		if p, err := auth.Authenticate(ctx(t), c.key); err != nil || authz.Decide(p, authz.ModelInvoke, authz.Target{TenantID: p.TenantID}) != authz.Allow {
 			t.Fatalf("the cached principal must still be allowed at once: %+v %v", p, err)

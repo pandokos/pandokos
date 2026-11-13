@@ -21,6 +21,8 @@ func ctx(t *testing.T) context.Context {
 	return c
 }
 
+const zeroID = "00000000-0000-0000-0000-000000000000" // AfterID when there is no cursor: the statement casts it
+
 func usec(t time.Time) time.Time { return t.UTC().Truncate(time.Microsecond) }
 
 func equalTime(t *testing.T, what string, got *time.Time, want *time.Time) {
@@ -94,9 +96,10 @@ func TestEveryStatement(t *testing.T) {
 			}
 			mark("ListTenants")
 			for _, sortBy := range []string{"created_at", "-created_at", "name", "-name"} {
-				all, err := q.ListTenants(c, queries.ListTenantsParams{Sort: sortBy, PageSize: 10})
+				all, err := q.ListTenants(c, queries.ListTenantsParams{AfterID: zeroID, Sort: sortBy, PageSize: 10})
 				if err != nil || len(all) != 2 {
-					t.Fatalf("ListTenants %s: %d rows, %v", sortBy, len(all), err)
+					t.Errorf("ListTenants %s: %d rows, %v", sortBy, len(all), err)
+					return nil
 				}
 				wantFirst := map[string]string{"created_at": ten.ID, "-created_at": second.ID, "name": second.ID, "-name": ten.ID}[sortBy]
 				if all[0].ID != wantFirst {
@@ -107,14 +110,14 @@ func TestEveryStatement(t *testing.T) {
 					t.Errorf("ListTenants %s after the first: %+v %v", sortBy, next, err)
 				}
 			}
-			byName, err := q.ListTenants(c, queries.ListTenantsParams{Sort: "created_at", PageSize: 10, Name: "tenant-230", State: "active"})
+			byName, err := q.ListTenants(c, queries.ListTenantsParams{AfterID: zeroID, Sort: "created_at", PageSize: 10, Name: "tenant-230", State: "active"})
 			if err != nil || len(byName) != 1 || byName[0].ID != ten.ID {
 				t.Errorf("ListTenants by name and state: %+v %v", byName, err)
 			}
-			if none, err := q.ListTenants(c, queries.ListTenantsParams{Sort: "created_at", PageSize: 10, State: "suspended"}); err != nil || len(none) != 0 {
+			if none, err := q.ListTenants(c, queries.ListTenantsParams{AfterID: zeroID, Sort: "created_at", PageSize: 10, State: "suspended"}); err != nil || len(none) != 0 {
 				t.Errorf("ListTenants by another state: %+v %v", none, err)
 			}
-			if one, err := q.ListTenants(c, queries.ListTenantsParams{Sort: "name", PageSize: 1}); err != nil || len(one) != 1 {
+			if one, err := q.ListTenants(c, queries.ListTenantsParams{AfterID: zeroID, Sort: "name", PageSize: 1}); err != nil || len(one) != 1 {
 				t.Errorf("ListTenants with a page size of 1: %+v %v", one, err)
 			}
 			return nil
@@ -171,9 +174,10 @@ func TestEveryStatement(t *testing.T) {
 			}
 			mark("ListServiceAccounts")
 			for _, sortBy := range []string{"created_at", "-created_at", "name", "-name"} {
-				all, err := q.ListServiceAccounts(c, queries.ListServiceAccountsParams{Sort: sortBy, PageSize: 10})
+				all, err := q.ListServiceAccounts(c, queries.ListServiceAccountsParams{AfterID: zeroID, Sort: sortBy, PageSize: 10})
 				if err != nil || len(all) != 2 {
-					t.Fatalf("ListServiceAccounts %s: %d rows, %v", sortBy, len(all), err)
+					t.Errorf("ListServiceAccounts %s: %d rows, %v", sortBy, len(all), err)
+					return nil
 				}
 				wantFirst := map[string]string{"created_at": sa.ID, "-created_at": sa2.ID, "name": sa2.ID, "-name": sa.ID}[sortBy]
 				if all[0].ID != wantFirst {
@@ -184,7 +188,7 @@ func TestEveryStatement(t *testing.T) {
 					t.Errorf("ListServiceAccounts %s after the first: %+v %v", sortBy, next, err)
 				}
 			}
-			if byName, err := q.ListServiceAccounts(c, queries.ListServiceAccountsParams{Sort: "name", PageSize: 10, Name: "bot", State: "active"}); err != nil || len(byName) != 1 || !reflect.DeepEqual(byName[0].Roles, []string{"inference", "tenant-admin"}) {
+			if byName, err := q.ListServiceAccounts(c, queries.ListServiceAccountsParams{AfterID: zeroID, Sort: "name", PageSize: 10, Name: "bot", State: "active"}); err != nil || len(byName) != 1 || !reflect.DeepEqual(byName[0].Roles, []string{"inference", "tenant-admin"}) {
 				t.Errorf("ListServiceAccounts by name: %+v %v", byName, err)
 			}
 			mark("UpdateServiceAccount")
@@ -253,23 +257,24 @@ func TestEveryStatement(t *testing.T) {
 			}
 			mark("ListVirtualKeys")
 			for _, sortBy := range []string{"created_at", "-created_at"} {
-				all, err := q.ListVirtualKeys(c, queries.ListVirtualKeysParams{Sort: sortBy, PageSize: 10})
+				all, err := q.ListVirtualKeys(c, queries.ListVirtualKeysParams{AfterID: zeroID, ServiceAccountID: zeroID, Sort: sortBy, PageSize: 10})
 				if err != nil || len(all) != 2 {
-					t.Fatalf("ListVirtualKeys %s: %d rows, %v", sortBy, len(all), err)
+					t.Errorf("ListVirtualKeys %s: %d rows, %v", sortBy, len(all), err)
+					return nil
 				}
 				wantFirst := map[string]string{"created_at": keyScoped, "-created_at": keyUnscoped}[sortBy]
 				if all[0].KeyID != wantFirst {
 					t.Errorf("ListVirtualKeys %s: first is %s, want %s", sortBy, all[0].KeyID, wantFirst)
 				}
-				next, err := q.ListVirtualKeys(c, queries.ListVirtualKeysParams{Sort: sortBy, PageSize: 10, After: true, AfterID: all[0].ID})
+				next, err := q.ListVirtualKeys(c, queries.ListVirtualKeysParams{ServiceAccountID: zeroID, Sort: sortBy, PageSize: 10, After: true, AfterID: all[0].ID})
 				if err != nil || len(next) != 1 || next[0].ID != all[1].ID {
 					t.Errorf("ListVirtualKeys %s after the first: %+v %v", sortBy, next, err)
 				}
 			}
-			if bySA, err := q.ListVirtualKeys(c, queries.ListVirtualKeysParams{Sort: "created_at", PageSize: 10, ByServiceAccount: true, ServiceAccountID: sa2.ID}); err != nil || len(bySA) != 0 {
+			if bySA, err := q.ListVirtualKeys(c, queries.ListVirtualKeysParams{AfterID: zeroID, Sort: "created_at", PageSize: 10, ByServiceAccount: true, ServiceAccountID: sa2.ID}); err != nil || len(bySA) != 0 {
 				t.Errorf("ListVirtualKeys of another service account: %+v %v", bySA, err)
 			}
-			if bySA, err := q.ListVirtualKeys(c, queries.ListVirtualKeysParams{Sort: "created_at", PageSize: 10, ByServiceAccount: true, ServiceAccountID: sa.ID, State: "active"}); err != nil || len(bySA) != 2 {
+			if bySA, err := q.ListVirtualKeys(c, queries.ListVirtualKeysParams{AfterID: zeroID, Sort: "created_at", PageSize: 10, ByServiceAccount: true, ServiceAccountID: sa.ID, State: "active"}); err != nil || len(bySA) != 2 {
 				t.Errorf("ListVirtualKeys of the service account: %+v %v", bySA, err)
 			}
 			return nil
@@ -325,7 +330,7 @@ func TestEveryStatement(t *testing.T) {
 			if err != nil || got.State != "revoked" || got.RevokedAt == nil {
 				t.Errorf("after the revocation: %+v %v", got, err)
 			}
-			if rev, err := q.ListVirtualKeys(c, queries.ListVirtualKeysParams{Sort: "created_at", PageSize: 10, State: "revoked"}); err != nil || len(rev) != 1 || rev[0].KeyID != keyScoped {
+			if rev, err := q.ListVirtualKeys(c, queries.ListVirtualKeysParams{AfterID: zeroID, ServiceAccountID: zeroID, Sort: "created_at", PageSize: 10, State: "revoked"}); err != nil || len(rev) != 1 || rev[0].KeyID != keyScoped {
 				t.Errorf("ListVirtualKeys by state: %+v %v", rev, err)
 			}
 			return nil
@@ -363,9 +368,10 @@ func TestEveryStatement(t *testing.T) {
 			equalTime(t, "platform key expires_at", got.ExpiresAt, &pexpires)
 			mark("ListPlatformKeys")
 			for _, sortBy := range []string{"created_at", "-created_at"} {
-				all, err := q.ListPlatformKeys(c, queries.ListPlatformKeysParams{Sort: sortBy, PageSize: 10})
+				all, err := q.ListPlatformKeys(c, queries.ListPlatformKeysParams{AfterID: zeroID, Sort: sortBy, PageSize: 10})
 				if err != nil || len(all) != 2 {
-					t.Fatalf("ListPlatformKeys %s: %d rows, %v", sortBy, len(all), err)
+					t.Errorf("ListPlatformKeys %s: %d rows, %v", sortBy, len(all), err)
+					return nil
 				}
 				next, err := q.ListPlatformKeys(c, queries.ListPlatformKeysParams{Sort: sortBy, PageSize: 10, After: true, AfterID: all[0].ID})
 				if err != nil || len(next) != 1 || next[0].ID != all[1].ID {
@@ -379,7 +385,7 @@ func TestEveryStatement(t *testing.T) {
 			if n, err := q.CountUsablePlatformKeys(c); err != nil || n.Usable != 1 || n.Bootstrap != 0 {
 				t.Errorf("CountUsablePlatformKeys after the revocation: %+v %v", n, err)
 			}
-			if rev, err := q.ListPlatformKeys(c, queries.ListPlatformKeysParams{Sort: "created_at", PageSize: 10, State: "revoked"}); err != nil || len(rev) != 1 {
+			if rev, err := q.ListPlatformKeys(c, queries.ListPlatformKeysParams{AfterID: zeroID, Sort: "created_at", PageSize: 10, State: "revoked"}); err != nil || len(rev) != 1 {
 				t.Errorf("ListPlatformKeys by state: %+v %v", rev, err)
 			}
 			return nil

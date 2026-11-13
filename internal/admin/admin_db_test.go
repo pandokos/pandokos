@@ -441,13 +441,13 @@ func TestFilters(t *testing.T) {
 	if got := keys(adminapi.ListVirtualKeysInput{State: adminapi.KeyStateRevoked}); len(got) != 1 || got[toRevoke.Key.ID] != adminapi.KeyStateRevoked {
 		t.Errorf("revoked: %v", got)
 	}
-	if got := keys(adminapi.ListVirtualKeysInput{State: adminapi.KeyStateActive}); len(got) != 1 || got[w.key.Key.ID] != adminapi.KeyStateActive {
+	if got := keys(adminapi.ListVirtualKeysInput{State: adminapi.KeyStateActive}); len(got) != 2 || got[w.key.Key.ID] != adminapi.KeyStateActive { // and the key of the administrator
 		t.Errorf("active: %v", got)
 	}
 	if got := keys(adminapi.ListVirtualKeysInput{ServiceAccountID: sa2.ID}); len(got) != 1 || got[toRevoke.Key.ID] == "" {
 		t.Errorf("by service account: %v", got)
 	}
-	if got := keys(adminapi.ListVirtualKeysInput{}); len(got) != 3 {
+	if got := keys(adminapi.ListVirtualKeysInput{}); len(got) != 4 {
 		t.Errorf("all: %v", got)
 	}
 	// A service account of another tenant names nothing visible: an empty page.

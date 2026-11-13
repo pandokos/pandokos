@@ -176,7 +176,7 @@ func TestFailedMigrationRollsBack(t *testing.T) {
 	conn := d.Connect(t, "owner")
 	ms := withExtra(t, "CREATE TABLE pandokos.zz_two (i integer); SELECT 1/0; CREATE TABLE pandokos.zz_three (i integer)")
 	_, err := migrate.Apply(ctx(t), conn, ms, "v")
-	if err == nil || !strings.Contains(err.Error(), "migration 0002_extra") {
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("migration %04d_extra", len(ms))) {
 		t.Fatalf("error %v", err)
 	}
 	super := d.Super(t)

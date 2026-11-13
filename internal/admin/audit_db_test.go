@@ -13,6 +13,7 @@ import (
 	"github.com/pandokos/pandokos/internal/admin"
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/authn"
+	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/test/apitest"
 	"github.com/pandokos/pandokos/test/testutil"
 )
@@ -356,7 +357,7 @@ func TestEveryChangeIsAudited(t *testing.T) {
 			return api.Do(t, "PATCH", "/v1/tenants/"+f.w.tenant.ID, api.PlatformKey(), map[string]any{"name": "audited-renamed"}, nil)
 		}},
 		{"update an account to the same values", func() *apitest.Response {
-			return api.Do(t, "PATCH", "/v1/tenants/"+f.w.tenant.ID+"/service-accounts/"+f.w.sa.ID, f.w.adminKey, map[string]any{"description": ""}, nil)
+			return api.Do(t, "PATCH", "/v1/tenants/"+f.w.tenant.ID+"/service-accounts/"+f.w.sa.ID, f.w.adminKey, map[string]any{"name": "worker"}, nil)
 		}},
 	}
 	// The key that the "revoke a revoked key" repeat needs is revoked first, and that revocation
@@ -397,11 +398,8 @@ func TestEveryChangeIsAudited(t *testing.T) {
 			continue
 		}
 		key := f.w.adminKey
-		if !strings.Contains(op.Path, "{tenant}") {
+		if perm, _ := authz.Lookup(op.Permission); perm.Scope == authz.ScopePlatform {
 			key = api.PlatformKey()
-		}
-		if op.ID == "getMe" {
-			key = f.w.adminKey
 		}
 		if resp := f.w.call(t, op, key); resp.Status != 200 {
 			t.Errorf("%s: status %d\n%s", op.ID, resp.Status, resp.Body)

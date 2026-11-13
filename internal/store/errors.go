@@ -68,6 +68,9 @@ func IsUnavailable(err error) bool {
 		case "08", "53", "57":
 			return true
 		}
+		if st == "55000" { // the database is not accepting connections
+			return true
+		}
 	}
 	return strings.Contains(err.Error(), "failed to connect") || strings.Contains(err.Error(), "conn closed")
 }
