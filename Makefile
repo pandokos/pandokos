@@ -6,6 +6,7 @@ IMAGE ?= pandokos:dev
 PKG := github.com/pandokos/pandokos
 LDFLAGS := -s -w -buildid= -X $(PKG)/internal/buildinfo.Version=$(VERSION) -X $(PKG)/internal/buildinfo.Commit=$(COMMIT)
 GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.9.0
+GITLEAKS := github.com/zricethezav/gitleaks/v8@v8.30.1
 SQLC := github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
 GENERATED := internal/adminapi internal/store/queries
 FUZZTIME ?= 30s
@@ -13,7 +14,7 @@ FUZZTIME ?= 30s
 # Loads local/testdb/env (written by make db-up) unless the variable is already set.
 DBENV = set -a; if [ -z "$$PANDOKOS_TEST_DATABASE_URL" ] && [ -f local/testdb/env ]; then . ./local/testdb/env; fi; set +a;
 
-.PHONY: help build test test-sdk test-container fuzz bench fmt fmt-check vet lint tidy vuln image check clean db-up db-down test-nodb migrations-sum generate generate-check
+.PHONY: help build test test-sdk test-container fuzz bench fmt fmt-check vet lint tidy vuln image check clean db-up db-down test-nodb migrations-sum generate generate-check secrets
 
 help: ## Show the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -80,7 +81,10 @@ vuln: ## govulncheck with the release toolchain
 image: ## Build the container image for the local platform
 	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) -t $(IMAGE) .
 
-check: fmt-check vet lint tidy generate-check test test-sdk vuln ## Everything a pull request must pass, except the image
+secrets: ## Scan the repository and its whole history for keys and other secrets (gitleaks)
+	go run $(GITLEAKS) git --config .gitleaks.toml --redact --no-banner .
+
+check: fmt-check vet lint tidy generate-check secrets test test-sdk vuln ## Everything a pull request must pass, except the image
 
 clean: ## Remove build output
 	rm -rf bin dist
