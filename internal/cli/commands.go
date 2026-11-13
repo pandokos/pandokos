@@ -343,6 +343,14 @@ var commands = []command{
 			}
 			body.ValidUntil = adminapi.Value(*t)
 		}
+		switch {
+		case *noRoles && len(roles) > 0:
+			return usagef("--no-roles cannot be combined with --role")
+		case *noFrom && *from != "":
+			return usagef("--no-valid-from cannot be combined with --valid-from")
+		case *noUntil && *until != "":
+			return usagef("--no-valid-until cannot be combined with --valid-until")
+		}
 		if *name == "" && *desc == "" && len(roles) == 0 && !*noRoles && !body.ValidFrom.Set && !body.ValidUntil.Set {
 			return usagef("service-account update needs a member to change")
 		}

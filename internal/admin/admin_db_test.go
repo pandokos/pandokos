@@ -207,7 +207,8 @@ func TestEveryOperationNeedsACredential(t *testing.T) {
 	}
 
 	// A baseline that must not move: the audit tables only gain authentication failures.
-	before := w.api.Snapshot(t, "audit_event", "platform_audit_event")
+	before := w.api.Snapshot(t)
+	seenAudit := seenIDs(t, w.api)
 	var want *apitest.Response
 	for _, op := range adminapi.Operations {
 		for _, c := range creds {
@@ -236,13 +237,34 @@ func TestEveryOperationNeedsACredential(t *testing.T) {
 			}
 		}
 	}
-	if after := w.api.Snapshot(t, "audit_event", "platform_audit_event"); after != before {
+	// Only the audit tables may change, and only by authentication failures.
+	added := newRows(t, w.api, seenAudit)
+	for _, r := range added {
+		if r.Action != "auth.failure" || r.Outcome != "failure" || r.ActorType != "anonymous" {
+			t.Errorf("a refused request wrote %+v", r)
+		}
+	}
+	if len(added) == 0 {
+		t.Error("no authentication failure was audited")
+	}
+	if after := w.api.Snapshot(t, "audit_event", "platform_audit_event"); after != strings.Join(nonAudit(before), "") {
 		t.Error("a request without a valid credential changed a row")
 	}
 	// A request that is not a route is 404 whatever it carries, and the health paths are not
 	// served here at all (they belong to the server, not to the API handler).
 	r := w.api.Do(t, "GET", "/v1/nope", "", nil, nil)
 	expect(t, r, 404, adminapi.ProblemCodeNotFound)
+}
+
+// nonAudit drops the two audit tables from a full snapshot.
+func nonAudit(snapshot string) []string {
+	var out []string
+	for _, l := range strings.SplitAfter(snapshot, "\n") {
+		if !strings.HasPrefix(l, "audit_event: ") && !strings.HasPrefix(l, "platform_audit_event: ") {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 // TestPagination is T-233.

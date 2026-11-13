@@ -469,6 +469,15 @@ func TestCommands(t *testing.T) {
 		if got := r.f.only(t, "enableServiceAccount"); !reflect.DeepEqual(got, adminapi.EnableServiceAccountInput{Tenant: tid, ServiceAccount: sid}) {
 			t.Errorf("enable: %+v", got)
 		}
+		for _, conflict := range [][]string{
+			{"--no-roles", "--role", "inference"}, {"--no-valid-from", "--valid-from", t0.Format(time.RFC3339)}, {"--no-valid-until", "--valid-until", t1.Format(time.RFC3339)},
+		} {
+			n := len(r.f.calls("updateServiceAccount"))
+			code, _, errs := r.run(t, append([]string{"service-account", "update", "--tenant", tid}, append(conflict, sid)...)...)
+			if code != 2 || errs == "" || len(r.f.calls("updateServiceAccount")) != n {
+				t.Errorf("%v: exit %d, stderr %q", conflict, code, errs)
+			}
+		}
 		code, _, errs := r.run(t, "service-account", "update", "--tenant", tid, sid)
 		if code != 2 || errs == "" {
 			t.Errorf("an update that changes nothing is a usage error: %d %q", code, errs)

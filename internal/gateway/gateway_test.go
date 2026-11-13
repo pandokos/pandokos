@@ -1060,7 +1060,19 @@ func TestAuthorization(t *testing.T) {
 	t.Run("a missing or malformed header never reaches the authenticator", func(t *testing.T) {
 		called := 0
 		h := newHarness(t, func(o *Options) { o.Authenticator = countingAuth{n: &called} })
-		for _, hdr := range []http.Header{{}, {"Authorization": {"Basic abc"}}, {"Authorization": {"Bearer"}}} {
+		hdrs := []http.Header{{}, {"Authorization": {"Basic abc"}}, {"Authorization": {"Bearer"}}}
+		defer func() {
+			lines := h.logs.Find(t, "authentication failed")
+			if len(lines) != len(hdrs) {
+				t.Errorf("%d authentication failed lines, want %d", len(lines), len(hdrs))
+			}
+			for _, l := range lines {
+				if l["level"] != "WARN" || l["listener"] != "inference" || l["reason"] != "malformed" || len(fmt.Sprint(l["request_id"])) != 32 {
+					t.Errorf("the line: %v", l)
+				}
+			}
+		}()
+		for _, hdr := range hdrs {
 			resp, err := h.request(ctx5(t), t, http.MethodPost, route, chat("fake-basic", false), hdr)
 			if err != nil {
 				t.Fatal(err)

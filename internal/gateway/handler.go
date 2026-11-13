@@ -194,6 +194,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) authenticate(r *http.Request, st *reqState) bool {
 	cred, ok := openai.InboundCredential(r.Header)
 	if !ok {
+		h.logger.Warn("authentication failed", "listener", "inference", "request_id", st.id, "reason", "malformed")
 		h.fail(st, family.CodeUnauthenticated)
 		return false
 	}

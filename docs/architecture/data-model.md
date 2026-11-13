@@ -30,7 +30,7 @@ erDiagram
 
 | Group | Tables | Scope |
 |---|---|---|
-| Platform | `tenant`, `platform_role_assignment`, `provider`, `endpoint`, `model`, `price_version`, `rating_rule`, `platform_credential`, `platform_issuer`, `kek_version` | global |
+| Platform | `tenant`, `platform_key`, `virtual_key_directory` (no grant to any runtime role), `platform_role_assignment`, `provider`, `endpoint`, `model`, `price_version`, `rating_rule`, `platform_credential`, `platform_issuer`, `kek_version` | global |
 | Identity | `app_user`, `local_account`, `console_session`, `membership`, `service_account`, `virtual_key`, `trusted_issuer`, `subject_mapping`, `role`, `role_permission`, `role_assignment` | tenant (`app_user`, `local_account` and `console_session` are global, memberships are tenant-scoped) |
 | Vault | `tenant_data_key`, `provider_credential` | tenant |
 | Policy | `model_grant`, `funding_mode`, `limit_rule` | tenant |
@@ -91,10 +91,13 @@ are granted to the role, so users and passwords can change without a migration. 
 
 Three details make this hold:
 
-- **Finding a key before the tenant is known.** A virtual key must be looked up before there is
-  a tenant session. The gateway calls a `SECURITY DEFINER` function that takes a key ID and
-  returns exactly one row with the key hash, tenant and constraints. The function is the only
-  path that crosses the policy, it is narrow, and it cannot list keys.
+- **Finding a key before the tenant is known.** Forced row-level security binds the owner too, so
+  a definer function cannot read `virtual_key` before a tenant is known. A `SECURITY DEFINER`
+  function therefore reads a directory that holds nothing but (key ID, tenant ID), which no runtime
+  role can read or write directly, and returns only the tenant of a key ID. Everything else about
+  the key (hash, scopes, expiry, service account, roles) is then read in that tenant's session,
+  under the ordinary policy. The function takes one key ID and returns at most one tenant ID: it
+  cannot list, and a key ID is 80 random bits.
 - **Platform administrators and tenant secrets.** When the admin API acts for a platform
   administrator it uses a session without a tenant and reads credential metadata through a view
   that omits the ciphertext columns. The rule "the platform admin cannot read tenant secrets"
