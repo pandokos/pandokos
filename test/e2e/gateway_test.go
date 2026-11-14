@@ -418,7 +418,7 @@ func TestUpstreamCAAndProxy(t *testing.T) {
 		p := startBinary(t, opts{level: "info", up: up, env: []string{
 			"PANDOKOS_UPSTREAM_TLS_CA_FILE=" + f.caFile,
 			"PANDOKOS_UPSTREAM_PROXY_URL=" + proxy.String(),
-			"HTTPS_PROXY=http://127.0.0.1:1", // the environment's proxy is not used
+			"HTTPS_PROXY=http://127.0.0.1:1", // only exercises the absence of the warning: Go never proxies loopback
 			"PANDOKOS_PRICING_REFRESH_ENABLED=true",
 			"PANDOKOS_PRICING_REFRESH_URL=" + priceURL,
 			"PANDOKOS_PRICING_REFRESH_INTERVAL=1h",
@@ -471,28 +471,47 @@ func TestUpstreamCAAndProxy(t *testing.T) {
 	})
 
 	t.Run("HTTPS_PROXY in the environment is not used and gives the warning", func(t *testing.T) {
-		up := fakeprovider.New(t)
-		var contacted atomic.Int64
-		l, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
+		host := testutil.NonLoopbackHost()
+		if host == "" {
+			t.Skip("no non-loopback address on this machine: an environment proxy is never applied to loopback, so the test cannot discriminate")
 		}
-		go func() {
-			for {
-				c, err := l.Accept()
-				if err != nil {
-					return
-				}
-				contacted.Add(1)
-				c.Close()
+		up := fakeprovider.New(t)
+		listen := func() (net.Listener, *atomic.Int64) {
+			l, err := net.Listen("tcp", host+":0")
+			if err != nil {
+				t.Skipf("cannot listen on %s: %v", host, err)
 			}
-		}()
-		t.Cleanup(func() { l.Close() })
+			var n atomic.Int64
+			go func() {
+				for {
+					c, err := l.Accept()
+					if err != nil {
+						return
+					}
+					n.Add(1)
+					c.Close()
+				}
+			}()
+			t.Cleanup(func() { l.Close() })
+			return l, &n
+		}
+		// The proxy of the environment, and the endpoint (private, so plain http at a
+		// non-loopback address): Go would send that call through the environment's proxy.
+		l, contacted := listen()
+		endpoint, direct := listen()
 		value := "http://" + l.Addr().String()
-		p := startBinary(t, opts{level: "info", up: up, env: []string{"HTTPS_PROXY=" + value}})
+		p := startBinary(t, opts{level: "info", up: up, env: []string{"HTTPS_PROXY=" + value, "HTTP_PROXY=" + value}})
 		key := p.inferenceKey(t)
 		if status, text := p.chatCall(t, key, fakeprovider.ModelBasic, false); status != 200 {
 			t.Fatalf("a call with HTTPS_PROXY in the environment: %d\n%s", status, text)
+		}
+		p.mustCLI(t, p.bootstrap(t), "endpoint", "update", "--base-url", "http://"+endpoint.Addr().String(), "--private", "openai", "default")
+		testutil.Eventually(t, 15*time.Second, "the call to go to the endpoint", func() bool {
+			status, _ := p.chatCall(t, key, fakeprovider.ModelBasic, false)
+			return status == 502
+		})
+		if direct.Load() == 0 {
+			t.Error("the endpoint was never contacted directly")
 		}
 		var warning string
 		for _, w := range logLines(t, p.stdout.String(), "configuration warning") {
@@ -500,8 +519,8 @@ func TestUpstreamCAAndProxy(t *testing.T) {
 				warning = fmt.Sprint(w["warning"])
 			}
 		}
-		if !strings.Contains(warning, "HTTPS_PROXY") {
-			t.Errorf("no warning that names HTTPS_PROXY in the log: %q\n%s", warning, p.stdout.String())
+		if !strings.Contains(warning, "HTTPS_PROXY") && !strings.Contains(warning, "HTTP_PROXY") {
+			t.Errorf("no warning that names an environment proxy variable in the log: %q\n%s", warning, p.stdout.String())
 		}
 		testutil.AssertAbsent(t, "the process output", p.stdout.String()+p.stderr.String(), value)
 		if n := contacted.Load(); n != 0 {
