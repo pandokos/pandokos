@@ -21,6 +21,15 @@ The administration API listens on `127.0.0.1:8081` by default. It refuses a non-
 without TLS unless `listeners.admin.allow_plaintext` is true, which warns that keys travel in clear
 text unless TLS ends in front of it.
 
+## Towards providers
+
+Every outbound TLS connection of the server (provider calls, credential validation, the price download,
+an `https` proxy) verifies the certificate chain and the host name, with TLS 1.2 or later; there is no
+setting that turns verification off. `upstream.tls.ca_file` (`PANDOKOS_UPSTREAM_TLS_CA_FILE`) names a PEM
+file whose certificates are added to the system roots, for a provider or a proxy behind a private
+authority. The file is read when `serve` starts: restart to reload it. See the
+[gateway guide](gateway.md).
+
 ## Towards PostgreSQL
 
 `database.tls.mode` is `verify-full` (the default: the certificate chain and the host name are
