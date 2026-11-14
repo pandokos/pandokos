@@ -1,7 +1,7 @@
 ---
 id: EPIC-3
 title: Gateway
-status: in-progress
+status: done
 release: v0.1
 depends_on: [EPIC-2]
 ---

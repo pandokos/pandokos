@@ -3,9 +3,10 @@
 The catalogue says which providers, endpoints and models an installation knows, which tenants may use
 which models, and what each model costs. This guide is for the platform administrator. Decisions:
 [ADR 0035](../adr/0035-catalogue-and-model-access.md) (catalogue and access) and
-[ADR 0036](../adr/0036-prices-costs-and-importer.md) (prices). The inference route does not read the
-catalogue yet; it starts to in sprint 3.1, and costs are computed and recorded from sprint 3.2. Until
-then the catalogue is administered, imported and tested, not used for calls.
+[ADR 0036](../adr/0036-prices-costs-and-importer.md) (prices). The inference route reads the
+catalogue on every call to resolve the provider, endpoint, model access and credential
+([gateway guide](gateway.md)), and every recorded request carries a cost computed from these prices
+([usage guide](usage.md)).
 
 Every command below is a client of the administration API ([reference](../reference/admin-api.md)) and
 needs a platform key; model access for a tenant needs a key of that tenant.
@@ -243,4 +244,4 @@ version is recorded with the cost, so the record is self-consistent.
 - The dataset is third-party data under the MIT licence; its accuracy is not guaranteed.
 - A model the dataset does not match has no price until you set an override; its cost is unknown, not
   zero.
-- The inference route does not yet check access or compute costs (sprints 3.1 and 3.2).
+- A model without a price is served and recorded with an unknown cost, never a zero cost.
