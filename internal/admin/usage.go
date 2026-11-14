@@ -24,6 +24,16 @@ func (s *server) ListUsageRecords(ctx context.Context, in adminapi.ListUsageReco
 	if err != nil {
 		return nil, err
 	}
+	const layout = time.RFC3339Nano
+	const sortKey = "usage"
+	var cur cursor
+	if in.Cursor != "" {
+		if cur, err = decodeFullCursor(in.Cursor, sortKey); err != nil {
+			return nil, err
+		}
+	}
+	// A cursor carries the window and the provider it was made for (the default window moves with
+	// the clock): they are taken from it, and an explicit value must be the same instant.
 	to := time.Now().UTC()
 	var toErr, fromErr, provErr *adminapi.FieldError
 	if in.To != "" {
@@ -46,33 +56,42 @@ func (s *server) ListUsageRecords(ctx context.Context, in adminapi.ListUsageReco
 	if in.Provider != "" && catalog.ValidateProviderName(in.Provider) != nil {
 		provErr = &adminapi.FieldError{Field: "provider", Message: "is not a provider name"}
 	}
-	if toErr == nil && fromErr == nil {
-		switch {
-		case !from.Before(to):
-			fromErr = &adminapi.FieldError{Field: "from", Message: "must be before to"}
-		case to.Sub(from) > maxUsageWindow:
-			fromErr = &adminapi.FieldError{Field: "from", Message: "the window is at most 31 days"}
-		}
-	}
 	if err := fieldsError(fromErr, toErr, provErr); err != nil {
 		return nil, err
 	}
-
-	const layout = time.RFC3339Nano
-	sortKey := "usage:" + from.Format(layout) + "|" + to.Format(layout) + "|" + in.Provider
-	after, name, id, err := decodeCursor(in.Cursor, sortKey)
-	if err != nil {
+	provider := in.Provider
+	if in.Cursor != "" {
+		cf, ferr := time.Parse(layout, cur.F)
+		ct, terr := time.Parse(layout, cur.T)
+		if ferr != nil || terr != nil ||
+			(in.From != "" && !from.Equal(cf)) || (in.To != "" && !to.Equal(ct)) || (in.Provider != "" && in.Provider != cur.P) {
+			return nil, invalid("cursor", "is not a cursor of this collection and sort")
+		}
+		from, to, provider = cf.UTC(), ct.UTC(), cur.P
+	}
+	switch {
+	case !from.Before(to):
+		fromErr = &adminapi.FieldError{Field: "from", Message: "must be before to"}
+	case to.Sub(from) > maxUsageWindow:
+		fromErr = &adminapi.FieldError{Field: "from", Message: "the window is at most 31 days"}
+	}
+	if in.Cursor != "" && fromErr != nil {
+		return nil, invalid("cursor", "is not a cursor of this collection and sort")
+	}
+	if err := fieldsError(fromErr); err != nil {
 		return nil, err
 	}
+
+	after := in.Cursor != ""
 	afterAt := time.Time{}
 	if after {
-		if afterAt, err = time.Parse(layout, name); err != nil {
+		if afterAt, err = time.Parse(layout, cur.N); err != nil {
 			return nil, invalid("cursor", "is not a cursor of this collection and sort")
 		}
 	}
 	limit, ask := limitOf(in.Limit)
 	par := queries.ListUsageRecordsParams{
-		FromAt: from, ToAt: to, Provider: in.Provider, After: after, AfterStartedAt: afterAt, AfterID: afterID(after, id), PageSize: ask,
+		FromAt: from, ToAt: to, Provider: provider, After: after, AfterStartedAt: afterAt, AfterID: afterID(after, cur.I), PageSize: ask,
 	}
 	var rows []queries.ListUsageRecordsRow
 	err = s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
@@ -87,7 +106,8 @@ func (s *server) ListUsageRecords(ctx context.Context, in adminapi.ListUsageReco
 	for i, r := range rows {
 		if i == limit {
 			last := rows[limit-1]
-			out.NextCursor = encodeCursor(sortKey, last.StartedAt.UTC().Format(layout), last.ID)
+			out.NextCursor = encodeFullCursor(cursor{S: sortKey, N: last.StartedAt.UTC().Format(layout), I: last.ID,
+				F: from.Format(layout), T: to.Format(layout), P: provider})
 			break
 		}
 		out.Items = append(out.Items, usageRecordOut(r))

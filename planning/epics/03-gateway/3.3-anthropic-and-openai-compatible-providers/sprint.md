@@ -1038,3 +1038,13 @@ environment; T-567 runs in CI); `docker compose` on macOS and Windows hosts.
 | O-12 | Confirmed: server tool requests stored in `other_units`, not priced |
 | O-13 | Confirmed: no Go Anthropic SDK |
 | O-14 | Confirmed: the error type mapping of §5.2 |
+
+### Amendments at review
+
+- The usage list cursor (§5.7) carries the resolved `from`, `to` and `provider` as well as the
+  position. The first implementation bound the cursor to the window recomputed on each request, so
+  a list without `to` (whose default is now) refused its own second page. A cursor now supplies the
+  window and the provider; an explicit `from`, `to` or `provider` that differs from the cursor's is
+  still `invalid_request` on `cursor`, and so is a cursor that is malformed or whose window is not
+  valid. The cursor stays unsigned: a forged one only moves the position within the tenant's own
+  rows (row-level security).

@@ -258,8 +258,10 @@ pandokos usage list --tenant demo [--from 2026-11-19T00:00:00Z] [--to 2026-11-20
 
 `to` defaults to now and `from` to 24 hours before `to`; the window is at most 31 days and `from`
 must be before `to` (otherwise `invalid_request` on `from`). The records are those with
-`from` <= `started_at` < `to`. Pages hold 1 to 200 records (default 50); the cursor is bound to the
-window and the filter, and a cursor used with other values is `invalid_request` on `cursor`. The
+`from` <= `started_at` < `to`. Pages hold 1 to 200 records (default 50); the cursor carries the
+resolved window and the filter (so a list without `to` pages over the window of its first page),
+and a cursor used with an explicit `from`, `to` or `provider` that differs from them is
+`invalid_request` on `cursor`. The
 list is read as the admin role under the tenant's row-level security policy and is not audited. In
 the answer `other_units` and `provider_usage` are arrays of `{name, value}` sorted by name, `metadata` is an
 array of `{key, value}` (the caller's own labels), a token figure is 0 when its source is not
