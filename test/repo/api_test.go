@@ -263,7 +263,9 @@ func internalDeps(t *testing.T, pkg string) []string {
 func TestPlanesDoNotImportEachOther(t *testing.T) {
 	const mod = "github.com/pandokos/pandokos/internal/"
 	rules := map[string][]string{
-		"gateway": {"admin", "adminapi", "authn", "cli", "store", "vault", "catalog"},
+		// Sprint 3.1 (T-R25): the gateway receives two http.RoundTrippers and three interfaces; it
+		// reaches neither the resolver that adapts the real ones nor the egress guard.
+		"gateway": {"admin", "adminapi", "authn", "cli", "store", "vault", "catalog", "config", "server", "resolver", "egress"},
 		// internal/family itself (the leaf: Usage, error codes) is allowed: the catalogue prices
 		// usage (pricing.CostOf takes family.Usage) and the administration plane reaches the
 		// catalogue (sprint 2.2, C8). Its subpackages (the adapters) are not: see below.
@@ -277,6 +279,10 @@ func TestPlanesDoNotImportEachOther(t *testing.T) {
 		// Sprint 2.2: internal/catalog may not reach admin, adminapi, gateway, server, cli, config
 		// or the vault; internal/gateway does not reach it until sprint 3.1 gives it an interface.
 		"catalog": {"admin", "adminapi", "gateway", "server", "cli", "config", "vault"},
+		// Sprint 3.1: the egress guard and the resolver are below the server and the planes' entry
+		// points; the guard is a leaf (below), the resolver is wiring (also below).
+		"egress":   {"admin", "adminapi", "authn", "authz", "cli", "config", "gateway", "server", "store", "vault", "catalog", "family", "resolver"},
+		"resolver": {"admin", "adminapi", "cli", "config", "server"},
 	}
 	for pkg, banned := range rules {
 		deps := internalDeps(t, pkg)
@@ -381,6 +387,55 @@ func TestPlanesDoNotImportEachOther(t *testing.T) {
 			}
 		}
 	})
+	// Sprint 3.1 (T-R25): internal/egress imports the standard library only.
+	t.Run("what egress imports", func(t *testing.T) {
+		cmd := exec.Command("go", "list", "-f", `{{join .Imports "\n"}}`, "./internal/egress")
+		cmd.Dir = root(t)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("go list ./internal/egress: %v", err)
+		}
+		n := 0
+		for _, imp := range strings.Fields(string(out)) {
+			n++
+			first, _, _ := strings.Cut(imp, "/")
+			if strings.Contains(first, ".") {
+				t.Errorf("internal/egress imports %s, which is not the standard library", imp)
+			}
+		}
+		if n == 0 {
+			t.Error("internal/egress imports nothing: the test would prove nothing")
+		}
+	})
+	// Sprint 3.1 (T-R25): the resolver is reached by cmd/pandokos only (and by tests).
+	t.Run("who imports the resolver", func(t *testing.T) {
+		cmd := exec.Command("go", "list", "-f", `{{.ImportPath}} {{join .Imports " "}}`, "./cmd/...", "./internal/...")
+		cmd.Dir = root(t)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("go list: %v", err)
+		}
+		importers := 0
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) == 0 {
+				continue
+			}
+			pkg := fields[0]
+			for _, imp := range fields[1:] {
+				if imp != mod+"resolver" {
+					continue
+				}
+				importers++
+				if pkg != "github.com/pandokos/pandokos/cmd/pandokos" {
+					t.Errorf("%s imports internal/resolver: only cmd/pandokos may", pkg)
+				}
+			}
+		}
+		if importers != 1 {
+			t.Errorf("%d packages import internal/resolver, want exactly cmd/pandokos", importers)
+		}
+	})
 	// internal/authz and internal/requestid know only the tenant package.
 	for _, pkg := range []string{"authz", "requestid"} {
 		for _, d := range internalDeps(t, pkg) {
@@ -427,6 +482,10 @@ func TestReferenceDocuments(t *testing.T) {
 			if !strings.Contains(doc, w) {
 				t.Errorf("permissions.md does not explain %q", w)
 			}
+		}
+		// Sprint 3.1 (section 5.2): a call to a model needs both permissions, decided before the body is read.
+		if !has("`model:invoke`", "`credential:use`", "both") {
+			t.Error("permissions.md has no line that says a call needs both model:invoke and credential:use")
 		}
 	})
 	t.Run("keys", func(t *testing.T) {
@@ -503,7 +562,7 @@ func TestReferenceDocuments(t *testing.T) {
 				}
 			}
 		}
-		for _, w := range []string{"verify-full", "database.tls.ca_file"} {
+		for _, w := range []string{"verify-full", "database.tls.ca_file", "upstream.tls.ca_file", "TLS 1.2"} {
 			if !strings.Contains(doc, w) {
 				t.Errorf("tls.md lacks %q", w)
 			}
@@ -783,6 +842,12 @@ func TestVaultGuide(t *testing.T) {
 			if !strings.Contains(doc, k.Env) {
 				t.Errorf("vault.md does not name the variable %s", k.Env)
 			}
+		}
+	}
+	// Sprint 3.1: validation is per family, against the default endpoint of the provider, behind the guard.
+	for _, w := range []string{"default endpoint", "upstream.proxy.url", "anthropic", "any key"} {
+		if !strings.Contains(doc, w) {
+			t.Errorf("vault.md lacks %q (validation per family, sprint 3.1)", w)
 		}
 	}
 	for _, w := range []string{

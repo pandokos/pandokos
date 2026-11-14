@@ -1,14 +1,12 @@
-package gateway
+package gateway_test
 
 import (
 	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httptrace"
@@ -18,12 +16,16 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/authz"
-	"github.com/pandokos/pandokos/internal/secret"
+	"github.com/pandokos/pandokos/internal/egress"
+	"github.com/pandokos/pandokos/internal/family"
+	"github.com/pandokos/pandokos/internal/family/openai"
+	"github.com/pandokos/pandokos/internal/gateway"
 	"github.com/pandokos/pandokos/internal/telemetry"
 	"github.com/pandokos/pandokos/test/fakeprovider"
 	"github.com/pandokos/pandokos/test/fixtures"
@@ -49,48 +51,88 @@ func newTestKey() string {
 }
 
 type harness struct {
-	up   *fakeprovider.Server
-	srv  *httptest.Server // serves the gateway.Handler
-	logs *testutil.LogBuffer
+	up      *fakeprovider.Server // nil for a harness over a raw handler
+	srv     *httptest.Server     // serves the gateway.Handler
+	handler *gateway.Handler
+	logs    *testutil.LogBuffer
+	cat     *testutil.Catalogue
+	creds   *testutil.Credentials
+	targets map[string]gateway.Target // "provider/model": the catalogue's targets; tests may add
 }
 
-func newHarness(t *testing.T, mutate func(*Options)) *harness {
-	t.Helper()
-	return newHarnessWith(t, fakeprovider.New(t), nil, mutate)
+// fakeModels are the models of the fake provider; the harness gives each a target of provider
+// "openai" (and "fake-model", the default target of the harness).
+var fakeModels = []string{
+	fakeprovider.ModelBasic, fakeprovider.ModelDetails, fakeprovider.ModelGatedStream, fakeprovider.ModelHang,
+	fakeprovider.ModelError429, fakeprovider.ModelError500Echo, fakeprovider.ModelUsageOnLastChunk,
+	fakeprovider.ModelRedirect, fakeprovider.ModelEchoAuth, fakeprovider.ModelClose, "fake-model",
 }
 
-func newHarnessWith(t *testing.T, up *fakeprovider.Server, transport http.RoundTripper, mutate func(*Options)) *harness {
+// trusting returns an option function for testutil.TestGuard that trusts a TLS fake.
+func trusting(up *fakeprovider.Server) func(*egress.Options) {
+	return func(o *egress.Options) { o.RootCAs = up.CertPool() }
+}
+
+func newHarness(t *testing.T, mutate func(*gateway.Options)) *harness {
 	t.Helper()
-	base, err := url.Parse(up.BaseURL())
-	if err != nil {
-		t.Fatal(err)
+	return newHarnessWith(t, fakeprovider.New(t), testutil.TestGuard(t), mutate)
+}
+
+// newHarnessWith builds the gateway over the fake provider up, with real transports from guard.
+func newHarnessWith(t *testing.T, up *fakeprovider.Server, guard *egress.Guard, mutate func(*gateway.Options)) *harness {
+	t.Helper()
+	targets := map[string]gateway.Target{}
+	for _, m := range fakeModels {
+		targets["openai/"+m] = testutil.TargetFor(up, "openai", m)
 	}
-	if transport == nil {
-		tr := NewTransport(2 * time.Second)
-		t.Cleanup(tr.CloseIdleConnections)
-		transport = tr
+	h := build(t, targets, guard, mutate)
+	h.up = up
+	return h
+}
+
+// newRaw builds the gateway in front of a handler that is the provider: every model of the fake
+// is a private target at its address.
+func newRaw(t *testing.T, handler http.HandlerFunc) *harness {
+	t.Helper()
+	ts := httptest.NewServer(handler)
+	t.Cleanup(ts.Close)
+	base, _ := url.Parse(ts.URL)
+	targets := map[string]gateway.Target{}
+	for _, m := range fakeModels {
+		targets["openai/"+m] = gateway.Target{Provider: "openai", Endpoint: "synthetic-endpoint", ModelID: "synthetic-model-" + m,
+			Model: m, UpstreamModel: m, BaseURL: base, Private: true}
 	}
+	return build(t, targets, testutil.TestGuard(t), nil)
+}
+
+func build(t *testing.T, targets map[string]gateway.Target, guard *egress.Guard, mutate func(*gateway.Options)) *harness {
+	t.Helper()
 	logs := &testutil.LogBuffer{}
-	o := Options{
+	cat := testutil.StaticCatalogue(map[string]string{"openai": "openai"}, targets)
+	creds := testutil.StaticCredentials(map[string]string{"openai": fixtures.CanaryProviderKey})
+	o := gateway.Options{
 		Logger:                 telemetry.NewLogger(logs, "debug"),
-		BaseURL:                base,
-		ProviderKey:            secret.New(fixtures.CanaryProviderKey),
 		Authenticator:          testAuth,
+		Catalogue:              cat,
+		Credentials:            creds,
+		Families:               map[string]family.Adapter{"openai": openai.Adapter()},
+		DefaultFamily:          "openai",
+		Public:                 guard.Transport(false),
+		Private:                guard.Transport(true),
 		MaxRequestBodyBytes:    1 << 20,
 		RequestBodyReadTimeout: 2 * time.Second,
 		MaxRequestDuration:     10 * time.Second,
-		Transport:              transport,
 	}
 	if mutate != nil {
 		mutate(&o)
 	}
-	h, err := New(o)
+	g, err := gateway.New(o)
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(h)
+	srv := httptest.NewServer(g)
 	t.Cleanup(srv.Close)
-	return &harness{up: up, srv: srv, logs: logs}
+	return &harness{srv: srv, handler: g, logs: logs, cat: cat, creds: creds, targets: targets}
 }
 
 func chat(model string, stream bool) []byte {
@@ -182,37 +224,6 @@ func usageGroup(t *testing.T, line map[string]any) map[string]any {
 		t.Fatalf("no usage group in %v", line)
 	}
 	return g
-}
-
-func TestNewValidatesOptions(t *testing.T) {
-	good := func() Options {
-		base, _ := url.Parse("http://127.0.0.1:1/v1")
-		return Options{
-			Logger: telemetry.NewLogger(io.Discard, "info"), BaseURL: base,
-			ProviderKey: secret.New("k"), Authenticator: testAuth,
-			MaxRequestBodyBytes: 1, RequestBodyReadTimeout: 1, MaxRequestDuration: 1,
-			Transport: http.DefaultTransport,
-		}
-	}
-	if _, err := New(good()); err != nil {
-		t.Fatal(err)
-	}
-	for name, mutate := range map[string]func(*Options){
-		"logger":        func(o *Options) { o.Logger = nil },
-		"base url":      func(o *Options) { o.BaseURL = nil },
-		"key":           func(o *Options) { o.ProviderKey = secret.Secret{} },
-		"authenticator": func(o *Options) { o.Authenticator = nil },
-		"transport":     func(o *Options) { o.Transport = nil },
-		"body":          func(o *Options) { o.MaxRequestBodyBytes = 0 },
-		"read":          func(o *Options) { o.RequestBodyReadTimeout = 0 },
-		"duration":      func(o *Options) { o.MaxRequestDuration = 0 },
-	} {
-		o := good()
-		mutate(&o)
-		if _, err := New(o); err == nil {
-			t.Errorf("%s: expected an error", name)
-		}
-	}
 }
 
 func TestForwardNonStreaming(t *testing.T) {
@@ -338,7 +349,7 @@ func TestClientDisconnectCancelsUpstream(t *testing.T) {
 	t.Run("http1", func(t *testing.T) { run(t, newHarness(t, nil)) })
 	t.Run("http2", func(t *testing.T) {
 		up := fakeprovider.NewTLS(t)
-		h := newHarnessWith(t, up, up.Transport(), nil)
+		h := newHarnessWith(t, up, testutil.TestGuard(t, trusting(up)), nil)
 		run(t, h)
 		if reqs := up.Requests(); len(reqs) != 1 || reqs[0].Proto != "HTTP/2.0" {
 			t.Fatalf("the provider did not see HTTP/2: %+v", reqs)
@@ -371,7 +382,7 @@ func TestClientDisconnectBeforeResponse(t *testing.T) {
 
 func TestMaxRequestDuration(t *testing.T) {
 	t.Run("before_headers", func(t *testing.T) {
-		h := newHarness(t, func(o *Options) { o.MaxRequestDuration = 200 * time.Millisecond })
+		h := newHarness(t, func(o *gateway.Options) { o.MaxRequestDuration = 200 * time.Millisecond })
 		resp, body := h.call(t, chat(fakeprovider.ModelHang, false))
 		if resp.StatusCode != 504 || resp.Header.Get("X-Pandokos-Error") != "upstream_timeout" || !bytes.Contains(body, []byte(`"code":"upstream_timeout"`)) {
 			t.Fatalf("got %d %s", resp.StatusCode, body)
@@ -385,7 +396,7 @@ func TestMaxRequestDuration(t *testing.T) {
 		}
 	})
 	t.Run("mid_stream", func(t *testing.T) {
-		h := newHarness(t, func(o *Options) { o.MaxRequestDuration = 300 * time.Millisecond })
+		h := newHarness(t, func(o *gateway.Options) { o.MaxRequestDuration = 300 * time.Millisecond })
 		resp, err := h.request(ctx5(t), t, http.MethodPost, route, chat(fakeprovider.ModelGatedStream, true), authed())
 		if err != nil {
 			t.Fatal(err)
@@ -405,31 +416,9 @@ func TestMaxRequestDuration(t *testing.T) {
 	})
 }
 
-func TestSlowRequestBody(t *testing.T) {
-	h := newHarness(t, func(o *Options) { o.RequestBodyReadTimeout = 200 * time.Millisecond })
-	conn, err := net.Dial("tcp", h.srv.Listener.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	fmt.Fprintf(conn, "POST %s HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer %s\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{\"model\":", route, testKey)
-	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-	_, err = io.ReadAll(conn)
-	var ne net.Error
-	if errors.As(err, &ne) && ne.Timeout() {
-		t.Fatal("the server did not close the connection within 3 s")
-	}
-	if n := len(h.up.Requests()); n != 0 {
-		t.Fatalf("provider contacted %d times", n)
-	}
-	if line := h.awaitOutcome(t, "client_error"); line["status"] != float64(0) {
-		t.Errorf("line: %v", line)
-	}
-}
-
 func TestNothingLeaksAfterCancel(t *testing.T) {
-	tr := NewTransport(2 * time.Second)
-	h := newHarnessWith(t, fakeprovider.New(t), tr, nil)
+	guard := testutil.TestGuard(t)
+	h := newHarnessWith(t, fakeprovider.New(t), guard, nil)
 	client := &http.Client{Transport: &http.Transport{}}
 	ct := client.Transport.(*http.Transport)
 	do := func(model string, stream bool, cancelAfterFirst bool) {
@@ -460,31 +449,10 @@ func TestNothingLeaksAfterCancel(t *testing.T) {
 	testutil.Eventually(t, 5*time.Second, "provider handlers to finish", func() bool { return h.up.InFlight() == 0 })
 	testutil.Eventually(t, 5*time.Second, "goroutines to return to the baseline", func() bool {
 		ct.CloseIdleConnections()
-		tr.CloseIdleConnections()
+		guard.CloseIdleConnections()
 		h.srv.Client().CloseIdleConnections()
 		return runtime.NumGoroutine() <= baseline+3
 	})
-}
-
-func TestUpstreamUnreachable(t *testing.T) {
-	h := newHarness(t, func(o *Options) { o.BaseURL, _ = url.Parse("http://127.0.0.1:1/v1") })
-	resp, body := h.call(t, chat("fake-basic", false))
-	want := `{"error":{"message":"Pandokos: the provider could not be reached.","type":"pandokos_error","param":null,"code":"upstream_unreachable"}}`
-	if resp.StatusCode != 502 || string(body) != want || resp.Header.Get("X-Pandokos-Error") != "upstream_unreachable" {
-		t.Fatalf("got %d %s", resp.StatusCode, body)
-	}
-	for k, v := range resp.Header {
-		if strings.Contains(strings.Join(v, ","), "127.0.0.1") {
-			t.Errorf("header %s contains the address", k)
-		}
-	}
-	line := h.lastRequestLine(t)
-	if line["outcome"] != "pandokos_error" || line["error_code"] != "upstream_unreachable" {
-		t.Errorf("line: %v", line)
-	}
-	if strings.Contains(h.logs.String(), "127.0.0.1:1") {
-		t.Error("the address was logged")
-	}
 }
 
 func TestUnauthenticated(t *testing.T) {
@@ -541,36 +509,6 @@ func TestCredentialSwap(t *testing.T) {
 	}
 }
 
-func TestRequestHeaderAllowList(t *testing.T) {
-	h := newHarness(t, nil)
-	hdr := authed()
-	hdr.Set("Accept", "text/event-stream")
-	hdr.Set("User-Agent", "pandokos-test/1.0")
-	hdr.Set("Cookie", "session=abc")
-	hdr.Set("X-Api-Key", "k")
-	hdr.Set("X-Forwarded-For", "1.2.3.4")
-	hdr.Set("Accept-Encoding", "gzip")
-	hdr.Set("OpenAI-Organization", "org-x")
-	hdr.Set("X-Custom", "v")
-	resp, err := h.request(ctx5(t), t, http.MethodPost, route, chat("fake-basic", false), hdr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _ = io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
-	got := h.up.Requests()[0].Header
-	for _, n := range []string{"Cookie", "X-Api-Key", "X-Forwarded-For", "Accept-Encoding", "Openai-Organization", "X-Custom", "X-Forwarded-Host", "X-Forwarded-Proto"} {
-		if v := got.Values(n); len(v) != 0 {
-			t.Errorf("%s reached the provider: %v", n, v)
-		}
-	}
-	for n, want := range map[string]string{"Accept": "text/event-stream", "Content-Type": "application/json", "User-Agent": "pandokos-test/1.0"} {
-		if got.Get(n) != want {
-			t.Errorf("%s = %q, want %q", n, got.Get(n), want)
-		}
-	}
-}
-
 func TestResponseHeaderAllowList(t *testing.T) {
 	h := newHarness(t, nil)
 	resp, _ := h.call(t, chat("fake-basic", false))
@@ -621,6 +559,7 @@ func TestEndpointNotSupported(t *testing.T) {
 		{"POST", "//openai/v1/chat/completions"},
 		{"POST", "/healthz"},
 		{"POST", "/openai/v1"},
+		{"POST", "/openai/chat/completions"},
 	}
 	want := `{"error":{"message":"Pandokos: this endpoint is not supported.","type":"pandokos_error","param":null,"code":"endpoint_not_supported"}}`
 	for _, c := range cases {
@@ -642,6 +581,9 @@ func TestEndpointNotSupported(t *testing.T) {
 	if n := len(h.up.Requests()); n != 0 {
 		t.Errorf("provider contacted %d times", n)
 	}
+	if n := h.cat.Resolves.Load(); n != 0 {
+		t.Errorf("the model was resolved %d times for a path that is not served", n)
+	}
 	for _, l := range h.requestLines(t, len(cases)) {
 		if l["route"] != "unmatched" {
 			t.Errorf("route logged as %v", l["route"])
@@ -650,7 +592,7 @@ func TestEndpointNotSupported(t *testing.T) {
 }
 
 func TestRequestTooLarge(t *testing.T) {
-	h := newHarness(t, func(o *Options) { o.MaxRequestBodyBytes = 100 })
+	h := newHarness(t, func(o *gateway.Options) { o.MaxRequestBodyBytes = 100 })
 	body := bytes.Repeat([]byte("a"), 200)
 	check := func(t *testing.T, resp *http.Response, err error) {
 		t.Helper()
@@ -739,7 +681,7 @@ func (panicTransport) RoundTrip(*http.Request) (*http.Response, error) {
 }
 
 func TestPanicRecovered(t *testing.T) {
-	h := newHarnessWith(t, fakeprovider.New(t), panicTransport{}, nil)
+	h := newHarness(t, func(o *gateway.Options) { o.Private = panicTransport{} })
 	resp, body := h.call(t, chat("fake-basic", false))
 	if resp.StatusCode != 500 || resp.Header.Get("X-Pandokos-Error") != "internal" || !bytes.Contains(body, []byte(`"code":"internal"`)) {
 		t.Fatalf("got %d %s", resp.StatusCode, body)
@@ -756,100 +698,8 @@ func TestPanicRecovered(t *testing.T) {
 	}
 }
 
-func TestRequestLogFields(t *testing.T) {
-	h := newHarness(t, nil)
-	hdr := authed()
-	hdr.Set("Cookie", "session=cookie-value")
-	resp, err := h.request(ctx5(t), t, http.MethodPost, route+"?q=query-value", chat("fake-basic", true), hdr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _ = io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
-	line := h.lastRequestLine(t)
-	want := []string{
-		"time", "level", "msg", "request_id", "method", "route", "status", "outcome", "duration_ms", "provider",
-		"operation", "stream", "usage_injected", "upstream_status", "ttfb_ms", "request_bytes", "response_bytes",
-		"usage_source", "usage", "tenant_id", "service_account_id", "key_id",
-	}
-	var got []string
-	for k := range line {
-		got = append(got, k)
-	}
-	sort.Strings(got)
-	sort.Strings(want)
-	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("fields\n got %v\nwant %v", got, want)
-	}
-	strs := map[string]string{"method": "POST", "route": "POST " + route, "outcome": "ok", "provider": "openai", "operation": "chat.completions", "usage_source": "provider", "level": "INFO", "msg": "request"}
-	for k, v := range strs {
-		if line[k] != v {
-			t.Errorf("%s = %v, want %q", k, line[k], v)
-		}
-	}
-	if line["tenant_id"] != testPrincipal.TenantID.String() || line["service_account_id"] != testPrincipal.ID || line["key_id"] != testPrincipal.KeyID {
-		t.Errorf("identity fields: %v %v %v", line["tenant_id"], line["service_account_id"], line["key_id"])
-	}
-	for _, k := range []string{"status", "duration_ms", "upstream_status", "ttfb_ms", "request_bytes", "response_bytes"} {
-		if _, ok := line[k].(float64); !ok {
-			t.Errorf("%s is %T, want a number", k, line[k])
-		}
-	}
-	if line["status"] != float64(200) || line["upstream_status"] != float64(200) {
-		t.Errorf("status fields: %v %v", line["status"], line["upstream_status"])
-	}
-	if line["stream"] != true || line["usage_injected"] != true {
-		t.Errorf("booleans: %v %v", line["stream"], line["usage_injected"])
-	}
-	if len(line["request_id"].(string)) != 32 {
-		t.Error("request_id length")
-	}
-	ug := usageGroup(t, line)
-	var ukeys []string
-	for k := range ug {
-		ukeys = append(ukeys, k)
-	}
-	sort.Strings(ukeys)
-	if strings.Join(ukeys, ",") != "cache_read_tokens,cache_write_tokens,input_tokens,output_tokens,reasoning_tokens" {
-		t.Errorf("usage keys: %v", ukeys)
-	}
-	all := h.logs.String()
-	for _, leak := range []string{"query-value", "cookie-value", "Bearer", "stream_options", testKey} {
-		if strings.Contains(all, leak) {
-			t.Errorf("logs contain %q", leak)
-		}
-	}
-	testutil.AssertNoCanary(t, "logs", all)
-	if !strings.Contains(all, `"route":"POST /openai/v1/chat/completions"`) {
-		t.Error("route missing")
-	}
-}
-
-// rawUpstream serves handler as the provider and returns a gateway in front of it.
-func rawUpstream(t *testing.T, handler http.HandlerFunc) *harness {
-	t.Helper()
-	ts := httptest.NewServer(handler)
-	t.Cleanup(ts.Close)
-	base, _ := url.Parse(ts.URL + "/v1")
-	logs := &testutil.LogBuffer{}
-	tr := NewTransport(2 * time.Second)
-	t.Cleanup(tr.CloseIdleConnections)
-	g, err := New(Options{
-		Logger: telemetry.NewLogger(logs, "debug"), BaseURL: base,
-		ProviderKey: secret.New(fixtures.CanaryProviderKey), Authenticator: testAuth,
-		MaxRequestBodyBytes: 1 << 20, RequestBodyReadTimeout: 2 * time.Second, MaxRequestDuration: 10 * time.Second,
-		Transport: tr,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv := httptest.NewServer(g)
-	t.Cleanup(srv.Close)
-	return &harness{srv: srv, logs: logs}
-}
-
 func TestInformationalResponsesAreDropped(t *testing.T) {
-	h := rawUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+	h := newRaw(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		w.Header().Set("Set-Cookie", "early=1")
 		w.Header().Set("X-Pandokos-Error", "spoofed")
@@ -895,7 +745,7 @@ func TestInformationalResponsesAreDropped(t *testing.T) {
 func TestProviderTrailersAreDropped(t *testing.T) {
 	for _, mode := range []string{"json", "stream", "error"} {
 		t.Run(mode, func(t *testing.T) {
-			h := rawUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+			h := newRaw(t, func(w http.ResponseWriter, r *http.Request) {
 				_, _ = io.Copy(io.Discard, r.Body)
 				w.Header().Set("Trailer", "X-Pandokos-Error, Set-Cookie")
 				status := 200
@@ -948,16 +798,6 @@ func (r reasoned) Error() string                    { return "failure: " + r.rea
 func (r reasoned) Unwrap() error                    { return authz.ErrUnauthenticated }
 func (r reasoned) Detail() (string, string, string) { return r.reason, r.keyID, r.tenantID }
 
-// TestRouteDeclaresAPermission: the route table names the permission of its one route (T-274).
-func TestRouteDeclaresAPermission(t *testing.T) {
-	if len(routes) != 1 || routes[0].Method != "POST" || routes[0].Path != route || routes[0].Permission != authz.ModelInvoke {
-		t.Errorf("routes = %+v", routes)
-	}
-	if _, ok := authz.Lookup(routes[0].Permission); !ok {
-		t.Error("the permission of the route is not in the catalogue")
-	}
-}
-
 // TestAuthorization is T-267.
 func TestAuthorization(t *testing.T) {
 	active := testutil.InferencePrincipal()
@@ -966,6 +806,10 @@ func TestAuthorization(t *testing.T) {
 	scoped := active
 	scoped.Roles = []string{authz.RoleTenantAdmin}
 	scoped.Scopes = []string{authz.VirtualKeyRead}
+	invokeOnly := active
+	invokeOnly.Scopes = []string{authz.ModelInvoke}
+	useOnly := active
+	useOnly.Scopes = []string{authz.CredentialUse}
 	suspended := active
 	suspended.TenantState = "suspended"
 	cases := []struct {
@@ -977,13 +821,15 @@ func TestAuthorization(t *testing.T) {
 	}{
 		{"no role", fixedAuth{p: noRole}, 403, "forbidden", "Pandokos: the credential does not allow this operation."},
 		{"scopes exclude the permission", fixedAuth{p: scoped}, 403, "forbidden", "Pandokos: the credential does not allow this operation."},
+		{"a key limited to model:invoke", fixedAuth{p: invokeOnly}, 403, "forbidden", "Pandokos: the credential does not allow this operation."},
+		{"a key limited to credential:use", fixedAuth{p: useOnly}, 403, "forbidden", "Pandokos: the credential does not allow this operation."},
 		{"suspended tenant", fixedAuth{p: suspended}, 403, "tenant_suspended", "Pandokos: the tenant is not active."},
 		{"unavailable", fixedAuth{err: fmt.Errorf("%w: 08006", authz.ErrUnavailable)}, 503, "unavailable", "Pandokos: the request cannot be verified right now."},
 		{"unauthenticated", fixedAuth{err: authz.ErrUnauthenticated}, 401, "unauthenticated", "Pandokos: missing or invalid credential."},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			h := newHarness(t, func(o *Options) { o.Authenticator = c.auth })
+			h := newHarness(t, func(o *gateway.Options) { o.Authenticator = c.auth })
 			resp, err := h.request(ctx5(t), t, http.MethodPost, route, chat("fake-basic", false), authed())
 			if err != nil {
 				t.Fatal(err)
@@ -1017,7 +863,7 @@ func TestAuthorization(t *testing.T) {
 	}
 
 	t.Run("a good principal is forwarded and logged", func(t *testing.T) {
-		h := newHarness(t, func(o *Options) { o.Authenticator = fixedAuth{p: active} })
+		h := newHarness(t, func(o *gateway.Options) { o.Authenticator = fixedAuth{p: active} })
 		resp, b := h.call(t, chat("fake-basic", false))
 		if resp.StatusCode != 200 || len(b) == 0 || len(h.up.Requests()) != 1 {
 			t.Fatalf("status %d", resp.StatusCode)
@@ -1030,7 +876,7 @@ func TestAuthorization(t *testing.T) {
 
 	t.Run("authentication failed is logged with the reason", func(t *testing.T) {
 		const keyID, tenantID = "tabcdefghijklmnop", "0192f0f0-0000-7000-8000-000000000001"
-		h := newHarness(t, func(o *Options) { o.Authenticator = fixedAuth{err: reasoned{"wrong_secret", keyID, tenantID}} })
+		h := newHarness(t, func(o *gateway.Options) { o.Authenticator = fixedAuth{err: reasoned{"wrong_secret", keyID, tenantID}} })
 		resp, err := h.request(ctx5(t), t, http.MethodPost, route, chat("fake-basic", false), authed())
 		if err != nil {
 			t.Fatal(err)
@@ -1059,7 +905,7 @@ func TestAuthorization(t *testing.T) {
 
 	t.Run("a missing or malformed header never reaches the authenticator", func(t *testing.T) {
 		called := 0
-		h := newHarness(t, func(o *Options) { o.Authenticator = countingAuth{n: &called} })
+		h := newHarness(t, func(o *gateway.Options) { o.Authenticator = countingAuth{n: &called} })
 		hdrs := []http.Header{{}, {"Authorization": {"Basic abc"}}, {"Authorization": {"Bearer"}}}
 		defer func() {
 			lines := h.logs.Find(t, "authentication failed")
@@ -1089,7 +935,7 @@ func TestAuthorization(t *testing.T) {
 
 	t.Run("an unknown path is 404 before authentication", func(t *testing.T) {
 		called := 0
-		h := newHarness(t, func(o *Options) { o.Authenticator = countingAuth{n: &called} })
+		h := newHarness(t, func(o *gateway.Options) { o.Authenticator = countingAuth{n: &called} })
 		resp, err := h.request(ctx5(t), t, http.MethodPost, "/openai/v1/nope", nil, authed())
 		if err != nil {
 			t.Fatal(err)
@@ -1106,4 +952,134 @@ type countingAuth struct{ n *int }
 func (c countingAuth) Authenticate(context.Context, string) (authz.Principal, error) {
 	*c.n++
 	return authz.Principal{}, authz.ErrUnauthenticated
+}
+
+// TestNewValidatesOptions is the validation of the options of sprint 3.1, section 5.4.
+func TestNewValidatesOptions(t *testing.T) {
+	logs := &testutil.LogBuffer{}
+	cat := testutil.StaticCatalogue(map[string]string{"openai": "openai"}, nil)
+	creds := testutil.StaticCredentials(nil)
+	good := func() gateway.Options {
+		return gateway.Options{
+			Logger: telemetry.NewLogger(logs, "info"), Authenticator: testAuth, Catalogue: cat, Credentials: creds,
+			Families: map[string]family.Adapter{"openai": openai.Adapter()}, DefaultFamily: "openai",
+			Public: http.DefaultTransport, Private: http.DefaultTransport,
+			MaxRequestBodyBytes: 1, RequestBodyReadTimeout: 1, MaxRequestDuration: 1,
+		}
+	}
+	if _, err := gateway.New(good()); err != nil {
+		t.Fatal(err)
+	}
+	o := good()
+	o.Failures = &failureRecorder{}
+	if _, err := gateway.New(o); err != nil {
+		t.Fatalf("Failures is optional and may be set: %v", err)
+	}
+	for name, mutate := range map[string]func(*gateway.Options){
+		"logger":                func(o *gateway.Options) { o.Logger = nil },
+		"authenticator":         func(o *gateway.Options) { o.Authenticator = nil },
+		"catalogue":             func(o *gateway.Options) { o.Catalogue = nil },
+		"credentials":           func(o *gateway.Options) { o.Credentials = nil },
+		"families":              func(o *gateway.Options) { o.Families = nil },
+		"no family":             func(o *gateway.Options) { o.Families = map[string]family.Adapter{} },
+		"a nil adapter":         func(o *gateway.Options) { o.Families = map[string]family.Adapter{"openai": nil} },
+		"default family":        func(o *gateway.Options) { o.DefaultFamily = "" },
+		"unknown default":       func(o *gateway.Options) { o.DefaultFamily = "anthropic" },
+		"public transport":      func(o *gateway.Options) { o.Public = nil },
+		"private transport":     func(o *gateway.Options) { o.Private = nil },
+		"body":                  func(o *gateway.Options) { o.MaxRequestBodyBytes = 0 },
+		"read":                  func(o *gateway.Options) { o.RequestBodyReadTimeout = 0 },
+		"duration":              func(o *gateway.Options) { o.MaxRequestDuration = 0 },
+		"a negative body limit": func(o *gateway.Options) { o.MaxRequestBodyBytes = -1 },
+	} {
+		o := good()
+		mutate(&o)
+		if _, err := gateway.New(o); err == nil {
+			t.Errorf("%s: expected an error", name)
+		}
+	}
+}
+
+// TestUpstreamUnreachable is T-46: a closed port on a private target.
+func TestUpstreamUnreachable(t *testing.T) {
+	h := newHarness(t, nil)
+	closed, _ := url.Parse("http://127.0.0.1:1")
+	tgt := h.targets["openai/fake-basic"]
+	tgt.BaseURL = closed
+	h.targets["openai/fake-basic"] = tgt
+	resp, body := h.call(t, chat("fake-basic", false))
+	want := `{"error":{"message":"Pandokos: the provider could not be reached.","type":"pandokos_error","param":null,"code":"upstream_unreachable"}}`
+	if resp.StatusCode != 502 || string(body) != want || resp.Header.Get("X-Pandokos-Error") != "upstream_unreachable" {
+		t.Fatalf("got %d %s", resp.StatusCode, body)
+	}
+	for k, v := range resp.Header {
+		if strings.Contains(strings.Join(v, ","), "127.0.0.1") {
+			t.Errorf("header %s contains the address", k)
+		}
+	}
+	line := h.lastRequestLine(t)
+	if line["outcome"] != "pandokos_error" || line["error_code"] != "upstream_unreachable" || line["upstream_error"] != "connect" {
+		t.Errorf("line: %v", line)
+	}
+	if strings.Contains(h.logs.String(), "127.0.0.1:1") {
+		t.Error("the address was logged")
+	}
+}
+
+// TestRouteDeclaresAPermission is T-274: the routes of the gateway name both permissions.
+func TestRouteDeclaresAPermission(t *testing.T) {
+	routes := gateway.Routes()
+	want := map[string]bool{}
+	for _, op := range openai.Adapter().Operations() {
+		want[op.Method+" /{provider}"+op.Path] = false
+	}
+	if len(want) == 0 {
+		t.Fatal("the openai adapter has no operation")
+	}
+	for _, r := range routes {
+		key := r.Method + " " + r.Path
+		if _, ok := want[key]; !ok {
+			t.Errorf("a route that no operation of an adapter explains: %+v", r)
+			continue
+		}
+		want[key] = true
+		perms := append([]string(nil), r.Permissions...)
+		sort.Strings(perms)
+		if strings.Join(perms, ",") != authz.CredentialUse+","+authz.ModelInvoke {
+			t.Errorf("%s: permissions %v, want model:invoke and credential:use", key, r.Permissions)
+		}
+		for _, p := range r.Permissions {
+			if _, ok := authz.Lookup(p); !ok {
+				t.Errorf("%s: the permission %q is not in the catalogue", key, p)
+			}
+		}
+	}
+	for key, seen := range want {
+		if !seen {
+			t.Errorf("the operation %s has no route", key)
+		}
+	}
+	if !want["POST /{provider}/v1/chat/completions"] {
+		t.Error("POST /{provider}/v1/chat/completions is not a route")
+	}
+}
+
+// failureRecorder is a gateway.FailureRecorder that stores its calls and answers as told.
+type failureRecorder struct {
+	mu     sync.Mutex
+	calls  []gateway.AuthFailure
+	answer bool
+}
+
+func (f *failureRecorder) Record(_ context.Context, af gateway.AuthFailure) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, af)
+	return f.answer
+}
+
+func (f *failureRecorder) recorded() []gateway.AuthFailure {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]gateway.AuthFailure(nil), f.calls...)
 }

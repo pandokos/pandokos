@@ -60,7 +60,8 @@ func TestMain(m *testing.M) {
 
 type opts struct {
 	level     string
-	baseURL   string
+	up        *fakeprovider.Server // the provider of the tenants of the test (its URL is the endpoint of openai)
+	endpoint  string               // another base URL for the endpoint of openai, when there is no fake (private)
 	env       []string
 	db        *dbtest.Database // nil: a new database of the test
 	noMigrate bool             // true: the database is used as it is
@@ -85,15 +86,83 @@ type proc struct {
 	platformFile string // the key file of the bootstrap key, once init ran
 	tenantKey    string // an inference key of a tenant made by inferenceKey
 	tenants      int
+
+	up      *fakeprovider.Server
+	upURL   string // the base URL the endpoint of openai is pointed at
+	upReady bool   // the endpoint and the models were set up
+	credN   int
 }
 
-func baseEnv(t *testing.T, baseURL string, extra []string) []string {
+func baseEnv(t *testing.T, extra []string) []string {
 	t.Helper()
-	return append([]string{
-		"PATH=" + os.Getenv("PATH"),
-		"PANDOKOS_SKELETON_OPENAI_BASE_URL=" + baseURL,
-		"PANDOKOS_SKELETON_OPENAI_API_KEY_FILE=" + testutil.WriteSecret(t, "openai_api_key", fixtures.CanaryProviderKey),
-	}, extra...)
+	return append([]string{"PATH=" + os.Getenv("PATH")}, extra...)
+}
+
+// fakeModels are the models of the fake provider; each is created in the catalogue of the
+// process as a model of provider openai available to every tenant.
+var fakeModels = []string{
+	fakeprovider.ModelBasic, fakeprovider.ModelDetails, fakeprovider.ModelGatedStream, fakeprovider.ModelHang,
+	fakeprovider.ModelError429, fakeprovider.ModelError500Echo, fakeprovider.ModelUsageOnLastChunk,
+	fakeprovider.ModelRedirect, fakeprovider.ModelEchoAuth, fakeprovider.ModelClose,
+}
+
+// useFakeProvider points the default endpoint of a provider at the fake provider, as a private
+// endpoint (CLI endpoint update), with the key file of a platform key.
+func (p *proc) useFakeProvider(t *testing.T, platformFile, provider string, up *fakeprovider.Server) {
+	t.Helper()
+	p.useEndpoint(t, platformFile, provider, up.URL())
+}
+
+// useEndpoint points the default endpoint of a provider at a base URL, as a private endpoint.
+func (p *proc) useEndpoint(t *testing.T, platformFile, provider, baseURL string) {
+	t.Helper()
+	p.mustCLI(t, platformFile, "endpoint", "update", "--base-url", baseURL, "--private", provider, "default")
+}
+
+// addFakeModels creates the models of the fake in the catalogue (the seeded catalogue has none
+// of these names).
+func (p *proc) addFakeModels(t *testing.T, platformFile string) {
+	t.Helper()
+	for _, m := range fakeModels {
+		p.mustCLI(t, platformFile, "model", "create", "--availability", "all", "openai/"+m)
+	}
+}
+
+// addCredential registers a credential of a provider for the tenant of the administrator's key
+// file, with the secret read from a file, and returns its ID.
+func (p *proc) addCredential(t *testing.T, adminFile, provider, secretValue string) (id string) {
+	t.Helper()
+	p.credN++
+	secretFile := testutil.WriteSecret(t, "provider-secret", secretValue)
+	out := p.mustCLI(t, adminFile, "credential", "create", "--provider", provider, "--secret-file", secretFile, fmt.Sprintf("credential-%d", p.credN))
+	m := reCredentialID.FindStringSubmatch(out)
+	if m == nil {
+		t.Fatalf("no credential ID in the output of credential create:\n%s", out)
+	}
+	return m[1]
+}
+
+// prepareUpstream points openai at the fake of the process and creates its models, once.
+func (p *proc) prepareUpstream(t *testing.T) {
+	t.Helper()
+	if p.upReady || p.upURL == "" {
+		return
+	}
+	platform := p.bootstrap(t)
+	p.useEndpoint(t, platform, "openai", p.upURL)
+	p.addFakeModels(t, platform)
+	if p.up != nil {
+		p.up.Accept(fixtures.CanaryCredential)
+	}
+	p.upReady = true
+}
+
+// prepareTenant gives the tenant of an administrator a credential for openai equal to
+// fixtures.CanaryCredential, after the endpoint and the models were set up.
+func (p *proc) prepareTenant(t *testing.T, adminFile string) {
+	t.Helper()
+	p.prepareUpstream(t)
+	p.addCredential(t, adminFile, "openai", fixtures.CanaryCredential)
 }
 
 func writeConfig(t *testing.T, level string) string {
@@ -150,7 +219,14 @@ func startBinary(t *testing.T, o opts) *proc {
 		p.caFile, p.scheme = ca, "https"
 		p.client = &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}, ForceAttemptHTTP2: true}}
 	}
-	p.env = baseEnv(t, o.baseURL, extra)
+	p.up = o.up
+	switch {
+	case o.endpoint != "":
+		p.upURL = o.endpoint
+	case o.up != nil:
+		p.upURL = o.up.URL()
+	}
+	p.env = baseEnv(t, extra)
 	p.cmd = exec.Command(binary, "serve", "--config", p.cfg)
 	p.cmd.Env = p.env
 	p.cmd.Stdout, p.cmd.Stderr = p.stdout, p.stderr
@@ -253,7 +329,7 @@ func (p *proc) newTenant(t *testing.T, platformFile, name string) (id, adminFile
 
 // newInferenceKey creates a service account with the role inference and a key for it, with the
 // administrator of the tenant, and returns the key.
-func (p *proc) newInferenceKey(t *testing.T, adminFile, tenantID string) (keyID, key string) {
+func (p *proc) newInferenceKey(t *testing.T, adminFile, tenantID string, keyFlags ...string) (keyID, key string) {
 	t.Helper()
 	p.mustCLI(t, adminFile, "service-account", "create", "--tenant", tenantID, "--role", "inference", fmt.Sprintf("inference-%d", time.Now().UnixNano()))
 	list := p.mustCLI(t, adminFile, "service-account", "list", "--tenant", tenantID, "-o", "json")
@@ -278,7 +354,7 @@ func (p *proc) newInferenceKey(t *testing.T, adminFile, tenantID string) (keyID,
 		t.Fatalf("no inference service account in %s", list)
 	}
 	keyFile := filepath.Join(t.TempDir(), "inference.key")
-	out := p.mustCLI(t, adminFile, "key", "create", "--tenant", tenantID, "--service-account", sa, "--key-out", keyFile)
+	out := p.mustCLI(t, adminFile, append([]string{"key", "create", "--tenant", tenantID, "--service-account", sa, "--key-out", keyFile}, keyFlags...)...)
 	b, err := os.ReadFile(keyFile)
 	if err != nil {
 		t.Fatal(err)
@@ -303,6 +379,7 @@ func (p *proc) inferenceKey(t *testing.T) string {
 	p.tenants++
 	id, admin := p.newTenant(t, platform, fmt.Sprintf("tenant-%d", p.tenants))
 	_, p.tenantKey = p.newInferenceKey(t, admin, id)
+	p.prepareTenant(t, admin)
 	return p.tenantKey
 }
 
@@ -332,7 +409,7 @@ func runBinary(t *testing.T, env []string, args ...string) (code int, stdout, st
 // serveEnv is the environment of a serve process on database d, without a fake provider.
 func serveEnv(t *testing.T, d *dbtest.Database, extra ...string) []string {
 	t.Helper()
-	return append(baseEnv(t, "http://127.0.0.1:1/v1", d.Env(t)), extra...)
+	return append(baseEnv(t, d.Env(t)), extra...)
 }
 
 // logLines decodes the JSON log lines of stdout whose msg matches.
@@ -412,7 +489,7 @@ func authHeader(key string) http.Header {
 
 func TestServeStreamAndSigterm(t *testing.T) {
 	up := fakeprovider.New(t)
-	p := startBinary(t, opts{level: "info", baseURL: up.BaseURL()})
+	p := startBinary(t, opts{level: "info", up: up})
 	key := p.inferenceKey(t)
 
 	status, text := exchange(t, "POST", p.url("/openai/v1/chat/completions"), authHeader(key), chatBody("fake-basic", false, fixtures.CanaryPrompt))
@@ -448,7 +525,7 @@ func TestCanaries(t *testing.T) {
 			responses := map[string]string{}
 			var outputs []*testutil.LogBuffer
 
-			p := startBinary(t, opts{level: level, baseURL: up.BaseURL(), env: []string{"PANDOKOS_LIMITS_MAX_REQUEST_BODY_BYTES=1024"}})
+			p := startBinary(t, opts{level: level, up: up, env: []string{"PANDOKOS_LIMITS_MAX_REQUEST_BODY_BYTES=1024"}})
 			key := p.inferenceKey(t)
 			call := func(label, method, path string, hdr http.Header, body []byte) {
 				_, responses[label] = exchange(t, method, p.url(path), hdr, body)
@@ -464,7 +541,7 @@ func TestCanaries(t *testing.T) {
 			}
 			outputs = append(outputs, p.stdout, p.stderr)
 
-			unreachable := startBinary(t, opts{level: level, baseURL: "http://127.0.0.1:1/v1"})
+			unreachable := startBinary(t, opts{level: level, endpoint: "http://127.0.0.1:1"})
 			ukey := unreachable.inferenceKey(t)
 			_, responses["7 unreachable"] = exchange(t, "POST", unreachable.url("/openai/v1/chat/completions"), authHeader(ukey), chatBody("fake-basic", false, fixtures.CanaryPrompt))
 			if code := unreachable.stop(t); code != 0 {
@@ -569,7 +646,7 @@ func TestServeRefusesUnmigratedDatabase(t *testing.T) { // T-161
 func TestServeReadinessFollowsDatabase(t *testing.T) { // T-162
 	d := dbtest.New(t)
 	up := fakeprovider.New(t)
-	p := startBinary(t, opts{level: "info", baseURL: up.BaseURL(), db: d})
+	p := startBinary(t, opts{level: "info", up: up, db: d})
 	status := func(path string) int {
 		resp, err := http.Get(p.url(path))
 		if err != nil {
@@ -613,7 +690,7 @@ func TestServeBehindPooler(t *testing.T) { // T-163
 		t.Fatalf("migrate through the pooler: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	up := fakeprovider.New(t)
-	p := startBinary(t, opts{level: "info", baseURL: up.BaseURL(), db: pooled, noMigrate: true})
+	p := startBinary(t, opts{level: "info", up: up, db: pooled, noMigrate: true})
 	if code := p.stop(t); code != 0 {
 		t.Fatalf("exit code %d", code)
 	}
@@ -681,7 +758,7 @@ func TestDatabaseCanaries(t *testing.T) { // T-165
 	}
 	collect("migrate status", out, errs)
 	up := fakeprovider.New(t)
-	p := startBinary(t, opts{level: "debug", baseURL: up.BaseURL(), db: d, noMigrate: true})
+	p := startBinary(t, opts{level: "debug", up: up, db: d, noMigrate: true})
 	exchange(t, "POST", p.url("/openai/v1/chat/completions"), authHeader(p.inferenceKey(t)), chatBody("fake-basic", false, fixtures.CanaryPrompt))
 	if code := p.stop(t); code != 0 {
 		t.Fatalf("exit code %d", code)
@@ -712,7 +789,7 @@ func tableCount(t *testing.T, d *dbtest.Database, table string) int {
 // TestServeWithTLS is T-244.
 func TestServeWithTLS(t *testing.T) {
 	up := fakeprovider.New(t)
-	p := startBinary(t, opts{level: "debug", baseURL: up.BaseURL(), tls: true})
+	p := startBinary(t, opts{level: "debug", up: up, tls: true})
 	platform := p.bootstrap(t)
 	if code, out, errs := p.cli(t, platform, "whoami"); code != 0 || !strings.Contains(out, "principal_type: platform") {
 		t.Fatalf("whoami over TLS: %d %s %s", code, out, errs)
@@ -760,7 +837,7 @@ func TestDatabaseTLS(t *testing.T) {
 		t.Fatalf("init: %d %s %s", code, out, errs)
 	}
 	up := fakeprovider.New(t)
-	p := startBinary(t, opts{level: "info", baseURL: up.BaseURL(), db: d, noMigrate: true, env: tlsEnv()[len(d.Env(t)):]})
+	p := startBinary(t, opts{level: "info", up: up, db: d, noMigrate: true, env: tlsEnv()[len(d.Env(t)):]})
 	var ssl int
 	if err := d.Super(t).QueryRow(context.Background(), `SELECT count(*) FROM pg_stat_ssl s JOIN pg_stat_activity a ON a.pid = s.pid WHERE a.datname = $1 AND s.ssl AND a.application_name LIKE 'pandokos-%'`, d.Name).Scan(&ssl); err != nil || ssl < 3 {
 		t.Errorf("encrypted Pandokos connections: %d %v", ssl, err)
@@ -783,7 +860,7 @@ func TestDatabaseTLS(t *testing.T) {
 // TestNoDefaultCredentials is T-250.
 func TestNoDefaultCredentials(t *testing.T) {
 	up := fakeprovider.New(t)
-	p := startBinary(t, opts{level: "info", baseURL: up.BaseURL()})
+	p := startBinary(t, opts{level: "info", up: up})
 	for _, table := range []string{"virtual_key", "platform_key", "virtual_key_directory"} {
 		if n := tableCount(t, p.db, table); n != 0 {
 			t.Errorf("%s has %d rows after migrate", table, n)
@@ -818,7 +895,7 @@ func TestNoDefaultCredentials(t *testing.T) {
 // TestInit is T-251.
 func TestInit(t *testing.T) {
 	d := dbtest.NewMigrated(t)
-	env := baseEnv(t, "http://127.0.0.1:1/v1", d.Env(t))
+	env := baseEnv(t, d.Env(t))
 	code, out, errs := runBinary(t, env, "init")
 	if code != 0 {
 		t.Fatalf("init: %d %s %s", code, out, errs)
@@ -838,7 +915,7 @@ func TestInit(t *testing.T) {
 	}
 	// The key authenticates as platform-admin with bootstrap: true.
 	up := fakeprovider.New(t)
-	p := startBinary(t, opts{level: "info", baseURL: up.BaseURL(), db: d, noMigrate: true})
+	p := startBinary(t, opts{level: "info", up: up, db: d, noMigrate: true})
 	_, text := exchange(t, "GET", p.adminURL("/v1/me"), authHeader(key), nil)
 	if !strings.Contains(text, `"bootstrap":true`) || !strings.Contains(text, "platform-admin") {
 		t.Errorf("me: %s", text)
@@ -883,7 +960,7 @@ func TestInit(t *testing.T) {
 	}
 	// Four concurrent runs on a fresh database create one key.
 	d2 := dbtest.NewMigrated(t)
-	env2 := baseEnv(t, "http://127.0.0.1:1/v1", d2.Env(t))
+	env2 := baseEnv(t, d2.Env(t))
 	codes := make(chan int, 4)
 	for i := 0; i < 4; i++ {
 		go func() { c, _, _ := runBinary(t, env2, "init"); codes <- c }()
@@ -905,12 +982,12 @@ func TestInit(t *testing.T) {
 func TestBootstrapWarnings(t *testing.T) {
 	d := dbtest.NewMigrated(t)
 	up := fakeprovider.New(t)
-	env := baseEnv(t, up.BaseURL(), d.Env(t))
+	env := baseEnv(t, d.Env(t))
 	file := filepath.Join(t.TempDir(), "boot.key")
 	if code, out, errs := runBinary(t, env, "init", "--key-out", file); code != 0 {
 		t.Fatalf("init: %d %s %s", code, out, errs)
 	}
-	p := startBinary(t, opts{level: "info", baseURL: up.BaseURL(), db: d, noMigrate: true})
+	p := startBinary(t, opts{level: "info", up: up, db: d, noMigrate: true})
 	p.platformFile = file
 	testutil.Eventually(t, 5*time.Second, "the bootstrap warning", func() bool { return len(completeLines(p.stdout, "bootstrap key active")) >= 1 })
 	l := completeLines(p.stdout, "bootstrap key active")[0]
@@ -949,7 +1026,7 @@ func TestBootstrapWarnings(t *testing.T) {
 	if code := p.stop(t); code != 0 {
 		t.Fatalf("exit %d", code)
 	}
-	p2 := startBinary(t, opts{level: "info", baseURL: up.BaseURL(), db: d, noMigrate: true})
+	p2 := startBinary(t, opts{level: "info", up: up, db: d, noMigrate: true})
 	time.Sleep(500 * time.Millisecond)
 	if n := len(completeLines(p2.stdout, "bootstrap key active")); n != 0 {
 		t.Errorf("the restart warned %d times", n)
@@ -977,7 +1054,7 @@ func auditActions(t *testing.T, d *dbtest.Database, query string, args ...any) [
 // TestExitScenario is T-290.
 func TestExitScenario(t *testing.T) {
 	up := fakeprovider.New(t)
-	p := startBinary(t, opts{level: "info", baseURL: up.BaseURL()})
+	p := startBinary(t, opts{level: "info", up: up})
 	boot := p.bootstrap(t)
 	opsKey := filepath.Join(t.TempDir(), "ops.key")
 	p.mustCLI(t, boot, "platform-key", "create", "--key-out", opsKey)
@@ -986,6 +1063,7 @@ func TestExitScenario(t *testing.T) {
 	for _, name := range []string{"alpha", "beta"} {
 		id, admin := p.newTenant(t, opsKey, name)
 		_, key := p.newInferenceKey(t, admin, id)
+		p.prepareTenant(t, admin)
 		ts = append(ts, tn{id, admin, key})
 		status, text := exchange(t, "POST", p.url("/openai/v1/chat/completions"), authHeader(key), chatBody("fake-basic", false, fixtures.CanaryPrompt))
 		if status != 200 {
@@ -1004,12 +1082,12 @@ func TestExitScenario(t *testing.T) {
 	}
 	// Every step is in the audit logs, in order.
 	got := auditActions(t, p.db, "SELECT action FROM pandokos.platform_audit_event ORDER BY occurred_at, action")
-	if want := "platform_key.bootstrap,platform_key.create,tenant.create,tenant.create"; strings.Join(got, ",") != want {
+	if want := "platform_key.bootstrap,platform_key.create,tenant.create,endpoint.update,tenant.create"; strings.Join(got, ",") != want {
 		t.Errorf("platform log: %v, want %s", got, want)
 	}
 	for _, x := range ts {
 		got := auditActions(t, p.db, "SELECT action FROM pandokos.audit_event WHERE tenant_id = $1::uuid ORDER BY occurred_at, action", x.id)
-		if want := "data_key.create,service_account.create,virtual_key.create,service_account.create,virtual_key.create"; strings.Join(got, ",") != want {
+		if want := "data_key.create,service_account.create,virtual_key.create,service_account.create,virtual_key.create,credential.create"; strings.Join(got, ",") != want {
 			t.Errorf("tenant log: %v, want %s", got, want)
 		}
 	}
@@ -1042,11 +1120,12 @@ func TestRevocationAndSuspensionEndToEnd(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			d, extra := c.setup(t)
 			up := fakeprovider.New(t)
-			p := startBinary(t, opts{level: "info", baseURL: up.BaseURL(), db: d, noMigrate: true, env: append([]string{"PANDOKOS_CACHE_PRINCIPAL_TTL=" + c.ttl}, extra...)})
+			p := startBinary(t, opts{level: "info", up: up, db: d, noMigrate: true, env: append([]string{"PANDOKOS_CACHE_PRINCIPAL_TTL=" + c.ttl}, extra...)})
 			platform := p.bootstrap(t)
 			id, admin := p.newTenant(t, platform, "cached")
 			keyID1, key1 := p.newInferenceKey(t, admin, id)
 			_, key2 := p.newInferenceKey(t, admin, id)
+			p.prepareTenant(t, admin)
 			call := func(key string) (int, string) {
 				return exchange(t, "POST", p.url("/openai/v1/chat/completions"), authHeader(key), chatBody("fake-basic", false, "x"))
 			}
@@ -1078,7 +1157,7 @@ func TestRevocationAndSuspensionEndToEnd(t *testing.T) {
 // TestKeyCanaries is T-292.
 func TestKeyCanaries(t *testing.T) {
 	up := fakeprovider.New(t)
-	p := startBinary(t, opts{level: "debug", baseURL: up.BaseURL()})
+	p := startBinary(t, opts{level: "debug", up: up})
 	var keys []string
 	type output struct{ where, text, creates string }
 	var outs []output
@@ -1109,6 +1188,7 @@ func TestKeyCanaries(t *testing.T) {
 	if err := os.WriteFile(boot, []byte(bootOut+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	p.platformFile = boot
 	type tn struct{ id, adminFile, key string }
 	var ts []tn
 	for _, name := range []string{"one", "two"} {
@@ -1121,6 +1201,7 @@ func TestKeyCanaries(t *testing.T) {
 		}
 		run(af, "service-account", "create", "--tenant", id, "--role", "inference", "caller")
 		_, kout := run(af, "key", "create", "--tenant", id, "--service-account", "caller")
+		p.prepareTenant(t, af)
 		ts = append(ts, tn{id, af, reKeyLine.FindStringSubmatch(kout)[1]})
 	}
 	var responses []string

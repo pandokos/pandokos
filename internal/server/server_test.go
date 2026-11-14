@@ -9,7 +9,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -19,7 +18,7 @@ import (
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/config"
-	"github.com/pandokos/pandokos/internal/secret"
+	"github.com/pandokos/pandokos/internal/gateway"
 	"github.com/pandokos/pandokos/internal/telemetry"
 	"github.com/pandokos/pandokos/test/fakeprovider"
 	"github.com/pandokos/pandokos/test/fixtures"
@@ -52,26 +51,32 @@ func (f *fakeAdmin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"code":"not_found"}`))
 }
 
-func testConfig(t *testing.T, up *fakeprovider.Server) *config.Config {
+func testConfig(t *testing.T) *config.Config {
 	t.Helper()
 	cfg := config.Defaults()
 	cfg.Listeners.Inference.Address = "127.0.0.1:0"
 	cfg.Listeners.Admin.Address = "127.0.0.1:0"
-	u, err := url.Parse(up.BaseURL())
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg.Skeleton.OpenAI.BaseURL = up.BaseURL()
-	cfg.Skeleton.OpenAI.ParsedBaseURL = u
-	cfg.Skeleton.OpenAI.APIKey = secret.New(fixtures.CanaryProviderKey)
 	return cfg
 }
 
-func newOptions(cfg *config.Config, logs io.Writer, admin http.Handler) Options {
+// catalogueFor serves the models of the fake provider as provider "openai", private targets.
+func catalogueFor(up *fakeprovider.Server) *testutil.Catalogue {
+	targets := map[string]gateway.Target{}
+	for _, m := range []string{fakeprovider.ModelBasic, fakeprovider.ModelGatedStream, fakeprovider.ModelHang} {
+		targets["openai/"+m] = testutil.TargetFor(up, "openai", m)
+	}
+	return testutil.StaticCatalogue(map[string]string{"openai": "openai"}, targets)
+}
+
+func newOptions(t *testing.T, up *fakeprovider.Server, cfg *config.Config, logs io.Writer, admin http.Handler) Options {
+	t.Helper()
 	principal := testutil.InferencePrincipal()
 	return Options{
 		Config: cfg, Logger: telemetry.NewLogger(logs, "debug"), Admin: admin,
 		Authenticator: testutil.StaticAuthenticator(map[string]authz.Principal{testKey: principal}),
+		Catalogue:     catalogueFor(up),
+		Credentials:   testutil.StaticCredentials(map[string]string{"openai": fixtures.CanaryProviderKey}),
+		Egress:        testutil.TestGuard(t),
 	}
 }
 
@@ -83,14 +88,24 @@ func startServer(t *testing.T, mutate func(*config.Config)) (*Server, *fakeprovi
 
 func startServerWithAdmin(t *testing.T, mutate func(*config.Config)) (*Server, *fakeprovider.Server, *testutil.LogBuffer, func(), <-chan error, *fakeAdmin) {
 	t.Helper()
+	return startServerOpts(t, mutate, nil)
+}
+
+// startServerOpts also lets the test change the options of the server.
+func startServerOpts(t *testing.T, mutate func(*config.Config), mutateOpts func(*Options, *fakeprovider.Server)) (*Server, *fakeprovider.Server, *testutil.LogBuffer, func(), <-chan error, *fakeAdmin) {
+	t.Helper()
 	up := fakeprovider.New(t)
-	cfg := testConfig(t, up)
+	cfg := testConfig(t)
 	if mutate != nil {
 		mutate(cfg)
 	}
 	logs := &testutil.LogBuffer{}
 	admin := &fakeAdmin{}
-	srv, err := New(newOptions(cfg, logs, admin))
+	opts := newOptions(t, up, cfg, logs, admin)
+	if mutateOpts != nil {
+		mutateOpts(&opts, up)
+	}
+	srv, err := New(opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,9 +274,9 @@ func TestListenFailure(t *testing.T) {
 	}
 	defer busy.Close()
 	up := fakeprovider.New(t)
-	cfg := testConfig(t, up)
+	cfg := testConfig(t)
 	cfg.Listeners.Inference.Address = busy.Addr().String()
-	srv, err := New(newOptions(cfg, io.Discard, &fakeAdmin{}))
+	srv, err := New(newOptions(t, up, cfg, io.Discard, &fakeAdmin{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,10 +290,10 @@ func TestListenFailure(t *testing.T) {
 	}
 	inference := free.Addr().String()
 	free.Close()
-	cfg = testConfig(t, up)
+	cfg = testConfig(t)
 	cfg.Listeners.Inference.Address = inference
 	cfg.Listeners.Admin.Address = busy.Addr().String()
-	srv, err = New(newOptions(cfg, io.Discard, &fakeAdmin{}))
+	srv, err = New(newOptions(t, up, cfg, io.Discard, &fakeAdmin{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,15 +309,23 @@ func TestListenFailure(t *testing.T) {
 
 func TestNewValidatesOptions(t *testing.T) {
 	up := fakeprovider.New(t)
-	good := func() Options { return newOptions(testConfig(t, up), io.Discard, &fakeAdmin{}) }
+	good := func() Options { return newOptions(t, up, testConfig(t), io.Discard, &fakeAdmin{}) }
 	if _, err := New(good()); err != nil {
 		t.Fatal(err)
+	}
+	o := good()
+	o.Failures = nil // optional
+	if _, err := New(o); err != nil {
+		t.Fatalf("Failures is optional: %v", err)
 	}
 	for name, mutate := range map[string]func(*Options){
 		"config":        func(o *Options) { o.Config = nil },
 		"logger":        func(o *Options) { o.Logger = nil },
 		"authenticator": func(o *Options) { o.Authenticator = nil },
 		"admin":         func(o *Options) { o.Admin = nil },
+		"catalogue":     func(o *Options) { o.Catalogue = nil },
+		"credentials":   func(o *Options) { o.Credentials = nil },
+		"egress":        func(o *Options) { o.Egress = nil },
 	} {
 		o := good()
 		mutate(&o)
@@ -600,4 +623,110 @@ func TestMixedListeners(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestShutdownDuringResolution is T-450: a request that waits in the catalogue when shutdown
+// starts completes when it is released within the deadline, and is not forwarded when it is not.
+func TestShutdownDuringResolution(t *testing.T) {
+	post := func(t *testing.T, srv *Server) <-chan *http.Response {
+		t.Helper()
+		out := make(chan *http.Response, 1)
+		go func() {
+			body := `{"model":"fake-basic","messages":[{"role":"user","content":"` + fixtures.CanaryPrompt + `"}]}`
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+srv.InferenceAddr().String()+"/openai/v1/chat/completions", strings.NewReader(body))
+			req.Header.Set("Authorization", "Bearer "+testKey)
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := (&http.Client{Transport: &http.Transport{}}).Do(req)
+			if err != nil {
+				out <- nil
+				return
+			}
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			out <- resp
+		}()
+		return out
+	}
+	block := func(cat *testutil.Catalogue) { cat.Block = make(chan struct{}) }
+
+	t.Run("released within the deadline", func(t *testing.T) {
+		var cat *testutil.Catalogue
+		srv, up, logs, cancel, done, _ := startServerOpts(t, nil, func(o *Options, up *fakeprovider.Server) {
+			cat = catalogueFor(up)
+			block(cat)
+			o.Catalogue = cat
+		})
+		testutil.Eventually(t, 5*time.Second, "readiness", func() bool { return get(t, srv, "/readyz") == 200 })
+		resp := post(t, srv)
+		testutil.Eventually(t, 5*time.Second, "the request to wait in Resolve", func() bool { return cat.Resolves.Load() == 1 })
+		cancel()
+		testutil.Eventually(t, 5*time.Second, "readiness to go down", func() bool { return !srv.Health().Ready(context.Background()) })
+		close(cat.Block)
+		select {
+		case r := <-resp:
+			if r == nil || r.StatusCode != 200 {
+				t.Fatalf("the released request did not complete: %v", r)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("the request did not complete")
+		}
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("Serve returned %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("Serve did not return")
+		}
+		if n := len(up.Requests()); n != 1 {
+			t.Errorf("the provider received %d requests, want 1", n)
+		}
+		if l := logs.Find(t, "shutdown complete"); len(l) != 1 || l[0]["forced"] != false {
+			t.Errorf("shutdown complete: %v", l)
+		}
+	})
+
+	t.Run("not released: forced, nothing forwarded", func(t *testing.T) {
+		var cat *testutil.Catalogue
+		srv, up, logs, cancel, done, _ := startServerOpts(t, func(c *config.Config) {
+			c.Shutdown.DrainTimeout = config.Duration(200 * time.Millisecond)
+		}, func(o *Options, up *fakeprovider.Server) {
+			cat = catalogueFor(up)
+			block(cat)
+			o.Catalogue = cat
+		})
+		testutil.Eventually(t, 5*time.Second, "readiness", func() bool { return get(t, srv, "/readyz") == 200 })
+		resp := post(t, srv)
+		testutil.Eventually(t, 5*time.Second, "the request to wait in Resolve", func() bool { return cat.Resolves.Load() == 1 })
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("Serve returned %v", err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("Serve did not return within 3 s")
+		}
+		select {
+		case <-resp:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the request did not end")
+		}
+		testutil.Eventually(t, 5*time.Second, "the shutdown_aborted outcome", func() bool {
+			for _, r := range logs.Find(t, "request") {
+				if r["outcome"] == "shutdown_aborted" {
+					return true
+				}
+			}
+			return false
+		})
+		if n := len(up.Requests()); n != 0 {
+			t.Errorf("the provider received %d requests: a request that never got past resolution was forwarded", n)
+		}
+		if l := logs.Find(t, "shutdown complete"); len(l) != 1 || l[0]["forced"] != true {
+			t.Errorf("shutdown complete: %v", l)
+		}
+	})
 }

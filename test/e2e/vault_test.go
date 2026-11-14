@@ -58,7 +58,7 @@ func TestVault(t *testing.T) {
 	keyFile, version := generateKEK(t)
 	secretFile := testutil.WriteSecret(t, "provider-secret", fixtures.CanaryCredential)
 
-	p := startBinary(t, opts{level: "info", baseURL: up.BaseURL(), db: d, env: []string{kekEnv + "=" + keyFile}})
+	p := startBinary(t, opts{level: "info", up: up, db: d, env: []string{kekEnv + "=" + keyFile}})
 	ready := completeLines(p.stdout, "vault ready")
 	if len(ready) != 1 || ready[0]["kek_provider"] != "local" || ready[0]["kek_version"] != version || ready[0]["level"] != "INFO" {
 		t.Fatalf("`vault ready` lines: %v, want one with the provider local and the version %s", ready, version)
@@ -91,7 +91,7 @@ func TestVault(t *testing.T) {
 	}
 
 	t.Run("restart with the same key", func(t *testing.T) {
-		p2 := startBinary(t, opts{level: "info", baseURL: up.BaseURL(), db: d, env: []string{kekEnv + "=" + keyFile}})
+		p2 := startBinary(t, opts{level: "info", up: up, db: d, env: []string{kekEnv + "=" + keyFile}})
 		ready := completeLines(p2.stdout, "vault ready")
 		if len(ready) != 1 || ready[0]["kek_version"] != version {
 			t.Fatalf("`vault ready` after the restart: %v", ready)
@@ -199,8 +199,9 @@ func TestVaultCanaries(t *testing.T) {
 	otherSecret := "synthetic-provider-secret-for-the-second-credential"
 	otherFile := testutil.WriteSecret(t, "provider-secret-2", otherSecret)
 
-	p := startBinary(t, opts{level: "debug", baseURL: up.BaseURL(), db: d, env: []string{kekEnv + "=" + keyFile}})
+	p := startBinary(t, opts{level: "debug", up: up, db: d, env: []string{kekEnv + "=" + keyFile}})
 	platform := p.bootstrap(t)
+	p.useFakeProvider(t, platform, "openai", up) // the credential validation presents the secret to the fake
 	tenantID, adminFile := p.newTenant(t, platform, "canaries")
 
 	type output struct{ where, text string }

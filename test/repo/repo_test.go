@@ -233,6 +233,17 @@ func TestSecurityPolicy(t *testing.T) {
 
 func TestConfigurationReference(t *testing.T) {
 	doc := read(t, "docs/operations/configuration.md")
+	// Every key the tables name exists: a removed key (sprint 3.1 removes the first provider section) is
+	// not left in them.
+	known := map[string]bool{}
+	for _, k := range config.Keys() {
+		known[k.Name] = true
+	}
+	for _, m := range regexp.MustCompile("(?m)^\\| `([a-z_]+(?:\\.[a-z_]+)+)` \\|").FindAllStringSubmatch(doc, -1) {
+		if !known[m[1]] {
+			t.Errorf("configuration.md has a table row for %s, which is not a configuration key", m[1])
+		}
+	}
 	for _, k := range config.Keys() {
 		for _, want := range []string{k.Name, k.Env} {
 			if !strings.Contains(doc, want) {
