@@ -13,11 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgconn"
-
 	"github.com/pandokos/pandokos/internal/telemetry"
 	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/internal/usage"
+	"github.com/pandokos/pandokos/test/dbtest"
 	"github.com/pandokos/pandokos/test/fixtures"
 	"github.com/pandokos/pandokos/test/testutil"
 )
@@ -380,7 +379,7 @@ func TestRetryableStates(t *testing.T) {
 			down.Store(true)
 			fs.setFail(func(tenant.ID, []usage.Record) error {
 				if down.Load() {
-					return &pgconn.PgError{Code: state, Message: "synthetic"}
+					return dbtest.StateError(state)
 				}
 				return nil
 			})
