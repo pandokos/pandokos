@@ -27,7 +27,7 @@ func (h *Handler) newProxy(transport http.RoundTripper) *httputil.ReverseProxy {
 // rewrite builds the outbound request: a fixed URL, and a header built from an empty one.
 func (h *Handler) rewrite(pr *httputil.ProxyRequest) {
 	u := *h.baseURL
-	u.Path = h.baseURL.Path + openai.PathChatCompletions
+	u.Path = h.baseURL.Path + strings.TrimPrefix(openai.PathChatCompletions, "/v1")
 	u.RawPath = ""
 	u.RawQuery = ""
 	pr.Out.URL = &u

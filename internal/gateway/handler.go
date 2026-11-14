@@ -158,7 +158,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() { h.finish(st, recover()) }()
 
 	rest, underPrefix := strings.CutPrefix(r.URL.Path, routePrefix)
-	if _, ok := openai.Match(r.Method, rest); !underPrefix || !ok {
+	if _, ok := openai.Match(r.Method, "/v1"+rest); !underPrefix || !ok {
 		h.fail(st, family.CodeEndpointNotSupported)
 		return
 	}
