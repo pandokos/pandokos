@@ -301,10 +301,10 @@ func TestQuickStart(t *testing.T) {
 		s.pdk(boot, "", "endpoint", "update", "--base-url", fmt.Sprintf("http://host.docker.internal:%d", fake.Port()), "--private", provider, "default")
 		s.pdk(boot, "", "model", "create", "--availability", "all", provider+"/fake-basic")
 	}
-	s.pdk(demo, fixtures.CanaryCredential, "credential", "create", "--tenant", "demo", "--provider", "openai", "--secret-file", "/dev/stdin", "openai-main")
-	s.pdk(demo, fixtures.CanaryCredential, "credential", "create", "--tenant", "demo", "--provider", "anthropic", "--secret-file", "/dev/stdin", "anthropic-main")
-	s.pdk(demo, "", "service-account", "create", "--tenant", "demo", "--role", "inference", "app")
-	s.pdk(demo, "", "key", "create", "--tenant", "demo", "--service-account", "app", "--key-out", "/home/nonroot/app.key")
+	s.pdk(demo, fixtures.CanaryCredential, "credential", "create", "--provider", "openai", "--secret-file", "/dev/stdin", "openai-main")
+	s.pdk(demo, fixtures.CanaryCredential, "credential", "create", "--provider", "anthropic", "--secret-file", "/dev/stdin", "anthropic-main")
+	s.pdk(demo, "", "service-account", "create", "--role", "inference", "app")
+	s.pdk(demo, "", "key", "create", "--service-account", "app", "--key-out", "/home/nonroot/app.key")
 	keyCopy := filepath.Join(tmp, "app.key")
 	s.mustCompose("", 60*time.Second, "cp", "pandokos:/home/nonroot/app.key", keyCopy)
 	keyBytes, err := os.ReadFile(keyCopy)
@@ -314,7 +314,7 @@ func TestQuickStart(t *testing.T) {
 	key := strings.TrimSpace(string(keyBytes))
 
 	t.Run("capability check says callable", func(t *testing.T) {
-		out := s.pdk(demo, "", "capability", "check", "--tenant", "demo", "--provider", "anthropic", "--model", "claude-sonnet-4-5", "-o", "json")
+		out := s.pdk(demo, "", "capability", "check", "--provider", "anthropic", "--model", "claude-sonnet-4-5", "-o", "json")
 		var got adminapi.Capability
 		if err := json.Unmarshal([]byte(out), &got); err != nil || !got.Callable {
 			t.Errorf("%v: %s", err, out)
@@ -362,7 +362,7 @@ func TestQuickStart(t *testing.T) {
 	t.Run("usage list shows both records with provider sources", func(t *testing.T) {
 		var items []adminapi.UsageRecord
 		testutil.Eventually(t, 30*time.Second, "both records", func() bool {
-			out := s.pdk(demo, "", "usage", "list", "--tenant", "demo", "--all", "-o", "json")
+			out := s.pdk(demo, "", "usage", "list", "--all", "-o", "json")
 			var doc struct {
 				Items []adminapi.UsageRecord `json:"items"`
 			}

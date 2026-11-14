@@ -40,17 +40,20 @@ docker compose exec pandokos /pandokos init --key-out /home/nonroot/bootstrap.ke
 docker compose exec -e PANDOKOS_CLI_KEY_FILE=/home/nonroot/bootstrap.key pandokos \
   /pandokos tenant create demo --admin-key-out /home/nonroot/demo-admin.key
 pdk() { docker compose exec -T -e PANDOKOS_CLI_KEY_FILE=/home/nonroot/demo-admin.key pandokos /pandokos "$@"; }
-printf %s "$OPENAI_API_KEY"    | pdk credential create --tenant demo --provider openai --secret-file /dev/stdin openai-main
-printf %s "$ANTHROPIC_API_KEY" | pdk credential create --tenant demo --provider anthropic --secret-file /dev/stdin anthropic-main
-pdk service-account create --tenant demo --role inference app
-KEY=$(pdk key create --tenant demo --service-account app)
-pdk capability check --tenant demo --provider anthropic --model claude-sonnet-4-5
+printf %s "$OPENAI_API_KEY"    | pdk credential create --provider openai --secret-file /dev/stdin openai-main
+printf %s "$ANTHROPIC_API_KEY" | pdk credential create --provider anthropic --secret-file /dev/stdin anthropic-main
+pdk service-account create --role inference app
+KEY=$(pdk key create --service-account app)
+pdk capability check --provider anthropic --model claude-sonnet-4-5
 ```
 
 The provider keys go through standard input and are never written to disk by the reference. The
 capability check answers whether the tenant can call that provider and model now; it reads
 configuration and credential metadata only (never the key), so it does not prove that the provider
 accepts the key (see the [administration API reference](../reference/admin-api.md)).
+
+`--tenant` is left out because the demo-admin key belongs to the tenant and acts on it; resolving a
+tenant by name needs a platform key.
 
 Call both families with the generated certificate as the trusted authority. Python:
 
@@ -98,7 +101,7 @@ curl --cacert secrets/tls_cert https://localhost:8080/anthropic/v1/messages \
 Every authenticated call leaves one record without content ([usage guide](usage.md)). List them:
 
 ```sh
-pdk usage list --tenant demo
+pdk usage list
 ```
 
 A cut Anthropic stream, for example, shows the provider's input figures and an estimated output. The

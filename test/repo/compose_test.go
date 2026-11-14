@@ -170,9 +170,9 @@ func TestComposeReference(t *testing.T) {
 		guide := read(t, "docs/operations/compose.md")
 		for _, c := range []string{
 			"./setup.sh", "docker compose up -d --wait", "secrets/tls_cert", "/pandokos init --key-out", "tenant create demo --admin-key-out",
-			"credential create --tenant demo --provider openai --secret-file /dev/stdin", "credential create --tenant demo --provider anthropic --secret-file /dev/stdin",
-			"service-account create --tenant demo --role inference", "key create --tenant demo --service-account app",
-			"capability check --tenant demo --provider anthropic --model", "usage list --tenant demo", "docker compose stop",
+			"credential create --provider openai --secret-file /dev/stdin", "credential create --provider anthropic --secret-file /dev/stdin",
+			"service-account create --role inference", "key create --service-account app",
+			"capability check --provider anthropic --model", "usage list", "docker compose stop",
 			"make image", "PANDOKOS_IMAGE", "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS",
 		} {
 			if !strings.Contains(guide, c) {
