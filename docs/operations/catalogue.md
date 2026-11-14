@@ -36,13 +36,16 @@ To add an OpenAI-compatible provider, for example a self-hosted server that is n
 internet:
 
 ```
-pandokos provider create vllm --family openai --display-name "Our vLLM"
+pandokos provider create vllm --family openai --display-name "Our vLLM"   # add --stream-usage-option omit if the server refuses stream_options
 pandokos endpoint create vllm main --base-url http://models.internal:8000 --private
 pandokos model create vllm/llama-3-70b --upstream-id meta-llama/Llama-3-70b-instruct \
     --availability selected
 pandokos credential create --tenant ACME --provider vllm --secret-file ./vllm.key "vllm for ACME"
 pandokos model grant vllm/llama-3-70b --tenant ACME
 ```
+
+**`stream_usage_option`.** Each provider of the `openai` family has this setting: `add` (default) makes
+Pandokos add the usage option to a chat stream whose caller did not ask for usage ([ADR 0024](../adr/0024-openai-stream-usage-option.md)); `omit` never adds it, for a server that refuses unknown request members. With `omit` such streams are forwarded as the server sends them and their usage is estimated unless the server reports it anyway. Set it with `provider create` or `provider update` and `--stream-usage-option`; `omit` is refused for a provider of the `anthropic` family. A change reaches the gateway within `cache.catalog_ttl`. Compatible providers such as Groq, Mistral or Ollama are configuration only: see the [providers guide](providers.md) ([ADR 0042](../adr/0042-openai-compatible-providers-and-stream-usage-option.md)).
 
 - The first endpoint of a provider becomes its default; `endpoint update --default` moves the default
   in one step. The base URL has a scheme and a host, no user information, query or fragment, and no

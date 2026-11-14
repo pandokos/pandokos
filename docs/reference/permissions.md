@@ -27,11 +27,11 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | `virtual_key:read` | tenant | Reading and listing virtual keys (metadata) |
 | `virtual_key:write` | tenant | Issuing a virtual key |
 | `virtual_key:revoke` | tenant | Revoking a virtual key |
-| `model:invoke` | tenant | Calling a model through the inference listener: every operation of a family (`chat.completions`, `responses` and `embeddings` for `openai`) needs the same pair, `model:invoke` and `credential:use` |
+| `model:invoke` | tenant | Calling a model through the inference listener: every operation of a family (`chat.completions`, `responses` and `embeddings` for `openai`; `messages` and `messages.count_tokens` for `anthropic`) needs the same pair, `model:invoke` and `credential:use` |
 | `catalog:read` | platform | Reading providers, endpoints, models, model grants, price versions and price imports |
 | `catalog:write` | platform | Creating, changing and deleting providers, endpoints and models; granting models to tenants and revoking grants |
 | `catalog:price` | platform | Setting and removing price overrides; running a price import |
-| `model:read` | tenant | Listing the models available to the tenant, with their prices; reading the tenant's model restriction |
+| `model:read` | tenant | Listing the models available to the tenant, with their prices; reading the tenant's model restriction; the capability check |
 | `model:restrict` | tenant | Setting and clearing the tenant's model restriction |
 | `usage:read` | tenant | Listing the tenant's usage records |
 

@@ -96,6 +96,10 @@ The secret files must be readable by user 65532. All settings are described in t
 | `POST /openai/v1/chat/completions` | OpenAI chat completions, streaming and not streaming |
 | `POST /openai/v1/responses` | OpenAI responses, streaming and not streaming; background processing is refused |
 | `POST /openai/v1/embeddings` | OpenAI embeddings |
+| `POST /anthropic/v1/messages` | Anthropic messages, streaming and not streaming (provider `anthropic`) |
+| `POST /anthropic/v1/messages/count_tokens` | Anthropic token counting; recorded without usage |
+
+The path after the first segment is the provider's own, for any provider of the catalogue (`/<provider>/v1/...`).
 
 Any other path or method gets 404 `endpoint_not_supported`. A caller presents the static access
 token as `Authorization: Bearer <token>`. An SDK needs only a different base URL and key:
@@ -108,15 +112,16 @@ client = OpenAI(base_url="http://localhost:8080/openai/v1", api_key="<access tok
 
 ## What Pandokos changes
 
-Provider responses pass through unchanged: status, body and an allow-list of headers
-(`Content-Type`, `Content-Length`, `Retry-After`, `X-Request-Id`, `X-Ratelimit-*`, `Openai-*`),
+Provider responses pass through unchanged: status, body and an allow-list of headers per family
+(`openai`: `Content-Type`, `Content-Length`, `Retry-After`, `X-Request-Id`, `X-Ratelimit-*`, `Openai-*`;
+`anthropic`: `Content-Type`, `Content-Length`, `Retry-After`, `Request-Id`, `X-Should-Retry`, `Anthropic-*`),
 for every status including errors ([ADR 0009](../adr/0009-native-passthrough-by-api-family.md)).
 Towards the provider only `Accept`, `Content-Type` and `User-Agent` are forwarded, with the
 provider key in `Authorization`; the query string is not forwarded and redirects are not followed.
 
 For a streamed request that does not ask for usage, Pandokos adds `stream_options.include_usage`
 by splicing bytes into the body (it is never re-serialized) and removes the usage-only event from
-the response. The provider also adds `"usage":null` to every other chunk when that option is on;
+the response, unless the provider's `stream_usage_option` is `omit` ([catalogue guide](catalogue.md)). The `anthropic` family changes nothing but the model name. The provider also adds `"usage":null` to every other chunk when that option is on;
 that member is left in place. If the caller asked for usage itself, nothing is added or removed
 ([ADR 0024](../adr/0024-openai-stream-usage-option.md)).
 
@@ -216,7 +221,7 @@ dependencies are the same on both platforms.
 
 ## Limits of this pre-release
 
-The inference listener forwards chat completions, responses and embeddings of the `openai` family with the tenant's stored
+The inference listener forwards chat completions, responses and embeddings of the `openai` family and messages of the `anthropic` family with the tenant's stored
 credential; see the [gateway guide](gateway.md) for what a call needs and what reaches the provider. It
-speaks plain HTTP, so terminate TLS in front of it. It writes a usage record for every authenticated request ([usage guide](usage.md)) and exports traces when a collector is configured ([telemetry guide](telemetry.md)). It has no retries. Do not
+speaks plain HTTP, so terminate TLS in front of it. It writes a usage record for every authenticated request ([usage guide](usage.md)) and exports traces when a collector is configured ([telemetry guide](telemetry.md)). It has no retries. The [Compose reference](compose.md) runs one instance with PostgreSQL and TLS for a first trial. Do not
 expose it to the internet and do not use it for production.

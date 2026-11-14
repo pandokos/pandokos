@@ -60,3 +60,4 @@ would see `"usage":null`; the official SDK does not mind.
 ## History
 
 - 2026-11: sprint 3.2 confirms the decision for chat streams; the responses and embeddings operations need no option.
+- 2026-11: amended by [ADR 0042](0042-openai-compatible-providers-and-stream-usage-option.md): a provider can set stream_usage_option omit.

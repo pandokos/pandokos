@@ -155,6 +155,9 @@ reference `provider/name` wherever it takes a model.
 | `getCapability` | `GET /v1/tenants/{tenant}/capability` | `model:read` |
 | `listUsageRecords` | `GET /v1/tenants/{tenant}/usage-records` | `usage:read` |
 
+- `getCapability` answers whether a tenant can call a provider and model now (`provider` and `model` are required): `callable`, the failing `reasons` in a fixed order (`provider_unavailable`, `model_not_allowed`, `no_credential`, `credential_disabled`, `credential_revoked`), the `checks` and `budget: not_enforced`. It reads committed catalogue state and credential metadata and never opens a credential, so it can differ from a call made at the same moment by at most the cache lifetimes; a key's pin and model list are not evaluated. A suspended tenant is answered 403 `tenant_suspended`. CLI: `capability check --tenant T --provider P --model M`. [ADR 0043](../adr/0043-tenant-capability-check-and-usage-list.md).
+- `listUsageRecords` lists a tenant's usage records newest first, with `from`, `to`, `provider`, `limit` and `cursor` (rules and representation in the [usage guide](../operations/usage.md), section 9). CLI: `usage list --tenant T [--from --to --provider]`.
+- The provider member `stream_usage_option` is `add` or `omit`; `omit` for a provider of family `anthropic` is `invalid_request` ("must be add for a provider of family anthropic").
 - Collections: `listModels` filters by `provider`, `name`, `status` and `availability`. `createModel`
   takes `availability` `selected` unless told otherwise. `listPriceVersions` takes `at` (RFC 3339) and
   returns the version in force then, at most one.
@@ -178,7 +181,7 @@ reference `provider/name` wherever it takes a model.
   tenant's log, and `virtual_key.create` records the `models` of a key.
 
 Flags of the catalogue commands: `provider create NAME --family F [--display-name --description
---dataset-provider]`; `endpoint create PROVIDER NAME --base-url U [--region --private --default]`;
+--dataset-provider --stream-usage-option add|omit]`; `endpoint create PROVIDER NAME --base-url U [--region --private --default]`;
 `model create REF [--upstream-id --availability --status --capability ...  --context-window
 --max-output-tokens]`; `model grant|revoke-grant MODEL --tenant T`; `price override MODEL --currency C
 --rate category[@threshold]=amount ... [--valid-from --note]`; `price clear-override MODEL --reason R`;

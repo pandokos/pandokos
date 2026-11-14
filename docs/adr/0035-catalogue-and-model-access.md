@@ -46,3 +46,7 @@ Open global tables (writes would rest on handler code); a tenant-scoped grant ta
 platform could not list a model's tenants); matching callers' model names against upstream
 identifiers or patterns (a second way in, which CAT-06 forbids); a mutable key model list (a
 second invalidation path).
+
+## History
+
+- 2026-11: sprint 3.3: providers gain stream_usage_option; the capability check reuses the access rule ([ADR 0042](0042-openai-compatible-providers-and-stream-usage-option.md), [ADR 0043](0043-tenant-capability-check-and-usage-list.md)).

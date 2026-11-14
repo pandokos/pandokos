@@ -51,3 +51,7 @@ arrive); staying on v1.46.0 and the old floor (it keeps a vulnerable `golang.org
 graph); spans for every request (anonymous callers would drive
 telemetry); ignoring the caller's sampled flag (breaks the caller's traces); the SDK's
 environment configuration (settings outside ADR 0019).
+
+## History
+
+- 2026-11: sprint 3.3 adds the span attribute pandokos.usage.output_source.

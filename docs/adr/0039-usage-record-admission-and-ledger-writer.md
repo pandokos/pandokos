@@ -60,3 +60,7 @@ record); a definer function inserting whole batches across tenants (a special pa
 policy); estimating every forwarded request (errors would look like consumption); storing the
 provider's usage object as received (a channel for text); no default partition (a missing
 partition would reject records); metadata in one JSON header (parsing ambiguity).
+
+## History
+
+- 2026-11: sprint 3.3: the admin role lists a tenant's records ([ADR 0043](0043-tenant-capability-check-and-usage-list.md)).

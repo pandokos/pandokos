@@ -3,20 +3,29 @@
 The inference listener forwards requests of a provider's own API to that provider, on behalf of a
 tenant, with the tenant's stored credential. This page says what a caller sends, what a call needs,
 what Pandokos changes in a request, which errors it answers with, and how outbound connections are
-controlled. It applies from sprint 3.1; sprint 3.2 adds two operations, streaming details, caller metadata and the usage record.
+controlled. It applies from sprint 3.1; sprint 3.2 adds two operations, streaming details, caller metadata and the usage record; sprint 3.3 adds the `anthropic` family and OpenAI-compatible providers.
 
 ## 1. Base URLs
 
 The first path segment names a provider of the catalogue and the rest is the provider's own path.
-Point an SDK at `/<provider>/v1`:
+The routes are `POST /{provider}/v1/chat/completions`, `/{provider}/v1/responses`,
+`/{provider}/v1/embeddings`, `/{provider}/v1/messages` and `/{provider}/v1/messages/count_tokens`.
+An SDK needs the base URL its own client appends the native path to:
 
-| SDK | Base URL |
-|---|---|
-| OpenAI SDK, provider `openai` | `https://pandokos.example.com/openai/v1` |
-| any OpenAI-compatible client, provider `acme` | `https://pandokos.example.com/acme/v1` |
+| SDK | Family | Base URL |
+|---|---|---|
+| OpenAI Python, TypeScript and Go SDKs, provider `openai` | `openai` | `https://pandokos.example.com/openai/v1` |
+| Anthropic Python and TypeScript SDKs, provider `anthropic` | `anthropic` | `https://pandokos.example.com/anthropic` |
+| any OpenAI-compatible client, provider `acme` | `openai` | `https://pandokos.example.com/acme/v1` |
 
-The key is a Pandokos virtual key, sent in the header the SDK uses for the provider's own key
-(`Authorization: Bearer <key>` for the `openai` family).
+The Anthropic SDKs add `/v1/messages` themselves, so their base URL has no `/v1`. The key is a
+Pandokos virtual key, sent in the header the SDK uses for the provider's own key:
+`Authorization: Bearer <key>` for the `openai` family; for the `anthropic` family either
+`Authorization: Bearer <key>` (what the current Anthropic SDKs send) or `X-Api-Key: <key>` (`curl`
+examples and older SDKs). When both are present they must carry the same value, otherwise the answer
+is `unauthenticated`. Spaces around the value are ignored.
+
+A provider that speaks the `openai` wire needs no code: see the [providers guide](providers.md).
 
 Supported operations of the `openai` family, each a `POST` to the provider's own path:
 
@@ -25,6 +34,15 @@ Supported operations of the `openai` family, each a `POST` to the provider's own
 | `chat.completions` | `/<provider>/v1/chat/completions` | when the body has `stream: true` |
 | `responses` | `/<provider>/v1/responses` | when the body has `stream: true` |
 | `embeddings` | `/<provider>/v1/embeddings` | never |
+
+Supported operations of the `anthropic` family:
+
+| Operation | Path | Streams |
+|---|---|---|
+| `messages` | `/<provider>/v1/messages` | when the last top-level `stream` member is `true` |
+| `messages.count_tokens` | `/<provider>/v1/messages/count_tokens` | never |
+
+`messages.count_tokens` consumes no tokens: it is forwarded and recorded without usage and without cost.
 
 A `responses` request that asks for background processing (`"background": true`) is refused with
 `invalid_request`: the provider would answer without usage and the result would be fetched from a path
@@ -62,11 +80,20 @@ hop-by-hop header (`Connection`, `Keep-Alive`, `Proxy-Connection`, `Te`, `Traile
 `Transfer-Encoding`, `Upgrade`). `Host` is the endpoint's host; the URL is the endpoint's base URL plus
 the native path, without the caller's query.
 
-Two changes to the body:
+For the `anthropic` family the forwarded headers are `Accept`, `Content-Type`, `User-Agent`,
+`Anthropic-Version` and `Anthropic-Beta`. Both are forwarded as the caller sent them and Pandokos never
+adds `Anthropic-Version`: a request without it gets the provider's own 400, unchanged. The caller's
+`Authorization` and `X-Api-Key` are never forwarded; the provider receives the tenant's credential as
+`X-Api-Key`. `X-Stainless-*` and `Anthropic-Dangerous-Direct-Browser-Access` are dropped.
 
-1. For streaming `chat.completions` requests the option that makes the provider send usage in the
-   stream is added ([ADR 0024](../adr/0024-openai-stream-usage-option.md)). Every other byte is
-   forwarded as received. The `responses` and `embeddings` operations need no option: the provider
+Changes to the body:
+
+1. For streaming `chat.completions` requests of the `openai` family the option that makes the provider
+   send usage in the stream is added ([ADR 0024](../adr/0024-openai-stream-usage-option.md)), unless the
+   provider's `stream_usage_option` is `omit` ([ADR 0042](../adr/0042-openai-compatible-providers-and-stream-usage-option.md);
+   the stream is then read in observe mode and its usage is estimated when the server reports none).
+   Every other byte is forwarded as received. The `anthropic` family needs no option: the provider
+   reports usage in every stream. The `responses` and `embeddings` operations need no option: the provider
    always reports usage there.
 2. When the model's upstream identifier differs from its public name, the value of `model` is
    replaced by the upstream identifier. The response is not rewritten: the provider's `model` member
@@ -81,8 +108,15 @@ identity (PRV-02; see [data flows](../reference/data-flows.md)). The one excepti
 `Traceparent` and `Tracestate`: with `telemetry.traces.propagate` on, Pandokos sets them itself from
 its own span ([telemetry guide](telemetry.md)); the caller's are never copied.
 
-Response headers pass through an allow-list (`Content-Type`, `Content-Length`, `Retry-After`,
-`X-Request-Id`, `X-Ratelimit-*`, `Openai-*`); status and body pass unchanged.
+Response headers pass through an allow-list per family; status and body pass unchanged.
+
+| Family | Passed response headers |
+|---|---|
+| `openai` | `Content-Type`, `Content-Length`, `Retry-After`, `X-Request-Id`, `X-Ratelimit-*`, `Openai-*` |
+| `anthropic` | `Content-Type`, `Content-Length`, `Retry-After`, `Request-Id`, `X-Should-Retry`, `Anthropic-*` |
+
+The provider's request ID (`X-Request-Id` for `openai`, `Request-Id` for `anthropic`) is logged as
+`upstream_request_id`.
 
 ## 4. Errors
 
@@ -102,6 +136,19 @@ Response headers pass through an allow-list (`Content-Type`, `Content-Length`, `
 | `unavailable` | 503 | the catalogue, the key or the credential could not be verified, or the usage ledger buffer is full (the log line has `ledger: full`; no usage record is written for that request) |
 | `internal` | 500 | an unexpected failure |
 
+Anthropic error types. On an `anthropic` route the body is `{"type":"error","error":{"type":<type>,"message":"Pandokos: ..."}}`
+and `type` is the provider's type for the status:
+
+| Code | Anthropic `error.type` |
+|---|---|
+| `invalid_request`, `no_credential` | `invalid_request_error` |
+| `unauthenticated` | `authentication_error` |
+| `forbidden`, `tenant_suspended`, `model_not_allowed` | `permission_error` |
+| `endpoint_not_supported` | `not_found_error` |
+| `request_timeout`, `upstream_timeout` | `timeout_error` |
+| `request_too_large` | `request_too_large` |
+| `internal`, `upstream_unreachable`, `unavailable` | `api_error` |
+
 Every Pandokos error carries the headers `X-Pandokos-Error` (the code) and `X-Pandokos-Request-Id`,
 and a body in the family's shape:
 
@@ -112,6 +159,13 @@ and a body in the family's shape:
 A response with `X-Pandokos-Error` comes from Pandokos. A provider's error passes unchanged and never
 carries that header. Messages are constants; none holds a model name, a provider name, an address or
 the text of an underlying error.
+
+A request that reaches no family (an unknown, disabled or malformed provider, or a refusal while the
+catalogue is away) gets the shape of the first family, in name order, that recognizes it: `anthropic`
+recognizes the paths of its operations and any request that carries `Anthropic-Version`, `openai`
+recognizes the paths of its operations; otherwise the `openai` shape is used. Only the body shape
+depends on this: the status, the code and the message do not, so a caller still cannot tell an
+unknown provider from an unsupported path ([ADR 0041](../adr/0041-anthropic-api-family.md)).
 
 SDKs retry 408 and 409 by default. `request_timeout` and `no_credential` can therefore be retried
 by the client; the second one will keep failing until a credential exists.
@@ -128,6 +182,14 @@ and flushed before the next read, with no timer or buffer of Pandokos's in betwe
   removed. In this mode events are forwarded whole, not byte by byte. **The one observable
   difference** ([ADR 0024](../adr/0024-openai-stream-usage-option.md)): the provider also puts
   `"usage":null` in every other chunk when the option is on, and that member is left in place.
+
+- **Anthropic streams** are always observed, never changed: the caller gets the provider's bytes in
+  the same writes. The reader takes the input side from the `message_start` event and, from each
+  `message_delta`, the cumulative output; events are read by the `type` of their data, whatever the
+  `event:` line says. A stream that ends after `message_start` is recorded with the provider's input
+  and an estimated output, which is why a record can have a different source for each side
+  (`usage_output_source`, section 10; [usage guide](usage.md)). An `error` event inside a 200 stream
+  changes nothing.
 
 If the usage reader fails (an event over its bound, a malformed answer, an internal error) it is
 abandoned: the rest of the stream is forwarded unchanged, the usage of the request is estimated, and
@@ -150,11 +212,16 @@ describes the usage record every authenticated request leaves.
 | Limit | Key (default) | When exceeded |
 |---|---|---|
 | Request headers | `listeners.inference.max_header_bytes` (65536), `read_header_timeout` (10 s) | 431 or closed connection |
+| Number of header values | 500 (the default of Go 1.27's `net/http`; not configurable) | 431 |
 | Request body size | `limits.max_request_body_bytes` (10485760) | 413 `request_too_large` |
 | Request body time | `limits.request_body_read_timeout` (30 s) | 408 `request_timeout` |
 | Connect and TLS handshake | `upstream.connect_timeout` (10 s) | 502 `upstream_unreachable` |
 | Whole forwarded request, stream included | `limits.max_request_duration` (10 m) | 504 before the provider's headers; the response is cut after |
 | Provider response headers | 262144 bytes | 502 `upstream_unreachable` |
+
+A request with more than 500 header values is answered `431 Request Header Fields Too Large` by
+Go's `net/http` before Pandokos sees it (Go 1.27 limits a request to 500 header values by default).
+Such an answer has no Pandokos error shape, no `X-Pandokos-Error` header and no usage record.
 
 On shutdown readiness goes down, in-flight requests continue for `shutdown.drain_timeout`, and a
 request that has not been forwarded by then is not forwarded. The usage records are then written
@@ -228,7 +295,7 @@ tenant register its own credential with `pandokos credential create --provider o
 
 ## 10. Log fields of a request
 
-The `request` line of the [container guide](container.md) gains these fields from sprint 3.2:
+The `request` line of the [container guide](container.md) gains these fields from sprint 3.2 (`usage_output_source` and `upstream_request_id` from sprint 3.3):
 
 | Field | Present | Meaning |
 |---|---|---|
@@ -236,7 +303,9 @@ The `request` line of the [container guide](container.md) gains these fields fro
 | `trace_id` | the request has a trace | 32 hexadecimal characters |
 | `cost_status` | the request was admitted | `known`, `unknown` or `none` |
 | `cost`, `currency` | the cost is known | the amount and its currency |
-| `usage_source` | the provider answered | `provider`, `estimated` or `none` |
+| `usage_source` | the provider answered | `provider`, `estimated` or `none`: the source of the input side |
+| `usage_output_source` | the output side has another source | only when it differs from `usage_source`, for example `usage_source: provider` and `usage_output_source: estimated` after a stream cut following `message_start` |
+| `upstream_request_id` | the provider sent one | its `X-Request-Id` (`openai`) or `Request-Id` (`anthropic`), bounded |
 | `metadata_count`, `metadata_dropped` | metadata was sent / entries were dropped | counts, never values |
 | `usage_reader` | the reader gave up | `failed` |
 | `ledger` | step 3a refused the request | `full` (written `ledger: full` in this guide) |
