@@ -16,7 +16,7 @@ estimated cost and one span. This completes v0.1 together with sprint 4.1.
 
 ## Decisions it implements
 
-ADR 0009, 0010, 0013 (ledger), 0015 (traces), 0020.
+ADR 0009, 0010, 0013 (ledger), 0015 (traces), 0020, 0024, 0039, 0040.
 
 ## Sprints
 

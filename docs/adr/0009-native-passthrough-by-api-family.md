@@ -75,3 +75,4 @@ and the ledger, and the attack surface is whatever the provider exposes.
 
 - 2026-11: sprint 2.2 reserves `healthz`, `readyz` and `v1` as provider names and stores the family per provider ([ADR 0035](0035-catalogue-and-model-access.md)).
 - 2026-11: sprint 3.1 routes by catalogue provider with one adapter per family, appends the native path (which includes /v1) to the endpoint base URL, extends the request allow-list of the openai family and replaces the model name by the upstream identifier when they differ ([ADR 0037](0037-request-pipeline-and-resolution.md)).
+- 2026-11: sprint 3.2 adds the operations responses and embeddings to the openai family; a responses request that asks for background processing is refused.

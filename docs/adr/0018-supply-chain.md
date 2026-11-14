@@ -59,3 +59,7 @@ can be offered without changing the default.
 
 **Vendoring dependencies.** Checksums and the module proxy give the same integrity guarantee with
 less noise in reviews.
+
+## History
+
+- 2026-11: sprint 3.2 adds the OpenTelemetry SDK, the OTLP/HTTP exporter and logr as direct dependencies ([ADR 0040](0040-traces.md)).

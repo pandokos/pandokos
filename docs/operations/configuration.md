@@ -79,6 +79,17 @@ replaced by `_`.
 | `pricing.refresh.enabled` | `PANDOKOS_PRICING_REFRESH_ENABLED` | boolean | `false` | Download the price dataset periodically: an outbound request to `pricing.refresh.url` |
 | `pricing.refresh.url` | `PANDOKOS_PRICING_REFRESH_URL` | URL | `https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json` | Address of the price dataset; `https` only, no user information. Pin it to a commit to control what is imported |
 | `pricing.refresh.interval` | `PANDOKOS_PRICING_REFRESH_INTERVAL` | duration | `24h` | Time between downloads (1h to 720h) |
+| `ledger.flush_interval` | `PANDOKOS_LEDGER_FLUSH_INTERVAL` | duration | `50ms` | Longest time a usage record waits in memory before it is written (1ms to 10s) |
+| `ledger.batch_size` | `PANDOKOS_LEDGER_BATCH_SIZE` | integer | `500` | Most usage records written in one transaction (1 to 5000) |
+| `ledger.buffer_size` | `PANDOKOS_LEDGER_BUFFER_SIZE` | integer | `10000` | Usage records held in memory, admitted requests included; when it is full the gateway answers 503 (100 to 1000000, at least `ledger.batch_size`) |
+| `ledger.shutdown_flush_timeout` | `PANDOKOS_LEDGER_SHUTDOWN_FLUSH_TIMEOUT` | duration | `10s` | Time allowed to write the records still in memory when the process stops (1s to 5m) |
+| `telemetry.otlp.endpoint` | `PANDOKOS_TELEMETRY_OTLP_ENDPOINT` | URL | none | Base URL of the OTLP/HTTP collector; `/v1/traces` is appended to its path; empty means no export |
+| `telemetry.otlp.protocol` | `PANDOKOS_TELEMETRY_OTLP_PROTOCOL` | `http/protobuf` | `http/protobuf` | Export protocol; only `http/protobuf` exists |
+| `telemetry.otlp.headers_file` | `PANDOKOS_TELEMETRY_OTLP_HEADERS_FILE` | path | none | File with the headers sent to the collector, one `Name: value` per line; the values are secrets |
+| `telemetry.otlp.timeout` | `PANDOKOS_TELEMETRY_OTLP_TIMEOUT` | duration | `10s` | Time allowed for one export (1s to 60s) |
+| `telemetry.traces.sample_ratio` | `PANDOKOS_TELEMETRY_TRACES_SAMPLE_RATIO` | decimal | `1` | Share of the traces started here that is sampled (0 to 1); the sampled flag of a caller's `traceparent` is followed |
+| `telemetry.traces.propagate` | `PANDOKOS_TELEMETRY_TRACES_PROPAGATE` | boolean | `false` | Send the trace context to the provider in a `traceparent` header |
+| `telemetry.resource.attributes` | `PANDOKOS_TELEMETRY_RESOURCE_ATTRIBUTES` | list | none | Resource attributes of the traces: `key=value` pairs separated by commas, in YAML and in the environment |
 
 Durations are strings in Go syntax (`"30s"`, `"10m"`); a YAML number is rejected for a duration.
 Sizes are integers in bytes.
@@ -158,6 +169,14 @@ All problems are reported together, not only the first. Each is attached to a ke
 | `vault.kek.provider` | `local` |
 | `vault.kek.local.key_file` | set; a readable regular file holding 32 bytes in standard base64 (44 characters); no message quotes the content |
 | `database.direct_address` | when set, the three address rules of `database.address` |
+| `ledger.flush_interval`, `ledger.shutdown_flush_timeout` | 1ms to 10s; 1s to 5m (`serve` only) |
+| `ledger.batch_size`, `ledger.buffer_size` | 1 to 5000; 100 to 1000000 and at least the batch size (`serve` only) |
+| `telemetry.otlp.endpoint` | when set (`serve` only): scheme `http` or `https`, a host, no user information, no query, no fragment; no message quotes the URL |
+| `telemetry.otlp.protocol` | `http/protobuf` |
+| `telemetry.otlp.headers_file` | when set: a readable file of at most 131072 bytes; lines `Name: value`, blank lines and lines starting with `#` ignored; at most 16 headers; names are HTTP tokens and none of `Host`, `Content-Type`, `Content-Length`, `Content-Encoding`, `User-Agent`; values 1 to 4096 printable ASCII bytes. A problem names the line, never its content |
+| `telemetry.otlp.timeout` | 1s to 60s |
+| `telemetry.traces.sample_ratio` | 0 to 1 |
+| `telemetry.resource.attributes` | at most 32 `key=value` pairs; keys `[a-z][a-z0-9._-]{0,62}`, values 1 to 256 printable ASCII bytes without `,` and `=` |
 
 ## Warnings
 
@@ -167,6 +186,8 @@ they do not prevent start.
 | Key | Condition | Message |
 |---|---|---|
 | `upstream.proxy.url` | `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY` (or the lower-case name) is set in the environment and the key is not (`serve` only) | `<VARIABLE>` is set in the environment and is not used; set upstream.proxy.url to send provider traffic through a proxy |
+| `telemetry.resource.attributes` | `OTEL_RESOURCE_ATTRIBUTES` is set in the environment (`serve` only) | `OTEL_RESOURCE_ATTRIBUTES` is set in the environment: the OpenTelemetry SDK adds its attributes to the resource; they never replace those Pandokos sets. The value is never shown |
+| `telemetry.otlp.endpoint` | `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set in the environment and the key is not (`serve` only) | `<VARIABLE>` is set in the environment and is not used; set telemetry.otlp.endpoint to export traces |
 | `listeners.inference.address` | no TLS and the host is not a loopback address or `localhost` | the listener serves plain HTTP; set listeners.inference.tls.cert_file and key_file, or terminate TLS in front of it |
 | `listeners.admin.address` | no TLS, host not loopback, `allow_plaintext` true | the administration API is served without TLS; keys travel in clear text unless TLS ends in front of it |
 | `listeners.admin.allow_plaintext` | true while TLS is configured or the host is loopback | has no effect |

@@ -5,18 +5,30 @@ import (
 	"strings"
 )
 
-// Names of the family and of its only operation.
+// Names of the family, its operations and their native paths (appended to the endpoint base URL).
 const (
 	Name                     = "openai"
 	OperationChatCompletions = "chat.completions"
-	PathChatCompletions      = "/v1/chat/completions" // the native path, appended to the endpoint base URL
+	PathChatCompletions      = "/v1/chat/completions"
+	OperationResponses       = "responses"
+	PathResponses            = "/v1/responses"
+	OperationEmbeddings      = "embeddings"
+	PathEmbeddings           = "/v1/embeddings"
 )
 
-// Match reports the operation for a method and a native path ("/v1/...").
-// Only ("POST", "/v1/chat/completions") matches.
+// Match reports the operation for a method and a native path ("/v1/..."). Only POST to one of
+// the three native paths matches, exactly.
 func Match(method, path string) (operation string, ok bool) {
-	if method == http.MethodPost && path == PathChatCompletions {
+	if method != http.MethodPost {
+		return "", false
+	}
+	switch path {
+	case PathChatCompletions:
 		return OperationChatCompletions, true
+	case PathResponses:
+		return OperationResponses, true
+	case PathEmbeddings:
+		return OperationEmbeddings, true
 	}
 	return "", false
 }

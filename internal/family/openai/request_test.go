@@ -288,18 +288,21 @@ func TestPrepare(t *testing.T) {
 // FuzzParseRequest is T-423: Parse never panics; what it accepts, encoding/json reads the same;
 // the output of Prepare decodes to the upstream model and to the same other members.
 func FuzzParseRequest(f *testing.F) {
-	for _, c := range prepareCases {
-		f.Add([]byte(c.in))
+	for i, c := range prepareCases {
+		f.Add([]byte(c.in), uint8(i))
 	}
-	for _, c := range parseCases {
-		f.Add([]byte(c.in))
+	for i, c := range parseCases {
+		f.Add([]byte(c.in), uint8(i))
 	}
-	for _, c := range prepareModelCases {
-		f.Add([]byte(c.in))
+	for i, c := range prepareModelCases {
+		f.Add([]byte(c.in), uint8(i))
 	}
-	f.Fuzz(func(t *testing.T, in []byte) {
+	f.Add([]byte(`{"model":"m","background":true}`), uint8(1))
+	f.Add([]byte(`{"model":"m","stream":true}`), uint8(2))
+	f.Fuzz(func(t *testing.T, in []byte, which uint8) {
+		op := []string{OperationChatCompletions, OperationResponses, OperationEmbeddings}[int(which)%3]
 		orig := append([]byte(nil), in...)
-		r, err := Parse(in)
+		r, err := ParseOperation(op, in)
 		if !bytes.Equal(in, orig) {
 			t.Fatal("input was modified")
 		}
@@ -337,6 +340,123 @@ func FuzzParseRequest(f *testing.F) {
 		}
 		if len(got) != len(members) && (len(got) != len(members)+1 || members["stream_options"] != nil) {
 			t.Fatalf("the output has %d members, the input %d", len(got), len(members))
+		}
+	})
+}
+
+// TestParseOperation is T-457: the request rules of the three operations and what Prepare does.
+func TestParseOperation(t *testing.T) {
+	all := []string{OperationChatCompletions, OperationResponses, OperationEmbeddings}
+
+	t.Run("the model rules apply to every operation", func(t *testing.T) {
+		for _, op := range all {
+			for _, c := range parseCases {
+				_, err := ParseOperation(op, []byte(c.in))
+				if c.reason == "" {
+					if err != nil {
+						t.Errorf("%s %s: %v", op, c.name, err)
+					}
+					continue
+				}
+				if !errors.Is(err, family.ErrInvalidRequest) || family.InvalidReason(err) != c.reason {
+					t.Errorf("%s %s: %v (reason %q), want %q", op, c.name, err, family.InvalidReason(err), c.reason)
+				}
+			}
+		}
+	})
+
+	t.Run("responses and background", func(t *testing.T) {
+		for _, c := range []struct {
+			name, in, reason string
+		}{
+			{"true", `{"model":"m","background":true}`, "background_not_supported"},
+			{"true with spaces", `{"model":"m","background" :  true }`, "background_not_supported"},
+			{"false", `{"model":"m","background":false}`, ""},
+			{"null", `{"model":"m","background":null}`, ""},
+			{"absent", `{"model":"m","input":"x"}`, ""},
+			{"the last occurrence counts: true last", `{"model":"m","background":false,"background":true}`, "background_not_supported"},
+			{"the last occurrence counts: false last", `{"model":"m","background":true,"background":false}`, ""},
+			{"nested is not top level", `{"model":"m","metadata":{"background":true}}`, ""},
+			{"the string true is not true", `{"model":"m","background":"true"}`, ""},
+			{"the model rules come first", `{"background":true}`, "model_missing"},
+			{"a duplicate model comes first", `{"model":"a","model":"b","background":true}`, "model_duplicate"},
+		} {
+			r, err := ParseOperation(OperationResponses, []byte(c.in))
+			if c.reason != "" {
+				if r != nil || !errors.Is(err, family.ErrInvalidRequest) || family.InvalidReason(err) != c.reason {
+					t.Errorf("%s: %v %v, want reason %q", c.name, r, err, c.reason)
+				}
+				continue
+			}
+			if err != nil {
+				t.Errorf("%s: %v", c.name, err)
+			}
+		}
+		for _, op := range []string{OperationChatCompletions, OperationEmbeddings} {
+			if _, err := ParseOperation(op, []byte(`{"model":"m","background":true}`)); err != nil {
+				t.Errorf("%s refuses background: %v", op, err)
+			}
+		}
+	})
+
+	t.Run("responses streams as chat does", func(t *testing.T) {
+		for in, want := range map[string]bool{
+			`{"model":"m","stream":true}`: true, `{"model":"m","stream":false}`: false, `{"model":"m"}`: false,
+			`{"model":"m","stream":true,"stream":false}`: false, `{"model":"m","stream":"yes"}`: false,
+		} {
+			r, err := ParseOperation(OperationResponses, []byte(in))
+			if err != nil || r.Stream() != want {
+				t.Errorf("%s: stream=%v %v, want %v", in, r != nil && r.Stream(), err, want)
+			}
+		}
+	})
+
+	t.Run("embeddings never stream", func(t *testing.T) {
+		r, err := ParseOperation(OperationEmbeddings, []byte(`{"model":"m","stream":true,"input":"x"}`))
+		if err != nil || r.Stream() {
+			t.Fatalf("stream=%v %v", r != nil && r.Stream(), err)
+		}
+		if out, strip := r.Prepare("m"); strip || string(out) != `{"model":"m","stream":true,"input":"x"}` {
+			t.Errorf("Prepare: %q %v", out, strip)
+		}
+	})
+
+	t.Run("Prepare splices the usage option for chat only and replaces the model for all", func(t *testing.T) {
+		const in = `{"model":"nick","stream":true,"input":"x"}`
+		want := map[string]struct {
+			out   string
+			strip bool
+		}{
+			OperationChatCompletions: {`{"model":"up","stream":true,"input":"x","stream_options":{"include_usage":true}}`, true},
+			OperationResponses:       {`{"model":"up","stream":true,"input":"x"}`, false},
+			OperationEmbeddings:      {`{"model":"up","stream":true,"input":"x"}`, false},
+		}
+		for _, op := range all {
+			body := []byte(in)
+			r, err := ParseOperation(op, body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, strip := r.Prepare("up")
+			if string(out) != want[op].out || strip != want[op].strip {
+				t.Errorf("%s: %q %v, want %q %v", op, out, strip, want[op].out, want[op].strip)
+			}
+			if string(body) != in {
+				t.Errorf("%s: Prepare modified the caller's bytes", op)
+			}
+			// The same name: no change at all for the operations that splice nothing.
+			if op != OperationChatCompletions {
+				if out, strip := r.Prepare("nick"); strip || &out[0] != &body[0] {
+					t.Errorf("%s: a request that needs no change is not the input slice", op)
+				}
+			}
+		}
+	})
+
+	t.Run("Parse stays chat", func(t *testing.T) {
+		r, err := Parse([]byte(`{"model":"m","background":true,"stream":true}`))
+		if err != nil || !r.Stream() {
+			t.Fatalf("%v %v", r, err)
 		}
 	})
 }

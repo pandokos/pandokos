@@ -1,4 +1,4 @@
-// Package telemetry provides the structured logger and its redaction. OpenTelemetry comes later.
+// Package telemetry provides the structured logger and its redaction, and the trace provider.
 package telemetry
 
 import (

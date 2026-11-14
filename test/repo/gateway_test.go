@@ -160,6 +160,23 @@ func TestGatewayGuide(t *testing.T) {
 		}
 	})
 
+	// Sprint 3.2 (section 5.2, 5.3 and 5.5): the three operations, background processing, the
+	// metadata headers, the first-byte time and the fields the ledger adds to the log line.
+	t.Run("operations, metadata and log fields", func(t *testing.T) {
+		for _, op := range openai.Adapter().Operations() {
+			for _, w := range []string{op.Name, op.Path} {
+				if !strings.Contains(doc, w) {
+					t.Errorf("gateway.md does not name %s", w)
+				}
+			}
+		}
+		for _, w := range []string{"background", "X-Pandokos-Metadata-", "X-Pandokos-Metadata-Dropped", "ttfb_ms", "record_id", "trace_id", "cost_status", "usage_source", "ledger: full", "0024"} {
+			if !strings.Contains(doc, w) {
+				t.Errorf("gateway.md lacks %q", w)
+			}
+		}
+	})
+
 	t.Run("the keys", func(t *testing.T) {
 		for _, k := range []string{"upstream.tls.ca_file", "upstream.proxy.url", "PANDOKOS_UPSTREAM_TLS_CA_FILE", "PANDOKOS_UPSTREAM_PROXY_URL"} {
 			if !strings.Contains(doc, k) {

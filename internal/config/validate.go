@@ -80,6 +80,8 @@ func validate(c *Config, purpose Purpose) []Problem {
 	if purpose == PurposeServe {
 		ps = append(ps, validatePricing(c)...)
 		ps = append(ps, validateUpstream(c)...)
+		ps = append(ps, validateLedger(c)...)
+		ps = append(ps, validateTelemetry(c)...)
 	}
 	if c.Vault.KEK.Provider != "local" {
 		add("vault.kek.provider", "must be local")

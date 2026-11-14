@@ -9,7 +9,9 @@ import (
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/family"
 	"github.com/pandokos/pandokos/internal/family/openai"
+	"github.com/pandokos/pandokos/internal/pricing"
 	"github.com/pandokos/pandokos/internal/secret"
+	"github.com/pandokos/pandokos/internal/usage"
 )
 
 // Target is where an authorized call goes. Every field comes from the catalogue.
@@ -19,6 +21,16 @@ type Target struct {
 	UpstreamModel      string // what the provider receives as model
 	BaseURL            *url.URL
 	Private            bool
+	Prices             []pricing.Version // the model's price versions, from the snapshot that resolved it; read-only
+}
+
+// Recorder receives the usage record of every admitted request.
+type Recorder interface {
+	// Admit reserves room for the record of one request. When it returns false the request
+	// is refused and Record is not called.
+	Admit() bool
+	// Record takes the record of an admitted request. It does not block.
+	Record(r usage.Record)
 }
 
 // Catalogue is the gateway's view of the catalogue.

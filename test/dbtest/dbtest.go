@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/pandokos/pandokos/internal/secret"
 	"github.com/pandokos/pandokos/internal/store"
@@ -457,4 +458,10 @@ func (d *Database) EnvWith(tb testing.TB, extra map[string]string) []string {
 		env = append(env, k+"="+extra[k])
 	}
 	return env
+}
+
+// StateError returns an error the driver reports for the SQLSTATE code, as the database would
+// answer with it; for tests of the code that classifies errors.
+func StateError(code string) error {
+	return &pgconn.PgError{Code: code, Message: "synthetic " + code}
 }

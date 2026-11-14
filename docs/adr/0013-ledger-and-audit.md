@@ -61,3 +61,7 @@ accounting source.
 
 **Audit as log lines.** Not transactional with the change, and not queryable per tenant with
 isolation.
+
+## History
+
+- 2026-11: sprint 3.2 builds the ledger: admission by buffer slots, one transaction per tenant, idempotent inserts, a flush deadline of its own, monthly partitions with a default ([ADR 0039](0039-usage-record-admission-and-ledger-writer.md)).

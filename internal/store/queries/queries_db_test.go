@@ -6,6 +6,7 @@ import (
 	"errors"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -406,6 +407,28 @@ func TestEveryStatement(t *testing.T) {
 			return queries.New(tx).InsertPlatformAuditEvent(c, queries.InsertPlatformAuditEventParams{ActorType: "host", ActorName: "pandokos init",
 				Action: "platform_key.bootstrap", ResourceType: "platform_key", ResourceID: platformKey, Outcome: "success", RequestID: "req-230", Detail: "{}"})
 		}))
+		mark("EnsureUsagePartitions")
+		worker := d.Open(t, store.RoleWorker)
+		must("usage partitions", worker.Platform(c, func(c context.Context, tx store.Tx) error {
+			row, err := queries.New(tx).EnsureUsagePartitions(c, 3)
+			if err == nil && row.DefaultInUse {
+				err = errors.New("the default usage partition is in use")
+			}
+			return err
+		}))
+		mark("InsertUsageRecords")
+		must("usage records", gateway.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
+			rec := `[{"id":"0192f0f0-0000-7000-8000-0000000000a1","started_at":"` + time.Now().UTC().Format(time.RFC3339Nano) +
+				`","request_id":"0123456789abcdef0123456789abcdef","principal_kind":"service_account","principal_id":"0192f0f0-0000-7000-8000-0000000000a2",` +
+				`"funding":"byok","provider":"openai","api_family":"openai","operation":"chat.completions","outcome":"ok","duration_ms":1,` +
+				`"input_source":"none","output_source":"none","cost_status":"none","cost_reason":"","trace_id":"","key_id":"","endpoint":"","model":"",` +
+				`"upstream_model":"","error_code":"","other_units":{},"provider_usage":{},"metadata":{},"metadata_dropped":0}]`
+			n, err := queries.New(tx).InsertUsageRecords(c, rec)
+			if err == nil && n != 1 {
+				err = errors.New("InsertUsageRecords did not insert one row")
+			}
+			return err
+		}))
 		mark("RecordAuthFailure")
 		must("auth failure", gateway.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
 			return queries.New(tx).RecordAuthFailure(c, queries.RecordAuthFailureParams{KeyID: keyScoped, Reason: "bad_secret", RequestID: "0123456789abcdef0123456789abcdef"})
@@ -434,7 +457,7 @@ func TestEveryStatement(t *testing.T) {
 		// Sprint 2.2: the catalogue, the model access and the prices.
 		catalogStatements(c, t, admin, gateway, tid, ten.ID, sa.ID, hash, called)
 
-		// The 93 statements, and nothing was prepared on the server.
+		// The 95 statements, and nothing was prepared on the server.
 		var names []string
 		typ := reflect.TypeOf(&queries.Queries{})
 		for i := 0; i < typ.NumMethod(); i++ {
@@ -443,8 +466,8 @@ func TestEveryStatement(t *testing.T) {
 			}
 		}
 		sort.Strings(names)
-		if len(names) != 93 {
-			t.Errorf("the generated package has %d statements, want 93: %v", len(names), names)
+		if len(names) != 95 {
+			t.Errorf("the generated package has %d statements, want 95: %v", len(names), names)
 		}
 		for _, name := range names {
 			if !called[name] {
@@ -728,4 +751,120 @@ func vaultStatements(c context.Context, t *testing.T, admin, gateway *store.DB, 
 		}
 		return nil
 	}))
+}
+
+// usageJSON is one record in the JSON form the statement takes: every column the table does not
+// default for a NULL (the statement passes NULL explicitly) is present.
+func usageJSON(id string, started time.Time, tenantInJSON, requestID string, extra string) string {
+	rec := `{"id":"` + id + `","started_at":"` + started.UTC().Format(time.RFC3339Nano) + `","request_id":"` + requestID + `",` +
+		`"trace_id":"","principal_kind":"service_account","principal_id":"0192f0f0-0000-7000-8000-0000000000a2","key_id":"",` +
+		`"funding":"byok","provider":"openai","api_family":"openai","operation":"chat.completions","endpoint":"","model":"","upstream_model":"",` +
+		`"outcome":"ok","error_code":"","duration_ms":12,"input_source":"none","output_source":"none","cost_status":"none","cost_reason":"",` +
+		`"other_units":{},"provider_usage":{},"metadata":{},"metadata_dropped":0`
+	if tenantInJSON != "" {
+		rec += `,"tenant_id":"` + tenantInJSON + `"`
+	}
+	if extra != "" {
+		rec += "," + extra
+	}
+	return rec + "}"
+}
+
+// TestUsageQueries is T-479: the generated InsertUsageRecords (rows affected, a second call
+// inserts nothing) and EnsureUsagePartitions run under their roles, directly and through the pooler.
+func TestUsageQueries(t *testing.T) {
+	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
+		c := ctx(t)
+		gateway, worker, admin := d.Open(t, store.RoleGateway), d.Open(t, store.RoleWorker), d.Open(t, store.RoleAdmin)
+		a, b := d.SeedTenant(t, "usage-a"), d.SeedTenant(t, "usage-b")
+		super := d.Super(t)
+		now := time.Now().UTC().Truncate(time.Microsecond)
+		id1, id2 := "0192f0f0-0000-7000-8000-0000000000b1", "0192f0f0-0000-7000-8000-0000000000b2"
+
+		const rich = `"stream":true,"ttfb_ms":5,"request_bytes":100,"response_bytes":200,"input_source":"provider","output_source":"estimated",` +
+			`"input_tokens":9,"cache_read_tokens":3,"estimated_output_tokens":7,"provider_usage":{"prompt_tokens":9},"other_units":{"input_audio_tokens":4},` +
+			`"cost_status":"known","cost":"0.123456789012345678","currency":"USD","price_version_id":"0192f0f0-0000-7000-8000-0000000000c1",` +
+			`"cost_fallbacks":["cache_read"],"metadata":{"team":"alpha"},"metadata_dropped":2,"upstream_status":200,"credential_id":"0192f0f0-0000-7000-8000-0000000000c2"`
+		// Two records of tenant A; the second carries every optional column. Both name tenant B in
+		// the JSON, which the statement must ignore: the tenant is the session's.
+		batch := "[" + usageJSON(id1, now, b.String(), "0123456789abcdef0123456789abcdef", "") + "," +
+			strings.Replace(usageJSON(id2, now.Add(time.Second), b.String(), "fedcba9876543210fedcba9876543210", rich),
+				`"input_source":"none","output_source":"none","cost_status":"none",`, "", 1) + "]"
+		insert := func(db *store.DB, tid tenant.ID, records string) (int64, error) {
+			var n int64
+			err := db.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
+				var err error
+				n, err = queries.New(tx).InsertUsageRecords(c, records)
+				return err
+			})
+			return n, err
+		}
+
+		n, err := insert(gateway, a, batch)
+		if err != nil || n != 2 {
+			t.Fatalf("first insert: %d %v", n, err)
+		}
+		if n, err = insert(gateway, a, batch); err != nil || n != 0 {
+			t.Fatalf("the same batch again: %d %v, want 0 rows", n, err)
+		}
+		var rows int
+		if err := super.QueryRow(c, `SELECT count(*) FROM pandokos.usage_record WHERE tenant_id = $1::uuid`, a.String()).Scan(&rows); err != nil || rows != 2 {
+			t.Fatalf("rows of tenant A: %d %v", rows, err)
+		}
+		if err := super.QueryRow(c, `SELECT count(*) FROM pandokos.usage_record WHERE tenant_id = $1::uuid`, b.String()).Scan(&rows); err != nil || rows != 0 {
+			t.Fatalf("rows of tenant B: %d %v (the JSON must not choose the tenant)", rows, err)
+		}
+
+		var cost, currency, meta, fallbacks string
+		var in, cache, estOut int64
+		var stream bool
+		if err := super.QueryRow(c, `SELECT cost::text, currency, metadata::text, cost_fallbacks::text, input_tokens, cache_read_tokens, estimated_output_tokens, stream
+			FROM pandokos.usage_record WHERE id = $1::uuid`, id2).Scan(&cost, &currency, &meta, &fallbacks, &in, &cache, &estOut, &stream); err != nil {
+			t.Fatal(err)
+		}
+		if cost != "0.123456789012345678" || currency != "USD" || meta != `{"team": "alpha"}` || fallbacks != "{cache_read}" || in != 9 || cache != 3 || estOut != 7 || !stream {
+			t.Errorf("the row came back as %s %s %s %s %d %d %d %v", cost, currency, meta, fallbacks, in, cache, estOut, stream)
+		}
+		var nullCost, noCost bool
+		if err := super.QueryRow(c, `SELECT cost IS NULL, cost_fallbacks = '{}' FROM pandokos.usage_record WHERE id = $1::uuid`, id1).Scan(&nullCost, &noCost); err != nil || !nullCost || !noCost {
+			t.Errorf("the first row: cost NULL %v, no fallbacks %v (%v)", nullCost, noCost, err)
+		}
+
+		// A violated constraint reaches the caller with its name; a bad cast is an error too.
+		_, err = insert(gateway, a, "["+usageJSON("0192f0f0-0000-7000-8000-0000000000b3", now, "", "BAD", "")+"]")
+		if kind, name, ok := store.ConstraintViolation(err); !ok || kind != "check" || name != "usage_record_request_id_format" {
+			t.Errorf("a bad request ID: %v", err)
+		}
+
+		// The partitions: the migration made them, so nothing is missing and the default is empty.
+		ensure := func(db *store.DB, ahead int32) (queries.EnsureUsagePartitionsRow, error) {
+			var row queries.EnsureUsagePartitionsRow
+			err := db.Unscoped(c, func(c context.Context, tx store.Tx) error {
+				var err error
+				row, err = queries.New(tx).EnsureUsagePartitions(c, ahead)
+				return err
+			})
+			return row, err
+		}
+		row, err := ensure(worker, 3)
+		if err != nil || row.Created != 0 || row.DefaultInUse {
+			t.Errorf("EnsureUsagePartitions(3): %+v %v", row, err)
+		}
+		if row, err = ensure(worker, 6); err != nil || row.Created != 3 {
+			t.Errorf("EnsureUsagePartitions(6) created %+v %v, want 3", row, err)
+		}
+		if row, err = ensure(worker, 6); err != nil || row.Created != 0 {
+			t.Errorf("a second call created %+v %v", row, err)
+		}
+		for _, ahead := range []int32{0, 13, -1} {
+			if _, err := ensure(worker, ahead); store.SQLState(err) != "23514" {
+				t.Errorf("EnsureUsagePartitions(%d): %v, want check_violation", ahead, err)
+			}
+		}
+		for name, db := range map[string]*store.DB{"gateway": gateway, "admin": admin} {
+			if _, err := ensure(db, 3); store.SQLState(err) != "42501" {
+				t.Errorf("the %s role executed ensure_usage_partitions: %v", name, err)
+			}
+		}
+	})
 }

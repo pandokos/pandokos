@@ -28,6 +28,8 @@ type StreamReader interface {
 	Flush() []byte
 	Usage() (Usage, bool)
 	Failed() bool
+	// Deltas counts the content events seen so far, the evidence of an estimate.
+	Deltas() int64
 }
 
 // Adapter is everything the gateway needs to know about one wire protocol (ADR 0009).
@@ -42,6 +44,8 @@ type Adapter interface {
 	ParseRequest(op Operation, body []byte) (Request, error) // wraps ErrInvalidRequest
 	ReadUsage(op Operation, body []byte) (Usage, bool, error)
 	NewStreamReader(op Operation, strip bool) StreamReader
+	// EstimateUsage estimates the usage of a request whose provider reported none.
+	EstimateUsage(op Operation, e Evidence) Usage
 	WriteError(w http.ResponseWriter, code ErrorCode)
 }
 

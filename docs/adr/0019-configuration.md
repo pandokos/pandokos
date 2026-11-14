@@ -50,3 +50,7 @@ not work for a multi-tenant product administered by its tenants.
 
 **Everything in the database.** The bootstrap problem, and no safe place for the settings that
 protect the database itself.
+
+## History
+
+- 2026-11: sprint 3.2: OTEL_* variables are not configuration; the SDK still reads OTEL_RESOURCE_ATTRIBUTES, which is warned about.

@@ -56,3 +56,7 @@ would see `"usage":null`; the official SDK does not mind.
   remove an event.
 - Not adding the option and estimating instead: loses the provider's exact count for the most
   common call shape.
+
+## History
+
+- 2026-11: sprint 3.2 confirms the decision for chat streams; the responses and embeddings operations need no option.

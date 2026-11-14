@@ -265,7 +265,12 @@ func TestPlanesDoNotImportEachOther(t *testing.T) {
 	rules := map[string][]string{
 		// Sprint 3.1 (T-R25): the gateway receives two http.RoundTrippers and three interfaces; it
 		// reaches neither the resolver that adapts the real ones nor the egress guard.
-		"gateway": {"admin", "adminapi", "authn", "cli", "store", "vault", "catalog", "config", "server", "resolver", "egress"},
+		// Sprint 3.2 (T-R28): it sees the ledger as gateway.Recorder and takes a trace provider as a
+		// value: neither the ledger nor the telemetry package is below it.
+		"gateway": {"admin", "adminapi", "authn", "cli", "store", "vault", "catalog", "config", "server", "resolver", "egress", "ledger", "telemetry"},
+		// Sprint 3.2: the usage record is a leaf below the gateway and the ledger.
+		"usage":  {"admin", "adminapi", "authn", "authz", "cli", "config", "gateway", "server", "store", "vault", "catalog", "resolver", "egress", "ledger", "telemetry"},
+		"ledger": {"admin", "adminapi", "authn", "authz", "cli", "config", "gateway", "server", "vault", "catalog", "resolver", "egress", "telemetry"},
 		// internal/family itself (the leaf: Usage, error codes) is allowed: the catalogue prices
 		// usage (pricing.CostOf takes family.Usage) and the administration plane reaches the
 		// catalogue (sprint 2.2, C8). Its subpackages (the adapters) are not: see below.
@@ -451,6 +456,12 @@ func TestPlanesDoNotImportEachOther(t *testing.T) {
 func TestReferenceDocuments(t *testing.T) {
 	t.Run("permissions", func(t *testing.T) {
 		doc := read(t, "docs/reference/permissions.md")
+		// Sprint 3.2: the two new operations need the same pair of permissions.
+		for _, w := range []string{"responses", "embeddings"} {
+			if !strings.Contains(doc, w) {
+				t.Errorf("permissions.md does not name the operation %s", w)
+			}
+		}
 		lines := strings.Split(doc, "\n")
 		has := func(parts ...string) bool {
 			for _, l := range lines {

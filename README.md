@@ -46,8 +46,8 @@ Pandokos is deliberately not an identity provider, an agent or workflow framewor
 - [Requirements](docs/requirements/README.md): what Pandokos must guarantee, by release.
 - [Architecture](docs/architecture/overview.md), with the [data model](docs/architecture/data-model.md) and the [security model](docs/architecture/security-model.md).
 - [Decision records](docs/adr/README.md): why it is built this way.
-- [Configuration reference](docs/operations/configuration.md), the [database guide](docs/operations/database.md), [keys, `init` and revocation](docs/operations/keys.md), the [vault and the key-encryption key](docs/operations/vault.md), the [catalogue and prices](docs/operations/catalogue.md), the [gateway guide](docs/operations/gateway.md), [TLS](docs/operations/tls.md) and [running the container image](docs/operations/container.md), including how to verify a release.
-- Reference: the [administration API](docs/reference/admin-api.md) and the [permissions and built-in roles](docs/reference/permissions.md).
+- [Configuration reference](docs/operations/configuration.md), the [database guide](docs/operations/database.md), [keys, `init` and revocation](docs/operations/keys.md), the [vault and the key-encryption key](docs/operations/vault.md), the [catalogue and prices](docs/operations/catalogue.md), the [gateway guide](docs/operations/gateway.md), [usage and the ledger](docs/operations/usage.md), [telemetry](docs/operations/telemetry.md), [TLS](docs/operations/tls.md) and [running the container image](docs/operations/container.md), including how to verify a release.
+- Reference: the [administration API](docs/reference/admin-api.md), the [permissions and built-in roles](docs/reference/permissions.md) and the [data flows](docs/reference/data-flows.md): what each destination receives.
 - [History](docs/history/README.md): the record of each completed epic, with the designs of its sprints.
 - [Planning](planning/roadmap.md): epics and sprints.
 

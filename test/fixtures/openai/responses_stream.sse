@@ -1,0 +1,15 @@
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_fixture0001","object":"response","created_at":1700000000,"status":"in_progress","model":"fake-basic","output":[],"usage":null}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":1,"item_id":"msg_fixture0001","output_index":0,"content_index":0,"delta":"pandokos-canary-completion-5f2a9c"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":2,"item_id":"msg_fixture0001","output_index":0,"content_index":0,"delta":" end"}
+
+event: response.output_text.done
+data: {"type":"response.output_text.done","sequence_number":3,"item_id":"msg_fixture0001","output_index":0,"content_index":0,"text":"pandokos-canary-completion-5f2a9c end"}
+
+event: response.completed
+data: {"type":"response.completed","sequence_number":4,"response":{"id":"resp_fixture0001","object":"response","created_at":1700000000,"status":"completed","model":"fake-basic","output":[{"type":"message","id":"msg_fixture0001","status":"completed","role":"assistant","content":[{"type":"output_text","text":"pandokos-canary-completion-5f2a9c end","annotations":[]}]}],"usage":{"input_tokens":20,"input_tokens_details":{"cached_tokens":5},"output_tokens":15,"output_tokens_details":{"reasoning_tokens":4},"total_tokens":35}}}
+

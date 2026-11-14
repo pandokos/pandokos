@@ -92,8 +92,10 @@ The secret files must be readable by user 65532. All settings are described in t
 | Endpoint | Purpose |
 |---|---|
 | `GET /healthz` | Liveness: 200 whenever the process answers |
-| `GET /readyz` | Readiness: 200 when the listener is bound, the process is not draining and every registered check passes, including one check per database role (`database-gateway`, `database-admin`, `database-worker`: the database answers and its schema still matches the binary); otherwise 503 |
+| `GET /readyz` | Readiness: 200 when the listener is bound, the process is not draining and every registered check passes, including one check per database role (`database-gateway`, `database-admin`, `database-worker`: the database answers and its schema still matches the binary) and the check `ledger` (fails with `ledger: buffer full` while the usage ledger buffer is full, see the [usage guide](usage.md)); otherwise 503 |
 | `POST /openai/v1/chat/completions` | OpenAI chat completions, streaming and not streaming |
+| `POST /openai/v1/responses` | OpenAI responses, streaming and not streaming; background processing is refused |
+| `POST /openai/v1/embeddings` | OpenAI embeddings |
 
 Any other path or method gets 404 `endpoint_not_supported`. A caller presents the static access
 token as `Authorization: Bearer <token>`. An SDK needs only a different base URL and key:
@@ -147,17 +149,20 @@ header values, bodies and query strings never appear. Values of sensitive keys a
 |---|---|---|
 | `request_id` | always | 32 hexadecimal characters; the same value as the response header wherever that header is sent (not on the health endpoints) |
 | `method` | always | the HTTP method, or `OTHER` |
-| `route` | always | `POST /openai/v1/chat/completions`, `GET /healthz`, `GET /readyz` or `unmatched` |
+| `route` | always | `POST /openai/v1/chat/completions` (or the route of another operation), `GET /healthz`, `GET /readyz` or `unmatched` |
 | `status` | always | status sent to the caller, 0 if none |
 | `outcome` | always | `ok`, `pandokos_error`, `client_cancelled`, `client_error`, `timeout`, `upstream_aborted`, `shutdown_aborted` |
 | `error_code` | when Pandokos raised the error | the `X-Pandokos-Error` code |
 | `duration_ms` | always | wall time of the handler |
-| `provider`, `operation` | proxied route | `openai`, `chat.completions` |
+| `provider`, `operation` | proxied route | `openai`, `chat.completions`, `responses` or `embeddings` |
 | `stream`, `usage_injected` | after the body was read | whether a stream was asked for, and whether Pandokos added the usage option |
-| `upstream_status`, `ttfb_ms` | when the provider answered | provider status, and time to its response headers |
+| `upstream_status` | when the provider answered | provider status |
+| `ttfb_ms` | when a body byte arrived | time to the first byte of the response body |
 | `request_bytes`, `response_bytes` | when known | body bytes received and sent |
-| `usage_source` | after the body was read | `provider` or `none` |
+| `usage_source` | when the provider answered | `provider`, `estimated` or `none` |
 | `usage` | when `usage_source` is `provider` | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `reasoning_tokens`, plus one entry per non-zero provider-specific category |
+
+The usage record adds `record_id`, `trace_id`, `cost_status`, `cost`, `currency`, `metadata_count`, `metadata_dropped`, `usage_reader` and `ledger` (see the [gateway guide](gateway.md), section 10).
 
 Health requests are logged at level debug, everything else at info.
 
@@ -171,13 +176,23 @@ Health requests are logged at level debug, everything else at info.
 | `upstream.connect_timeout` | TCP connect and TLS handshake towards the provider |
 | `listeners.inference.idle_timeout` | idle keep-alive connections |
 | `shutdown.drain_timeout` | draining at shutdown |
+| `ledger.shutdown_flush_timeout` | writing the usage records still in memory, after the drain |
 
 ## Shutdown
 
 On SIGTERM or SIGINT readiness goes to 503, the listener closes and in-flight requests, streams
 included, continue until they finish or `shutdown.drain_timeout` passes. Requests still running
-then are cancelled, which releases their provider connections. The process exits with code 0. A
-second signal during the drain ends it at once.
+then are cancelled, which releases their provider connections. The usage records of all requests,
+the cancelled ones included, are then written to the database and the traces are flushed, together
+under `ledger.shutdown_flush_timeout` (default 10 s); records that cannot be written are logged in
+full (`usage record not written`, see the [usage guide](usage.md)). The process exits with code 0
+within `shutdown.drain_timeout` plus, when requests were still running at the end of the drain, up to
+5 s for the cancelled handlers to record, plus `ledger.shutdown_flush_timeout`, plus about a second.
+**Give the container a stop grace period at least that long** plus a margin (worst case with the
+defaults: 30 s + 5 s + 10 s + 1 s = 46 s: use
+`docker stop -t 60`, `stop_grace_period: 60s` in Compose or `terminationGracePeriodSeconds: 60`);
+otherwise the runtime kills the process and the records in memory are lost. A second signal during
+the drain ends the process at once and loses them too.
 
 ## Verifying a release
 
@@ -201,7 +216,7 @@ dependencies are the same on both platforms.
 
 ## Limits of this pre-release
 
-The inference listener forwards chat completions of the `openai` family with the tenant's stored
+The inference listener forwards chat completions, responses and embeddings of the `openai` family with the tenant's stored
 credential; see the [gateway guide](gateway.md) for what a call needs and what reaches the provider. It
-speaks plain HTTP, so terminate TLS in front of it. It records no usage yet and has no retries. Do not
+speaks plain HTTP, so terminate TLS in front of it. It writes a usage record for every authenticated request ([usage guide](usage.md)) and exports traces when a collector is configured ([telemetry guide](telemetry.md)). It has no retries. Do not
 expose it to the internet and do not use it for production.

@@ -101,14 +101,14 @@ flowchart TB
         resolve[resolver<br/>provider, endpoint, credential]
         fwd[forwarder<br/>streaming reverse proxy]
         families[API families<br/>openai, anthropic, gemini]
-        meter[meter<br/>usage, price]
+        meter[usage<br/>record, outcome, cost]
     end
     subgraph shared[shared packages]
         vault[vault<br/>envelope encryption]
         catalog[catalogue cache]
-        ledger[ledger writer]
+        ledger[ledger<br/>writer, partitions]
         audit[audit writer]
-        telemetry[telemetry]
+        telemetry[telemetry<br/>traces over OTLP]
         store[store<br/>pgx, RLS sessions]
     end
     authn --> authz --> limits --> resolve --> fwd --> meter
@@ -142,7 +142,15 @@ flowchart TB
   [ADR 0010](../adr/0010-usage-extraction.md)).
 - **vault** encrypts and decrypts provider credentials
   ([ADR 0008](../adr/0008-vault-envelope-encryption.md)).
-- **ledger** and **audit** append records ([ADR 0013](../adr/0013-ledger-and-audit.md)).
+- **usage** (`internal/usage`) is the record of one request, the identifier of a record and the
+  parsing of caller metadata; it holds no content ([ADR 0039](../adr/0039-usage-record-admission-and-ledger-writer.md)).
+- **ledger** (`internal/ledger`) admits requests by buffer slots, batches records per tenant into the
+  database and keeps the monthly partitions; **audit** appends audit records
+  ([ADR 0013](../adr/0013-ledger-and-audit.md)). The gateway knows the ledger only through the
+  `Recorder` interface; `cmd/pandokos` wires it.
+- **telemetry** (`internal/telemetry`) builds the trace provider with the OpenTelemetry SDK and the
+  OTLP/HTTP exporter; the gateway uses only the API packages
+  ([ADR 0040](../adr/0040-traces.md)).
 
 ## 5. The life of a request
 
@@ -156,6 +164,7 @@ sequenceDiagram
     participant D as PostgreSQL
     C->>G: POST /anthropic/v1/messages (x-api-key: pdk_…)
     G->>G: Authenticate, build principal (cache)
+    G->>G: Admit: take a ledger slot
     G->>G: Parse model and stream flag, authorize model
     G->>K: Reserve requests, tokens, budget
     G->>G: Resolve endpoint and credential, decrypt (cache)
@@ -164,7 +173,7 @@ sequenceDiagram
     G-->>C: Forward bytes as they arrive
     G->>G: Read usage from the response
     G->>K: Settle reservation with actual usage
-    G->>D: Append usage record (batched)
+    G-)D: Append usage record (batched, after the response)
 ```
 
 1. **Route.** The first path segment names a provider in the catalogue: `/openai/v1/…`,
@@ -174,26 +183,35 @@ sequenceDiagram
    (`Authorization: Bearer` for OpenAI, `x-api-key` for Anthropic), so stock SDKs work unchanged.
    A value with the `pdk_` prefix is a virtual key; anything else is treated as a JWT. The lookup
    result is cached in memory for a short time.
-3. **Authorize.** Both `model:invoke` and `credential:use` are decided from the principal before
+3. **Admit and attribute.** Right after authentication the request takes a slot of the ledger buffer
+   (step 3a, `Admit`); without a free slot it is refused with `unavailable` and has no record. Then
+   caller metadata and trace context are read and the server span is started (step 3b). Nothing of
+   this runs for an unauthenticated request. From here on exactly one usage record is written,
+   whatever happens.
+4. **Authorize.** Both `model:invoke` and `credential:use` are decided from the principal before
    the body is read. Then the body is read up to a size limit and only the fields Pandokos needs are
    parsed: model, stream flag (and, in later sprints, the output-token limit). The model must be
    available to the tenant and allowed by the key.
-4. **Reserve.** An estimate of the request's cost is reserved against every applicable limit. If
+5. **Reserve.** An estimate of the request's cost is reserved against every applicable limit. If
    any limit would be exceeded the request ends here with a 429 in the API family's error shape.
-5. **Resolve.** Funding mode, endpoint and credential come from the catalogue (limits, step 4, are
+6. **Resolve.** Funding mode, endpoint and credential come from the catalogue (limits, step 5, are
    not built yet, so in the code this step follows the model check directly). The credential is
    decrypted, or taken from a short-lived in-memory cache.
-6. **Forward.** Inbound credentials are stripped, the provider credential is injected, the
+7. **Forward.** Inbound credentials are stripped, the provider credential is injected, the
    request goes to the catalogue host and nowhere else. The response is copied to the caller as
-   it arrives; a tee feeds the usage reader without delaying the stream.
-7. **Settle.** Usage read from the response replaces the estimate. A usage record is queued for
-   the ledger; for platform-funded calls the billable event is written in the same transaction.
-8. **Trace.** One span covers the provider call and is a child of the caller's trace.
+   it arrives; a copy feeds the usage reader without delaying the stream, and a failure of the reader never changes what the caller receives ([gateway guide](../operations/gateway.md)).
+8. **Finish** (settle). Whichever way the request ends, the outcome, the usage and its sources
+   (provider figures, or a marked estimate when the provider answered 2xx without readable usage)
+   and the cost are decided once; the record is handed to the ledger writer, which never blocks the
+   caller. For platform-funded calls the billable event is written in the same transaction (later
+   release).
+9. **Trace.** The server span covers the request and a child span the provider call; both are
+   children of the caller's trace when it sent one, and end at step 8.
 
 A client that disconnects cancels the upstream request; the reservation is settled with whatever
 usage was observed.
 
-**Latency budget.** With warm caches, steps 2 to 5 involve no network round trip in a
+**Latency budget.** With warm caches, steps 2 to 6 involve no network round trip in a
 single-instance installation and one round trip to Valkey in a multi-instance one. The ledger
 write happens after the response has been delivered.
 
@@ -225,6 +243,11 @@ revocation takes, so these numbers are part of the product's contract (IAM-05, V
 
 **Documented bound: a revocation takes effect within 60 seconds on every instance**, and in
 practice within a second when notifications are flowing. The bound is tested.
+
+When the connection that carries the notifications is lost, the caches are **not** emptied: the
+gateway keeps serving from them while the database is stopped, and empties them when the listener
+connects again, since notifications may have been missed. The bound stays the cache lifetimes above
+(`cache.principal_ttl` and `cache.credential_ttl`, at most 60 s; `cache.catalog_ttl`).
 
 ## 8. Deployment topologies
 
@@ -266,11 +289,11 @@ The rule: when Pandokos cannot verify that a request is allowed, it does not for
 
 | Dependency down | Inference | Administration |
 |---|---|---|
-| PostgreSQL | Continues from caches until they expire, then refuses. Usage records wait in a bounded memory buffer; when it fills, the instance reports not ready and refuses new requests | Unavailable |
+| PostgreSQL | Continues from caches until they expire, then refuses; the caches are not emptied when the notification connection is lost, so the bound is their lifetimes. Usage records wait in a bounded memory buffer whose slots are taken at admission: when it is full, `/readyz` fails and new authenticated requests are refused with 503, and those are the only ones without a record | Unavailable |
 | Valkey | Refuses by default. Configurable to continue with per-instance counters | Unaffected |
 | KEK provider | Continues while data keys are cached, then refuses | Credential writes fail |
 | Identity provider | Tokens verify while the JWKS is cached. Virtual keys unaffected | Sign-in through the IdP is unavailable. Open sessions, local accounts and keys are unaffected |
-| OTLP collector | Unaffected; telemetry is dropped | Unaffected |
+| OTLP collector | Unaffected; spans are dropped when the export queue is full | Unaffected |
 | Billing destination | Unaffected; events wait in the outbox | Unaffected |
 | Provider | The provider's error is returned unchanged | Credential validation fails |
 
@@ -314,12 +337,13 @@ internal/
   pricing/               exact decimals, price versions, cost of a usage; pricing/genaiprices reads the price dataset (embedded snapshot)
   vault/                 envelope encryption, key providers, sealer, opener, validator
   limits/                counters: memory and Valkey
-  ledger/  audit/        append-only writers and readers
+  usage/  ledger/        the usage record; its writer, admission and partition keeper
+  audit/                 append-only writer and reader of the audit log
   outbox/  billing/      event relay and destinations
   admin/                 administration API handlers (change and audit in one transaction)
   worker/                background jobs
   store/                 database access: pools per role, tenant transactions, migrator, embedded migrations
-  telemetry/  config/
+  telemetry/  config/    traces over OTLP (OpenTelemetry SDK); settings
 api/openapi/             administration API specification (admin.v1.yaml)
 sqlc.yaml                configuration of the SQL generator; queries in internal/store/queries/sql
 web/console/             console source; its build output is embedded in the binary

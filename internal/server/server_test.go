@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -15,11 +16,14 @@ import (
 	"testing"
 	"time"
 
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
+
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/config"
 	"github.com/pandokos/pandokos/internal/gateway"
 	"github.com/pandokos/pandokos/internal/telemetry"
+	"github.com/pandokos/pandokos/internal/usage"
 	"github.com/pandokos/pandokos/test/fakeprovider"
 	"github.com/pandokos/pandokos/test/fixtures"
 	"github.com/pandokos/pandokos/test/testcert"
@@ -77,6 +81,8 @@ func newOptions(t *testing.T, up *fakeprovider.Server, cfg *config.Config, logs 
 		Catalogue:     catalogueFor(up),
 		Credentials:   testutil.StaticCredentials(map[string]string{"openai": fixtures.CanaryProviderKey}),
 		Egress:        testutil.TestGuard(t),
+		Recorder:      &testutil.MemoryRecorder{},
+		Tracer:        tracenoop.NewTracerProvider(),
 	}
 }
 
@@ -326,6 +332,8 @@ func TestNewValidatesOptions(t *testing.T) {
 		"catalogue":     func(o *Options) { o.Catalogue = nil },
 		"credentials":   func(o *Options) { o.Credentials = nil },
 		"egress":        func(o *Options) { o.Egress = nil },
+		"recorder":      func(o *Options) { o.Recorder = nil },
+		"tracer":        func(o *Options) { o.Tracer = nil },
 	} {
 		o := good()
 		mutate(&o)
@@ -733,4 +741,120 @@ func TestShutdownDuringResolution(t *testing.T) {
 			t.Errorf("shutdown complete: %v", l)
 		}
 	})
+}
+
+// TestReadinessFollowsTheLedger is T-506: /readyz is 503 while the recorder's readiness check
+// fails and 200 when it passes, and the failing check is named in the log.
+func TestReadinessFollowsTheLedger(t *testing.T) {
+	var failing atomic.Bool
+	up := fakeprovider.New(t)
+	logs := &testutil.LogBuffer{}
+	srv, err := New(newOptions(t, up, testConfig(t), logs, &fakeAdmin{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Health().AddCheck("ledger", func(context.Context) error {
+		if failing.Load() {
+			return errors.New("ledger: buffer full")
+		}
+		return nil
+	})
+	if err := srv.Listen(); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- srv.Serve(ctx); close(done) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+		}
+	})
+
+	testutil.Eventually(t, 5*time.Second, "readiness", func() bool { return get(t, srv, "/readyz") == 200 })
+	failing.Store(true)
+	if got := get(t, srv, "/readyz"); got != 503 {
+		t.Errorf("/readyz = %d while the check fails, want 503", got)
+	}
+	lines := logs.Find(t, "readiness check failed")
+	if len(lines) == 0 || lines[len(lines)-1]["check"] != "ledger" || !strings.Contains(lines[len(lines)-1]["error"].(string), "ledger: buffer full") {
+		t.Errorf("the log: %v", lines)
+	}
+	if got := get(t, srv, "/healthz"); got != 200 {
+		t.Errorf("/healthz = %d: liveness does not follow the ledger", got)
+	}
+	failing.Store(false)
+	if got := get(t, srv, "/readyz"); got != 200 {
+		t.Errorf("/readyz = %d after the check passes, want 200", got)
+	}
+}
+
+// TestShutdownRecordsEverything is T-507: streams in flight at the signal that finish within the
+// drain have a record ok; those cut by the deadline have a record cancelled; Serve returns only
+// after every handler recorded.
+func TestShutdownRecordsEverything(t *testing.T) {
+	rec := &testutil.MemoryRecorder{}
+	srv, up, logs, cancel, done, _ := startServerOpts(t, func(c *config.Config) {
+		c.Shutdown.DrainTimeout = config.Duration(700 * time.Millisecond)
+	}, func(o *Options, _ *fakeprovider.Server) { o.Recorder = rec })
+	up.GateEachEvent()
+	testutil.Eventually(t, 5*time.Second, "readiness", func() bool { return get(t, srv, "/readyz") == 200 })
+
+	// The stream that will finish: one event read, the rest held by the provider.
+	resp, err := postStream(t, srv, fakeprovider.ModelBasic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	br := bufio.NewReader(resp.Body)
+	if _, err := testutil.ReadEvent(br); err != nil {
+		t.Fatal(err)
+	}
+	// The call that will be cut: the provider does not answer.
+	hung := make(chan error, 1)
+	go func() {
+		resp, err := postStream(t, srv, fakeprovider.ModelHang)
+		if resp != nil {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+		}
+		hung <- err
+	}()
+	testutil.Eventually(t, 5*time.Second, "both calls in flight", func() bool { return up.InFlight() == 2 })
+
+	cancel() // the signal
+	testutil.Eventually(t, 5*time.Second, "readiness to go down", func() bool { return !srv.Health().Ready(context.Background()) })
+	for i := 0; i < 10; i++ {
+		up.Advance() // the first stream may finish within the drain
+	}
+	rest, err := io.ReadAll(br)
+	if err != nil || !bytes.HasSuffix(rest, []byte("data: [DONE]\n\n")) {
+		t.Fatalf("the first stream did not complete: %v", err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Serve returned %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Serve did not return")
+	}
+	// No waiting: Serve returned, so every handler has recorded.
+	recs := rec.Records()
+	if rec.Admits() != 2 || len(recs) != 2 {
+		t.Fatalf("%d admissions and %d records when Serve returned, want 2 and 2", rec.Admits(), len(recs))
+	}
+	byOutcome := map[usage.Outcome]int{}
+	for _, r := range recs {
+		byOutcome[r.Outcome]++
+	}
+	if byOutcome[usage.OutcomeOK] != 1 || byOutcome[usage.OutcomeCancelled] != 1 {
+		t.Errorf("outcomes %v, want one ok and one cancelled", byOutcome)
+	}
+	if l := logs.Find(t, "shutdown complete"); len(l) != 1 || l[0]["forced"] != true {
+		t.Errorf("shutdown complete: %v", l)
+	}
+	<-hung
 }

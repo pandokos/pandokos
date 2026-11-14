@@ -27,6 +27,7 @@ flowchart LR
     adm -- 3 --> db
     gw -- 4 --> kek[KEK provider]
     gw -- 5 --> provider[Provider]
+    gw -- 8 --> otel[OTLP collector]
     idp[Identity provider] -- 6 --> gw
     infra[Infrastructure operator] -. 7 .-> gw
     infra -. 7 .-> db
@@ -49,6 +50,12 @@ flowchart LR
    A compromised identity provider can impersonate what it is trusted to assert, which is why
    issuers are scoped (IAM-07).
 7. **Infrastructure operator.** See the next section.
+8. **Gateway to trace collector.** Outbound only, to the one URL the operator configured, through
+   the same guard as provider calls (certificates verified, no proxy, no redirect, forbidden
+   addresses refused). It receives spans made of identifiers and measurements, never content,
+   a header value or caller metadata ([telemetry guide](../operations/telemetry.md),
+   [ADR 0040](../adr/0040-traces.md)); what each destination receives is listed in
+   [data flows](../reference/data-flows.md).
 
 ## What Pandokos does not protect against
 
@@ -97,7 +104,10 @@ disk the operator's database administrators can read, and by auditing every admi
 | Resource exhaustion | Limits on body size, duration and concurrency (GW-16). Bounded buffers everywhere |
 | The audit log is altered | No update or delete grants. Hash chain (AUD-04) |
 | A dependency or the build is compromised | A small dependency set, pinned and scanned. Signed artefacts with provenance and SBOM (SEC-06) |
-| A caller forges trace or metadata to mislead | Both are recorded as declared by the caller and never used in a decision (GW-13, OBS-02) |
+| A caller forges trace or metadata to mislead | Metadata headers and trace context are read only after authentication, so an anonymous caller causes no span and no stored value. Both are recorded as declared by the caller, within bounds (eight short ASCII entries; a sampled flag only makes the caller's own requests sampled), and never used in a decision or forwarded (GW-13, OBS-02, [ADR 0039](../adr/0039-usage-record-admission-and-ledger-writer.md)) |
+| The gateway is used to rewrite or read the usage ledger | The gateway role holds `INSERT` on the listed columns of `usage_record` and nothing else: it cannot read, change or delete a row, even one it wrote; triggers stop the owner too. Rows of every tenant are written in that tenant's session under forced row-level security |
+| A provider smuggles text into the ledger through its usage object | Only non-negative integer members, at most 32, are kept, under keys of a fixed alphabet; every text column of a record is format-checked by the database |
+| The trace collector is used as a way out | The exporter uses the egress guard: one operator-configured URL, certificates verified, no proxy, no redirect, forbidden and metadata addresses refused |
 
 ## Replay exposure
 

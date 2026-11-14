@@ -32,6 +32,10 @@ linters:
             - go/format
             - go/parser
             - go/token
+            - go.opentelemetry.io/otel
+            - go.opentelemetry.io/proto/otlp
+            - google.golang.org/protobuf
+            - github.com/go-logr/logr
         pgx-only-in-store:
           list-mode: lax
           files:
@@ -110,6 +114,47 @@ linters:
               desc: the gateway sees credentials through gateway.Credentials
             - pkg: github.com/pandokos/pandokos/internal/catalog
               desc: the gateway sees the catalogue through gateway.Catalogue
+            - pkg: github.com/pandokos/pandokos/internal/ledger
+              desc: the gateway sees the ledger through gateway.Recorder
+            - pkg: github.com/pandokos/pandokos/internal/telemetry
+              desc: the gateway receives a trace provider through Options
+        otel-sdk-in-telemetry:
+          list-mode: lax
+          files:
+            - "**/cmd/**"
+            - "**/internal/**"
+            - "!**/internal/telemetry/**"
+            - "!$test"
+          deny:
+            - pkg: go.opentelemetry.io/otel/sdk
+              desc: the SDK is imported in internal/telemetry only; use the API packages
+            - pkg: go.opentelemetry.io/otel/exporters
+              desc: the exporter is imported in internal/telemetry only
+            - pkg: github.com/go-logr
+              desc: logr is imported in internal/telemetry only
+            - pkg: go.opentelemetry.io/proto
+              desc: OTLP messages are decoded by tests only
+            - pkg: google.golang.org/protobuf
+              desc: protobuf is used by tests and internal/telemetry only
+        usage-is-a-leaf:
+          list-mode: strict
+          files:
+            - "**/internal/usage/**"
+            - "!$test"
+          allow:
+            - $gostd
+            - github.com/pandokos/pandokos/internal/tenant
+            - github.com/pandokos/pandokos/internal/family
+            - github.com/pandokos/pandokos/internal/pricing
+        ledger-is-wiring:
+          list-mode: lax
+          files:
+            - "**/internal/**"
+            - "!**/internal/ledger/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/pandokos/pandokos/internal/ledger
+              desc: only the command composes the ledger writer
         egress-is-a-leaf:
           list-mode: strict
           files:

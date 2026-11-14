@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
+
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/authz"
@@ -432,6 +434,7 @@ func inferenceHandler(t *testing.T, w *apiWorld) (*httptest.Server, *testutil.Lo
 		DefaultFamily: "openai",
 		Public:        guard.Transport(false), Private: guard.Transport(true),
 		MaxRequestBodyBytes: 1 << 20, RequestBodyReadTimeout: 2 * time.Second, MaxRequestDuration: 10 * time.Second,
+		Recorder: &testutil.MemoryRecorder{}, Tracer: tracenoop.NewTracerProvider(),
 	})
 	if err != nil {
 		t.Fatal(err)

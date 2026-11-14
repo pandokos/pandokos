@@ -331,7 +331,7 @@ func (o *Opener) Invalidate(payload string) {
 	o.flush("unknown_payload")
 }
 
-// Flush empties both caches; the listener calls it when it loses its connection.
+// Flush empties both caches; the listener calls it each time it (re)connects, because notifications may have been missed.
 func (o *Opener) Flush() { o.flush("reset") }
 
 func (o *Opener) epochNow() uint64 {

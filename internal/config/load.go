@@ -52,6 +52,9 @@ func Load(src Source) (*Config, []Warning, error) {
 	known := map[string]bool{"PANDOKOS_CONFIG": true, "PANDOKOS_TEST_REFRESH_DELAY": true} // the second is a test hook of serve, not a key
 	for _, k := range keyTable {
 		known[k.Env] = true
+		if k.serveOnly && src.Purpose != PurposeServe {
+			continue
+		}
 		if v, ok := env[k.Env]; ok {
 			if err := k.set(cfg, v); err != nil {
 				problems = append(problems, Problem{Key: k.Name, Message: err.Error()})
@@ -78,6 +81,7 @@ func warnings(cfg *Config, env map[string]string, known map[string]bool, src Sou
 	ws := listenerAndURLWarnings(cfg)
 	if src.Purpose == PurposeServe {
 		ws = append(ws, proxyEnvironmentWarnings(cfg, src.Environ)...)
+		ws = append(ws, otelEnvironmentWarnings(cfg, src.Environ)...)
 	}
 	var unknown []string
 	for name := range env {

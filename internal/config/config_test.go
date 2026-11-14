@@ -209,6 +209,17 @@ func TestDefaults(t *testing.T) {
 		{"pricing.refresh.enabled", d.Pricing.Refresh.Enabled, false},
 		{"pricing.refresh.url", d.Pricing.Refresh.URL, "https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json"},
 		{"pricing.refresh.interval", time.Duration(d.Pricing.Refresh.Interval), 24 * time.Hour},
+		{"ledger.flush_interval", time.Duration(d.Ledger.FlushInterval), 50 * time.Millisecond},
+		{"ledger.batch_size", d.Ledger.BatchSize, 500},
+		{"ledger.buffer_size", d.Ledger.BufferSize, 10000},
+		{"ledger.shutdown_flush_timeout", time.Duration(d.Ledger.ShutdownFlushTimeout), 10 * time.Second},
+		{"telemetry.otlp.endpoint", d.Telemetry.OTLP.Endpoint, ""},
+		{"telemetry.otlp.protocol", d.Telemetry.OTLP.Protocol, "http/protobuf"},
+		{"telemetry.otlp.headers_file", d.Telemetry.OTLP.HeadersFile, ""},
+		{"telemetry.otlp.timeout", time.Duration(d.Telemetry.OTLP.Timeout), 10 * time.Second},
+		{"telemetry.traces.sample_ratio", d.Telemetry.Traces.SampleRatio, 1.0},
+		{"telemetry.traces.propagate", d.Telemetry.Traces.Propagate, false},
+		{"telemetry.resource.attributes", d.Telemetry.Resource.Attributes, ""},
 	}
 	for _, c := range checks {
 		if !reflect.DeepEqual(c.got, c.want) {
@@ -268,6 +279,17 @@ var wantKeys = []string{
 	"pricing.refresh.enabled",
 	"pricing.refresh.url",
 	"pricing.refresh.interval",
+	"ledger.flush_interval",
+	"ledger.batch_size",
+	"ledger.buffer_size",
+	"ledger.shutdown_flush_timeout",
+	"telemetry.otlp.endpoint",
+	"telemetry.otlp.protocol",
+	"telemetry.otlp.headers_file",
+	"telemetry.otlp.timeout",
+	"telemetry.traces.sample_ratio",
+	"telemetry.traces.propagate",
+	"telemetry.resource.attributes",
 }
 
 var wantDefaultText = []string{"info", "0.0.0.0:8080", "10s", "120s", "65536", "", "", "TLS1.2",
@@ -275,7 +297,8 @@ var wantDefaultText = []string{"info", "0.0.0.0:8080", "10s", "120s", "65536", "
 	"10485760", "30s", "10m", "10s", "", "", "30s", "30s", "30s", "5m", "30s",
 	"", "", "pandokos", "verify-full", "", "5s", "pandokos_gateway", "", "10", "pandokos_admin", "", "10", "pandokos_worker", "", "5", "pandokos_owner", "",
 	"local", "",
-	"true", "false", "https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json", "24h"}
+	"true", "false", "https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json", "24h",
+	"50ms", "500", "10000", "10s", "", "http/protobuf", "", "10s", "1", "false", ""}
 
 func leafKeys(t reflect.Type, prefix string, out *[]string) {
 	for i := 0; i < t.NumField(); i++ {

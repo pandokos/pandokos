@@ -112,7 +112,9 @@ The inference listener keeps the principal of a key for `cache.principal_ttl`. P
 notifications shorten that: the gateway holds one connection that listens for them. A notification
 cannot cross a pooler in transaction mode; when `database.address` is such a pooler, set
 `database.direct_address` to PostgreSQL itself, or the listener logs `cache invalidation
-unavailable` and the bound is the full 30 s. The bound holds with no notification at all. A
+unavailable` and the bound is the full 30 s. The bound holds with no notification at all, and when the listener loses its connection the principal
+cache is not emptied (calls continue from it while the database is stopped); it is emptied when the
+listener connects again. A
 request that was authenticated before the event is not interrupted: a stream that is running
 finishes. The administration API does not cache.
 

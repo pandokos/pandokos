@@ -9,72 +9,54 @@ import (
 
 const maxEventBytes = 1 << 20
 
-type chunk struct {
-	Choices []struct{} `json:"choices"`
-	Usage   *wireUsage `json:"usage"`
+// framing assembles the events of an event stream from chunks cut anywhere. It holds the one
+// incomplete event, nothing else, and gives up when that event passes max bytes.
+type framing struct {
+	max    int
+	failed bool
+	buf    []byte // the incomplete event being assembled
+	scan   int    // index in buf of the first line not examined yet
 }
 
-// StreamReader reads usage from a chat completions event stream, incrementally. With strip
-// set it also removes the usage-only event; otherwise it is a pure tee.
-type StreamReader struct {
-	strip    bool
-	failed   bool
-	buf      []byte // the incomplete event being assembled, nothing else
-	scan     int    // index in buf of the first line not examined yet
-	out      []byte // reused output buffer (strip mode)
-	usage    family.Usage
-	hasUsage bool
-}
-
-// NewStreamReader returns a reader; strip says whether usage-only events are removed.
-func NewStreamReader(strip bool) *StreamReader { return &StreamReader{strip: strip} }
-
-// Filter takes the next bytes of the stream and returns the bytes to forward; the result is
-// valid until the next call.
-func (r *StreamReader) Filter(p []byte) []byte {
-	if r.failed {
-		return p
-	}
-	r.out = r.out[:0]
-	r.buf = append(r.buf, p...)
+// split appends p and calls each for every complete event (valid during the call only). It
+// returns the bytes held when the bound was passed, which the caller must forward: after that the
+// framing holds nothing and has failed.
+func (f *framing) split(p []byte, each func(ev []byte)) (overflow []byte) {
+	f.buf = append(f.buf, p...)
 	start := 0
 	for {
-		end, next := eventEnd(r.buf, r.scan)
-		r.scan = next
+		end, next := eventEnd(f.buf, f.scan)
+		f.scan = next
 		if end < 0 {
 			break
 		}
-		ev := r.buf[start:end]
-		usageOnly := r.inspect(ev)
-		if r.strip && !usageOnly {
-			r.out = append(r.out, ev...)
+		if end-start > f.max { // a complete event over the bound: give up like for an incomplete one
+			f.failed = true
+			overflow = append([]byte(nil), f.buf[start:]...)
+			f.buf, f.scan = nil, 0
+			return overflow
 		}
+		each(f.buf[start:end])
 		start = end
 	}
-	rest := r.buf[start:]
-	if len(rest) > maxEventBytes {
-		r.failed = true
-		if r.strip {
-			r.out = append(r.out, rest...)
-		}
-		r.buf, r.scan = nil, 0
-	} else {
-		r.buf = append(r.buf[:0], rest...)
-		r.scan -= start
+	if rest := f.buf[start:]; len(rest) > f.max {
+		f.failed = true
+		overflow = append([]byte(nil), rest...)
+		f.buf, f.scan = nil, 0
+		return overflow
 	}
-	if !r.strip {
-		return p
+	if start > 0 {
+		n := copy(f.buf, f.buf[start:])
+		f.buf = f.buf[:n]
+		f.scan -= start
 	}
-	return r.out
+	return nil
 }
 
-// Flush returns the bytes still held at the end of the stream.
-func (r *StreamReader) Flush() []byte {
-	if !r.strip || r.failed {
-		return nil
-	}
-	b := r.buf
-	r.buf, r.scan = nil, 0
+// take returns the bytes held and forgets them.
+func (f *framing) take() []byte {
+	b := f.buf
+	f.buf, f.scan = nil, 0
 	return b
 }
 
@@ -96,12 +78,18 @@ func eventEnd(b []byte, scan int) (end, next int) {
 	}
 }
 
-// inspect records the usage carried by a complete event and reports whether the event is a
-// usage-only event.
-func (r *StreamReader) inspect(ev []byte) bool {
+// eventData returns the data of an event: its data: lines without the field name and one leading
+// space, joined with newlines. It returns the event's own bytes when there is a single line.
+func eventData(ev []byte) []byte {
 	var data []byte
 	n := 0
-	for _, line := range bytes.Split(ev, []byte("\n")) {
+	for len(ev) > 0 {
+		var line []byte
+		if i := bytes.IndexByte(ev, '\n'); i >= 0 {
+			line, ev = ev[:i], ev[i+1:]
+		} else {
+			line, ev = ev, nil
+		}
 		line = bytes.TrimSuffix(line, []byte("\r"))
 		if !bytes.HasPrefix(line, []byte("data:")) {
 			continue
@@ -114,14 +102,82 @@ func (r *StreamReader) inspect(ev []byte) bool {
 		}
 		n++
 	}
+	return data
+}
+
+type chunk struct {
+	Choices []json.RawMessage `json:"choices"`
+	Usage   json.RawMessage   `json:"usage"`
+}
+
+// StreamReader reads usage from a chat completions event stream, incrementally. With strip
+// set it also removes the usage-only event; otherwise it is a pure tee.
+type StreamReader struct {
+	framing
+	strip    bool
+	out      []byte // reused output buffer (strip mode)
+	usage    family.Usage
+	hasUsage bool
+	deltas   int64
+}
+
+// NewStreamReader returns a reader; strip says whether usage-only events are removed.
+func NewStreamReader(strip bool) *StreamReader {
+	return &StreamReader{framing: framing{max: maxEventBytes}, strip: strip}
+}
+
+// Filter takes the next bytes of the stream and returns the bytes to forward; the result is
+// valid until the next call.
+func (r *StreamReader) Filter(p []byte) []byte {
+	if r.failed {
+		return p
+	}
+	r.out = r.out[:0]
+	overflow := r.split(p, func(ev []byte) {
+		usageOnly := r.inspect(ev)
+		if r.strip && !usageOnly {
+			r.out = append(r.out, ev...)
+		}
+	})
+	if !r.strip {
+		return p
+	}
+	return append(r.out, overflow...)
+}
+
+// Flush returns the bytes still held at the end of the stream. An event the stream ended in the
+// middle of is still read for its usage, and forwarded, unless it is the usage-only event that
+// Pandokos asked for: that one is removed in strip mode, terminated or not.
+func (r *StreamReader) Flush() []byte {
+	if r.failed {
+		return nil
+	}
+	b := r.take()
+	usageOnly := len(b) > 0 && r.inspect(b)
+	if !r.strip || usageOnly {
+		return nil
+	}
+	return b
+}
+
+// inspect records the usage carried by an event and counts it among the content events, and
+// reports whether the event is a usage-only event.
+func (r *StreamReader) inspect(ev []byte) bool {
+	data := eventData(ev)
 	if len(data) == 0 || data[0] != '{' {
 		return false
 	}
 	var c chunk
-	if err := json.Unmarshal(data, &c); err != nil || c.Usage == nil {
+	if err := json.Unmarshal(data, &c); err != nil {
 		return false
 	}
-	u, err := c.Usage.normalize() // wireUsage → family.Usage; error on a negative count
+	if len(c.Choices) > 0 {
+		r.deltas++
+	}
+	if isAbsent(c.Usage) {
+		return false
+	}
+	u, err := normalizeUsage(OperationChatCompletions, c.Usage) // error on a negative count
 	if err != nil {
 		return false
 	}
@@ -134,3 +190,6 @@ func (r *StreamReader) Usage() (family.Usage, bool) { return r.usage, r.hasUsage
 
 // Failed reports that the reader gave up because an event exceeded the size bound.
 func (r *StreamReader) Failed() bool { return r.failed }
+
+// Deltas counts the chunks with a non-empty choices array seen so far.
+func (r *StreamReader) Deltas() int64 { return r.deltas }

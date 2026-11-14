@@ -249,6 +249,102 @@ type PandokosTenantModelRestriction struct {
 	UpdatedAt time.Time
 }
 
+type PandokosUsageRecord struct {
+	TenantID              string
+	ID                    string
+	StartedAt             time.Time
+	RecordedAt            time.Time
+	RequestID             string
+	TraceID               string
+	PrincipalKind         string
+	PrincipalID           string
+	KeyID                 string
+	CredentialID          *string
+	Funding               string
+	Provider              string
+	ApiFamily             string
+	Operation             string
+	Endpoint              string
+	Model                 string
+	ModelID               *string
+	UpstreamModel         string
+	Stream                *bool
+	Outcome               string
+	ErrorCode             string
+	UpstreamStatus        *int32
+	TtfbMs                *int64
+	DurationMs            int64
+	RequestBytes          *int64
+	ResponseBytes         *int64
+	InputSource           string
+	OutputSource          string
+	InputTokens           *int64
+	OutputTokens          *int64
+	CacheReadTokens       *int64
+	CacheWriteTokens      *int64
+	ReasoningTokens       *int64
+	OtherUnits            string
+	ProviderUsage         string
+	EstimatedInputTokens  *int64
+	EstimatedOutputTokens *int64
+	CostStatus            string
+	CostReason            string
+	Cost                  *string
+	Currency              *string
+	PriceVersionID        *string
+	CostFallbacks         []string
+	Metadata              string
+	MetadataDropped       int32
+}
+
+type PandokosUsageRecordDefault struct {
+	TenantID              string
+	ID                    string
+	StartedAt             time.Time
+	RecordedAt            time.Time
+	RequestID             string
+	TraceID               string
+	PrincipalKind         string
+	PrincipalID           string
+	KeyID                 string
+	CredentialID          *string
+	Funding               string
+	Provider              string
+	ApiFamily             string
+	Operation             string
+	Endpoint              string
+	Model                 string
+	ModelID               *string
+	UpstreamModel         string
+	Stream                *bool
+	Outcome               string
+	ErrorCode             string
+	UpstreamStatus        *int32
+	TtfbMs                *int64
+	DurationMs            int64
+	RequestBytes          *int64
+	ResponseBytes         *int64
+	InputSource           string
+	OutputSource          string
+	InputTokens           *int64
+	OutputTokens          *int64
+	CacheReadTokens       *int64
+	CacheWriteTokens      *int64
+	ReasoningTokens       *int64
+	OtherUnits            string
+	ProviderUsage         string
+	EstimatedInputTokens  *int64
+	EstimatedOutputTokens *int64
+	CostStatus            string
+	CostReason            string
+	Cost                  *string
+	Currency              *string
+	PriceVersionID        *string
+	CostFallbacks         []string
+	Metadata              string
+	MetadataDropped       int32
+}
+
 type PandokosVirtualKey struct {
 	TenantID         string
 	ID               string

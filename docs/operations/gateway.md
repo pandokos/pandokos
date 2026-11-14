@@ -3,7 +3,7 @@
 The inference listener forwards requests of a provider's own API to that provider, on behalf of a
 tenant, with the tenant's stored credential. This page says what a caller sends, what a call needs,
 what Pandokos changes in a request, which errors it answers with, and how outbound connections are
-controlled. It applies from sprint 3.1.
+controlled. It applies from sprint 3.1; sprint 3.2 adds two operations, streaming details, caller metadata and the usage record.
 
 ## 1. Base URLs
 
@@ -18,7 +18,19 @@ Point an SDK at `/<provider>/v1`:
 The key is a Pandokos virtual key, sent in the header the SDK uses for the provider's own key
 (`Authorization: Bearer <key>` for the `openai` family).
 
-Supported operations: `POST /<provider>/v1/chat/completions` (`chat.completions`), streaming or not.
+Supported operations of the `openai` family, each a `POST` to the provider's own path:
+
+| Operation | Path | Streams |
+|---|---|---|
+| `chat.completions` | `/<provider>/v1/chat/completions` | when the body has `stream: true` |
+| `responses` | `/<provider>/v1/responses` | when the body has `stream: true` |
+| `embeddings` | `/<provider>/v1/embeddings` | never |
+
+A `responses` request that asks for background processing (`"background": true`) is refused with
+`invalid_request`: the provider would answer without usage and the result would be fetched from a path
+that is not served. A `responses` body must name `model`; a stored prompt that names the model at the
+provider is refused for the same reason (the model check needs it).
+
 Anything else answers 404 `endpoint_not_supported`: an unknown, disabled or reserved provider name, a
 provider whose API family has no adapter, a path or method that is not on the list. These cases are
 indistinguishable on purpose. Which provider names are served can be learned without a key.
@@ -52,8 +64,10 @@ the native path, without the caller's query.
 
 Two changes to the body:
 
-1. For streaming requests the option that makes the provider send usage in the stream is added
-   (ADR 0024). Every other byte is forwarded as received.
+1. For streaming `chat.completions` requests the option that makes the provider send usage in the
+   stream is added ([ADR 0024](../adr/0024-openai-stream-usage-option.md)). Every other byte is
+   forwarded as received. The `responses` and `embeddings` operations need no option: the provider
+   always reports usage there.
 2. When the model's upstream identifier differs from its public name, the value of `model` is
    replaced by the upstream identifier. The response is not rewritten: the provider's `model` member
    shows the upstream identifier.
@@ -62,7 +76,10 @@ The body must be one JSON object with exactly one top-level string member `model
 refused (`invalid_request`), because parsers disagree on which occurrence counts.
 
 The provider sees the tenant's credential, the allow-listed headers and the body. It never sees the
-virtual key, the caller's other headers, the caller's address or the tenant's identity (PRV-02).
+virtual key, the caller's other headers, the caller metadata, the caller's address or the tenant's
+identity (PRV-02; see [data flows](../reference/data-flows.md)). The one exception to the rule on
+`Traceparent` and `Tracestate`: with `telemetry.traces.propagate` on, Pandokos sets them itself from
+its own span ([telemetry guide](telemetry.md)); the caller's are never copied.
 
 Response headers pass through an allow-list (`Content-Type`, `Content-Length`, `Retry-After`,
 `X-Request-Id`, `X-Ratelimit-*`, `Openai-*`); status and body pass unchanged.
@@ -77,12 +94,12 @@ Response headers pass through an allow-list (`Content-Type`, `Content-Length`, `
 | `model_not_allowed` | 403 | the model is not available to this tenant |
 | `endpoint_not_supported` | 404 | the provider or operation is not served |
 | `no_credential` | 409 | the tenant has no usable credential for the provider |
-| `invalid_request` | 400 | the body is not one JSON object with one string member `model` |
+| `invalid_request` | 400 | the body is not one JSON object with one string member `model`, or a `responses` request asks for background processing |
 | `request_timeout` | 408 | the body was not received within `limits.request_body_read_timeout` |
 | `request_too_large` | 413 | the body is over `limits.max_request_body_bytes` |
 | `upstream_unreachable` | 502 | the provider could not be reached, the egress guard refused the connection, or the provider answered with a redirect |
 | `upstream_timeout` | 504 | the provider did not answer headers within `limits.max_request_duration` |
-| `unavailable` | 503 | the catalogue, the key or the credential could not be verified |
+| `unavailable` | 503 | the catalogue, the key or the credential could not be verified, or the usage ledger buffer is full (the log line has `ledger: full`; no usage record is written for that request) |
 | `internal` | 500 | an unexpected failure |
 
 Every Pandokos error carries the headers `X-Pandokos-Error` (the code) and `X-Pandokos-Request-Id`,
@@ -99,6 +116,35 @@ the text of an underlying error.
 SDKs retry 408 and 409 by default. `request_timeout` and `no_credential` can therefore be retried
 by the client; the second one will keep failing until a credential exists.
 
+## 4a. Streaming
+
+A stream is forwarded as the provider sends it: each read from the provider is written to the caller
+and flushed before the next read, with no timer or buffer of Pandokos's in between. Two modes:
+
+- **Observe**: the caller asked for usage itself, or the operation is `responses`. The caller gets
+  exactly the bytes the provider sent, in the same writes. Pandokos reads a copy for usage.
+- **Strip**: a `chat.completions` stream whose usage option Pandokos added. Every complete event is
+  forwarded as soon as its terminating blank line arrives, except the usage-only event, which is
+  removed. In this mode events are forwarded whole, not byte by byte. **The one observable
+  difference** ([ADR 0024](../adr/0024-openai-stream-usage-option.md)): the provider also puts
+  `"usage":null` in every other chunk when the option is on, and that member is left in place.
+
+If the usage reader fails (an event over its bound, a malformed answer, an internal error) it is
+abandoned: the rest of the stream is forwarded unchanged, the usage of the request is estimated, and
+`usage reader failed` is logged without data. In strip mode the bytes of an incomplete event it held
+are lost.
+
+**`ttfb_ms`** is the time from the start of the request to the first byte of the provider's response
+body, for streams and plain answers alike; it is absent when no body byte arrived.
+
+## 4b. Caller metadata and the usage record
+
+Headers named `X-Pandokos-Metadata-<key>` label a request. After authentication, at most eight short
+ASCII entries are read and stored in the usage record, never forwarded; entries outside the bounds
+are dropped and their number is returned in the response header `X-Pandokos-Metadata-Dropped` when not
+zero. The bounds and the warning about personal data are in the [usage guide](usage.md), which also
+describes the usage record every authenticated request leaves.
+
 ## 5. Limits
 
 | Limit | Key (default) | When exceeded |
@@ -111,7 +157,12 @@ by the client; the second one will keep failing until a credential exists.
 | Provider response headers | 262144 bytes | 502 `upstream_unreachable` |
 
 On shutdown readiness goes down, in-flight requests continue for `shutdown.drain_timeout`, and a
-request that has not been forwarded by then is not forwarded.
+request that has not been forwarded by then is not forwarded. The usage records are then written
+under `ledger.shutdown_flush_timeout` ([usage guide](usage.md)).
+
+When the ledger buffer (`ledger.buffer_size`) is full, the instance answers 503 `unavailable` to new
+authenticated requests and `/readyz` fails with the check `ledger`, until the slots in use fall to half
+of the buffer.
 
 ## 6. Outbound connections
 
@@ -174,3 +225,20 @@ skeleton`, and the two environment variables are reported as unknown and ignored
 `pandokos migrate`, if `skeleton.openai.base_url` was not the default, point the endpoint of `openai`
 elsewhere with `pandokos endpoint update` (the base URL is now written without `/v1`), and have each
 tenant register its own credential with `pandokos credential create --provider openai`.
+
+## 10. Log fields of a request
+
+The `request` line of the [container guide](container.md) gains these fields from sprint 3.2:
+
+| Field | Present | Meaning |
+|---|---|---|
+| `record_id` | the request was admitted | the ID of its usage record |
+| `trace_id` | the request has a trace | 32 hexadecimal characters |
+| `cost_status` | the request was admitted | `known`, `unknown` or `none` |
+| `cost`, `currency` | the cost is known | the amount and its currency |
+| `usage_source` | the provider answered | `provider`, `estimated` or `none` |
+| `metadata_count`, `metadata_dropped` | metadata was sent / entries were dropped | counts, never values |
+| `usage_reader` | the reader gave up | `failed` |
+| `ledger` | step 3a refused the request | `full` (written `ledger: full` in this guide) |
+
+`ttfb_ms` now means the first body byte (section 4a).

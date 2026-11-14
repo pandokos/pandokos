@@ -93,7 +93,7 @@ func TestImage(t *testing.T) {
 
 	// The image creates the schema with its migrate command.
 	migrateArgs := append(append([]string{"run", "--rm"}, hardened...), dbEnv...)
-	if out := docker(t, append(migrateArgs, image, "migrate")...); !strings.Contains(out, "schema is at version 5") {
+	if out := docker(t, append(migrateArgs, image, "migrate")...); !strings.Contains(out, "schema is at version 6") {
 		t.Fatalf("migrate output: %q", out)
 	}
 
@@ -195,6 +195,16 @@ func TestImage(t *testing.T) {
 	if !strings.HasSuffix(body, "data: [DONE]\n\n") {
 		t.Fatalf("streaming call: %d %q", status, body)
 	}
+
+	// T-72: the streamed call left one usage row for the tenant, read from the provider.
+	super := d.Super(t)
+	testutil.Eventually(t, 20*time.Second, "the usage row of the streamed call", func() bool {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		var n int
+		err := super.QueryRow(ctx, `SELECT count(*) FROM pandokos.usage_record WHERE tenant_id = $1::uuid AND outcome = 'ok' AND input_source = 'provider'`, tid[1]).Scan(&n)
+		return err == nil && n == 1
+	})
 
 	// The same fake, now through a public endpoint: the admin API refuses an http URL or a
 	// loopback literal there, so the endpoint is https://localhost:<port>. It passes the

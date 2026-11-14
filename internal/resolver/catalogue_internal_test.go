@@ -17,17 +17,33 @@ import (
 // (the unexported interface `source`, which NewCatalogue satisfies with a *catalog.Cache). It
 // serves a snapshot that need not satisfy the constraints of the database.
 type fakeSource struct {
-	snap *catalog.Snapshot
-	err  error
+	snap  *catalog.Snapshot
+	err   error
+	reads *int // how many times the snapshot was read, when not nil
 }
 
-func (f fakeSource) Snapshot(context.Context) (*catalog.Snapshot, error) { return f.snap, f.err }
+func (f fakeSource) read() {
+	if f.reads != nil {
+		*f.reads++
+	}
+}
+
+func (f fakeSource) Snapshot(context.Context) (*catalog.Snapshot, error) {
+	f.read()
+	return f.snap, f.err
+}
 
 func (f fakeSource) Resolve(_ context.Context, p authz.Principal, provider, name string) (catalog.Model, catalog.Endpoint, error) {
+	f.read()
 	if f.err != nil {
 		return catalog.Model{}, catalog.Endpoint{}, f.err
 	}
 	return f.snap.Resolve(p, catalog.TenantAccess{}, provider, name)
+}
+
+func (f fakeSource) ResolveIn(ctx context.Context, p authz.Principal, provider, name string) (*catalog.Snapshot, catalog.Model, catalog.Endpoint, error) {
+	m, e, err := f.Resolve(ctx, p, provider, name)
+	return f.snap, m, e, err
 }
 
 func testPrincipal() authz.Principal {
@@ -83,6 +99,19 @@ func TestCatalogueEndpointUnusable(t *testing.T) {
 		got, err := cat.Resolve(context.Background(), testPrincipal(), "synth", "m")
 		if err != nil || got.BaseURL == nil || got.BaseURL.String() != "http://10.0.0.5:8000/v1" || !got.Private || got.UpstreamModel != "up-m" || got.ModelID != "m1" {
 			t.Errorf("%+v %v", got, err)
+		}
+	})
+
+	t.Run("Resolve reads one snapshot for the model and the prices", func(t *testing.T) {
+		snap := catalog.NewSnapshot(catalog.SnapshotData{
+			Providers: []catalog.Provider{{ID: "p1", Name: "synth", Family: "openai", Enabled: true}},
+			Endpoints: map[string][]catalog.Endpoint{"synth": {{Name: "main", BaseURL: "http://10.0.0.5:8000/v1", Private: true, Enabled: true, Default: true}}},
+			Models:    []catalog.Model{{ID: "m1", Provider: "synth", Name: "m", UpstreamID: "up-m", Status: "active", Availability: "all"}},
+		})
+		reads := 0
+		cat := newCatalogue(fakeSource{snap: snap, reads: &reads}, telemetry.NewLogger(&testutil.LogBuffer{}, "debug"))
+		if _, err := cat.Resolve(context.Background(), testPrincipal(), "synth", "m"); err != nil || reads != 1 {
+			t.Errorf("%d reads of the snapshot, error %v", reads, err)
 		}
 	})
 

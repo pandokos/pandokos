@@ -58,3 +58,7 @@ Authenticating before routing (needs every family's header tried in turn); check
 `credential:use` only in the vault (a key without it would learn its model access); rewriting
 the model in responses (a JSON rewrite of every response and stream event); passing redirects
 through; a pinned key limited to its credential's provider.
+
+## History
+
+- 2026-11: sprint 3.2 adds admission and attribution after authentication, and the usage record and spans at the end of every admitted request ([ADR 0039](0039-usage-record-admission-and-ledger-writer.md), [ADR 0040](0040-traces.md)).
