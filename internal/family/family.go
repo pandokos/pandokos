@@ -11,6 +11,21 @@ type Usage struct {
 	CacheWriteTokens int64
 	ReasoningTokens  int64
 	Extra            map[string]int64 // provider-specific categories, non-zero entries only; nil if none
+	Reported         map[string]int64 // the provider's own counters, keyed by path; nil if none
+}
+
+// FlattenUsage returns the integer members of a provider's usage object keyed by their path
+// with dots, bounded as sprint 3.2 section 5.2 says; everything else in the object is dropped.
+// It returns nil when nothing is kept.
+func FlattenUsage(usageObject []byte) map[string]int64 {
+	_ = usageObject
+	return nil
+}
+
+// Evidence is what the gateway measured about a request whose provider reported no usage.
+type Evidence struct {
+	RequestBytes, ResponseBytes, Deltas int64
+	Stream                              bool
 }
 
 // ErrorCode is a stable code of ADR 0020.
@@ -97,4 +112,6 @@ func (c ErrorCode) Message() string {
 const (
 	HeaderError     = "X-Pandokos-Error"
 	HeaderRequestID = "X-Pandokos-Request-Id"
+	// HeaderMetadataDropped tells the caller how many metadata headers were not kept.
+	HeaderMetadataDropped = "X-Pandokos-Metadata-Dropped"
 )

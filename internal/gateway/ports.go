@@ -9,7 +9,9 @@ import (
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/family"
 	"github.com/pandokos/pandokos/internal/family/openai"
+	"github.com/pandokos/pandokos/internal/pricing"
 	"github.com/pandokos/pandokos/internal/secret"
+	"github.com/pandokos/pandokos/internal/usage"
 )
 
 // Target is where an authorized call goes. Every field comes from the catalogue.
@@ -19,6 +21,28 @@ type Target struct {
 	UpstreamModel      string // what the provider receives as model
 	BaseURL            *url.URL
 	Private            bool
+	Prices             []pricing.Version // the model's price versions, from the snapshot that resolved it; read-only
+}
+
+// Recorder receives the usage record of every admitted request.
+type Recorder interface {
+	// Admit reserves room for the record of one request. When it returns false the request
+	// is refused and Record is not called.
+	Admit() bool
+	// Record takes the record of an admitted request. It does not block.
+	Record(r usage.Record)
+}
+
+// SpanAttributes lists every attribute key the gateway sets on a span.
+var SpanAttributes = []string{
+	// server span
+	"http.request.method", "http.route", "http.response.status_code", "pandokos.request.id",
+	"pandokos.record.id", "pandokos.tenant.id", "pandokos.principal.id", "pandokos.key.id",
+	"pandokos.provider", "pandokos.operation", "pandokos.outcome", "pandokos.error.code",
+	// provider span (the keys it shares with the server span are listed once)
+	"pandokos.endpoint", "pandokos.model", "pandokos.stream", "pandokos.credential.id",
+	"pandokos.funding", "pandokos.upstream.error", "pandokos.ttfb_ms", "pandokos.usage.source",
+	"pandokos.cost.status", "pandokos.cost.amount", "pandokos.cost.currency",
 }
 
 // Catalogue is the gateway's view of the catalogue.

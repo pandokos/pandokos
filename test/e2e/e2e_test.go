@@ -595,20 +595,20 @@ func TestMigrateCommand(t *testing.T) { // T-160
 	}
 
 	code, out, errs := runBinary(t, env, "migrate", "status")
-	if code != 1 || errs != "" || out != "0001_init  pending\n0002_identity_audit  pending\n0003_vault  pending\n0004_catalogue  pending\n0005_gateway_auth_failures  pending\nschema is at version 0; this binary needs version 5\n" {
+	if code != 1 || errs != "" || out != "0001_init  pending\n0002_identity_audit  pending\n0003_vault  pending\n0004_catalogue  pending\n0005_gateway_auth_failures  pending\n0006_usage_ledger  pending\nschema is at version 0; this binary needs version 6\n" {
 		t.Fatalf("status before: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate")
-	if code != 0 || errs != "" || out != "applied 0001_init\napplied 0002_identity_audit\napplied 0003_vault\napplied 0004_catalogue\napplied 0005_gateway_auth_failures\nschema is at version 5\n" {
+	if code != 0 || errs != "" || out != "applied 0001_init\napplied 0002_identity_audit\napplied 0003_vault\napplied 0004_catalogue\napplied 0005_gateway_auth_failures\napplied 0006_usage_ledger\nschema is at version 6\n" {
 		t.Fatalf("migrate: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate")
-	if code != 0 || errs != "" || out != "schema is at version 5\n" {
+	if code != 0 || errs != "" || out != "schema is at version 6\n" {
 		t.Fatalf("second migrate: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate", "status")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if code != 0 || errs != "" || len(lines) != 6 || !applied("0001_init").MatchString(lines[0]) || !applied("0002_identity_audit").MatchString(lines[1]) || !applied("0003_vault").MatchString(lines[2]) || !applied("0004_catalogue").MatchString(lines[3]) || !applied("0005_gateway_auth_failures").MatchString(lines[4]) || lines[5] != "schema is at version 5; this binary needs version 5" {
+	if code != 0 || errs != "" || len(lines) != 7 || !applied("0001_init").MatchString(lines[0]) || !applied("0002_identity_audit").MatchString(lines[1]) || !applied("0003_vault").MatchString(lines[2]) || !applied("0004_catalogue").MatchString(lines[3]) || !applied("0005_gateway_auth_failures").MatchString(lines[4]) || !applied("0006_usage_ledger").MatchString(lines[5]) || lines[6] != "schema is at version 6; this binary needs version 6" {
 		t.Fatalf("status after: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	testutil.AssertAbsent(t, "migrate output", out+errs, d.Passwords()...)
@@ -630,7 +630,7 @@ func TestServeRefusesUnmigratedDatabase(t *testing.T) { // T-161
 	}
 
 	d.Migrate(t)
-	if _, err := d.Super(t).Exec(context.Background(), "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (6, 'future', repeat('0', 64), 'x')"); err != nil {
+	if _, err := d.Super(t).Exec(context.Background(), "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (7, 'future', repeat('0', 64), 'x')"); err != nil {
 		t.Fatal(err)
 	}
 	code, out, errs = runBinary(t, serveEnv(t, d), "serve", "--config", writeConfig(t, "info"))
@@ -686,7 +686,7 @@ func TestServeBehindPooler(t *testing.T) { // T-163
 	d := dbtest.New(t)
 	pooled := d.Pooled(t)
 	code, out, errs := runBinary(t, pooled.Env(t), "migrate")
-	if code != 0 || !strings.Contains(out, "schema is at version 5") {
+	if code != 0 || !strings.Contains(out, "schema is at version 6") {
 		t.Fatalf("migrate through the pooler: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	up := fakeprovider.New(t)

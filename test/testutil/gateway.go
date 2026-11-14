@@ -12,10 +12,14 @@ import (
 	"testing"
 	"time"
 
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/egress"
 	"github.com/pandokos/pandokos/internal/gateway"
 	"github.com/pandokos/pandokos/internal/secret"
+	"github.com/pandokos/pandokos/internal/usage"
 	"github.com/pandokos/pandokos/test/fakeprovider"
 )
 
@@ -194,4 +198,56 @@ func ConnectProxy(tb testing.TB) (proxyURL *url.URL, requests func() []*http.Req
 		defer mu.Unlock()
 		return append([]*http.Request(nil), seen...)
 	}
+}
+
+// MemoryRecorder is a gateway.Recorder that keeps the records in memory.
+type MemoryRecorder struct {
+	// Capacity is the number of admissions; zero means no limit. Set it before use.
+	Capacity int
+
+	mu      sync.Mutex
+	records []usage.Record
+	admits  int
+}
+
+// Admit takes a slot while Capacity allows.
+func (m *MemoryRecorder) Admit() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.Capacity > 0 && m.admits >= m.Capacity {
+		return false
+	}
+	m.admits++
+	return true
+}
+
+// Record keeps the record.
+func (m *MemoryRecorder) Record(r usage.Record) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.records = append(m.records, r)
+}
+
+// Records returns the records received, in order.
+func (m *MemoryRecorder) Records() []usage.Record {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]usage.Record(nil), m.records...)
+}
+
+// Admits returns the number of successful Admit calls.
+func (m *MemoryRecorder) Admits() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.admits
+}
+
+// SpanRecorder returns an SDK tracer provider that samples everything into an in-memory
+// recorder; the provider is shut down when the test ends.
+func SpanRecorder(tb testing.TB) (*sdktrace.TracerProvider, *tracetest.SpanRecorder) {
+	tb.Helper()
+	rec := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec), sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	tb.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+	return tp, rec
 }

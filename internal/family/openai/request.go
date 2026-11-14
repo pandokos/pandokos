@@ -213,3 +213,10 @@ func encodeString(s string) string {
 	}
 	return strings.TrimSuffix(buf.String(), "\n")
 }
+
+// ParseOperation reads the request body of an operation of the family. Every error wraps
+// family.ErrInvalidRequest as for Parse, which stays and means chat completions.
+func ParseOperation(operation string, body []byte) (*Request, error) {
+	_ = operation
+	return Parse(body)
+}

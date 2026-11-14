@@ -40,20 +40,24 @@ func (adapter) AllowResponseHeader(canonicalName string) bool {
 	return AllowResponseHeader(canonicalName)
 }
 
-func (adapter) ParseRequest(_ family.Operation, body []byte) (family.Request, error) {
-	r, err := Parse(body)
+func (adapter) ParseRequest(op family.Operation, body []byte) (family.Request, error) {
+	r, err := ParseOperation(op.Name, body)
 	if err != nil {
 		return nil, err
 	}
 	return r, nil
 }
 
-func (adapter) ReadUsage(_ family.Operation, body []byte) (family.Usage, bool, error) {
-	return ReadUsage(body)
+func (adapter) ReadUsage(op family.Operation, body []byte) (family.Usage, bool, error) {
+	return ReadUsageOf(op.Name, body)
 }
 
-func (adapter) NewStreamReader(_ family.Operation, strip bool) family.StreamReader {
-	return NewStreamReader(strip)
+func (adapter) NewStreamReader(op family.Operation, strip bool) family.StreamReader {
+	return NewStreamReaderFor(op.Name, strip)
+}
+
+func (adapter) EstimateUsage(op family.Operation, e family.Evidence) family.Usage {
+	return Estimate(op.Name, e)
 }
 
 func (adapter) WriteError(w http.ResponseWriter, code family.ErrorCode) { WriteError(w, code) }

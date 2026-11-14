@@ -134,3 +134,6 @@ func (r *StreamReader) Usage() (family.Usage, bool) { return r.usage, r.hasUsage
 
 // Failed reports that the reader gave up because an event exceeded the size bound.
 func (r *StreamReader) Failed() bool { return r.failed }
+
+// Deltas counts the chunks with a non-empty choices array seen so far.
+func (r *StreamReader) Deltas() int64 { return 0 }

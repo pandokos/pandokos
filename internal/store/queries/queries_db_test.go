@@ -406,6 +406,28 @@ func TestEveryStatement(t *testing.T) {
 			return queries.New(tx).InsertPlatformAuditEvent(c, queries.InsertPlatformAuditEventParams{ActorType: "host", ActorName: "pandokos init",
 				Action: "platform_key.bootstrap", ResourceType: "platform_key", ResourceID: platformKey, Outcome: "success", RequestID: "req-230", Detail: "{}"})
 		}))
+		mark("EnsureUsagePartitions")
+		worker := d.Open(t, store.RoleWorker)
+		must("usage partitions", worker.Platform(c, func(c context.Context, tx store.Tx) error {
+			row, err := queries.New(tx).EnsureUsagePartitions(c, 3)
+			if err == nil && row.DefaultInUse {
+				err = errors.New("the default usage partition is in use")
+			}
+			return err
+		}))
+		mark("InsertUsageRecords")
+		must("usage records", gateway.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
+			rec := `[{"id":"0192f0f0-0000-7000-8000-0000000000a1","started_at":"` + time.Now().UTC().Format(time.RFC3339Nano) +
+				`","request_id":"0123456789abcdef0123456789abcdef","principal_kind":"service_account","principal_id":"0192f0f0-0000-7000-8000-0000000000a2",` +
+				`"funding":"byok","provider":"openai","api_family":"openai","operation":"chat.completions","outcome":"ok","duration_ms":1,` +
+				`"input_source":"none","output_source":"none","cost_status":"none","cost_reason":"","trace_id":"","key_id":"","endpoint":"","model":"",` +
+				`"upstream_model":"","error_code":"","other_units":{},"provider_usage":{},"metadata":{},"metadata_dropped":0}]`
+			n, err := queries.New(tx).InsertUsageRecords(c, rec)
+			if err == nil && n != 1 {
+				err = errors.New("InsertUsageRecords did not insert one row")
+			}
+			return err
+		}))
 		mark("RecordAuthFailure")
 		must("auth failure", gateway.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
 			return queries.New(tx).RecordAuthFailure(c, queries.RecordAuthFailureParams{KeyID: keyScoped, Reason: "bad_secret", RequestID: "0123456789abcdef0123456789abcdef"})
@@ -434,7 +456,7 @@ func TestEveryStatement(t *testing.T) {
 		// Sprint 2.2: the catalogue, the model access and the prices.
 		catalogStatements(c, t, admin, gateway, tid, ten.ID, sa.ID, hash, called)
 
-		// The 93 statements, and nothing was prepared on the server.
+		// The 95 statements, and nothing was prepared on the server.
 		var names []string
 		typ := reflect.TypeOf(&queries.Queries{})
 		for i := 0; i < typ.NumMethod(); i++ {
@@ -443,8 +465,8 @@ func TestEveryStatement(t *testing.T) {
 			}
 		}
 		sort.Strings(names)
-		if len(names) != 93 {
-			t.Errorf("the generated package has %d statements, want 93: %v", len(names), names)
+		if len(names) != 95 {
+			t.Errorf("the generated package has %d statements, want 95: %v", len(names), names)
 		}
 		for _, name := range names {
 			if !called[name] {

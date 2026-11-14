@@ -75,3 +75,10 @@ func ReadUsage(body []byte) (u family.Usage, ok bool, err error) {
 	}
 	return u, true, nil
 }
+
+// ReadUsageOf reads usage from a complete JSON response of an operation of the family.
+// ReadUsage stays and means chat completions.
+func ReadUsageOf(operation string, body []byte) (u family.Usage, ok bool, err error) {
+	_ = operation
+	return ReadUsage(body)
+}

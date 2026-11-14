@@ -778,7 +778,7 @@ SELECT pandokos.protect_usage_partition('usage_record_default');
 -- Creates the monthly partitions (UTC) from the month before the current one to p_ahead months
 -- after it, and reports how many it created and whether the default partition has ever held a
 -- row. A month whose rows are already in the default partition is skipped. Safe to call
--- concurrently and repeatedly. It runs with the rights of the owner, because runtime roles own
+-- in parallel and repeatedly. It runs with the rights of the owner, because runtime roles own
 -- nothing and cannot create tables; the worker role is its only caller.
 CREATE FUNCTION pandokos.ensure_usage_partitions(p_ahead integer, OUT created integer, OUT default_in_use boolean)
     LANGUAGE plpgsql

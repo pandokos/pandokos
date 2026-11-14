@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/pandokos/pandokos/internal/config"
 	"github.com/pandokos/pandokos/internal/egress"
 	"github.com/pandokos/pandokos/internal/family"
@@ -33,6 +35,8 @@ type Options struct {
 	Credentials   gateway.Credentials     // required: opens the provider credential of a call
 	Failures      gateway.FailureRecorder // optional: records authentication failures
 	Egress        *egress.Guard           // required: the only way out of the process
+	Recorder      gateway.Recorder        // receives the usage record of every admitted request
+	Tracer        trace.TracerProvider    // the trace provider of the gateway
 }
 
 // listener is one HTTP listener with its server.
@@ -93,6 +97,8 @@ func New(o Options) (*Server, error) {
 		MaxRequestBodyBytes:    cfg.Limits.MaxRequestBodyBytes,
 		RequestBodyReadTimeout: time.Duration(cfg.Limits.RequestBodyReadTimeout),
 		MaxRequestDuration:     time.Duration(cfg.Limits.MaxRequestDuration),
+		Recorder:               o.Recorder,
+		Tracer:                 o.Tracer,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("server: %w", err)

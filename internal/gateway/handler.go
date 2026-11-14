@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/family"
 	"github.com/pandokos/pandokos/internal/secret"
@@ -44,6 +46,9 @@ type Options struct {
 	MaxRequestBodyBytes    int64                     // must be positive
 	RequestBodyReadTimeout time.Duration             // must be positive
 	MaxRequestDuration     time.Duration             // must be positive
+	Recorder               Recorder                  // required from sprint 3.2 on; nil is accepted for now
+	Tracer                 trace.TracerProvider      // required from sprint 3.2 on; nil is accepted for now
+	PropagateTrace         bool                      // send traceparent and tracestate to the provider
 }
 
 // Handler is the inference handler.
@@ -59,6 +64,9 @@ type Handler struct {
 	readTimeout time.Duration
 	maxDuration time.Duration
 	proxy       *httputil.ReverseProxy
+	recorder    Recorder
+	tracer      trace.TracerProvider
+	propagate   bool
 }
 
 // New validates the options and returns a Handler.
@@ -107,6 +115,9 @@ func New(o Options) (*Handler, error) {
 		maxBody:     o.MaxRequestBodyBytes,
 		readTimeout: o.RequestBodyReadTimeout,
 		maxDuration: o.MaxRequestDuration,
+		recorder:    o.Recorder,
+		tracer:      o.Tracer,
+		propagate:   o.PropagateTrace,
 	}
 	h.proxy = h.newProxy(&classTransport{public: o.Public, private: o.Private})
 	return h, nil
