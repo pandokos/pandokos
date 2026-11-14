@@ -25,7 +25,7 @@ func TestWriteError(t *testing.T) {
 		{family.CodeUnavailable, 503, "Pandokos: the request cannot be verified right now."},
 		{family.CodeModelNotAllowed, 403, "Pandokos: the model is not available to this credential."},
 		{family.CodeNoCredential, 409, "Pandokos: no usable provider credential for this provider."},
-		{family.CodeInvalidRequest, 400, `Pandokos: the request body must be a JSON object with one string member \"model\".`},
+		{family.CodeInvalidRequest, 400, `Pandokos: the request body is not accepted: it must be a JSON object with one string member \"model\", and must not ask for background processing.`},
 		{family.CodeRequestTimeout, 408, "Pandokos: the request body was not received in time."},
 	}
 	for _, c := range cases {

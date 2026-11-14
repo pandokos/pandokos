@@ -37,6 +37,38 @@ const (
 	ModelEchoAuth = "fake-echo-auth"
 	// ModelClose hijacks the connection and closes it without a response.
 	ModelClose = "fake-close"
+	// ModelNoUsage answers 2xx without a usage object, for every operation, streaming or not.
+	ModelNoUsage = "fake-no-usage"
+	// ModelStreamError streams two content events and then an error event in the middle of the
+	// stream, and ends without a final marker.
+	ModelStreamError = "fake-stream-error"
+	// ModelKeepalive streams with a comment event (": ping") before every event.
+	ModelKeepalive = "fake-keepalive"
+	// ModelTools streams tool-call deltas.
+	ModelTools = "fake-tools"
+	// ModelTinyWrites writes one byte at a time and flushes after each byte.
+	ModelTinyWrites = "fake-tiny-writes"
+	// ModelCut hijacks the connection, sends half of the answer and closes it.
+	ModelCut = "fake-cut"
+	// ModelCRLF streams with CRLF line endings.
+	ModelCRLF = "fake-crlf"
+	// ModelBigEvent sends an event (or, for a plain answer, a body) over the bounds of the readers.
+	ModelBigEvent = "fake-big-event"
+)
+
+// Sizes of the oversized event or body of ModelBigEvent: over the 1 MiB bound of the chat reader,
+// the 4 MiB bound of the responses reader and the 4 MiB bound of a buffered JSON answer.
+const (
+	BigChatEventBytes      = 1<<20 + 1024
+	BigResponsesEventBytes = 4<<20 + 1024
+	BigBodyBytes           = 4<<20 + 1024
+)
+
+// The operations the fake serves, by native path.
+const (
+	pathChat       = "/v1/chat/completions"
+	pathResponses  = "/v1/responses"
+	pathEmbeddings = "/v1/embeddings"
 )
 
 // Request is a request the fake received.
@@ -60,6 +92,8 @@ type Server struct {
 	models    string
 	redirect  string
 	conns     atomic.Int64
+	stepping  atomic.Bool
+	steps     chan struct{}
 }
 
 // New starts a plain HTTP/1.1 fake on 127.0.0.1; it is closed through tb.Cleanup.
@@ -95,7 +129,7 @@ func NewTLS(tb testing.TB) *Server {
 }
 
 func newServer() *Server {
-	return &Server{gate: make(chan struct{}), cancelled: make(chan struct{}, 1024),
+	return &Server{gate: make(chan struct{}), cancelled: make(chan struct{}, 1024), steps: make(chan struct{}, 4096),
 		accepted: map[string]bool{fixtures.CanaryProviderKey: true}}
 }
 
@@ -225,6 +259,14 @@ func (s *Server) Requests() []Request {
 	return append([]Request(nil), s.requests...)
 }
 
+// GateEachEvent makes every stream of every operation wait, after each event but the last, until
+// Advance is called (or Release, which opens every gate for good). The provider then never sends
+// event n+1 before the test has asked for it, so a test proves "no buffering" without timing.
+func (s *Server) GateEachEvent() { s.stepping.Store(true) }
+
+// Advance lets one gated stream send its next event.
+func (s *Server) Advance() { s.steps <- struct{}{} }
+
 // Release lets gated and hanging handlers continue. It is idempotent.
 func (s *Server) Release() { s.once.Do(func() { close(s.gate) }) }
 
@@ -241,16 +283,24 @@ func (s *Server) WaitCancelled(d time.Duration) bool {
 // InFlight returns the number of handlers currently running.
 func (s *Server) InFlight() int { return int(s.inflight.Load()) }
 
+// splitEvents splits a stream into events, each with its terminating blank line (LF or CRLF).
 func splitEvents(b []byte) [][]byte {
 	var out [][]byte
 	for len(b) > 0 {
-		i := bytes.Index(b, []byte("\n\n"))
-		if i < 0 {
+		lf, crlf := bytes.Index(b, []byte("\n\n")), bytes.Index(b, []byte("\r\n\r\n"))
+		end := -1
+		switch {
+		case lf >= 0 && (crlf < 0 || lf < crlf):
+			end = lf + 2
+		case crlf >= 0:
+			end = crlf + 4
+		}
+		if end < 0 {
 			out = append(out, b)
 			break
 		}
-		out = append(out, b[:i+2])
-		b = b[i+2:]
+		out = append(out, b[:end])
+		b = b[end:]
 	}
 	return out
 }
@@ -277,7 +327,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.handleModels(w, r)
 		return
 	}
-	if r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" {
+	op := r.URL.Path
+	if r.Method != http.MethodPost || (op != pathChat && op != pathResponses && op != pathEmbeddings) {
 		writeJSON(w, http.StatusNotFound, []byte(`{"error":{"message":"not found","type":"invalid_request_error","param":null,"code":null}}`))
 		return
 	}
@@ -316,15 +367,17 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 	switch req.Model {
 	case ModelBasic:
-		s.answer(w, r, req.Stream, includeUsage, false)
+		s.answer(w, r, op, req.Stream, includeUsage, false)
 	case ModelDetails:
-		writeJSON(w, http.StatusOK, fixtures.Read("chat_completion_details.json"))
+		writeJSON(w, http.StatusOK, oneOf(op, "chat_completion_details.json"))
 	case ModelGatedStream:
-		s.answer(w, r, true, includeUsage, true)
+		s.answer(w, r, op, true, includeUsage, true)
+	case ModelNoUsage, ModelStreamError, ModelKeepalive, ModelTools, ModelTinyWrites, ModelCut, ModelCRLF, ModelBigEvent:
+		s.behave(w, r, op, req.Model, req.Stream)
 	case ModelHang:
 		select {
 		case <-s.gate:
-			s.answer(w, r, req.Stream, includeUsage, false)
+			s.answer(w, r, op, req.Stream, includeUsage, false)
 		case <-r.Context().Done():
 			s.cancelled <- struct{}{}
 		}
@@ -352,7 +405,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		h.Set("X-Echo-Authorization", r.Header.Get("Authorization"))
 		h.Set("Www-Authenticate", r.Header.Get("Authorization"))
-		writeJSON(w, status, fixtures.Read("chat_completion.json"))
+		writeJSON(w, status, oneOf(op, "chat_completion.json"))
 	case ModelClose:
 		if hj, ok := w.(http.Hijacker); ok {
 			if conn, _, err := hj.Hijack(); err == nil {
@@ -360,15 +413,37 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	case ModelUsageOnLastChunk:
+		if op != pathChat {
+			s.answer(w, r, op, req.Stream, includeUsage, false)
+			return
+		}
 		s.stream(w, r, fixtures.Read("chat_stream_usage_on_last_chunk.sse"), false)
 	default:
 		writeJSON(w, http.StatusNotFound, []byte(`{"error":{"message":"The model does not exist.","type":"invalid_request_error","param":null,"code":"model_not_found"}}`))
 	}
 }
 
-func (s *Server) answer(w http.ResponseWriter, r *http.Request, stream, includeUsage, gated bool) {
-	if !stream {
-		writeJSON(w, http.StatusOK, fixtures.Read("chat_completion.json"))
+// oneOf returns the JSON fixture of the operation op: chat is the one of chat completions.
+func oneOf(op, chat string) []byte {
+	switch op {
+	case pathResponses:
+		return fixtures.Read("responses.json")
+	case pathEmbeddings:
+		return fixtures.Read("embeddings.json")
+	}
+	return fixtures.Read(chat)
+}
+
+// streams reports whether the operation can stream.
+func streams(op string) bool { return op == pathChat || op == pathResponses }
+
+func (s *Server) answer(w http.ResponseWriter, r *http.Request, op string, stream, includeUsage, gated bool) {
+	if !stream || !streams(op) {
+		writeJSON(w, http.StatusOK, oneOf(op, "chat_completion.json"))
+		return
+	}
+	if op == pathResponses {
+		s.stream(w, r, fixtures.Read("responses_stream.sse"), gated)
 		return
 	}
 	name := "chat_stream.sse"
@@ -378,23 +453,208 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, stream, includeU
 	s.stream(w, r, fixtures.Read(name), gated)
 }
 
+// dropUsage removes the usage object from a JSON document, at the top level and under "response".
+func dropUsage(b []byte) []byte {
+	var doc map[string]any
+	if json.Unmarshal(b, &doc) != nil {
+		return b
+	}
+	delete(doc, "usage")
+	if resp, ok := doc["response"].(map[string]any); ok {
+		delete(resp, "usage")
+	}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return b
+	}
+	return out
+}
+
+// dropUsageSSE removes the usage of every event of a stream that carries JSON data.
+func dropUsageSSE(b []byte) []byte {
+	var out []byte
+	for _, ev := range splitEvents(b) {
+		var lines []string
+		for _, line := range strings.SplitAfter(string(ev), "\n") {
+			if payload, ok := strings.CutPrefix(line, "data: "); ok && strings.HasPrefix(payload, "{") {
+				eol := payload[len(strings.TrimRight(payload, "\r\n")):]
+				line = "data: " + string(dropUsage([]byte(strings.TrimRight(payload, "\r\n")))) + eol
+			}
+			lines = append(lines, line)
+		}
+		out = append(out, strings.Join(lines, "")...)
+	}
+	return out
+}
+
+// base returns the usual answer of the operation: its stream when stream is true and the
+// operation streams, its JSON document otherwise; withUsage chooses the variant of the chat
+// stream that carries usage.
+func base(op string, stream bool) (data []byte, isStream bool) {
+	switch {
+	case stream && op == pathResponses:
+		return fixtures.Read("responses_stream.sse"), true
+	case stream && op == pathChat:
+		return fixtures.Read("chat_stream_usage.sse"), true
+	}
+	return oneOf(op, "chat_completion.json"), false
+}
+
+// behave serves the behaviours of the models of section 7 of the sprint 3.2 design, for every
+// operation.
+func (s *Server) behave(w http.ResponseWriter, r *http.Request, op, model string, stream bool) {
+	data, isStream := base(op, stream)
+	switch model {
+	case ModelNoUsage:
+		if isStream {
+			if op == pathChat {
+				data = fixtures.Read("chat_stream.sse")
+			}
+			s.stream(w, r, dropUsageSSE(data), false)
+			return
+		}
+		writeJSON(w, http.StatusOK, dropUsage(data))
+	case ModelStreamError:
+		if !isStream {
+			writeJSON(w, http.StatusInternalServerError, []byte(`{"error":{"message":"synthetic upstream failure","type":"server_error","param":null,"code":null}}`))
+			return
+		}
+		if op == pathChat {
+			s.stream(w, r, fixtures.Read("chat_stream_error.sse"), false)
+			return
+		}
+		evs := splitEvents(data)
+		out := bytes.Join(evs[:3], nil)
+		out = append(out, "event: error\ndata: {\"type\":\"error\",\"code\":\"synthetic\",\"message\":\"synthetic upstream failure\"}\n\n"...)
+		s.stream(w, r, out, false)
+	case ModelKeepalive:
+		if !isStream {
+			writeJSON(w, http.StatusOK, data)
+			return
+		}
+		var out []byte
+		for _, ev := range splitEvents(data) {
+			out = append(out, ": ping\n\n"...)
+			out = append(out, ev...)
+		}
+		s.stream(w, r, out, false)
+	case ModelTools:
+		switch {
+		case !isStream:
+			writeJSON(w, http.StatusOK, data)
+		case op == pathChat:
+			s.stream(w, r, fixtures.Read("chat_stream_tools.sse"), false)
+		default:
+			s.stream(w, r, bytes.ReplaceAll(data, []byte("response.output_text.delta"), []byte("response.function_call_arguments.delta")), false)
+		}
+	case ModelCRLF:
+		if !isStream {
+			writeJSON(w, http.StatusOK, data)
+			return
+		}
+		if op == pathChat {
+			s.stream(w, r, fixtures.Read("chat_stream_keepalive_crlf.sse"), false)
+			return
+		}
+		s.stream(w, r, bytes.ReplaceAll(data, []byte("\n"), []byte("\r\n")), false)
+	case ModelTinyWrites:
+		ct := "application/json"
+		if isStream {
+			ct = "text/event-stream"
+		}
+		w.Header().Set("Content-Type", ct)
+		w.WriteHeader(http.StatusOK)
+		rc := http.NewResponseController(w)
+		for i := range data {
+			if _, err := w.Write(data[i : i+1]); err != nil {
+				s.cancelled <- struct{}{}
+				return
+			}
+			_ = rc.Flush()
+		}
+	case ModelCut:
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			return
+		}
+		conn, _, err := hj.Hijack()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		half := data[:len(data)/2]
+		if isStream {
+			_, _ = io.WriteString(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n"+strconv.FormatInt(int64(len(half)), 16)+"\r\n")
+			_, _ = conn.Write(half)
+			_, _ = io.WriteString(conn, "\r\n")
+			return
+		}
+		_, _ = io.WriteString(conn, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "+strconv.Itoa(len(data))+"\r\n\r\n")
+		_, _ = conn.Write(half)
+	case ModelBigEvent:
+		s.big(w, r, op, data, isStream)
+	}
+}
+
+// big answers with an event over the bound of the reader of the operation, followed by the usual
+// events (a stream), or with a JSON body over the bound of a buffered answer.
+func (s *Server) big(w http.ResponseWriter, r *http.Request, op string, data []byte, isStream bool) {
+	if !isStream {
+		var doc map[string]any
+		if json.Unmarshal(data, &doc) != nil {
+			writeJSON(w, http.StatusOK, data)
+			return
+		}
+		doc["pad"] = strings.Repeat("a", BigBodyBytes)
+		b, _ := json.Marshal(doc)
+		writeJSON(w, http.StatusOK, b)
+		return
+	}
+	var first []byte
+	if op == pathResponses {
+		pad := strings.Repeat("a", BigResponsesEventBytes)
+		first = []byte("event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"" + pad + "\"}\n\n")
+	} else {
+		pad := strings.Repeat("a", BigChatEventBytes)
+		first = []byte("data: {\"id\":\"chatcmpl-fixture0005\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"" + pad + "\"},\"finish_reason\":null}],\"usage\":null}\n\n")
+	}
+	s.stream(w, r, append(first, data...), false)
+}
+
 func (s *Server) stream(w http.ResponseWriter, r *http.Request, data []byte, gated bool) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.WriteHeader(http.StatusOK)
 	rc := http.NewResponseController(w)
-	for i, ev := range splitEvents(data) {
+	events := splitEvents(data)
+	for i, ev := range events {
 		if _, err := w.Write(ev); err != nil {
 			s.cancelled <- struct{}{}
 			return
 		}
 		_ = rc.Flush()
-		if gated && i == 0 {
-			select {
-			case <-s.gate:
-			case <-r.Context().Done():
-				s.cancelled <- struct{}{}
+		switch {
+		case gated && i == 0:
+			if !s.wait(r, s.gate) {
+				return
+			}
+		case s.stepping.Load() && i < len(events)-1:
+			if !s.wait(r, s.steps) {
 				return
 			}
 		}
+	}
+}
+
+// wait blocks until c delivers (or, for the step channel, Release opens the gate for good) or the
+// request is cancelled; it reports false after a cancellation.
+func (s *Server) wait(r *http.Request, c chan struct{}) bool {
+	select {
+	case <-c:
+		return true
+	case <-s.gate:
+		return true
+	case <-r.Context().Done():
+		s.cancelled <- struct{}{}
+		return false
 	}
 }

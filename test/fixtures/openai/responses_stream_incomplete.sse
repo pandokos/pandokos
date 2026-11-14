@@ -1,0 +1,9 @@
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_fixture0001","object":"response","created_at":1700000000,"status":"in_progress","model":"fake-basic","output":[],"usage":null}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":1,"item_id":"msg_fixture0001","output_index":0,"content_index":0,"delta":"pandokos-canary-completion-5f2a9c"}
+
+event: response.incomplete
+data: {"type":"response.incomplete","sequence_number":2,"response":{"id":"resp_fixture0001","object":"response","created_at":1700000000,"status":"incomplete","model":"fake-basic","output":[{"type":"message","id":"msg_fixture0001","status":"completed","role":"assistant","content":[{"type":"output_text","text":"pandokos-canary-completion-5f2a9c end","annotations":[]}]}],"usage":{"input_tokens":20,"output_tokens":6,"total_tokens":26},"incomplete_details":{"reason":"max_output_tokens"}}}
+

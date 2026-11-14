@@ -20,6 +20,10 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
+
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/egress"
@@ -27,6 +31,8 @@ import (
 	"github.com/pandokos/pandokos/internal/family/openai"
 	"github.com/pandokos/pandokos/internal/gateway"
 	"github.com/pandokos/pandokos/internal/telemetry"
+	"github.com/pandokos/pandokos/internal/usage"
+
 	"github.com/pandokos/pandokos/test/fakeprovider"
 	"github.com/pandokos/pandokos/test/fixtures"
 	"github.com/pandokos/pandokos/test/testutil"
@@ -58,6 +64,8 @@ type harness struct {
 	cat     *testutil.Catalogue
 	creds   *testutil.Credentials
 	targets map[string]gateway.Target // "provider/model": the catalogue's targets; tests may add
+	rec     *testutil.MemoryRecorder  // the recorder the gateway was built with (unless a test replaced it)
+	spans   *tracetest.SpanRecorder   // the spans of the tracer provider the gateway was built with
 }
 
 // fakeModels are the models of the fake provider; the harness gives each a target of provider
@@ -66,6 +74,8 @@ var fakeModels = []string{
 	fakeprovider.ModelBasic, fakeprovider.ModelDetails, fakeprovider.ModelGatedStream, fakeprovider.ModelHang,
 	fakeprovider.ModelError429, fakeprovider.ModelError500Echo, fakeprovider.ModelUsageOnLastChunk,
 	fakeprovider.ModelRedirect, fakeprovider.ModelEchoAuth, fakeprovider.ModelClose, "fake-model",
+	fakeprovider.ModelNoUsage, fakeprovider.ModelStreamError, fakeprovider.ModelKeepalive, fakeprovider.ModelTools,
+	fakeprovider.ModelTinyWrites, fakeprovider.ModelCut, fakeprovider.ModelCRLF, fakeprovider.ModelBigEvent,
 }
 
 // trusting returns an option function for testutil.TestGuard that trusts a TLS fake.
@@ -110,7 +120,11 @@ func build(t *testing.T, targets map[string]gateway.Target, guard *egress.Guard,
 	logs := &testutil.LogBuffer{}
 	cat := testutil.StaticCatalogue(map[string]string{"openai": "openai"}, targets)
 	creds := testutil.StaticCredentials(map[string]string{"openai": fixtures.CanaryProviderKey})
+	rec := &testutil.MemoryRecorder{}
+	tp, spans := testutil.SpanRecorder(t)
 	o := gateway.Options{
+		Recorder:               rec,
+		Tracer:                 tp,
 		Logger:                 telemetry.NewLogger(logs, "debug"),
 		Authenticator:          testAuth,
 		Catalogue:              cat,
@@ -132,7 +146,7 @@ func build(t *testing.T, targets map[string]gateway.Target, guard *egress.Guard,
 	}
 	srv := httptest.NewServer(g)
 	t.Cleanup(srv.Close)
-	return &harness{srv: srv, handler: g, logs: logs, cat: cat, creds: creds, targets: targets}
+	return &harness{srv: srv, handler: g, logs: logs, cat: cat, creds: creds, targets: targets, rec: rec, spans: spans}
 }
 
 func chat(model string, stream bool) []byte {
@@ -215,6 +229,23 @@ func (h *harness) awaitOutcome(t *testing.T, outcome string) map[string]any {
 		return false
 	})
 	return found
+}
+
+// oneRecord waits for the recorder to hold exactly one record and returns it.
+func (h *harness) oneRecord(t *testing.T) usage.Record {
+	t.Helper()
+	recs := h.records(t, 1)
+	if len(recs) != 1 {
+		t.Fatalf("%d records, want 1", len(recs))
+	}
+	return recs[0]
+}
+
+// records waits for at least n records and returns what the recorder holds.
+func (h *harness) records(t *testing.T, n int) []usage.Record {
+	t.Helper()
+	testutil.Eventually(t, 5*time.Second, fmt.Sprintf("%d usage records", n), func() bool { return len(h.rec.Records()) >= n })
+	return h.rec.Records()
 }
 
 func usageGroup(t *testing.T, line map[string]any) map[string]any {
@@ -553,7 +584,11 @@ func TestEndpointNotSupported(t *testing.T) {
 	cases := []struct{ method, path string }{
 		{"GET", route},
 		{"POST", route + "/"},
-		{"POST", "/openai/v1/embeddings"},
+		{"POST", "/openai/v1/models"},
+		{"GET", "/openai/v1/embeddings"},
+		{"GET", "/openai/v1/responses"},
+		{"POST", "/openai/v1/embeddings/"},
+		{"POST", "/openai/v1/responses/"},
 		{"POST", "/v1/chat/completions"},
 		{"POST", "/"},
 		{"POST", "//openai/v1/chat/completions"},
@@ -965,6 +1000,7 @@ func TestNewValidatesOptions(t *testing.T) {
 			Families: map[string]family.Adapter{"openai": openai.Adapter()}, DefaultFamily: "openai",
 			Public: http.DefaultTransport, Private: http.DefaultTransport,
 			MaxRequestBodyBytes: 1, RequestBodyReadTimeout: 1, MaxRequestDuration: 1,
+			Recorder: &testutil.MemoryRecorder{}, Tracer: noopTracer(),
 		}
 	}
 	if _, err := gateway.New(good()); err != nil {
@@ -990,6 +1026,8 @@ func TestNewValidatesOptions(t *testing.T) {
 		"body":                  func(o *gateway.Options) { o.MaxRequestBodyBytes = 0 },
 		"read":                  func(o *gateway.Options) { o.RequestBodyReadTimeout = 0 },
 		"duration":              func(o *gateway.Options) { o.MaxRequestDuration = 0 },
+		"recorder":              func(o *gateway.Options) { o.Recorder = nil },
+		"tracer":                func(o *gateway.Options) { o.Tracer = nil },
 		"a negative body limit": func(o *gateway.Options) { o.MaxRequestBodyBytes = -1 },
 	} {
 		o := good()
@@ -1083,3 +1121,6 @@ func (f *failureRecorder) recorded() []gateway.AuthFailure {
 	defer f.mu.Unlock()
 	return append([]gateway.AuthFailure(nil), f.calls...)
 }
+
+// noopTracer returns a tracer provider that records nothing, for options that need one.
+func noopTracer() trace.TracerProvider { return tracenoop.NewTracerProvider() }

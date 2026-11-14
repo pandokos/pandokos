@@ -180,3 +180,117 @@ func TestFakeProviderBehaviours(t *testing.T) {
 		}
 	})
 }
+
+func postPath(t *testing.T, s *Server, path, body string) (*http.Response, []byte, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.URL()+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+fixtures.CanaryProviderKey)
+	resp, err := s.ts.Client().Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	return resp, b, err
+}
+
+// TestOperationsAndBehaviours serves every behaviour of section 7 of sprint 3.2 for the three
+// operations.
+func TestOperationsAndBehaviours(t *testing.T) {
+	s := New(t)
+	paths := map[string]bool{"/v1/chat/completions": true, "/v1/responses": true, "/v1/embeddings": false}
+	for path, streams := range paths {
+		for _, model := range []string{ModelBasic, ModelNoUsage, ModelStreamError, ModelKeepalive, ModelTools, ModelTinyWrites, ModelCRLF, ModelBigEvent, ModelCut} {
+			for _, stream := range []bool{false, true} {
+				if stream && !streams {
+					continue
+				}
+				name := path + " " + model
+				if stream {
+					name += " stream"
+				}
+				t.Run(name, func(t *testing.T) {
+					body := `{"model":"` + model + `"`
+					if stream {
+						body += `,"stream":true`
+					}
+					resp, b, err := postPath(t, s, path, body+"}")
+					if model == ModelCut {
+						if err == nil {
+							t.Fatalf("a cut answer was read to its end (%d bytes)", len(b))
+						}
+						return
+					}
+					if err != nil || (resp.StatusCode/100 != 2 && (model != ModelStreamError || stream)) {
+						t.Fatalf("%v %v", resp, err)
+					}
+					if len(b) == 0 {
+						t.Fatal("empty answer")
+					}
+					if model == ModelNoUsage && bytes.Contains(b, []byte(`"usage":{`)) {
+						t.Errorf("the answer carries usage: %.200s", b)
+					}
+					if model == ModelCRLF && stream && !bytes.Contains(b, []byte("\r\n\r\n")) {
+						t.Error("no CRLF event end")
+					}
+					if model == ModelKeepalive && stream && !bytes.HasPrefix(b, []byte(": ping\n\n")) {
+						t.Error("no comment event")
+					}
+					if model == ModelBigEvent && len(b) < BigChatEventBytes {
+						t.Errorf("answer of %d bytes is not over the bound", len(b))
+					}
+				})
+			}
+		}
+	}
+}
+
+// TestGateEachEvent is the gate the streaming tests rely on: after the first event the provider
+// sends nothing until Advance.
+func TestGateEachEvent(t *testing.T) {
+	s := New(t)
+	s.GateEachEvent()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, s.URL()+"/v1/responses", strings.NewReader(`{"model":"fake-basic","stream":true}`))
+	req.Header.Set("Authorization", "Bearer "+fixtures.CanaryProviderKey)
+	resp, err := s.ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	got := make(chan int, 1)
+	go func() {
+		n := 0
+		buf := make([]byte, 64<<10)
+		for {
+			k, err := resp.Body.Read(buf)
+			n += k
+			got <- n
+			if err != nil {
+				close(got)
+				return
+			}
+		}
+	}()
+	first := <-got
+	select {
+	case n := <-got:
+		if n != first {
+			t.Fatal("the provider sent a second event before Advance")
+		}
+	case <-time.After(200 * time.Millisecond):
+	}
+	s.Advance()
+	if n := <-got; n <= first {
+		t.Fatalf("no progress after Advance: %d", n)
+	}
+	s.Release()
+	for range got {
+	}
+}

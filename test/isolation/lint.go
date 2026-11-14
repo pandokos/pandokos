@@ -198,6 +198,9 @@ func Lint(ctx context.Context, conn *pgx.Conn, spec Spec) ([]Finding, error) {
 	if err := lintAppendOnly(ctx, conn, spec, add); err != nil {
 		return nil, err
 	}
+	if err := lintPartitions(ctx, conn, spec, rels, add); err != nil {
+		return nil, err
+	}
 
 	for name := range spec.Global {
 		if !tables[name] {
@@ -563,5 +566,16 @@ func lintAppendOnly(ctx context.Context, conn *pgx.Conn, spec Spec, add func(rul
 			add("L-17", table, "no enabled BEFORE TRUNCATE statement trigger that executes pandokos.append_only()")
 		}
 	}
+	return nil
+}
+
+// lintPartitions is rule L-20 of sprint 3.2, section 5.7: for every relation with relispartition,
+// (a) it is owned by pandokos_owner, (b) no runtime role and not PUBLIC holds a table or column
+// privilege, (c) when the parent is tenant-scoped, row-level security is enabled and forced and
+// exactly one policy exists, the canonical tenant_isolation, and (d) when the parent is in
+// Spec.AppendOnly, an enabled BEFORE TRUNCATE trigger executes append_only(). It reports nothing
+// yet: the implementation comes with the ledger (sprint 3.2, step C3).
+func lintPartitions(ctx context.Context, conn *pgx.Conn, spec Spec, rels []relation, add func(rule, object, format string, args ...any)) error {
+	_, _, _, _, _ = ctx, conn, spec, rels, add
 	return nil
 }

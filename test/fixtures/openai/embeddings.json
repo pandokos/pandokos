@@ -1,0 +1,19 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "object": "embedding",
+      "index": 0,
+      "embedding": [
+        0.0123,
+        -0.0456,
+        0.0789
+      ]
+    }
+  ],
+  "model": "fake-basic",
+  "usage": {
+    "prompt_tokens": 8,
+    "total_tokens": 8
+  }
+}

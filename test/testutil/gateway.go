@@ -18,6 +18,7 @@ import (
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/egress"
 	"github.com/pandokos/pandokos/internal/gateway"
+	"github.com/pandokos/pandokos/internal/pricing"
 	"github.com/pandokos/pandokos/internal/secret"
 	"github.com/pandokos/pandokos/internal/usage"
 	"github.com/pandokos/pandokos/test/fakeprovider"
@@ -128,6 +129,37 @@ func TargetFor(up *fakeprovider.Server, provider, model string) gateway.Target {
 		Provider: provider, Endpoint: "synthetic-endpoint",
 		ModelID: "synthetic-model-" + provider + "-" + model, Model: model, UpstreamModel: model,
 		BaseURL: u, Private: true,
+		Prices: []pricing.Version{syntheticPrice("synthetic-price-"+provider+"-"+model, "synthetic-model-"+provider+"-"+model,
+			time.Now().Add(-time.Hour), "3", "6")},
+	}
+}
+
+// syntheticPrice returns a USD price version with an input and an output rate (per million tokens).
+func syntheticPrice(id, modelID string, validFrom time.Time, input, output string) pricing.Version {
+	in, err := pricing.ParseDecimal(input)
+	if err != nil {
+		panic(err)
+	}
+	out, err := pricing.ParseDecimal(output)
+	if err != nil {
+		panic(err)
+	}
+	return pricing.Version{
+		ID: id, ModelID: modelID, ValidFrom: validFrom, Currency: "USD", Source: "override",
+		Rates: []pricing.Rate{
+			{Category: pricing.CategoryInput, PerMillion: in},
+			{Category: pricing.CategoryOutput, PerMillion: out},
+		},
+	}
+}
+
+// TwoPrices returns two versions of a price, "synthetic-price-before" valid from before (input 1,
+// output 2 per million) and "synthetic-price-after" valid from after (input 10, output 20), for a
+// test of the version in force at the start of a request.
+func TwoPrices(before, after time.Time) []pricing.Version {
+	return []pricing.Version{
+		syntheticPrice("synthetic-price-before", "synthetic-model", before, "1", "2"),
+		syntheticPrice("synthetic-price-after", "synthetic-model", after, "10", "20"),
 	}
 }
 

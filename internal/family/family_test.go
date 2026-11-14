@@ -20,7 +20,7 @@ var codeTable = []struct {
 	{CodeModelNotAllowed, "model_not_allowed", 403, "Pandokos: the model is not available to this credential."},
 	{CodeEndpointNotSupported, "endpoint_not_supported", 404, "Pandokos: this endpoint is not supported."},
 	{CodeNoCredential, "no_credential", 409, "Pandokos: no usable provider credential for this provider."},
-	{CodeInvalidRequest, "invalid_request", 400, `Pandokos: the request body must be a JSON object with one string member "model".`},
+	{CodeInvalidRequest, "invalid_request", 400, `Pandokos: the request body is not accepted: it must be a JSON object with one string member "model", and must not ask for background processing.`},
 	{CodeRequestTimeout, "request_timeout", 408, "Pandokos: the request body was not received in time."},
 	{CodeRequestTooLarge, "request_too_large", 413, "Pandokos: the request body exceeds the configured limit."},
 	{CodeUpstreamUnreachable, "upstream_unreachable", 502, "Pandokos: the provider could not be reached."},

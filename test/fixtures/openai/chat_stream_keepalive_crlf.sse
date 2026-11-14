@@ -1,0 +1,21 @@
+: ping
+
+id: 1
+event: message
+data: {"id":"chatcmpl-fixture0004","object":"chat.completion.chunk","created":1700000000,"model":"fake-basic","system_fingerprint":"fp_fixture","choices":[{"index":0,"delta":{"role":"assistant","content":""},"logprobs":null,"finish_reason":null}],"usage":null}
+
+: ping
+
+id: 2
+data: {"id":"chatcmpl-fixture0004","object":"chat.completion.chunk","created":1700000000,"model":"fake-basic","system_fingerprint":"fp_fixture","choices":[{"index":0,"delta":{"content":"pandokos-canary-completion-5f2a9c"},"logprobs":null,"finish_reason":null}],"usage":null}
+
+: ping
+
+id: 3
+data: {"id":"chatcmpl-fixture0004","object":"chat.completion.chunk","created":1700000000,"model":"fake-basic","system_fingerprint":"fp_fixture","choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"stop"}],"usage":null}
+
+id: 4
+data: {"id":"chatcmpl-fixture0004","object":"chat.completion.chunk","created":1700000000,"model":"fake-basic","system_fingerprint":"fp_fixture","choices":[],"usage":{"prompt_tokens":9,"completion_tokens":12,"total_tokens":21}}
+
+data: [DONE]
+

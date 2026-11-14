@@ -15,6 +15,7 @@ import (
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/catalog"
 	"github.com/pandokos/pandokos/internal/gateway"
+	"github.com/pandokos/pandokos/internal/pricing"
 	"github.com/pandokos/pandokos/internal/resolver"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/telemetry"
@@ -526,6 +527,69 @@ func TestFailureAuditor(t *testing.T) {
 			if l["level"] != "DEBUG" || l["request_id"] == nil {
 				t.Errorf("the line: %v", l)
 			}
+		}
+	})
+}
+
+// TestTargetPrices is T-483: Resolve returns the model's price versions from the snapshot that
+// resolved it; a model without a price returns none; versions changed in the database appear
+// after the cache refresh.
+func TestTargetPrices(t *testing.T) {
+	w := newWorld(t)
+	tn, _ := w.api.Tenant(t, "tenant-prices")
+	priced := w.provider(t, "synth-priced", "http://10.1.2.3:8080", true, "priced", "up/priced", "all")
+	bare := w.provider(t, "synth-bare", "http://10.1.2.4:8080", true, "bare", "up/bare", "all")
+	_ = bare
+	cat := w.catalogue(t)
+	p := principal(t, tn.ID, "")
+
+	resolve := func(provider, model string) gateway.Target {
+		t.Helper()
+		target, err := cat.Resolve(ctx(t), p, provider, model)
+		if err != nil {
+			t.Fatalf("Resolve(%s, %s): %v", provider, model, err)
+		}
+		return target
+	}
+
+	t.Run("a model without a price returns none", func(t *testing.T) {
+		if got := resolve("synth-bare", "bare").Prices; len(got) != 0 {
+			t.Errorf("%+v", got)
+		}
+		if got := resolve("synth-priced", "priced").Prices; len(got) != 0 {
+			t.Errorf("%+v", got)
+		}
+	})
+
+	rates := []map[string]any{{"category": "input", "threshold": 0, "rate": "2"}, {"category": "output", "threshold": 0, "rate": "4"}}
+	w.platform(t, "POST", "/v1/models/"+priced+"/prices", map[string]any{"currency": "USD", "rates": rates})
+	later := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
+	w.platform(t, "POST", "/v1/models/"+priced+"/prices", map[string]any{"currency": "EUR", "valid_from": later.Format(time.RFC3339),
+		"rates": []map[string]any{{"category": "input", "threshold": 0, "rate": "3"}, {"category": "output", "threshold": 0, "rate": "6"}}})
+
+	t.Run("versions changed in the database appear after the cache refresh", func(t *testing.T) {
+		var prices []pricing.Version
+		testutil.Eventually(t, 10*time.Second, "both versions reach the target", func() bool {
+			prices = resolve("synth-priced", "priced").Prices
+			return len(prices) == 2
+		})
+		if prices[0].Currency != "USD" || prices[1].Currency != "EUR" || !prices[1].ValidFrom.Equal(later) {
+			t.Errorf("%+v", prices)
+		}
+		for _, v := range prices {
+			if v.ModelID != priced || v.ID == "" || len(v.Rates) != 2 {
+				t.Errorf("version %+v", v)
+			}
+		}
+		at, ok := pricing.VersionAt(prices, time.Now())
+		if !ok || at.Currency != "USD" {
+			t.Errorf("the version in force now: %+v %v", at, ok)
+		}
+		if at, ok = pricing.VersionAt(prices, later.Add(time.Minute)); !ok || at.Currency != "EUR" {
+			t.Errorf("the version in force later: %+v %v", at, ok)
+		}
+		if got := resolve("synth-bare", "bare").Prices; len(got) != 0 {
+			t.Errorf("the other model got %+v", got)
 		}
 	})
 }
