@@ -112,7 +112,7 @@ func TestGatewayExitScenario(t *testing.T) {
 	p.useFakeProvider(t, boot, "openai", up)
 	p.addFakeModels(t, boot)
 	p.upReady = true
-	p.mustCLI(t, boot, "model", "create", "--availability", "selected", "--upstream-id", fakeprovider.ModelBasic, "openai/fake-selected")
+	p.mustCLI(t, boot, "model", "create", "--availability", "selected", "openai/fake-selected")
 
 	const credA, credB, credE = "synthetic-credential-tenant-a-0001", "synthetic-credential-tenant-b-0002", "synthetic-credential-tenant-e-0003"
 	up.Accept(credA, credB, credE)
@@ -308,7 +308,7 @@ func TestGatewayCanaries(t *testing.T) {
 			p.useFakeProvider(t, boot, "openai", up)
 			p.addFakeModels(t, boot)
 			p.upReady = true
-			p.mustCLI(t, boot, "model", "create", "--availability", "selected", "--upstream-id", fakeprovider.ModelBasic, "openai/fake-selected")
+			p.mustCLI(t, boot, "model", "create", "--availability", "selected", "openai/fake-selected")
 			up.Accept(fixtures.CanaryCredential)
 
 			id, admin := p.newTenant(t, boot, "canary")

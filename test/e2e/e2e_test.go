@@ -1082,7 +1082,8 @@ func TestExitScenario(t *testing.T) {
 	}
 	// Every step is in the audit logs, in order.
 	got := auditActions(t, p.db, "SELECT action FROM pandokos.platform_audit_event ORDER BY occurred_at, action")
-	if want := "platform_key.bootstrap,platform_key.create,tenant.create,endpoint.update,tenant.create"; strings.Join(got, ",") != want {
+	want := "platform_key.bootstrap,platform_key.create,tenant.create,endpoint.update," + strings.Repeat("model.create,", len(fakeModels)) + "tenant.create"
+	if strings.Join(got, ",") != want {
 		t.Errorf("platform log: %v, want %s", got, want)
 	}
 	for _, x := range ts {
