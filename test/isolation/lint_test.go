@@ -209,7 +209,7 @@ VALUES ($1::uuid, 'platform', 'test.fixture', 'test', 'success') RETURNING id::t
 				Update: `models = ARRAY['openai/gpt-4o-mini']`,
 			},
 		},
-		SecurityDefiner: []string{"virtual_key_lookup", "virtual_key_directory_add"},
+		SecurityDefiner: []string{"virtual_key_lookup", "virtual_key_directory_add", "record_auth_failure"},
 		Views:           []string{"provider_credential_metadata"},
 		AppendOnly:      []string{"audit_event", "platform_audit_event", "price_import"},
 	}

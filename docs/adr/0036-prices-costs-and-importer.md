@@ -46,3 +46,7 @@ Floating point or a decimal dependency; prices in a JSON column; backdated versi
 importing the v1 files (frozen); creating models from the dataset (its identifiers include
 prefixes and pseudo-models); importing scheduled prices as future versions (upstream withdraws
 them).
+
+## History
+
+- 2026-11: sprint 3.1 sends the download through the egress guard: it obeys upstream.proxy.url and upstream.tls.ca_file; "without proxy" in point 4 now means "without a proxy from the environment".

@@ -85,8 +85,9 @@ disk the operator's database administrators can read, and by auditing every admi
 | A ciphertext is copied onto another tenant's row | The tenant and credential IDs are bound into the ciphertext as associated data, so decryption fails (VLT-07) |
 | An attacker with the database guesses a credential from its fingerprint or hint | The fingerprint is a keyed hash under a key derived from the tenant's data key, which needs the key-encryption key; fingerprints differ between tenants. The hint is four characters and absent for short secrets |
 | A platform administrator abuses the role | No read path for secrets in API or database grants (AZ-08). Support actions inside a tenant need a reason and are audited in the tenant's log (AZ-09) |
-| The proxy is used to reach internal services (SSRF) | Destinations come from the catalogue only. Redirects are not followed. The dialled address is checked against private ranges (GW-05, GW-06) |
-| A private endpoint is used to reach internal services | An endpoint may use `http` or a private address only when an administrator declared it `private`; a public endpoint may not name a private address. Host names are not resolved when the endpoint is written: the guard that checks the dialled address arrives with the gateway sprint (3.1), and until then nothing calls an endpoint from the inference route |
+| The proxy is used to reach internal services (SSRF) | Destinations come from the catalogue only: scheme, host, port and path of the outbound request are catalogue values. Redirects are not followed. The address actually dialled is classified in the dialer's control hook, after name resolution, for every connection attempt; forbidden addresses (unspecified, multicast, reserved, instance-metadata) are refused for every endpoint. Behind `upstream.proxy.url` the connection checked is the one to the proxy and target names are resolved by the proxy, which is then the control point (GW-05, GW-06, [ADR 0038](../adr/0038-egress-guard-upstream-tls-and-proxy.md)) |
+| A private endpoint is used to reach internal services | An endpoint may use `http` or a private address only when an administrator declared it `private`; a public endpoint is refused any private address when it is dialled, whatever its name resolved to when it was written. Private endpoints never use the proxy and can never be on a metadata address |
+| A body with two `model` members is used to pass the model check | Refused with `invalid_request`: exactly one top-level string member `model` is accepted, so the model that is authorized is the one the provider sees ([ADR 0037](../adr/0037-request-pipeline-and-resolution.md)) |
 | A poisoned or hijacked price dataset (R-3) | The dataset is data, never code: it is parsed with a size limit, its regular expressions run in RE2, and it can only price models the catalogue already holds, never create one or name a destination. The embedded snapshot is pinned to a commit with its checksum. The download is off by default, goes only to an operator-configured `https` URL (no proxy, no redirects, bounded in size and time) and no request can set that URL. A changed price becomes a new immutable version with an audit record, and an operator override is never touched by an import. The worst a bad dataset does is wrong cost estimates, which the operator can see in the import report and correct with an override |
 | The provider credential is sent elsewhere | It is attached only to requests for the registered host (GW-05) |
 | Request smuggling, header injection | Strict parsing by the Go HTTP stack, a header allow-list, removal of hop-by-hop headers (GW-07) |
@@ -97,6 +98,15 @@ disk the operator's database administrators can read, and by auditing every admi
 | The audit log is altered | No update or delete grants. Hash chain (AUD-04) |
 | A dependency or the build is compromised | A small dependency set, pinned and scanned. Signed artefacts with provenance and SBOM (SEC-06) |
 | A caller forges trace or metadata to mislead | Both are recorded as declared by the caller and never used in a decision (GW-13, OBS-02) |
+
+## Replay exposure
+
+A virtual key is a bearer credential (SEC-02): whoever holds it can use it. It is protected in transit
+by TLS on the listener or in front of it. A captured key can be replayed until it expires or is
+revoked, within the bound of the principal cache ([ADR 0030](../adr/0030-keys-format-storage-lookup.md)).
+There is no nonce and no request signature. Scopes, the tenant's model list and limits bound what a
+replay can do. Sender-constrained mechanisms, which would make a captured key useless to anyone else,
+are IAM-15 and IAM-16 and are not built yet.
 
 ## Key hierarchy
 

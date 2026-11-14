@@ -14,3 +14,6 @@ INSERT INTO pandokos.platform_audit_event (actor_type, actor_id, actor_name, key
 VALUES (sqlc.arg(actor_type)::text, sqlc.arg(actor_id)::text, sqlc.arg(actor_name)::text,
         sqlc.arg(key_id)::text, sqlc.arg(action)::text, sqlc.arg(resource_type)::text, sqlc.arg(resource_id)::text,
         sqlc.arg(outcome)::text, sqlc.arg(request_id)::text, sqlc.arg(reason)::text, sqlc.arg(detail)::text::jsonb);
+
+-- name: RecordAuthFailure :exec
+SELECT pandokos.record_auth_failure(sqlc.arg(key_id)::text, sqlc.arg(reason)::text, sqlc.arg(request_id)::text);

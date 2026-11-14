@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/url"
 	"testing"
 	"time"
 
@@ -16,7 +15,7 @@ import (
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/config"
-	"github.com/pandokos/pandokos/internal/secret"
+	"github.com/pandokos/pandokos/internal/gateway"
 	"github.com/pandokos/pandokos/internal/server"
 	"github.com/pandokos/pandokos/internal/telemetry"
 	"github.com/pandokos/pandokos/test/fakeprovider"
@@ -38,17 +37,20 @@ func start(t *testing.T) (baseURL string, up *fakeprovider.Server) {
 	up = fakeprovider.New(t)
 	cfg := config.Defaults()
 	cfg.Listeners.Inference.Address = "127.0.0.1:0"
-	u, err := url.Parse(up.BaseURL())
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg.Skeleton.OpenAI.BaseURL = up.BaseURL()
-	cfg.Skeleton.OpenAI.ParsedBaseURL = u
 	cfg.Listeners.Admin.Address = "127.0.0.1:0"
-	cfg.Skeleton.OpenAI.APIKey = secret.New(fixtures.CanaryProviderKey)
+	targets := map[string]gateway.Target{}
+	for _, m := range []string{
+		fakeprovider.ModelBasic, fakeprovider.ModelDetails, fakeprovider.ModelGatedStream, fakeprovider.ModelHang,
+		fakeprovider.ModelError429, fakeprovider.ModelError500Echo, fakeprovider.ModelUsageOnLastChunk,
+	} {
+		targets["openai/"+m] = testutil.TargetFor(up, "openai", m)
+	}
 	srv, err := server.New(server.Options{
 		Config: cfg, Logger: telemetry.NewLogger(io.Discard, "info"), Admin: http.NotFoundHandler(),
 		Authenticator: testutil.StaticAuthenticator(map[string]authz.Principal{testKey: testutil.InferencePrincipal()}),
+		Catalogue:     testutil.StaticCatalogue(map[string]string{"openai": "openai"}, targets),
+		Credentials:   testutil.StaticCredentials(map[string]string{"openai": fixtures.CanaryProviderKey}),
+		Egress:        testutil.TestGuard(t),
 	})
 	if err != nil {
 		t.Fatal(err)

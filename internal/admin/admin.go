@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"net/http"
 	"runtime/debug"
 	"strings"
@@ -34,9 +33,9 @@ type Options struct {
 	Now           func() time.Time     // time.Now when nil
 	// Sealer seals the secrets of credentials and creates the data keys of tenants (required).
 	Sealer *vault.Sealer
-	// Validators maps a provider identifier to the validator used for `validate: true`; a
-	// provider without one refuses `validate`.
-	Validators map[string]vault.Validator
+	// Validator presents a credential to its provider for `validate: true`; nil refuses
+	// `validate`.
+	Validator vault.Validator
 	// Snapshot is the embedded price dataset (genaiprices.Snapshot), the source of an import with
 	// source embedded (required).
 	Snapshot []byte
@@ -56,16 +55,15 @@ type RefreshOptions struct {
 }
 
 type server struct {
-	log     *slog.Logger
-	db      *store.DB
-	auth    *authn.Authenticator
-	now     func() time.Time
-	limiter *failureLimiter
-	sealer  *vault.Sealer
-	// validators is a private copy of Options.Validators.
-	validators map[string]vault.Validator
-	snapshot   []byte
-	refresh    RefreshOptions
+	log       *slog.Logger
+	db        *store.DB
+	auth      *authn.Authenticator
+	now       func() time.Time
+	limiter   *failureLimiter
+	sealer    *vault.Sealer
+	validator vault.Validator
+	snapshot  []byte
+	refresh   RefreshOptions
 }
 
 // reqState is the state of one request, shared by the outer handler and the hooks.
@@ -103,7 +101,7 @@ func New(o Options) (http.Handler, error) {
 	case o.Refresh.Enabled && (o.Refresh.URL == "" || o.Refresh.Fetch == nil):
 		return nil, errors.New("admin: Refresh needs a URL and a Fetch function when enabled")
 	}
-	s := &server{log: o.Logger, db: o.DB, auth: o.Authenticator, now: o.Now, sealer: o.Sealer, validators: maps.Clone(o.Validators),
+	s := &server{log: o.Logger, db: o.DB, auth: o.Authenticator, now: o.Now, sealer: o.Sealer, validator: o.Validator,
 		snapshot: o.Snapshot, refresh: o.Refresh}
 	if s.now == nil {
 		s.now = time.Now

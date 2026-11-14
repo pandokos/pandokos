@@ -9,11 +9,11 @@ import (
 const (
 	Name                     = "openai"
 	OperationChatCompletions = "chat.completions"
-	PathChatCompletions      = "/chat/completions" // relative to the provider base URL
+	PathChatCompletions      = "/v1/chat/completions" // the native path, appended to the endpoint base URL
 )
 
-// Match reports the operation for a method and a path relative to "/<provider>/v1".
-// Only ("POST", "/chat/completions") matches.
+// Match reports the operation for a method and a native path ("/v1/...").
+// Only ("POST", "/v1/chat/completions") matches.
 func Match(method, path string) (operation string, ok bool) {
 	if method == http.MethodPost && path == PathChatCompletions {
 		return OperationChatCompletions, true
@@ -38,7 +38,7 @@ func AttachCredential(h http.Header, key string) {
 }
 
 // RequestHeaders is the allow-list of caller headers forwarded to the provider.
-var RequestHeaders = []string{"Accept", "Content-Type", "User-Agent"}
+var RequestHeaders = []string{"Accept", "Content-Type", "User-Agent", "OpenAI-Organization", "OpenAI-Project", "OpenAI-Beta"}
 
 // AllowResponseHeader reports whether a provider response header is passed to the caller:
 // Content-Type, Content-Length, Retry-After, X-Request-Id, and any header whose canonical

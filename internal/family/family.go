@@ -16,7 +16,7 @@ type Usage struct {
 // ErrorCode is a stable code of ADR 0020.
 type ErrorCode string
 
-// The codes the skeleton can raise.
+// The codes the inference side can raise (ADR 0020 and its amendment).
 const (
 	CodeUnauthenticated      ErrorCode = "unauthenticated"        // 401
 	CodeEndpointNotSupported ErrorCode = "endpoint_not_supported" // 404
@@ -27,6 +27,10 @@ const (
 	CodeForbidden            ErrorCode = "forbidden"              // 403
 	CodeTenantSuspended      ErrorCode = "tenant_suspended"       // 403
 	CodeUnavailable          ErrorCode = "unavailable"            // 503
+	CodeModelNotAllowed      ErrorCode = "model_not_allowed"      // 403
+	CodeNoCredential         ErrorCode = "no_credential"          //nolint:gosec // 409; an error code, not a credential
+	CodeInvalidRequest       ErrorCode = "invalid_request"        // 400
+	CodeRequestTimeout       ErrorCode = "request_timeout"        // 408
 )
 
 // Status returns the HTTP status of the code.
@@ -42,8 +46,14 @@ func (c ErrorCode) Status() int {
 		return 502
 	case CodeUpstreamTimeout:
 		return 504
-	case CodeForbidden, CodeTenantSuspended:
+	case CodeForbidden, CodeTenantSuspended, CodeModelNotAllowed:
 		return 403
+	case CodeNoCredential:
+		return 409
+	case CodeInvalidRequest:
+		return 400
+	case CodeRequestTimeout:
+		return 408
 	case CodeUnavailable:
 		return 503
 	default:
@@ -70,6 +80,14 @@ func (c ErrorCode) Message() string {
 		return "Pandokos: the tenant is not active."
 	case CodeUnavailable:
 		return "Pandokos: the request cannot be verified right now."
+	case CodeModelNotAllowed:
+		return "Pandokos: the model is not available to this credential."
+	case CodeNoCredential:
+		return "Pandokos: no usable provider credential for this provider."
+	case CodeInvalidRequest:
+		return `Pandokos: the request body must be a JSON object with one string member "model".`
+	case CodeRequestTimeout:
+		return "Pandokos: the request body was not received in time."
 	default:
 		return "Pandokos: internal error."
 	}

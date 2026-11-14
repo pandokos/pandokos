@@ -16,16 +16,23 @@ import (
 	"time"
 
 	"github.com/pandokos/pandokos/internal/config"
+	"github.com/pandokos/pandokos/internal/egress"
+	"github.com/pandokos/pandokos/internal/family"
+	"github.com/pandokos/pandokos/internal/family/openai"
 	"github.com/pandokos/pandokos/internal/gateway"
 	"github.com/pandokos/pandokos/internal/health"
 )
 
 // Options configure a Server.
 type Options struct {
-	Config        *config.Config        // required
-	Logger        *slog.Logger          // required
-	Authenticator gateway.Authenticator // required: authenticates inference requests
-	Admin         http.Handler          // required: the administration API (admin.New)
+	Config        *config.Config          // required
+	Logger        *slog.Logger            // required
+	Authenticator gateway.Authenticator   // required: authenticates inference requests
+	Admin         http.Handler            // required: the administration API (admin.New)
+	Catalogue     gateway.Catalogue       // required: provider and model resolution
+	Credentials   gateway.Credentials     // required: opens the provider credential of a call
+	Failures      gateway.FailureRecorder // optional: records authentication failures
+	Egress        *egress.Guard           // required: the only way out of the process
 }
 
 // listener is one HTTP listener with its server.
@@ -39,14 +46,14 @@ type listener struct {
 // Server serves two listeners with two handlers: the inference gateway and the administration
 // API. They share the health state, the logger and the shutdown sequence.
 type Server struct {
-	cfg       *config.Config
-	logger    *slog.Logger
-	health    *health.State
-	healthH   http.Handler
-	gw        *gateway.Handler
-	admin     http.Handler
-	transport *http.Transport
-	inf, adm  *listener
+	cfg      *config.Config
+	logger   *slog.Logger
+	health   *health.State
+	healthH  http.Handler
+	gw       *gateway.Handler
+	admin    http.Handler
+	egress   *egress.Guard
+	inf, adm *listener
 
 	baseCtx    context.Context
 	cancelBase context.CancelCauseFunc
@@ -63,20 +70,29 @@ func New(o Options) (*Server, error) {
 		return nil, errors.New("server: Authenticator is required")
 	case o.Admin == nil:
 		return nil, errors.New("server: Admin is required")
+	case o.Catalogue == nil:
+		return nil, errors.New("server: Catalogue is required")
+	case o.Credentials == nil:
+		return nil, errors.New("server: Credentials is required")
+	case o.Egress == nil:
+		return nil, errors.New("server: Egress is required")
 	}
 	cfg, logger := o.Config, o.Logger
-	s := &Server{cfg: cfg, logger: logger, health: health.New(logger), admin: o.Admin}
+	s := &Server{cfg: cfg, logger: logger, health: health.New(logger), admin: o.Admin, egress: o.Egress}
 	s.healthH = s.health.Handler()
-	s.transport = gateway.NewTransport(time.Duration(cfg.Upstream.ConnectTimeout))
 	gw, err := gateway.New(gateway.Options{
 		Logger:                 logger,
-		BaseURL:                cfg.Skeleton.OpenAI.ParsedBaseURL,
-		ProviderKey:            cfg.Skeleton.OpenAI.APIKey,
 		Authenticator:          o.Authenticator,
+		Catalogue:              o.Catalogue,
+		Credentials:            o.Credentials,
+		Failures:               o.Failures,
+		Families:               map[string]family.Adapter{openai.Name: openai.Adapter()},
+		DefaultFamily:          openai.Name,
+		Public:                 o.Egress.Transport(false),
+		Private:                o.Egress.Transport(true),
 		MaxRequestBodyBytes:    cfg.Limits.MaxRequestBodyBytes,
 		RequestBodyReadTimeout: time.Duration(cfg.Limits.RequestBodyReadTimeout),
 		MaxRequestDuration:     time.Duration(cfg.Limits.MaxRequestDuration),
-		Transport:              s.transport,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("server: %w", err)
@@ -274,7 +290,7 @@ func (s *Server) Serve(ctx context.Context) error {
 			failure = fmt.Errorf("serve: %w", err)
 		}
 	}
-	s.transport.CloseIdleConnections()
+	s.egress.CloseIdleConnections()
 
 	level := slog.LevelInfo
 	if forced.Load() {

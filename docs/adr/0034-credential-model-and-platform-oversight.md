@@ -48,3 +48,7 @@ A platform-scope policy on the credential table with column privileges (a second
 tenant table, and a platform session that sees every tenant's metadata at once); platform
 principals holding tenant permissions (contradicts ADR 0031); deleting instead of revoking
 (loses the fingerprint that identifies what was revoked); a pin table per provider.
+
+## History
+
+- 2026-11: sprint 3.1 replaces point 6: validation presents the secret to the default enabled endpoint of the credential's catalogue provider, in the way of its API family (openai, anthropic), through the egress guard ([ADR 0038](0038-egress-guard-upstream-tls-and-proxy.md)); it shares the guard's connection pools. The pin rule of point 2 is confirmed with the model check in the request path.

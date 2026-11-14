@@ -49,8 +49,14 @@ pandokos model grant vllm/llama-3-70b --tenant ACME
   trailing slash (a trailing `/` is removed; the scheme and the host are lower-cased). The native path
   of a request is appended to it. Only a `private` endpoint may use `http`, and a public one may not
   name a loopback, private, link-local or unspecified address. Host names are not resolved when the
-  endpoint is written; the guard that checks the address actually dialled belongs to the gateway
-  sprint (3.1). Declare an endpoint `private` only for a destination you control.
+  endpoint is written; the egress guard checks the address actually dialled, so `private` is enforced
+  when connecting (see the [gateway guide](gateway.md)). Declare an endpoint `private` only for a
+  destination you control.
+- Base URL plus native path. The base URL is written without the SDK's `/v1`; the request's native path
+  (which includes `/v1`) is appended. Examples: OpenAI, base URL `https://api.openai.com`, a call to
+  `/openai/v1/chat/completions` goes to `https://api.openai.com/v1/chat/completions`; an
+  OpenAI-compatible host with a path prefix, base URL `https://models.example.com/serve`, goes to
+  `https://models.example.com/serve/v1/chat/completions`.
 - A model is created `selected` unless `--availability all` is given: nobody may use it until a tenant
   is granted it. Names and upstream identifiers are unique per provider.
 - A provider is deleted only when no endpoint, model or credential references it. A model with price
@@ -165,7 +171,7 @@ the copyright line are kept beside the data). Pandokos reads the **v2 format**
 
 **`import-prices --file`.** `pandokos import-prices --file FILE` (or `--embedded`; add `--dry-run` to
 see the report and write nothing) imports a dataset from a file, with the admin database user and no
-network: use it behind a proxy or in an air-gapped network after downloading the file yourself. It
+network: use it behind a proxy or in an air-gapped network after downloading the file yourself; it remains the way for hosts that cannot reach the dataset at all. It
 reads and checks the file (16 MiB at most) before it opens the database, prints `models_seen`,
 `created`, `unchanged`, `overridden`, `unmatched` and `skipped`, one `name: value` line each, then one
 line per model, and exits 0 on success even with issues, 1 when the import fails, 2 for wrong usage. The
@@ -184,7 +190,8 @@ job of `serve` downloads the dataset from `pricing.refresh.url` (`PANDOKOS_PRICI
 minute after start and then every `pricing.refresh.interval` (`PANDOKOS_PRICING_REFRESH_INTERVAL`, 24
 hours by default, 1 to 720 hours); it skips a run when another instance imported less than half an
 interval ago. The download is a single `GET` over `https` with a total limit of 60 seconds and 16 MiB,
-without a proxy (`HTTPS_PROXY` is ignored until sprint 3.1 decides it) and without following redirects;
+through the egress guard (it obeys `upstream.proxy.url` and `upstream.tls.ca_file`; `HTTPS_PROXY` is
+ignored) and without following redirects;
 a failure (`unreachable`, `timeout`, `status`, `redirect`, `too_large`, `dataset_invalid`) is logged, kept
 as a failed run and not retried before the next interval. No byte of the response is logged. The URL is
 operator configuration only; no request can change it. The default URL names the `main` branch, which

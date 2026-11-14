@@ -4,6 +4,7 @@ package config
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net/url"
 	"strings"
@@ -46,7 +47,6 @@ type Config struct {
 	Database  Database  `yaml:"database"`
 	Vault     Vault     `yaml:"vault"`
 	Pricing   Pricing   `yaml:"pricing"`
-	Skeleton  Skeleton  `yaml:"skeleton"`
 }
 
 // Log configures logging.
@@ -142,7 +142,25 @@ type Limits struct {
 
 // Upstream configures the connection to providers.
 type Upstream struct {
-	ConnectTimeout Duration `yaml:"connect_timeout"`
+	ConnectTimeout Duration      `yaml:"connect_timeout"`
+	TLS            UpstreamTLS   `yaml:"tls"`
+	Proxy          UpstreamProxy `yaml:"proxy"`
+}
+
+// UpstreamTLS configures the certificate authorities trusted for outbound TLS connections, in
+// addition to the system roots.
+type UpstreamTLS struct {
+	CAFile string `yaml:"ca_file"`
+
+	RootCAs *x509.CertPool `yaml:"-"` // filled by Load when the purpose is serve and CAFile is set
+}
+
+// UpstreamProxy configures the proxy used for provider calls to public endpoints, credential
+// validation and the price download.
+type UpstreamProxy struct {
+	URL string `yaml:"url"`
+
+	ParsedURL *url.URL `yaml:"-"` // filled by Load when the purpose is serve and URL is set
 }
 
 // Shutdown configures graceful shutdown.
@@ -191,20 +209,6 @@ type DatabaseOwner struct {
 	PasswordFile string `yaml:"password_file"`
 
 	Password secret.Secret `yaml:"-"` // filled by Load when the purpose is migrate
-}
-
-// Skeleton is the temporary section of the walking skeleton; later sprints remove it.
-type Skeleton struct {
-	OpenAI SkeletonOpenAI `yaml:"openai"`
-}
-
-// SkeletonOpenAI configures the single provider of the walking skeleton.
-type SkeletonOpenAI struct {
-	BaseURL    string `yaml:"base_url"`
-	APIKeyFile string `yaml:"api_key_file"`
-
-	ParsedBaseURL *url.URL      `yaml:"-"` // filled by Load
-	APIKey        secret.Secret `yaml:"-"` // filled by Load
 }
 
 // Purpose says which command the configuration is loaded for. It decides which secrets are
@@ -290,6 +294,5 @@ func Defaults() *Config {
 			Worker:         DatabaseRole{User: "pandokos_worker", MaxConnections: 5},
 			Owner:          DatabaseOwner{User: "pandokos_owner"},
 		},
-		Skeleton: Skeleton{OpenAI: SkeletonOpenAI{BaseURL: "https://api.openai.com/v1"}},
 	}
 }

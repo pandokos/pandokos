@@ -20,7 +20,7 @@ type Refresher struct {
 	URL        string        // https URL, from the configuration only
 	Interval   time.Duration // pricing.refresh.interval
 	FirstDelay time.Duration // default one minute
-	// Fetch downloads the dataset; the default is the package's Fetch with its defaults. Tests
+	// Fetch downloads the dataset; serve always sets it (a nil Fetch fails every download). Tests
 	// and the administration plane inject their own.
 	Fetch func(ctx context.Context, url string) ([]byte, error)
 	Now   func() time.Time

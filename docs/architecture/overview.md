@@ -127,9 +127,14 @@ flowchart TB
   ([ADR 0007](../adr/0007-authorization-rbac.md)).
 - **limits** reserves capacity before forwarding and settles after
   ([ADR 0012](../adr/0012-limits-and-budget-reservation.md)).
-- **resolver** maps the request to a provider endpoint and a credential, both taken from the
-  catalogue, never from the request.
+- **resolver** (`internal/resolver`) maps the request to a provider endpoint and a credential, both
+  taken from the catalogue, never from the request, and records authentication failures
+  ([ADR 0037](../adr/0037-request-pipeline-and-resolution.md)).
 - **forwarder** is a streaming reverse proxy with a fixed set of destinations.
+- **egress guard** (`internal/egress`) makes every outbound connection of the server: two transports
+  (public and private endpoints) that classify the address actually dialled, never follow redirects,
+  verify certificates and use the configured proxy only
+  ([ADR 0038](../adr/0038-egress-guard-upstream-tls-and-proxy.md)).
 - **API families** hold everything that is specific to a wire protocol: which paths are
   supported, where the model name is, how the credential is sent, how usage is read from a
   response or a stream, and what an error looks like
@@ -169,12 +174,14 @@ sequenceDiagram
    (`Authorization: Bearer` for OpenAI, `x-api-key` for Anthropic), so stock SDKs work unchanged.
    A value with the `pdk_` prefix is a virtual key; anything else is treated as a JWT. The lookup
    result is cached in memory for a short time.
-3. **Authorize.** The body is read up to a size limit and only the fields Pandokos needs are
-   parsed: model, stream flag, output-token limit. The model must be available to the tenant and
-   allowed by the key.
+3. **Authorize.** Both `model:invoke` and `credential:use` are decided from the principal before
+   the body is read. Then the body is read up to a size limit and only the fields Pandokos needs are
+   parsed: model, stream flag (and, in later sprints, the output-token limit). The model must be
+   available to the tenant and allowed by the key.
 4. **Reserve.** An estimate of the request's cost is reserved against every applicable limit. If
    any limit would be exceeded the request ends here with a 429 in the API family's error shape.
-5. **Resolve.** Funding mode, endpoint and credential come from the catalogue. The credential is
+5. **Resolve.** Funding mode, endpoint and credential come from the catalogue (limits, step 4, are
+   not built yet, so in the code this step follows the model check directly). The credential is
    decrypted, or taken from a short-lived in-memory cache.
 6. **Forward.** Inbound credentials are stripped, the provider credential is injected, the
    request goes to the catalogue host and nowhere else. The response is copied to the caller as
@@ -297,6 +304,7 @@ internal/
   health/                liveness and readiness
   server/                listeners, wiring, graceful shutdown
   gateway/               request pipeline of the data plane
+  egress/  resolver/     outbound connections and their address checks; catalogue, vault and audit adapters of the gateway
   family/                one package per API family: openai, anthropic, gemini
   authn/  authz/         key format and authenticator with the principal cache; permission catalogue, roles, decision
   adminapi/  apigen/     generated administration API (types, router, client) and its generator

@@ -71,11 +71,14 @@ func Load(src Source) (*Config, []Warning, error) {
 	if len(problems) > 0 {
 		return nil, nil, &ValidationError{Problems: problems}
 	}
-	return cfg, warnings(cfg, env, known), nil
+	return cfg, warnings(cfg, env, known, src), nil
 }
 
-func warnings(cfg *Config, env map[string]string, known map[string]bool) []Warning {
+func warnings(cfg *Config, env map[string]string, known map[string]bool, src Source) []Warning {
 	ws := listenerAndURLWarnings(cfg)
+	if src.Purpose == PurposeServe {
+		ws = append(ws, proxyEnvironmentWarnings(cfg, src.Environ)...)
+	}
 	var unknown []string
 	for name := range env {
 		if known[name] || strings.HasPrefix(name, "PANDOKOS_CLI_") || strings.HasPrefix(name, "PANDOKOS_SERVICE_") || strings.HasPrefix(name, "PANDOKOS_PORT") || reServiceLink.MatchString(name) {

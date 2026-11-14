@@ -79,6 +79,7 @@ func validate(c *Config, purpose Purpose) []Problem {
 	}
 	if purpose == PurposeServe {
 		ps = append(ps, validatePricing(c)...)
+		ps = append(ps, validateUpstream(c)...)
 	}
 	if c.Vault.KEK.Provider != "local" {
 		add("vault.kek.provider", "must be local")
@@ -89,12 +90,6 @@ func validate(c *Config, purpose Purpose) []Problem {
 
 	ps = append(ps, validateDatabase(c)...)
 
-	u, msg := parseBaseURL(c.Skeleton.OpenAI.BaseURL)
-	if msg != "" {
-		add("skeleton.openai.base_url", msg)
-	} else {
-		c.Skeleton.OpenAI.ParsedBaseURL = u
-	}
 	return ps
 }
 
@@ -356,30 +351,6 @@ func checkAddress(addr string) string {
 	return ""
 }
 
-// parseBaseURL validates the provider base URL and removes a trailing slash from its path.
-func parseBaseURL(raw string) (*url.URL, string) {
-	u, err := url.Parse(raw)
-	switch {
-	case err != nil:
-		return nil, "must be a valid URL"
-	case !u.IsAbs():
-		return nil, "must be an absolute URL"
-	case u.Scheme != "http" && u.Scheme != "https":
-		return nil, "the scheme must be http or https"
-	case u.Host == "":
-		return nil, "must have a host"
-	case u.User != nil:
-		return nil, "must not contain user information"
-	case u.RawQuery != "" || u.ForceQuery || strings.Contains(raw, "?"):
-		return nil, "must not contain a query"
-	case u.Fragment != "" || strings.Contains(raw, "#"):
-		return nil, "must not contain a fragment"
-	}
-	u.Path = strings.TrimSuffix(u.Path, "/")
-	u.RawPath = ""
-	return u, ""
-}
-
 func isLoopback(host string) bool {
 	if host == "localhost" {
 		return true
@@ -390,9 +361,6 @@ func isLoopback(host string) bool {
 
 func listenerAndURLWarnings(c *Config) []Warning {
 	var ws []Warning
-	if u := c.Skeleton.OpenAI.ParsedBaseURL; u != nil && u.Scheme == "http" && !isLoopback(u.Hostname()) {
-		ws = append(ws, Warning{Key: "skeleton.openai.base_url", Message: "the provider key is sent without TLS"})
-	}
 	if host, _, err := net.SplitHostPort(c.Listeners.Inference.Address); err == nil && !isLoopback(host) && (c.Listeners.Inference.TLS.CertFile == "" || c.Listeners.Inference.TLS.KeyFile == "") {
 		ws = append(ws, Warning{Key: "listeners.inference.address", Message: "the listener serves plain HTTP; set listeners.inference.tls.cert_file and key_file, or terminate TLS in front of it"})
 	}
@@ -420,18 +388,9 @@ func listenerAndURLWarnings(c *Config) []Warning {
 	return append(ws, keyFileWarning(c)...)
 }
 
-// loadSecrets reads the provider key and the key-encryption key.
+// loadSecrets reads the key-encryption key.
 func loadSecrets(c *Config) []Problem {
-	const apiKey = "skeleton.openai.api_key_file"
-	var ps []Problem
-	if c.Skeleton.OpenAI.APIKeyFile == "" {
-		ps = append(ps, Problem{Key: apiKey, Message: "must be set"})
-	} else if s, err := secret.ReadFile(c.Skeleton.OpenAI.APIKeyFile); err != nil {
-		ps = append(ps, Problem{Key: apiKey, Message: err.Error()})
-	} else {
-		c.Skeleton.OpenAI.APIKey = s
-	}
-	return append(ps, loadKEK(c)...)
+	return loadKEK(c)
 }
 
 // loadKEK reads the key file and checks that it holds 32 bytes in standard base64. No message
@@ -490,4 +449,88 @@ func validatePricing(c *Config) []Problem {
 		r.ParsedURL = u
 	}
 	return ps
+}
+
+// validateUpstream applies the rules of upstream.tls.ca_file and upstream.proxy.url; only serve
+// reads them. No message quotes the content of the file or the URL.
+func validateUpstream(c *Config) []Problem {
+	var ps []Problem
+	if file := c.Upstream.TLS.CAFile; file != "" {
+		const key = "upstream.tls.ca_file"
+		b, err := readCAFile(file)
+		switch {
+		case err != nil:
+			ps = append(ps, Problem{key, "the file cannot be read"})
+		default:
+			pool, perr := x509.SystemCertPool()
+			if perr != nil || pool == nil {
+				pool = x509.NewCertPool()
+			}
+			if !pool.AppendCertsFromPEM(b) {
+				ps = append(ps, Problem{key, "the file holds no certificate"})
+			} else {
+				c.Upstream.TLS.RootCAs = pool
+			}
+		}
+	}
+	if raw := c.Upstream.Proxy.URL; raw != "" {
+		const key = "upstream.proxy.url"
+		u, err := url.Parse(raw)
+		switch {
+		case err != nil || strings.ContainsAny(raw, " \t\r\n"):
+			ps = append(ps, Problem{key, "must be a valid URL"})
+		case u.Scheme != "http" && u.Scheme != "https":
+			ps = append(ps, Problem{key, "the scheme must be http or https"})
+		case u.Host == "" || u.Hostname() == "":
+			ps = append(ps, Problem{key, "must have a host"})
+		case u.User != nil:
+			ps = append(ps, Problem{key, "must not contain user information"})
+		case u.RawQuery != "" || u.ForceQuery || strings.Contains(raw, "?"):
+			ps = append(ps, Problem{key, "must not contain a query"})
+		case u.Fragment != "" || strings.Contains(raw, "#"):
+			ps = append(ps, Problem{key, "must not contain a fragment"})
+		case u.Path != "" && u.Path != "/":
+			ps = append(ps, Problem{key, "must not contain a path"})
+		default:
+			c.Upstream.Proxy.ParsedURL = u
+		}
+	}
+	return ps
+}
+
+// readCAFile reads at most maxCAFileBytes of a regular file.
+func readCAFile(path string) ([]byte, error) {
+	f, err := os.Open(path) //nolint:gosec // the path is operator configuration
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	b, err := io.ReadAll(io.LimitReader(f, maxCAFileBytes))
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+// proxyEnvVars are the environment variables that name a proxy and that Pandokos never uses.
+var proxyEnvVars = []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"}
+
+// proxyEnvironmentWarnings names each proxy variable set in the environment, never its value.
+func proxyEnvironmentWarnings(c *Config, environ []string) []Warning {
+	if c.Upstream.Proxy.URL != "" {
+		return nil
+	}
+	set := map[string]bool{}
+	for _, e := range environ {
+		if name, v, ok := strings.Cut(e, "="); ok && v != "" {
+			set[name] = true
+		}
+	}
+	var ws []Warning
+	for _, name := range proxyEnvVars {
+		if set[name] {
+			ws = append(ws, Warning{Key: "upstream.proxy.url", Message: name + " is set in the environment and is not used; set upstream.proxy.url to send provider traffic through a proxy"})
+		}
+	}
+	return ws
 }

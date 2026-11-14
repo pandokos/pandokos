@@ -134,13 +134,19 @@ deleted while a credential references it.
 ## 8. Validation
 
 When a tenant asks (`validate`), a credential is checked once against the provider before it is
-stored: `GET <skeleton.openai.base_url>/models` with the secret as a bearer token, nothing else, on a
-connection that follows no proxy and no redirect, with a 10 s limit. Only the provider `openai` has a
-validator; a request to validate a credential of another provider is refused with `invalid_request`
-on `validate`. A 2xx answer stores the credential as validated; 401 or 403
-returns 422 `credential_rejected`; anything else, including a timeout or a redirect, returns 502
-`validation_unavailable`. In both failures nothing is stored. The provider's answer is never logged.
-The log line `credential validation` carries only the outcome and the status.
+stored. The secret is presented to the default enabled endpoint of the credential's provider, in the way
+of the provider's API family: `GET <base URL>/v1/models` with a bearer token for `openai`, and the
+equivalent request with `x-api-key` for `anthropic`. The request goes through the egress guard: the
+endpoint's class (public or private) decides the allowed scheme and addresses, redirects are not followed,
+certificates are verified, and the request goes through `upstream.proxy.url` when it is configured
+([gateway guide](gateway.md)). The limit is 10 s. A provider whose family has no validator, or a
+provider with no enabled default endpoint, is refused with `invalid_request` on `validate`.
+
+A 2xx answer stores the credential as validated; 401 or 403 returns 422 `credential_rejected`; anything
+else, including a timeout, a refusal by the guard or a redirect, returns 502 `validation_unavailable`.
+In both failures nothing is stored. The provider's answer is never logged. The log line `credential
+validation` carries only the outcome and the status. Self-hosted servers that accept any key answer 2xx
+to every secret: for them `validate` proves that the endpoint is reachable, not that the key is right.
 
 ## 9. Limits
 
@@ -151,4 +157,6 @@ The log line `credential validation` carries only the outcome and the status.
   grants today and becomes a property of the deployment when the roles run apart.
 - Erasure and old backups: see section 4 (O-8).
 - No key rotation yet (R-6): one key file, one active version.
-- The inference listener does not open credentials yet; that arrives with the gateway sprint.
+- The pin rule holds in the request path: a key pinned to a credential of the provider being called
+  uses that credential; otherwise the tenant's default for that provider is used; nothing else is tried
+  ([gateway guide](gateway.md)).
