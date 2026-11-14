@@ -188,6 +188,14 @@ func TestAnthropicEndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("usage list --all pages over the default window", func(t *testing.T) {
+		// No --from and no --to: every page must keep the window of the first one.
+		items := p.usageList(t, admin, id, "--limit", "1")
+		if len(items) < 4 {
+			t.Fatalf("%d items over one-record pages, want at least 4", len(items))
+		}
+	})
+
 	t.Run("capability check says callable", func(t *testing.T) {
 		got := p.capabilityOf(t, admin, id, "anthropic", fakeprovider.ModelBasic)
 		if !got.Callable || len(got.Reasons) != 0 || got.Checks.Credential != adminapi.CredentialAvailabilityActive {

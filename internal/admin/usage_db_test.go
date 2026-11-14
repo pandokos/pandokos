@@ -354,6 +354,52 @@ func TestListUsageRecords(t *testing.T) {
 		}
 	})
 
+	t.Run("pages over the default window by cursor", func(t *testing.T) {
+		// No from, no to: the window is resolved on the first request and the cursor carries it.
+		for name, q := range map[string]url.Values{
+			"no from, no to": {"limit": {"2"}},
+			"only from":      {"from": {now.Add(-2 * time.Hour).Format(time.RFC3339Nano)}, "limit": {"2"}},
+			"only to":        {"to": {now.Add(time.Minute).Format(time.RFC3339Nano)}, "limit": {"2"}},
+		} {
+			var got []string
+			pages := 0
+			for {
+				page := usagePage(t, c, c.ka, c.a.ID, q)
+				pages++
+				got = append(got, ids(page.Items)...)
+				if page.NextCursor == "" {
+					break
+				}
+				q.Set("cursor", page.NextCursor)
+				if pages > 5 {
+					t.Fatalf("%s: too many pages", name)
+				}
+			}
+			want := ids(usagePage(t, c, c.ka, c.a.ID, url.Values{"from": all["from"], "to": all["to"]}).Items)[:5]
+			if pages != 3 || strings.Join(got, ",") != strings.Join(want, ",") {
+				t.Errorf("%s: %d pages, ids %v, want %v", name, pages, got, want)
+			}
+		}
+	})
+
+	t.Run("a cursor of the default window refuses another explicit window", func(t *testing.T) {
+		first := usagePage(t, c, c.ka, c.a.ID, url.Values{"limit": {"2"}})
+		if first.NextCursor == "" {
+			t.Fatal("no cursor")
+		}
+		for name, q := range map[string]url.Values{
+			"another from":     {"from": {now.Add(-3 * time.Hour).Format(time.RFC3339Nano)}},
+			"another to":       {"to": {now.Add(time.Hour).Format(time.RFC3339Nano)}},
+			"another provider": {"provider": {"anthropic"}},
+		} {
+			q.Set("cursor", first.NextCursor)
+			p := expect(t, listUsage(t, c, c.ka, c.a.ID, q), 400, adminapi.ProblemCodeInvalidRequest)
+			if len(p.Errors) != 1 || p.Errors[0].Field != "cursor" {
+				t.Errorf("%s: errors %+v, want one on cursor", name, p.Errors)
+			}
+		}
+	})
+
 	t.Run("the default window is the last 24 hours", func(t *testing.T) {
 		page := usagePage(t, c, c.ka, c.a.ID, nil)
 		if len(page.Items) != 5 {
