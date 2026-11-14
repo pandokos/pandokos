@@ -113,13 +113,13 @@ func (r *Request) Model() string { return r.model }
 func (r *Request) Stream() bool { return r.stream }
 
 // Prepare returns the body to forward and whether the usage option was added by Pandokos. The
-// usage option is added when the request is a stream that does not ask for it, and the value of
+// usage option is added when p.StreamUsage is true and the request is a stream that does not ask for it, and the value of
 // the model member is replaced by upstreamModel when that is not empty and differs from
 // Model(). Every other byte is forwarded as received; with no edit the input slice is returned.
 func (r *Request) Prepare(p family.Preparation) (out []byte, strip bool) {
 	upstreamModel := p.UpstreamModel
 	var edits []edit
-	if r.usage != nil {
+	if r.usage != nil && p.StreamUsage {
 		edits = append(edits, *r.usage)
 		strip = true
 	}
