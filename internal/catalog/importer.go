@@ -172,7 +172,7 @@ func runImport(ctx context.Context, db *store.DB, src Source, o ImportOptions, c
 	ds, err := genaiprices.Parse(src.Data)
 	if err != nil {
 		if !o.DryRun {
-			if ferr := recordFailure(ctx, db, src, o, started, digest, "dataset_invalid"); ferr != nil {
+			if ferr := RecordFailure(ctx, db, src, o, started, digest, "dataset_invalid"); ferr != nil {
 				return Report{Digest: digest}, "", ferr
 			}
 		}
@@ -222,8 +222,9 @@ func runImport(ctx context.Context, db *store.DB, src Source, o ImportOptions, c
 	return rep, skip, nil
 }
 
-// recordFailure writes a failed run in its own platform transaction.
-func recordFailure(ctx context.Context, db *store.DB, src Source, o ImportOptions, started time.Time, digest, class string) error {
+// RecordFailure writes a failed run (a dataset that could not be read or downloaded) in its own
+// platform transaction.
+func RecordFailure(ctx context.Context, db *store.DB, src Source, o ImportOptions, started time.Time, digest, class string) error {
 	err := db.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
 		row, err := queries.New(tx).CreatePriceImport(ctx, queries.CreatePriceImportParams{
 			StartedAt: started, Source: src.Kind, SourceRef: sourceRef(src), DatasetFormat: "genai-prices-v2", Digest: digest,

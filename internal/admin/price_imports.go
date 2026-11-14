@@ -124,6 +124,12 @@ func (s *server) RunPriceImport(ctx context.Context, in adminapi.RunPriceImportI
 				fe = &catalog.FetchError{Class: "unreachable"}
 			}
 			s.log.Warn("price import failed", "source", catalog.SourceRemote, "error_class", fe.Class, "duration_ms", time.Since(started).Milliseconds())
+			if !b.DryRun {
+				failed := catalog.Source{Kind: catalog.SourceRemote, Ref: s.refresh.URL}
+				if rerr := catalog.RecordFailure(ctx, s.db, failed, catalog.ImportOptions{Actor: audit.ActorOf(p), RequestID: st.id}, started, "", fe.Class); rerr != nil {
+					s.log.Warn("price import failure not recorded", "source", catalog.SourceRemote)
+				}
+			}
 			return nil, fe
 		}
 		src = catalog.Source{Kind: catalog.SourceRemote, Ref: s.refresh.URL, Data: data}

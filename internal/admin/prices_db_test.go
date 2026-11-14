@@ -494,6 +494,17 @@ func TestPriceImportAPI(t *testing.T) {
 		if after := c.api.Snapshot(t, "audit_event", "platform_audit_event", "price_import"); after != before {
 			t.Error("a failed download changed a table other than the import log and the audit log")
 		}
+		// Each failure is recorded as a failed import and in the audit log, with its class.
+		for _, class := range []string{"unreachable", "timeout", "status", "redirect", "too_large"} {
+			var rows, audits int
+			if err := c.api.Super(t).QueryRow(ctx(t), `SELECT (SELECT count(*) FROM pandokos.price_import WHERE outcome = 'failure' AND source = 'remote' AND error_class = $1),
+				(SELECT count(*) FROM pandokos.platform_audit_event WHERE action = 'price_import.run' AND outcome = 'failure' AND detail->>'error_class' = $1)`, class).Scan(&rows, &audits); err != nil {
+				t.Fatal(err)
+			}
+			if rows != 1 || audits != 1 {
+				t.Errorf("%s: %d failed import rows and %d audit rows, want 1 and 1", class, rows, audits)
+			}
+		}
 		if versions() != 2 {
 			t.Errorf("a failed download created versions: %d", versions())
 		}

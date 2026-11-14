@@ -84,7 +84,7 @@ func (r *Refresher) once(ctx context.Context) {
 	data, err := fetch(ctx, r.URL)
 	if err != nil {
 		class := ErrorClass(err)
-		if rerr := recordFailure(ctx, r.DB, src, ImportOptions{Actor: actor}, started, "", class); rerr != nil {
+		if rerr := RecordFailure(ctx, r.DB, src, ImportOptions{Actor: actor}, started, "", class); rerr != nil {
 			r.Logger.Warn("price import failure not recorded", "source", SourceRemote)
 		}
 		fail(err)
