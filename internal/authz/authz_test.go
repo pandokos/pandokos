@@ -290,3 +290,52 @@ func TestContext(t *testing.T) {
 		t.Error("the two errors must be distinct")
 	}
 }
+
+// TestUsageRead is T-548: usage:read is in the catalogue at tenant scope with its text, tenant-admin
+// holds it and no other role does, and Decide treats it as any tenant permission.
+func TestUsageRead(t *testing.T) {
+	p, ok := Lookup(UsageRead)
+	if !ok || p.Name != "usage:read" || UsageRead != "usage:read" || p.Scope != ScopeTenant || p.Description != "Listing the tenant's usage records" {
+		t.Fatalf("usage:read: %+v %v", p, ok)
+	}
+	count := 0
+	for _, c := range Catalogue() {
+		if c.Name == UsageRead {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("usage:read is listed %d times", count)
+	}
+	holders := map[string]bool{}
+	for _, r := range Roles() {
+		for _, perm := range r.Permissions {
+			if perm == UsageRead {
+				holders[r.Name] = true
+			}
+		}
+	}
+	if len(holders) != 1 || !holders[RoleTenantAdmin] {
+		t.Errorf("usage:read is held by %v, want tenant-admin only", holders)
+	}
+
+	a, b := id(1), id(2)
+	for _, c := range []struct {
+		name string
+		p    Principal
+		tgt  Target
+		want Decision
+	}{
+		{"tenant admin, own tenant", sa(a, tenant.StateActive, []string{RoleTenantAdmin}, nil), Target{TenantID: a}, Allow},
+		{"tenant admin, another tenant", sa(a, tenant.StateActive, []string{RoleTenantAdmin}, nil), Target{TenantID: b}, DenyNotFound},
+		{"tenant admin, suspended", sa(a, tenant.StateSuspended, []string{RoleTenantAdmin}, nil), Target{TenantID: a}, DenyTenantState},
+		{"inference", sa(a, tenant.StateActive, []string{RoleInference}, nil), Target{TenantID: a}, Deny},
+		{"platform admin", Principal{Kind: KindPlatform, ID: "p", Roles: []string{RolePlatformAdmin}}, Target{TenantID: a}, Deny},
+		{"a key scoped to model:read", sa(a, tenant.StateActive, []string{RoleTenantAdmin}, []string{ModelRead}), Target{TenantID: a}, Deny},
+		{"a key scoped to usage:read", sa(a, tenant.StateActive, []string{RoleTenantAdmin}, []string{UsageRead}), Target{TenantID: a}, Allow},
+	} {
+		if got := Decide(c.p, UsageRead, c.tgt); got != c.want {
+			t.Errorf("%s: %v, want %v", c.name, got, c.want)
+		}
+	}
+}

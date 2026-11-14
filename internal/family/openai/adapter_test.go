@@ -206,7 +206,7 @@ func TestAdapter(t *testing.T) {
 		if err != nil || r.Model() != "m" || !r.Stream() {
 			t.Fatalf("%v %v", r, err)
 		}
-		out, strip := r.Prepare(family.Preparation{UpstreamModel: "u"})
+		out, strip := r.Prepare(family.Preparation{UpstreamModel: "u", StreamUsage: true})
 		if string(out) != `{"model":"u","stream":true,"stream_options":{"include_usage":true}}` || !strip {
 			t.Errorf("Prepare: %q %v", out, strip)
 		}

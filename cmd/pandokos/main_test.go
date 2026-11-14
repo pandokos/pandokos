@@ -306,6 +306,8 @@ func TestInitAndClientUsage(t *testing.T) {
 			"price-import list|get|run",
 			"tenant-model list",
 			"model-restriction get|set|clear",
+			"capability check",
+			"usage list",
 			"import-prices [--config FILE] (--file FILE | --embedded) [--dry-run]",
 			"kek generate --out FILE",
 			"Administer through the administration API;",
@@ -324,7 +326,7 @@ func TestInitAndClientUsage(t *testing.T) {
 	t.Run("a command group needs a sub-command", func(t *testing.T) {
 		for _, args := range [][]string{
 			{"tenant"}, {"service-account"}, {"key"}, {"platform-key"}, {"credential"}, {"tenant-credential"}, {"kek"},
-			{"provider"}, {"endpoint"}, {"model"}, {"price"}, {"price-import"}, {"tenant-model"}, {"model-restriction"},
+			{"provider"}, {"endpoint"}, {"model"}, {"price"}, {"price-import"}, {"tenant-model"}, {"model-restriction"}, {"capability"}, {"usage"},
 			{"provider", "frobnicate"}, {"model", "frobnicate"}, {"price", "frobnicate"}, {"price-import", "delete"}, {"tenant-model", "get"}, {"model-restriction", "list"},
 			{"tenant", "frobnicate"}, {"key", "delete"}, {"platform-key", "list", "extra"},
 			{"credential", "frobnicate"}, {"tenant-credential", "create"}, {"kek", "rotate"},

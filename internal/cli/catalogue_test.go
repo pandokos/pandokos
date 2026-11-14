@@ -147,6 +147,35 @@ func TestCatalogueCommands(t *testing.T) {
 		check(t, call(t, "getProvider", "provider", "get", "acme"), adminapi.GetProviderInput{Provider: "acme"})
 		check(t, call(t, "deleteProvider", "provider", "delete", "acme"), adminapi.DeleteProviderInput{Provider: "acme"})
 
+		// The stream usage option of sprint 3.3: sent when given, add or omit only.
+		check(t, call(t, "createProvider", "provider", "create", "--family", "openai", "--stream-usage-option", "omit", "ollama"),
+			adminapi.CreateProviderInput{Body: adminapi.ProviderCreate{Name: "ollama", ApiFamily: adminapi.ApiFamilyOpenai, StreamUsageOption: adminapi.StreamUsageOptionOmit}})
+		check(t, call(t, "createProvider", "provider", "create", "--family", "openai", "--stream-usage-option", "add", "groq"),
+			adminapi.CreateProviderInput{Body: adminapi.ProviderCreate{Name: "groq", ApiFamily: adminapi.ApiFamilyOpenai, StreamUsageOption: adminapi.StreamUsageOptionAdd}})
+		check(t, call(t, "updateProvider", "provider", "update", "--stream-usage-option", "omit", "ollama"),
+			adminapi.UpdateProviderInput{Provider: "ollama", Body: adminapi.ProviderUpdate{StreamUsageOption: adminapi.Some(adminapi.StreamUsageOptionOmit)}})
+		check(t, call(t, "updateProvider", "provider", "update", "--stream-usage-option", "add", "--enabled", "ollama"),
+			adminapi.UpdateProviderInput{Provider: "ollama", Body: adminapi.ProviderUpdate{StreamUsageOption: adminapi.Some(adminapi.StreamUsageOptionAdd), Enabled: adminapi.Some(true)}})
+		{
+			r := newRig(t)
+			for name, args := range map[string][]string{
+				"create with another value": {"provider", "create", "--family", "openai", "--stream-usage-option", "sometimes", "x"},
+				"update with another value": {"provider", "update", "--stream-usage-option", "never", "x"},
+				"create with an empty one":  {"provider", "create", "--family", "openai", "--stream-usage-option", "", "x"},
+			} {
+				code, out, errs := r.run(t, args...)
+				if code == 0 && name != "create with an empty one" {
+					t.Errorf("%s: exit 0, stdout %q", name, out)
+				}
+				if code == 2 && !strings.Contains(errs, "stream-usage-option") {
+					t.Errorf("%s: the usage error does not name the flag: %q", name, errs)
+				}
+			}
+			if n := len(r.f.calls("updateProvider")); n != 0 {
+				t.Errorf("a refused update reached the API %d times", n)
+			}
+		}
+
 		// An absent member is not sent, an empty one clears, a boolean can be set to false.
 		check(t, call(t, "updateProvider", "provider", "update", "--display-name", "Acme 2", "acme"),
 			adminapi.UpdateProviderInput{Provider: "acme", Body: adminapi.ProviderUpdate{DisplayName: adminapi.Some("Acme 2")}})

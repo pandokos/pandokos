@@ -14,7 +14,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pandokos/pandokos/internal/family/openai"
+	"github.com/pandokos/pandokos/internal/family"
+	"github.com/pandokos/pandokos/internal/family/anthropic"
+	"github.com/pandokos/pandokos/internal/gateway"
 	"github.com/pandokos/pandokos/test/familycodes"
 )
 
@@ -148,9 +150,11 @@ func TestGatewayGuide(t *testing.T) {
 	})
 
 	t.Run("every header of the adapter's lists", func(t *testing.T) {
-		for _, h := range openai.Adapter().RequestHeaders() {
-			if !strings.Contains(lower, strings.ToLower(h)) {
-				t.Errorf("gateway.md does not name the forwarded header %s", h)
+		for name, a := range gateway.Families() {
+			for _, h := range a.RequestHeaders() {
+				if !strings.Contains(lower, strings.ToLower(h)) {
+					t.Errorf("gateway.md does not name the forwarded header %s of the %s family", h, name)
+				}
 			}
 		}
 		for _, h := range []string{"Authorization", "Cookie", "X-Api-Key", "Idempotency-Key", "Accept-Encoding", "Traceparent", "Forwarded"} {
@@ -163,10 +167,12 @@ func TestGatewayGuide(t *testing.T) {
 	// Sprint 3.2 (section 5.2, 5.3 and 5.5): the three operations, background processing, the
 	// metadata headers, the first-byte time and the fields the ledger adds to the log line.
 	t.Run("operations, metadata and log fields", func(t *testing.T) {
-		for _, op := range openai.Adapter().Operations() {
-			for _, w := range []string{op.Name, op.Path} {
-				if !strings.Contains(doc, w) {
-					t.Errorf("gateway.md does not name %s", w)
+		for name, a := range gateway.Families() {
+			for _, op := range a.Operations() {
+				for _, w := range []string{op.Name, op.Path} {
+					if !strings.Contains(doc, w) {
+						t.Errorf("gateway.md does not name %s of the %s family", w, name)
+					}
 				}
 			}
 		}
@@ -349,4 +355,200 @@ func TestNoSkeleton(t *testing.T) {
 			t.Errorf("%s is allowed to say skeleton and does not: remove the exception", rel)
 		}
 	}
+}
+
+// markdownTable returns the header cells and the rows of the first table of doc whose header holds
+// every one of the wanted cells, with the markup of a cell (backticks) removed.
+func markdownTable(t *testing.T, doc string, want ...string) (header []string, rows [][]string) {
+	t.Helper()
+	cells := func(line string) []string {
+		var out []string
+		for _, c := range strings.Split(strings.Trim(strings.TrimSpace(line), "|"), "|") {
+			out = append(out, strings.TrimSpace(strings.ReplaceAll(c, "`", "")))
+		}
+		return out
+	}
+	lines := strings.Split(doc, "\n")
+	for i, line := range lines {
+		if !strings.HasPrefix(strings.TrimSpace(line), "|") {
+			continue
+		}
+		head := cells(line)
+		has := map[string]bool{}
+		for _, c := range head {
+			has[c] = true
+		}
+		ok := true
+		for _, w := range want {
+			ok = ok && has[w]
+		}
+		if !ok {
+			continue
+		}
+		for _, row := range lines[i+2:] { // the line after the header is the separator
+			if !strings.HasPrefix(strings.TrimSpace(row), "|") {
+				break
+			}
+			rows = append(rows, cells(row))
+		}
+		return head, rows
+	}
+	t.Fatalf("no table with the columns %v", want)
+	return nil, nil
+}
+
+// TestGatewayGuideFamilies is T-R31: the gateway guide lists every route of gateway.Routes(), the
+// request and response header lists of both adapters, the error type table, the base URL table
+// (one row per SDK and family) and the limit of 500 header values.
+func TestGatewayGuideFamilies(t *testing.T) {
+	doc := read(t, "docs/operations/gateway.md")
+	lower := strings.ToLower(doc)
+
+	t.Run("every route", func(t *testing.T) {
+		routes := gateway.Routes()
+		if len(routes) != 5 {
+			t.Fatalf("%d routes", len(routes))
+		}
+		for _, r := range routes {
+			if !strings.Contains(doc, r.Path) {
+				t.Errorf("gateway.md does not list the route %s %s", r.Method, r.Path)
+			}
+		}
+		for name, a := range gateway.Families() {
+			for _, op := range a.Operations() {
+				if !strings.Contains(doc, op.Name) {
+					t.Errorf("gateway.md does not name the operation %s of %s", op.Name, name)
+				}
+			}
+		}
+	})
+
+	t.Run("the header lists of both adapters", func(t *testing.T) {
+		for name, a := range gateway.Families() {
+			for _, h := range a.RequestHeaders() {
+				if !strings.Contains(lower, strings.ToLower(h)) {
+					t.Errorf("gateway.md does not name the request header %s of %s", h, name)
+				}
+			}
+		}
+		// The response headers each adapter passes, by name or by prefix.
+		for name, probes := range map[string][]string{
+			"openai":    {"Content-Type", "Content-Length", "Retry-After", "X-Request-Id", "X-Ratelimit-", "Openai-"},
+			"anthropic": {"Content-Type", "Content-Length", "Retry-After", "Request-Id", "X-Should-Retry", "Anthropic-"},
+		} {
+			a := gateway.Families()[name]
+			if a == nil {
+				t.Fatalf("no adapter %s", name)
+			}
+			for _, h := range probes {
+				if !a.AllowResponseHeader(h) && !a.AllowResponseHeader(h+"Probe") {
+					t.Errorf("the %s adapter does not pass %s: this test's list is stale", name, h)
+				}
+				if !strings.Contains(lower, strings.ToLower(h)) {
+					t.Errorf("gateway.md does not name the response header %s of %s", h, name)
+				}
+			}
+		}
+		for _, h := range []string{"X-Api-Key", "Anthropic-Version", "Anthropic-Beta"} {
+			if !strings.Contains(doc, h) {
+				t.Errorf("gateway.md does not name %s", h)
+			}
+		}
+		if !strings.Contains(lower, "request-id") || !strings.Contains(doc, "upstream_request_id") || !strings.Contains(doc, "usage_output_source") {
+			t.Error("gateway.md does not name the upstream request ID header and the log fields of sprint 3.3")
+		}
+	})
+
+	t.Run("the error type table", func(t *testing.T) {
+		// The table of section 5.2 of the design, owned by this test; the adapter must agree with it.
+		types := map[string]string{
+			"invalid_request": "invalid_request_error", "no_credential": "invalid_request_error", "unauthenticated": "authentication_error",
+			"forbidden": "permission_error", "tenant_suspended": "permission_error", "model_not_allowed": "permission_error",
+			"endpoint_not_supported": "not_found_error", "request_timeout": "timeout_error", "upstream_timeout": "timeout_error",
+			"request_too_large": "request_too_large", "internal": "api_error", "upstream_unreachable": "api_error", "unavailable": "api_error",
+		}
+		lines := strings.Split(doc, "\n")
+		for _, code := range familycodes.All(t) {
+			typ, known := types[code]
+			if !known {
+				t.Errorf("the code %q has no error type in this test's table", code)
+				continue
+			}
+			if got := anthropic.ErrorType(family.ErrorCode(code)); got != typ {
+				t.Errorf("anthropic.ErrorType(%s) = %q, want %q", code, got, typ)
+			}
+			found := false
+			for _, l := range lines {
+				found = found || (strings.Contains(l, "`"+code+"`") && strings.Contains(l, "`"+typ+"`"))
+			}
+			if !found {
+				t.Errorf("gateway.md has no line with `%s` and its Anthropic error type `%s`", code, typ)
+			}
+		}
+	})
+
+	t.Run("the base URL table has a row per SDK and family", func(t *testing.T) {
+		head, rows := markdownTable(t, doc, "SDK", "Family", "Base URL")
+		col := map[string]int{}
+		for i, h := range head {
+			col[h] = i
+		}
+		if len(rows) < 3 {
+			t.Fatalf("%d rows, want one per SDK and family (OpenAI, Anthropic, a compatible provider)", len(rows))
+		}
+		pairs, paths, families := map[string]bool{}, map[string]bool{}, map[string]bool{}
+		for _, r := range rows {
+			if len(r) != len(head) || r[col["SDK"]] == "" || r[col["Family"]] == "" || r[col["Base URL"]] == "" {
+				t.Errorf("an incomplete row: %v", r)
+				continue
+			}
+			pair := r[col["SDK"]] + "|" + r[col["Family"]]
+			if pairs[pair] {
+				t.Errorf("the pair %q is listed twice", pair)
+			}
+			pairs[pair] = true
+			families[strings.ToLower(r[col["Family"]])] = true
+			u := r[col["Base URL"]]
+			if i := strings.Index(u, "://"); i >= 0 {
+				u = u[i+3:]
+			}
+			if i := strings.Index(u, "/"); i >= 0 {
+				first, rest, _ := strings.Cut(strings.TrimPrefix(u[i:], "/"), "/")
+				if first != "openai" && first != "anthropic" { // the example provider of the guide stands for the suite's "compat"
+					first = "compat"
+				}
+				paths["/"+first+"/"+rest] = true
+				if rest == "" {
+					paths["/"+first] = true
+				}
+			}
+		}
+		for _, p := range []string{"/openai/v1", "/anthropic", "/compat/v1"} {
+			if !paths[p] {
+				t.Errorf("no row with the base URL path %s (the SDK suites build their clients from it): %v", p, paths)
+			}
+		}
+		for _, f := range []string{"openai", "anthropic"} {
+			if !families[f] {
+				t.Errorf("no row for the family %s", f)
+			}
+		}
+		var sdks []string
+		for _, r := range rows {
+			sdks = append(sdks, r[col["SDK"]])
+		}
+		all := strings.ToLower(strings.Join(sdks, " "))
+		for _, w := range []string{"openai", "anthropic"} {
+			if !strings.Contains(all, w) {
+				t.Errorf("the SDK column does not name %s: %v", w, sdks)
+			}
+		}
+	})
+
+	t.Run("the limit of 500 header values", func(t *testing.T) {
+		re := regexp.MustCompile(`(?is)500[^.\n|]*header values?`)
+		if !re.MatchString(doc) || !strings.Contains(doc, "431") {
+			t.Error("gateway.md does not say that a request with more than 500 header values is answered 431 by net/http before Pandokos sees it")
+		}
+	})
 }

@@ -236,7 +236,7 @@ func TestPrepare(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out, strip := r.Prepare(family.Preparation{UpstreamModel: c.upstream})
+			out, strip := r.Prepare(family.Preparation{UpstreamModel: c.upstream, StreamUsage: true})
 			if !bytes.Equal(in, orig) {
 				t.Fatal("Prepare modified the caller's bytes")
 			}
@@ -271,8 +271,8 @@ func TestPrepare(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		a, _ := r.Prepare(family.Preparation{UpstreamModel: "u"})
-		b, _ := r.Prepare(family.Preparation{UpstreamModel: "u"})
+		a, _ := r.Prepare(family.Preparation{UpstreamModel: "u", StreamUsage: true})
+		b, _ := r.Prepare(family.Preparation{UpstreamModel: "u", StreamUsage: true})
 		if !bytes.Equal(a, b) {
 			t.Errorf("%q then %q", a, b)
 		}
@@ -321,7 +321,7 @@ func FuzzParseRequest(f *testing.F) {
 			t.Fatalf("encoding/json reads model %q (%v), Parse read %q", model, err, r.Model())
 		}
 		const upstream = `synthetic"up\stream`
-		out, _ := r.Prepare(family.Preparation{UpstreamModel: upstream})
+		out, _ := r.Prepare(family.Preparation{UpstreamModel: upstream, StreamUsage: true})
 		var got map[string]json.RawMessage
 		if err := json.Unmarshal(out, &got); err != nil {
 			t.Fatalf("the output is not a JSON object: %v", err)
@@ -437,7 +437,7 @@ func TestParseOperation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out, strip := r.Prepare(family.Preparation{UpstreamModel: "up"})
+			out, strip := r.Prepare(family.Preparation{UpstreamModel: "up", StreamUsage: true})
 			if string(out) != want[op].out || strip != want[op].strip {
 				t.Errorf("%s: %q %v, want %q %v", op, out, strip, want[op].out, want[op].strip)
 			}
@@ -457,6 +457,77 @@ func TestParseOperation(t *testing.T) {
 		r, err := Parse([]byte(`{"model":"m","background":true,"stream":true}`))
 		if err != nil || !r.Stream() {
 			t.Fatalf("%v %v", r, err)
+		}
+	})
+}
+
+// TestPrepareStreamUsage is T-527: with Preparation.StreamUsage false the usage option is never
+// added and strip is false for every row of ADR 0024's table, while the model replacement still
+// applies; with it true the rows come out as before.
+func TestPrepareStreamUsage(t *testing.T) {
+	rows := append([]prepareModelCase(nil), prepareModelCases...)
+	for _, c := range prepareCases { // the usage table of 3.1, with a model added to each parseable row
+		in := strings.Replace(c.in, "{", `{"model":"nick",`, 1)
+		if !strings.HasPrefix(c.in, "{") || !json.Valid([]byte(in)) {
+			continue
+		}
+		rows = append(rows, prepareModelCase{name: "table: " + c.in, in: in, upstream: "up-model"})
+	}
+	accepted := rows[:0:0]
+	for _, c := range rows { // only the requests the family accepts have something to prepare
+		if _, err := ParseOperation(OperationChatCompletions, []byte(c.in)); err == nil {
+			accepted = append(accepted, c)
+		}
+	}
+	if len(accepted) < len(prepareModelCases) {
+		t.Fatalf("only %d rows are requests the family accepts", len(accepted))
+	}
+	for _, c := range accepted {
+		t.Run(c.name, func(t *testing.T) {
+			in := []byte(c.in)
+			orig := append([]byte(nil), in...)
+			r, err := ParseOperation(OperationChatCompletions, in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, strip := r.Prepare(family.Preparation{UpstreamModel: c.upstream, StreamUsage: false})
+			if strip {
+				t.Error("strip is true without the usage option")
+			}
+			if !bytes.Equal(in, orig) {
+				t.Fatal("Prepare modified the caller's bytes")
+			}
+			want := c.in
+			if c.upstream != "" && c.upstream != r.Model() {
+				want = strings.Replace(c.in, `"nick"`, family.EncodeString(c.upstream), 1)
+			}
+			if string(out) != want {
+				t.Errorf("got  %q\nwant %q", out, want)
+			}
+			if want == c.in && len(in) > 0 && &out[0] != &in[0] {
+				t.Error("an unchanged body is not the input slice")
+			}
+			if strings.Contains(string(out), "include_usage") && !strings.Contains(c.in, "include_usage") {
+				t.Error("the option was added")
+			}
+			with, _ := r.Prepare(family.Preparation{UpstreamModel: c.upstream, StreamUsage: true})
+			if c.out != "" && string(with) != c.out {
+				t.Errorf("with the option: %q, want %q", with, c.out)
+			}
+		})
+	}
+	t.Run("the other operations are unaffected", func(t *testing.T) {
+		for _, op := range []string{OperationResponses, OperationEmbeddings} {
+			body := []byte(`{"model":"nick","stream":true,"input":"x"}`)
+			r, err := ParseOperation(op, body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, su := range []bool{false, true} {
+				if out, strip := r.Prepare(family.Preparation{UpstreamModel: "nick", StreamUsage: su}); strip || &out[0] != &body[0] {
+					t.Errorf("%s with StreamUsage %v", op, su)
+				}
+			}
 		}
 	})
 }

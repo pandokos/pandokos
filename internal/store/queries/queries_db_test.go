@@ -4,7 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -875,5 +879,318 @@ func TestUsageQueries(t *testing.T) {
 				t.Errorf("the %s role executed ensure_usage_partitions: %v", name, err)
 			}
 		}
+	})
+}
+
+// TestProviderStreamUsageOption is T-541: the column of migration 0007 defaults to add, its check
+// constraint refuses other values, the admin role sets it in platform scope and the gateway role
+// reads it.
+func TestProviderStreamUsageOption(t *testing.T) {
+	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
+		c := ctx(t)
+		admin, gateway := d.Open(t, store.RoleAdmin), d.Open(t, store.RoleGateway)
+		super := d.Super(t)
+
+		var def string
+		if err := super.QueryRow(c, `INSERT INTO pandokos.provider (name, api_family) VALUES ('synthetic-opt-default', 'openai') RETURNING stream_usage_option`).Scan(&def); err != nil || def != "add" {
+			t.Fatalf("the default is %q (%v), want add", def, err)
+		}
+		for _, name := range []string{"openai", "anthropic"} {
+			var got string
+			if err := super.QueryRow(c, `SELECT stream_usage_option FROM pandokos.provider WHERE name = $1`, name).Scan(&got); err != nil || got != "add" {
+				t.Errorf("the seeded provider %s has %q (%v)", name, got, err)
+			}
+		}
+
+		// The check constraint, as the owner and as the admin role.
+		_, err := super.Exec(c, `UPDATE pandokos.provider SET stream_usage_option = 'x' WHERE name = 'synthetic-opt-default'`)
+		if kind, name, ok := store.ConstraintViolation(err); !ok || kind != "check" || name != "provider_stream_usage_option_valid" {
+			t.Errorf("the owner set an unknown value: %v", err)
+		}
+		err = admin.Platform(c, func(c context.Context, tx store.Tx) error {
+			_, err := queries.New(tx).UpdateProvider(c, queries.UpdateProviderParams{Name: "synthetic-opt-default", SetStreamUsageOption: true, StreamUsageOption: "x"})
+			return err
+		})
+		if kind, name, ok := store.ConstraintViolation(err); !ok || kind != "check" || name != "provider_stream_usage_option_valid" {
+			t.Errorf("the admin role set an unknown value: %v", err)
+		}
+		err = admin.Platform(c, func(c context.Context, tx store.Tx) error {
+			_, err := queries.New(tx).CreateProvider(c, queries.CreateProviderParams{Name: "synthetic-opt-bad", ApiFamily: "openai", Enabled: true, StreamUsageOption: ""})
+			return err
+		})
+		if kind, _, ok := store.ConstraintViolation(err); !ok || kind != "check" {
+			t.Errorf("an empty value at creation: %v", err)
+		}
+
+		// The admin role sets and creates with the option, in platform scope.
+		var row queries.PandokosProvider
+		if err := admin.Platform(c, func(c context.Context, tx store.Tx) error {
+			var err error
+			row, err = queries.New(tx).UpdateProvider(c, queries.UpdateProviderParams{Name: "synthetic-opt-default", SetStreamUsageOption: true, StreamUsageOption: "omit"})
+			return err
+		}); err != nil || row.StreamUsageOption != "omit" {
+			t.Fatalf("the admin role set omit: %+v %v", row, err)
+		}
+		if err := admin.Platform(c, func(c context.Context, tx store.Tx) error {
+			var err error
+			row, err = queries.New(tx).CreateProvider(c, queries.CreateProviderParams{Name: "synthetic-opt-created", ApiFamily: "openai", Enabled: true, StreamUsageOption: "omit"})
+			return err
+		}); err != nil || row.StreamUsageOption != "omit" {
+			t.Fatalf("the admin role created with omit: %+v %v", row, err)
+		}
+		// An update that does not set the option leaves it.
+		if err := admin.Platform(c, func(c context.Context, tx store.Tx) error {
+			var err error
+			row, err = queries.New(tx).UpdateProvider(c, queries.UpdateProviderParams{Name: "synthetic-opt-default", SetDescription: true, Description: "d"})
+			return err
+		}); err != nil || row.StreamUsageOption != "omit" {
+			t.Errorf("an update of the description changed the option: %+v %v", row, err)
+		}
+
+		// The gateway role reads it, and cannot write it.
+		var seen = map[string]string{}
+		if err := gateway.Unscoped(c, func(c context.Context, tx store.Tx) error {
+			rows, err := queries.New(tx).LoadProviders(c)
+			for _, r := range rows {
+				seen[r.Name] = r.StreamUsageOption
+			}
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if seen["synthetic-opt-default"] != "omit" || seen["synthetic-opt-created"] != "omit" || seen["openai"] != "add" || seen["anthropic"] != "add" {
+			t.Errorf("the gateway role read %v", seen)
+		}
+		err = gateway.Unscoped(c, func(c context.Context, tx store.Tx) error {
+			_, err := tx.Exec(c, `UPDATE pandokos.provider SET stream_usage_option = 'add' WHERE name = 'synthetic-opt-default'`)
+			return err
+		})
+		if store.SQLState(err) != "42501" {
+			t.Errorf("the gateway role updated the option: %v", err)
+		}
+	})
+}
+
+// listQuery returns the text of ListUsageRecords from usage.sql with positional parameters, and
+// the names of the parameters in order.
+func listQuery(t *testing.T) (sql string, names []string) {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("sql", "usage.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(b)
+	i := strings.Index(text, "-- name: ListUsageRecords :many")
+	if i < 0 {
+		t.Fatal("ListUsageRecords is not in usage.sql")
+	}
+	text = text[i+len("-- name: ListUsageRecords :many"):]
+	if j := strings.Index(text, "-- name:"); j >= 0 {
+		text = text[:j]
+	}
+	index := map[string]int{}
+	text = regexp.MustCompile(`sqlc\.arg\((\w+)\)`).ReplaceAllStringFunc(text, func(m string) string {
+		name := regexp.MustCompile(`\((\w+)\)`).FindStringSubmatch(m)[1]
+		if _, ok := index[name]; !ok {
+			names = append(names, name)
+			index[name] = len(names)
+		}
+		return fmt.Sprintf("$%d", index[name])
+	})
+	return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(text), ";")), names
+}
+
+// TestListUsageRecords is T-550: the generated query under the admin role in a tenant session:
+// tenant isolation, bounds, order, keyset; the plan scans only the partitions of the window.
+func TestListUsageRecords(t *testing.T) {
+	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
+		c := ctx(t)
+		gateway, admin := d.Open(t, store.RoleGateway), d.Open(t, store.RoleAdmin)
+		a, b := d.SeedTenant(t, "list-a"), d.SeedTenant(t, "list-b")
+		now := time.Now().UTC().Truncate(time.Second)
+		uuid := func(n int) string { return fmt.Sprintf("0192f0f0-0000-7000-8000-%012d", n) }
+		reqID := func(n int) string { return fmt.Sprintf("%032x", n) }
+
+		insert := func(tid tenant.ID, recs ...string) {
+			t.Helper()
+			err := gateway.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
+				n, err := queries.New(tx).InsertUsageRecords(c, "["+strings.Join(recs, ",")+"]")
+				if err == nil && n != int64(len(recs)) {
+					err = fmt.Errorf("%d rows inserted, want %d", n, len(recs))
+				}
+				return err
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		rec := func(n int, at time.Time, provider string) string {
+			return strings.Replace(usageJSON(uuid(n), at, "", reqID(n), ""), `"provider":"openai"`, `"provider":"`+provider+`"`, 1)
+		}
+		// Tenant A: records 1..6 at -10m .. -60m, two of them at the same instant (ordered by id),
+		// one at 'from' exactly and one just before it; tenant B: records 101..103 in the same window.
+		from, to := now.Add(-65*time.Minute), now
+		var aRecs []string
+		aRecs = append(aRecs,
+			rec(1, now.Add(-10*time.Minute), "openai"),
+			rec(2, now.Add(-20*time.Minute), "anthropic"),
+			rec(3, now.Add(-30*time.Minute), "openai"), rec(4, now.Add(-30*time.Minute), "openai"), // the same instant: ids 4 then 3
+			rec(5, from, "anthropic"), // at from: included
+			rec(6, from.Add(-time.Microsecond), "openai"),
+			rec(7, to, "openai"), // at to: excluded
+		)
+		insert(a, aRecs...)
+		insert(b, rec(101, now.Add(-15*time.Minute), "openai"), rec(102, now.Add(-25*time.Minute), "anthropic"), rec(103, now.Add(-35*time.Minute), "openai"))
+
+		list := func(tid tenant.ID, p queries.ListUsageRecordsParams) []queries.ListUsageRecordsRow {
+			t.Helper()
+			var rows []queries.ListUsageRecordsRow
+			if err := admin.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
+				var err error
+				rows, err = queries.New(tx).ListUsageRecords(c, p)
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			return rows
+		}
+		idsOf := func(rows []queries.ListUsageRecordsRow) string {
+			var out []string
+			for _, r := range rows {
+				out = append(out, r.ID[len(r.ID)-3:])
+			}
+			return strings.Join(out, ",")
+		}
+		base := queries.ListUsageRecordsParams{FromAt: from, ToAt: to, AfterID: zeroID, PageSize: 50}
+
+		t.Run("the tenant's rows only, newest first, from included and to excluded", func(t *testing.T) {
+			if got := idsOf(list(a, base)); got != "001,002,004,003,005" {
+				t.Errorf("tenant A: %s", got)
+			}
+			if got := idsOf(list(b, base)); got != "101,102,103" {
+				t.Errorf("tenant B: %s", got)
+			}
+			// A window with no rows, and an empty tenant session.
+			empty := base
+			empty.FromAt, empty.ToAt = now.Add(-5*time.Hour), now.Add(-4*time.Hour)
+			if got := list(a, empty); len(got) != 0 {
+				t.Errorf("an empty window: %v", got)
+			}
+		})
+		t.Run("the provider filter", func(t *testing.T) {
+			p := base
+			p.Provider = "anthropic"
+			if got := idsOf(list(a, p)); got != "002,005" {
+				t.Errorf("anthropic: %s", got)
+			}
+			p.Provider = "no-such-provider"
+			if got := list(a, p); len(got) != 0 {
+				t.Errorf("an unknown provider: %v", got)
+			}
+		})
+		t.Run("the keyset", func(t *testing.T) {
+			var got []string
+			p := base
+			p.PageSize = 2
+			pages := 0
+			for {
+				rows := list(a, p)
+				pages++
+				for _, r := range rows {
+					got = append(got, r.ID[len(r.ID)-3:])
+				}
+				if len(rows) < 2 || pages > 5 {
+					break
+				}
+				last := rows[len(rows)-1]
+				p.After, p.AfterStartedAt, p.AfterID = true, last.StartedAt, last.ID
+			}
+			if strings.Join(got, ",") != "001,002,004,003,005" || pages != 3 {
+				t.Errorf("pages %d, ids %v", pages, got)
+			}
+			// A cursor on the instant shared by two rows continues with the lower id only.
+			p = base
+			p.After, p.AfterStartedAt, p.AfterID = true, now.Add(-30*time.Minute), uuid(4)
+			if got := idsOf(list(a, p)); got != "003,005" {
+				t.Errorf("after (-30m, 4): %s", got)
+			}
+		})
+		t.Run("the row's members come back", func(t *testing.T) {
+			rows := list(a, queries.ListUsageRecordsParams{FromAt: from, ToAt: to, AfterID: zeroID, PageSize: 1})
+			if len(rows) != 1 || rows[0].ID != uuid(1) || rows[0].Provider != "openai" || rows[0].RequestID != reqID(1) || rows[0].Outcome != "ok" ||
+				rows[0].InputSource != "none" || rows[0].CostStatus != "none" || !rows[0].StartedAt.Equal(now.Add(-10*time.Minute)) {
+				t.Errorf("%+v", rows)
+			}
+		})
+		t.Run("another tenant's rows are invisible whatever the parameters", func(t *testing.T) {
+			p := base
+			p.After, p.AfterStartedAt, p.AfterID = true, now.Add(time.Hour), uuid(1)
+			if got := idsOf(list(b, p)); got != "101,102,103" {
+				t.Errorf("tenant B with a cursor from far ahead: %s", got)
+			}
+		})
+		t.Run("the plan scans only the partitions of the window", func(t *testing.T) {
+			sql, names := listQuery(t)
+			args := map[string]any{"from_at": from, "to_at": to, "provider": "", "after": false, "after_started_at": time.Time{}, "after_id": zeroID, "page_size": int32(50)}
+			var params []any
+			for _, n := range names {
+				v, ok := args[n]
+				if !ok {
+					t.Fatalf("the query has a parameter %q this test does not know", n)
+				}
+				params = append(params, v)
+			}
+			var plan string
+			if err := admin.WithTenant(c, a, func(c context.Context, tx store.Tx) error {
+				return tx.QueryRow(c, "EXPLAIN (FORMAT JSON) "+sql, params...).Scan(&plan)
+			}); err != nil {
+				t.Fatal(err)
+			}
+			scanned := map[string]bool{}
+			for _, m := range regexp.MustCompile(`"Relation Name": ?"(\w+)"`).FindAllStringSubmatch(plan, -1) {
+				scanned[m[1]] = true
+			}
+			rows, err := d.Super(t).Query(c, `SELECT c.relname, pg_get_expr(c.relpartbound, c.oid) FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid WHERE i.inhparent = 'pandokos.usage_record'::regclass`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer rows.Close()
+			partitions, overlapping := 0, map[string]bool{}
+			bound := regexp.MustCompile(`FROM \('([^']+)'\) TO \('([^']+)'\)`)
+			for rows.Next() {
+				var name, expr string
+				if err := rows.Scan(&name, &expr); err != nil {
+					t.Fatal(err)
+				}
+				partitions++
+				m := bound.FindStringSubmatch(expr)
+				if m == nil {
+					overlapping[name] = true // the default partition (or an unknown bound): never pruned away by this test
+					continue
+				}
+				lo, err1 := time.Parse("2006-01-02 15:04:05-07", m[1])
+				hi, err2 := time.Parse("2006-01-02 15:04:05-07", m[2])
+				if err1 != nil || err2 != nil {
+					t.Fatalf("bound %q: %v %v", expr, err1, err2)
+				}
+				if lo.Before(to) && hi.After(from) {
+					overlapping[name] = true
+				}
+			}
+			if partitions < 4 {
+				t.Fatalf("only %d partitions: the test would prove nothing", partitions)
+			}
+			if len(scanned) == 0 {
+				t.Fatalf("no relation in the plan: %s", plan)
+			}
+			for name := range scanned {
+				if strings.HasPrefix(name, "usage_record") && name != "usage_record" && !overlapping[name] {
+					t.Errorf("the plan scans %s, a partition outside the window", name)
+				}
+			}
+			if len(scanned) > 3 {
+				t.Errorf("the plan scans %d relations: %v", len(scanned), scanned)
+			}
+		})
 	})
 }
