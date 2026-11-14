@@ -244,14 +244,22 @@ func TestOpenAIValidator(t *testing.T) {
 		// A destination that is not loopback (Go never proxies loopback) and where nothing
 		// answers: with the proxy it would go to the listener above.
 		const dest = "http://192.0.2.1:9" // TEST-NET-1, reserved for documentation
-		// The control: the default transport of the standard library does use the proxy here.
+		// The control: a transport that takes the proxy of the environment does use it here. It
+		// parses the value itself: the default transport reads the environment once per process,
+		// which would make this test depend on what ran before it (and fail under -count=2).
+		proxyURL, err := url.Parse("http://" + proxy.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		control := &http.Transport{Proxy: http.ProxyURL(proxyURL)}
+		t.Cleanup(control.CloseIdleConnections)
 		req, _ := http.NewRequestWithContext(t.Context(), "GET", dest+"/models", nil)
-		cl := &http.Client{Timeout: time.Second}
+		cl := &http.Client{Timeout: time.Second, Transport: control}
 		if resp, err := cl.Do(req); err == nil {
 			resp.Body.Close()
 		}
 		if contacted.Load() == 0 {
-			t.Fatal("the control failed: the default transport of the standard library did not use the proxy of the environment, so this test would prove nothing (the environment of a process is read once, by the first request that looks at it)")
+			t.Fatal("the control failed: the control transport did not use the proxy, so this test would prove nothing")
 		}
 		contacted.Store(0)
 		got, upstream := vault.NewOpenAIValidator(baseOf(t, dest), 500*time.Millisecond).Validate(t.Context(), key)

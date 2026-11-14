@@ -136,7 +136,12 @@ var credentialCommands = []command{
 		if err != nil {
 			return err
 		}
+		descGiven := false
+		fs.Visit(func(f *flag.Flag) { descGiven = descGiven || f.Name == "description" })
 		body := adminapi.CredentialUpdate{Label: *label, Description: *desc}
+		if descGiven && *desc == "" {
+			body.Description = adminapi.EmptyDescription // an empty description clears it
+		}
 		switch {
 		case *noExpires && *expires != "":
 			return usagef("--no-expires-at cannot be combined with --expires-at")
@@ -149,7 +154,7 @@ var credentialCommands = []command{
 			}
 			body.ExpiresAt = adminapi.Value(*t)
 		}
-		if *label == "" && *desc == "" && !body.ExpiresAt.Set {
+		if *label == "" && !descGiven && !body.ExpiresAt.Set {
 			return usagef("credential update needs a member to change")
 		}
 		if err := a.connect(); err != nil {

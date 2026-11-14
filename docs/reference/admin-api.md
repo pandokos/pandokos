@@ -107,6 +107,7 @@ that holds the key itself, and none that skips certificate verification. `creden
 else; no flag or variable holds it. `create` takes the label as an argument and `--provider`,
 `--validate`, `--expires-at`, `--description`; the other credential commands take the credential ID and
 `--tenant`. `tenant-credential disable` and `revoke` require `--reason` (exit 2 without it);
-`credential enable` accepts an optional `--reason`. `key create --credential ID` pins a virtual key.
+`credential enable` accepts an optional `--reason`. `credential update --description ""` clears the
+description (an absent `--description` leaves it alone). `key create --credential ID` pins a virtual key.
 List commands take
 `--state`, `--sort`, `--limit`, `--cursor` and `--all`.

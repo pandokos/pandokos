@@ -184,6 +184,19 @@ func TestCredentialCommands(t *testing.T) {
 		if got := r.f.only(t, "updateCredential"); !reflect.DeepEqual(got, want) {
 			t.Errorf("update --no-expires-at: %+v", got)
 		}
+		// An empty --description is given, and clears the description: the member is on the wire.
+		r.f.got = map[string][]any{}
+		mustRun(t, r, "credential", "update", "--tenant", tid, "--description", "", cid)
+		if got := r.f.only(t, "updateCredential"); got == nil {
+			t.Error("update --description \"\": no call")
+		}
+		if r.f.patchBody != `{"description":""}` {
+			t.Errorf("update --description \"\": the body is %s, want {\"description\":\"\"}", r.f.patchBody)
+		}
+		mustRun(t, r, "credential", "update", "--tenant", tid, "--label", "other", cid)
+		if r.f.patchBody != `{"label":"other"}` {
+			t.Errorf("update --label: the body is %s: an absent description must stay absent", r.f.patchBody)
+		}
 		for _, args := range [][]string{
 			{"credential", "update", "--tenant", tid, cid}, // changes nothing
 			{"credential", "update", "--tenant", tid, "--no-expires-at", "--expires-at", t1.Format(time.RFC3339), cid},

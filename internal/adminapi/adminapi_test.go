@@ -737,3 +737,23 @@ func (s *ctxServer) GetMe(ctx context.Context, in adminapi.GetMeInput) (*adminap
 	*s.seen = ctx.Value(s.key)
 	return s.fake.GetMe(ctx, in)
 }
+
+// TestCredentialUpdateClearsDescription checks that an update can carry an empty description:
+// the generated member is omitted when empty, and an empty one clears (design 5.5).
+func TestCredentialUpdateClearsDescription(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   adminapi.CredentialUpdate
+		want string
+	}{
+		{"absent", adminapi.CredentialUpdate{Label: "main"}, `{"label":"main"}`},
+		{"empty", adminapi.CredentialUpdate{Description: adminapi.EmptyDescription}, `{"description":""}`},
+		{"empty with a label", adminapi.CredentialUpdate{Label: "main", Description: adminapi.EmptyDescription}, `{"label":"main","description":""}`},
+		{"a value", adminapi.CredentialUpdate{Description: "d"}, `{"description":"d"}`},
+	} {
+		b, err := json.Marshal(&tc.in)
+		if err != nil || string(b) != tc.want {
+			t.Errorf("%s: %s, %v; want %s", tc.name, b, err, tc.want)
+		}
+	}
+}

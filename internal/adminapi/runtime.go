@@ -393,3 +393,21 @@ func (c *Client) do(ctx context.Context, method, path string, q url.Values, body
 	}
 	return nil
 }
+
+// EmptyDescription, as CredentialUpdate.Description, asks to clear the description. The
+// generated member is omitted when empty, so an empty description could not be sent; the
+// marshalling below writes this value as "". It is never a real description (a control character).
+const EmptyDescription = "\x00"
+
+// MarshalJSON writes the update, with an empty description when Description is EmptyDescription.
+func (v CredentialUpdate) MarshalJSON() ([]byte, error) {
+	type plain CredentialUpdate
+	if v.Description != EmptyDescription {
+		return json.Marshal(plain(v))
+	}
+	v.Description = ""
+	return json.Marshal(struct {
+		plain
+		Description string `json:"description"`
+	}{plain(v), ""})
+}

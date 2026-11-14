@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -39,6 +40,9 @@ type fakeAPI struct {
 	fail map[string]error
 	// pages answers listTenants by cursor.
 	pages map[string]adminapi.TenantList
+	// patchBody is the raw body of the last PATCH: the generated types cannot tell an absent
+	// member from an empty one, the wire can.
+	patchBody string
 }
 
 func newFake() *fakeAPI {
@@ -227,6 +231,13 @@ func handler(f *fakeAPI, header http.Header, auth *[]string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		for k, v := range header {
 			w.Header()[k] = v
+		}
+		if r.Method == http.MethodPatch {
+			b, _ := io.ReadAll(r.Body)
+			f.mu.Lock()
+			f.patchBody = string(b)
+			f.mu.Unlock()
+			r.Body = io.NopCloser(bytes.NewReader(b))
 		}
 		h.ServeHTTP(w, r)
 	})
