@@ -255,9 +255,25 @@ func (s *server) fail(w http.ResponseWriter, r *http.Request, _ *adminapi.Operat
 		code = adminapi.ProblemCodeValidationUnavailable
 	case errors.Is(err, vault.ErrUnavailable):
 		// A key-encryption key version that is not available, or a data key that does not
-		// unwrap. Nothing of the error is logged but its class: provider errors can carry paths.
+		// unwrap. Nothing of the error is logged but its class and identifiers: provider errors
+		// can carry paths. The write-time counterpart of the line of section 5.10.
 		code = adminapi.ProblemCodeUnavailable
-		s.log.Error("credential cannot be sealed", "request_id", st.id, "operation", st.operation, "cause", "kek_unavailable")
+		attrs := []any{"request_id", st.id, "operation", st.operation, "cause", "kek_unavailable"}
+		var se *vault.SealError
+		if errors.As(err, &se) {
+			attrs = []any{"request_id", st.id, "operation", st.operation, "tenant_id", se.TenantID.String()}
+			if se.CredentialID != "" {
+				attrs = append(attrs, "credential_id", se.CredentialID)
+			}
+			if se.DataKeyVersion != 0 {
+				attrs = append(attrs, "data_key_version", se.DataKeyVersion)
+			}
+			if se.KEKVersion != "" {
+				attrs = append(attrs, "kek_version", se.KEKVersion)
+			}
+			attrs = append(attrs, "cause", se.Cause)
+		}
+		s.log.Error("credential cannot be sealed", attrs...)
 	case errors.Is(err, authz.ErrUnavailable) || store.IsUnavailable(err):
 		code = adminapi.ProblemCodeUnavailable
 	default:

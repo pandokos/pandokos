@@ -287,6 +287,20 @@ func TestSealerDB(t *testing.T) {
 		if !errors.Is(err, vault.ErrUnavailable) {
 			t.Errorf("a data key that does not unwrap: %v, want ErrUnavailable", err)
 		}
+		var se *vault.SealError
+		if !errors.As(err, &se) || se.Cause != "data_key_unwrap" || se.TenantID != tid2 || se.DataKeyVersion != 1 || se.KEKVersion == "" ||
+			se.CredentialID != "0192f0f0-1111-7000-8000-0000000000cc" {
+			t.Errorf("a provider that fails to unwrap: %+v", se)
+		}
+		// A KEK version the provider does not hold is another class.
+		bad.unwrapFails, bad.unwrapErr = true, vault.ErrKeyVersionUnknown
+		err = w.admin.WithTenant(ctx(t), tid2, func(c context.Context, tx store.Tx) error {
+			_, err := sealer.Seal(c, tx, tid2, "0192f0f0-1111-7000-8000-0000000000dd", secret.New("synthetic-secret-0004"))
+			return err
+		})
+		if !errors.Is(err, vault.ErrUnavailable) || !errors.As(err, &se) || se.Cause != "kek_unavailable" {
+			t.Errorf("a KEK version that is unknown: %v (%+v)", err, se)
+		}
 		if err != nil {
 			testutil.AssertAbsent(t, "the error", err.Error(), testutil.SecretForms("synthetic-secret-0003")...)
 		}
@@ -298,6 +312,8 @@ func TestSealerDB(t *testing.T) {
 type failingProvider struct {
 	vault.KeyProvider
 	unwrapFails bool
+	// unwrapErr, when set, is the error of Unwrap while unwrapFails; the default is ErrUnwrap.
+	unwrapErr error
 }
 
 func (f *failingProvider) Wrap(c context.Context, plaintext, aad []byte) (string, []byte, error) {
@@ -309,6 +325,9 @@ func (f *failingProvider) Wrap(c context.Context, plaintext, aad []byte) (string
 
 func (f *failingProvider) Unwrap(c context.Context, version string, wrapped, aad []byte) ([]byte, error) {
 	if f.unwrapFails {
+		if f.unwrapErr != nil {
+			return nil, f.unwrapErr
+		}
 		return nil, vault.ErrUnwrap
 	}
 	return f.KeyProvider.Unwrap(c, version, wrapped, aad)

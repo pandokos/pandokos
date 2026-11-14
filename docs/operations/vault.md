@@ -81,6 +81,22 @@ Procedure after the loss of the key file:
 3. `pandokos kek generate --out ...` a new key, mount it and start `serve`.
 4. Tell the tenants: they register their credentials again.
 
+### Log lines when the key material fails
+
+A use of a credential that cannot be opened logs `credential cannot be opened`; a write (create or
+replace secret) that cannot be sealed logs `credential cannot be sealed` and answers 503
+`unavailable`. Both carry `request_id`, `tenant_id`, `data_key_version`, `kek_version` and `cause`;
+the line of a write carries `credential_id` and `operation` too, and leaves out what is not known
+yet (the key versions when the data key cannot even be created). `cause` is one of:
+
+| `cause` | Meaning |
+|---|---|
+| `kek_unavailable` | the key-encryption key version is unknown to the provider (for example a missing key file), or the provider cannot answer |
+| `data_key_unwrap` | the stored data key does not unwrap: damaged, or copied from another tenant |
+| `data_key_missing`, `authentication` | read only: no data key row, or the secret does not authenticate |
+
+The error text of the provider is never logged: it can carry paths.
+
 ## 6. What its compromise means
 
 The key alone opens nothing. With a copy of the database it opens every credential: tenants must

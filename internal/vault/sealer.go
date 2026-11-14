@@ -67,7 +67,7 @@ func (s *Sealer) EnsureDataKey(ctx context.Context, tx store.Tx, id tenant.ID) (
 	}
 	version, wrapped, err := s.p.Wrap(ctx, raw, DataAAD(id, dataKeyVersion))
 	if err != nil {
-		return false, "", fmt.Errorf("%w: the data key cannot be wrapped: %w", ErrUnavailable, err)
+		return false, "", &SealError{Cause: sealCause(err), TenantID: id, DataKeyVersion: dataKeyVersion, msg: "the data key cannot be wrapped", err: err}
 	}
 	if err := q.RegisterKEKVersion(ctx, queries.RegisterKEKVersionParams{ID: version, Provider: s.p.Name()}); err != nil {
 		return false, "", err
@@ -88,6 +88,41 @@ func (s *Sealer) EnsureDataKey(ctx context.Context, tx store.Tx, id tenant.ID) (
 	return false, row.KekVersion, nil
 }
 
+// SealError is the failure of Seal when the key material is at fault. It is an ErrUnavailable
+// (the administration API answers 503) and it keeps the class of the cause and the identifiers
+// known at write time, so the log line can say what §5.10 says for a read. The text of the
+// provider error is kept for errors.Is, never for a log: it can carry paths.
+type SealError struct {
+	// Cause is "data_key_unwrap" (the stored data key does not unwrap) or "kek_unavailable"
+	// (the key-encryption key version is unknown or the provider cannot answer).
+	Cause string
+	// TenantID, CredentialID, KEKVersion and DataKeyVersion are empty or zero when not known.
+	TenantID       tenant.ID
+	CredentialID   string
+	KEKVersion     string
+	DataKeyVersion int32
+	msg            string
+	err            error
+}
+
+func (e *SealError) Error() string { return fmt.Sprintf("%s: %s: %v", ErrUnavailable, e.msg, e.err) }
+
+// Unwrap reports ErrUnavailable and the provider error.
+func (e *SealError) Unwrap() []error {
+	if e.err == nil {
+		return []error{ErrUnavailable}
+	}
+	return []error{ErrUnavailable, e.err}
+}
+
+// sealCause classes a provider error the way the opener does.
+func sealCause(err error) string {
+	if errors.Is(err, ErrUnwrap) {
+		return "data_key_unwrap"
+	}
+	return "kek_unavailable"
+}
+
 // Seal ensures the data key of the tenant, unwraps it, seals plaintext for credentialID and
 // computes the fingerprint and the hint. A data key that does not unwrap is ErrUnavailable.
 func (s *Sealer) Seal(ctx context.Context, tx store.Tx, id tenant.ID, credentialID string, plaintext secret.Secret) (Sealed, error) {
@@ -101,7 +136,10 @@ func (s *Sealer) Seal(ctx context.Context, tx store.Tx, id tenant.ID, credential
 	}
 	raw, err := s.p.Unwrap(ctx, row.KekVersion, row.WrappedKey, DataAAD(id, row.Version))
 	if err != nil {
-		return Sealed{}, fmt.Errorf("%w: the data key of the tenant does not unwrap: %w", ErrUnavailable, err)
+		return Sealed{}, &SealError{
+			Cause: sealCause(err), TenantID: id, CredentialID: credentialID, KEKVersion: row.KekVersion, DataKeyVersion: row.Version,
+			msg: "the data key of the tenant does not unwrap", err: err,
+		}
 	}
 	defer clear(raw)
 	dk, err := NewDataKey(raw, id, row.Version)
