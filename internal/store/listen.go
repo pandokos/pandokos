@@ -170,7 +170,10 @@ func (l *Listener) Run(ctx context.Context) {
 			l.o.OnNotify(n.Payload)
 		}
 		closeConn()
-		l.o.OnReset()
+		// No reset here: what the caches hold stays valid for its lifetime while the connection
+		// is away (calls continue from the caches while the database is stopped, sprint 3.2
+		// section 5.6). The reset that matters, for the notifications missed in the meantime,
+		// is the one after the next connection.
 		if ctx.Err() == nil {
 			log.Warn("cache listener disconnected", "role", string(l.o.Role), "error", "connection lost")
 			wait()

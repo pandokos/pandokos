@@ -229,7 +229,7 @@ func (c *Cache) Invalidate(payload string) {
 	c.flush("unknown_payload")
 }
 
-// Flush empties the cache; the listener calls it when it loses its connection.
+// Flush empties the cache; the listener calls it each time it (re)connects, because notifications may have been missed.
 func (c *Cache) Flush() { c.flush("reset") }
 
 func (c *Cache) flush(reason string) {
