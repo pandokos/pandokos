@@ -394,8 +394,8 @@ func (c *Client) do(ctx context.Context, method, path string, q url.Values, body
 	return nil
 }
 
-// EmptyDescription, as CredentialUpdate.Description, asks to clear the description. The
-// generated member is omitted when empty, so an empty description could not be sent; the
+// EmptyDescription is the value of CredentialUpdate.Description that asks to clear the
+// description. The generated member is omitted when empty, so an empty description could not be sent; the
 // marshalling below writes this value as "". It is never a real description (a control character).
 const EmptyDescription = "\x00"
 

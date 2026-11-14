@@ -46,7 +46,8 @@ func TestFailSealLog(t *testing.T) {
 			if line["msg"] != "credential cannot be sealed" || line["cause"] != tc.cause {
 				t.Errorf("line %v, want cause %s", line, tc.cause)
 			}
-			if _, ok := tc.err.(*vault.SealError); ok {
+			var se *vault.SealError
+			if errors.As(tc.err, &se) {
 				for k, want := range map[string]any{"credential_id": "cred-1", "kek_version": "kek-1", "data_key_version": float64(1)} {
 					if line[k] != want {
 						t.Errorf("%s = %v, want %v", k, line[k], want)
