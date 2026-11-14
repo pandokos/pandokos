@@ -115,13 +115,24 @@ func (s *server) CreatePriceOverride(ctx context.Context, in adminapi.CreatePric
 		if err != nil {
 			return err
 		}
+		// Without a start, the version starts at the database's clock read after the lock: now() of
+		// the transaction may be earlier than a version another writer committed while this one
+		// waited, and a version that starts before it would never be in force.
+		start := validFrom
+		if start == nil {
+			at, err := q.ClockTimestamp(ctx)
+			if err != nil {
+				return err
+			}
+			start = &at
+		}
 		// The version that is in force when the new one starts, for the audit row.
-		prev, err := q.PriceAt(ctx, queries.PriceAtParams{ModelID: m.ID, At: validFrom})
+		prev, err := q.PriceAt(ctx, queries.PriceAtParams{ModelID: m.ID, At: start})
 		if err != nil && !isNoRowsErr(err) {
 			return err
 		}
 		created, err := q.CreatePriceVersion(ctx, queries.CreatePriceVersionParams{
-			ModelID: m.ID, ValidFrom: validFrom, Currency: v.Currency, Source: "override", Note: b.Note,
+			ModelID: m.ID, ValidFrom: start, Currency: v.Currency, Source: "override", Note: b.Note,
 		})
 		if err != nil {
 			return err

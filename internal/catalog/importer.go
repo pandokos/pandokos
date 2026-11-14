@@ -54,8 +54,10 @@ const (
 // import goes on.
 const ReasonMalformedPrices = "malformed_prices"
 
-// maxStoredReport bounds the report kept in the import row (the column holds 64 KiB).
-const maxStoredReport = 60000
+// maxStoredReport bounds the JSON text of the report kept in the import row. The column's CHECK
+// bounds the jsonb value to 64 KiB, and a jsonb value is larger than its text (about 22% on
+// PostgreSQL 16, with many short keys), so the text budget leaves a wide margin.
+const maxStoredReport = 45000
 
 // Source is a dataset and where it came from.
 type Source struct {
@@ -196,7 +198,14 @@ func runImport(ctx context.Context, db *store.DB, src Source, o ImportOptions, c
 				}
 			}
 		}
-		plan, r, err := planImport(ctx, tx, q, ds, now())
+		// The clock is read after the lock: now() of the transaction may be earlier than a version
+		// that another writer committed while this one waited, and a version that starts before it
+		// would never be in force.
+		at, err := q.ClockTimestamp(ctx)
+		if err != nil {
+			return err
+		}
+		plan, r, err := planImport(ctx, tx, q, ds, at)
 		if err != nil {
 			return err
 		}
@@ -205,7 +214,7 @@ func runImport(ctx context.Context, db *store.DB, src Source, o ImportOptions, c
 		if o.DryRun {
 			return nil
 		}
-		return writeImport(ctx, tx, q, src, o, started, &rep, plan)
+		return writeImport(ctx, tx, q, src, o, started, at, &rep, plan)
 	}
 	if runErr := db.Platform(ctx, run); runErr != nil {
 		return Report{Digest: digest}, "", fmt.Errorf("catalog: import: %w", runErr)
@@ -372,7 +381,11 @@ func storedReport(rep Report) (string, error) {
 		}
 		d.DatasetIssues = append(d.DatasetIssues, storedIssue{Reason: is.Reason, Detail: is.Detail})
 	}
-	size := 100 + len(d.DatasetIssues)*200
+	base, err := json.Marshal(d)
+	if err != nil {
+		return "", errors.New("catalog: encode the report")
+	}
+	size := len(base) + 16 // the "truncated" count grows with the number of digits
 	for i, it := range items {
 		si := storedItem{Provider: it.Provider, Model: it.Model, DatasetModel: it.DatasetModel, Outcome: it.Outcome}
 		for _, is := range it.Issues {
@@ -398,7 +411,7 @@ func storedReport(rep Report) (string, error) {
 
 // writeImport writes the import row, then the versions with their rates and audit rows, then
 // the audit row of the run.
-func writeImport(ctx context.Context, tx store.Tx, q *queries.Queries, src Source, o ImportOptions, started time.Time, rep *Report, plan []pending) error {
+func writeImport(ctx context.Context, tx store.Tx, q *queries.Queries, src Source, o ImportOptions, started, at time.Time, rep *Report, plan []pending) error {
 	report, err := storedReport(*rep)
 	if err != nil {
 		return err
@@ -417,7 +430,7 @@ func writeImport(ctx context.Context, tx store.Tx, q *queries.Queries, src Sourc
 	for _, pd := range plan {
 		v := pd.version
 		importID := row.ID
-		created, err := q.CreatePriceVersion(ctx, queries.CreatePriceVersionParams{ModelID: pd.modelID, Currency: v.Currency, Source: "import", ImportID: &importID})
+		created, err := q.CreatePriceVersion(ctx, queries.CreatePriceVersionParams{ModelID: pd.modelID, Currency: v.Currency, Source: "import", ImportID: &importID, ValidFrom: &at})
 		if err != nil {
 			return err
 		}

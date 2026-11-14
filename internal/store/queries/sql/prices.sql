@@ -6,6 +6,11 @@
 -- name: LockPriceImports :exec
 SELECT pg_catalog.pg_advisory_xact_lock(7203391045122417921);
 
+-- The database's wall clock, read after a lock was taken: now() is the start of the transaction,
+-- which may be before another writer committed while this one waited.
+-- name: ClockTimestamp :one
+SELECT clock_timestamp()::timestamptz AS at;
+
 -- last_remote is the epoch when no remote import succeeded.
 -- name: PriceImportHistory :one
 SELECT EXISTS (SELECT 1 FROM pandokos.price_import i

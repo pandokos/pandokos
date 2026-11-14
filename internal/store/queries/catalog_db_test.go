@@ -257,6 +257,10 @@ func catalogStatements(c context.Context, t *testing.T, admin, gateway *store.DB
 		if err := q.LockPriceImports(c); err != nil {
 			t.Errorf("LockPriceImports: %v", err)
 		}
+		mark("ClockTimestamp")
+		if at, err := q.ClockTimestamp(c); err != nil || time.Since(at) > time.Minute || time.Until(at) > time.Minute {
+			t.Errorf("ClockTimestamp: %v %v", at, err)
+		}
 		mark("PriceImportHistory")
 		hist, err := q.PriceImportHistory(c, queries.PriceImportHistoryParams{Digest: digest, Since: time.Now().Add(-time.Hour)})
 		if err != nil {

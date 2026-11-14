@@ -15,6 +15,9 @@ import (
 	"github.com/pandokos/pandokos/internal/admin"
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/catalog"
+	"github.com/pandokos/pandokos/internal/store"
+	"github.com/pandokos/pandokos/internal/store/queries"
+	"github.com/pandokos/pandokos/test/apitest"
 	"github.com/pandokos/pandokos/test/testutil"
 )
 
@@ -87,6 +90,30 @@ func TestPriceOverrides(t *testing.T) {
 		list := c.platform(t, "GET", prices, nil)
 		if regexp.MustCompile(`"rate":[0-9]`).MatchString(string(list.Body)) {
 			t.Errorf("a rate of the list is a JSON number: %s", list.Body)
+		}
+	})
+
+	t.Run("an override without a start takes its clock after the lock of the model", func(t *testing.T) {
+		mm := c.createModel(t, p.Name, map[string]any{"name": "synthetic-locked", "availability": "all"})
+		var release time.Time
+		done := make(chan *apitest.Response, 1)
+		err := c.api.Admin.Platform(context.Background(), func(ctx context.Context, tx store.Tx) error {
+			if _, err := queries.New(tx).LockModel(ctx, mm.ID); err != nil {
+				return err
+			}
+			go func() {
+				done <- c.platform(t, "POST", "/v1/models/"+mm.ID+"/prices", map[string]any{"currency": "USD", "rates": rates("input", "0", "1")})
+			}()
+			time.Sleep(500 * time.Millisecond) // the request's transaction has started and waits
+			release = time.Now()
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		v := decode[adminapi.PriceVersion](t, <-done, 201)
+		if v.ValidFrom.Before(release) {
+			t.Errorf("valid_from %v is before the release of the lock (%v): the version may never be in force", v.ValidFrom, release)
 		}
 	})
 

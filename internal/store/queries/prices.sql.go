@@ -10,6 +10,19 @@ import (
 	"time"
 )
 
+const clockTimestamp = `-- name: ClockTimestamp :one
+SELECT clock_timestamp()::timestamptz AS at
+`
+
+// The database's wall clock, read after a lock was taken: now() is the start of the transaction,
+// which may be before another writer committed while this one waited.
+func (q *Queries) ClockTimestamp(ctx context.Context) (time.Time, error) {
+	row := q.db.QueryRow(ctx, clockTimestamp)
+	var at time.Time
+	err := row.Scan(&at)
+	return at, err
+}
+
 const createPriceImport = `-- name: CreatePriceImport :one
 INSERT INTO pandokos.price_import (started_at, source, source_ref, dataset_format, digest, outcome, error_class, actor_type,
                                    actor_id, models_seen, versions_created, unchanged, overridden, unmatched, skipped, report)
