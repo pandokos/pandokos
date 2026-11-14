@@ -3,7 +3,7 @@ id: SPRINT-2.2
 title: Catalogue and prices
 epic: EPIC-2
 release: v0.1
-status: in-progress
+status: done
 design: draft 2026-11-14
 ---
 
