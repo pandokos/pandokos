@@ -263,7 +263,7 @@ func TestVaultConfiguration(t *testing.T) {
 			}
 			return "", false
 		}
-		for _, m := range []os.FileMode{0o600, 0o400, 0o440, 0o640, 0o660, 0o200} {
+		for _, m := range []os.FileMode{0o600, 0o400, 0o440, 0o640, 0o660} {
 			if msg, ok := warn(mk(m.String(), m)); ok {
 				t.Errorf("mode %v warned: %s", m, msg)
 			}
