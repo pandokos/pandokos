@@ -64,9 +64,10 @@ func (adapter) EstimateUsage(op family.Operation, e family.Evidence) family.Usag
 
 func (adapter) WriteError(w http.ResponseWriter, code family.ErrorCode) { WriteError(w, code) }
 
-// Recognizes reports whether a request looks like a call of this family. The stub recognizes
-// nothing.
-func (adapter) Recognizes(_, _ string, _ http.Header) bool { return false }
+// Recognizes reports whether a request looks like a call of this family.
+func (adapter) Recognizes(method, nativePath string, h http.Header) bool {
+	return Recognizes(method, nativePath, h)
+}
 
 // UpstreamRequestID returns the provider's Request-Id header value, unchecked.
 func (adapter) UpstreamRequestID(h http.Header) string { return h.Get("Request-Id") }
