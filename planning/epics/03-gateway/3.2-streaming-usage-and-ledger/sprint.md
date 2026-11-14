@@ -1104,3 +1104,17 @@ are synthetic, 1.1 R-4); the Responses wire format against a live account.
 | O-16 | Confirmed: no token counts on spans until 6.1 |
 | O-17 | Confirmed: `cancelled` covers disconnect and forced shutdown; the log line distinguishes them |
 | O-18 | Assigned to 3.3, which decides with the compatible servers it verifies |
+
+### Amendments during implementation
+
+Changes to the design made while building, each declared and documented:
+
+1. **Go floor and OpenTelemetry v1.47.0** (O-1, amended above): `go 1.26.0`, SDK and exporter at
+   v1.47.0, `golang.org/x/net` v0.60.0; ADR 0025 and ADR 0040 carry the change.
+2. **The cache listener no longer flushes the caches when its connection is lost** (§5.6; accepted by
+   the orchestrator). `internal/store/listen.go` calls `OnReset` only when it (re)connects, not when
+   the connection is lost, so that calls continue from the caches while the database is stopped
+   (T-509, T-510). The documented bound on a revocation or a disable stays the cache lifetimes
+   (`cache.principal_ttl` and `cache.credential_ttl`, at most 60 s; `cache.catalog_ttl`). Documented
+   in the database, keys and architecture guides; history line on ADR 0030.
+

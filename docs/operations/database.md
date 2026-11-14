@@ -255,7 +255,7 @@ without a transaction-mode pooler such as PgBouncer. There is no configuration s
 | Connection start parameters | Only `application_name` |
 | Statements outside a transaction | Only in the start-up check and readiness: single read-only statements on global objects |
 | Temporary tables, cursors `WITH HOLD`, session advisory locks | Not used; forbidden by this design |
-| `LISTEN` / `NOTIFY` | One dedicated connection of the gateway user, outside the pool, to `database.direct_address` when set (else `database.address`): the principal cache listens for revocations. It proves itself with probes sent from a second connection; behind a transaction pooler without a direct address the probe fails and the cache lifetime is the bound (`cache invalidation unavailable`) |
+| `LISTEN` / `NOTIFY` | One dedicated connection of the gateway user, outside the pool, to `database.direct_address` when set (else `database.address`): the principal cache listens for revocations. It proves itself with probes sent from a second connection; behind a transaction pooler without a direct address the probe fails and the cache lifetime is the bound (`cache invalidation unavailable`). When the connection is lost the caches are **not** emptied: calls continue from them while the database is stopped, and they are emptied when the listener connects again, because notifications may have been missed. The bound on a revocation or a disable stays the cache lifetimes (`cache.principal_ttl` and `cache.credential_ttl`, at most 60 s; `cache.catalog_ttl`) |
 
 What you must provide when a pooler is in front of PostgreSQL:
 
@@ -367,3 +367,43 @@ Migration `0004_catalogue` adds the catalogue ([catalogue guide](catalogue.md)):
 - Notifications: a change to the catalogue sends `catalog` on the notification channel and a change to
   a grant or a restriction sends `catalog:<tenant>`; the gateway empties its cache on them.
 
+## 12. Grants of migration 0006
+
+Migration `0006_usage_ledger` adds the usage ledger ([usage guide](usage.md)): the table
+`usage_record`, partitioned by month, and the function that creates its partitions.
+
+- `usage_record` carries the canonical tenant policy, forced, and nothing else. `pandokos_gateway`
+  holds `INSERT` on the listed columns and **nothing else**: it cannot read a row, not even one it
+  wrote, and holds no `UPDATE`, `DELETE` or `TRUNCATE`. `pandokos_admin` and `pandokos_worker` hold
+  `SELECT`, under the policy (the tenant's rows in a tenant session, none without one). The columns
+  `recorded_at` (the database's clock) and the defaults are not insertable by the gateway. Triggers
+  refuse `UPDATE`, `DELETE` and `TRUNCATE` for everyone, the owner included.
+- The insert ends in `ON CONFLICT DO NOTHING` without a target, which is why the gateway needs no
+  `SELECT`: a batch that is sent twice stores each row once (the primary key is `tenant_id`,
+  `started_at`, `id`). If a gateway permission error appears, do not widen the grant.
+- The only foreign key is `tenant_id`: a row outlives the key, the credential, the model and the
+  price it names.
+- Rows are written in the tenant's session, one transaction per tenant and batch.
+- Nothing in the product reads the ledger yet; the `SELECT` grants exist so that a later release
+  needs no migration.
+
+### Usage partitions
+
+`usage_record` is a partitioned table with one partition per calendar month (UTC), named
+`usage_record_yYYYYmMM`, and a default partition `usage_record_default` that takes any row whose month
+has no partition (it is expected to stay empty).
+
+- The function `pandokos.ensure_usage_partitions(p_ahead integer)` creates the partitions from the
+  month before the current one to `p_ahead` months after it (1 to 12), skipping a month whose rows are
+  already in the default partition. It reports how many partitions it created and whether the default
+  partition has ever held a row. It is `SECURITY DEFINER` (it runs with the owner's rights, because
+  runtime roles own nothing and cannot create tables), executable by `pandokos_worker` only, takes no
+  name or date from its caller, and runs under an advisory lock with a 5 s lock timeout, so it is safe
+  to call in parallel and repeatedly.
+- `serve` calls it with 3 months ahead at start and then every hour; see the
+  [usage guide](usage.md), section 7, for the log lines and the warning about the default partition.
+- No runtime role holds any privilege on a partition: rows are reached through `usage_record`. Each
+  partition has forced row-level security with the same policy and its own `BEFORE TRUNCATE` trigger,
+  set by the owner-only function `protect_usage_partition`. The schema lint (rule L-20) checks all of
+  this for every partition.
+- Pandokos never drops a partition in this release; retention is a later sprint.

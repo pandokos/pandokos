@@ -52,3 +52,7 @@ repository, and attribute names can still change.
 a conversation store outside tenant isolation.
 
 **Prometheus only.** No traces, so no correlation with the caller.
+
+## History
+
+- 2026-11: sprint 3.2 builds traces over OTLP/HTTP; spans exist for admitted requests only ([ADR 0040](0040-traces.md)).

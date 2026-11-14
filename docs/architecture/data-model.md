@@ -133,8 +133,9 @@ Three details make this hold:
 - **Pinning a key to a credential.** `virtual_key.credential_id` is set when a key is created, can
   only be cleared afterwards (deleting the credential clears it), and is read with the key into the
   principal; a pinned key uses that credential for its provider and the default for any other.
-- **Append-only records.** `usage_record` and `audit_event` grant `INSERT` and `SELECT` only. No
-  runtime role holds `UPDATE`, `DELETE` or `TRUNCATE` on them. Retention is carried out by the
+- **Append-only records.** `usage_record` and `audit_event` are append-only: no runtime role holds
+  `UPDATE`, `DELETE` or `TRUNCATE` on them, and triggers stop the owner too. The gateway role holds
+  `INSERT` on `usage_record` and no `SELECT`; the admin and worker roles read it. Retention is carried out by the
   worker dropping whole expired partitions through a dedicated, audited function.
 
 ## People and sessions
@@ -158,23 +159,42 @@ security like every other tenant table.
 
 ## Usage ledger
 
-`usage_record` is partitioned by month on the request time. One row per request (USE-01), with
-three groups of columns kept apart (USE-04):
+`usage_record` is partitioned by calendar month (UTC) on the request start `started_at`, with a
+default partition; the gateway's writer creates no table, the worker's hourly job creates the
+partitions ahead of time through a definer function ([usage guide](../operations/usage.md),
+[ADR 0039](../adr/0039-usage-record-admission-and-ledger-writer.md)). There is **one row for every
+admitted, that is authenticated, request** (USE-01), whatever its outcome. The one authenticated
+request without a row is the one refused because the writer's buffer is full. The primary key is
+`(tenant_id, started_at, id)`; the gateway makes the ID (a UUID version 7) and a repeated insert
+stores the row once. No column holds content, and every text column is format-checked. Columns fall
+into five groups, with provider values and Pandokos's estimates kept apart (USE-04):
 
-- **attribution**: record ID, request ID, trace ID, tenant, principal, virtual key or token
-  subject, credential ID, funding mode, caller metadata;
-- **what was called**: provider, endpoint, model as requested, model as reported by the provider,
-  API family, operation, streaming flag, start time, time to first byte, duration, outcome,
-  upstream status;
-- **measurement**: tokens by category as reported by the provider, the source of each value
-  (`provider` or `estimated`), other billed units, price version, estimated upstream cost,
-  currency; and, for platform-funded calls, rating rule version and chargeable amount.
+- **attribution**: tenant, record ID, start and commit time, request ID, trace ID, principal kind
+  and ID, virtual key ID, credential ID, funding mode, caller metadata and the count of dropped
+  entries;
+- **what was called**: provider, API family, operation, endpoint, model as named in the catalogue
+  (`model`), the catalogue model ID, `upstream_model` (the identifier the provider received; the
+  provider's own reply is not recorded), streaming flag, outcome, error code, upstream status, time
+  to first body byte, duration, request and response bytes;
+- **measured by the provider**: the source of each of the two totals (`provider`, `estimated` or
+  `none`), input and output tokens, cache and reasoning counts, other billed units, and the
+  provider's own integer counters; empty unless the source is `provider`;
+- **estimated by Pandokos**: estimated input and output tokens; empty unless the source is
+  `estimated`;
+- **cost**: status (`known`, `unknown` with a reason, `none`), the exact amount, currency, the price
+  version in force when the request started, and the categories priced by fallback. Under BYOK the
+  cost is informational. Rating rules and chargeable amounts for platform-funded calls come with that
+  funding mode.
+
+Check constraints enforce the sources: a provider column is null unless its source is `provider`, an
+estimate column unless it is `estimated`. The only foreign key is `tenant_id`; a record outlives the
+key, the credential, the model and the price it names.
 
 Outcomes: `ok`, `upstream_error`, `cancelled`, `timeout`, `rejected_limit`, `rejected_policy`,
-`internal_error`.
+`internal_error`. (`rejected_limit` is written once limits exist.)
 
-Corrections go to `usage_correction`, which references the original record and carries the
-difference. Reports read both.
+Corrections will go to `usage_correction`, which references the original record and carries the
+difference. Reports will read both. Neither exists yet, and no API reads usage yet.
 
 ## Audit log
 

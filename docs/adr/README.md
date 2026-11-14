@@ -45,6 +45,8 @@ A record is *proposed* until its pull request is merged by the maintainer, then 
 | [0036](0036-prices-costs-and-importer.md) | Prices, costs and the price importer | proposed |
 | [0037](0037-request-pipeline-and-resolution.md) | Request pipeline and resolution | proposed |
 | [0038](0038-egress-guard-upstream-tls-and-proxy.md) | Egress guard, upstream TLS and proxy | proposed |
+| [0039](0039-usage-record-admission-and-ledger-writer.md) | Usage record, admission and the ledger writer | proposed |
+| [0040](0040-traces.md) | Traces: SDK, span model, sampling and propagation | proposed |
 
 ## Questions from SOW 0.1 and where they were decided
 

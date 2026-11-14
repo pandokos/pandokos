@@ -73,3 +73,4 @@ transparency principle.
   `upstream_unreachable` to guard refusals and redirects, and puts `model_not_allowed` and
   `no_credential` into use ([ADR 0037](0037-request-pipeline-and-resolution.md),
   [ADR 0038](0038-egress-guard-upstream-tls-and-proxy.md)).
+- 2026-11: sprint 3.2: invalid_request also covers a responses request that asks for background processing; unavailable also covers a full ledger buffer.
