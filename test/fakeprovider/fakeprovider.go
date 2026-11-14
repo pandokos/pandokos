@@ -41,10 +41,10 @@ const (
 
 // Request is a request the fake received.
 type Request struct {
-	Method, Path, RawQuery, Proto, Host string
-	ContentLength                       int64
-	Header                              http.Header
-	Body                                []byte
+	Method, Path, EscapedPath, RawQuery, Proto, Host string
+	ContentLength                                    int64
+	Header                                           http.Header
+	Body                                             []byte
 }
 
 // Server is the fake upstream.
@@ -268,7 +268,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	s.mu.Lock()
 	s.requests = append(s.requests, Request{
-		Method: r.Method, Path: r.URL.Path, RawQuery: r.URL.RawQuery, Proto: r.Proto, Host: r.Host,
+		Method: r.Method, Path: r.URL.Path, EscapedPath: r.URL.EscapedPath(), RawQuery: r.URL.RawQuery, Proto: r.Proto, Host: r.Host,
 		ContentLength: r.ContentLength, Header: r.Header.Clone(), Body: body,
 	})
 	s.mu.Unlock()
