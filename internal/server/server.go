@@ -61,6 +61,7 @@ type Server struct {
 
 	baseCtx    context.Context
 	cancelBase context.CancelCauseFunc
+	handlers   atomic.Int64 // inference handlers still running
 }
 
 // New wires logger, health, gateway and the two HTTP servers. It performs no I/O.
@@ -220,6 +221,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 			"duration_ms", time.Since(start).Milliseconds())
 		return
 	}
+	s.handlers.Add(1)
+	defer s.handlers.Add(-1)
 	s.gw.ServeHTTP(w, r)
 }
 
@@ -293,6 +296,11 @@ func (s *Server) Serve(ctx context.Context) error {
 		s.cancelBase(gateway.ErrShutdown)
 		_ = s.inf.srv.Close()
 		_ = s.adm.srv.Close()
+		// Close does not wait for handlers: a cancelled handler still records its request, and
+		// the ledger is closed after Serve returns, so wait for them (bounded).
+		for deadline := time.Now().Add(5 * time.Second); s.handlers.Load() > 0 && time.Now().Before(deadline); {
+			time.Sleep(time.Millisecond)
+		}
 	} else {
 		s.cancelBase(nil)
 	}
