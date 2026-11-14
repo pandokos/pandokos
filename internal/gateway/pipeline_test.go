@@ -1247,7 +1247,7 @@ func TestCancelledBeforeForwarding(t *testing.T) {
 				defer func() { got = recover() }()
 				h.handler.ServeHTTP(rec, req)
 			}()
-			if got != http.ErrAbortHandler {
+			if !errors.Is(asErr(got), http.ErrAbortHandler) {
 				t.Errorf("the handler ended with %v (status %d), want a panic of http.ErrAbortHandler", got, rec.Code)
 			}
 			if rec.Body.Len() != 0 {
@@ -1259,4 +1259,9 @@ func TestCancelledBeforeForwarding(t *testing.T) {
 			}
 		})
 	}
+}
+
+func asErr(v any) error {
+	err, _ := v.(error)
+	return err
 }
