@@ -401,22 +401,22 @@ func fuzzReader(t *testing.T, op string, data, cuts []byte, strip bool) {
 	// Strip mode: the output is the input with zero or more complete events removed.
 	in, out := splitEv(data), splitEv(outA)
 	j := 0
-	for _, e := range in {
+	for i, e := range in {
 		if j < len(out) && bytes.Equal(e, out[j]) {
 			j++
 			continue
 		}
-		if !bytes.Contains(e, []byte("usage")) {
+		if !bytes.Contains(bytes.ToLower(e), []byte("usage")) { // encoding/json matches member names without regard to case
 			t.Fatalf("an event without usage was removed: %q", e)
 		}
-		if !bytes.HasSuffix(e, []byte("\n\n")) && !bytes.HasSuffix(e, []byte("\r\n\r\n")) && !bytes.HasSuffix(e, []byte("\n\r\n")) {
+		if i < len(in)-1 && !bytes.HasSuffix(e, []byte("\n\n")) && !bytes.HasSuffix(e, []byte("\r\n\r\n")) && !bytes.HasSuffix(e, []byte("\n\r\n")) { // only the last event can be cut, and Flush removes a cut usage-only event (3.2 design, change 7)
 			t.Fatalf("an incomplete event was removed: %q", e)
 		}
 	}
 	if j != len(out) {
 		t.Fatalf("the output is not a subsequence of the input events")
 	}
-	if !bytes.Contains(data, []byte("usage")) && !bytes.Equal(outA, data) {
+	if !bytes.Contains(bytes.ToLower(data), []byte("usage")) && !bytes.Equal(outA, data) {
 		t.Fatal("the stream changed though it has no usage")
 	}
 }
