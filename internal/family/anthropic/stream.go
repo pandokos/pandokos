@@ -56,7 +56,10 @@ var (
 	deltaKey = []byte(`"content_block_delta"`)
 )
 
-// inspect reads one complete event.
+// inspect reads one complete event. The pre-filter matches the keys in exact case, while
+// encoding/json decodes them case-insensitively: the provider sends them in lowercase, and the
+// reader only observes and never strips or rewrites an event. Exact-case matching in both
+// families is a later hardening.
 func (r *StreamReader) inspect(ev []byte) {
 	data := sse.Data(ev)
 	if len(data) == 0 || data[0] != '{' || (!bytes.Contains(data, usageKey) && !bytes.Contains(data, deltaKey)) {
