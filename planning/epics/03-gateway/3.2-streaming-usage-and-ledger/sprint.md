@@ -1144,3 +1144,6 @@ Changes to the design made while building, each declared and documented:
    §5.8): `Serve` waits up to `handlerWait` (5 s) for the handlers it cancelled after the drain, so the
    worst case of a stop is `shutdown.drain_timeout + 5 s + ledger.shutdown_flush_timeout` plus about a
    second (46 s with the defaults). The container and usage guides say so.
+7. **A trailing usage-only event is removed in strip mode too** (at review, §5.3): when the stream
+   ends in the middle of the usage-only event that Pandokos asked for, `Flush` reads it for its usage
+   and does not forward it (T-460).

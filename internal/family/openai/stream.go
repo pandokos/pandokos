@@ -146,16 +146,15 @@ func (r *StreamReader) Filter(p []byte) []byte {
 }
 
 // Flush returns the bytes still held at the end of the stream. An event the stream ended in the
-// middle of is still read for its usage, and forwarded.
+// middle of is still read for its usage, and forwarded, unless it is the usage-only event that
+// Pandokos asked for: that one is removed in strip mode, terminated or not.
 func (r *StreamReader) Flush() []byte {
 	if r.failed {
 		return nil
 	}
 	b := r.take()
-	if len(b) > 0 {
-		r.inspect(b)
-	}
-	if !r.strip {
+	usageOnly := len(b) > 0 && r.inspect(b)
+	if !r.strip || usageOnly {
 		return nil
 	}
 	return b

@@ -206,6 +206,7 @@ func edgeCases() []edgeCase {
 		{"chat multi-line data", chat, []byte(utf8Chunk + `data: {"choices":[],` + "\n" + `data: "usage":{"prompt_tokens":9,"completion_tokens":12,"total_tokens":21}}` + "\n\ndata: [DONE]\n\n"), chatU, 1},
 		{"chat UTF-8 content", chat, []byte(utf8Chunk + usageEvent + "data: [DONE]\n\n"), chatU, 1},
 		{"chat no final blank line", chat, bytes.TrimSuffix(chatUsage, []byte("\n")), chatU, 4},
+		{"chat unterminated usage-only event at the end", chat, []byte(utf8Chunk + strings.TrimSuffix(usageEvent, "\n\n")), chatU, 1},
 		{"chat only [DONE]", chat, []byte("data: [DONE]\n\n"), nil, 0},
 		{"chat without usage", chat, fixtures.Read("chat_stream.sse"), nil, 4},
 		{"chat empty", chat, nil, nil, 0},
