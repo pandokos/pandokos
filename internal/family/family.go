@@ -2,6 +2,12 @@
 // error codes of the inference side.
 package family
 
+import (
+	"bytes"
+	"encoding/json"
+	"strconv"
+)
+
 // Usage is the normalized form of ADR 0010. InputTokens includes CacheReadTokens and
 // CacheWriteTokens; OutputTokens includes ReasoningTokens.
 type Usage struct {
@@ -18,8 +24,103 @@ type Usage struct {
 // with dots, bounded as sprint 3.2 section 5.2 says; everything else in the object is dropped.
 // It returns nil when nothing is kept.
 func FlattenUsage(usageObject []byte) map[string]int64 {
-	_ = usageObject
+	dec := json.NewDecoder(bytes.NewReader(usageObject))
+	dec.UseNumber()
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		return nil
+	}
+	out := map[string]int64{}
+	if err := flattenObject(dec, "", 1, out); err != nil || len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+const (
+	maxReportedEntries = 32
+	maxReportedDepth   = 3
+	maxReportedKey     = 64
+)
+
+// flattenObject reads the members of an object whose opening brace was consumed. It stops, without
+// error, when the map holds maxReportedEntries entries.
+func flattenObject(dec *json.Decoder, prefix string, depth int, out map[string]int64) error {
+	for dec.More() {
+		if len(out) >= maxReportedEntries {
+			return nil
+		}
+		keyTok, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		name, _ := keyTok.(string)
+		key := name
+		if prefix != "" {
+			key = prefix + "." + name
+		}
+		usable := name != "" && validReportedKey(key)
+		tok, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		switch v := tok.(type) {
+		case json.Number:
+			if n, err := strconv.ParseInt(string(v), 10, 64); err == nil && n >= 0 && usable {
+				out[key] = n
+			}
+		case json.Delim:
+			if v == '{' && depth < maxReportedDepth && usable {
+				if err := flattenObject(dec, key, depth+1, out); err != nil {
+					return err
+				}
+				if len(out) >= maxReportedEntries {
+					return nil
+				}
+				continue
+			}
+			if err := skipValue(dec, v); err != nil {
+				return err
+			}
+		}
+	}
+	_, err := dec.Token() // the closing brace
+	return err
+}
+
+// skipValue consumes the rest of the object or array whose opening delimiter was read.
+func skipValue(dec *json.Decoder, open json.Delim) error {
+	if open != '{' && open != '[' {
+		return nil
+	}
+	for level := 1; level > 0; {
+		tok, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		if d, ok := tok.(json.Delim); ok {
+			if d == '{' || d == '[' {
+				level++
+			} else {
+				level--
+			}
+		}
+	}
 	return nil
+}
+
+func validReportedKey(k string) bool {
+	if len(k) < 1 || len(k) > maxReportedKey {
+		return false
+	}
+	for i := 0; i < len(k); i++ {
+		c := k[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '_', c == '.':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // Evidence is what the gateway measured about a request whose provider reported no usage.
@@ -100,7 +201,7 @@ func (c ErrorCode) Message() string {
 	case CodeNoCredential:
 		return "Pandokos: no usable provider credential for this provider."
 	case CodeInvalidRequest:
-		return `Pandokos: the request body must be a JSON object with one string member "model".`
+		return `Pandokos: the request body is not accepted: it must be a JSON object with one string member "model", and must not ask for background processing.`
 	case CodeRequestTimeout:
 		return "Pandokos: the request body was not received in time."
 	default:
