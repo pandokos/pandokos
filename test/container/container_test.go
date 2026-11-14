@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -195,8 +196,15 @@ func TestImage(t *testing.T) {
 		t.Fatalf("streaming call: %d %q", status, body)
 	}
 
-	// The same address, no longer marked private: the guard refuses it when connecting.
-	cli("platform.key", "endpoint", "update", "--base-url", up.URL(), "--private=false", "openai", "default")
+	// The same fake, now through a public endpoint: the admin API refuses an http URL or a
+	// loopback literal there, so the endpoint is https://localhost:<port>. It passes the
+	// validation, and the guard refuses the resolved loopback address when connecting, before
+	// any TLS handshake.
+	upURL, err := url.Parse(up.URL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cli("platform.key", "endpoint", "update", "--base-url", "https://localhost:"+upURL.Port(), "--private=false", "openai", "default")
 	testutil.Eventually(t, 20*time.Second, "the refusal of a private address on a public endpoint", func() bool {
 		status, code, body = call()
 		return status != 200
@@ -210,6 +218,9 @@ func TestImage(t *testing.T) {
 		t.Errorf("exit code %s", code)
 	}
 	logs := docker(t, "logs", id)
+	if !strings.Contains(logs, "egress blocked") {
+		t.Errorf("the container did not log the refusal of the private address:\n%s", logs)
+	}
 	// The key was read, the version is announced, and the mode of the file is warned about (T-362).
 	if !strings.Contains(logs, `"msg":"vault ready"`) || !strings.Contains(logs, `"kek_provider":"local"`) {
 		t.Errorf("the container did not log `vault ready`:\n%s", logs)
