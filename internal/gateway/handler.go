@@ -62,6 +62,7 @@ type Handler struct {
 	credentials Credentials
 	failures    FailureRecorder
 	families    map[string]family.Adapter
+	familyNames []string // the keys of families in name order
 	def         family.Adapter
 	maxBody     int64
 	readTimeout time.Duration
@@ -112,7 +113,13 @@ func New(o Options) (*Handler, error) {
 	if !ok {
 		return nil, errors.New("gateway: DefaultFamily is not a key of Families")
 	}
+	names := make([]string, 0, len(families))
+	for name := range families {
+		names = append(names, name)
+	}
+	sort.Strings(names)
 	h := &Handler{
+		familyNames: names,
 		logger:      o.Logger,
 		auth:        o.Authenticator,
 		catalogue:   o.Catalogue,
@@ -334,6 +341,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // the request is not served.
 func (h *Handler) route(r *http.Request, st *reqState) bool {
 	p := r.URL.Path
+	h.pickErrorShape(r, st)
 	if len(p) < 2 || p[0] != '/' {
 		h.fail(st, family.CodeEndpointNotSupported)
 		return false
@@ -358,6 +366,7 @@ func (h *Handler) route(r *http.Request, st *reqState) bool {
 		h.fail(st, family.CodeEndpointNotSupported)
 		return false
 	}
+	st.adapter = adapter // a known provider answers in its own family's shape
 	op, ok := adapter.Match(r.Method, native)
 	if !ok {
 		h.fail(st, family.CodeEndpointNotSupported)
@@ -365,6 +374,25 @@ func (h *Handler) route(r *http.Request, st *reqState) bool {
 	}
 	st.adapter, st.matched, st.provider, st.family, st.op = adapter, true, segment, fam, op
 	return true
+}
+
+// pickErrorShape chooses the adapter that writes the error of a request that reaches no family
+// (sprint.md section 5.3): the first, in name order, that recognizes the method, the native
+// path and the header; the default otherwise. It reads nothing else of the request.
+func (h *Handler) pickErrorShape(r *http.Request, st *reqState) {
+	p := r.URL.Path
+	native := p
+	if len(p) > 1 && p[0] == '/' {
+		if i := strings.IndexByte(p[1:], '/'); i > 0 {
+			native = p[1+i:]
+		}
+	}
+	for _, name := range h.familyNames {
+		if a := h.families[name]; a.Recognizes(r.Method, native, r.Header) {
+			st.adapter = a
+			return
+		}
+	}
 }
 
 // authenticate runs steps 3 and 4: the credential, then the decision. It answers and returns
@@ -580,6 +608,9 @@ func (h *Handler) logRequest(st *reqState, outcome string) {
 			source = st.rec.InputSource
 		}
 		attrs = append(attrs, "usage_source", string(source))
+		if st.rec != nil && st.rec.OutputSource != source {
+			attrs = append(attrs, "usage_output_source", string(st.rec.OutputSource))
+		}
 		if source != usage.SourceNone {
 			attrs = append(attrs, usageAttr(st.costUsage))
 		}
