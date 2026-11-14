@@ -41,7 +41,6 @@ docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
   -e PANDOKOS_DATABASE_WORKER_USER=acme_worker \
   -e PANDOKOS_DATABASE_WORKER_PASSWORD_FILE=/run/secrets/db_worker \
   -e PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE=/run/secrets/pandokos_kek \
-  -e PANDOKOS_SKELETON_OPENAI_API_KEY_FILE=/run/secrets/openai_api_key \
   ghcr.io/pandokos/pandokos:<version>
 ```
 
@@ -202,11 +201,7 @@ dependencies are the same on both platforms.
 
 ## Limits of this pre-release
 
-Provider credentials are stored encrypted (sprint 2.1), but the inference listener does not use them
-yet: it still sends the single provider key of the `skeleton` configuration.
-
-
-One static access token shared by all callers, no rotation; plain HTTP, so terminate TLS in front
-of it; one endpoint; the database holds tenants and service accounts with tested isolation, but
-nothing is proxied through it yet. Do not expose it to the internet and do not use it for
-production.
+The inference listener forwards chat completions of the `openai` family with the tenant's stored
+credential; see the [gateway guide](gateway.md) for what a call needs and what reaches the provider. It
+speaks plain HTTP, so terminate TLS in front of it. It records no usage yet and has no retries. Do not
+expose it to the internet and do not use it for production.
