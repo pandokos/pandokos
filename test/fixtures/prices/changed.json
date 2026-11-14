@@ -1,0 +1,92 @@
+[
+  {
+    "id": "openai",
+    "name": "OpenAI (synthetic test data)",
+    "models": [
+      {
+        "id": "gpt-4o",
+        "name": "gpt 4o",
+        "match": {
+          "or": [
+            {
+              "equals": "gpt-4o"
+            },
+            {
+              "equals": "gpt-4o-2024-08-06"
+            }
+          ]
+        },
+        "context_window": 128000,
+        "prices": {
+          "input_mtok": 2.45,
+          "output_mtok": 10.4,
+          "cache_read_mtok": 1.225
+        }
+      },
+      {
+        "id": "o4-mini",
+        "name": "o4 mini",
+        "match": {
+          "or": [
+            {
+              "equals": "o4-mini"
+            },
+            {
+              "equals": "o4-mini-2025-04-16"
+            }
+          ]
+        },
+        "context_window": 200000,
+        "prices": {
+          "input_mtok": 1.15,
+          "output_mtok": 4.6,
+          "cache_read_mtok": 0.29
+        }
+      }
+    ]
+  },
+  {
+    "id": "synthetic",
+    "name": "Synthetic",
+    "models": [
+      {
+        "id": "synthetic-chat",
+        "name": "Synthetic chat",
+        "match": {
+          "equals": "synthetic-chat"
+        },
+        "prices": {
+          "input_mtok": 0.5,
+          "output_mtok": 1.5
+        }
+      },
+      {
+        "id": "synthetic-tiered",
+        "name": "Synthetic tiered",
+        "match": {
+          "equals": "synthetic-tiered"
+        },
+        "prices": {
+          "input_mtok": {
+            "base": 1,
+            "tiers": [
+              {
+                "start": 100000,
+                "price": 2
+              }
+            ]
+          },
+          "output_mtok": {
+            "base": 3,
+            "tiers": [
+              {
+                "start": 100000,
+                "price": 6
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+]

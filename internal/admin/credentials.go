@@ -1,11 +1,7 @@
 package admin
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"io"
-	"net/http"
 	"strings"
 	"time"
 	"unicode"
@@ -289,23 +285,6 @@ func (s *server) CreateCredential(ctx context.Context, in adminapi.CreateCredent
 	}
 }
 
-// peekUpdate records, before the body is decoded, whether an update names the description. The
-// generated type cannot tell an absent description from an empty one, and an empty one clears.
-func peekUpdate(r *http.Request, st *reqState) {
-	if r.Body == nil {
-		return
-	}
-	raw, _ := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes+1))
-	r.Body = io.NopCloser(bytes.NewReader(raw))
-	var members map[string]json.RawMessage
-	if json.Unmarshal(raw, &members) != nil {
-		return
-	}
-	if v, ok := members["description"]; ok && len(v) > 0 && v[0] == '"' {
-		st.descriptionGiven = true
-	}
-}
-
 // UpdateCredential changes the label, the description and the expiry.
 func (s *server) UpdateCredential(ctx context.Context, in adminapi.UpdateCredentialInput) (*adminapi.Credential, error) {
 	tid, err := tenantID(in.Tenant)
@@ -313,8 +292,7 @@ func (s *server) UpdateCredential(ctx context.Context, in adminapi.UpdateCredent
 		return nil, err
 	}
 	b := in.Body
-	setDescription := b.Description != "" || stateOf(ctx).descriptionGiven
-	if b.Label == "" && !setDescription && !b.ExpiresAt.Set {
+	if !b.Label.Set && !b.Description.Set && !b.ExpiresAt.Set {
 		return nil, invalid("body", "must change at least one member")
 	}
 	var out credRow
@@ -331,13 +309,13 @@ func (s *server) UpdateCredential(ctx context.Context, in adminapi.UpdateCredent
 		}
 		detail := map[string]any{}
 		par := queries.UpdateCredentialParams{ID: cur.ID}
-		if b.Label != "" && b.Label != cur.Label {
-			par.SetLabel, par.Label = true, b.Label
-			detail["label"] = change(cur.Label, b.Label)
+		if b.Label.Set && b.Label.Value != cur.Label {
+			par.SetLabel, par.Label = true, b.Label.Value
+			detail["label"] = change(cur.Label, b.Label.Value)
 		}
-		if setDescription && b.Description != cur.Description {
-			par.SetDescription, par.Description = true, b.Description
-			detail["description"] = change(cur.Description, b.Description)
+		if b.Description.Set && b.Description.Value != cur.Description {
+			par.SetDescription, par.Description = true, b.Description.Value
+			detail["description"] = change(cur.Description, b.Description.Value)
 		}
 		if b.ExpiresAt.Set {
 			var want *time.Time

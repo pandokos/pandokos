@@ -97,14 +97,14 @@ func TestTenants(t *testing.T) {
 			t.Fatalf("%+v %v", acme, err)
 		}
 		id := acme.Items[0].ID
-		upd, err := plat.UpdateTenant(ctx(t), adminapi.UpdateTenantInput{Tenant: id, Body: adminapi.TenantUpdate{Name: "acme-renamed"}})
+		upd, err := plat.UpdateTenant(ctx(t), adminapi.UpdateTenantInput{Tenant: id, Body: adminapi.TenantUpdate{Name: adminapi.Some("acme-renamed")}})
 		if err != nil || upd.Name != "acme-renamed" || upd.DisplayName != "Acme Inc" || !upd.UpdatedAt.After(acme.Items[0].UpdatedAt.Add(-time.Second)) {
 			t.Errorf("rename: %+v %v", upd, err)
 		}
 		if _, err := plat.CreateTenant(ctx(t), adminapi.CreateTenantInput{Body: adminapi.TenantCreate{Name: "acme"}}); err != nil {
 			t.Errorf("a name that was changed away is free: %v", err)
 		}
-		upd, err = plat.UpdateTenant(ctx(t), adminapi.UpdateTenantInput{Tenant: id, Body: adminapi.TenantUpdate{DisplayName: "Renamed Inc"}})
+		upd, err = plat.UpdateTenant(ctx(t), adminapi.UpdateTenantInput{Tenant: id, Body: adminapi.TenantUpdate{DisplayName: adminapi.Some("Renamed Inc")}})
 		if err != nil || upd.Name != "acme-renamed" || upd.DisplayName != "Renamed Inc" {
 			t.Errorf("display name: %+v %v", upd, err)
 		}

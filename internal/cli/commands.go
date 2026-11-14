@@ -1,13 +1,8 @@
 package cli
 
 import (
-	"bytes"
-	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
 
@@ -180,7 +175,7 @@ var commands = []command{
 		if err != nil {
 			return err
 		}
-		t, err := a.client.UpdateTenant(a.ctx, adminapi.UpdateTenantInput{Tenant: id, Body: adminapi.TenantUpdate{Name: *name, DisplayName: *display}})
+		t, err := a.client.UpdateTenant(a.ctx, adminapi.UpdateTenantInput{Tenant: id, Body: adminapi.TenantUpdate{Name: nonEmpty(*name), DisplayName: nonEmpty(*display)}})
 		if err != nil {
 			return err
 		}
@@ -322,7 +317,16 @@ var commands = []command{
 		if err != nil {
 			return err
 		}
-		body := adminapi.ServiceAccountUpdate{Name: *name, Description: *desc, Roles: roles}
+		body := adminapi.ServiceAccountUpdate{Name: nonEmpty(*name)}
+		if given(fs, "description") {
+			body.Description = adminapi.Some(*desc) // an empty description clears it
+		}
+		switch {
+		case *noRoles:
+			body.Roles = adminapi.Some([]string{})
+		case len(roles) > 0:
+			body.Roles = adminapi.Some([]string(roles))
+		}
 		switch {
 		case *noFrom:
 			body.ValidFrom = adminapi.Null[time.Time]()
@@ -351,7 +355,7 @@ var commands = []command{
 		case *noUntil && *until != "":
 			return usagef("--no-valid-until cannot be combined with --valid-until")
 		}
-		if *name == "" && *desc == "" && len(roles) == 0 && !*noRoles && !body.ValidFrom.Set && !body.ValidUntil.Set {
+		if !body.Name.Set && !body.Description.Set && !body.Roles.Set && !body.ValidFrom.Set && !body.ValidUntil.Set {
 			return usagef("service-account update needs a member to change")
 		}
 		if err := a.connect(); err != nil {
@@ -365,12 +369,7 @@ var commands = []command{
 		if err != nil {
 			return err
 		}
-		var sa *adminapi.ServiceAccount
-		if *noRoles {
-			sa, err = a.patchWithoutRoles(tid, id, body)
-		} else {
-			sa, err = a.client.UpdateServiceAccount(a.ctx, adminapi.UpdateServiceAccountInput{Tenant: tid, ServiceAccount: id, Body: body})
-		}
+		sa, err := a.client.UpdateServiceAccount(a.ctx, adminapi.UpdateServiceAccountInput{Tenant: tid, ServiceAccount: id, Body: body})
 		if err != nil {
 			return err
 		}
@@ -610,56 +609,17 @@ var commands = []command{
 	}},
 }
 
-// patchWithoutRoles sends an update that removes every role. The generated client leaves an empty
-// array out of the body (omitempty), so this one request is written by hand, with the client's own
-// connection and key.
-func (a *app) patchWithoutRoles(tenantID, id string, body adminapi.ServiceAccountUpdate) (*adminapi.ServiceAccount, error) {
-	raw, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
+// nonEmpty is the optional member of an update for a flag: absent when the flag is empty.
+func nonEmpty(s string) adminapi.Optional[string] {
+	if s == "" {
+		return adminapi.Optional[string]{}
 	}
-	var members map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &members); err != nil {
-		return nil, err
-	}
-	members["roles"] = json.RawMessage("[]")
-	payload, err := json.Marshal(members)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(a.ctx, http.MethodPatch, a.client.BaseURL+"/v1/tenants/"+tenantID+"/service-accounts/"+id, bytes.NewReader(payload))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+a.client.Key())
-	resp, err := a.client.HTTP.Do(req)
-	if err != nil {
-		var ue interface{ Unwrap() error }
-		if errors.As(err, &ue) {
-			err = ue.Unwrap()
-		}
-		return nil, fmt.Errorf("the server could not be reached: %w", err)
-	}
-	defer resp.Body.Close()
-	if a.client.OnResponse != nil {
-		a.client.OnResponse(resp)
-	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		var p adminapi.Problem
-		if json.Unmarshal(b, &p) != nil || p.Code == "" {
-			return nil, fmt.Errorf("unexpected response with status %d", resp.StatusCode)
-		}
-		return nil, &adminapi.ProblemError{Problem: p}
-	}
-	var sa adminapi.ServiceAccount
-	if err := json.Unmarshal(b, &sa); err != nil {
-		return nil, err
-	}
-	return &sa, nil
+	return adminapi.Some(s)
+}
+
+// given reports whether the flag was set on the command line, even to the empty string.
+func given(fs *flag.FlagSet, name string) bool {
+	found := false
+	fs.Visit(func(f *flag.Flag) { found = found || f.Name == name })
+	return found
 }

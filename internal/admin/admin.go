@@ -55,8 +55,6 @@ type reqState struct {
 	operation string
 	principal *authz.Principal
 	errCode   adminapi.ProblemCode
-	// descriptionGiven: the body of updateCredential names the description (see peekUpdate).
-	descriptionGiven bool
 }
 
 type stateKey struct{}
@@ -174,9 +172,6 @@ func (s *server) before(ctx context.Context, r *http.Request, op *adminapi.Opera
 		return ctx, errTenantState
 	default:
 		return ctx, errForbidden
-	}
-	if op.ID == "updateCredential" {
-		peekUpdate(r, st)
 	}
 	return authz.WithPrincipal(ctx, p), nil
 }

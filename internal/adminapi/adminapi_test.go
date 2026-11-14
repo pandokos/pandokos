@@ -27,8 +27,9 @@ const (
 
 // fake is an adminapi.Server that records the input of every call and answers with zero values.
 type fake struct {
-	mu  sync.Mutex
-	got map[string]any
+	adminapi.Server // the catalogue operations are exercised from sprint 2.2 on; calling one here panics
+	mu              sync.Mutex
+	got             map[string]any
 }
 
 func (f *fake) rec(id string, in any) { f.mu.Lock(); f.got[id] = in; f.mu.Unlock() }
@@ -176,6 +177,12 @@ func (f *fake) SetDefaultCredential(_ context.Context, in adminapi.SetDefaultCre
 	return &adminapi.Credential{}, nil
 }
 
+// CreatePriceOverride records its input: the body holds an array of objects (T-384).
+func (f *fake) CreatePriceOverride(_ context.Context, in adminapi.CreatePriceOverrideInput) (*adminapi.PriceVersion, error) {
+	f.rec("createPriceOverride", in)
+	return &adminapi.PriceVersion{}, nil
+}
+
 var _ adminapi.Server = (*fake)(nil)
 
 // problemBody is what the test's Error hook writes: enough to see the code and the members.
@@ -284,7 +291,7 @@ func TestRouterAndClient(t *testing.T) {
 			add("getTenant", in, func() error { _, err := c.GetTenant(ctx, in); return err })
 		}
 		{
-			in := adminapi.UpdateTenantInput{Tenant: tid, Body: adminapi.TenantUpdate{Name: "acme2", DisplayName: "Acme 2"}}
+			in := adminapi.UpdateTenantInput{Tenant: tid, Body: adminapi.TenantUpdate{Name: adminapi.Some("acme2"), DisplayName: adminapi.Some("Acme 2")}}
 			add("updateTenant", in, func() error { _, err := c.UpdateTenant(ctx, in); return err })
 		}
 		{
@@ -309,7 +316,7 @@ func TestRouterAndClient(t *testing.T) {
 		}
 		{
 			in := adminapi.UpdateServiceAccountInput{Tenant: tid, ServiceAccount: sid, Body: adminapi.ServiceAccountUpdate{
-				Name: "bot2", Description: "d2", ValidFrom: adminapi.Null[time.Time](), ValidUntil: adminapi.Value(future), Roles: []string{"inference"}}}
+				Name: adminapi.Some("bot2"), Description: adminapi.Some("d2"), ValidFrom: adminapi.Null[time.Time](), ValidUntil: adminapi.Value(future), Roles: adminapi.Some([]string{"inference"})}}
 			add("updateServiceAccount", in, func() error { _, err := c.UpdateServiceAccount(ctx, in); return err })
 		}
 		{
@@ -365,7 +372,7 @@ func TestRouterAndClient(t *testing.T) {
 			add("getCredential", in, func() error { _, err := c.GetCredential(ctx, in); return err })
 		}
 		{
-			in := adminapi.UpdateCredentialInput{Tenant: tid, Credential: cid, Body: adminapi.CredentialUpdate{Label: "other", Description: "d2", ExpiresAt: adminapi.Null[time.Time]()}}
+			in := adminapi.UpdateCredentialInput{Tenant: tid, Credential: cid, Body: adminapi.CredentialUpdate{Label: adminapi.Some("other"), Description: adminapi.Some("d2"), ExpiresAt: adminapi.Null[time.Time]()}}
 			add("updateCredential", in, func() error { _, err := c.UpdateCredential(ctx, in); return err })
 		}
 		{
@@ -738,22 +745,116 @@ func (s *ctxServer) GetMe(ctx context.Context, in adminapi.GetMeInput) (*adminap
 	return s.fake.GetMe(ctx, in)
 }
 
-// TestCredentialUpdateClearsDescription checks that an update can carry an empty description:
-// the generated member is omitted when empty, and an empty one clears (design 5.5).
-func TestCredentialUpdateClearsDescription(t *testing.T) {
+// TestOptionalMembers is part of T-384: an update body tells an absent member from an empty one,
+// through the generated client and router.
+func TestOptionalMembers(t *testing.T) {
+	r := newRig(t, 1<<20)
+	c := r.client()
+	ctx := context.Background()
 	for _, tc := range []struct {
 		name string
-		in   adminapi.CredentialUpdate
-		want string
+		body adminapi.CredentialUpdate
+		wire string
 	}{
-		{"absent", adminapi.CredentialUpdate{Label: "main"}, `{"label":"main"}`},
-		{"empty", adminapi.CredentialUpdate{Description: adminapi.EmptyDescription}, `{"description":""}`},
-		{"empty with a label", adminapi.CredentialUpdate{Label: "main", Description: adminapi.EmptyDescription}, `{"label":"main","description":""}`},
-		{"a value", adminapi.CredentialUpdate{Description: "d"}, `{"description":"d"}`},
+		{"absent", adminapi.CredentialUpdate{Label: adminapi.Some("main")}, `{"label":"main"}`},
+		{"empty", adminapi.CredentialUpdate{Description: adminapi.Some("")}, `{"description":""}`},
+		{"empty with a label", adminapi.CredentialUpdate{Label: adminapi.Some("main"), Description: adminapi.Some("")}, `{"label":"main","description":""}`},
+		{"a value", adminapi.CredentialUpdate{Description: adminapi.Some("d")}, `{"description":"d"}`},
 	} {
-		b, err := json.Marshal(&tc.in)
-		if err != nil || string(b) != tc.want {
-			t.Errorf("%s: %s, %v; want %s", tc.name, b, err, tc.want)
+		b, err := json.Marshal(&tc.body)
+		if err != nil || string(b) != tc.wire {
+			t.Errorf("%s: marshals to %s, %v; want %s", tc.name, b, err, tc.wire)
 		}
+		r.f.reset()
+		in := adminapi.UpdateCredentialInput{Tenant: tid, Credential: cid, Body: tc.body}
+		if _, err := c.UpdateCredential(ctx, in); err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if got := r.f.last("updateCredential"); !reflect.DeepEqual(got, in) {
+			t.Errorf("%s: the server received %+v, the client sent %+v", tc.name, got, in)
+		}
+	}
+}
+
+// TestOptionalNullAndValidation is part of T-384: null is refused for an optional member, and a
+// member is validated only when it is present.
+func TestOptionalNullAndValidation(t *testing.T) {
+	r := newRig(t, 1<<20)
+	path := "/v1/tenants/" + tid + "/credentials/" + cid
+	for _, tc := range []struct {
+		name, body string
+		status     int
+		field, msg string
+	}{
+		{"null", `{"description":null}`, 400, "description", "must not be null"},
+		{"too long when present", `{"description":"` + strings.Repeat("x", 501) + `"}`, 400, "description", "length must be at most 500"},
+		{"empty label when present", `{"label":""}`, 400, "label", ""},
+		{"absent members are not checked", `{}`, 200, "", ""},
+		{"empty description is valid", `{"description":""}`, 200, "", ""},
+	} {
+		status, pb, text := r.raw(t, "PATCH", path, "application/json", tc.body)
+		if status != tc.status {
+			t.Errorf("%s: status %d, want %d: %s", tc.name, status, tc.status, text)
+			continue
+		}
+		if tc.field == "" {
+			continue
+		}
+		found := false
+		for _, e := range pb.Errors {
+			found = found || (e.Field == tc.field && (tc.msg == "" || e.Message == tc.msg))
+		}
+		if !found {
+			t.Errorf("%s: errors %+v do not name %s (%q)", tc.name, pb.Errors, tc.field, tc.msg)
+		}
+	}
+}
+
+// TestNestedRequestObjects is part of T-384: a body with an array of objects is decoded and every
+// item is validated, with the item named in the field (rates[1].rate).
+func TestNestedRequestObjects(t *testing.T) {
+	good := adminapi.PriceOverride{Currency: "USD", Rates: []adminapi.PriceRate{
+		{Category: adminapi.PriceCategoryInput, Rate: "2.5"},
+		{Category: adminapi.PriceCategoryOutput, Threshold: 200000, Rate: "10"},
+	}}
+	if errs := good.Validate(); len(errs) != 0 {
+		t.Fatalf("a valid body: %+v", errs)
+	}
+	bad := adminapi.PriceOverride{Currency: "usd", Rates: []adminapi.PriceRate{
+		{Category: adminapi.PriceCategoryInput, Rate: "2.5"},
+		{Category: adminapi.PriceCategoryOutput, Rate: "1e3"},
+		{Category: "bogus", Rate: "1"},
+	}}
+	want := map[string]bool{"currency": true, "rates[1].rate": true, "rates[2].category": true}
+	got := map[string]bool{}
+	for _, e := range bad.Validate() {
+		got[e.Field] = true
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("fields %v, want %v", got, want)
+	}
+	if errs := (&adminapi.PriceOverride{Currency: "USD", Rates: []adminapi.PriceRate{}}).Validate(); len(errs) != 1 || errs[0].Field != "rates" {
+		t.Errorf("an empty list of rates: %+v", errs)
+	}
+	long := adminapi.PriceOverride{Currency: "USD", Rates: make([]adminapi.PriceRate, 65)}
+	for i := range long.Rates {
+		long.Rates[i] = adminapi.PriceRate{Category: adminapi.PriceCategoryInput, Rate: "1"}
+	}
+	if errs := long.Validate(); len(errs) != 1 || errs[0].Field != "rates" {
+		t.Errorf("65 rates: %+v", errs)
+	}
+	// Through the router and the client: the nested object round-trips.
+	r := newRig(t, 1<<20)
+	in := adminapi.CreatePriceOverrideInput{Model: tid, Body: good}
+	if _, err := r.client().CreatePriceOverride(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.f.last("createPriceOverride"); !reflect.DeepEqual(got, in) {
+		t.Errorf("the server received %+v, the client sent %+v", got, in)
+	}
+	status, pb, text := r.raw(t, "POST", "/v1/models/"+tid+"/prices", "application/json",
+		`{"currency":"USD","rates":[{"category":"input","threshold":0,"rate":"1"},{"category":"input","threshold":0,"rate":"x"}]}`)
+	if status != 400 || len(pb.Errors) != 1 || pb.Errors[0].Field != "rates[1].rate" {
+		t.Errorf("a bad nested member: %d %s", status, text)
 	}
 }

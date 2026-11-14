@@ -71,6 +71,35 @@ func (n *Nullable[T]) UnmarshalJSON(b []byte) error {
 	return json.Unmarshal(b, &n.Value)
 }
 
+// Optional is a member of an update body that is absent or present with a value. Presence is
+// what matters: a present empty string, zero or false is a change, an absent member is not. A
+// null is refused (UnmarshalJSON fails); the members that can be cleared with null are Nullable.
+type Optional[T any] struct {
+	Set   bool // the member was present
+	Value T
+}
+
+// Some returns a member that is present with a value.
+func Some[T any](v T) Optional[T] { return Optional[T]{Set: true, Value: v} }
+
+// IsZero makes the omitzero tag leave an absent member out.
+func (o Optional[T]) IsZero() bool { return !o.Set }
+
+// MarshalJSON writes the value.
+func (o Optional[T]) MarshalJSON() ([]byte, error) { return json.Marshal(o.Value) }
+
+// errNullMember is reported by Optional.UnmarshalJSON for a null.
+var errNullMember = errors.New("must not be null")
+
+// UnmarshalJSON records that the member was present; null is an error.
+func (o *Optional[T]) UnmarshalJSON(b []byte) error {
+	if string(bytes.TrimSpace(b)) == "null" {
+		return errNullMember
+	}
+	o.Set = true
+	return json.Unmarshal(b, &o.Value)
+}
+
 // RequestError is a request that the router refuses before the Server sees it.
 type RequestError struct {
 	Status int          // 400, 404, 413 or 415
@@ -244,6 +273,9 @@ func decodeBody(r *http.Request, limit int64, bodyRequired bool, required []stri
 			return invalidField(strings.Trim(name, `"`), "is not a member of this body")
 		}
 		if name := wrongMember(members, dst); name != "" {
+			if errors.Is(err, errNullMember) {
+				return invalidField(name, errNullMember.Error())
+			}
 			return invalidField(name, "is not a valid value")
 		}
 		return invalidField("body", "does not match the schema")
@@ -392,22 +424,4 @@ func (c *Client) do(ctx context.Context, method, path string, q url.Values, body
 		return fmt.Errorf("adminapi: decode the response: %w", err)
 	}
 	return nil
-}
-
-// EmptyDescription is the value of CredentialUpdate.Description that asks to clear the
-// description. The generated member is omitted when empty, so an empty description could not be sent; the
-// marshalling below writes this value as "". It is never a real description (a control character).
-const EmptyDescription = "\x00"
-
-// MarshalJSON writes the update, with an empty description when Description is EmptyDescription.
-func (v CredentialUpdate) MarshalJSON() ([]byte, error) {
-	type plain CredentialUpdate
-	if v.Description != EmptyDescription {
-		return json.Marshal(plain(v))
-	}
-	v.Description = ""
-	return json.Marshal(struct {
-		plain
-		Description string `json:"description"`
-	}{plain(v), ""})
 }

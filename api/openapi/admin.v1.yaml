@@ -20,6 +20,9 @@ tags:
   - name: virtual-keys
   - name: credentials
   - name: tenant-credentials
+  - name: catalog
+  - name: prices
+  - name: model-access
   - name: platform-keys
 paths:
   /v1/me:
@@ -756,6 +759,511 @@ paths:
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/providers:
+    get:
+      operationId: listProviders
+      tags: [catalog]
+      summary: List the providers of the catalogue, by name
+      x-pandokos-permission: catalog:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        "200": {$ref: '#/components/responses/ProviderList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: createProvider
+      tags: [catalog]
+      summary: Add a provider
+      description: >-
+        The name is the first path segment of the inference listener and never changes; healthz, readyz and v1 are refused. The provider is created enabled.
+      x-pandokos-permission: catalog:write
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ProviderCreate'}}}}
+      responses:
+        "201": {$ref: '#/components/responses/ProviderCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/providers/{provider}:
+    parameters:
+      - {$ref: '#/components/parameters/Provider'}
+    get:
+      operationId: getProvider
+      tags: [catalog]
+      summary: Read a provider
+      x-pandokos-permission: catalog:read
+      responses:
+        "200": {$ref: '#/components/responses/Provider'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    patch:
+      operationId: updateProvider
+      tags: [catalog]
+      summary: Change, enable or disable a provider
+      x-pandokos-permission: catalog:write
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ProviderUpdate'}}}}
+      responses:
+        "200": {$ref: '#/components/responses/Provider'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    delete:
+      operationId: deleteProvider
+      tags: [catalog]
+      summary: Delete a provider that nothing references
+      description: >-
+        Refused with invalid_state while an endpoint, a model or a credential of any tenant references the provider. The response is the provider as it was.
+      x-pandokos-permission: catalog:write
+      responses:
+        "200": {$ref: '#/components/responses/Provider'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/providers/{provider}/endpoints:
+    parameters:
+      - {$ref: '#/components/parameters/Provider'}
+    get:
+      operationId: listEndpoints
+      tags: [catalog]
+      summary: List the endpoints of a provider, by name
+      x-pandokos-permission: catalog:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        "200": {$ref: '#/components/responses/EndpointList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: createEndpoint
+      tags: [catalog]
+      summary: Add an endpoint to a provider
+      description: >-
+        The first endpoint of a provider becomes its default. http is accepted only for an endpoint marked private, and a public endpoint cannot name a private IP address.
+      x-pandokos-permission: catalog:write
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/EndpointCreate'}}}}
+      responses:
+        "201": {$ref: '#/components/responses/EndpointCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/providers/{provider}/endpoints/{endpoint}:
+    parameters:
+      - {$ref: '#/components/parameters/Provider'}
+      - {$ref: '#/components/parameters/Endpoint'}
+    get:
+      operationId: getEndpoint
+      tags: [catalog]
+      summary: Read an endpoint
+      x-pandokos-permission: catalog:read
+      responses:
+        "200": {$ref: '#/components/responses/Endpoint'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    patch:
+      operationId: updateEndpoint
+      tags: [catalog]
+      summary: Change an endpoint or make it the default
+      x-pandokos-permission: catalog:write
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/EndpointUpdate'}}}}
+      responses:
+        "200": {$ref: '#/components/responses/Endpoint'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    delete:
+      operationId: deleteEndpoint
+      tags: [catalog]
+      summary: Delete an endpoint
+      description: >-
+        Refused with invalid_state for the default endpoint while the provider has another endpoint. The response is the endpoint as it was.
+      x-pandokos-permission: catalog:write
+      responses:
+        "200": {$ref: '#/components/responses/Endpoint'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/models:
+    get:
+      operationId: listModels
+      tags: [catalog]
+      summary: List the models of the catalogue
+      x-pandokos-permission: catalog:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/Sort'}
+        - {name: provider, in: query, description: Only models of this provider., schema: {$ref: '#/components/schemas/ProviderName'}}
+        - {name: name, in: query, description: Only the model with this public name., schema: {$ref: '#/components/schemas/ModelName'}}
+        - {name: status, in: query, description: Only models with this status., schema: {$ref: '#/components/schemas/ModelStatus'}}
+        - {name: availability, in: query, description: Only models with this availability., schema: {$ref: '#/components/schemas/ModelAvailability'}}
+      responses:
+        "200": {$ref: '#/components/responses/ModelList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: createModel
+      tags: [catalog]
+      summary: Add a model
+      description: >-
+        availability defaults to selected: nobody may use the model until it is granted or made available to all. upstream_id defaults to the name.
+      x-pandokos-permission: catalog:write
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ModelCreate'}}}}
+      responses:
+        "201": {$ref: '#/components/responses/ModelCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/models/{model}:
+    parameters:
+      - {$ref: '#/components/parameters/Model'}
+    get:
+      operationId: getModel
+      tags: [catalog]
+      summary: Read a model
+      x-pandokos-permission: catalog:read
+      responses:
+        "200": {$ref: '#/components/responses/Model'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    patch:
+      operationId: updateModel
+      tags: [catalog]
+      summary: Change a model
+      x-pandokos-permission: catalog:write
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ModelUpdate'}}}}
+      responses:
+        "200": {$ref: '#/components/responses/Model'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    delete:
+      operationId: deleteModel
+      tags: [catalog]
+      summary: Delete a model that has no price
+      description: >-
+        Refused with invalid_state once a price version exists: retire the model instead. Grants are removed with it. The response is the model as it was.
+      x-pandokos-permission: catalog:write
+      responses:
+        "200": {$ref: '#/components/responses/Model'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/models/{model}/grants:
+    parameters:
+      - {$ref: '#/components/parameters/Model'}
+    get:
+      operationId: listModelGrants
+      tags: [catalog]
+      summary: List the tenants a model is granted to
+      x-pandokos-permission: catalog:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        "200": {$ref: '#/components/responses/ModelGrantList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/models/{model}/grants/{tenant}:
+    parameters:
+      - {$ref: '#/components/parameters/Model'}
+      - {$ref: '#/components/parameters/Tenant'}
+    put:
+      operationId: grantModel
+      tags: [catalog]
+      summary: Grant a model to a tenant
+      description: >-
+        Idempotent. The grant matters while the availability of the model is selected.
+      x-pandokos-permission: catalog:write
+      responses:
+        "200": {$ref: '#/components/responses/ModelGrant'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    delete:
+      operationId: revokeModelGrant
+      tags: [catalog]
+      summary: Revoke the grant of a model to a tenant
+      description: >-
+        The response is the grant as it was; not_found when there is none.
+      x-pandokos-permission: catalog:write
+      responses:
+        "200": {$ref: '#/components/responses/ModelGrant'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/models/{model}/prices:
+    parameters:
+      - {$ref: '#/components/parameters/Model'}
+    get:
+      operationId: listPriceVersions
+      tags: [prices]
+      summary: List the price versions of a model, newest first
+      x-pandokos-permission: catalog:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {name: at, in: query, description: 'An RFC 3339 time: only the version in force then (at most one item).', schema: {type: string, minLength: 1, maxLength: 64}}
+      responses:
+        "200": {$ref: '#/components/responses/PriceVersionList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: createPriceOverride
+      tags: [prices]
+      summary: Set an operator price for a model
+      description: >-
+        Adds a version with source override that starts at valid_from (now when absent; never in the past). From then on imports leave the model alone until clearPriceOverride.
+      x-pandokos-permission: catalog:price
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PriceOverride'}}}}
+      responses:
+        "201": {$ref: '#/components/responses/PriceVersionCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/models/{model}/prices/{price_version}:
+    parameters:
+      - {$ref: '#/components/parameters/Model'}
+      - {$ref: '#/components/parameters/PriceVersion'}
+    delete:
+      operationId: deletePriceVersion
+      tags: [prices]
+      summary: Remove a price version that has not started
+      description: >-
+        Refused with invalid_state once the version is in force or past: versions are immutable. The response is the version as it was.
+      x-pandokos-permission: catalog:price
+      responses:
+        "200": {$ref: '#/components/responses/PriceVersion'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/models/{model}/clear-price-override:
+    parameters:
+      - {$ref: '#/components/parameters/Model'}
+    post:
+      operationId: clearPriceOverride
+      tags: [prices]
+      summary: Let imports price the model again
+      description: >-
+        Refused with invalid_state while a version of the model has not started. The override in force stays in force until an import creates a version.
+      x-pandokos-permission: catalog:price
+      requestBody: {required: false, content: {application/json: {schema: {$ref: '#/components/schemas/Reason'}}}}
+      responses:
+        "200": {$ref: '#/components/responses/Model'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/price-imports:
+    get:
+      operationId: listPriceImports
+      tags: [prices]
+      summary: List price imports, newest first
+      x-pandokos-permission: catalog:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        "200": {$ref: '#/components/responses/PriceImportList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: runPriceImport
+      tags: [prices]
+      summary: Import prices now
+      description: >-
+        embedded imports the snapshot of this release; remote downloads pricing.refresh.url and is refused unless pricing.refresh.enabled. With dry_run nothing is written and the response has no id.
+      x-pandokos-permission: catalog:price
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PriceImportRun'}}}}
+      responses:
+        "201": {$ref: '#/components/responses/PriceImportCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/PriceDatasetInvalid'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "502": {$ref: '#/components/responses/PriceSourceUnavailable'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/price-imports/{price_import}:
+    parameters:
+      - {$ref: '#/components/parameters/PriceImport'}
+    get:
+      operationId: getPriceImport
+      tags: [prices]
+      summary: Read a price import with its report
+      x-pandokos-permission: catalog:read
+      responses:
+        "200": {$ref: '#/components/responses/PriceImport'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/models:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: listTenantModels
+      tags: [model-access]
+      summary: List the models available to the tenant
+      description: >-
+        Models the platform made available to the tenant, with allowed false for those outside the tenant's restriction, and the price in force now.
+      x-pandokos-permission: model:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {name: provider, in: query, description: Only models of this provider., schema: {$ref: '#/components/schemas/ProviderName'}}
+      responses:
+        "200": {$ref: '#/components/responses/TenantModelList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/model-restriction:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: getModelRestriction
+      tags: [model-access]
+      summary: Read the model restriction of the tenant
+      x-pandokos-permission: model:read
+      responses:
+        "200": {$ref: '#/components/responses/ModelRestriction'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    put:
+      operationId: setModelRestriction
+      tags: [model-access]
+      summary: Restrict the tenant to the models named
+      description: >-
+        Every reference must name a model available to the tenant. An empty list allows no model.
+      x-pandokos-permission: model:restrict
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ModelRestrictionSet'}}}}
+      responses:
+        "200": {$ref: '#/components/responses/ModelRestriction'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    delete:
+      operationId: clearModelRestriction
+      tags: [model-access]
+      summary: Remove the model restriction of the tenant
+      x-pandokos-permission: model:restrict
+      responses:
+        "200": {$ref: '#/components/responses/ModelRestriction'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
   /v1/platform-keys:
     get:
       operationId: listPlatformKeys
@@ -872,6 +1380,36 @@ components:
       in: path
       required: true
       description: Credential ID.
+      schema: {$ref: '#/components/schemas/ID'}
+    Provider:
+      name: provider
+      in: path
+      required: true
+      description: Name of a provider.
+      schema: {$ref: '#/components/schemas/ProviderName'}
+    Endpoint:
+      name: endpoint
+      in: path
+      required: true
+      description: Name of an endpoint of the provider.
+      schema: {$ref: '#/components/schemas/Name'}
+    Model:
+      name: model
+      in: path
+      required: true
+      description: Model ID.
+      schema: {$ref: '#/components/schemas/ID'}
+    PriceVersion:
+      name: price_version
+      in: path
+      required: true
+      description: Price version ID.
+      schema: {$ref: '#/components/schemas/ID'}
+    PriceImport:
+      name: price_import
+      in: path
+      required: true
+      description: Price import ID.
       schema: {$ref: '#/components/schemas/ID'}
     Limit:
       name: limit
@@ -1029,7 +1567,463 @@ components:
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
+
+    Provider:
+      description: The provider.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Provider'}
+    ProviderCreated:
+      description: The new provider.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Provider'}
+    ProviderList:
+      description: One page of providers.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ProviderList'}
+    Endpoint:
+      description: The endpoint.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Endpoint'}
+    EndpointCreated:
+      description: The new endpoint.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Endpoint'}
+    EndpointList:
+      description: One page of endpoints.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/EndpointList'}
+    Model:
+      description: The model.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Model'}
+    ModelCreated:
+      description: The new model.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Model'}
+    ModelList:
+      description: One page of models.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ModelList'}
+    ModelGrant:
+      description: The grant.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ModelGrant'}
+    ModelGrantList:
+      description: One page of grants.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ModelGrantList'}
+    PriceVersion:
+      description: The price version.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PriceVersion'}
+    PriceVersionCreated:
+      description: The new price version.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PriceVersion'}
+    PriceVersionList:
+      description: One page of price versions.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PriceVersionList'}
+    PriceImport:
+      description: The import, with its report.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PriceImport'}
+    PriceImportCreated:
+      description: The import that ran, with its report.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PriceImport'}
+    PriceImportList:
+      description: One page of imports (without reports).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PriceImportList'}
+    TenantModelList:
+      description: One page of the models available to the tenant.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/TenantModelList'}
+    ModelRestriction:
+      description: The model restriction of the tenant.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ModelRestriction'}
+    PriceSourceUnavailable:
+      description: 'The price dataset could not be downloaded; nothing was imported. Code: price_source_unavailable.'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    PriceDatasetInvalid:
+      description: 'The price dataset could not be read; nothing was imported. Code: price_dataset_invalid.'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
   schemas:
+    ApiFamily:
+      type: string
+      description: The wire protocol of a provider.
+      enum: [openai, anthropic]
+    ModelName:
+      type: string
+      description: 'The public name callers send: letters, digits and . _ : @ / + -, 1 to 128 characters.'
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$'
+    ModelRef:
+      type: string
+      description: A model named as provider/name.
+      pattern: '^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$'
+    ModelStatus:
+      type: string
+      description: active; deprecated (still callable, flagged); retired (callable by nobody).
+      enum: [active, deprecated, retired]
+    ModelAvailability:
+      type: string
+      description: all tenants, or the tenants the model is granted to.
+      enum: [all, selected]
+    PriceSource:
+      type: string
+      enum: [import, override]
+    PriceCategory:
+      type: string
+      description: The units a rate applies to.
+      enum: [input, output, cache_read, cache_write, cache_write_1h, input_audio, output_audio]
+    PriceImportSource:
+      type: string
+      enum: [embedded, file, remote]
+    PriceImportRunSource:
+      type: string
+      enum: [embedded, remote]
+    Provider:
+      type: object
+      additionalProperties: false
+      required: [id, name, display_name, description, api_family, enabled, dataset_provider, created_at, updated_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        name: {$ref: '#/components/schemas/ProviderName'}
+        display_name: {type: string}
+        description: {type: string}
+        api_family: {$ref: '#/components/schemas/ApiFamily'}
+        enabled: {type: boolean}
+        dataset_provider: {type: string, description: Identifier of the provider in the price dataset; empty when its prices are not imported.}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ProviderCreate:
+      type: object
+      additionalProperties: false
+      required: [name, api_family]
+      properties:
+        name: {$ref: '#/components/schemas/ProviderName'}
+        api_family: {$ref: '#/components/schemas/ApiFamily'}
+        display_name: {type: string, maxLength: 200}
+        description: {type: string, maxLength: 500}
+        dataset_provider: {type: string, pattern: '^[a-z0-9][a-z0-9_.-]{0,62}$'}
+    ProviderUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        display_name: {type: string, maxLength: 200}
+        description: {type: string, maxLength: 500}
+        enabled: {type: boolean}
+        dataset_provider: {type: string, pattern: '^([a-z0-9][a-z0-9_.-]{0,62})?$', description: Empty stops imports for the provider.}
+    ProviderList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Provider'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    Endpoint:
+      type: object
+      additionalProperties: false
+      required: [id, provider, name, base_url, region, private, enabled, is_default, description, created_at, updated_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        provider: {$ref: '#/components/schemas/ProviderName'}
+        name: {$ref: '#/components/schemas/Name'}
+        base_url: {type: string, description: The native path of a request is appended to it.}
+        region: {type: string}
+        private: {type: boolean, description: Declared by the platform administrator to be on a private network.}
+        enabled: {type: boolean}
+        is_default: {type: boolean, description: The endpoint the gateway uses for the provider.}
+        description: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    EndpointCreate:
+      type: object
+      additionalProperties: false
+      required: [name, base_url]
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        base_url: {type: string, minLength: 8, maxLength: 2048, pattern: '^https?://[^/?#@\s]+(/[^?#\s]*)?$'}
+        region: {type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$'}
+        private: {type: boolean}
+        is_default: {type: boolean}
+        description: {type: string, maxLength: 500}
+    EndpointUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        base_url: {type: string, minLength: 8, maxLength: 2048, pattern: '^https?://[^/?#@\s]+(/[^?#\s]*)?$'}
+        region: {type: string, pattern: '^([a-z0-9][a-z0-9-]{0,62})?$'}
+        private: {type: boolean}
+        enabled: {type: boolean}
+        is_default: {type: boolean, description: true makes this the default; false is refused for the default (make another one the default instead).}
+        description: {type: string, maxLength: 500}
+    EndpointList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Endpoint'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    Model:
+      type: object
+      additionalProperties: false
+      required: [id, provider, api_family, name, ref, upstream_id, display_name, description, status, availability, capabilities, context_window, max_output_tokens, price_override, created_at, updated_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        provider: {$ref: '#/components/schemas/ProviderName'}
+        api_family: {$ref: '#/components/schemas/ApiFamily'}
+        name: {$ref: '#/components/schemas/ModelName'}
+        ref: {$ref: '#/components/schemas/ModelRef'}
+        upstream_id: {type: string, description: The identifier the provider receives.}
+        display_name: {type: string}
+        description: {type: string}
+        status: {$ref: '#/components/schemas/ModelStatus'}
+        availability: {$ref: '#/components/schemas/ModelAvailability'}
+        capabilities:
+          type: array
+          items: {type: string}
+        context_window: {type: integer, description: In tokens; 0 when not known.}
+        max_output_tokens: {type: integer, description: In tokens; 0 when not known.}
+        price_override: {type: boolean, description: An operator price is in place and imports leave the model alone.}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ModelCreate:
+      type: object
+      additionalProperties: false
+      required: [provider, name]
+      properties:
+        provider: {$ref: '#/components/schemas/ProviderName'}
+        name: {$ref: '#/components/schemas/ModelName'}
+        upstream_id: {type: string, maxLength: 256, pattern: '^[!-~]+$'}
+        display_name: {type: string, maxLength: 200}
+        description: {type: string, maxLength: 1000}
+        status: {$ref: '#/components/schemas/ModelStatus'}
+        availability: {$ref: '#/components/schemas/ModelAvailability'}
+        capabilities:
+          type: array
+          maxItems: 8
+          uniqueItems: true
+          items: {type: string, pattern: '^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$'}
+        context_window: {type: integer, minimum: 0, maximum: 100000000}
+        max_output_tokens: {type: integer, minimum: 0, maximum: 100000000}
+    ModelUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        upstream_id: {type: string, maxLength: 256, pattern: '^[!-~]+$'}
+        display_name: {type: string, maxLength: 200}
+        description: {type: string, maxLength: 1000}
+        status: {$ref: '#/components/schemas/ModelStatus'}
+        availability: {$ref: '#/components/schemas/ModelAvailability'}
+        capabilities:
+          type: array
+          maxItems: 8
+          uniqueItems: true
+          items: {type: string, pattern: '^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$'}
+        context_window: {type: integer, minimum: 0, maximum: 100000000, description: 0 clears it.}
+        max_output_tokens: {type: integer, minimum: 0, maximum: 100000000, description: 0 clears it.}
+    ModelList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Model'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    ModelGrant:
+      type: object
+      additionalProperties: false
+      required: [model_id, tenant_id, tenant_name, created_at]
+      properties:
+        model_id: {$ref: '#/components/schemas/ID'}
+        tenant_id: {$ref: '#/components/schemas/ID'}
+        tenant_name: {$ref: '#/components/schemas/Name'}
+        created_at: {type: string, format: date-time}
+    ModelGrantList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ModelGrant'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    PriceRate:
+      type: object
+      additionalProperties: false
+      required: [category, threshold, rate]
+      properties:
+        category: {$ref: '#/components/schemas/PriceCategory'}
+        threshold: {type: integer, minimum: 0, maximum: 100000000, description: 'Input tokens of a request from which this rate applies to every unit of the category; 0 for the base rate.'}
+        rate: {type: string, pattern: '^(0|[1-9][0-9]{0,6})(\.[0-9]{1,12})?$', description: 'Price per million units, as a decimal string, in the currency of the version.'}
+    PriceVersion:
+      type: object
+      additionalProperties: false
+      required: [id, model_id, valid_from, currency, source, note, rates, created_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        model_id: {$ref: '#/components/schemas/ID'}
+        valid_from: {type: string, format: date-time}
+        currency: {type: string, description: ISO 4217 code.}
+        source: {$ref: '#/components/schemas/PriceSource'}
+        import_id: {$ref: '#/components/schemas/ID'}
+        note: {type: string}
+        rates:
+          type: array
+          items: {$ref: '#/components/schemas/PriceRate'}
+        created_at: {type: string, format: date-time}
+    PriceVersionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/PriceVersion'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    PriceOverride:
+      type: object
+      additionalProperties: false
+      required: [currency, rates]
+      properties:
+        currency: {type: string, pattern: '^[A-Z]{3}$'}
+        valid_from: {type: string, format: date-time, description: Now when absent; never in the past.}
+        note: {type: string, maxLength: 500}
+        rates:
+          type: array
+          minItems: 1
+          maxItems: 64
+          items: {$ref: '#/components/schemas/PriceRate'}
+    PriceImportIssue:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: {type: string}
+        detail: {type: string}
+    PriceImportItem:
+      type: object
+      additionalProperties: false
+      required: [provider, model, outcome]
+      properties:
+        provider: {$ref: '#/components/schemas/ProviderName'}
+        model: {$ref: '#/components/schemas/ModelName'}
+        dataset_model: {type: string}
+        outcome: {type: string, description: 'created, unchanged, overridden, unmatched or skipped.'}
+        issues:
+          type: array
+          items: {$ref: '#/components/schemas/PriceImportIssue'}
+    PriceImport:
+      type: object
+      additionalProperties: false
+      required: [source, dataset_format, outcome, models_seen, versions_created, unchanged, overridden, unmatched, skipped, started_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        source: {$ref: '#/components/schemas/PriceImportSource'}
+        source_ref: {type: string}
+        dataset_format: {type: string}
+        digest: {type: string, description: SHA-256 of the dataset, hexadecimal.}
+        outcome: {type: string, description: success or failure.}
+        error_class: {type: string}
+        actor_type: {type: string}
+        models_seen: {type: integer}
+        versions_created: {type: integer}
+        unchanged: {type: integer}
+        overridden: {type: integer}
+        unmatched: {type: integer}
+        skipped: {type: integer}
+        dry_run: {type: boolean}
+        items:
+          type: array
+          description: The report; absent in lists.
+          items: {$ref: '#/components/schemas/PriceImportItem'}
+        truncated: {type: integer, description: Report items left out because the report reached its size limit.}
+        started_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+    PriceImportRun:
+      type: object
+      additionalProperties: false
+      required: [source]
+      properties:
+        source: {$ref: '#/components/schemas/PriceImportRunSource'}
+        dry_run: {type: boolean}
+    PriceImportList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/PriceImport'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    TenantModel:
+      type: object
+      additionalProperties: false
+      required: [model, allowed]
+      properties:
+        model: {$ref: '#/components/schemas/Model'}
+        allowed: {type: boolean, description: false when the tenant's restriction leaves the model out.}
+        price: {$ref: '#/components/schemas/PriceVersion'}
+    TenantModelList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/TenantModel'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    ModelRestriction:
+      type: object
+      additionalProperties: false
+      required: [restricted, models]
+      properties:
+        restricted: {type: boolean, description: false when the tenant has no restriction.}
+        models:
+          type: array
+          items: {$ref: '#/components/schemas/ModelRef'}
+        updated_at: {type: string, format: date-time}
+    ModelRestrictionSet:
+      type: object
+      additionalProperties: false
+      required: [models]
+      properties:
+        models:
+          type: array
+          maxItems: 512
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/ModelRef'}
     ID:
       type: string
       description: A UUID in canonical lower-case form.
@@ -1161,6 +2155,8 @@ components:
         - unavailable
         - credential_rejected
         - validation_unavailable
+        - price_source_unavailable
+        - price_dataset_invalid
     Problem:
       type: object
       description: RFC 9457 problem details with the members code, request_id and errors.
@@ -1328,6 +2324,10 @@ components:
         service_account_id: {$ref: '#/components/schemas/ID'}
         description: {type: string}
         credential_id: {$ref: '#/components/schemas/ID'}
+        models:
+          type: array
+          description: Models the key is limited to, as provider/name. Absent means every model available to the tenant.
+          items: {$ref: '#/components/schemas/ModelRef'}
         scopes:
           type: array
           description: Permissions the key is limited to. Absent means every permission of the service account's roles.
@@ -1344,6 +2344,12 @@ components:
         service_account_id: {$ref: '#/components/schemas/ID'}
         description: {type: string, maxLength: 200}
         credential_id: {$ref: '#/components/schemas/ID'}
+        models:
+          type: array
+          minItems: 1
+          maxItems: 64
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/ModelRef'}
         scopes:
           type: array
           minItems: 1
