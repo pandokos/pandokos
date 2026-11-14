@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
-	"net/url"
 	"strings"
 	"time"
 
@@ -68,11 +67,8 @@ func (h *Handler) rewrite(pr *httputil.ProxyRequest) {
 	base := st.target.BaseURL
 	u := *base
 	// The base path keeps its escapes, as in the URL the validator requests.
-	if p, err := url.Parse(base.EscapedPath() + st.op.Path); err == nil {
-		u.Path, u.RawPath = p.Path, p.RawPath
-	} else {
-		u.Path, u.RawPath = base.Path+st.op.Path, ""
-	}
+	u.Path = base.Path + st.op.Path
+	u.RawPath = base.EscapedPath() + st.op.Path
 	u.RawQuery = ""
 	u.Fragment = ""
 	u.RawFragment = ""

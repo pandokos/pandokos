@@ -164,6 +164,22 @@ func TestRouteByProvider(t *testing.T) {
 		}
 	})
 
+	t.Run("a base path that starts with two slashes is kept", func(t *testing.T) {
+		up := fakeprovider.New(t)
+		esc := testutil.TargetFor(up, "openai", "fake-basic")
+		esc.BaseURL, _ = url.Parse(up.URL() + "//x")
+		he := newHarness(t, providersFor(map[string]string{"openai": "openai"}, map[string]gateway.Target{"openai/fake-basic": esc},
+			map[string]string{"openai": fixtures.CanaryProviderKey}))
+		// The fake answers 404 at a prefixed path; what counts is the path it recorded.
+		if c := he.sendAuthed(t, "/openai/v1/chat/completions", chat("fake-basic", false)); c.status == 0 {
+			t.Fatal("no answer")
+		}
+		r := up.Requests()
+		if len(r) != 1 || r[0].EscapedPath != "//x/v1/chat/completions" {
+			t.Errorf("the provider saw %+v, want the path //x/v1/chat/completions", r)
+		}
+	})
+
 	t.Run("a name that is not served is one and the same 404", func(t *testing.T) {
 		before1, before2 := len(up1.Requests()), len(up2.Requests())
 		paths := []string{
