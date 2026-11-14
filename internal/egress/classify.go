@@ -38,8 +38,12 @@ var (
 		"192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24", "2001:db8::/32",
 		"2001::/32", "64:ff9b:1::/48",
 	)
-	nat64Prefix = netip.MustParsePrefix("64:ff9b::/96")
-	sixToFour   = netip.MustParsePrefix("2002::/16")
+	// Deprecated IPv4-compatible (::/96) and IPv4-translated (::ffff:0:0:0/96) addresses: refused
+	// for every class. Checked after the private table, so that ::1 stays loopback; :: is
+	// forbidden already.
+	deprecatedEmbeds = prefixes("::/96", "::ffff:0:0:0/96")
+	nat64Prefix      = netip.MustParsePrefix("64:ff9b::/96")
+	sixToFour        = netip.MustParsePrefix("2002::/16")
 )
 
 func inAny(list []netip.Prefix, a netip.Addr) bool {
@@ -73,6 +77,9 @@ func Classify(a netip.Addr) AddrClass {
 	}
 	if inAny(privatePrefixes, a) {
 		return AddrPrivate
+	}
+	if inAny(deprecatedEmbeds, a) {
+		return AddrForbidden
 	}
 	return AddrPublic
 }

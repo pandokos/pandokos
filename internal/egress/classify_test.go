@@ -125,6 +125,17 @@ func TestClassify(t *testing.T) {
 		{"::1%lo", egress.AddrPrivate, "loopback with a zone"},
 		{"2001:4860:4860::8888%eth0", egress.AddrPublic, "public with a zone"},
 		{"fd00:ec2::254%eth0", egress.AddrForbidden, "metadata with a zone"},
+		{"::", egress.AddrForbidden, "unspecified keeps its class"},
+		{"::1", egress.AddrPrivate, "loopback keeps its class"},
+		{"::2", egress.AddrForbidden, "IPv4-compatible, first after loopback"},
+		{"::7f00:1", egress.AddrForbidden, "IPv4-compatible loopback"},
+		{"::808:808", egress.AddrForbidden, "IPv4-compatible public address"},
+		{"::ffff:ffff", egress.AddrForbidden, "last IPv4-compatible address"},
+		{"::1:0:0", egress.AddrPublic, "just outside ::/96"},
+		{"::ffff:0:0:0", egress.AddrForbidden, "IPv4-translated, first"},
+		{"::ffff:0:a00:1", egress.AddrForbidden, "IPv4-translated 10.0.0.1"},
+		{"::ffff:0:ffff:ffff", egress.AddrForbidden, "IPv4-translated, last"},
+		{"::ffff:1:0:0", egress.AddrPublic, "just outside ::ffff:0:0:0/96"},
 	}
 	for _, f := range forms {
 		if got := egress.Classify(netip.MustParseAddr(f.addr)); got != f.want {
