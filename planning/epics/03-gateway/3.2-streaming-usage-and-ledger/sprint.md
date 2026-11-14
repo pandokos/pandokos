@@ -1127,3 +1127,7 @@ Changes to the design made while building, each declared and documented:
    up to 128 and `upstream_model` up to 256 characters (appendix A of the plan amended); every other
    text bound already covered its source. T-466, T-469, T-485, T-488 and a new table test
    (`TestRecordsAlwaysValidate`) drive the gateway's record builder with adversarial input.
+4. **A failure of the partitions at start is a warning** (at review, §5.6): `serve` logs
+   `usage partitions not ensured` at warn, with `error_class` (and `sqlstate` when there is one, never the
+   text of the error) and continues; the extra 30 s context around `Ensure`, which has its own
+   10 s, is gone. The hourly keeper logs the same line.

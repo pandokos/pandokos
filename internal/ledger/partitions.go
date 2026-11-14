@@ -2,6 +2,7 @@ package ledger
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync/atomic"
@@ -54,6 +55,29 @@ func (p *Partitioner) Ensure(ctx context.Context) error {
 	return nil
 }
 
+// Warn logs that the partitions could not be ensured: the class of the error and its SQLSTATE,
+// never its text.
+func (p *Partitioner) Warn(err error) {
+	attrs := []any{"error_class", errorClass(err)}
+	if state := store.SQLState(err); state != "" {
+		attrs = append(attrs, "sqlstate", state)
+	}
+	p.Logger.Warn("usage partitions not ensured", attrs...)
+}
+
+func errorClass(err error) string {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case store.IsUnavailable(err):
+		return "unavailable"
+	case store.SQLState(err) != "":
+		return "database"
+	default:
+		return "other"
+	}
+}
+
 // Run calls Ensure every Interval until ctx ends. A failure is logged at warn.
 func (p *Partitioner) Run(ctx context.Context) {
 	interval := p.Interval
@@ -69,7 +93,7 @@ func (p *Partitioner) Run(ctx context.Context) {
 		case <-t.C:
 		}
 		if err := p.Ensure(ctx); err != nil && ctx.Err() == nil {
-			p.Logger.Warn("usage partitions not ensured", "error", err.Error())
+			p.Warn(err)
 		}
 	}
 }

@@ -54,6 +54,9 @@ func warnBootstrap(ctx context.Context, logger *slog.Logger, db *store.DB) {
 	}
 }
 
+// ensurePartitions creates the partitions at start; a variable so that a test can make it fail.
+var ensurePartitions = func(ctx context.Context, p *ledger.Partitioner) error { return p.Ensure(ctx) }
+
 func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, environ []string) int {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -237,12 +240,10 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		return 1
 	}
 	partitioner := &ledger.Partitioner{DB: workerDB, Logger: logger}
-	pctx, pcancel := context.WithTimeout(ctx, 30*time.Second)
-	err = partitioner.Ensure(pctx)
-	pcancel()
-	if err != nil {
-		logger.Error("startup failed", "error", err.Error())
-		return 1
+	// Ensure bounds itself. A failure is a warning: the keeper retries, and rows whose month has
+	// no partition land in the default one.
+	if err := ensurePartitions(ctx, partitioner); err != nil {
+		partitioner.Warn(err)
 	}
 	srv, err := server.New(server.Options{
 		Config: cfg, Logger: logger, Authenticator: gatewayAuth, Admin: adminHandler,
