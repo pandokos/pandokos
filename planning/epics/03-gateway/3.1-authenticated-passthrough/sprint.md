@@ -183,7 +183,9 @@ tests import it. `internal/vault` and `internal/catalog` gain no product import 
 round trippers). Under `cmd/` and `internal/`, a composite literal of `http.Transport` or
 `net.Dialer`, and any use of `http.DefaultClient`, `http.DefaultTransport`, `http.Get`,
 `http.Post` or `http.Head`, exists only in `internal/egress` and `internal/cli` (the CLI is the
-operator's client of the administration API, not an outbound path of the server).
+operator's client of the administration API, not an outbound path of the server). (Amended at
+review: T-R25 also exempts `internal/adminapi`, the runtime of the CLI client, which keeps a
+pre-existing `http.DefaultClient` fallback, and generated files.)
 
 ## 5. Architecture
 
@@ -403,6 +405,7 @@ func (e *BlockedError) BlockedAddr() string // "" when Addr is the zero value
 |---|---|
 | forbidden | unspecified (`0.0.0.0`, `::`), `0.0.0.0/8`, multicast (`224.0.0.0/4`, `ff00::/8`), `240.0.0.0/4` (broadcast included), and the instance-metadata addresses `169.254.169.254`, `169.254.170.2`, `100.100.100.200`, `fd00:ec2::254` |
 | private | loopback (`127.0.0.0/8`, `::1`), `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, link-local (`169.254.0.0/16`, `fe80::/10`), unique-local `fc00::/7`, `fec0::/10`, `192.0.0.0/24`, `198.18.0.0/15`, the documentation ranges (`192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`, `2001:db8::/32`), `2001::/32` (Teredo), `64:ff9b:1::/48` |
+| forbidden, amended at review | the deprecated IPv4-compatible `::/96` and IPv4-translated `::ffff:0:0:0/96`, for every class (`::` and `::1` keep their classes above) |
 | embedded | `64:ff9b::/96` (NAT64) and `2002::/16` (6to4) take the class of the IPv4 address they embed |
 | public | everything else |
 
@@ -977,3 +980,11 @@ whether the proxy helper needs to speak only HTTP/1.1 to the client side).
 | O-9 | Confirmed: OPS-12 is claimed by 3.1 in full; 3.2 names it as touched for the ledger flush; the epic file is corrected |
 | O-10 | Confirmed: a provider 3xx is answered 502 `upstream_unreachable`, no new code |
 | O-11 | Confirmed: a key scoped to `model:invoke` alone is refused before its body is read |
+
+### Amendments at review
+
+1. The container test's step 1 of plan part D (`endpoint update --base-url <fake URL> --private=false`) was unsatisfiable as written: the administration API refuses an `http` URL, and a loopback literal, on a public endpoint. The test updates the endpoint to `https://localhost:<port of the fake>` instead; it passes `catalog.ValidateEndpointURL` and the guard refuses the resolved loopback address at dial time (`private_address`, 502 `upstream_unreachable`), before any TLS handshake; the test also looks for the `egress blocked` log line.
+2. A request cancelled before forwarding (steps 2 to 8, including a forced shutdown) now aborts the connection (`http.ErrAbortHandler`) instead of returning without a write, which let net/http send an empty 200.
+3. The suppression of repeated authentication failures reserves the key under the lock, so concurrent identical failures write one row.
+4. The outbound path of the gateway keeps the escapes of the endpoint's base path, as the credential validator does.
+5. The forbidden table of 5.5 gains `::/96` and `::ffff:0:0:0/96` (amended at review); the import rule of section 4 names `internal/adminapi` (amended at review).

@@ -128,7 +128,7 @@ for both classes.
 
 | Class | Addresses |
 |---|---|
-| forbidden | `0.0.0.0/8`, `::`, `224.0.0.0/4`, `ff00::/8`, `240.0.0.0/4`, and the instance-metadata addresses `169.254.169.254`, `169.254.170.2`, `100.100.100.200`, `fd00:ec2::254` |
+| forbidden | `0.0.0.0/8`, `::`, `224.0.0.0/4`, `ff00::/8`, `240.0.0.0/4`, and the instance-metadata addresses `169.254.169.254`, `169.254.170.2`, `100.100.100.200`, `fd00:ec2::254`; the deprecated IPv4-compatible `::/96` and IPv4-translated `::ffff:0:0:0/96` ranges (`::1` stays loopback) |
 | private | `127.0.0.0/8`, `::1`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `169.254.0.0/16`, `fe80::/10`, `fc00::/7`, `fec0::/10`, `192.0.0.0/24`, `198.18.0.0/15`, `192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`, `2001:db8::/32`, `2001::/32`, `64:ff9b:1::/48` |
 | embedded | `64:ff9b::/96` and `2002::/16` take the class of the IPv4 address they embed; IPv4-mapped addresses are unmapped first |
 | public | everything else |
