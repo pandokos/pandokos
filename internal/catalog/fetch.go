@@ -57,6 +57,7 @@ func Fetch(ctx context.Context, rawURL string, o FetchOptions) ([]byte, error) {
 		DialContext:         (&net.Dialer{Timeout: dialTimeout}).DialContext,
 		TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: o.roots},
 		TLSHandshakeTimeout: dialTimeout,
+		DisableCompression:  true, // no Accept-Encoding: the request carries Accept and User-Agent only
 	}
 	defer tr.CloseIdleConnections()
 	client := &http.Client{Transport: tr, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}

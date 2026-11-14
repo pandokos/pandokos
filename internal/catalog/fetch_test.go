@@ -169,11 +169,11 @@ func TestFetch(t *testing.T) {
 		if want := "pandokos/" + buildinfo.Version; h.Get("User-Agent") != want {
 			t.Errorf("User-Agent = %q, want %q", h.Get("User-Agent"), want)
 		}
-		// What Go itself adds to every request is allowed; nothing the operator's installation
-		// could leak (cookies, authorization, identifiers) is.
+		// Only Accept and User-Agent: nothing the operator's installation could leak (cookies,
+		// authorization, identifiers), and no Accept-Encoding that Go's transport would add.
 		for k := range h {
 			switch k {
-			case "Accept", "User-Agent", "Accept-Encoding":
+			case "Accept", "User-Agent":
 			default:
 				t.Errorf("an extra header was sent: %s", k)
 			}
