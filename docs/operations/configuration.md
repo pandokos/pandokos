@@ -51,6 +51,8 @@ replaced by `_`.
 | `upstream.connect_timeout` | `PANDOKOS_UPSTREAM_CONNECT_TIMEOUT` | duration | `10s` | TCP connect timeout, and separately TLS handshake timeout, towards the provider |
 | `shutdown.drain_timeout` | `PANDOKOS_SHUTDOWN_DRAIN_TIMEOUT` | duration | `30s` | Time in-flight requests get to finish after a termination signal |
 | `cache.principal_ttl` | `PANDOKOS_CACHE_PRINCIPAL_TTL` | duration | `30s` | Lifetime of a cached principal in the gateway: the upper bound on the time a revocation or a suspension takes to reach the inference listener (1s to 60s) |
+| `cache.credential_ttl` | `PANDOKOS_CACHE_CREDENTIAL_TTL` | duration | `30s` | Lifetime of a cached provider credential in the gateway: the upper bound on the time a disable, revocation or replacement takes to reach the inference listener when notifications are not delivered (1s to 60s) |
+| `cache.data_key_ttl` | `PANDOKOS_CACHE_DATA_KEY_TTL` | duration | `5m` | Lifetime of an unwrapped data key in the gateway (1s to 15m) |
 | `database.address` | `PANDOKOS_DATABASE_ADDRESS` | `host:port` | none, required | Address of PostgreSQL, or of the connection pooler in front of it |
 | `database.direct_address` | `PANDOKOS_DATABASE_DIRECT_ADDRESS` | `host:port` | none | Address of PostgreSQL itself, used only by the notification listener. Set it when `database.address` is a pooler in transaction mode |
 | `database.name` | `PANDOKOS_DATABASE_NAME` | name | `pandokos` | Database name |
@@ -68,6 +70,8 @@ replaced by `_`.
 | `database.worker.max_connections` | `PANDOKOS_DATABASE_WORKER_MAX_CONNECTIONS` | integer | `5` | Size limit of the worker pool |
 | `database.owner.user` | `PANDOKOS_DATABASE_OWNER_USER` | name | `pandokos_owner` | Database user of `pandokos migrate` |
 | `database.owner.password_file` | `PANDOKOS_DATABASE_OWNER_PASSWORD_FILE` | path | none, required by `migrate` | File with that user's password. Never read by `serve` |
+| `vault.kek.provider` | `PANDOKOS_VAULT_KEK_PROVIDER` | `local` | `local` | Key-encryption key provider; only `local` exists |
+| `vault.kek.local.key_file` | `PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE` | path | none, required by `serve` | File with the key-encryption key: 32 random bytes in standard base64. Create it with `pandokos kek generate` ([vault guide](vault.md)) |
 | `skeleton.openai.base_url` | `PANDOKOS_SKELETON_OPENAI_BASE_URL` | URL | `https://api.openai.com/v1` | Provider base URL, in the form SDKs use (ends with `/v1`) |
 | `skeleton.openai.api_key_file` | `PANDOKOS_SKELETON_OPENAI_API_KEY_FILE` | path | none, required | File with the provider API key |
 
@@ -88,6 +92,7 @@ required and read:
 | | `serve`, `config check` (`--for serve`, the default) | `migrate`, `migrate status`, `config check --for migrate` | `init`, `config check --for init` |
 |---|---|---|---|
 | `skeleton.openai.api_key_file` | required, read | not read | not read |
+| `vault.kek.local.key_file` | required, read | not read | not read |
 | `database.gateway.password_file`, `database.worker.password_file` | required, read | not read | not read |
 | `database.admin.password_file` | required, read | not read | required, read |
 | `database.owner.password_file` | **not read**, set or not; the file may be absent | required, read | not read |
@@ -140,6 +145,10 @@ All problems are reported together, not only the first. Each is attached to a ke
 | `listeners.<l>.tls.min_version` | `TLS1.2` or `TLS1.3` |
 | `listeners.<l>.tls.cert_file`, `listeners.<l>.tls.key_file` | both set or both empty; for `serve`: readable, at most 1048576 bytes, a valid pair, valid now |
 | `cache.principal_ttl` | 1s to 60s |
+| `cache.credential_ttl` | 1s to 60s |
+| `cache.data_key_ttl` | 1s to 15m |
+| `vault.kek.provider` | `local` |
+| `vault.kek.local.key_file` | set; a readable regular file holding 32 bytes in standard base64 (44 characters); no message quotes the content |
 | `database.direct_address` | when set, the three address rules of `database.address` |
 | `skeleton.openai.api_key_file` | set; readable |
 
@@ -156,6 +165,7 @@ they do not prevent start.
 | `listeners.admin.allow_plaintext` | true while TLS is configured or the host is loopback | has no effect |
 | `listeners.<l>.tls.cert_file` | the certificate expires in less than 14 days | the certificate expires on `<date>` |
 | `database.tls.mode` | the mode is `disable` and the host of `database.address` is not a loopback address or `localhost` | the database connection is not encrypted |
+| `vault.kek.local.key_file` | the file grants any permission to other users (mode `& 0007`) | the file can be accessed by other users; restrict it to the service user (chmod 600) |
 | `environment` | an unknown `PANDOKOS_` variable | unknown variable `<NAME>` ignored (the value is never printed) |
 
 Variables starting with `PANDOKOS_SERVICE_` or `PANDOKOS_PORT` are ignored silently: Kubernetes
@@ -214,6 +224,10 @@ database:
   owner:
     user: acme_owner
     password_file: /run/secrets/db_owner
+vault:
+  kek:
+    local:
+      key_file: /run/secrets/pandokos_kek
 skeleton:
   openai:
     base_url: https://api.openai.com/v1
@@ -228,7 +242,7 @@ vault replace them (sprint 3.1). Do not build on it.
 
 ## Variables of the API commands
 
-`pandokos tenant`, `service-account`, `key`, `platform-key` and `whoami` are clients of the
+`pandokos tenant`, `service-account`, `key`, `platform-key`, `credential`, `tenant-credential` and `whoami` are clients of the
 administration API. They read `PANDOKOS_CLI_SERVER` (default `http://127.0.0.1:8081`),
 `PANDOKOS_CLI_KEY_FILE` (required) and `PANDOKOS_CLI_CA_FILE`. These variables are not part of the
 server configuration and cause no warning. No key of the server configuration starts with `cli`.

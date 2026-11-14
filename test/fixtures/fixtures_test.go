@@ -38,7 +38,7 @@ func TestFixturesAreWellFormed(t *testing.T) {
 		}
 		seen[c] = true
 	}
-	if len(Canaries()) != 3 {
-		t.Errorf("Canaries() returns %d values, want 3", len(Canaries()))
+	if len(Canaries()) != 4 {
+		t.Errorf("Canaries() returns %d values, want 4", len(Canaries()))
 	}
 }

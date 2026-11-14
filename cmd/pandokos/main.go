@@ -27,8 +27,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, environ [
 		return runMigrate(ctx, args[1:], stdout, stderr, environ)
 	case "init":
 		return runInit(ctx, args[1:], stdout, stderr, environ)
-	case "whoami", "tenant", "service-account", "key", "platform-key":
+	case "whoami", "tenant", "service-account", "key", "platform-key", "credential", "tenant-credential":
 		return runClient(ctx, args, stdout, stderr, environ)
+	case "kek":
+		return runKEK(ctx, args[1:], stdout, stderr)
 	case "config":
 		return runConfig(args[1:], stdout, stderr, environ)
 	case "version":

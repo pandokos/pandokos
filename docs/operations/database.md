@@ -232,6 +232,7 @@ prefixed `database (<role>): `, where `<role>` is `gateway`, `admin` or `worker`
 | `the database schema is newer than this binary: schema version <k>, this binary knows version <n>; upgrade Pandokos` | Run the binary that matches the schema |
 | `a migration recorded in the database differs from this binary: <NNNN>_<name>` | The database was migrated by a different build; restore, or run the matching release |
 | `the migration ledger is inconsistent: <detail>` | The ledger table was edited; restore it |
+| `vault: the database holds data keys wrapped by key-encryption key version <v> which this configuration does not provide; see docs/operations/vault.md` | The key file is not the one that wrapped the data keys; mount the right file, or follow the loss procedure in the [vault guide](vault.md) |
 
 **Readiness.** `/readyz` has one check per role (`database-gateway`, `database-admin`,
 `database-worker`). Each reads the migration ledger and fails when the database does not answer
@@ -309,3 +310,24 @@ remove an audit row: triggers refuse it. Forced row-level security hides audit r
 owner too. `DELETE` on `service_account` is revoked: service accounts are disabled, never deleted.
 If `database.address` is a pooler in transaction mode, set `database.direct_address` (see
 [keys](keys.md)).
+
+## 10. Grants of migration 0003
+
+Migration `0003_vault` adds the vault: `kek_version`, `tenant_data_key` and `provider_credential`, a
+view `provider_credential_metadata`, and the pin `virtual_key.credential_id`.
+
+- `kek_version` is global: all three runtime roles read it, the admin role registers a version.
+- `tenant_data_key` is read by the gateway and admin roles; the admin role inserts a wrapped data key,
+  and nobody updates or deletes one (the worker will re-wrap them in a later sprint).
+- `provider_credential` holds the sealed secret in the column `secret`. Only the gateway role can read
+  it, in the tenant's session. The admin role has `SELECT` on every column except `secret`, inserts and
+  updates the secret and the metadata with column-level grants, and deletes rows; it can never read the
+  sealed secret, in any session.
+- `provider_credential_metadata` is a view with the metadata columns, created with
+  `security_invoker`: it runs with the caller's rights and so under the tenant policy. Lint rule L-19
+  requires this of every view.
+- Vault tables carry the canonical tenant policy and nothing else: a transaction in platform scope
+  sees none of their rows. A trigger enforces the credential lifecycle (revocation is final and
+  destroys the secret) and notifies `vault:<tenant>` on the notification channel.
+- The admin role may set `virtual_key.credential_id` when a key is created; deleting a credential
+  clears the pins that point to it.

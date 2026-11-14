@@ -20,7 +20,8 @@ func newTestCache(ttl time.Duration) (*cache, *clock) {
 
 func keyIDFor(i int) string { return fmt.Sprintf("t%016d", i) }
 
-// TestCache is T-208.
+// TestCache is T-208, extended in sprint 2.1 (T-306): a payload `vault:<tenant>` removes no
+// principal, whatever it names.
 func TestCache(t *testing.T) {
 	const tenantA, tenantB = "0192f0f0-0000-7000-8000-00000000000a", "0192f0f0-0000-7000-8000-00000000000b"
 
@@ -43,6 +44,25 @@ func TestCache(t *testing.T) {
 		}
 		if pos, _ := c.sizes(); pos != 0 {
 			t.Errorf("an expired entry is still counted: %d", pos)
+		}
+	})
+
+	t.Run("the lifetime counts from the start of the lookup, not from its end", func(t *testing.T) {
+		c, clk := newTestCache(30 * time.Second)
+		start := clk.now()
+		clk.advance(10 * time.Second) // the reads took 10 s
+		c.putAt("tkey", tenantA, &entry{}, start)
+		c.putNegativeAt("tunknown", start)
+		clk.advance(20*time.Second - time.Nanosecond)
+		if _, ok := c.get("tkey"); !ok {
+			t.Fatal("the entry is gone before its lifetime from the start ends")
+		}
+		clk.advance(time.Nanosecond)
+		if _, ok := c.get("tkey"); ok {
+			t.Fatal("the entry outlived start + lifetime: it was stamped at the end of the reads")
+		}
+		if c.negative("tunknown") {
+			t.Fatal("the negative entry (5 s) outlived start + lifetime")
 		}
 	})
 
@@ -92,11 +112,33 @@ func TestCache(t *testing.T) {
 		c, _ := newTestCache(time.Minute)
 		c.put("ta1", tenantA, &entry{})
 		c.putNegative("tunknown")
-		for _, p := range []string{"platform", "probe:0123456789abcdef", "probe:"} {
+		for _, p := range []string{"platform", "probe:0123456789abcdef", "probe:", "vault:" + tenantA, "vault:" + tenantB, "vault:"} {
 			c.invalidate(p)
 		}
 		if pos, neg := c.sizes(); pos != 1 || neg != 1 {
 			t.Errorf("sizes %d/%d after payloads that remove nothing", pos, neg)
+		}
+	})
+
+	t.Run("a vault payload removes no principal", func(t *testing.T) {
+		c, _ := newTestCache(time.Minute)
+		c.put("ta1", tenantA, &entry{})
+		c.put("tb1", tenantB, &entry{})
+		c.putNegative("tunknown")
+		c.invalidate("vault:" + tenantA)
+		if _, ok := c.get("ta1"); !ok {
+			t.Error("the principal of the tenant named by a vault payload was removed")
+		}
+		if _, ok := c.get("tb1"); !ok {
+			t.Error("the principal of another tenant was removed")
+		}
+		if !c.negative("tunknown") {
+			t.Error("a negative entry was removed by a vault payload")
+		}
+		// A payload of a kind nobody knows still flushes (ADR 0030).
+		c.invalidate("vaults:" + tenantA)
+		if pos, neg := c.sizes(); pos != 0 || neg != 0 {
+			t.Errorf("sizes %d/%d after an unknown payload", pos, neg)
 		}
 	})
 

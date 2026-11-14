@@ -22,6 +22,7 @@ import (
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/migrations"
 	"github.com/pandokos/pandokos/internal/telemetry"
+	"github.com/pandokos/pandokos/internal/vault"
 )
 
 // warnBootstrap logs "bootstrap key active" at once and then every hour while a bootstrap key is
@@ -121,6 +122,32 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	}
 
 	gatewayDB, adminDB := dbs[0], dbs[1]
+	kp, err := vault.NewLocalProvider(cfg.Vault.KEK.Local.Key)
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
+	vctx, vcancel := context.WithTimeout(ctx, 30*time.Second)
+	kekVersion, err := vault.Check(vctx, adminDB, kp)
+	vcancel()
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
+	logger.Info("vault ready", "kek_provider", kp.Name(), "kek_version", kekVersion)
+	sealer, err := vault.NewSealer(kp)
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
+	opener, err := vault.NewOpener(vault.OpenerOptions{
+		DB: gatewayDB, Provider: kp, Logger: logger,
+		CredentialTTL: time.Duration(cfg.Cache.CredentialTTL), DataKeyTTL: time.Duration(cfg.Cache.DataKeyTTL),
+	})
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
 	gatewayAuth, err := authn.New(authn.Options{DB: gatewayDB, Logger: logger, Kinds: []authn.Kind{authn.KindTenant}, CacheTTL: time.Duration(cfg.Cache.PrincipalTTL)})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
@@ -135,13 +162,17 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	listenConn.Host, listenConn.Port = cfg.Database.DirectHost, cfg.Database.DirectPort
 	listener, err := store.NewListener(store.ListenerOptions{
 		Conn: listenConn, Role: store.RoleGateway, Logger: logger, Direct: cfg.Database.DirectAddress != "",
-		OnNotify: gatewayAuth.Invalidate, OnReset: gatewayAuth.Flush,
+		OnNotify: func(p string) { gatewayAuth.Invalidate(p); opener.Invalidate(p) },
+		OnReset:  func() { gatewayAuth.Flush(); opener.Flush() },
 	})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	adminHandler, err := admin.New(admin.Options{Logger: logger, DB: adminDB, Authenticator: adminAuth})
+	adminHandler, err := admin.New(admin.Options{
+		Logger: logger, DB: adminDB, Authenticator: adminAuth, Sealer: sealer,
+		Validators: map[string]vault.Validator{"openai": vault.NewOpenAIValidator(cfg.Skeleton.OpenAI.ParsedBaseURL, 10*time.Second)},
+	})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1

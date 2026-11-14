@@ -23,8 +23,11 @@ import (
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/telemetry"
+	"github.com/pandokos/pandokos/internal/vault"
 	"github.com/pandokos/pandokos/test/dbtest"
+	"github.com/pandokos/pandokos/test/fixtures"
 	"github.com/pandokos/pandokos/test/testutil"
+	"github.com/pandokos/pandokos/test/vaulttest"
 )
 
 // API is one running administration API.
@@ -33,6 +36,11 @@ type API struct {
 	URL   string              // of the httptest server in front of admin.New
 	Logs  *testutil.LogBuffer // the handler's logger, level debug
 	Admin *store.DB           // the admin pool the handler uses
+
+	// KeyProvider and Sealer are what the handler seals credentials with: a local provider on a
+	// key generated for this test.
+	KeyProvider vault.KeyProvider
+	Sealer      *vault.Sealer
 
 	srv         *httptest.Server
 	platformKey string
@@ -71,7 +79,11 @@ func NewOn(tb testing.TB, d *dbtest.Database, mutate ...func(*admin.Options)) *A
 	if err != nil {
 		tb.Fatal(err)
 	}
-	o := admin.Options{Logger: logger, DB: a.Admin, Authenticator: auth}
+	a.KeyProvider = vaulttest.NewKeyProvider(tb)
+	if a.Sealer, err = vault.NewSealer(a.KeyProvider); err != nil {
+		tb.Fatal(err)
+	}
+	o := admin.Options{Logger: logger, DB: a.Admin, Authenticator: auth, Sealer: a.Sealer}
 	for _, m := range mutate {
 		m(&o)
 	}
@@ -147,6 +159,21 @@ func (a *API) Tenant(tb testing.TB, name string) (t adminapi.Tenant, adminKey st
 	}
 	a.track(out.AdminKey.Secret)
 	return out.Tenant, out.AdminKey.Secret
+}
+
+// Credential registers a provider credential for the tenant through the API, with the key of
+// its administrator and fixtures.CanaryCredential as the secret, and returns its metadata. The
+// label must be unique among the tenant's credentials of that provider.
+func (a *API) Credential(tb testing.TB, tenantID, adminKey, provider, label string) adminapi.Credential {
+	tb.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, err := a.Client(adminKey).CreateCredential(ctx, adminapi.CreateCredentialInput{Tenant: tenantID,
+		Body: adminapi.CredentialCreate{Provider: provider, Label: label, Secret: fixtures.CanaryCredential}})
+	if err != nil {
+		tb.Fatalf("create credential %s: %v", label, err)
+	}
+	return *out
 }
 
 // Do sends a raw request. body is nil, a string or []byte (sent as it is), or any value (sent

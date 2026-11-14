@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -42,6 +43,8 @@ type Server struct {
 	once      sync.Once
 	cancelled chan struct{}
 	inflight  atomic.Int64
+	accepted  map[string]bool
+	models    string
 }
 
 // New starts a plain HTTP/1.1 fake on 127.0.0.1; it is closed through tb.Cleanup.
@@ -65,7 +68,72 @@ func NewTLS(tb testing.TB) *Server {
 }
 
 func newServer() *Server {
-	return &Server{gate: make(chan struct{}), cancelled: make(chan struct{}, 1024)}
+	return &Server{gate: make(chan struct{}), cancelled: make(chan struct{}, 1024),
+		accepted: map[string]bool{fixtures.CanaryProviderKey: true}}
+}
+
+// Accept replaces the set of bearer tokens GET /v1/models accepts (default: the canary provider
+// key).
+func (s *Server) Accept(keys ...string) {
+	set := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		set[k] = true
+	}
+	s.mu.Lock()
+	s.accepted = set
+	s.mu.Unlock()
+}
+
+// ModelsBehaviour makes GET /v1/models misbehave: "403", "429", "500" answer that status,
+// "redirect" answers 302 to another path of the fake that answers 200, and "stall" gives no
+// answer until the request is cancelled. The empty string restores the normal behaviour.
+func (s *Server) ModelsBehaviour(b string) {
+	s.mu.Lock()
+	s.models = b
+	s.mu.Unlock()
+}
+
+// modelsMovedPath is where the "redirect" behaviour sends the client.
+const modelsMovedPath = "/v1/models-moved"
+
+// handleModels answers the credential check of the vault validator.
+func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	behaviour := s.models
+	accepted := s.accepted[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")] &&
+		strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ")
+	presented := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	s.mu.Unlock()
+
+	if r.URL.Path == modelsMovedPath {
+		writeJSON(w, http.StatusOK, []byte(`{"object":"list","data":[]}`))
+		return
+	}
+	switch behaviour {
+	case "403":
+		writeJSON(w, http.StatusForbidden, []byte(`{"error":{"message":"forbidden","type":"invalid_request_error","param":null,"code":null}}`))
+		return
+	case "429":
+		writeJSON(w, http.StatusTooManyRequests, fixtures.Read("error_429.json"))
+		return
+	case "500":
+		writeJSON(w, http.StatusInternalServerError, []byte(`{"error":{"message":"upstream failure","type":"server_error","param":null,"code":null}}`))
+		return
+	case "redirect":
+		http.Redirect(w, r, modelsMovedPath, http.StatusFound)
+		return
+	case "stall":
+		<-r.Context().Done()
+		s.cancelled <- struct{}{}
+		return
+	}
+	if accepted {
+		writeJSON(w, http.StatusOK, []byte(`{"object":"list","data":[]}`))
+		return
+	}
+	msg := "Incorrect API key provided: " + presented + "."
+	b, _ := json.Marshal(map[string]any{"error": map[string]any{"message": msg, "type": "invalid_request_error", "param": nil, "code": "invalid_api_key"}})
+	writeJSON(w, http.StatusUnauthorized, b)
 }
 
 func (s *Server) close() {
@@ -137,6 +205,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	})
 	s.mu.Unlock()
 
+	if r.Method == http.MethodGet && (r.URL.Path == "/v1/models" || r.URL.Path == modelsMovedPath) {
+		s.handleModels(w, r)
+		return
+	}
 	if r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" {
 		writeJSON(w, http.StatusNotFound, []byte(`{"error":{"message":"not found","type":"invalid_request_error","param":null,"code":null}}`))
 		return
