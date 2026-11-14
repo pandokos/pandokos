@@ -1086,7 +1086,7 @@ are synthetic, 1.1 R-4); the Responses wire format against a live account.
 
 | # | Decision |
 |---|---|
-| O-1 | Confirmed: OpenTelemetry SDK v1.46.0, keeping the `go 1.25.0` floor; the floor is raised when another reason appears |
+| O-1 | Amended after part A: govulncheck reports five vulnerabilities in `golang.org/x/net` v0.58.0, which the OTLP exporter brings in; the fixed v0.60.0 needs Go 1.26, and Go 1.25 is already out of support (the release toolchain is 1.27). The language floor is raised to Go 1.26.0 (ADR 0025 history line) and the OpenTelemetry SDK is taken at v1.47.0, the alternative the design named; behaviour verified by the design for v1.46.0 is re-verified by the tests |
 | O-2 | Confirmed: `http/protobuf` only until an operator asks for gRPC |
 | O-3 | Confirmed: nothing reads the ledger in 3.2; sprint 3.3 adds a minimal list operation for the quick-start; reports stay in 6.2 |
 | O-4 | Confirmed D-6: an error status or no answer is recorded without usage |
