@@ -391,7 +391,7 @@ func (q *Queries) ListPriceVersions(ctx context.Context, arg ListPriceVersionsPa
 }
 
 const loadPriceVersions = `-- name: LoadPriceVersions :many
-SELECT v.id, v.model_id, v.valid_from, v.currency,
+SELECT v.id, v.model_id, v.valid_from, v.currency, v.source,
        COALESCE(array_agg(r.category ORDER BY r.category, r.threshold) FILTER (WHERE r.category IS NOT NULL), '{}')::text[] AS categories,
        COALESCE(array_agg(r.threshold ORDER BY r.category, r.threshold) FILTER (WHERE r.category IS NOT NULL), '{}')::bigint[] AS thresholds,
        COALESCE(array_agg(r.rate::text ORDER BY r.category, r.threshold) FILTER (WHERE r.category IS NOT NULL), '{}')::text[] AS rates
@@ -406,6 +406,7 @@ type LoadPriceVersionsRow struct {
 	ModelID    string
 	ValidFrom  time.Time
 	Currency   string
+	Source     string
 	Categories []string
 	Thresholds []int64
 	Rates      []string
@@ -425,6 +426,7 @@ func (q *Queries) LoadPriceVersions(ctx context.Context) ([]LoadPriceVersionsRow
 			&i.ModelID,
 			&i.ValidFrom,
 			&i.Currency,
+			&i.Source,
 			&i.Categories,
 			&i.Thresholds,
 			&i.Rates,

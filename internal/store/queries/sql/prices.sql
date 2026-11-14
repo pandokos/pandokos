@@ -99,7 +99,7 @@ DELETE FROM pandokos.price_version
  WHERE id = sqlc.arg(id)::uuid AND model_id = sqlc.arg(model_id)::uuid;
 
 -- name: LoadPriceVersions :many
-SELECT v.id, v.model_id, v.valid_from, v.currency,
+SELECT v.id, v.model_id, v.valid_from, v.currency, v.source,
        COALESCE(array_agg(r.category ORDER BY r.category, r.threshold) FILTER (WHERE r.category IS NOT NULL), '{}')::text[] AS categories,
        COALESCE(array_agg(r.threshold ORDER BY r.category, r.threshold) FILTER (WHERE r.category IS NOT NULL), '{}')::bigint[] AS thresholds,
        COALESCE(array_agg(r.rate::text ORDER BY r.category, r.threshold) FILTER (WHERE r.category IS NOT NULL), '{}')::text[] AS rates

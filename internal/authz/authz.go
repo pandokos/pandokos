@@ -155,6 +155,9 @@ type Principal struct {
 	Scopes      []string // nil: no restriction; otherwise the permissions the key is limited to
 	// CredentialID is the provider credential the key in use is pinned to; empty for none.
 	CredentialID string
+	// Models is the allow-list of the key in use, as model references (provider/name); nil: the
+	// key has no list. An empty, non-nil list allows nothing.
+	Models []string
 }
 
 // Effective returns the permissions p holds: the union of the permissions of its roles that
