@@ -12,13 +12,15 @@ type Key struct{ Name, Env, Type, Default, Description string }
 
 type keyDef struct {
 	Key
-	set func(c *Config, v string) error
+	set       func(c *Config, v string) error
+	serveOnly bool // read from the environment only when the purpose is serve
 }
 
 var (
 	errNotDuration = errors.New("not a valid duration such as 30s")
 	errNotInteger  = errors.New("not an integer")
 	errNotBoolean  = errors.New("not a boolean (true or false)")
+	errNotDecimal  = errors.New("not a decimal number")
 )
 
 func setString(f func(c *Config) *string) func(*Config, string) error {
@@ -53,6 +55,28 @@ func parseInt(v string) (int64, error) {
 		return 0, errNotInteger
 	}
 	return n, nil
+}
+
+func setInt(f func(c *Config) *int) func(*Config, string) error {
+	return func(c *Config, v string) error {
+		n, err := parseInt(v)
+		if err != nil {
+			return err
+		}
+		*f(c) = int(n)
+		return nil
+	}
+}
+
+func setDecimal(f func(c *Config) *float64) func(*Config, string) error {
+	return func(c *Config, v string) error {
+		x, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			return errNotDecimal
+		}
+		*f(c) = x
+		return nil
+	}
 }
 
 func envName(key string) string {
@@ -206,6 +230,35 @@ var keyTable = []keyDef{
 		setString(func(c *Config) *string { return &c.Pricing.Refresh.URL })),
 	def("pricing.refresh.interval", "duration", "24h", "Time between downloads; 1h to 720h",
 		setDuration(func(c *Config) *Duration { return &c.Pricing.Refresh.Interval })),
+	serveDef("ledger.flush_interval", "duration", "50ms", "Longest time a usage record waits in memory before it is written; 1ms to 10s",
+		setDuration(func(c *Config) *Duration { return &c.Ledger.FlushInterval })),
+	serveDef("ledger.batch_size", "integer", "500", "Most usage records written in one transaction; 1 to 5000",
+		setInt(func(c *Config) *int { return &c.Ledger.BatchSize })),
+	serveDef("ledger.buffer_size", "integer", "10000", "Usage records held in memory, admitted requests included; when it is full the gateway answers 503; 100 to 1000000, at least ledger.batch_size",
+		setInt(func(c *Config) *int { return &c.Ledger.BufferSize })),
+	serveDef("ledger.shutdown_flush_timeout", "duration", "10s", "Time allowed to write the records still in memory when the process stops; 1s to 5m",
+		setDuration(func(c *Config) *Duration { return &c.Ledger.ShutdownFlushTimeout })),
+	serveDef("telemetry.otlp.endpoint", "URL", "", "Base URL of the OTLP/HTTP collector, http or https, without user information, query or fragment; /v1/traces is appended; empty means no export",
+		setString(func(c *Config) *string { return &c.Telemetry.OTLP.Endpoint })),
+	serveDef("telemetry.otlp.protocol", "http/protobuf", "http/protobuf", "Export protocol; only http/protobuf",
+		setString(func(c *Config) *string { return &c.Telemetry.OTLP.Protocol })),
+	serveDef("telemetry.otlp.headers_file", "path", "", "File with the headers sent to the collector, one Name: value per line; the values are secrets",
+		setString(func(c *Config) *string { return &c.Telemetry.OTLP.HeadersFile })),
+	serveDef("telemetry.otlp.timeout", "duration", "10s", "Time allowed for one export; 1s to 60s",
+		setDuration(func(c *Config) *Duration { return &c.Telemetry.OTLP.Timeout })),
+	serveDef("telemetry.traces.sample_ratio", "decimal", "1", "Share of the traces started here that is sampled, 0 to 1; a caller's sampled flag is followed",
+		setDecimal(func(c *Config) *float64 { return &c.Telemetry.Traces.SampleRatio })),
+	serveDef("telemetry.traces.propagate", "boolean", "false", "Send the trace context to the provider in a traceparent header",
+		setBool(func(c *Config) *bool { return &c.Telemetry.Traces.Propagate })),
+	serveDef("telemetry.resource.attributes", "list", "", "Resource attributes of the traces: key=value pairs separated by commas, at most 32",
+		setString(func(c *Config) *string { return &c.Telemetry.Resource.Attributes })),
+}
+
+// serveDef is def for a key that only serve reads.
+func serveDef(name, typ, dflt, desc string, set func(*Config, string) error) keyDef {
+	k := def(name, typ, dflt, desc, set)
+	k.serveOnly = true
+	return k
 }
 
 // Keys returns every configuration key, in a fixed order.

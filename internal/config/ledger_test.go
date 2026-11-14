@@ -85,7 +85,8 @@ func TestLedgerConfiguration(t *testing.T) {
 
 	t.Run("buffer_size is 100 to 1 000 000", func(t *testing.T) {
 		for v, ok := range map[string]bool{"100": true, "10000": true, "1000000": true, "99": false, "0": false, "-5": false, "1000001": false, "big": false} {
-			c, err := load(t, "ledger.buffer_size", v)
+			// A batch of 100 keeps the range check apart from the buffer-below-batch rule tested next.
+			c, err := load(t, "ledger.buffer_size", v, "ledger.batch_size", "100")
 			if ok != (err == nil) {
 				t.Errorf("%q: %v", v, err)
 			}
