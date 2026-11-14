@@ -126,7 +126,7 @@ func TestDependencies(t *testing.T) {
 		}
 	}
 	sort.Strings(direct)
-	if want := []string{"github.com/go-logr/logr", "github.com/jackc/pgx/v5", "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp", "go.opentelemetry.io/otel/sdk", "go.opentelemetry.io/otel/trace", "go.opentelemetry.io/proto/otlp", "go.yaml.in/yaml/v3", "google.golang.org/protobuf"}; !reflect.DeepEqual(direct, want) {
+	if want := []string{"github.com/go-logr/logr", "github.com/jackc/pgx/v5", "go.opentelemetry.io/otel", "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp", "go.opentelemetry.io/otel/sdk", "go.opentelemetry.io/otel/trace", "go.opentelemetry.io/proto/otlp", "go.yaml.in/yaml/v3", "google.golang.org/protobuf"}; !reflect.DeepEqual(direct, want) {
 		t.Errorf("direct requirements = %v, want exactly %v", direct, want)
 	}
 	if !regexp.MustCompile(`(?m)^go 1\.26\.0$`).MatchString(gomod) {
