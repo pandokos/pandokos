@@ -296,6 +296,9 @@ func TestCapability(t *testing.T) {
 				if id, ok := sel.X.(*ast.Ident); ok && id.Name == "queries" {
 					used[sel.Sel.Name] = true
 				}
+				if credQueries[sel.Sel.Name] {
+					used[sel.Sel.Name] = true // a method of *queries.Queries
+				}
 				if credQueries[sel.Sel.Name] && sel.Sel.Name != "ListCredentials" {
 					t.Errorf("capability.go refers to %s, a query of credentials.sql other than ListCredentials", sel.Sel.Name)
 				}

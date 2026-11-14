@@ -475,9 +475,6 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 		if scopeOf(t, op) != authz.ScopeTenant {
 			continue
 		}
-		if op.ID == "getCapability" || op.ID == "listUsageRecords" {
-			continue // answered 500 until their handlers exist (sprint 3.3 step C5)
-		}
 		// The positive control: A's key does it in A.
 		own := apitest.CallFor(t, op, w.fresh(t, w.a, op))
 		r := w.api.Do(t, own.Method, own.Path, w.a.adminKey, own.Body, nil)
@@ -493,8 +490,8 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 		}
 		n++
 	}
-	if n != 24 {
-		t.Errorf("%d tenant operations, want 24 (20 and the four of sprint 2.2)", n)
+	if n != 26 {
+		t.Errorf("%d tenant operations, want 26 (24 and the two of sprint 3.3)", n)
 	}
 	if _, err := c.GetTenant(ctx(t), adminapi.GetTenantInput{Tenant: w.b.tenant.ID}); err == nil {
 		t.Error("a tenant key read a tenant")
@@ -547,9 +544,6 @@ func TestPlatformKeyHasNoTenantPermission(t *testing.T) {
 func TestTenantAdminIsEnoughAndNoMore(t *testing.T) {
 	w := newAPIWorld(t)
 	for _, op := range adminapi.Operations {
-		if op.ID == "getCapability" || op.ID == "listUsageRecords" {
-			continue // answered 500 until their handlers exist (sprint 3.3 step C5)
-		}
 		call := apitest.CallFor(t, op, w.fresh(t, w.a, op))
 		r := w.api.Do(t, call.Method, call.Path, w.a.adminKey, call.Body, nil)
 		switch scopeOf(t, op) {
