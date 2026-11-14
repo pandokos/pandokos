@@ -47,6 +47,10 @@ type listener struct {
 	tls  *config.ListenerTLS
 }
 
+// handlerWait bounds the wait for the handlers that the forced close cancelled, so that their usage
+// records exist when Serve returns. It comes after the drain and before the flush of the ledger.
+const handlerWait = 5 * time.Second
+
 // Server serves two listeners with two handlers: the inference gateway and the administration
 // API. They share the health state, the logger and the shutdown sequence.
 type Server struct {
@@ -298,7 +302,7 @@ func (s *Server) Serve(ctx context.Context) error {
 		_ = s.adm.srv.Close()
 		// Close does not wait for handlers: a cancelled handler still records its request, and
 		// the ledger is closed after Serve returns, so wait for them (bounded).
-		for deadline := time.Now().Add(5 * time.Second); s.handlers.Load() > 0 && time.Now().Before(deadline); {
+		for deadline := time.Now().Add(handlerWait); s.handlers.Load() > 0 && time.Now().Before(deadline); {
 			time.Sleep(time.Millisecond)
 		}
 	} else {

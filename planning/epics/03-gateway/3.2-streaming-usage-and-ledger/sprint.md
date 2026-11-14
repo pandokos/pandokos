@@ -565,7 +565,8 @@ the parent is in `Spec.AppendOnly`: an enabled `BEFORE TRUNCATE` trigger that ex
 4. Idle provider connections are closed; database pools close; exit.
 
 The process ends within `shutdown.drain_timeout + ledger.shutdown_flush_timeout` plus about a
-second. The container guide tells operators to give the container at least that long to stop.
+second, plus up to 5 s (`handlerWait`, amended at review) that `Serve` waits after the forced close
+for the cancelled handlers to record. The container guide tells operators to give the container at least that long to stop.
 A second signal still ends the process at once, losing what is in memory.
 
 ### 5.9 Traces (`internal/telemetry`)
@@ -1139,3 +1140,7 @@ Changes to the design made while building, each declared and documented:
    the records stay queued and the writer backs off. A record that arrives after `Close` has finished
    is logged as `usage record not written` (with the row, metadata values removed) and counted in
    `Stats.Unwritten`; it is no longer reported as `usage record without admission`.
+6. **The wait for cancelled handlers is a named constant and part of the shutdown bound** (at review,
+   §5.8): `Serve` waits up to `handlerWait` (5 s) for the handlers it cancelled after the drain, so the
+   worst case of a stop is `shutdown.drain_timeout + 5 s + ledger.shutdown_flush_timeout` plus about a
+   second (46 s with the defaults). The container and usage guides say so.

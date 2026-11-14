@@ -233,11 +233,12 @@ should send traffic elsewhere.
 
 ## 8. Shutdown
 
-After the drain (`shutdown.drain_timeout`), the writer stops admitting, writes every queued record
+After the drain (`shutdown.drain_timeout`), requests still running are cancelled and `serve` waits
+up to 5 s for them to record; the writer then stops admitting, writes every queued record
 and the late records of the requests just cancelled, under its own deadline
 `ledger.shutdown_flush_timeout`. Records it cannot write are logged in full as
 `usage record not written`, and one last line, `ledger closed with records lost`, gives their count. Give the container at least
-`shutdown.drain_timeout + ledger.shutdown_flush_timeout` plus a few seconds to stop; see the
+`shutdown.drain_timeout + 5 s + ledger.shutdown_flush_timeout` plus a few seconds to stop; see the
 [container guide](container.md).
 
 ## 9. Inspecting rows

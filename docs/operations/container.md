@@ -186,8 +186,10 @@ then are cancelled, which releases their provider connections. The usage records
 the cancelled ones included, are then written to the database and the traces are flushed, together
 under `ledger.shutdown_flush_timeout` (default 10 s); records that cannot be written are logged in
 full (`usage record not written`, see the [usage guide](usage.md)). The process exits with code 0
-within `shutdown.drain_timeout` plus `ledger.shutdown_flush_timeout` plus about a second. **Give the
-container a stop grace period at least that long** plus a margin (with the defaults, 30 s + 10 s: use
+within `shutdown.drain_timeout` plus, when requests were still running at the end of the drain, up to
+5 s for the cancelled handlers to record, plus `ledger.shutdown_flush_timeout`, plus about a second.
+**Give the container a stop grace period at least that long** plus a margin (worst case with the
+defaults: 30 s + 5 s + 10 s + 1 s = 46 s: use
 `docker stop -t 60`, `stop_grace_period: 60s` in Compose or `terminationGracePeriodSeconds: 60`);
 otherwise the runtime kills the process and the records in memory are lost. A second signal during
 the drain ends the process at once and loses them too.
