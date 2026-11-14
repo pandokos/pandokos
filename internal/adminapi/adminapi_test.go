@@ -18,16 +18,18 @@ import (
 )
 
 const (
-	tid = "0192f0f0-0000-7000-8000-000000000001"
-	sid = "0192f0f0-0000-7000-8000-000000000002"
-	vk  = "tabcdefghijklmnop"
-	pk  = "pabcdefghijklmnop"
-	cid = "0192f0f0-0000-7000-8000-000000000003"
+	tid  = "0192f0f0-0000-7000-8000-000000000001"
+	sid  = "0192f0f0-0000-7000-8000-000000000002"
+	vk   = "tabcdefghijklmnop"
+	pk   = "pabcdefghijklmnop"
+	cid  = "0192f0f0-0000-7000-8000-000000000003"
+	mid  = "0192f0f0-0000-7000-8000-000000000004" // a model
+	pvid = "0192f0f0-0000-7000-8000-000000000005" // a price version, a price import
 )
 
 // fake is an adminapi.Server that records the input of every call and answers with zero values.
 type fake struct {
-	adminapi.Server // the catalogue operations are exercised from sprint 2.2 on; calling one here panics
+	adminapi.Server // every operation has a method below; the embedded interface only keeps the fake short to read
 	mu              sync.Mutex
 	got             map[string]any
 }
@@ -181,6 +183,120 @@ func (f *fake) SetDefaultCredential(_ context.Context, in adminapi.SetDefaultCre
 func (f *fake) CreatePriceOverride(_ context.Context, in adminapi.CreatePriceOverrideInput) (*adminapi.PriceVersion, error) {
 	f.rec("createPriceOverride", in)
 	return &adminapi.PriceVersion{}, nil
+}
+
+// The catalogue operations of sprint 2.2 (the fake used to panic on them).
+func (f *fake) ListProviders(_ context.Context, in adminapi.ListProvidersInput) (*adminapi.ProviderList, error) {
+	f.rec("listProviders", in)
+	return &adminapi.ProviderList{}, nil
+}
+func (f *fake) CreateProvider(_ context.Context, in adminapi.CreateProviderInput) (*adminapi.Provider, error) {
+	f.rec("createProvider", in)
+	return &adminapi.Provider{}, nil
+}
+func (f *fake) GetProvider(_ context.Context, in adminapi.GetProviderInput) (*adminapi.Provider, error) {
+	f.rec("getProvider", in)
+	return &adminapi.Provider{}, nil
+}
+func (f *fake) UpdateProvider(_ context.Context, in adminapi.UpdateProviderInput) (*adminapi.Provider, error) {
+	f.rec("updateProvider", in)
+	return &adminapi.Provider{}, nil
+}
+func (f *fake) DeleteProvider(_ context.Context, in adminapi.DeleteProviderInput) (*adminapi.Provider, error) {
+	f.rec("deleteProvider", in)
+	return &adminapi.Provider{}, nil
+}
+func (f *fake) ListEndpoints(_ context.Context, in adminapi.ListEndpointsInput) (*adminapi.EndpointList, error) {
+	f.rec("listEndpoints", in)
+	return &adminapi.EndpointList{}, nil
+}
+func (f *fake) CreateEndpoint(_ context.Context, in adminapi.CreateEndpointInput) (*adminapi.Endpoint, error) {
+	f.rec("createEndpoint", in)
+	return &adminapi.Endpoint{}, nil
+}
+func (f *fake) GetEndpoint(_ context.Context, in adminapi.GetEndpointInput) (*adminapi.Endpoint, error) {
+	f.rec("getEndpoint", in)
+	return &adminapi.Endpoint{}, nil
+}
+func (f *fake) UpdateEndpoint(_ context.Context, in adminapi.UpdateEndpointInput) (*adminapi.Endpoint, error) {
+	f.rec("updateEndpoint", in)
+	return &adminapi.Endpoint{}, nil
+}
+func (f *fake) DeleteEndpoint(_ context.Context, in adminapi.DeleteEndpointInput) (*adminapi.Endpoint, error) {
+	f.rec("deleteEndpoint", in)
+	return &adminapi.Endpoint{}, nil
+}
+func (f *fake) ListModels(_ context.Context, in adminapi.ListModelsInput) (*adminapi.ModelList, error) {
+	f.rec("listModels", in)
+	return &adminapi.ModelList{}, nil
+}
+func (f *fake) CreateModel(_ context.Context, in adminapi.CreateModelInput) (*adminapi.Model, error) {
+	f.rec("createModel", in)
+	return &adminapi.Model{}, nil
+}
+func (f *fake) GetModel(_ context.Context, in adminapi.GetModelInput) (*adminapi.Model, error) {
+	f.rec("getModel", in)
+	return &adminapi.Model{}, nil
+}
+func (f *fake) UpdateModel(_ context.Context, in adminapi.UpdateModelInput) (*adminapi.Model, error) {
+	f.rec("updateModel", in)
+	return &adminapi.Model{}, nil
+}
+func (f *fake) DeleteModel(_ context.Context, in adminapi.DeleteModelInput) (*adminapi.Model, error) {
+	f.rec("deleteModel", in)
+	return &adminapi.Model{}, nil
+}
+func (f *fake) ClearPriceOverride(_ context.Context, in adminapi.ClearPriceOverrideInput) (*adminapi.Model, error) {
+	f.rec("clearPriceOverride", in)
+	return &adminapi.Model{}, nil
+}
+func (f *fake) ListModelGrants(_ context.Context, in adminapi.ListModelGrantsInput) (*adminapi.ModelGrantList, error) {
+	f.rec("listModelGrants", in)
+	return &adminapi.ModelGrantList{}, nil
+}
+func (f *fake) GrantModel(_ context.Context, in adminapi.GrantModelInput) (*adminapi.ModelGrant, error) {
+	f.rec("grantModel", in)
+	return &adminapi.ModelGrant{}, nil
+}
+func (f *fake) RevokeModelGrant(_ context.Context, in adminapi.RevokeModelGrantInput) (*adminapi.ModelGrant, error) {
+	f.rec("revokeModelGrant", in)
+	return &adminapi.ModelGrant{}, nil
+}
+func (f *fake) ListPriceVersions(_ context.Context, in adminapi.ListPriceVersionsInput) (*adminapi.PriceVersionList, error) {
+	f.rec("listPriceVersions", in)
+	return &adminapi.PriceVersionList{}, nil
+}
+func (f *fake) DeletePriceVersion(_ context.Context, in adminapi.DeletePriceVersionInput) (*adminapi.PriceVersion, error) {
+	f.rec("deletePriceVersion", in)
+	return &adminapi.PriceVersion{}, nil
+}
+func (f *fake) ListPriceImports(_ context.Context, in adminapi.ListPriceImportsInput) (*adminapi.PriceImportList, error) {
+	f.rec("listPriceImports", in)
+	return &adminapi.PriceImportList{}, nil
+}
+func (f *fake) RunPriceImport(_ context.Context, in adminapi.RunPriceImportInput) (*adminapi.PriceImport, error) {
+	f.rec("runPriceImport", in)
+	return &adminapi.PriceImport{}, nil
+}
+func (f *fake) GetPriceImport(_ context.Context, in adminapi.GetPriceImportInput) (*adminapi.PriceImport, error) {
+	f.rec("getPriceImport", in)
+	return &adminapi.PriceImport{}, nil
+}
+func (f *fake) GetModelRestriction(_ context.Context, in adminapi.GetModelRestrictionInput) (*adminapi.ModelRestriction, error) {
+	f.rec("getModelRestriction", in)
+	return &adminapi.ModelRestriction{}, nil
+}
+func (f *fake) SetModelRestriction(_ context.Context, in adminapi.SetModelRestrictionInput) (*adminapi.ModelRestriction, error) {
+	f.rec("setModelRestriction", in)
+	return &adminapi.ModelRestriction{}, nil
+}
+func (f *fake) ClearModelRestriction(_ context.Context, in adminapi.ClearModelRestrictionInput) (*adminapi.ModelRestriction, error) {
+	f.rec("clearModelRestriction", in)
+	return &adminapi.ModelRestriction{}, nil
+}
+func (f *fake) ListTenantModels(_ context.Context, in adminapi.ListTenantModelsInput) (*adminapi.TenantModelList, error) {
+	f.rec("listTenantModels", in)
+	return &adminapi.TenantModelList{}, nil
 }
 
 var _ adminapi.Server = (*fake)(nil)
@@ -415,8 +531,125 @@ func TestRouterAndClient(t *testing.T) {
 			in := adminapi.RevokeTenantCredentialInput{Tenant: tid, Credential: cid, Body: adminapi.RequiredReason{Reason: "why"}}
 			add("revokeTenantCredential", in, func() error { _, err := c.RevokeTenantCredential(ctx, in); return err })
 		}
-		if len(adminapi.Operations) != 35 {
-			t.Fatalf("%d operations, want 35", len(adminapi.Operations))
+		{
+			in := adminapi.ListProvidersInput{Limit: 5}
+			add("listProviders", in, func() error { _, err := c.ListProviders(ctx, in); return err })
+		}
+		{
+			in := adminapi.CreateProviderInput{Body: adminapi.ProviderCreate{Name: "acme", ApiFamily: adminapi.ApiFamilyAnthropic, DisplayName: "Acme", Description: "d", DatasetProvider: "acme"}}
+			add("createProvider", in, func() error { _, err := c.CreateProvider(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetProviderInput{Provider: "acme"}
+			add("getProvider", in, func() error { _, err := c.GetProvider(ctx, in); return err })
+		}
+		{
+			in := adminapi.UpdateProviderInput{Provider: "acme", Body: adminapi.ProviderUpdate{Enabled: adminapi.Some(false), Description: adminapi.Some("")}}
+			add("updateProvider", in, func() error { _, err := c.UpdateProvider(ctx, in); return err })
+		}
+		{
+			in := adminapi.DeleteProviderInput{Provider: "acme"}
+			add("deleteProvider", in, func() error { _, err := c.DeleteProvider(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListEndpointsInput{Provider: "acme", Limit: 2}
+			add("listEndpoints", in, func() error { _, err := c.ListEndpoints(ctx, in); return err })
+		}
+		{
+			in := adminapi.CreateEndpointInput{Provider: "acme", Body: adminapi.EndpointCreate{Name: "eu", BaseURL: "https://api.example.com/v1", Region: "eu", Private: true, IsDefault: true, Description: "d"}}
+			add("createEndpoint", in, func() error { _, err := c.CreateEndpoint(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetEndpointInput{Provider: "acme", Endpoint: "eu"}
+			add("getEndpoint", in, func() error { _, err := c.GetEndpoint(ctx, in); return err })
+		}
+		{
+			in := adminapi.UpdateEndpointInput{Provider: "acme", Endpoint: "eu", Body: adminapi.EndpointUpdate{IsDefault: adminapi.Some(true), Region: adminapi.Some(""), Private: adminapi.Some(false)}}
+			add("updateEndpoint", in, func() error { _, err := c.UpdateEndpoint(ctx, in); return err })
+		}
+		{
+			in := adminapi.DeleteEndpointInput{Provider: "acme", Endpoint: "eu"}
+			add("deleteEndpoint", in, func() error { _, err := c.DeleteEndpoint(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListModelsInput{Limit: 3, Sort: adminapi.SortMinusCreatedAt, Provider: "openai", Name: "gpt-4o", Status: adminapi.ModelStatusActive, Availability: adminapi.ModelAvailabilityAll}
+			add("listModels", in, func() error { _, err := c.ListModels(ctx, in); return err })
+		}
+		{
+			in := adminapi.CreateModelInput{Body: adminapi.ModelCreate{Provider: "openai", Name: "meta/m", UpstreamID: "u", DisplayName: "M", Description: "d", Status: adminapi.ModelStatusDeprecated, Availability: adminapi.ModelAvailabilitySelected, Capabilities: []string{"text", "tools"}, ContextWindow: 8192, MaxOutputTokens: 1024}}
+			add("createModel", in, func() error { _, err := c.CreateModel(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetModelInput{Model: mid}
+			add("getModel", in, func() error { _, err := c.GetModel(ctx, in); return err })
+		}
+		{
+			in := adminapi.UpdateModelInput{Model: mid, Body: adminapi.ModelUpdate{Capabilities: adminapi.Some([]string{}), ContextWindow: adminapi.Some(0), Status: adminapi.Some(adminapi.ModelStatusRetired), Description: adminapi.Some("")}}
+			add("updateModel", in, func() error { _, err := c.UpdateModel(ctx, in); return err })
+		}
+		{
+			in := adminapi.DeleteModelInput{Model: mid}
+			add("deleteModel", in, func() error { _, err := c.DeleteModel(ctx, in); return err })
+		}
+		{
+			in := adminapi.ClearPriceOverrideInput{Model: mid, Body: adminapi.Reason{Reason: "why"}}
+			add("clearPriceOverride", in, func() error { _, err := c.ClearPriceOverride(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListModelGrantsInput{Model: mid, Limit: 2}
+			add("listModelGrants", in, func() error { _, err := c.ListModelGrants(ctx, in); return err })
+		}
+		{
+			in := adminapi.GrantModelInput{Model: mid, Tenant: tid}
+			add("grantModel", in, func() error { _, err := c.GrantModel(ctx, in); return err })
+		}
+		{
+			in := adminapi.RevokeModelGrantInput{Model: mid, Tenant: tid}
+			add("revokeModelGrant", in, func() error { _, err := c.RevokeModelGrant(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListPriceVersionsInput{Model: mid, Limit: 2, At: "2026-11-14T12:00:00Z"}
+			add("listPriceVersions", in, func() error { _, err := c.ListPriceVersions(ctx, in); return err })
+		}
+		{
+			in := adminapi.DeletePriceVersionInput{Model: mid, PriceVersion: pvid}
+			add("deletePriceVersion", in, func() error { _, err := c.DeletePriceVersion(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListPriceImportsInput{Limit: 2}
+			add("listPriceImports", in, func() error { _, err := c.ListPriceImports(ctx, in); return err })
+		}
+		{
+			in := adminapi.RunPriceImportInput{Body: adminapi.PriceImportRun{Source: adminapi.PriceImportRunSourceRemote, DryRun: true}}
+			add("runPriceImport", in, func() error { _, err := c.RunPriceImport(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetPriceImportInput{PriceImport: pvid}
+			add("getPriceImport", in, func() error { _, err := c.GetPriceImport(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetModelRestrictionInput{Tenant: tid}
+			add("getModelRestriction", in, func() error { _, err := c.GetModelRestriction(ctx, in); return err })
+		}
+		{
+			in := adminapi.SetModelRestrictionInput{Tenant: tid, Body: adminapi.ModelRestrictionSet{Models: []string{"openai/gpt-4o", "ollama/meta/llama"}}}
+			add("setModelRestriction", in, func() error { _, err := c.SetModelRestriction(ctx, in); return err })
+		}
+		{
+			in := adminapi.ClearModelRestrictionInput{Tenant: tid}
+			add("clearModelRestriction", in, func() error { _, err := c.ClearModelRestriction(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListTenantModelsInput{Tenant: tid, Limit: 2}
+			add("listTenantModels", in, func() error { _, err := c.ListTenantModels(ctx, in); return err })
+		}
+		{
+			in := adminapi.CreatePriceOverrideInput{Model: mid, Body: adminapi.PriceOverride{Currency: "EUR", ValidFrom: &future, Note: "n",
+				Rates: []adminapi.PriceRate{{Category: adminapi.PriceCategoryInput, Threshold: 0, Rate: "2.5"}, {Category: adminapi.PriceCategoryOutput, Threshold: 100000, Rate: "10.000000000001"}}}}
+			add("createPriceOverride", in, func() error { _, err := c.CreatePriceOverride(ctx, in); return err })
+		}
+		if len(adminapi.Operations) != 64 {
+			t.Fatalf("%d operations, want 64 (the 35 of epic 1 and sprint 2.1 and the 29 of sprint 2.2)", len(adminapi.Operations))
 		}
 		for _, op := range adminapi.Operations {
 			tc, ok := calls[op.ID]
@@ -449,7 +682,8 @@ func TestRouterAndClient(t *testing.T) {
 			if op.Permission == "" || (op.Status != 200 && op.Status != 201) || !strings.HasPrefix(op.Path, "/v1/") {
 				t.Errorf("%+v", op)
 			}
-			if (op.Status == 201) != (op.Method == "POST" && strings.HasPrefix(op.ID, "create")) {
+			// 201 for the operations that make a resource, and for the one that runs an import.
+			if (op.Status == 201) != (op.Method == "POST" && (strings.HasPrefix(op.ID, "create") || op.ID == "runPriceImport")) {
 				t.Errorf("%s: status %d", op.ID, op.Status)
 			}
 		}

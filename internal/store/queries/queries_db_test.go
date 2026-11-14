@@ -37,8 +37,9 @@ func equalTime(t *testing.T, what string, got *time.Time, want *time.Time) {
 	}
 }
 
-// TestEveryStatement is T-230, extended by T-323: each of the 47 generated methods (28 of epic 1
-// and the 19 of sprint 2.1) is called through a store helper, directly and through the pooler.
+// TestEveryStatement is T-230, extended by T-323 and by T-393: each of the 90 generated methods
+// (28 of epic 1, the 19 of sprint 2.1 and the 43 of sprint 2.2) is called through a store helper,
+// directly and through the pooler.
 // Identifiers, times, null times, arrays, null arrays, hashes, sealed bytes and JSON go in and
 // come back unchanged.
 func TestEveryStatement(t *testing.T) {
@@ -426,7 +427,10 @@ func TestEveryStatement(t *testing.T) {
 		// Sprint 2.1: key-encryption key versions, data keys, credentials and the pin of a key.
 		vaultStatements(c, t, admin, gateway, tid, ten.ID, sa.ID, hash, called)
 
-		// The 47 statements, and nothing was prepared on the server.
+		// Sprint 2.2: the catalogue, the model access and the prices.
+		catalogStatements(c, t, admin, gateway, tid, ten.ID, sa.ID, hash, called)
+
+		// The 90 statements, and nothing was prepared on the server.
 		var names []string
 		typ := reflect.TypeOf(&queries.Queries{})
 		for i := 0; i < typ.NumMethod(); i++ {
@@ -435,8 +439,8 @@ func TestEveryStatement(t *testing.T) {
 			}
 		}
 		sort.Strings(names)
-		if len(names) != 47 {
-			t.Errorf("the generated package has %d statements, want 47: %v", len(names), names)
+		if len(names) != 90 {
+			t.Errorf("the generated package has %d statements, want 90: %v", len(names), names)
 		}
 		for _, name := range names {
 			if !called[name] {

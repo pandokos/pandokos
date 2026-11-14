@@ -32,11 +32,19 @@ type side struct {
 	key       adminapi.VirtualKeyCreated
 	inference adminapi.VirtualKeyCreated // a key of a service account of its own, for the inference tests
 	cred      adminapi.Credential        // the default openai credential of the tenant
+
+	// The catalogue resources every side's params name (platform operations are called with a
+	// tenant key in these tests; the identifiers only have to exist).
+	provider, endpoint, model, priceVersion, priceImport string
 }
 
 type apiWorld struct {
 	api  *apitest.API
 	a, b side
+
+	cat    apitest.Catalogue
+	onlyB  adminapi.Model // a `selected` model granted to tenant B only
+	allRef string         // the reference of a model that every tenant may use
 }
 
 func newSide(t *testing.T, api *apitest.API, name string) side {
@@ -71,21 +79,58 @@ func newAPIWorld(t *testing.T) *apiWorld {
 	t.Helper()
 	w := &apiWorld{api: apitest.New(t)}
 	w.a, w.b = newSide(t, w.api, "tenant-a"), newSide(t, w.api, "tenant-b")
+
+	// The catalogue of sprint 2.2: a provider with a model for everybody and a model granted to
+	// tenant B only, a price version and a price import.
+	platform := w.api.Client(w.api.PlatformKey())
+	w.cat = w.api.Catalog(t)
+	w.allRef = w.cat.All.Ref
+	only, err := platform.CreateModel(ctx(t), adminapi.CreateModelInput{Body: adminapi.ModelCreate{
+		Provider: w.cat.Provider.Name, Name: apitest.UniqueName("synthetic-only-b"), Availability: adminapi.ModelAvailabilitySelected}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.onlyB = *only
+	if _, err := platform.GrantModel(ctx(t), adminapi.GrantModelInput{Model: only.ID, Tenant: w.b.tenant.ID}); err != nil {
+		t.Fatal(err)
+	}
+	pv, err := platform.CreatePriceOverride(ctx(t), adminapi.CreatePriceOverrideInput{Model: w.cat.All.ID, Body: adminapi.PriceOverride{
+		Currency: "USD", Rates: []adminapi.PriceRate{{Category: adminapi.PriceCategoryInput, Rate: "1"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	imp, err := platform.RunPriceImport(ctx(t), adminapi.RunPriceImportInput{Body: adminapi.PriceImportRun{Source: adminapi.PriceImportRunSourceEmbedded}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []*side{&w.a, &w.b} {
+		s.provider, s.endpoint, s.model, s.priceVersion, s.priceImport = w.cat.Provider.Name, w.cat.Endpoint.Name, w.cat.All.ID, pv.ID, imp.ID
+	}
 	return w
 }
 
 func (s side) params() apitest.Params {
-	return apitest.Params{Tenant: s.tenant.ID, ServiceAccount: s.sa.ID, VirtualKey: s.key.Key.ID, PlatformKey: "pabcdefghijklmnop", Credential: s.cred.ID}
+	return apitest.Params{Tenant: s.tenant.ID, ServiceAccount: s.sa.ID, VirtualKey: s.key.Key.ID, PlatformKey: "pabcdefghijklmnop", Credential: s.cred.ID,
+		Provider: s.provider, Endpoint: s.endpoint, Model: s.model, PriceVersion: s.priceVersion, PriceImport: s.priceImport}
 }
 
-// fresh is params with a credential of its own when the operation names one: the tests that
-// call every operation in turn would otherwise find the credential deleted, revoked or replaced
-// by an earlier operation. The new credential is not the default of its provider.
+// fresh is params with a credential, and a model, of its own when the operation names one: the
+// tests that call every operation in turn would otherwise find the credential deleted, revoked or
+// replaced, or the model deleted or changed, by an earlier operation. The new credential is not
+// the default of its provider; the new model belongs to the provider of the world's catalogue.
 func (w *apiWorld) fresh(t *testing.T, s side, op adminapi.Operation) apitest.Params {
 	t.Helper()
 	p := s.params()
 	if strings.Contains(op.Path, "{credential}") {
 		p.Credential = w.api.Credential(t, s.tenant.ID, s.adminKey, "openai", apitest.UniqueName("extra")).ID
+	}
+	if strings.Contains(op.Path, "{model}") {
+		m, err := w.api.Client(w.api.PlatformKey()).CreateModel(ctx(t), adminapi.CreateModelInput{Body: adminapi.ModelCreate{
+			Provider: w.cat.Provider.Name, Name: apitest.UniqueName("synthetic-fresh"), Availability: adminapi.ModelAvailabilityAll}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		p.Model = m.ID
 	}
 	return p
 }
@@ -152,6 +197,33 @@ var platformAndSelf = map[string]string{
 	"getTenantCredential":     "platform",
 	"disableTenantCredential": "platform",
 	"revokeTenantCredential":  "platform",
+
+	// Sprint 2.2: the 25 platform operations of the catalogue.
+	"listProviders":       "platform",
+	"createProvider":      "platform",
+	"getProvider":         "platform",
+	"updateProvider":      "platform",
+	"deleteProvider":      "platform",
+	"listEndpoints":       "platform",
+	"createEndpoint":      "platform",
+	"getEndpoint":         "platform",
+	"updateEndpoint":      "platform",
+	"deleteEndpoint":      "platform",
+	"listModels":          "platform",
+	"createModel":         "platform",
+	"getModel":            "platform",
+	"updateModel":         "platform",
+	"deleteModel":         "platform",
+	"listModelGrants":     "platform",
+	"grantModel":          "platform",
+	"revokeModelGrant":    "platform",
+	"listPriceVersions":   "platform",
+	"createPriceOverride": "platform",
+	"deletePriceVersion":  "platform",
+	"clearPriceOverride":  "platform",
+	"listPriceImports":    "platform",
+	"getPriceImport":      "platform",
+	"runPriceImport":      "platform",
 }
 
 func scopeOf(t *testing.T, op adminapi.Operation) authz.Scope {
@@ -182,8 +254,10 @@ func TestCrossTenantIndistinguishable(t *testing.T) {
 			}
 			// A's key gets 403 on a platform operation, or 200 on getMe, the same for an
 			// existing and a missing identifier.
-			real := apitest.Params{Tenant: w.b.tenant.ID, ServiceAccount: w.b.sa.ID, VirtualKey: w.b.key.Key.ID, PlatformKey: "pabcdefghijklmnop", Credential: w.b.cred.ID}
-			missing := apitest.Params{Tenant: randomUUID(t, w), ServiceAccount: randomUUID(t, w), VirtualKey: randomKeyID(t), PlatformKey: "pabcdefghijklmnoq", Credential: randomUUID(t, w)}
+			real := w.b.params()
+			real.PlatformKey = "pabcdefghijklmnop"
+			missing := apitest.Params{Tenant: randomUUID(t, w), ServiceAccount: randomUUID(t, w), VirtualKey: randomKeyID(t), PlatformKey: "pabcdefghijklmnoq", Credential: randomUUID(t, w),
+				Provider: "synthetic-missing", Endpoint: "ep-missing", Model: randomUUID(t, w), PriceVersion: randomUUID(t, w), PriceImport: randomUUID(t, w)}
 			cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
 			if op.ID == "createTenant" {
 				cm.Body = cr.Body
@@ -281,6 +355,40 @@ func TestCrossTenantIndistinguishable(t *testing.T) {
 			}
 			checked++
 		}
+
+		// A body member that names models: a model granted only to B, named by A, is refused
+		// exactly as a model that does not exist (a tenant cannot probe the grants of others).
+		if op.ID == "createVirtualKey" || op.ID == "setModelRestriction" {
+			cr, cm := apitest.CallFor(t, op, w.a.params()), apitest.CallFor(t, op, w.a.params())
+			set := func(c apitest.Call, refs ...string) apitest.Call {
+				body := c.Body.(map[string]any)
+				body["models"] = refs
+				return c
+			}
+			cr, cm = set(cr, w.onlyB.Ref), set(cm, w.cat.Provider.Name+"/synthetic-missing-model")
+			r1 := w.api.Do(t, cr.Method, cr.Path, w.a.adminKey, cr.Body, nil)
+			r2 := w.api.Do(t, cm.Method, cm.Path, w.a.adminKey, cm.Body, nil)
+			if r1.Status != 400 || r2.Status != 400 || !strings.Contains(string(r1.Body), `"code":"invalid_request"`) {
+				t.Errorf("%s: B's model gives %d, a missing one %d, want 400\n%s", op.ID, r1.Status, r2.Status, r1.Body)
+			}
+			if normalize(t, r1) != normalize(t, r2) {
+				t.Errorf("%s: B's model and a missing one differ:\n%s\n%s", op.ID, normalize(t, r1), normalize(t, r2))
+			}
+			if after := w.api.SnapshotTenant(t, w.b.tenant.ID); after != rows {
+				t.Fatalf("%s changed a row of tenant B", op.ID)
+			}
+			// The control: a model that every tenant may use is accepted.
+			ok := set(apitest.CallFor(t, op, w.a.params()), w.allRef)
+			if r := w.api.Do(t, ok.Method, ok.Path, w.a.adminKey, ok.Body, nil); r.Status != 200 && r.Status != 201 {
+				t.Errorf("%s: a model that every tenant may use gives %d\n%s", op.ID, r.Status, r.Body)
+			}
+			// And B itself may name the model granted to it.
+			own := set(apitest.CallFor(t, op, w.b.params()), w.onlyB.Ref)
+			if r := w.api.Do(t, own.Method, own.Path, w.b.adminKey, own.Body, nil); r.Status != 200 && r.Status != 201 {
+				t.Errorf("%s: B naming its own model gives %d\n%s", op.ID, r.Status, r.Body)
+			}
+			checked += 3
+		}
 	}
 	if checked < 20 {
 		t.Errorf("only %d checks were made", checked)
@@ -377,8 +485,8 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 		}
 		n++
 	}
-	if n != 20 {
-		t.Errorf("%d tenant operations, want 20", n)
+	if n != 24 {
+		t.Errorf("%d tenant operations, want 24 (20 and the four of sprint 2.2)", n)
 	}
 	if _, err := c.GetTenant(ctx(t), adminapi.GetTenantInput{Tenant: w.b.tenant.ID}); err == nil {
 		t.Error("a tenant key read a tenant")

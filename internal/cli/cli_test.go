@@ -34,7 +34,7 @@ const (
 
 // fakeAPI is an adminapi.Server that records the inputs, returns canned outputs and can fail.
 type fakeAPI struct {
-	adminapi.Server // the catalogue operations are exercised from sprint 2.2 on; calling one here panics
+	adminapi.Server // every operation has a method (catalogue_test.go); the embedded interface only keeps the fake short
 	mu              sync.Mutex
 	got             map[string][]any
 	out             map[string]any

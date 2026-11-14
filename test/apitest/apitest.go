@@ -21,6 +21,7 @@ import (
 	"github.com/pandokos/pandokos/internal/admin"
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/authn"
+	"github.com/pandokos/pandokos/internal/pricing/genaiprices"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/telemetry"
 	"github.com/pandokos/pandokos/internal/vault"
@@ -83,7 +84,7 @@ func NewOn(tb testing.TB, d *dbtest.Database, mutate ...func(*admin.Options)) *A
 	if a.Sealer, err = vault.NewSealer(a.KeyProvider); err != nil {
 		tb.Fatal(err)
 	}
-	o := admin.Options{Logger: logger, DB: a.Admin, Authenticator: auth, Sealer: a.Sealer}
+	o := admin.Options{Logger: logger, DB: a.Admin, Authenticator: auth, Sealer: a.Sealer, Snapshot: genaiprices.Snapshot()}
 	for _, m := range mutate {
 		m(&o)
 	}
@@ -174,6 +175,45 @@ func (a *API) Credential(tb testing.TB, tenantID, adminKey, provider, label stri
 		tb.Fatalf("create credential %s: %v", label, err)
 	}
 	return *out
+}
+
+// Catalogue is what Catalog creates.
+type Catalogue struct {
+	Provider adminapi.Provider
+	Endpoint adminapi.Endpoint // the default endpoint of Provider
+	All      adminapi.Model    // availability all
+	Selected adminapi.Model    // availability selected: granted to nobody
+}
+
+// Catalog creates, with the platform key, a provider (family openai), its endpoint and two models,
+// one available to all tenants and one `selected`, and returns them. Every name is new.
+func (a *API) Catalog(tb testing.TB) Catalogue {
+	tb.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	c := a.Client(a.platformKey)
+	var out Catalogue
+	p, err := c.CreateProvider(ctx, adminapi.CreateProviderInput{Body: adminapi.ProviderCreate{Name: UniqueName("synthetic"), ApiFamily: adminapi.ApiFamilyOpenai}})
+	if err != nil {
+		tb.Fatalf("create provider: %v", err)
+	}
+	out.Provider = *p
+	e, err := c.CreateEndpoint(ctx, adminapi.CreateEndpointInput{Provider: p.Name, Body: adminapi.EndpointCreate{Name: UniqueName("ep"), BaseURL: "https://synthetic.invalid"}})
+	if err != nil {
+		tb.Fatalf("create endpoint: %v", err)
+	}
+	out.Endpoint = *e
+	all, err := c.CreateModel(ctx, adminapi.CreateModelInput{Body: adminapi.ModelCreate{Provider: p.Name, Name: UniqueName("synthetic-model"), Availability: adminapi.ModelAvailabilityAll}})
+	if err != nil {
+		tb.Fatalf("create model: %v", err)
+	}
+	out.All = *all
+	sel, err := c.CreateModel(ctx, adminapi.CreateModelInput{Body: adminapi.ModelCreate{Provider: p.Name, Name: UniqueName("synthetic-model"), Availability: adminapi.ModelAvailabilitySelected}})
+	if err != nil {
+		tb.Fatalf("create model: %v", err)
+	}
+	out.Selected = *sel
+	return out
 }
 
 // Do sends a raw request. body is nil, a string or []byte (sent as it is), or any value (sent

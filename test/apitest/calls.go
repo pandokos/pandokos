@@ -17,6 +17,11 @@ type Params struct {
 	VirtualKey     string // {key} of a virtual key
 	PlatformKey    string // {key} of a platform key
 	Credential     string // {credential}
+	Provider       string // {provider} (a name)
+	Endpoint       string // {endpoint} (a name), and the endpoint of {provider}
+	Model          string // {model} (an identifier), and the model of a new price override
+	PriceVersion   string // {price_version}
+	PriceImport    string // {price_import}
 }
 
 // Call is how to make a valid call of one operation.
@@ -70,12 +75,37 @@ func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 		body = map[string]any{}
 	case "disableTenantCredential", "revokeTenantCredential":
 		body = map[string]any{"reason": "test"}
+	case "listProviders", "getProvider", "deleteProvider", "listEndpoints", "getEndpoint", "deleteEndpoint",
+		"listModels", "getModel", "deleteModel", "listModelGrants", "grantModel", "revokeModelGrant",
+		"listPriceVersions", "deletePriceVersion", "listPriceImports", "getPriceImport",
+		"listTenantModels", "getModelRestriction", "clearModelRestriction":
+	case "createProvider":
+		body = map[string]any{"name": UniqueName("synthetic"), "api_family": "openai"}
+	case "createEndpoint":
+		body = map[string]any{"name": UniqueName("ep"), "base_url": "https://synthetic.invalid"}
+	case "createModel":
+		body = map[string]any{"provider": p.Provider, "name": UniqueName("synthetic-model")}
+	case "updateProvider", "updateEndpoint", "updateModel":
+		body = map[string]any{"description": "changed by a test"}
+	case "createPriceOverride":
+		body = map[string]any{"currency": "USD", "rates": []map[string]any{{"category": "input", "threshold": 0, "rate": "1"}}}
+	case "clearPriceOverride":
+		body = map[string]any{}
+	case "runPriceImport":
+		body = map[string]any{"source": "embedded", "dry_run": true}
+	case "setModelRestriction":
+		body = map[string]any{"models": []string{}}
 	default:
 		tb.Fatalf("apitest.CallFor does not know the operation %s: add it", op.ID)
 	}
 	path := strings.ReplaceAll(op.Path, "{tenant}", p.Tenant)
 	path = strings.ReplaceAll(path, "{credential}", p.Credential)
 	path = strings.ReplaceAll(path, "{service_account}", p.ServiceAccount)
+	path = strings.ReplaceAll(path, "{provider}", p.Provider)
+	path = strings.ReplaceAll(path, "{endpoint}", p.Endpoint)
+	path = strings.ReplaceAll(path, "{model}", p.Model)
+	path = strings.ReplaceAll(path, "{price_version}", p.PriceVersion)
+	path = strings.ReplaceAll(path, "{price_import}", p.PriceImport)
 	if strings.HasPrefix(op.Path, "/v1/platform-keys/") {
 		path = strings.ReplaceAll(path, "{key}", p.PlatformKey)
 	} else {

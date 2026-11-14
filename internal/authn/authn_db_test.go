@@ -522,3 +522,64 @@ func TestPrincipalCarriesThePin(t *testing.T) {
 		t.Errorf("the pin of a revoked key after the deletion of its credential: %v, %v", pin, err)
 	}
 }
+
+// TestPrincipalCarriesTheModels is part of T-382's neighbours (sprint 2.2, C7): the model list of a
+// key, set when the key is created, reaches the principal; no list is nil, an empty list cannot be
+// made, and the order is the one given. A platform principal has none.
+func TestPrincipalCarriesTheModels(t *testing.T) {
+	api := apitest.New(t)
+	auth, _ := newAuth(t, api.DB.Open(t, store.RoleGateway), 0, authn.KindTenant, authn.KindPlatform)
+	c := newKey(t, api, "listed", authz.RoleInference)
+	cl := api.Client(c.admin)
+	cat := api.Catalog(t)
+	if _, err := api.Client(api.PlatformKey()).GrantModel(ctx(t), adminapi.GrantModelInput{Model: cat.Selected.ID, Tenant: c.tenant.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	listed, err := cl.CreateVirtualKey(ctx(t), adminapi.CreateVirtualKeyInput{Tenant: c.tenant.ID, Body: adminapi.VirtualKeyCreate{ServiceAccountID: c.sa.ID, Models: []string{cat.Selected.Ref, "openai/gpt-4o"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := auth.Authenticate(ctx(t), listed.Secret)
+	if err != nil || len(p.Models) != 2 || p.Models[0] != cat.Selected.Ref || p.Models[1] != "openai/gpt-4o" {
+		t.Errorf("the principal of a key with a list: %v, %v", p.Models, err)
+	}
+	// A key without a list: nil, which means no restriction (and never an empty list, which means nothing).
+	if p, err := auth.Authenticate(ctx(t), c.key); err != nil || p.Models != nil {
+		t.Errorf("the principal of a key without a list: %#v, %v; want nil", p.Models, err)
+	}
+	// A key restricted by a scope and by models carries both.
+	both, err := cl.CreateVirtualKey(ctx(t), adminapi.CreateVirtualKeyInput{Tenant: c.tenant.ID, Body: adminapi.VirtualKeyCreate{ServiceAccountID: c.sa.ID, Scopes: []string{"model:invoke"}, Models: []string{"openai/gpt-4o"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, err := auth.Authenticate(ctx(t), both.Secret); err != nil || strings.Join(p.Scopes, ",") != "model:invoke" || len(p.Models) != 1 {
+		t.Errorf("scopes and models: %v %v, %v", p.Scopes, p.Models, err)
+	}
+	// An empty list, as the database allows (the API does not make one), is an empty non-nil list.
+	key, keyID, hash, err := authn.Generate(authn.KindTenant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := api.Super(t).Exec(ctx(t), `INSERT INTO pandokos.virtual_key (tenant_id, service_account_id, key_id, secret_hash, models) VALUES ($1::uuid, $2::uuid, $3, $4, ARRAY[]::text[])`,
+		c.tenant.ID, c.sa.ID, keyID, hash[:]); err != nil {
+		t.Fatal(err)
+	}
+	if p, err := auth.Authenticate(ctx(t), key.Reveal()); err != nil || p.Models == nil || len(p.Models) != 0 {
+		t.Errorf("the principal of a key with an empty list: %#v, %v; want an empty non-nil list", p.Models, err)
+	}
+	// The platform key has none.
+	if pp, err := auth.Authenticate(ctx(t), api.PlatformKey()); err != nil || pp.Models != nil {
+		t.Errorf("a platform principal: %#v, %v", pp.Models, err)
+	}
+	// A catalogue notification does not drop the principal: the list is immutable and the cache ignores catalog payloads.
+	cached, _ := newAuth(t, api.DB.Open(t, store.RoleGateway), time.Minute, authn.KindTenant)
+	if _, err := cached.Authenticate(ctx(t), listed.Secret); err != nil {
+		t.Fatal(err)
+	}
+	cached.Invalidate("catalog")
+	cached.Invalidate("catalog:" + c.tenant.ID)
+	if p, err := cached.Authenticate(ctx(t), listed.Secret); err != nil || len(p.Models) != 2 {
+		t.Errorf("after catalogue payloads: %v, %v", p.Models, err)
+	}
+}

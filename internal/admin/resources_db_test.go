@@ -595,8 +595,8 @@ func TestSuspensionBlocksAdministration(t *testing.T) {
 			}
 		}
 	}
-	if n != 21 {
-		t.Errorf("only %d operations were exercised, want 21", n)
+	if n != 25 {
+		t.Errorf("only %d operations were exercised, want 25 (getMe, the twenty tenant operations of epic 2.1 and the four of sprint 2.2)", n)
 	}
 	if after := w.api.SnapshotTenant(t, w.tenant.ID); after != before {
 		t.Error("a row of the suspended tenant changed")
