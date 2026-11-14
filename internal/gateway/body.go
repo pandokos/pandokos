@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/pandokos/pandokos/internal/family"
-	"github.com/pandokos/pandokos/internal/family/openai"
 )
 
 const (
@@ -28,14 +27,14 @@ func (g trailerGuard) end(err error) {
 type streamBody struct {
 	src      io.ReadCloser
 	trailers trailerGuard
-	reader   *openai.StreamReader
+	reader   family.StreamReader
 	tmp      []byte
 	pending  []byte
 	err      error
 	bytes    int64
 }
 
-func newStreamBody(resp *http.Response, r *openai.StreamReader) *streamBody {
+func newStreamBody(resp *http.Response, r family.StreamReader) *streamBody {
 	return &streamBody{src: resp.Body, trailers: trailerGuard{resp}, reader: r, tmp: make([]byte, streamBufferBytes)}
 }
 
@@ -68,6 +67,8 @@ func (b *streamBody) Close() error { return b.src.Close() }
 type teeBody struct {
 	src        io.ReadCloser
 	trailers   trailerGuard
+	adapter    family.Adapter
+	op         family.Operation
 	buf        []byte
 	overflowed bool
 	bytes      int64
@@ -94,7 +95,7 @@ func (b *teeBody) usage() (family.Usage, bool) {
 	if b.overflowed {
 		return family.Usage{}, false
 	}
-	u, ok, err := openai.ReadUsage(b.buf)
+	u, ok, err := b.adapter.ReadUsage(b.op, b.buf)
 	if err != nil || !ok {
 		return family.Usage{}, false
 	}

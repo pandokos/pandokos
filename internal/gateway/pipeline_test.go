@@ -930,7 +930,9 @@ func TestRequestTimeout(t *testing.T) {
 		defer resp.Body.Close()
 		b, _ := io.ReadAll(resp.Body)
 		assertContract(t, "408", captured{status: resp.StatusCode, header: resp.Header, body: b}, family.CodeRequestTimeout)
-		if !resp.Close || !strings.EqualFold(resp.Header.Get("Connection"), "close") {
+		// net/http's client removes "Connection: close" from the header map and reports it as
+		// resp.Close, so that is where a 408's Connection: close is observed.
+		if !resp.Close {
 			t.Errorf("a 408 must carry Connection: close: %v close=%v", resp.Header, resp.Close)
 		}
 		if d := time.Since(start); d < 150*time.Millisecond || d > 3*time.Second {

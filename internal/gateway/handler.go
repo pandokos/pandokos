@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -17,7 +19,6 @@ import (
 
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/family"
-	"github.com/pandokos/pandokos/internal/family/openai"
 	"github.com/pandokos/pandokos/internal/secret"
 )
 
@@ -25,48 +26,41 @@ import (
 // passed. The gateway reports requests cancelled this way as shutdown_aborted.
 var ErrShutdown = errors.New("forced shutdown")
 
-const (
-	routePrefix = "/openai/v1"
-	routeLabel  = "POST /openai/v1/chat/completions"
-)
-
 // Authenticator turns the presented credential into a principal. It returns an error that wraps
 // authz.ErrUnauthenticated or authz.ErrUnavailable.
 type Authenticator interface {
 	Authenticate(ctx context.Context, presented string) (authz.Principal, error)
 }
 
-// routeEntry is one route of the gateway and the permission it requires.
-type routeEntry struct{ Method, Path, Permission string }
-
-var routes = []routeEntry{{Method: "POST", Path: "/openai/v1/chat/completions", Permission: authz.ModelInvoke}}
-
 // Options configures a Handler. The gateway receives plain values, not the configuration.
 type Options struct {
-	Logger                 *slog.Logger      // required
-	BaseURL                *url.URL          // provider base URL, path without trailing slash
-	ProviderKey            secret.Secret     // required
-	Authenticator          Authenticator     // required
-	MaxRequestBodyBytes    int64             // must be positive
-	RequestBodyReadTimeout time.Duration     // must be positive
-	MaxRequestDuration     time.Duration     // must be positive
-	Transport              http.RoundTripper // required; production value from NewTransport
+	Logger                 *slog.Logger              // required
+	Authenticator          Authenticator             // required
+	Catalogue              Catalogue                 // required
+	Credentials            Credentials               // required
+	Failures               FailureRecorder           // optional
+	Families               map[string]family.Adapter // required: API family -> adapter
+	DefaultFamily          string                    // required, a key of Families
+	Public, Private        http.RoundTripper         // required: by endpoint class
+	MaxRequestBodyBytes    int64                     // must be positive
+	RequestBodyReadTimeout time.Duration             // must be positive
+	MaxRequestDuration     time.Duration             // must be positive
 
-	// Sprint 3.1 fields; New ignores them until the gateway uses them.
-	Catalogue       Catalogue                 // required
-	Credentials     Credentials               // required
-	Failures        FailureRecorder           // optional
-	Families        map[string]family.Adapter // required: API family -> adapter
-	DefaultFamily   string                    // required, a key of Families
-	Public, Private http.RoundTripper         // required: by endpoint class
+	// Removed by the step that wires the server; New ignores them.
+	BaseURL     *url.URL
+	ProviderKey secret.Secret
+	Transport   http.RoundTripper
 }
 
 // Handler is the inference handler.
 type Handler struct {
 	logger      *slog.Logger
-	baseURL     *url.URL
-	providerKey secret.Secret
 	auth        Authenticator
+	catalogue   Catalogue
+	credentials Credentials
+	failures    FailureRecorder
+	families    map[string]family.Adapter
+	def         family.Adapter
 	maxBody     int64
 	readTimeout time.Duration
 	maxDuration time.Duration
@@ -78,14 +72,18 @@ func New(o Options) (*Handler, error) {
 	switch {
 	case o.Logger == nil:
 		return nil, errors.New("gateway: Logger is required")
-	case o.BaseURL == nil:
-		return nil, errors.New("gateway: BaseURL is required")
-	case o.ProviderKey.IsZero():
-		return nil, errors.New("gateway: ProviderKey is required")
 	case o.Authenticator == nil:
 		return nil, errors.New("gateway: Authenticator is required")
-	case o.Transport == nil:
-		return nil, errors.New("gateway: Transport is required")
+	case o.Catalogue == nil:
+		return nil, errors.New("gateway: Catalogue is required")
+	case o.Credentials == nil:
+		return nil, errors.New("gateway: Credentials is required")
+	case len(o.Families) == 0:
+		return nil, errors.New("gateway: Families is required")
+	case o.Public == nil:
+		return nil, errors.New("gateway: Public transport is required")
+	case o.Private == nil:
+		return nil, errors.New("gateway: Private transport is required")
 	case o.MaxRequestBodyBytes <= 0:
 		return nil, errors.New("gateway: MaxRequestBodyBytes must be positive")
 	case o.RequestBodyReadTimeout <= 0:
@@ -93,16 +91,30 @@ func New(o Options) (*Handler, error) {
 	case o.MaxRequestDuration <= 0:
 		return nil, errors.New("gateway: MaxRequestDuration must be positive")
 	}
+	families := make(map[string]family.Adapter, len(o.Families))
+	for name, a := range o.Families {
+		if a == nil {
+			return nil, errors.New("gateway: a family has no adapter")
+		}
+		families[name] = a
+	}
+	def, ok := families[o.DefaultFamily]
+	if !ok {
+		return nil, errors.New("gateway: DefaultFamily is not a key of Families")
+	}
 	h := &Handler{
 		logger:      o.Logger,
-		baseURL:     o.BaseURL,
-		providerKey: o.ProviderKey,
 		auth:        o.Authenticator,
+		catalogue:   o.Catalogue,
+		credentials: o.Credentials,
+		failures:    o.Failures,
+		families:    families,
+		def:         def,
 		maxBody:     o.MaxRequestBodyBytes,
 		readTimeout: o.RequestBodyReadTimeout,
 		maxDuration: o.MaxRequestDuration,
 	}
-	h.proxy = h.newProxy(o.Transport)
+	h.proxy = h.newProxy(&classTransport{public: o.Public, private: o.Private})
 	return h, nil
 }
 
@@ -117,23 +129,39 @@ type reqState struct {
 	callerCx context.Context
 	outCx    context.Context
 
-	matched bool
-	method  string
+	adapter  family.Adapter // the default family's until step 2 found one
+	matched  bool
+	method   string
+	provider string // catalogue name, from the path
+	family   string
+	op       family.Operation
 
 	principal *authz.Principal
 	keyID     string // from a failed authentication, when the key parsed
 
-	bodyRead     bool
-	stream       bool
-	strip        bool
-	requestBytes int
+	bodyRead      bool
+	parsed        bool
+	stream        bool
+	strip         bool
+	requestBytes  int
+	invalidReason string
+
+	target       Target
+	resolved     bool
+	credential   secret.Secret
+	credentialID string
+	pinned       bool
+	opened       bool
 
 	errCode     family.ErrorCode
 	clientError bool
 
-	answered       bool
-	upstreamStatus int
-	ttfb           time.Duration
+	answered          bool
+	upstreamStatus    int
+	ttfb              time.Duration
+	upstreamErr       string
+	egressReason      string
+	upstreamRequestID string
 
 	streamBody *streamBody
 	teeBody    *teeBody
@@ -145,29 +173,50 @@ func stateOf(ctx context.Context) *reqState {
 	return st
 }
 
+// fail answers with a Pandokos error in the shape of the family of the request.
 func (h *Handler) fail(st *reqState, code family.ErrorCode) {
-	openai.WriteError(st.sw, code)
+	st.adapter.WriteError(st.sw, code)
 	st.errCode = code
 }
 
-// ServeHTTP handles one request.
+// unavailable answers 503, unless the caller is gone or the server is being forced down: then
+// the failure is the cancellation, there is nobody to answer and the outcome says so.
+func (h *Handler) unavailable(st *reqState) {
+	if st.callerCx.Err() != nil {
+		return
+	}
+	h.fail(st, family.CodeUnavailable)
+}
+
+// providerName reports whether s can be the name of a provider: 1 to 63 characters of [a-z0-9-].
+func providerName(s string) bool {
+	if len(s) == 0 || len(s) > 63 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+// ServeHTTP handles one request: the steps of sprint.md section 5.1, in that order.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	st := &reqState{start: time.Now(), id: NewRequestID(), callerCx: r.Context(), method: logMethod(r.Method)}
+	st := &reqState{start: time.Now(), id: NewRequestID(), callerCx: r.Context(), method: logMethod(r.Method), adapter: h.def}
 	st.sw = &statusWriter{ResponseWriter: w, requestID: st.id}
 	w.Header().Set(family.HeaderRequestID, st.id)
 	defer func() { h.finish(st, recover()) }()
 
-	rest, underPrefix := strings.CutPrefix(r.URL.Path, routePrefix)
-	if _, ok := openai.Match(r.Method, "/v1"+rest); !underPrefix || !ok {
-		h.fail(st, family.CodeEndpointNotSupported)
+	if !h.route(r, st) { // step 2
 		return
 	}
-	st.matched = true
-
-	if !h.authenticate(r, st) {
+	if !h.authenticate(r, st) { // steps 3 and 4
 		return
 	}
 
+	// Step 5: the body.
 	if r.ContentLength > h.maxBody {
 		h.fail(st, family.CodeRequestTooLarge)
 		return
@@ -175,16 +224,65 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body, err := h.readBody(w, r)
 	if err != nil {
 		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
+		var netErr net.Error
+		switch {
+		case errors.As(err, &tooLarge):
 			h.fail(st, family.CodeRequestTooLarge)
-			return
+		case errors.Is(err, os.ErrDeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()):
+			w.Header().Set("Connection", "close")
+			h.fail(st, family.CodeRequestTimeout)
+		default:
+			st.clientError = true
+			panic(http.ErrAbortHandler)
 		}
-		st.clientError = true
-		panic(http.ErrAbortHandler)
+		return
+	}
+	st.bodyRead, st.requestBytes = true, len(body)
+
+	// Step 6: the model and the stream flag, nothing else.
+	parsed, err := st.adapter.ParseRequest(st.op, body)
+	if err != nil {
+		st.invalidReason = family.InvalidReason(err)
+		h.fail(st, family.CodeInvalidRequest)
+		return
 	}
 
-	prepared, stream, strip := openai.PrepareRequest(body)
-	st.bodyRead, st.stream, st.strip, st.requestBytes = true, stream, strip, len(body)
+	// Step 7: the model.
+	target, err := h.catalogue.Resolve(r.Context(), *st.principal, st.provider, parsed.Model())
+	switch {
+	case errors.Is(err, ErrModelNotAllowed):
+		h.fail(st, family.CodeModelNotAllowed)
+		return
+	case errors.Is(err, ErrProviderUnavailable):
+		h.fail(st, family.CodeEndpointNotSupported)
+		return
+	case err != nil || target.BaseURL == nil:
+		h.unavailable(st)
+		return
+	}
+	st.target, st.resolved = target, true
+
+	// Step 8: the credential.
+	cred, err := h.credentials.Open(r.Context(), *st.principal, st.id, st.provider)
+	switch {
+	case errors.Is(err, ErrNoCredential):
+		h.fail(st, family.CodeNoCredential)
+		return
+	case errors.Is(err, ErrCredentialDenied):
+		h.fail(st, family.CodeForbidden)
+		return
+	case err != nil:
+		h.unavailable(st)
+		return
+	}
+	st.credential, st.credentialID, st.pinned, st.opened = cred.Secret, cred.ID, cred.Pinned, true
+
+	// Step 9: forward. A request that was cancelled in steps 2 to 8 is not forwarded.
+	if r.Context().Err() != nil {
+		return
+	}
+	prepared, strip := parsed.Prepare(target.UpstreamModel)
+	st.parsed, st.stream, st.strip = true, parsed.Stream(), strip
 
 	outCx, cancel := context.WithTimeout(r.Context(), h.maxDuration)
 	defer cancel()
@@ -197,10 +295,47 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.proxy.ServeHTTP(st.sw, req)
 }
 
-// authenticate runs step 4: the credential, then the decision. It answers and returns false when
-// the request is refused.
+// route runs step 2: the path is /<provider>/<native path>. It answers and returns false when
+// the request is not served.
+func (h *Handler) route(r *http.Request, st *reqState) bool {
+	p := r.URL.Path
+	if len(p) < 2 || p[0] != '/' {
+		h.fail(st, family.CodeEndpointNotSupported)
+		return false
+	}
+	i := strings.IndexByte(p[1:], '/')
+	if i <= 0 {
+		h.fail(st, family.CodeEndpointNotSupported)
+		return false
+	}
+	segment, native := p[1:1+i], p[1+i:]
+	if !providerName(segment) {
+		h.fail(st, family.CodeEndpointNotSupported)
+		return false
+	}
+	fam, ok, err := h.catalogue.Provider(r.Context(), segment)
+	if err != nil {
+		h.unavailable(st)
+		return false
+	}
+	adapter := h.families[fam]
+	if !ok || adapter == nil {
+		h.fail(st, family.CodeEndpointNotSupported)
+		return false
+	}
+	op, ok := adapter.Match(r.Method, native)
+	if !ok {
+		h.fail(st, family.CodeEndpointNotSupported)
+		return false
+	}
+	st.adapter, st.matched, st.provider, st.family, st.op = adapter, true, segment, fam, op
+	return true
+}
+
+// authenticate runs steps 3 and 4: the credential, then the decision. It answers and returns
+// false when the request is refused.
 func (h *Handler) authenticate(r *http.Request, st *reqState) bool {
-	cred, ok := openai.InboundCredential(r.Header)
+	cred, ok := st.adapter.InboundCredential(r.Header)
 	if !ok {
 		h.logger.Warn("authentication failed", "listener", "inference", "request_id", st.id, "reason", "malformed")
 		h.fail(st, family.CodeUnauthenticated)
@@ -209,7 +344,7 @@ func (h *Handler) authenticate(r *http.Request, st *reqState) bool {
 	p, err := h.auth.Authenticate(r.Context(), cred)
 	switch {
 	case errors.Is(err, authz.ErrUnavailable):
-		h.fail(st, family.CodeUnavailable)
+		h.unavailable(st)
 		return false
 	case err != nil:
 		reason, keyID, tenantID := "unauthenticated", "", ""
@@ -226,21 +361,29 @@ func (h *Handler) authenticate(r *http.Request, st *reqState) bool {
 		}
 		if tenantID != "" {
 			attrs = append(attrs, "tenant_id", tenantID)
+			if h.failures != nil {
+				audited := h.failures.Record(r.Context(), AuthFailure{RequestID: st.id, Reason: reason, KeyID: keyID, TenantID: tenantID})
+				attrs = append(attrs, "audited", audited)
+			}
 		}
 		h.logger.Warn("authentication failed", attrs...)
 		h.fail(st, family.CodeUnauthenticated)
 		return false
 	}
 	st.principal = &p
-	switch authz.Decide(p, routes[0].Permission, authz.Target{TenantID: p.TenantID}) {
-	case authz.Allow:
-		return true
-	case authz.DenyTenantState:
-		h.fail(st, family.CodeTenantSuspended)
-	default:
-		h.fail(st, family.CodeForbidden)
+	// Under BYOK a call needs both permissions (D-4).
+	for _, perm := range []string{authz.ModelInvoke, authz.CredentialUse} {
+		switch authz.Decide(p, perm, authz.Target{TenantID: p.TenantID}) {
+		case authz.Allow:
+			continue
+		case authz.DenyTenantState:
+			h.fail(st, family.CodeTenantSuspended)
+		default:
+			h.fail(st, family.CodeForbidden)
+		}
+		return false
 	}
-	return false
+	return true
 }
 
 // readBody reads the request body under the read deadline and the size limit.
@@ -338,6 +481,9 @@ func (h *Handler) logRequest(st *reqState, outcome string) {
 	if st.errCode != "" {
 		attrs = append(attrs, "error_code", string(st.errCode))
 	}
+	if st.invalidReason != "" {
+		attrs = append(attrs, "invalid_reason", st.invalidReason)
+	}
 	attrs = append(attrs, "duration_ms", time.Since(st.start).Milliseconds())
 	if p := st.principal; p != nil {
 		attrs = append(attrs, "tenant_id", p.TenantID.String(), "service_account_id", p.ID, "key_id", p.KeyID)
@@ -345,21 +491,37 @@ func (h *Handler) logRequest(st *reqState, outcome string) {
 		attrs = append(attrs, "key_id", st.keyID)
 	}
 	if st.matched {
-		attrs = append(attrs, "provider", openai.Name, "operation", openai.OperationChatCompletions)
+		attrs = append(attrs, "provider", st.provider, "api_family", st.family, "operation", st.op.Name)
 	}
-	if st.bodyRead {
+	if st.resolved {
+		attrs = append(attrs, "model", st.target.Model, "model_id", st.target.ModelID, "endpoint", st.target.Endpoint)
+	}
+	if st.opened {
+		attrs = append(attrs, "credential_id", st.credentialID, "credential_pinned", st.pinned, "funding", "byok")
+	}
+	if st.parsed {
 		attrs = append(attrs, "stream", st.stream, "usage_injected", st.strip)
 	}
+	if st.upstreamStatus != 0 {
+		attrs = append(attrs, "upstream_status", st.upstreamStatus)
+	}
 	if st.answered {
-		attrs = append(attrs, "upstream_status", st.upstreamStatus, "ttfb_ms", st.ttfb.Milliseconds())
+		attrs = append(attrs, "ttfb_ms", st.ttfb.Milliseconds())
+	}
+	if st.upstreamErr != "" {
+		attrs = append(attrs, "upstream_error", st.upstreamErr)
+	}
+	if st.egressReason != "" {
+		attrs = append(attrs, "egress_reason", st.egressReason)
+	}
+	if st.upstreamRequestID != "" {
+		attrs = append(attrs, "upstream_request_id", st.upstreamRequestID)
 	}
 	if st.bodyRead {
 		attrs = append(attrs, "request_bytes", st.requestBytes)
 	}
 	if st.answered {
 		attrs = append(attrs, "response_bytes", st.responseBytes())
-	}
-	if st.bodyRead {
 		if u, ok := st.usage(); ok {
 			attrs = append(attrs, "usage_source", "provider", usageAttr(u))
 		} else {
@@ -371,7 +533,7 @@ func (h *Handler) logRequest(st *reqState, outcome string) {
 
 func routeLabelOf(st *reqState) string {
 	if st.matched {
-		return routeLabel
+		return st.op.Method + " /{provider}" + st.op.Path
 	}
 	return "unmatched"
 }

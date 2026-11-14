@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"sort"
 
 	"github.com/pandokos/pandokos/internal/authz"
+	"github.com/pandokos/pandokos/internal/family"
+	"github.com/pandokos/pandokos/internal/family/openai"
 	"github.com/pandokos/pandokos/internal/secret"
 )
 
@@ -66,4 +69,20 @@ type Route struct {
 }
 
 // Routes lists, for every operation of every family, the route and its permissions.
-func Routes() []Route { return nil }
+func Routes() []Route {
+	var routes []Route
+	names := make([]string, 0, len(knownAdapters))
+	for name := range knownAdapters {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		for _, op := range knownAdapters[name].Operations() {
+			routes = append(routes, Route{Method: op.Method, Path: "/{provider}" + op.Path, Permissions: []string{authz.ModelInvoke, authz.CredentialUse}})
+		}
+	}
+	return routes
+}
+
+// knownAdapters are the adapters of the families this build serves.
+var knownAdapters = map[string]family.Adapter{openai.Name: openai.Adapter()}
