@@ -3,7 +3,7 @@ id: SPRINT-3.2
 title: Streaming, usage and ledger
 epic: EPIC-3
 release: v0.1
-status: in-progress
+status: done
 design: draft 2026-11-14
 ---
 
