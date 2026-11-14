@@ -132,6 +132,39 @@ linters:
           allow:
             - $gostd
             - github.com/pandokos/pandokos/internal/tenant
+        pricing-is-pure:
+          list-mode: lax
+          files:
+            - "**/internal/pricing/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/pandokos/pandokos/internal/store
+              desc: pricing is arithmetic and parsing; it does not reach the database
+            - pkg: net
+              desc: pricing does no network I/O
+            - pkg: net/http
+              desc: pricing does no network I/O; the catalogue downloads a dataset
+            - pkg: os
+              desc: pricing does no file I/O; the caller reads the dataset
+        catalog-is-below-the-planes:
+          list-mode: lax
+          files:
+            - "**/internal/catalog/**"
+          deny:
+            - pkg: github.com/pandokos/pandokos/internal/admin
+              desc: the catalogue is used by the planes and does not know them
+            - pkg: github.com/pandokos/pandokos/internal/adminapi
+              desc: the catalogue is used by the planes and does not know them
+            - pkg: github.com/pandokos/pandokos/internal/gateway
+              desc: the catalogue is used by the planes and does not know them
+            - pkg: github.com/pandokos/pandokos/internal/server
+              desc: the catalogue does not know the server
+            - pkg: github.com/pandokos/pandokos/internal/cli
+              desc: the catalogue does not know the CLI
+            - pkg: github.com/pandokos/pandokos/internal/config
+              desc: the catalogue receives plain values
+            - pkg: github.com/pandokos/pandokos/internal/vault
+              desc: the catalogue holds no secret
         cli-is-a-client:
           list-mode: strict
           files:

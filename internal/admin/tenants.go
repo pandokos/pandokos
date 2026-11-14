@@ -120,7 +120,7 @@ func (s *server) CreateTenant(ctx context.Context, in adminapi.CreateTenantInput
 				exp = &u
 			}
 			vk, err := q.CreateVirtualKey(ctx, queries.CreateVirtualKeyParams{
-				TenantID: t.ID, ServiceAccountID: sa.ID, KeyID: keyID, SecretHash: hash[:], ExpiresAt: exp, CredentialID: nil,
+				TenantID: t.ID, ServiceAccountID: sa.ID, KeyID: keyID, SecretHash: hash[:], ExpiresAt: exp, CredentialID: nil, Models: nil, ModelsRestricted: false,
 			})
 			if err != nil {
 				return err
@@ -158,7 +158,7 @@ func (s *server) CreateTenant(ctx context.Context, in adminapi.CreateTenantInput
 				Tenant:              tenantOut(active),
 				AdminServiceAccount: saOut.out(),
 				AdminKey: adminapi.VirtualKeyCreated{
-					Key:    vkRow{vk.KeyID, vk.TenantID, vk.ServiceAccountID, vk.Description, vk.Scopes, vk.Scoped, vk.ExpiresAt, vk.RevokedAt, vk.CreatedAt, vk.State, vk.CredentialID}.out(),
+					Key:    vkRow{vk.KeyID, vk.TenantID, vk.ServiceAccountID, vk.Description, vk.Scopes, vk.Scoped, vk.ExpiresAt, vk.RevokedAt, vk.CreatedAt, vk.State, vk.CredentialID, vk.Models, vk.ModelsRestricted}.out(),
 					Secret: revealOnce(key),
 				},
 			}
@@ -183,7 +183,7 @@ func (s *server) CreateTenant(ctx context.Context, in adminapi.CreateTenantInput
 func (s *server) UpdateTenant(ctx context.Context, in adminapi.UpdateTenantInput) (*adminapi.Tenant, error) {
 	p := principalOf(ctx)
 	st := stateOf(ctx)
-	if in.Body.Name == "" && in.Body.DisplayName == "" {
+	if !in.Body.Name.Set && !in.Body.DisplayName.Set {
 		return nil, invalid("body", "must change the name or the display name")
 	}
 	var out adminapi.Tenant
@@ -201,13 +201,13 @@ func (s *server) UpdateTenant(ctx context.Context, in adminapi.UpdateTenantInput
 		}
 		detail := map[string]any{}
 		par := queries.UpdateTenantParams{ID: cur.ID}
-		if in.Body.Name != "" && in.Body.Name != cur.Name {
-			par.SetName, par.Name = true, in.Body.Name
-			detail["name"] = change(cur.Name, in.Body.Name)
+		if in.Body.Name.Set && in.Body.Name.Value != cur.Name {
+			par.SetName, par.Name = true, in.Body.Name.Value
+			detail["name"] = change(cur.Name, in.Body.Name.Value)
 		}
-		if in.Body.DisplayName != "" && in.Body.DisplayName != cur.DisplayName {
-			par.SetDisplayName, par.DisplayName = true, in.Body.DisplayName
-			detail["display_name"] = change(cur.DisplayName, in.Body.DisplayName)
+		if in.Body.DisplayName.Set && in.Body.DisplayName.Value != cur.DisplayName {
+			par.SetDisplayName, par.DisplayName = true, in.Body.DisplayName.Value
+			detail["display_name"] = change(cur.DisplayName, in.Body.DisplayName.Value)
 		}
 		if len(detail) == 0 {
 			out = tenantOut(cur)

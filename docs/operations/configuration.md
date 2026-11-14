@@ -53,6 +53,7 @@ replaced by `_`.
 | `cache.principal_ttl` | `PANDOKOS_CACHE_PRINCIPAL_TTL` | duration | `30s` | Lifetime of a cached principal in the gateway: the upper bound on the time a revocation or a suspension takes to reach the inference listener (1s to 60s) |
 | `cache.credential_ttl` | `PANDOKOS_CACHE_CREDENTIAL_TTL` | duration | `30s` | Lifetime of a cached provider credential in the gateway: the upper bound on the time a disable, revocation or replacement takes to reach the inference listener when notifications are not delivered (1s to 60s) |
 | `cache.data_key_ttl` | `PANDOKOS_CACHE_DATA_KEY_TTL` | duration | `5m` | Lifetime of an unwrapped data key in the gateway (1s to 15m) |
+| `cache.catalog_ttl` | `PANDOKOS_CACHE_CATALOG_TTL` | duration | `30s` | Lifetime of the cached catalogue and of a tenant's model access in the gateway: the upper bound on the time a catalogue, price or model-access change takes to reach the inference listener when notifications are not delivered (1s to 5m); see the [catalogue guide](catalogue.md) |
 | `database.address` | `PANDOKOS_DATABASE_ADDRESS` | `host:port` | none, required | Address of PostgreSQL, or of the connection pooler in front of it |
 | `database.direct_address` | `PANDOKOS_DATABASE_DIRECT_ADDRESS` | `host:port` | none | Address of PostgreSQL itself, used only by the notification listener. Set it when `database.address` is a pooler in transaction mode |
 | `database.name` | `PANDOKOS_DATABASE_NAME` | name | `pandokos` | Database name |
@@ -72,6 +73,10 @@ replaced by `_`.
 | `database.owner.password_file` | `PANDOKOS_DATABASE_OWNER_PASSWORD_FILE` | path | none, required by `migrate` | File with that user's password. Never read by `serve` |
 | `vault.kek.provider` | `PANDOKOS_VAULT_KEK_PROVIDER` | `local` | `local` | Key-encryption key provider; only `local` exists |
 | `vault.kek.local.key_file` | `PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE` | path | none, required by `serve` | File with the key-encryption key: 32 random bytes in standard base64. Create it with `pandokos kek generate` ([vault guide](vault.md)) |
+| `pricing.import_at_start` | `PANDOKOS_PRICING_IMPORT_AT_START` | boolean | `true` | Import the embedded price snapshot when `serve` starts, unless an identical or a newer import exists ([catalogue guide](catalogue.md)) |
+| `pricing.refresh.enabled` | `PANDOKOS_PRICING_REFRESH_ENABLED` | boolean | `false` | Download the price dataset periodically: an outbound request to `pricing.refresh.url` |
+| `pricing.refresh.url` | `PANDOKOS_PRICING_REFRESH_URL` | URL | `https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json` | Address of the price dataset; `https` only, no user information. Pin it to a commit to control what is imported |
+| `pricing.refresh.interval` | `PANDOKOS_PRICING_REFRESH_INTERVAL` | duration | `24h` | Time between downloads (1h to 720h) |
 | `skeleton.openai.base_url` | `PANDOKOS_SKELETON_OPENAI_BASE_URL` | URL | `https://api.openai.com/v1` | Provider base URL, in the form SDKs use (ends with `/v1`) |
 | `skeleton.openai.api_key_file` | `PANDOKOS_SKELETON_OPENAI_API_KEY_FILE` | path | none, required | File with the provider API key |
 
@@ -147,6 +152,9 @@ All problems are reported together, not only the first. Each is attached to a ke
 | `cache.principal_ttl` | 1s to 60s |
 | `cache.credential_ttl` | 1s to 60s |
 | `cache.data_key_ttl` | 1s to 15m |
+| `cache.catalog_ttl` | 1s to 5m (checked for every purpose) |
+| `pricing.refresh.interval` | 1h to 720h; checked for `serve` and `config check --for serve`, also while the refresh is disabled |
+| `pricing.refresh.url` | a valid `https` URL with a host and no user information; checked for `serve` as the interval is; no message quotes the URL |
 | `vault.kek.provider` | `local` |
 | `vault.kek.local.key_file` | set; a readable regular file holding 32 bytes in standard base64 (44 characters); no message quotes the content |
 | `database.direct_address` | when set, the three address rules of `database.address` |
@@ -228,6 +236,14 @@ vault:
   kek:
     local:
       key_file: /run/secrets/pandokos_kek
+cache:
+  catalog_ttl: 30s
+pricing:
+  import_at_start: true
+  refresh:
+    enabled: false
+    url: https://raw.githubusercontent.com/pydantic/genai-prices/<commit>/prices/new_data/v2/data.json
+    interval: 24h
 skeleton:
   openai:
     base_url: https://api.openai.com/v1
@@ -238,11 +254,12 @@ skeleton:
 
 The `skeleton` section belongs to the walking skeleton. The access token went away with sprint 1.3
 (virtual keys, [keys](keys.md)); the provider endpoint and key go away when the catalogue and the
-vault replace them (sprint 3.1). Do not build on it.
+vault replace them (sprint 3.1). Do not build on it. The catalogue ([guide](catalogue.md)) already holds the providers and
+endpoints; nothing reads it on the inference route until then.
 
 ## Variables of the API commands
 
-`pandokos tenant`, `service-account`, `key`, `platform-key`, `credential`, `tenant-credential` and `whoami` are clients of the
+`pandokos tenant`, `service-account`, `key`, `platform-key`, `credential`, `tenant-credential`, `provider`, `endpoint`, `model`, `price`, `price-import`, `tenant-model`, `model-restriction` and `whoami` are clients of the
 administration API. They read `PANDOKOS_CLI_SERVER` (default `http://127.0.0.1:8081`),
 `PANDOKOS_CLI_KEY_FILE` (required) and `PANDOKOS_CLI_CA_FILE`. These variables are not part of the
 server configuration and cause no warning. No key of the server configuration starts with `cli`.

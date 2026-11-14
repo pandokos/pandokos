@@ -187,6 +187,7 @@ func TestDefaults(t *testing.T) {
 		{"cache.principal_ttl", time.Duration(d.Cache.PrincipalTTL), 30 * time.Second},
 		{"cache.credential_ttl", time.Duration(d.Cache.CredentialTTL), 30 * time.Second},
 		{"cache.data_key_ttl", time.Duration(d.Cache.DataKeyTTL), 5 * time.Minute},
+		{"cache.catalog_ttl", time.Duration(d.Cache.CatalogTTL), 30 * time.Second},
 		{"database.address", d.Database.Address, ""},
 		{"database.direct_address", d.Database.DirectAddress, ""},
 		{"database.name", d.Database.Name, "pandokos"},
@@ -206,6 +207,10 @@ func TestDefaults(t *testing.T) {
 		{"database.owner.password_file", d.Database.Owner.PasswordFile, ""},
 		{"vault.kek.provider", d.Vault.KEK.Provider, "local"},
 		{"vault.kek.local.key_file", d.Vault.KEK.Local.KeyFile, ""},
+		{"pricing.import_at_start", d.Pricing.ImportAtStart, true},
+		{"pricing.refresh.enabled", d.Pricing.Refresh.Enabled, false},
+		{"pricing.refresh.url", d.Pricing.Refresh.URL, "https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json"},
+		{"pricing.refresh.interval", time.Duration(d.Pricing.Refresh.Interval), 24 * time.Hour},
 		{"skeleton.openai.base_url", d.Skeleton.OpenAI.BaseURL, "https://api.openai.com/v1"},
 		{"skeleton.openai.api_key_file", d.Skeleton.OpenAI.APIKeyFile, ""},
 	}
@@ -241,6 +246,7 @@ var wantKeys = []string{
 	"cache.principal_ttl",
 	"cache.credential_ttl",
 	"cache.data_key_ttl",
+	"cache.catalog_ttl",
 	"database.address",
 	"database.direct_address",
 	"database.name",
@@ -260,15 +266,20 @@ var wantKeys = []string{
 	"database.owner.password_file",
 	"vault.kek.provider",
 	"vault.kek.local.key_file",
+	"pricing.import_at_start",
+	"pricing.refresh.enabled",
+	"pricing.refresh.url",
+	"pricing.refresh.interval",
 	"skeleton.openai.base_url",
 	"skeleton.openai.api_key_file",
 }
 
 var wantDefaultText = []string{"info", "0.0.0.0:8080", "10s", "120s", "65536", "", "", "TLS1.2",
 	"127.0.0.1:8081", "10s", "120s", "65536", "", "", "TLS1.2", "false",
-	"10485760", "30s", "10m", "10s", "30s", "30s", "30s", "5m",
+	"10485760", "30s", "10m", "10s", "30s", "30s", "30s", "5m", "30s",
 	"", "", "pandokos", "verify-full", "", "5s", "pandokos_gateway", "", "10", "pandokos_admin", "", "10", "pandokos_worker", "", "5", "pandokos_owner", "",
 	"local", "",
+	"true", "false", "https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json", "24h",
 	"https://api.openai.com/v1", ""}
 
 func leafKeys(t reflect.Type, prefix string, out *[]string) {

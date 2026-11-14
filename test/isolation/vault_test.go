@@ -355,6 +355,16 @@ func fixtureOf(table string) string { return DefaultSpec().Fixtures[table].Inser
 
 // mkCred creates a credential of a tenant as superuser, in the state asked for (a credential
 // is created active; the trigger does the rest).
+// mkProviders adds providers to the catalogue: a credential names one (migration 0004).
+func mkProviders(t *testing.T, super *pgx.Conn, names ...string) {
+	t.Helper()
+	for _, name := range names {
+		if _, err := super.Exec(ctx(t), `INSERT INTO pandokos.provider (name, api_family) VALUES ($1, 'openai')`, name); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func mkCred(t *testing.T, super *pgx.Conn, tid tenant.ID, provider, state string, isDefault bool) string {
 	t.Helper()
 	var id string
@@ -523,6 +533,8 @@ VALUES ($1::uuid, 'openai', 'born-' || substr(md5(random()::text), 1, 8), 1, dec
 	t.Run("one default per tenant and provider, one label per provider", func(t *testing.T) {
 		const ins = `INSERT INTO pandokos.provider_credential (tenant_id, provider, label, key_version, secret, fingerprint, is_default)
 VALUES ($1::uuid, $2, $3, 1, decode(repeat('00', 61), 'hex'), md5(random()::text), $4)`
+		// A credential names a provider of the catalogue (migration 0004): these are test providers.
+		mkProviders(t, super, "dflt-provider", "label-of-admin", "label-of-owner", "default-of-admin", "default-of-owner")
 		expect("the first default", ins, []any{a.String(), "dflt-provider", "one", true}, map[string]string{"admin": ""})
 		for who := range as {
 			err := exec(who, ins, a.String(), "dflt-provider", "two-"+who, true)
@@ -633,6 +645,7 @@ VALUES ($1::uuid, $2::uuid, 't' || translate(substr(md5(random()::text), 1, 16),
 	})
 
 	t.Run("every change sends vault:<tenant> and nothing else of the row", func(t *testing.T) {
+		mkProviders(t, super, "notify-provider") // before LISTEN: a new provider sends a catalogue payload
 		listener := d.Super(t)
 		if _, err := listener.Exec(ctx(t), "LISTEN pandokos_cache"); err != nil {
 			t.Fatal(err)

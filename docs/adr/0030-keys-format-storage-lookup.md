@@ -33,3 +33,4 @@ The tenant ID inside the key (no directory, longer key, tenant visible in the ke
 ## History
 
 - 2026-11: sprint 2.1 adds the payload `vault:<tenant>`, which the principal cache ignores.
+- 2026-11: sprint 2.2 adds the payloads `catalog` and `catalog:<tenant>`, which the principal cache ignores.

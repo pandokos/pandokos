@@ -21,7 +21,8 @@ func newTestCache(ttl time.Duration) (*cache, *clock) {
 func keyIDFor(i int) string { return fmt.Sprintf("t%016d", i) }
 
 // TestCache is T-208, extended in sprint 2.1 (T-306): a payload `vault:<tenant>` removes no
-// principal, whatever it names.
+// principal, whatever it names; and in sprint 2.2 (T-381): `catalog` and `catalog:<tenant>`
+// remove none either.
 func TestCache(t *testing.T) {
 	const tenantA, tenantB = "0192f0f0-0000-7000-8000-00000000000a", "0192f0f0-0000-7000-8000-00000000000b"
 
@@ -137,6 +138,29 @@ func TestCache(t *testing.T) {
 		}
 		// A payload of a kind nobody knows still flushes (ADR 0030).
 		c.invalidate("vaults:" + tenantA)
+		if pos, neg := c.sizes(); pos != 0 || neg != 0 {
+			t.Errorf("sizes %d/%d after an unknown payload", pos, neg)
+		}
+	})
+
+	t.Run("a catalogue payload removes no principal", func(t *testing.T) {
+		c, _ := newTestCache(time.Minute)
+		c.put("ta1", tenantA, &entry{})
+		c.put("tb1", tenantB, &entry{})
+		c.putNegative("tunknown")
+		for _, p := range []string{"catalog", "catalog:" + tenantA, "catalog:" + tenantB, "catalog:", "catalog:not-a-tenant"} {
+			c.invalidate(p)
+			if pos, neg := c.sizes(); pos != 2 || neg != 1 {
+				t.Fatalf("sizes %d/%d after %q", pos, neg, p)
+			}
+		}
+		for _, k := range []string{"ta1", "tb1"} {
+			if _, ok := c.get(k); !ok {
+				t.Errorf("%s was removed by a catalogue payload", k)
+			}
+		}
+		// "catalogue" and other look-alikes are payloads nobody knows: they flush (ADR 0030).
+		c.invalidate("catalogue")
 		if pos, neg := c.sizes(); pos != 0 || neg != 0 {
 			t.Errorf("sizes %d/%d after an unknown payload", pos, neg)
 		}

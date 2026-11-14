@@ -30,7 +30,7 @@ func TestSchemaLint(t *testing.T) {
 	}
 }
 
-// TestDefaultSpecMatchesDesign is T-142 (changed in sprint 2.1): the spec is the one of sprint 1.3,
+// TestDefaultSpecMatchesDesign is T-142 (changed in sprint 2.1 and 2.2, T-390): the spec is the one of sprint 1.3,
 // sections 5.10 and 6.1, with the vault tables, the metadata view and the pin of sprint 2.1,
 // sections 5.3 and 6.
 func TestDefaultSpecMatchesDesign(t *testing.T) {
@@ -42,6 +42,13 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 			"platform_key":          {Reason: "Credentials of the platform; protected by its own policies", Restricted: true},
 			"platform_audit_event":  {Reason: "Audit log of the platform; protected by its own policies", Restricted: true},
 			"kek_version":           {Reason: "identifiers of key-encryption key versions; describes the installation, holds no key and no tenant information"},
+			"provider":              {Reason: "providers of the catalogue; read by every runtime role, written in platform scope", Restricted: true},
+			"provider_endpoint":     {Reason: "endpoints of providers; read by the gateway and the admin role, written in platform scope", Restricted: true},
+			"model":                 {Reason: "models of the catalogue; read by every runtime role, written in platform scope", Restricted: true},
+			"model_tenant_grant":    {Reason: "which tenants a model is granted to; a tenant's session sees its own rows; protected by its own policies", Restricted: true},
+			"price_import":          {Reason: "runs of the price importer; platform scope only", Restricted: true},
+			"price_version":         {Reason: "price versions; read by every runtime role, inserted in platform scope", Restricted: true},
+			"price_rate":            {Reason: "rates of price versions; read by every runtime role, inserted in platform scope", Restricted: true},
 		},
 		Grants: map[string]map[string][]string{
 			"schema_migration": {
@@ -90,7 +97,7 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 			"virtual_key": {
 				"pandokos_gateway": {"SELECT"},
 				"pandokos_admin": {
-					"INSERT(credential_id,description,expires_at,key_id,scopes,secret_hash,service_account_id,tenant_id)",
+					"INSERT(credential_id,description,expires_at,key_id,models,scopes,secret_hash,service_account_id,tenant_id)",
 					"SELECT",
 					"UPDATE(revoked_at)",
 				},
@@ -106,7 +113,59 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 				"pandokos_admin": {"INSERT(action,actor_id,actor_name,actor_type,detail,key_id,outcome,reason,request_id,resource_id,resource_type,tenant_id)"},
 			},
 			"platform_audit_event": {
-				"pandokos_admin": {"INSERT(action,actor_id,actor_name,actor_type,detail,key_id,outcome,reason,request_id,resource_id,resource_type)"},
+				"pandokos_admin":  {"INSERT(action,actor_id,actor_name,actor_type,detail,key_id,outcome,reason,request_id,resource_id,resource_type)"},
+				"pandokos_worker": {"INSERT(action,actor_id,actor_name,actor_type,detail,key_id,outcome,reason,request_id,resource_id,resource_type)"},
+			},
+			"provider": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin": {
+					"DELETE",
+					"INSERT(api_family,dataset_provider,description,display_name,enabled,name)",
+					"SELECT",
+					"UPDATE(dataset_provider,description,display_name,enabled)",
+				},
+				"pandokos_worker": {"SELECT"},
+			},
+			"provider_endpoint": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin": {
+					"DELETE",
+					"INSERT(base_url,description,enabled,is_default,name,private,provider_id,region)",
+					"SELECT",
+					"UPDATE(base_url,description,enabled,is_default,private,region)",
+				},
+			},
+			"model": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin": {
+					"DELETE",
+					"INSERT(availability,capabilities,context_window,description,display_name,max_output_tokens,name,provider_id,status,upstream_id)",
+					"SELECT",
+					"UPDATE(availability,capabilities,context_window,description,display_name,max_output_tokens,price_override,status,upstream_id)",
+				},
+				"pandokos_worker": {"SELECT"},
+			},
+			"model_tenant_grant": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin":   {"DELETE", "INSERT(model_id,tenant_id)", "SELECT"},
+			},
+			"tenant_model_restriction": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin":   {"DELETE", "INSERT(models,tenant_id)", "SELECT", "UPDATE(models)"},
+			},
+			"price_import": {
+				"pandokos_admin":  {"INSERT(actor_id,actor_type,dataset_format,digest,error_class,models_seen,outcome,overridden,report,skipped,source,source_ref,started_at,unchanged,unmatched,versions_created)", "SELECT"},
+				"pandokos_worker": {"INSERT(actor_id,actor_type,dataset_format,digest,error_class,models_seen,outcome,overridden,report,skipped,source,source_ref,started_at,unchanged,unmatched,versions_created)", "SELECT"},
+			},
+			"price_version": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin":   {"DELETE", "INSERT(currency,import_id,model_id,note,source,valid_from)", "SELECT"},
+				"pandokos_worker":  {"INSERT(currency,import_id,model_id,note,source,valid_from)", "SELECT"},
+			},
+			"price_rate": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin":   {"INSERT(category,price_version_id,rate,threshold)", "SELECT"},
+				"pandokos_worker":  {"INSERT(category,price_version_id,rate,threshold)", "SELECT"},
 			},
 		},
 		Fixtures: map[string]Fixture{
@@ -145,10 +204,14 @@ VALUES ($1::uuid, 'openai', 'c-' || substr(md5(random()::text), 1, 12), 1, decod
 VALUES ($1::uuid, 'platform', 'test.fixture', 'test', 'success') RETURNING id::text`,
 				Update: `reason = 'changed'`,
 			},
+			"tenant_model_restriction": {
+				Insert: `INSERT INTO pandokos.tenant_model_restriction (tenant_id, models) VALUES ($1::uuid, ARRAY['openai/gpt-4o']) RETURNING id::text`,
+				Update: `models = ARRAY['openai/gpt-4o-mini']`,
+			},
 		},
 		SecurityDefiner: []string{"virtual_key_lookup", "virtual_key_directory_add"},
 		Views:           []string{"provider_credential_metadata"},
-		AppendOnly:      []string{"audit_event", "platform_audit_event"},
+		AppendOnly:      []string{"audit_event", "platform_audit_event", "price_import"},
 	}
 	got := DefaultSpec()
 	if !reflect.DeepEqual(got, want) {

@@ -3,7 +3,6 @@ package vault
 import (
 	"context"
 	"errors"
-	"slices"
 )
 
 // The errors of the key provider and of the envelope. Their texts are constant: none of them
@@ -35,13 +34,3 @@ type KeyProvider interface {
 	// Available reports whether Unwrap can serve that version now.
 	Available(ctx context.Context, version string) error
 }
-
-// providers are the providers a credential may name until the catalogue of sprint 2.2 exists.
-var providers = []string{"anthropic", "openai"}
-
-// Providers returns the names of the providers a credential may name, in order. The slice is
-// the caller's.
-func Providers() []string { return slices.Clone(providers) }
-
-// KnownProvider reports whether name is exactly one of Providers.
-func KnownProvider(name string) bool { return slices.Contains(providers, name) }

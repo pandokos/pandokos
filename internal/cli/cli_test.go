@@ -34,10 +34,11 @@ const (
 
 // fakeAPI is an adminapi.Server that records the inputs, returns canned outputs and can fail.
 type fakeAPI struct {
-	mu   sync.Mutex
-	got  map[string][]any
-	out  map[string]any
-	fail map[string]error
+	adminapi.Server // every operation has a method (catalogue_test.go); the embedded interface only keeps the fake short
+	mu              sync.Mutex
+	got             map[string][]any
+	out             map[string]any
+	fail            map[string]error
 	// pages answers listTenants by cursor.
 	pages map[string]adminapi.TenantList
 	// patchBody is the raw body of the last PATCH: the generated types cannot tell an absent
@@ -356,7 +357,7 @@ func TestCommands(t *testing.T) {
 			t.Errorf("get: %+v", got)
 		}
 		out, _ := mustRun(t, r, "tenant", "update", "--name", "acme2", "--display-name", "Acme Two", tid)
-		if got := r.f.only(t, "updateTenant"); !reflect.DeepEqual(got, adminapi.UpdateTenantInput{Tenant: tid, Body: adminapi.TenantUpdate{Name: "acme2", DisplayName: "Acme Two"}}) {
+		if got := r.f.only(t, "updateTenant"); !reflect.DeepEqual(got, adminapi.UpdateTenantInput{Tenant: tid, Body: adminapi.TenantUpdate{Name: adminapi.Some("acme2"), DisplayName: adminapi.Some("Acme Two")}}) {
 			t.Errorf("update: %+v", got)
 		}
 		for _, want := range []string{"id: " + tid, "name: acme", "display_name: Acme Inc", "state: active"} {
@@ -500,14 +501,14 @@ func TestCommands(t *testing.T) {
 		}
 		mustRun(t, r, "service-account", "update", "--tenant", tid, "--name", "bot2", "--description", "d2", "--role", "inference", "--valid-from", t0.Format(time.RFC3339), "--no-valid-until", sid)
 		wantU := adminapi.UpdateServiceAccountInput{Tenant: tid, ServiceAccount: sid, Body: adminapi.ServiceAccountUpdate{
-			Name: "bot2", Description: "d2", Roles: []string{"inference"}, ValidFrom: adminapi.Value(t0), ValidUntil: adminapi.Null[time.Time]()}}
+			Name: adminapi.Some("bot2"), Description: adminapi.Some("d2"), Roles: adminapi.Some([]string{"inference"}), ValidFrom: adminapi.Value(t0), ValidUntil: adminapi.Null[time.Time]()}}
 		if got := r.f.only(t, "updateServiceAccount"); !reflect.DeepEqual(got, wantU) {
 			t.Errorf("update: %+v", got)
 		}
 		r.f.got = map[string][]any{}
 		mustRun(t, r, "service-account", "update", "--tenant", tid, "--no-roles", "--no-valid-from", sid)
 		got := r.f.only(t, "updateServiceAccount").(adminapi.UpdateServiceAccountInput)
-		if got.Body.Roles == nil || len(got.Body.Roles) != 0 {
+		if !got.Body.Roles.Set || len(got.Body.Roles.Value) != 0 {
 			t.Errorf("--no-roles must send an empty array, not leave the member out: %+v", got.Body.Roles)
 		}
 		if !got.Body.ValidFrom.Set || !got.Body.ValidFrom.Null || got.Body.ValidUntil.Set {

@@ -9,7 +9,9 @@ import (
 	"github.com/pandokos/pandokos/test/dbtest"
 )
 
-// TestAuditIsAppendOnly is T-280.
+// TestAuditIsAppendOnly is T-280 (changed in sprint 2.2: the worker role inserts platform audit
+// rows in platform scope, because the price importer and its refresh job audit what they change,
+// D-17).
 func TestAuditIsAppendOnly(t *testing.T) {
 	d := dbtest.NewMigrated(t)
 	a := d.SeedTenant(t, "tenant-a")
@@ -70,7 +72,22 @@ func TestAuditIsAppendOnly(t *testing.T) {
 				_, err := tx.Exec(c, tb.insert, tb.args...)
 				return err
 			})
-			if sqlstate(err) != insufficientPrivilege {
+			switch {
+			case role == "worker" && tb.name == "platform_audit_event":
+				if err != nil {
+					t.Errorf("%s: the worker role cannot insert in platform scope: %v", tb.name, err)
+				}
+				// Only in platform scope: any other session is refused by the policy.
+				for _, other := range []session{sessions(a)[0], sessions(a)[1], sessions(a)[2]} {
+					err := inSession(t, d.Connect(t, role), other, func(c context.Context, tx pgx.Tx) error {
+						_, err := tx.Exec(c, tb.insert, tb.args...)
+						return err
+					})
+					if sqlstate(err) != insufficientPrivilege {
+						t.Errorf("%s: the worker role inserted in session %s: %v", tb.name, other.name, err)
+					}
+				}
+			case sqlstate(err) != insufficientPrivilege:
 				t.Errorf("%s: %s inserted: %v", tb.name, role, err)
 			}
 		}

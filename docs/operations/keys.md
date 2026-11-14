@@ -77,6 +77,24 @@ A credential is opened for a call only when the key holds `credential:use`. A ke
 `model:invoke` for the credentials of its tenant ([permissions](../reference/permissions.md)). The
 built-in `inference` and `tenant-admin` roles hold both.
 
+## Limiting a key to models
+
+`pandokos key create --model REF` (repeatable; the field `models` of the API) limits the new key to
+the listed models. A reference is `provider/name`, for example `--model openai/gpt-4o-mini`; a key
+holds 1 to 64 unique references. Every reference must name a model that is visible to the tenant when
+the key is created; a reference that is unknown and one that is not visible give the same
+`invalid_request` on `models`, so a tenant cannot find out which models other tenants were granted.
+The list cannot change afterwards: issue a new key to change it. A key without `--model` has no list
+and is limited only by what its tenant may use. Issuing a key with a list needs only
+`virtual_key:write`. The model list of a key is one of four conditions of the rule that decides
+whether a model may be used ([catalogue guide](catalogue.md)).
+
+The tenant itself can be restricted to a set of models with `pandokos model-restriction set --model
+REF` (repeatable) or `--none` (an empty restriction: no model), and released with
+`model-restriction clear`; both need `model:restrict`, a permission of the tenant. A restriction
+narrows the models the tenant may use; it never widens them. Clearing a restriction that does not
+exist is not an error.
+
 ## Rotation
 
 A service account can hold several active keys. To rotate: create a second key, deploy it, revoke
@@ -101,6 +119,10 @@ finishes. The administration API does not cache.
 Disabling, revoking, replacing or deleting a provider credential, or moving the default, takes
 effect on the administration listener at the next request and on a running gateway within
 `cache.credential_ttl` (default 30 s; at most 60 s; see the [vault guide](vault.md)).
+
+Changes to the catalogue, to a model grant or to a tenant's restriction reach the inference listener
+within `cache.catalog_ttl` (default 30 s; at most 5 m), normally under a second; the model list of a
+key cannot change, so it needs no invalidation.
 
 ## What suspension does
 

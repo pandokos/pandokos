@@ -18,13 +18,42 @@ var (
 )
 
 var (
-	re0 = regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
-	re1 = regexp.MustCompile("^[a-z][a-z0-9-]{0,62}$")
-	re2 = regexp.MustCompile("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
-	re3 = regexp.MustCompile("^p[a-z2-7]{16}$")
-	re4 = regexp.MustCompile("^t[a-z2-7]{16}$")
-	re5 = regexp.MustCompile("^[a-z_]+:[a-z_]+$")
+	re0  = regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+	re1  = regexp.MustCompile("^[a-z][a-z0-9-]{0,62}$")
+	re2  = regexp.MustCompile("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
+	re3  = regexp.MustCompile("^https?://[^/?#@\\s]+(/[^?#\\s]*)?$")
+	re4  = regexp.MustCompile("^[a-z0-9][a-z0-9-]{0,62}$")
+	re5  = regexp.MustCompile("^([a-z0-9][a-z0-9-]{0,62})?$")
+	re6  = regexp.MustCompile("^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$")
+	re7  = regexp.MustCompile("^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$")
+	re8  = regexp.MustCompile("^[!-~]+$")
+	re9  = regexp.MustCompile("^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$")
+	re10 = regexp.MustCompile("^p[a-z2-7]{16}$")
+	re11 = regexp.MustCompile("^[A-Z]{3}$")
+	re12 = regexp.MustCompile("^(0|[1-9][0-9]{0,6})(\\.[0-9]{1,12})?$")
+	re13 = regexp.MustCompile("^[a-z0-9][a-z0-9_.-]{0,62}$")
+	re14 = regexp.MustCompile("^([a-z0-9][a-z0-9_.-]{0,62})?$")
+	re15 = regexp.MustCompile("^t[a-z2-7]{16}$")
+	re16 = regexp.MustCompile("^[a-z_]+:[a-z_]+$")
 )
+
+// ApiFamily: The wire protocol of a provider.
+type ApiFamily string
+
+// Values of ApiFamily.
+const (
+	ApiFamilyOpenai    ApiFamily = "openai"
+	ApiFamilyAnthropic ApiFamily = "anthropic"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v ApiFamily) Valid() bool {
+	switch v {
+	case ApiFamilyOpenai, ApiFamilyAnthropic:
+		return true
+	}
+	return false
+}
 
 // Credential is a schema of the administration API.
 type Credential struct {
@@ -55,6 +84,8 @@ type Credential struct {
 }
 
 var requiredCredential = []string{"id", "tenant_id", "provider", "label", "description", "owner", "state", "is_default", "fingerprint", "hint", "state_changed_at", "state_changed_by", "created_at"}
+
+var nestedCredential []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Credential) Validate() []FieldError {
@@ -115,6 +146,8 @@ type CredentialCreate struct {
 
 var requiredCredentialCreate = []string{"provider", "label", "secret"}
 
+var nestedCredentialCreate []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *CredentialCreate) Validate() []FieldError {
 	var errs []FieldError
@@ -145,9 +178,16 @@ type CredentialList struct {
 
 var requiredCredentialList = []string{"items"}
 
+var nestedCredentialList = []nestedMember{{Name: "items", Many: true, Required: requiredCredential, Nested: nestedCredential}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *CredentialList) Validate() []FieldError {
 	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
 	return errs
 }
 
@@ -178,6 +218,8 @@ type CredentialSecret struct {
 }
 
 var requiredCredentialSecret = []string{"secret"}
+
+var nestedCredentialSecret []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *CredentialSecret) Validate() []FieldError {
@@ -212,21 +254,172 @@ func (v CredentialState) Valid() bool {
 
 // CredentialUpdate is a schema of the administration API.
 type CredentialUpdate struct {
-	Label       string              `json:"label,omitempty"`
-	Description string              `json:"description,omitempty"`
+	Label       Optional[string]    `json:"label,omitzero"`
+	Description Optional[string]    `json:"description,omitzero"`
 	ExpiresAt   Nullable[time.Time] `json:"expires_at,omitzero"`
 }
 
 var requiredCredentialUpdate = []string{}
 
+var nestedCredentialUpdate []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *CredentialUpdate) Validate() []FieldError {
 	var errs []FieldError
-	if v.Label != "" && !re2.MatchString(v.Label) {
-		errs = append(errs, FieldError{Field: "label", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+	if v.Label.Set {
+		if !re2.MatchString(v.Label.Value) {
+			errs = append(errs, FieldError{Field: "label", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+		}
+	}
+	if v.Description.Set {
+		if runeCount(v.Description.Value) > 500 {
+			errs = append(errs, FieldError{Field: "description", Message: "length must be at most 500"})
+		}
+	}
+	return errs
+}
+
+// Endpoint is a schema of the administration API.
+type Endpoint struct {
+	ID       string `json:"id"`
+	Provider string `json:"provider"`
+	Name     string `json:"name"`
+	// The native path of a request is appended to it.
+	BaseURL string `json:"base_url"`
+	Region  string `json:"region"`
+	// Declared by the platform administrator to be on a private network.
+	Private bool `json:"private"`
+	Enabled bool `json:"enabled"`
+	// The endpoint the gateway uses for the provider.
+	IsDefault   bool      `json:"is_default"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+var requiredEndpoint = []string{"id", "provider", "name", "base_url", "region", "private", "enabled", "is_default", "description", "created_at", "updated_at"}
+
+var nestedEndpoint []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *Endpoint) Validate() []FieldError {
+	var errs []FieldError
+	if !re0.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !re1.MatchString(v.Provider) {
+		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+	}
+	if !re2.MatchString(v.Name) {
+		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+	}
+	return errs
+}
+
+// EndpointCreate is a schema of the administration API.
+type EndpointCreate struct {
+	Name        string `json:"name"`
+	BaseURL     string `json:"base_url"`
+	Region      string `json:"region,omitempty"`
+	Private     bool   `json:"private,omitempty"`
+	IsDefault   bool   `json:"is_default,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+var requiredEndpointCreate = []string{"name", "base_url"}
+
+var nestedEndpointCreate []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *EndpointCreate) Validate() []FieldError {
+	var errs []FieldError
+	if !re2.MatchString(v.Name) {
+		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+	}
+	if !re3.MatchString(v.BaseURL) {
+		errs = append(errs, FieldError{Field: "base_url", Message: "must match ^https?://[^/?#@\\s]+(/[^?#\\s]*)?$"})
+	}
+	if runeCount(v.BaseURL) < 8 {
+		errs = append(errs, FieldError{Field: "base_url", Message: "length must be at least 8"})
+	}
+	if runeCount(v.BaseURL) > 2048 {
+		errs = append(errs, FieldError{Field: "base_url", Message: "length must be at most 2048"})
+	}
+	if v.Region != "" && !re4.MatchString(v.Region) {
+		errs = append(errs, FieldError{Field: "region", Message: "must match ^[a-z0-9][a-z0-9-]{0,62}$"})
 	}
 	if runeCount(v.Description) > 500 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 500"})
+	}
+	return errs
+}
+
+// EndpointList is a schema of the administration API.
+type EndpointList struct {
+	Items []Endpoint `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredEndpointList = []string{"items"}
+
+var nestedEndpointList = []nestedMember{{Name: "items", Many: true, Required: requiredEndpoint, Nested: nestedEndpoint}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *EndpointList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// EndpointUpdate is a schema of the administration API.
+type EndpointUpdate struct {
+	BaseURL Optional[string] `json:"base_url,omitzero"`
+	Region  Optional[string] `json:"region,omitzero"`
+	Private Optional[bool]   `json:"private,omitzero"`
+	Enabled Optional[bool]   `json:"enabled,omitzero"`
+	// true makes this the default; false is refused for the default (make another one the default instead).
+	IsDefault   Optional[bool]   `json:"is_default,omitzero"`
+	Description Optional[string] `json:"description,omitzero"`
+}
+
+var requiredEndpointUpdate = []string{}
+
+var nestedEndpointUpdate []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *EndpointUpdate) Validate() []FieldError {
+	var errs []FieldError
+	if v.BaseURL.Set {
+		if !re3.MatchString(v.BaseURL.Value) {
+			errs = append(errs, FieldError{Field: "base_url", Message: "must match ^https?://[^/?#@\\s]+(/[^?#\\s]*)?$"})
+		}
+		if runeCount(v.BaseURL.Value) < 8 {
+			errs = append(errs, FieldError{Field: "base_url", Message: "length must be at least 8"})
+		}
+		if runeCount(v.BaseURL.Value) > 2048 {
+			errs = append(errs, FieldError{Field: "base_url", Message: "length must be at most 2048"})
+		}
+	}
+	if v.Region.Set {
+		if !re5.MatchString(v.Region.Value) {
+			errs = append(errs, FieldError{Field: "region", Message: "must match ^([a-z0-9][a-z0-9-]{0,62})?$"})
+		}
+	}
+	if v.Private.Set {
+	}
+	if v.Enabled.Set {
+	}
+	if v.IsDefault.Set {
+	}
+	if v.Description.Set {
+		if runeCount(v.Description.Value) > 500 {
+			errs = append(errs, FieldError{Field: "description", Message: "length must be at most 500"})
+		}
 	}
 	return errs
 }
@@ -240,6 +433,8 @@ type FieldError struct {
 }
 
 var requiredFieldError = []string{"field", "message"}
+
+var nestedFieldError []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *FieldError) Validate() []FieldError {
@@ -284,11 +479,382 @@ type Me struct {
 
 var requiredMe = []string{"principal_type", "id", "name", "key_id", "bootstrap", "roles", "permissions"}
 
+var nestedMe = []nestedMember{{Name: "tenant", Required: requiredTenantRef, Nested: nestedTenantRef}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Me) Validate() []FieldError {
 	var errs []FieldError
 	if !v.PrincipalType.Valid() {
 		errs = append(errs, FieldError{Field: "principal_type", Message: "must be one of platform, service_account"})
+	}
+	if v.Tenant != nil {
+		for _, e := range v.Tenant.Validate() {
+			errs = append(errs, FieldError{Field: "tenant." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// Model is a schema of the administration API.
+type Model struct {
+	ID        string    `json:"id"`
+	Provider  string    `json:"provider"`
+	ApiFamily ApiFamily `json:"api_family"`
+	Name      string    `json:"name"`
+	Ref       string    `json:"ref"`
+	// The identifier the provider receives.
+	UpstreamID   string            `json:"upstream_id"`
+	DisplayName  string            `json:"display_name"`
+	Description  string            `json:"description"`
+	Status       ModelStatus       `json:"status"`
+	Availability ModelAvailability `json:"availability"`
+	Capabilities []string          `json:"capabilities"`
+	// In tokens; 0 when not known.
+	ContextWindow int `json:"context_window"`
+	// In tokens; 0 when not known.
+	MaxOutputTokens int `json:"max_output_tokens"`
+	// An operator price is in place and imports leave the model alone.
+	PriceOverride bool      `json:"price_override"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+var requiredModel = []string{"id", "provider", "api_family", "name", "ref", "upstream_id", "display_name", "description", "status", "availability", "capabilities", "context_window", "max_output_tokens", "price_override", "created_at", "updated_at"}
+
+var nestedModel []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *Model) Validate() []FieldError {
+	var errs []FieldError
+	if !re0.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !re1.MatchString(v.Provider) {
+		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+	}
+	if !v.ApiFamily.Valid() {
+		errs = append(errs, FieldError{Field: "api_family", Message: "must be one of openai, anthropic"})
+	}
+	if !re6.MatchString(v.Name) {
+		errs = append(errs, FieldError{Field: "name", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
+	}
+	if !re7.MatchString(v.Ref) {
+		errs = append(errs, FieldError{Field: "ref", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
+	}
+	if !v.Status.Valid() {
+		errs = append(errs, FieldError{Field: "status", Message: "must be one of active, deprecated, retired"})
+	}
+	if !v.Availability.Valid() {
+		errs = append(errs, FieldError{Field: "availability", Message: "must be one of all, selected"})
+	}
+	return errs
+}
+
+// ModelAvailability: all tenants, or the tenants the model is granted to.
+type ModelAvailability string
+
+// Values of ModelAvailability.
+const (
+	ModelAvailabilityAll      ModelAvailability = "all"
+	ModelAvailabilitySelected ModelAvailability = "selected"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v ModelAvailability) Valid() bool {
+	switch v {
+	case ModelAvailabilityAll, ModelAvailabilitySelected:
+		return true
+	}
+	return false
+}
+
+// ModelCreate is a schema of the administration API.
+type ModelCreate struct {
+	Provider        string            `json:"provider"`
+	Name            string            `json:"name"`
+	UpstreamID      string            `json:"upstream_id,omitempty"`
+	DisplayName     string            `json:"display_name,omitempty"`
+	Description     string            `json:"description,omitempty"`
+	Status          ModelStatus       `json:"status,omitempty"`
+	Availability    ModelAvailability `json:"availability,omitempty"`
+	Capabilities    []string          `json:"capabilities,omitempty"`
+	ContextWindow   int               `json:"context_window,omitempty"`
+	MaxOutputTokens int               `json:"max_output_tokens,omitempty"`
+}
+
+var requiredModelCreate = []string{"provider", "name"}
+
+var nestedModelCreate []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *ModelCreate) Validate() []FieldError {
+	var errs []FieldError
+	if !re1.MatchString(v.Provider) {
+		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+	}
+	if !re6.MatchString(v.Name) {
+		errs = append(errs, FieldError{Field: "name", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
+	}
+	if v.UpstreamID != "" && !re8.MatchString(v.UpstreamID) {
+		errs = append(errs, FieldError{Field: "upstream_id", Message: "must match ^[!-~]+$"})
+	}
+	if runeCount(v.UpstreamID) > 256 {
+		errs = append(errs, FieldError{Field: "upstream_id", Message: "length must be at most 256"})
+	}
+	if runeCount(v.DisplayName) > 200 {
+		errs = append(errs, FieldError{Field: "display_name", Message: "length must be at most 200"})
+	}
+	if runeCount(v.Description) > 1000 {
+		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 1000"})
+	}
+	if v.Status != "" && !v.Status.Valid() {
+		errs = append(errs, FieldError{Field: "status", Message: "must be one of active, deprecated, retired"})
+	}
+	if v.Availability != "" && !v.Availability.Valid() {
+		errs = append(errs, FieldError{Field: "availability", Message: "must be one of all, selected"})
+	}
+	if len(v.Capabilities) > 8 {
+		errs = append(errs, FieldError{Field: "capabilities", Message: "must have at most 8 items"})
+	}
+	if !unique(v.Capabilities) {
+		errs = append(errs, FieldError{Field: "capabilities", Message: "must not repeat an item"})
+	}
+	for _, item := range v.Capabilities {
+		if !re9.MatchString(item) {
+			errs = append(errs, FieldError{Field: "capabilities", Message: "must match ^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$"})
+		}
+	}
+	if v.ContextWindow < 0 {
+		errs = append(errs, FieldError{Field: "context_window", Message: "must be at least 0"})
+	}
+	if v.ContextWindow > 100000000 {
+		errs = append(errs, FieldError{Field: "context_window", Message: "must be at most 100000000"})
+	}
+	if v.MaxOutputTokens < 0 {
+		errs = append(errs, FieldError{Field: "max_output_tokens", Message: "must be at least 0"})
+	}
+	if v.MaxOutputTokens > 100000000 {
+		errs = append(errs, FieldError{Field: "max_output_tokens", Message: "must be at most 100000000"})
+	}
+	return errs
+}
+
+// ModelGrant is a schema of the administration API.
+type ModelGrant struct {
+	ModelID    string    `json:"model_id"`
+	TenantID   string    `json:"tenant_id"`
+	TenantName string    `json:"tenant_name"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+var requiredModelGrant = []string{"model_id", "tenant_id", "tenant_name", "created_at"}
+
+var nestedModelGrant []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *ModelGrant) Validate() []FieldError {
+	var errs []FieldError
+	if !re0.MatchString(v.ModelID) {
+		errs = append(errs, FieldError{Field: "model_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !re0.MatchString(v.TenantID) {
+		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !re2.MatchString(v.TenantName) {
+		errs = append(errs, FieldError{Field: "tenant_name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+	}
+	return errs
+}
+
+// ModelGrantList is a schema of the administration API.
+type ModelGrantList struct {
+	Items []ModelGrant `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredModelGrantList = []string{"items"}
+
+var nestedModelGrantList = []nestedMember{{Name: "items", Many: true, Required: requiredModelGrant, Nested: nestedModelGrant}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *ModelGrantList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// ModelList is a schema of the administration API.
+type ModelList struct {
+	Items []Model `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredModelList = []string{"items"}
+
+var nestedModelList = []nestedMember{{Name: "items", Many: true, Required: requiredModel, Nested: nestedModel}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *ModelList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// ModelRestriction is a schema of the administration API.
+type ModelRestriction struct {
+	// false when the tenant has no restriction.
+	Restricted bool       `json:"restricted"`
+	Models     []string   `json:"models"`
+	UpdatedAt  *time.Time `json:"updated_at,omitempty"`
+}
+
+var requiredModelRestriction = []string{"restricted", "models"}
+
+var nestedModelRestriction []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *ModelRestriction) Validate() []FieldError {
+	var errs []FieldError
+	for _, item := range v.Models {
+		if !re7.MatchString(item) {
+			errs = append(errs, FieldError{Field: "models", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
+		}
+	}
+	return errs
+}
+
+// ModelRestrictionSet is a schema of the administration API.
+type ModelRestrictionSet struct {
+	Models []string `json:"models"`
+}
+
+var requiredModelRestrictionSet = []string{"models"}
+
+var nestedModelRestrictionSet []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *ModelRestrictionSet) Validate() []FieldError {
+	var errs []FieldError
+	if len(v.Models) > 512 {
+		errs = append(errs, FieldError{Field: "models", Message: "must have at most 512 items"})
+	}
+	if !unique(v.Models) {
+		errs = append(errs, FieldError{Field: "models", Message: "must not repeat an item"})
+	}
+	for _, item := range v.Models {
+		if !re7.MatchString(item) {
+			errs = append(errs, FieldError{Field: "models", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
+		}
+	}
+	return errs
+}
+
+// ModelStatus: active; deprecated (still callable, flagged); retired (callable by nobody).
+type ModelStatus string
+
+// Values of ModelStatus.
+const (
+	ModelStatusActive     ModelStatus = "active"
+	ModelStatusDeprecated ModelStatus = "deprecated"
+	ModelStatusRetired    ModelStatus = "retired"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v ModelStatus) Valid() bool {
+	switch v {
+	case ModelStatusActive, ModelStatusDeprecated, ModelStatusRetired:
+		return true
+	}
+	return false
+}
+
+// ModelUpdate is a schema of the administration API.
+type ModelUpdate struct {
+	UpstreamID   Optional[string]            `json:"upstream_id,omitzero"`
+	DisplayName  Optional[string]            `json:"display_name,omitzero"`
+	Description  Optional[string]            `json:"description,omitzero"`
+	Status       Optional[ModelStatus]       `json:"status,omitzero"`
+	Availability Optional[ModelAvailability] `json:"availability,omitzero"`
+	Capabilities Optional[[]string]          `json:"capabilities,omitzero"`
+	// 0 clears it.
+	ContextWindow Optional[int] `json:"context_window,omitzero"`
+	// 0 clears it.
+	MaxOutputTokens Optional[int] `json:"max_output_tokens,omitzero"`
+}
+
+var requiredModelUpdate = []string{}
+
+var nestedModelUpdate []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *ModelUpdate) Validate() []FieldError {
+	var errs []FieldError
+	if v.UpstreamID.Set {
+		if !re8.MatchString(v.UpstreamID.Value) {
+			errs = append(errs, FieldError{Field: "upstream_id", Message: "must match ^[!-~]+$"})
+		}
+		if runeCount(v.UpstreamID.Value) > 256 {
+			errs = append(errs, FieldError{Field: "upstream_id", Message: "length must be at most 256"})
+		}
+	}
+	if v.DisplayName.Set {
+		if runeCount(v.DisplayName.Value) > 200 {
+			errs = append(errs, FieldError{Field: "display_name", Message: "length must be at most 200"})
+		}
+	}
+	if v.Description.Set {
+		if runeCount(v.Description.Value) > 1000 {
+			errs = append(errs, FieldError{Field: "description", Message: "length must be at most 1000"})
+		}
+	}
+	if v.Status.Set {
+		if !v.Status.Value.Valid() {
+			errs = append(errs, FieldError{Field: "status", Message: "must be one of active, deprecated, retired"})
+		}
+	}
+	if v.Availability.Set {
+		if !v.Availability.Value.Valid() {
+			errs = append(errs, FieldError{Field: "availability", Message: "must be one of all, selected"})
+		}
+	}
+	if v.Capabilities.Set {
+		if len(v.Capabilities.Value) > 8 {
+			errs = append(errs, FieldError{Field: "capabilities", Message: "must have at most 8 items"})
+		}
+		if !unique(v.Capabilities.Value) {
+			errs = append(errs, FieldError{Field: "capabilities", Message: "must not repeat an item"})
+		}
+		for _, item := range v.Capabilities.Value {
+			if !re9.MatchString(item) {
+				errs = append(errs, FieldError{Field: "capabilities", Message: "must match ^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$"})
+			}
+		}
+	}
+	if v.ContextWindow.Set {
+		if v.ContextWindow.Value < 0 {
+			errs = append(errs, FieldError{Field: "context_window", Message: "must be at least 0"})
+		}
+		if v.ContextWindow.Value > 100000000 {
+			errs = append(errs, FieldError{Field: "context_window", Message: "must be at most 100000000"})
+		}
+	}
+	if v.MaxOutputTokens.Set {
+		if v.MaxOutputTokens.Value < 0 {
+			errs = append(errs, FieldError{Field: "max_output_tokens", Message: "must be at least 0"})
+		}
+		if v.MaxOutputTokens.Value > 100000000 {
+			errs = append(errs, FieldError{Field: "max_output_tokens", Message: "must be at most 100000000"})
+		}
 	}
 	return errs
 }
@@ -327,10 +893,12 @@ type PlatformKey struct {
 
 var requiredPlatformKey = []string{"id", "description", "role", "bootstrap", "state", "created_at"}
 
+var nestedPlatformKey []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformKey) Validate() []FieldError {
 	var errs []FieldError
-	if !re3.MatchString(v.ID) {
+	if !re10.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^p[a-z2-7]{16}$"})
 	}
 	if !v.State.Valid() {
@@ -346,6 +914,8 @@ type PlatformKeyCreate struct {
 }
 
 var requiredPlatformKeyCreate = []string{}
+
+var nestedPlatformKeyCreate []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformKeyCreate) Validate() []FieldError {
@@ -365,9 +935,14 @@ type PlatformKeyCreated struct {
 
 var requiredPlatformKeyCreated = []string{"key", "secret"}
 
+var nestedPlatformKeyCreated = []nestedMember{{Name: "key", Required: requiredPlatformKey, Nested: nestedPlatformKey}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformKeyCreated) Validate() []FieldError {
 	var errs []FieldError
+	for _, e := range v.Key.Validate() {
+		errs = append(errs, FieldError{Field: "key." + e.Field, Message: e.Message})
+	}
 	return errs
 }
 
@@ -380,9 +955,360 @@ type PlatformKeyList struct {
 
 var requiredPlatformKeyList = []string{"items"}
 
+var nestedPlatformKeyList = []nestedMember{{Name: "items", Many: true, Required: requiredPlatformKey, Nested: nestedPlatformKey}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformKeyList) Validate() []FieldError {
 	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// PriceCategory: The units a rate applies to.
+type PriceCategory string
+
+// Values of PriceCategory.
+const (
+	PriceCategoryInput        PriceCategory = "input"
+	PriceCategoryOutput       PriceCategory = "output"
+	PriceCategoryCacheRead    PriceCategory = "cache_read"
+	PriceCategoryCacheWrite   PriceCategory = "cache_write"
+	PriceCategoryCacheWrite1h PriceCategory = "cache_write_1h"
+	PriceCategoryInputAudio   PriceCategory = "input_audio"
+	PriceCategoryOutputAudio  PriceCategory = "output_audio"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v PriceCategory) Valid() bool {
+	switch v {
+	case PriceCategoryInput, PriceCategoryOutput, PriceCategoryCacheRead, PriceCategoryCacheWrite, PriceCategoryCacheWrite1h, PriceCategoryInputAudio, PriceCategoryOutputAudio:
+		return true
+	}
+	return false
+}
+
+// PriceImport is a schema of the administration API.
+type PriceImport struct {
+	ID            string            `json:"id,omitempty"`
+	Source        PriceImportSource `json:"source"`
+	SourceRef     string            `json:"source_ref,omitempty"`
+	DatasetFormat string            `json:"dataset_format"`
+	// SHA-256 of the dataset
+	Digest string `json:"digest,omitempty"`
+	// success or failure.
+	Outcome         string `json:"outcome"`
+	ErrorClass      string `json:"error_class,omitempty"`
+	ActorType       string `json:"actor_type,omitempty"`
+	ModelsSeen      int    `json:"models_seen"`
+	VersionsCreated int    `json:"versions_created"`
+	Unchanged       int    `json:"unchanged"`
+	Overridden      int    `json:"overridden"`
+	Unmatched       int    `json:"unmatched"`
+	Skipped         int    `json:"skipped"`
+	DryRun          bool   `json:"dry_run,omitempty"`
+	// The report; absent in lists.
+	Items []PriceImportItem `json:"items,omitempty"`
+	// Report items left out because the report reached its size limit.
+	Truncated int        `json:"truncated,omitempty"`
+	StartedAt time.Time  `json:"started_at"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+}
+
+var requiredPriceImport = []string{"source", "dataset_format", "outcome", "models_seen", "versions_created", "unchanged", "overridden", "unmatched", "skipped", "started_at"}
+
+var nestedPriceImport = []nestedMember{{Name: "items", Many: true, Required: requiredPriceImportItem, Nested: nestedPriceImportItem}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *PriceImport) Validate() []FieldError {
+	var errs []FieldError
+	if v.ID != "" && !re0.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !v.Source.Valid() {
+		errs = append(errs, FieldError{Field: "source", Message: "must be one of embedded, file, remote"})
+	}
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// PriceImportIssue is a schema of the administration API.
+type PriceImportIssue struct {
+	Reason string `json:"reason"`
+	Detail string `json:"detail,omitempty"`
+}
+
+var requiredPriceImportIssue = []string{"reason"}
+
+var nestedPriceImportIssue []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *PriceImportIssue) Validate() []FieldError {
+	var errs []FieldError
+	return errs
+}
+
+// PriceImportItem is a schema of the administration API.
+type PriceImportItem struct {
+	Provider     string `json:"provider"`
+	Model        string `json:"model"`
+	DatasetModel string `json:"dataset_model,omitempty"`
+	// created, unchanged, overridden, unmatched or skipped.
+	Outcome string             `json:"outcome"`
+	Issues  []PriceImportIssue `json:"issues,omitempty"`
+}
+
+var requiredPriceImportItem = []string{"provider", "model", "outcome"}
+
+var nestedPriceImportItem = []nestedMember{{Name: "issues", Many: true, Required: requiredPriceImportIssue, Nested: nestedPriceImportIssue}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *PriceImportItem) Validate() []FieldError {
+	var errs []FieldError
+	if !re1.MatchString(v.Provider) {
+		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+	}
+	if !re6.MatchString(v.Model) {
+		errs = append(errs, FieldError{Field: "model", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
+	}
+	for i := range v.Issues {
+		for _, e := range v.Issues[i].Validate() {
+			errs = append(errs, FieldError{Field: "issues[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// PriceImportList is a schema of the administration API.
+type PriceImportList struct {
+	Items []PriceImport `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredPriceImportList = []string{"items"}
+
+var nestedPriceImportList = []nestedMember{{Name: "items", Many: true, Required: requiredPriceImport, Nested: nestedPriceImport}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *PriceImportList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// PriceImportRun is a schema of the administration API.
+type PriceImportRun struct {
+	Source PriceImportRunSource `json:"source"`
+	DryRun bool                 `json:"dry_run,omitempty"`
+}
+
+var requiredPriceImportRun = []string{"source"}
+
+var nestedPriceImportRun []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *PriceImportRun) Validate() []FieldError {
+	var errs []FieldError
+	if !v.Source.Valid() {
+		errs = append(errs, FieldError{Field: "source", Message: "must be one of embedded, remote"})
+	}
+	return errs
+}
+
+// PriceImportRunSource is an enumeration of the administration API.
+type PriceImportRunSource string
+
+// Values of PriceImportRunSource.
+const (
+	PriceImportRunSourceEmbedded PriceImportRunSource = "embedded"
+	PriceImportRunSourceRemote   PriceImportRunSource = "remote"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v PriceImportRunSource) Valid() bool {
+	switch v {
+	case PriceImportRunSourceEmbedded, PriceImportRunSourceRemote:
+		return true
+	}
+	return false
+}
+
+// PriceImportSource is an enumeration of the administration API.
+type PriceImportSource string
+
+// Values of PriceImportSource.
+const (
+	PriceImportSourceEmbedded PriceImportSource = "embedded"
+	PriceImportSourceFile     PriceImportSource = "file"
+	PriceImportSourceRemote   PriceImportSource = "remote"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v PriceImportSource) Valid() bool {
+	switch v {
+	case PriceImportSourceEmbedded, PriceImportSourceFile, PriceImportSourceRemote:
+		return true
+	}
+	return false
+}
+
+// PriceOverride is a schema of the administration API.
+type PriceOverride struct {
+	Currency string `json:"currency"`
+	// Now when absent; never in the past.
+	ValidFrom *time.Time  `json:"valid_from,omitempty"`
+	Note      string      `json:"note,omitempty"`
+	Rates     []PriceRate `json:"rates"`
+}
+
+var requiredPriceOverride = []string{"currency", "rates"}
+
+var nestedPriceOverride = []nestedMember{{Name: "rates", Many: true, Required: requiredPriceRate, Nested: nestedPriceRate}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *PriceOverride) Validate() []FieldError {
+	var errs []FieldError
+	if !re11.MatchString(v.Currency) {
+		errs = append(errs, FieldError{Field: "currency", Message: "must match ^[A-Z]{3}$"})
+	}
+	if runeCount(v.Note) > 500 {
+		errs = append(errs, FieldError{Field: "note", Message: "length must be at most 500"})
+	}
+	if v.Rates != nil && len(v.Rates) < 1 {
+		errs = append(errs, FieldError{Field: "rates", Message: "must have at least 1 items"})
+	}
+	if len(v.Rates) > 64 {
+		errs = append(errs, FieldError{Field: "rates", Message: "must have at most 64 items"})
+	}
+	for i := range v.Rates {
+		for _, e := range v.Rates[i].Validate() {
+			errs = append(errs, FieldError{Field: "rates[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// PriceRate is a schema of the administration API.
+type PriceRate struct {
+	Category PriceCategory `json:"category"`
+	// Input tokens of a request from which this rate applies to every unit of the category; 0 for the base rate.
+	Threshold int `json:"threshold"`
+	// Price per million units, as a decimal string, in the currency of the version.
+	Rate string `json:"rate"`
+}
+
+var requiredPriceRate = []string{"category", "threshold", "rate"}
+
+var nestedPriceRate []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *PriceRate) Validate() []FieldError {
+	var errs []FieldError
+	if !v.Category.Valid() {
+		errs = append(errs, FieldError{Field: "category", Message: "must be one of input, output, cache_read, cache_write, cache_write_1h, input_audio, output_audio"})
+	}
+	if v.Threshold < 0 {
+		errs = append(errs, FieldError{Field: "threshold", Message: "must be at least 0"})
+	}
+	if v.Threshold > 100000000 {
+		errs = append(errs, FieldError{Field: "threshold", Message: "must be at most 100000000"})
+	}
+	if !re12.MatchString(v.Rate) {
+		errs = append(errs, FieldError{Field: "rate", Message: "must match ^(0|[1-9][0-9]{0,6})(\\.[0-9]{1,12})?$"})
+	}
+	return errs
+}
+
+// PriceSource is an enumeration of the administration API.
+type PriceSource string
+
+// Values of PriceSource.
+const (
+	PriceSourceImport   PriceSource = "import"
+	PriceSourceOverride PriceSource = "override"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v PriceSource) Valid() bool {
+	switch v {
+	case PriceSourceImport, PriceSourceOverride:
+		return true
+	}
+	return false
+}
+
+// PriceVersion is a schema of the administration API.
+type PriceVersion struct {
+	ID        string    `json:"id"`
+	ModelID   string    `json:"model_id"`
+	ValidFrom time.Time `json:"valid_from"`
+	// ISO 4217 code.
+	Currency  string      `json:"currency"`
+	Source    PriceSource `json:"source"`
+	ImportID  string      `json:"import_id,omitempty"`
+	Note      string      `json:"note"`
+	Rates     []PriceRate `json:"rates"`
+	CreatedAt time.Time   `json:"created_at"`
+}
+
+var requiredPriceVersion = []string{"id", "model_id", "valid_from", "currency", "source", "note", "rates", "created_at"}
+
+var nestedPriceVersion = []nestedMember{{Name: "rates", Many: true, Required: requiredPriceRate, Nested: nestedPriceRate}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *PriceVersion) Validate() []FieldError {
+	var errs []FieldError
+	if !re0.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !re0.MatchString(v.ModelID) {
+		errs = append(errs, FieldError{Field: "model_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !v.Source.Valid() {
+		errs = append(errs, FieldError{Field: "source", Message: "must be one of import, override"})
+	}
+	if v.ImportID != "" && !re0.MatchString(v.ImportID) {
+		errs = append(errs, FieldError{Field: "import_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	for i := range v.Rates {
+		for _, e := range v.Rates[i].Validate() {
+			errs = append(errs, FieldError{Field: "rates[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// PriceVersionList is a schema of the administration API.
+type PriceVersionList struct {
+	Items []PriceVersion `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredPriceVersionList = []string{"items"}
+
+var nestedPriceVersionList = []nestedMember{{Name: "items", Many: true, Required: requiredPriceVersion, Nested: nestedPriceVersion}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *PriceVersionList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
 	return errs
 }
 
@@ -420,11 +1346,18 @@ type Problem struct {
 
 var requiredProblem = []string{"type", "title", "status", "code", "detail", "request_id"}
 
+var nestedProblem = []nestedMember{{Name: "errors", Many: true, Required: requiredFieldError, Nested: nestedFieldError}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Problem) Validate() []FieldError {
 	var errs []FieldError
 	if !v.Code.Valid() {
-		errs = append(errs, FieldError{Field: "code", Message: "must be one of invalid_request, unauthenticated, forbidden, tenant_suspended, not_found, conflict, invalid_state, request_too_large, unsupported_media_type, internal, unavailable, credential_rejected, validation_unavailable"})
+		errs = append(errs, FieldError{Field: "code", Message: "must be one of invalid_request, unauthenticated, forbidden, tenant_suspended, not_found, conflict, invalid_state, request_too_large, unsupported_media_type, internal, unavailable, credential_rejected, validation_unavailable, price_source_unavailable, price_dataset_invalid"})
+	}
+	for i := range v.Errors {
+		for _, e := range v.Errors[i].Validate() {
+			errs = append(errs, FieldError{Field: "errors[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
 	}
 	return errs
 }
@@ -434,28 +1367,155 @@ type ProblemCode string
 
 // Values of ProblemCode.
 const (
-	ProblemCodeInvalidRequest        ProblemCode = "invalid_request"
-	ProblemCodeUnauthenticated       ProblemCode = "unauthenticated"
-	ProblemCodeForbidden             ProblemCode = "forbidden"
-	ProblemCodeTenantSuspended       ProblemCode = "tenant_suspended"
-	ProblemCodeNotFound              ProblemCode = "not_found"
-	ProblemCodeConflict              ProblemCode = "conflict"
-	ProblemCodeInvalidState          ProblemCode = "invalid_state"
-	ProblemCodeRequestTooLarge       ProblemCode = "request_too_large"
-	ProblemCodeUnsupportedMediaType  ProblemCode = "unsupported_media_type"
-	ProblemCodeInternal              ProblemCode = "internal"
-	ProblemCodeUnavailable           ProblemCode = "unavailable"
-	ProblemCodeCredentialRejected    ProblemCode = "credential_rejected"
-	ProblemCodeValidationUnavailable ProblemCode = "validation_unavailable"
+	ProblemCodeInvalidRequest         ProblemCode = "invalid_request"
+	ProblemCodeUnauthenticated        ProblemCode = "unauthenticated"
+	ProblemCodeForbidden              ProblemCode = "forbidden"
+	ProblemCodeTenantSuspended        ProblemCode = "tenant_suspended"
+	ProblemCodeNotFound               ProblemCode = "not_found"
+	ProblemCodeConflict               ProblemCode = "conflict"
+	ProblemCodeInvalidState           ProblemCode = "invalid_state"
+	ProblemCodeRequestTooLarge        ProblemCode = "request_too_large"
+	ProblemCodeUnsupportedMediaType   ProblemCode = "unsupported_media_type"
+	ProblemCodeInternal               ProblemCode = "internal"
+	ProblemCodeUnavailable            ProblemCode = "unavailable"
+	ProblemCodeCredentialRejected     ProblemCode = "credential_rejected"
+	ProblemCodeValidationUnavailable  ProblemCode = "validation_unavailable"
+	ProblemCodePriceSourceUnavailable ProblemCode = "price_source_unavailable"
+	ProblemCodePriceDatasetInvalid    ProblemCode = "price_dataset_invalid"
 )
 
 // Valid reports whether v is a value of the enumeration.
 func (v ProblemCode) Valid() bool {
 	switch v {
-	case ProblemCodeInvalidRequest, ProblemCodeUnauthenticated, ProblemCodeForbidden, ProblemCodeTenantSuspended, ProblemCodeNotFound, ProblemCodeConflict, ProblemCodeInvalidState, ProblemCodeRequestTooLarge, ProblemCodeUnsupportedMediaType, ProblemCodeInternal, ProblemCodeUnavailable, ProblemCodeCredentialRejected, ProblemCodeValidationUnavailable:
+	case ProblemCodeInvalidRequest, ProblemCodeUnauthenticated, ProblemCodeForbidden, ProblemCodeTenantSuspended, ProblemCodeNotFound, ProblemCodeConflict, ProblemCodeInvalidState, ProblemCodeRequestTooLarge, ProblemCodeUnsupportedMediaType, ProblemCodeInternal, ProblemCodeUnavailable, ProblemCodeCredentialRejected, ProblemCodeValidationUnavailable, ProblemCodePriceSourceUnavailable, ProblemCodePriceDatasetInvalid:
 		return true
 	}
 	return false
+}
+
+// Provider is a schema of the administration API.
+type Provider struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	DisplayName string    `json:"display_name"`
+	Description string    `json:"description"`
+	ApiFamily   ApiFamily `json:"api_family"`
+	Enabled     bool      `json:"enabled"`
+	// Identifier of the provider in the price dataset; empty when its prices are not imported.
+	DatasetProvider string    `json:"dataset_provider"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+var requiredProvider = []string{"id", "name", "display_name", "description", "api_family", "enabled", "dataset_provider", "created_at", "updated_at"}
+
+var nestedProvider []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *Provider) Validate() []FieldError {
+	var errs []FieldError
+	if !re0.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !re1.MatchString(v.Name) {
+		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+	}
+	if !v.ApiFamily.Valid() {
+		errs = append(errs, FieldError{Field: "api_family", Message: "must be one of openai, anthropic"})
+	}
+	return errs
+}
+
+// ProviderCreate is a schema of the administration API.
+type ProviderCreate struct {
+	Name            string    `json:"name"`
+	ApiFamily       ApiFamily `json:"api_family"`
+	DisplayName     string    `json:"display_name,omitempty"`
+	Description     string    `json:"description,omitempty"`
+	DatasetProvider string    `json:"dataset_provider,omitempty"`
+}
+
+var requiredProviderCreate = []string{"name", "api_family"}
+
+var nestedProviderCreate []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *ProviderCreate) Validate() []FieldError {
+	var errs []FieldError
+	if !re1.MatchString(v.Name) {
+		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+	}
+	if !v.ApiFamily.Valid() {
+		errs = append(errs, FieldError{Field: "api_family", Message: "must be one of openai, anthropic"})
+	}
+	if runeCount(v.DisplayName) > 200 {
+		errs = append(errs, FieldError{Field: "display_name", Message: "length must be at most 200"})
+	}
+	if runeCount(v.Description) > 500 {
+		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 500"})
+	}
+	if v.DatasetProvider != "" && !re13.MatchString(v.DatasetProvider) {
+		errs = append(errs, FieldError{Field: "dataset_provider", Message: "must match ^[a-z0-9][a-z0-9_.-]{0,62}$"})
+	}
+	return errs
+}
+
+// ProviderList is a schema of the administration API.
+type ProviderList struct {
+	Items []Provider `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredProviderList = []string{"items"}
+
+var nestedProviderList = []nestedMember{{Name: "items", Many: true, Required: requiredProvider, Nested: nestedProvider}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *ProviderList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// ProviderUpdate is a schema of the administration API.
+type ProviderUpdate struct {
+	DisplayName Optional[string] `json:"display_name,omitzero"`
+	Description Optional[string] `json:"description,omitzero"`
+	Enabled     Optional[bool]   `json:"enabled,omitzero"`
+	// Empty stops imports for the provider.
+	DatasetProvider Optional[string] `json:"dataset_provider,omitzero"`
+}
+
+var requiredProviderUpdate = []string{}
+
+var nestedProviderUpdate []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *ProviderUpdate) Validate() []FieldError {
+	var errs []FieldError
+	if v.DisplayName.Set {
+		if runeCount(v.DisplayName.Value) > 200 {
+			errs = append(errs, FieldError{Field: "display_name", Message: "length must be at most 200"})
+		}
+	}
+	if v.Description.Set {
+		if runeCount(v.Description.Value) > 500 {
+			errs = append(errs, FieldError{Field: "description", Message: "length must be at most 500"})
+		}
+	}
+	if v.Enabled.Set {
+	}
+	if v.DatasetProvider.Set {
+		if !re14.MatchString(v.DatasetProvider.Value) {
+			errs = append(errs, FieldError{Field: "dataset_provider", Message: "must match ^([a-z0-9][a-z0-9_.-]{0,62})?$"})
+		}
+	}
+	return errs
 }
 
 // Reason is a schema of the administration API.
@@ -465,6 +1525,8 @@ type Reason struct {
 }
 
 var requiredReason = []string{}
+
+var nestedReason []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Reason) Validate() []FieldError {
@@ -482,6 +1544,8 @@ type RequiredReason struct {
 }
 
 var requiredRequiredReason = []string{"reason"}
+
+var nestedRequiredReason []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *RequiredReason) Validate() []FieldError {
@@ -510,6 +1574,8 @@ type ServiceAccount struct {
 }
 
 var requiredServiceAccount = []string{"id", "tenant_id", "name", "description", "state", "roles", "created_at", "updated_at"}
+
+var nestedServiceAccount []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ServiceAccount) Validate() []FieldError {
@@ -540,6 +1606,8 @@ type ServiceAccountCreate struct {
 }
 
 var requiredServiceAccountCreate = []string{"name"}
+
+var nestedServiceAccountCreate []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ServiceAccountCreate) Validate() []FieldError {
@@ -573,9 +1641,16 @@ type ServiceAccountList struct {
 
 var requiredServiceAccountList = []string{"items"}
 
+var nestedServiceAccountList = []nestedMember{{Name: "items", Many: true, Required: requiredServiceAccount, Nested: nestedServiceAccount}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ServiceAccountList) Validate() []FieldError {
 	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
 	return errs
 }
 
@@ -599,33 +1674,41 @@ func (v ServiceAccountState) Valid() bool {
 
 // ServiceAccountUpdate is a schema of the administration API.
 type ServiceAccountUpdate struct {
-	Name        string              `json:"name,omitempty"`
-	Description string              `json:"description,omitempty"`
+	Name        Optional[string]    `json:"name,omitzero"`
+	Description Optional[string]    `json:"description,omitzero"`
 	ValidFrom   Nullable[time.Time] `json:"valid_from,omitzero"`
 	ValidUntil  Nullable[time.Time] `json:"valid_until,omitzero"`
-	Roles       []string            `json:"roles,omitempty"`
+	Roles       Optional[[]string]  `json:"roles,omitzero"`
 }
 
 var requiredServiceAccountUpdate = []string{}
 
+var nestedServiceAccountUpdate []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ServiceAccountUpdate) Validate() []FieldError {
 	var errs []FieldError
-	if v.Name != "" && !re2.MatchString(v.Name) {
-		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+	if v.Name.Set {
+		if !re2.MatchString(v.Name.Value) {
+			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+		}
 	}
-	if runeCount(v.Description) > 500 {
-		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 500"})
+	if v.Description.Set {
+		if runeCount(v.Description.Value) > 500 {
+			errs = append(errs, FieldError{Field: "description", Message: "length must be at most 500"})
+		}
 	}
-	if len(v.Roles) > 16 {
-		errs = append(errs, FieldError{Field: "roles", Message: "must have at most 16 items"})
-	}
-	if !unique(v.Roles) {
-		errs = append(errs, FieldError{Field: "roles", Message: "must not repeat an item"})
-	}
-	for _, item := range v.Roles {
-		if !re1.MatchString(item) {
-			errs = append(errs, FieldError{Field: "roles", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+	if v.Roles.Set {
+		if len(v.Roles.Value) > 16 {
+			errs = append(errs, FieldError{Field: "roles", Message: "must have at most 16 items"})
+		}
+		if !unique(v.Roles.Value) {
+			errs = append(errs, FieldError{Field: "roles", Message: "must not repeat an item"})
+		}
+		for _, item := range v.Roles.Value {
+			if !re1.MatchString(item) {
+				errs = append(errs, FieldError{Field: "roles", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+			}
 		}
 	}
 	return errs
@@ -662,6 +1745,8 @@ type Tenant struct {
 
 var requiredTenant = []string{"id", "name", "display_name", "state", "created_at", "updated_at", "state_changed_at"}
 
+var nestedTenant []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Tenant) Validate() []FieldError {
 	var errs []FieldError
@@ -689,6 +1774,8 @@ type TenantCreate struct {
 
 var requiredTenantCreate = []string{"name"}
 
+var nestedTenantCreate []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantCreate) Validate() []FieldError {
 	var errs []FieldError
@@ -713,9 +1800,20 @@ type TenantCreated struct {
 
 var requiredTenantCreated = []string{"tenant", "admin_service_account", "admin_key"}
 
+var nestedTenantCreated = []nestedMember{{Name: "tenant", Required: requiredTenant, Nested: nestedTenant}, {Name: "admin_service_account", Required: requiredServiceAccount, Nested: nestedServiceAccount}, {Name: "admin_key", Required: requiredVirtualKeyCreated, Nested: nestedVirtualKeyCreated}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantCreated) Validate() []FieldError {
 	var errs []FieldError
+	for _, e := range v.Tenant.Validate() {
+		errs = append(errs, FieldError{Field: "tenant." + e.Field, Message: e.Message})
+	}
+	for _, e := range v.AdminServiceAccount.Validate() {
+		errs = append(errs, FieldError{Field: "admin_service_account." + e.Field, Message: e.Message})
+	}
+	for _, e := range v.AdminKey.Validate() {
+		errs = append(errs, FieldError{Field: "admin_key." + e.Field, Message: e.Message})
+	}
 	return errs
 }
 
@@ -728,9 +1826,64 @@ type TenantList struct {
 
 var requiredTenantList = []string{"items"}
 
+var nestedTenantList = []nestedMember{{Name: "items", Many: true, Required: requiredTenant, Nested: nestedTenant}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantList) Validate() []FieldError {
 	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// TenantModel is a schema of the administration API.
+type TenantModel struct {
+	Model Model `json:"model"`
+	// false when the tenant's restriction leaves the model out.
+	Allowed bool          `json:"allowed"`
+	Price   *PriceVersion `json:"price,omitempty"`
+}
+
+var requiredTenantModel = []string{"model", "allowed"}
+
+var nestedTenantModel = []nestedMember{{Name: "model", Required: requiredModel, Nested: nestedModel}, {Name: "price", Required: requiredPriceVersion, Nested: nestedPriceVersion}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TenantModel) Validate() []FieldError {
+	var errs []FieldError
+	for _, e := range v.Model.Validate() {
+		errs = append(errs, FieldError{Field: "model." + e.Field, Message: e.Message})
+	}
+	if v.Price != nil {
+		for _, e := range v.Price.Validate() {
+			errs = append(errs, FieldError{Field: "price." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// TenantModelList is a schema of the administration API.
+type TenantModelList struct {
+	Items []TenantModel `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredTenantModelList = []string{"items"}
+
+var nestedTenantModelList = []nestedMember{{Name: "items", Many: true, Required: requiredTenantModel, Nested: nestedTenantModel}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TenantModelList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
 	return errs
 }
 
@@ -742,6 +1895,8 @@ type TenantRef struct {
 }
 
 var requiredTenantRef = []string{"id", "name", "state"}
+
+var nestedTenantRef []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantRef) Validate() []FieldError {
@@ -781,20 +1936,26 @@ func (v TenantState) Valid() bool {
 
 // TenantUpdate is a schema of the administration API.
 type TenantUpdate struct {
-	Name        string `json:"name,omitempty"`
-	DisplayName string `json:"display_name,omitempty"`
+	Name        Optional[string] `json:"name,omitzero"`
+	DisplayName Optional[string] `json:"display_name,omitzero"`
 }
 
 var requiredTenantUpdate = []string{}
 
+var nestedTenantUpdate []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantUpdate) Validate() []FieldError {
 	var errs []FieldError
-	if v.Name != "" && !re2.MatchString(v.Name) {
-		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+	if v.Name.Set {
+		if !re2.MatchString(v.Name.Value) {
+			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+		}
 	}
-	if runeCount(v.DisplayName) > 200 {
-		errs = append(errs, FieldError{Field: "display_name", Message: "length must be at most 200"})
+	if v.DisplayName.Set {
+		if runeCount(v.DisplayName.Value) > 200 {
+			errs = append(errs, FieldError{Field: "display_name", Message: "length must be at most 200"})
+		}
 	}
 	return errs
 }
@@ -806,6 +1967,8 @@ type VirtualKey struct {
 	ServiceAccountID string `json:"service_account_id"`
 	Description      string `json:"description"`
 	CredentialID     string `json:"credential_id,omitempty"`
+	// Models the key is limited to, as provider/name. Absent means every model available to the tenant.
+	Models []string `json:"models,omitempty"`
 	// Permissions the key is limited to. Absent means every permission of the service account's roles.
 	Scopes    []string   `json:"scopes,omitempty"`
 	State     KeyState   `json:"state"`
@@ -816,10 +1979,12 @@ type VirtualKey struct {
 
 var requiredVirtualKey = []string{"id", "tenant_id", "service_account_id", "description", "state", "created_at"}
 
+var nestedVirtualKey []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *VirtualKey) Validate() []FieldError {
 	var errs []FieldError
-	if !re4.MatchString(v.ID) {
+	if !re15.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^t[a-z2-7]{16}$"})
 	}
 	if !re0.MatchString(v.TenantID) {
@@ -830,6 +1995,11 @@ func (v *VirtualKey) Validate() []FieldError {
 	}
 	if v.CredentialID != "" && !re0.MatchString(v.CredentialID) {
 		errs = append(errs, FieldError{Field: "credential_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	for _, item := range v.Models {
+		if !re7.MatchString(item) {
+			errs = append(errs, FieldError{Field: "models", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
+		}
 	}
 	if !v.State.Valid() {
 		errs = append(errs, FieldError{Field: "state", Message: "must be one of active, expired, revoked"})
@@ -842,11 +2012,14 @@ type VirtualKeyCreate struct {
 	ServiceAccountID string     `json:"service_account_id"`
 	Description      string     `json:"description,omitempty"`
 	CredentialID     string     `json:"credential_id,omitempty"`
+	Models           []string   `json:"models,omitempty"`
 	Scopes           []string   `json:"scopes,omitempty"`
 	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
 }
 
 var requiredVirtualKeyCreate = []string{"service_account_id"}
+
+var nestedVirtualKeyCreate []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *VirtualKeyCreate) Validate() []FieldError {
@@ -860,6 +2033,20 @@ func (v *VirtualKeyCreate) Validate() []FieldError {
 	if v.CredentialID != "" && !re0.MatchString(v.CredentialID) {
 		errs = append(errs, FieldError{Field: "credential_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
+	if v.Models != nil && len(v.Models) < 1 {
+		errs = append(errs, FieldError{Field: "models", Message: "must have at least 1 items"})
+	}
+	if len(v.Models) > 64 {
+		errs = append(errs, FieldError{Field: "models", Message: "must have at most 64 items"})
+	}
+	if !unique(v.Models) {
+		errs = append(errs, FieldError{Field: "models", Message: "must not repeat an item"})
+	}
+	for _, item := range v.Models {
+		if !re7.MatchString(item) {
+			errs = append(errs, FieldError{Field: "models", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
+		}
+	}
 	if v.Scopes != nil && len(v.Scopes) < 1 {
 		errs = append(errs, FieldError{Field: "scopes", Message: "must have at least 1 items"})
 	}
@@ -870,7 +2057,7 @@ func (v *VirtualKeyCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "scopes", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Scopes {
-		if !re5.MatchString(item) {
+		if !re16.MatchString(item) {
 			errs = append(errs, FieldError{Field: "scopes", Message: "must match ^[a-z_]+:[a-z_]+$"})
 		}
 	}
@@ -886,9 +2073,14 @@ type VirtualKeyCreated struct {
 
 var requiredVirtualKeyCreated = []string{"key", "secret"}
 
+var nestedVirtualKeyCreated = []nestedMember{{Name: "key", Required: requiredVirtualKey, Nested: nestedVirtualKey}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *VirtualKeyCreated) Validate() []FieldError {
 	var errs []FieldError
+	for _, e := range v.Key.Validate() {
+		errs = append(errs, FieldError{Field: "key." + e.Field, Message: e.Message})
+	}
 	return errs
 }
 
@@ -901,19 +2093,51 @@ type VirtualKeyList struct {
 
 var requiredVirtualKeyList = []string{"items"}
 
+var nestedVirtualKeyList = []nestedMember{{Name: "items", Many: true, Required: requiredVirtualKey, Nested: nestedVirtualKey}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *VirtualKeyList) Validate() []FieldError {
 	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
 	return errs
 }
 
 // Operations lists every operation of the document, sorted by path and method.
 var Operations = []Operation{
 	{ID: "getMe", Method: "GET", Path: "/v1/me", Permission: "identity:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
+	{ID: "listModels", Method: "GET", Path: "/v1/models", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
+	{ID: "createModel", Method: "POST", Path: "/v1/models", Permission: "catalog:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
+	{ID: "getModel", Method: "GET", Path: "/v1/models/{model}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re0}}},
+	{ID: "updateModel", Method: "PATCH", Path: "/v1/models/{model}", Permission: "catalog:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re0}}},
+	{ID: "deleteModel", Method: "DELETE", Path: "/v1/models/{model}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re0}}},
+	{ID: "clearPriceOverride", Method: "POST", Path: "/v1/models/{model}/clear-price-override", Permission: "catalog:price", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re0}}},
+	{ID: "listModelGrants", Method: "GET", Path: "/v1/models/{model}/grants", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re0}}},
+	{ID: "grantModel", Method: "PUT", Path: "/v1/models/{model}/grants/{tenant}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re0}, {Name: "tenant", Pattern: re0}}},
+	{ID: "revokeModelGrant", Method: "DELETE", Path: "/v1/models/{model}/grants/{tenant}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re0}, {Name: "tenant", Pattern: re0}}},
+	{ID: "listPriceVersions", Method: "GET", Path: "/v1/models/{model}/prices", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re0}}},
+	{ID: "createPriceOverride", Method: "POST", Path: "/v1/models/{model}/prices", Permission: "catalog:price", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re0}}},
+	{ID: "deletePriceVersion", Method: "DELETE", Path: "/v1/models/{model}/prices/{price_version}", Permission: "catalog:price", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re0}, {Name: "price_version", Pattern: re0}}},
 	{ID: "listPlatformKeys", Method: "GET", Path: "/v1/platform-keys", Permission: "platform_key:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "createPlatformKey", Method: "POST", Path: "/v1/platform-keys", Permission: "platform_key:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getPlatformKey", Method: "GET", Path: "/v1/platform-keys/{key}", Permission: "platform_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "key", Pattern: re3}}},
-	{ID: "revokePlatformKey", Method: "POST", Path: "/v1/platform-keys/{key}/revoke", Permission: "platform_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "key", Pattern: re3}}},
+	{ID: "getPlatformKey", Method: "GET", Path: "/v1/platform-keys/{key}", Permission: "platform_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "key", Pattern: re10}}},
+	{ID: "revokePlatformKey", Method: "POST", Path: "/v1/platform-keys/{key}/revoke", Permission: "platform_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "key", Pattern: re10}}},
+	{ID: "listPriceImports", Method: "GET", Path: "/v1/price-imports", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
+	{ID: "runPriceImport", Method: "POST", Path: "/v1/price-imports", Permission: "catalog:price", Status: 201, HasBody: true, PathParams: []PathParam{}},
+	{ID: "getPriceImport", Method: "GET", Path: "/v1/price-imports/{price_import}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "price_import", Pattern: re0}}},
+	{ID: "listProviders", Method: "GET", Path: "/v1/providers", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
+	{ID: "createProvider", Method: "POST", Path: "/v1/providers", Permission: "catalog:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
+	{ID: "getProvider", Method: "GET", Path: "/v1/providers/{provider}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re1}}},
+	{ID: "updateProvider", Method: "PATCH", Path: "/v1/providers/{provider}", Permission: "catalog:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re1}}},
+	{ID: "deleteProvider", Method: "DELETE", Path: "/v1/providers/{provider}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re1}}},
+	{ID: "listEndpoints", Method: "GET", Path: "/v1/providers/{provider}/endpoints", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re1}}},
+	{ID: "createEndpoint", Method: "POST", Path: "/v1/providers/{provider}/endpoints", Permission: "catalog:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re1}}},
+	{ID: "getEndpoint", Method: "GET", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re1}, {Name: "endpoint", Pattern: re2}}},
+	{ID: "updateEndpoint", Method: "PATCH", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re1}, {Name: "endpoint", Pattern: re2}}},
+	{ID: "deleteEndpoint", Method: "DELETE", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re1}, {Name: "endpoint", Pattern: re2}}},
 	{ID: "listTenantCredentials", Method: "GET", Path: "/v1/tenant-credentials/{tenant}", Permission: "tenant_credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
 	{ID: "getTenantCredential", Method: "GET", Path: "/v1/tenant-credentials/{tenant}/{credential}", Permission: "tenant_credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
 	{ID: "disableTenantCredential", Method: "POST", Path: "/v1/tenant-credentials/{tenant}/{credential}/disable", Permission: "tenant_credential:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
@@ -932,6 +2156,10 @@ var Operations = []Operation{
 	{ID: "revokeCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/revoke", Permission: "credential:delete", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
 	{ID: "replaceCredentialSecret", Method: "PUT", Path: "/v1/tenants/{tenant}/credentials/{credential}/secret", Permission: "credential:rotate", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
 	{ID: "setDefaultCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/set-default", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
+	{ID: "getModelRestriction", Method: "GET", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
+	{ID: "setModelRestriction", Method: "PUT", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:restrict", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
+	{ID: "clearModelRestriction", Method: "DELETE", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:restrict", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
+	{ID: "listTenantModels", Method: "GET", Path: "/v1/tenants/{tenant}/models", Permission: "model:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
 	{ID: "reactivateTenant", Method: "POST", Path: "/v1/tenants/{tenant}/reactivate", Permission: "tenant:suspend", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
 	{ID: "listServiceAccounts", Method: "GET", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
 	{ID: "createServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
@@ -942,12 +2170,89 @@ var Operations = []Operation{
 	{ID: "suspendTenant", Method: "POST", Path: "/v1/tenants/{tenant}/suspend", Permission: "tenant:suspend", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
 	{ID: "listVirtualKeys", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
 	{ID: "createVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
-	{ID: "getVirtualKey", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys/{key}", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "key", Pattern: re4}}},
-	{ID: "revokeVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys/{key}/revoke", Permission: "virtual_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "key", Pattern: re4}}},
+	{ID: "getVirtualKey", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys/{key}", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "key", Pattern: re15}}},
+	{ID: "revokeVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys/{key}/revoke", Permission: "virtual_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "key", Pattern: re15}}},
 }
 
 // GetMeInput is the input of getMe.
 type GetMeInput struct {
+}
+
+// ListModelsInput is the input of listModels.
+type ListModelsInput struct {
+	Limit        int               // query; the zero value means absent
+	Cursor       string            // query; the zero value means absent
+	Sort         Sort              // query; the zero value means absent
+	Provider     string            // query; the zero value means absent
+	Name         string            // query; the zero value means absent
+	Status       ModelStatus       // query; the zero value means absent
+	Availability ModelAvailability // query; the zero value means absent
+}
+
+// CreateModelInput is the input of createModel.
+type CreateModelInput struct {
+	Body ModelCreate
+}
+
+// GetModelInput is the input of getModel.
+type GetModelInput struct {
+	Model string // path
+}
+
+// UpdateModelInput is the input of updateModel.
+type UpdateModelInput struct {
+	Model string // path
+	Body  ModelUpdate
+}
+
+// DeleteModelInput is the input of deleteModel.
+type DeleteModelInput struct {
+	Model string // path
+}
+
+// ClearPriceOverrideInput is the input of clearPriceOverride.
+type ClearPriceOverrideInput struct {
+	Model string // path
+	Body  Reason
+}
+
+// ListModelGrantsInput is the input of listModelGrants.
+type ListModelGrantsInput struct {
+	Model  string // path
+	Limit  int    // query; the zero value means absent
+	Cursor string // query; the zero value means absent
+}
+
+// GrantModelInput is the input of grantModel.
+type GrantModelInput struct {
+	Model  string // path
+	Tenant string // path
+}
+
+// RevokeModelGrantInput is the input of revokeModelGrant.
+type RevokeModelGrantInput struct {
+	Model  string // path
+	Tenant string // path
+}
+
+// ListPriceVersionsInput is the input of listPriceVersions.
+type ListPriceVersionsInput struct {
+	Model  string // path
+	Limit  int    // query; the zero value means absent
+	Cursor string // query; the zero value means absent
+	At     string // query; the zero value means absent
+}
+
+// CreatePriceOverrideInput is the input of createPriceOverride.
+type CreatePriceOverrideInput struct {
+	Model string // path
+	Body  PriceOverride
+}
+
+// DeletePriceVersionInput is the input of deletePriceVersion.
+type DeletePriceVersionInput struct {
+	Model        string // path
+	PriceVersion string // path
 }
 
 // ListPlatformKeysInput is the input of listPlatformKeys.
@@ -972,6 +2277,81 @@ type GetPlatformKeyInput struct {
 type RevokePlatformKeyInput struct {
 	Key  string // path
 	Body Reason
+}
+
+// ListPriceImportsInput is the input of listPriceImports.
+type ListPriceImportsInput struct {
+	Limit  int    // query; the zero value means absent
+	Cursor string // query; the zero value means absent
+}
+
+// RunPriceImportInput is the input of runPriceImport.
+type RunPriceImportInput struct {
+	Body PriceImportRun
+}
+
+// GetPriceImportInput is the input of getPriceImport.
+type GetPriceImportInput struct {
+	PriceImport string // path
+}
+
+// ListProvidersInput is the input of listProviders.
+type ListProvidersInput struct {
+	Limit  int    // query; the zero value means absent
+	Cursor string // query; the zero value means absent
+}
+
+// CreateProviderInput is the input of createProvider.
+type CreateProviderInput struct {
+	Body ProviderCreate
+}
+
+// GetProviderInput is the input of getProvider.
+type GetProviderInput struct {
+	Provider string // path
+}
+
+// UpdateProviderInput is the input of updateProvider.
+type UpdateProviderInput struct {
+	Provider string // path
+	Body     ProviderUpdate
+}
+
+// DeleteProviderInput is the input of deleteProvider.
+type DeleteProviderInput struct {
+	Provider string // path
+}
+
+// ListEndpointsInput is the input of listEndpoints.
+type ListEndpointsInput struct {
+	Provider string // path
+	Limit    int    // query; the zero value means absent
+	Cursor   string // query; the zero value means absent
+}
+
+// CreateEndpointInput is the input of createEndpoint.
+type CreateEndpointInput struct {
+	Provider string // path
+	Body     EndpointCreate
+}
+
+// GetEndpointInput is the input of getEndpoint.
+type GetEndpointInput struct {
+	Provider string // path
+	Endpoint string // path
+}
+
+// UpdateEndpointInput is the input of updateEndpoint.
+type UpdateEndpointInput struct {
+	Provider string // path
+	Endpoint string // path
+	Body     EndpointUpdate
+}
+
+// DeleteEndpointInput is the input of deleteEndpoint.
+type DeleteEndpointInput struct {
+	Provider string // path
+	Endpoint string // path
 }
 
 // ListTenantCredentialsInput is the input of listTenantCredentials.
@@ -1099,6 +2479,30 @@ type SetDefaultCredentialInput struct {
 	Body       Reason
 }
 
+// GetModelRestrictionInput is the input of getModelRestriction.
+type GetModelRestrictionInput struct {
+	Tenant string // path
+}
+
+// SetModelRestrictionInput is the input of setModelRestriction.
+type SetModelRestrictionInput struct {
+	Tenant string // path
+	Body   ModelRestrictionSet
+}
+
+// ClearModelRestrictionInput is the input of clearModelRestriction.
+type ClearModelRestrictionInput struct {
+	Tenant string // path
+}
+
+// ListTenantModelsInput is the input of listTenantModels.
+type ListTenantModelsInput struct {
+	Tenant   string // path
+	Limit    int    // query; the zero value means absent
+	Cursor   string // query; the zero value means absent
+	Provider string // query; the zero value means absent
+}
+
 // ReactivateTenantInput is the input of reactivateTenant.
 type ReactivateTenantInput struct {
 	Tenant string // path
@@ -1187,6 +2591,30 @@ type RevokeVirtualKeyInput struct {
 type Server interface {
 	// GetMe: GET /v1/me. Who the caller is and what it may do
 	GetMe(ctx context.Context, in GetMeInput) (*Me, error)
+	// ListModels: GET /v1/models. List the models of the catalogue
+	ListModels(ctx context.Context, in ListModelsInput) (*ModelList, error)
+	// CreateModel: POST /v1/models. Add a model
+	CreateModel(ctx context.Context, in CreateModelInput) (*Model, error)
+	// GetModel: GET /v1/models/{model}. Read a model
+	GetModel(ctx context.Context, in GetModelInput) (*Model, error)
+	// UpdateModel: PATCH /v1/models/{model}. Change a model
+	UpdateModel(ctx context.Context, in UpdateModelInput) (*Model, error)
+	// DeleteModel: DELETE /v1/models/{model}. Delete a model that has no price
+	DeleteModel(ctx context.Context, in DeleteModelInput) (*Model, error)
+	// ClearPriceOverride: POST /v1/models/{model}/clear-price-override. Let imports price the model again
+	ClearPriceOverride(ctx context.Context, in ClearPriceOverrideInput) (*Model, error)
+	// ListModelGrants: GET /v1/models/{model}/grants. List the tenants a model is granted to
+	ListModelGrants(ctx context.Context, in ListModelGrantsInput) (*ModelGrantList, error)
+	// GrantModel: PUT /v1/models/{model}/grants/{tenant}. Grant a model to a tenant
+	GrantModel(ctx context.Context, in GrantModelInput) (*ModelGrant, error)
+	// RevokeModelGrant: DELETE /v1/models/{model}/grants/{tenant}. Revoke the grant of a model to a tenant
+	RevokeModelGrant(ctx context.Context, in RevokeModelGrantInput) (*ModelGrant, error)
+	// ListPriceVersions: GET /v1/models/{model}/prices. List the price versions of a model, newest first
+	ListPriceVersions(ctx context.Context, in ListPriceVersionsInput) (*PriceVersionList, error)
+	// CreatePriceOverride: POST /v1/models/{model}/prices. Set an operator price for a model
+	CreatePriceOverride(ctx context.Context, in CreatePriceOverrideInput) (*PriceVersion, error)
+	// DeletePriceVersion: DELETE /v1/models/{model}/prices/{price_version}. Remove a price version that has not started
+	DeletePriceVersion(ctx context.Context, in DeletePriceVersionInput) (*PriceVersion, error)
 	// ListPlatformKeys: GET /v1/platform-keys. List platform keys
 	ListPlatformKeys(ctx context.Context, in ListPlatformKeysInput) (*PlatformKeyList, error)
 	// CreatePlatformKey: POST /v1/platform-keys. Issue a platform key with the role platform-admin
@@ -1195,6 +2623,32 @@ type Server interface {
 	GetPlatformKey(ctx context.Context, in GetPlatformKeyInput) (*PlatformKey, error)
 	// RevokePlatformKey: POST /v1/platform-keys/{key}/revoke. Revoke a platform key
 	RevokePlatformKey(ctx context.Context, in RevokePlatformKeyInput) (*PlatformKey, error)
+	// ListPriceImports: GET /v1/price-imports. List price imports, newest first
+	ListPriceImports(ctx context.Context, in ListPriceImportsInput) (*PriceImportList, error)
+	// RunPriceImport: POST /v1/price-imports. Import prices now
+	RunPriceImport(ctx context.Context, in RunPriceImportInput) (*PriceImport, error)
+	// GetPriceImport: GET /v1/price-imports/{price_import}. Read a price import with its report
+	GetPriceImport(ctx context.Context, in GetPriceImportInput) (*PriceImport, error)
+	// ListProviders: GET /v1/providers. List the providers of the catalogue, by name
+	ListProviders(ctx context.Context, in ListProvidersInput) (*ProviderList, error)
+	// CreateProvider: POST /v1/providers. Add a provider
+	CreateProvider(ctx context.Context, in CreateProviderInput) (*Provider, error)
+	// GetProvider: GET /v1/providers/{provider}. Read a provider
+	GetProvider(ctx context.Context, in GetProviderInput) (*Provider, error)
+	// UpdateProvider: PATCH /v1/providers/{provider}. Change, enable or disable a provider
+	UpdateProvider(ctx context.Context, in UpdateProviderInput) (*Provider, error)
+	// DeleteProvider: DELETE /v1/providers/{provider}. Delete a provider that nothing references
+	DeleteProvider(ctx context.Context, in DeleteProviderInput) (*Provider, error)
+	// ListEndpoints: GET /v1/providers/{provider}/endpoints. List the endpoints of a provider, by name
+	ListEndpoints(ctx context.Context, in ListEndpointsInput) (*EndpointList, error)
+	// CreateEndpoint: POST /v1/providers/{provider}/endpoints. Add an endpoint to a provider
+	CreateEndpoint(ctx context.Context, in CreateEndpointInput) (*Endpoint, error)
+	// GetEndpoint: GET /v1/providers/{provider}/endpoints/{endpoint}. Read an endpoint
+	GetEndpoint(ctx context.Context, in GetEndpointInput) (*Endpoint, error)
+	// UpdateEndpoint: PATCH /v1/providers/{provider}/endpoints/{endpoint}. Change an endpoint or make it the default
+	UpdateEndpoint(ctx context.Context, in UpdateEndpointInput) (*Endpoint, error)
+	// DeleteEndpoint: DELETE /v1/providers/{provider}/endpoints/{endpoint}. Delete an endpoint
+	DeleteEndpoint(ctx context.Context, in DeleteEndpointInput) (*Endpoint, error)
 	// ListTenantCredentials: GET /v1/tenant-credentials/{tenant}. List the credentials of a tenant as a platform administrator (metadata)
 	ListTenantCredentials(ctx context.Context, in ListTenantCredentialsInput) (*CredentialList, error)
 	// GetTenantCredential: GET /v1/tenant-credentials/{tenant}/{credential}. Read the metadata of a credential of a tenant as a platform administrator
@@ -1231,6 +2685,14 @@ type Server interface {
 	ReplaceCredentialSecret(ctx context.Context, in ReplaceCredentialSecretInput) (*Credential, error)
 	// SetDefaultCredential: POST /v1/tenants/{tenant}/credentials/{credential}/set-default. Make a credential the default of its provider
 	SetDefaultCredential(ctx context.Context, in SetDefaultCredentialInput) (*Credential, error)
+	// GetModelRestriction: GET /v1/tenants/{tenant}/model-restriction. Read the model restriction of the tenant
+	GetModelRestriction(ctx context.Context, in GetModelRestrictionInput) (*ModelRestriction, error)
+	// SetModelRestriction: PUT /v1/tenants/{tenant}/model-restriction. Restrict the tenant to the models named
+	SetModelRestriction(ctx context.Context, in SetModelRestrictionInput) (*ModelRestriction, error)
+	// ClearModelRestriction: DELETE /v1/tenants/{tenant}/model-restriction. Remove the model restriction of the tenant
+	ClearModelRestriction(ctx context.Context, in ClearModelRestrictionInput) (*ModelRestriction, error)
+	// ListTenantModels: GET /v1/tenants/{tenant}/models. List the models available to the tenant
+	ListTenantModels(ctx context.Context, in ListTenantModelsInput) (*TenantModelList, error)
 	// ReactivateTenant: POST /v1/tenants/{tenant}/reactivate. Reactivate a suspended tenant
 	ReactivateTenant(ctx context.Context, in ReactivateTenantInput) (*Tenant, error)
 	// ListServiceAccounts: GET /v1/tenants/{tenant}/service-accounts. List the service accounts of a tenant
@@ -1266,6 +2728,343 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		out, err := h.server.GetMe(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "listModels":
+		var in ListModelsInput
+		q, err := parseQuery(r, "limit", "cursor", "sort", "provider", "name", "status", "availability")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		in.Sort = Sort("created_at")
+		if v, ok := q["sort"]; ok {
+			in.Sort = Sort(v)
+		}
+		if in.Sort != "" && !in.Sort.Valid() {
+			errs = append(errs, FieldError{Field: "sort", Message: "must be one of created_at, -created_at"})
+		}
+		if v, ok := q["provider"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "provider", Message: "must not be empty"})
+			}
+			in.Provider = v
+		}
+		if in.Provider != "" && !re1.MatchString(in.Provider) {
+			errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+		}
+		if v, ok := q["name"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "name", Message: "must not be empty"})
+			}
+			in.Name = v
+		}
+		if in.Name != "" && !re6.MatchString(in.Name) {
+			errs = append(errs, FieldError{Field: "name", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
+		}
+		if v, ok := q["status"]; ok {
+			in.Status = ModelStatus(v)
+		}
+		if in.Status != "" && !in.Status.Valid() {
+			errs = append(errs, FieldError{Field: "status", Message: "must be one of active, deprecated, retired"})
+		}
+		if v, ok := q["availability"]; ok {
+			in.Availability = ModelAvailability(v)
+		}
+		if in.Availability != "" && !in.Availability.Valid() {
+			errs = append(errs, FieldError{Field: "availability", Message: "must be one of all, selected"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListModels(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "createModel":
+		var in CreateModelInput
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredModelCreate, nestedModelCreate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.CreateModel(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 201, out)
+	case "getModel":
+		var in GetModelInput
+		in.Model = params["model"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GetModel(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "updateModel":
+		var in UpdateModelInput
+		in.Model = params["model"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredModelUpdate, nestedModelUpdate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.UpdateModel(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "deleteModel":
+		var in DeleteModelInput
+		in.Model = params["model"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.DeleteModel(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "clearPriceOverride":
+		var in ClearPriceOverrideInput
+		in.Model = params["model"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ClearPriceOverride(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "listModelGrants":
+		var in ListModelGrantsInput
+		in.Model = params["model"]
+		q, err := parseQuery(r, "limit", "cursor")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListModelGrants(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "grantModel":
+		var in GrantModelInput
+		in.Model = params["model"]
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GrantModel(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "revokeModelGrant":
+		var in RevokeModelGrantInput
+		in.Model = params["model"]
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.RevokeModelGrant(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "listPriceVersions":
+		var in ListPriceVersionsInput
+		in.Model = params["model"]
+		q, err := parseQuery(r, "limit", "cursor", "at")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		if v, ok := q["at"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "at", Message: "must not be empty"})
+			}
+			in.At = v
+		}
+		if in.At != "" && runeCount(in.At) < 1 {
+			errs = append(errs, FieldError{Field: "at", Message: "length must be at least 1"})
+		}
+		if runeCount(in.At) > 64 {
+			errs = append(errs, FieldError{Field: "at", Message: "length must be at most 64"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListPriceVersions(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "createPriceOverride":
+		var in CreatePriceOverrideInput
+		in.Model = params["model"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredPriceOverride, nestedPriceOverride, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.CreatePriceOverride(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 201, out)
+	case "deletePriceVersion":
+		var in DeletePriceVersionInput
+		in.Model = params["model"]
+		in.PriceVersion = params["price_version"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.DeletePriceVersion(r.Context(), in)
 		if err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -1335,7 +3134,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredPlatformKeyCreate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredPlatformKeyCreate, nestedPlatformKeyCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -1369,7 +3168,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -1378,6 +3177,313 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		out, err := h.server.RevokePlatformKey(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "listPriceImports":
+		var in ListPriceImportsInput
+		q, err := parseQuery(r, "limit", "cursor")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListPriceImports(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "runPriceImport":
+		var in RunPriceImportInput
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredPriceImportRun, nestedPriceImportRun, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.RunPriceImport(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 201, out)
+	case "getPriceImport":
+		var in GetPriceImportInput
+		in.PriceImport = params["price_import"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GetPriceImport(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "listProviders":
+		var in ListProvidersInput
+		q, err := parseQuery(r, "limit", "cursor")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListProviders(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "createProvider":
+		var in CreateProviderInput
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredProviderCreate, nestedProviderCreate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.CreateProvider(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 201, out)
+	case "getProvider":
+		var in GetProviderInput
+		in.Provider = params["provider"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GetProvider(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "updateProvider":
+		var in UpdateProviderInput
+		in.Provider = params["provider"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredProviderUpdate, nestedProviderUpdate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.UpdateProvider(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "deleteProvider":
+		var in DeleteProviderInput
+		in.Provider = params["provider"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.DeleteProvider(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "listEndpoints":
+		var in ListEndpointsInput
+		in.Provider = params["provider"]
+		q, err := parseQuery(r, "limit", "cursor")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListEndpoints(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "createEndpoint":
+		var in CreateEndpointInput
+		in.Provider = params["provider"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredEndpointCreate, nestedEndpointCreate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.CreateEndpoint(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 201, out)
+	case "getEndpoint":
+		var in GetEndpointInput
+		in.Provider = params["provider"]
+		in.Endpoint = params["endpoint"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GetEndpoint(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "updateEndpoint":
+		var in UpdateEndpointInput
+		in.Provider = params["provider"]
+		in.Endpoint = params["endpoint"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredEndpointUpdate, nestedEndpointUpdate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.UpdateEndpoint(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "deleteEndpoint":
+		var in DeleteEndpointInput
+		in.Provider = params["provider"]
+		in.Endpoint = params["endpoint"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.DeleteEndpoint(r.Context(), in)
 		if err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -1473,7 +3579,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredRequiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredRequiredReason, nestedRequiredReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -1495,7 +3601,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredRequiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredRequiredReason, nestedRequiredReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -1582,7 +3688,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredTenantCreate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredTenantCreate, nestedTenantCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -1616,7 +3722,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredTenantUpdate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredTenantUpdate, nestedTenantUpdate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -1705,7 +3811,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredCredentialCreate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredCredentialCreate, nestedCredentialCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -1741,7 +3847,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredCredentialUpdate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredCredentialUpdate, nestedCredentialUpdate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -1777,7 +3883,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -1799,7 +3905,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -1821,7 +3927,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -1843,7 +3949,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredCredentialSecret, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredCredentialSecret, nestedCredentialSecret, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -1865,7 +3971,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -1879,6 +3985,108 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		writeJSON(w, 200, out)
+	case "getModelRestriction":
+		var in GetModelRestrictionInput
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GetModelRestriction(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "setModelRestriction":
+		var in SetModelRestrictionInput
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredModelRestrictionSet, nestedModelRestrictionSet, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.SetModelRestriction(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "clearModelRestriction":
+		var in ClearModelRestrictionInput
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.ClearModelRestriction(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "listTenantModels":
+		var in ListTenantModelsInput
+		in.Tenant = params["tenant"]
+		q, err := parseQuery(r, "limit", "cursor", "provider")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		if v, ok := q["provider"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "provider", Message: "must not be empty"})
+			}
+			in.Provider = v
+		}
+		if in.Provider != "" && !re1.MatchString(in.Provider) {
+			errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListTenantModels(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
 	case "reactivateTenant":
 		var in ReactivateTenantInput
 		in.Tenant = params["tenant"]
@@ -1886,7 +4094,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -1975,7 +4183,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredServiceAccountCreate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredServiceAccountCreate, nestedServiceAccountCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -2011,7 +4219,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredServiceAccountUpdate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredServiceAccountUpdate, nestedServiceAccountUpdate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -2033,7 +4241,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -2055,7 +4263,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -2076,7 +4284,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -2165,7 +4373,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredVirtualKeyCreate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredVirtualKeyCreate, nestedVirtualKeyCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -2201,7 +4409,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -2223,6 +4431,162 @@ func (c *Client) GetMe(ctx context.Context, in GetMeInput) (*Me, error) {
 	q := url.Values{}
 	var out Me
 	if err := c.do(ctx, "GET", "/v1/me", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListModels calls GET /v1/models. List the models of the catalogue
+func (c *Client) ListModels(ctx context.Context, in ListModelsInput) (*ModelList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	if in.Sort != "" {
+		q.Set("sort", string(in.Sort))
+	}
+	if in.Provider != "" {
+		q.Set("provider", string(in.Provider))
+	}
+	if in.Name != "" {
+		q.Set("name", string(in.Name))
+	}
+	if in.Status != "" {
+		q.Set("status", string(in.Status))
+	}
+	if in.Availability != "" {
+		q.Set("availability", string(in.Availability))
+	}
+	var out ModelList
+	if err := c.do(ctx, "GET", "/v1/models", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreateModel calls POST /v1/models. Add a model
+func (c *Client) CreateModel(ctx context.Context, in CreateModelInput) (*Model, error) {
+	q := url.Values{}
+	var out Model
+	if err := c.do(ctx, "POST", "/v1/models", q, &in.Body, 201, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetModel calls GET /v1/models/{model}. Read a model
+func (c *Client) GetModel(ctx context.Context, in GetModelInput) (*Model, error) {
+	q := url.Values{}
+	var out Model
+	if err := c.do(ctx, "GET", "/v1/models/"+url.PathEscape(in.Model)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateModel calls PATCH /v1/models/{model}. Change a model
+func (c *Client) UpdateModel(ctx context.Context, in UpdateModelInput) (*Model, error) {
+	q := url.Values{}
+	var out Model
+	if err := c.do(ctx, "PATCH", "/v1/models/"+url.PathEscape(in.Model)+"", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeleteModel calls DELETE /v1/models/{model}. Delete a model that has no price
+func (c *Client) DeleteModel(ctx context.Context, in DeleteModelInput) (*Model, error) {
+	q := url.Values{}
+	var out Model
+	if err := c.do(ctx, "DELETE", "/v1/models/"+url.PathEscape(in.Model)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ClearPriceOverride calls POST /v1/models/{model}/clear-price-override. Let imports price the model again
+func (c *Client) ClearPriceOverride(ctx context.Context, in ClearPriceOverrideInput) (*Model, error) {
+	q := url.Values{}
+	var out Model
+	if err := c.do(ctx, "POST", "/v1/models/"+url.PathEscape(in.Model)+"/clear-price-override", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListModelGrants calls GET /v1/models/{model}/grants. List the tenants a model is granted to
+func (c *Client) ListModelGrants(ctx context.Context, in ListModelGrantsInput) (*ModelGrantList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	var out ModelGrantList
+	if err := c.do(ctx, "GET", "/v1/models/"+url.PathEscape(in.Model)+"/grants", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GrantModel calls PUT /v1/models/{model}/grants/{tenant}. Grant a model to a tenant
+func (c *Client) GrantModel(ctx context.Context, in GrantModelInput) (*ModelGrant, error) {
+	q := url.Values{}
+	var out ModelGrant
+	if err := c.do(ctx, "PUT", "/v1/models/"+url.PathEscape(in.Model)+"/grants/"+url.PathEscape(in.Tenant)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// RevokeModelGrant calls DELETE /v1/models/{model}/grants/{tenant}. Revoke the grant of a model to a tenant
+func (c *Client) RevokeModelGrant(ctx context.Context, in RevokeModelGrantInput) (*ModelGrant, error) {
+	q := url.Values{}
+	var out ModelGrant
+	if err := c.do(ctx, "DELETE", "/v1/models/"+url.PathEscape(in.Model)+"/grants/"+url.PathEscape(in.Tenant)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListPriceVersions calls GET /v1/models/{model}/prices. List the price versions of a model, newest first
+func (c *Client) ListPriceVersions(ctx context.Context, in ListPriceVersionsInput) (*PriceVersionList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	if in.At != "" {
+		q.Set("at", string(in.At))
+	}
+	var out PriceVersionList
+	if err := c.do(ctx, "GET", "/v1/models/"+url.PathEscape(in.Model)+"/prices", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreatePriceOverride calls POST /v1/models/{model}/prices. Set an operator price for a model
+func (c *Client) CreatePriceOverride(ctx context.Context, in CreatePriceOverrideInput) (*PriceVersion, error) {
+	q := url.Values{}
+	var out PriceVersion
+	if err := c.do(ctx, "POST", "/v1/models/"+url.PathEscape(in.Model)+"/prices", q, &in.Body, 201, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeletePriceVersion calls DELETE /v1/models/{model}/prices/{price_version}. Remove a price version that has not started
+func (c *Client) DeletePriceVersion(ctx context.Context, in DeletePriceVersionInput) (*PriceVersion, error) {
+	q := url.Values{}
+	var out PriceVersion
+	if err := c.do(ctx, "DELETE", "/v1/models/"+url.PathEscape(in.Model)+"/prices/"+url.PathEscape(in.PriceVersion)+"", q, nil, 200, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -2275,6 +4639,154 @@ func (c *Client) RevokePlatformKey(ctx context.Context, in RevokePlatformKeyInpu
 	q := url.Values{}
 	var out PlatformKey
 	if err := c.do(ctx, "POST", "/v1/platform-keys/"+url.PathEscape(in.Key)+"/revoke", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListPriceImports calls GET /v1/price-imports. List price imports, newest first
+func (c *Client) ListPriceImports(ctx context.Context, in ListPriceImportsInput) (*PriceImportList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	var out PriceImportList
+	if err := c.do(ctx, "GET", "/v1/price-imports", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// RunPriceImport calls POST /v1/price-imports. Import prices now
+func (c *Client) RunPriceImport(ctx context.Context, in RunPriceImportInput) (*PriceImport, error) {
+	q := url.Values{}
+	var out PriceImport
+	if err := c.do(ctx, "POST", "/v1/price-imports", q, &in.Body, 201, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetPriceImport calls GET /v1/price-imports/{price_import}. Read a price import with its report
+func (c *Client) GetPriceImport(ctx context.Context, in GetPriceImportInput) (*PriceImport, error) {
+	q := url.Values{}
+	var out PriceImport
+	if err := c.do(ctx, "GET", "/v1/price-imports/"+url.PathEscape(in.PriceImport)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListProviders calls GET /v1/providers. List the providers of the catalogue, by name
+func (c *Client) ListProviders(ctx context.Context, in ListProvidersInput) (*ProviderList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	var out ProviderList
+	if err := c.do(ctx, "GET", "/v1/providers", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreateProvider calls POST /v1/providers. Add a provider
+func (c *Client) CreateProvider(ctx context.Context, in CreateProviderInput) (*Provider, error) {
+	q := url.Values{}
+	var out Provider
+	if err := c.do(ctx, "POST", "/v1/providers", q, &in.Body, 201, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetProvider calls GET /v1/providers/{provider}. Read a provider
+func (c *Client) GetProvider(ctx context.Context, in GetProviderInput) (*Provider, error) {
+	q := url.Values{}
+	var out Provider
+	if err := c.do(ctx, "GET", "/v1/providers/"+url.PathEscape(in.Provider)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateProvider calls PATCH /v1/providers/{provider}. Change, enable or disable a provider
+func (c *Client) UpdateProvider(ctx context.Context, in UpdateProviderInput) (*Provider, error) {
+	q := url.Values{}
+	var out Provider
+	if err := c.do(ctx, "PATCH", "/v1/providers/"+url.PathEscape(in.Provider)+"", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeleteProvider calls DELETE /v1/providers/{provider}. Delete a provider that nothing references
+func (c *Client) DeleteProvider(ctx context.Context, in DeleteProviderInput) (*Provider, error) {
+	q := url.Values{}
+	var out Provider
+	if err := c.do(ctx, "DELETE", "/v1/providers/"+url.PathEscape(in.Provider)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListEndpoints calls GET /v1/providers/{provider}/endpoints. List the endpoints of a provider, by name
+func (c *Client) ListEndpoints(ctx context.Context, in ListEndpointsInput) (*EndpointList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	var out EndpointList
+	if err := c.do(ctx, "GET", "/v1/providers/"+url.PathEscape(in.Provider)+"/endpoints", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreateEndpoint calls POST /v1/providers/{provider}/endpoints. Add an endpoint to a provider
+func (c *Client) CreateEndpoint(ctx context.Context, in CreateEndpointInput) (*Endpoint, error) {
+	q := url.Values{}
+	var out Endpoint
+	if err := c.do(ctx, "POST", "/v1/providers/"+url.PathEscape(in.Provider)+"/endpoints", q, &in.Body, 201, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetEndpoint calls GET /v1/providers/{provider}/endpoints/{endpoint}. Read an endpoint
+func (c *Client) GetEndpoint(ctx context.Context, in GetEndpointInput) (*Endpoint, error) {
+	q := url.Values{}
+	var out Endpoint
+	if err := c.do(ctx, "GET", "/v1/providers/"+url.PathEscape(in.Provider)+"/endpoints/"+url.PathEscape(in.Endpoint)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateEndpoint calls PATCH /v1/providers/{provider}/endpoints/{endpoint}. Change an endpoint or make it the default
+func (c *Client) UpdateEndpoint(ctx context.Context, in UpdateEndpointInput) (*Endpoint, error) {
+	q := url.Values{}
+	var out Endpoint
+	if err := c.do(ctx, "PATCH", "/v1/providers/"+url.PathEscape(in.Provider)+"/endpoints/"+url.PathEscape(in.Endpoint)+"", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeleteEndpoint calls DELETE /v1/providers/{provider}/endpoints/{endpoint}. Delete an endpoint
+func (c *Client) DeleteEndpoint(ctx context.Context, in DeleteEndpointInput) (*Endpoint, error) {
+	q := url.Values{}
+	var out Endpoint
+	if err := c.do(ctx, "DELETE", "/v1/providers/"+url.PathEscape(in.Provider)+"/endpoints/"+url.PathEscape(in.Endpoint)+"", q, nil, 200, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -2500,6 +5012,55 @@ func (c *Client) SetDefaultCredential(ctx context.Context, in SetDefaultCredenti
 	q := url.Values{}
 	var out Credential
 	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"/set-default", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetModelRestriction calls GET /v1/tenants/{tenant}/model-restriction. Read the model restriction of the tenant
+func (c *Client) GetModelRestriction(ctx context.Context, in GetModelRestrictionInput) (*ModelRestriction, error) {
+	q := url.Values{}
+	var out ModelRestriction
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/model-restriction", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// SetModelRestriction calls PUT /v1/tenants/{tenant}/model-restriction. Restrict the tenant to the models named
+func (c *Client) SetModelRestriction(ctx context.Context, in SetModelRestrictionInput) (*ModelRestriction, error) {
+	q := url.Values{}
+	var out ModelRestriction
+	if err := c.do(ctx, "PUT", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/model-restriction", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ClearModelRestriction calls DELETE /v1/tenants/{tenant}/model-restriction. Remove the model restriction of the tenant
+func (c *Client) ClearModelRestriction(ctx context.Context, in ClearModelRestrictionInput) (*ModelRestriction, error) {
+	q := url.Values{}
+	var out ModelRestriction
+	if err := c.do(ctx, "DELETE", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/model-restriction", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListTenantModels calls GET /v1/tenants/{tenant}/models. List the models available to the tenant
+func (c *Client) ListTenantModels(ctx context.Context, in ListTenantModelsInput) (*TenantModelList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	if in.Provider != "" {
+		q.Set("provider", string(in.Provider))
+	}
+	var out TenantModelList
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/models", q, nil, 200, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
