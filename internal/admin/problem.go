@@ -26,6 +26,10 @@ var problems = map[adminapi.ProblemCode]problemSpec{
 	adminapi.ProblemCodeUnsupportedMediaType: {415, "Unsupported media type", "The request body must be application/json."},
 	adminapi.ProblemCodeInternal:             {500, "Internal error", "Internal error."},
 	adminapi.ProblemCodeUnavailable:          {503, "Unavailable", "The request cannot be verified or recorded right now."},
+
+	// Sprint 2.1, section 5.4: the two outcomes of a validation at write time.
+	adminapi.ProblemCodeCredentialRejected:    {422, "Credential rejected", "The provider did not accept the credential. Nothing was stored."},
+	adminapi.ProblemCodeValidationUnavailable: {502, "Validation unavailable", "The provider could not confirm the credential. Nothing was stored."},
 }
 
 // The errors of the handlers and of the hooks; the Error hook turns each into a problem.
@@ -36,6 +40,11 @@ var (
 	errInvalidState    = errors.New("admin: invalid state")
 	errForbidden       = errors.New("admin: forbidden")
 	errTenantState     = errors.New("admin: tenant not active")
+
+	// errCredentialRejected: the provider answered 401 or 403 to a credential presented with validate.
+	errCredentialRejected = errors.New("admin: the provider rejected the credential")
+	// errValidationUnavailable: the provider could not confirm the credential.
+	errValidationUnavailable = errors.New("admin: the provider could not confirm the credential")
 )
 
 // invalidError is an invalid_request with the members that are at fault.

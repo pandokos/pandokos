@@ -259,3 +259,33 @@ func KeyForms(key string) []string {
 		base64.URLEncoding.EncodeToString(sum[:]),
 	}
 }
+
+// SecretForms returns the forms of a secret that must never be found in an output: the value
+// itself, its standard base64, its URL-safe base64 and its lower-case hexadecimal encoding.
+func SecretForms(s string) []string {
+	return []string{
+		s,
+		base64.StdEncoding.EncodeToString([]byte(s)),
+		base64.URLEncoding.EncodeToString([]byte(s)),
+		hex.EncodeToString([]byte(s)),
+	}
+}
+
+// WriteKEK writes a new key-encryption key as one line to a file of mode 0600 in tb.TempDir()
+// and returns its path. The key is 32 bytes from crypto/rand in standard base64 with padding,
+// the content that vault.GenerateLocalKey produces and the local provider reads; it exists for
+// this test only. (It does not call vault.GenerateLocalKey: this package must not import the
+// vault, so that the tests of every other package build while the vault is being written;
+// the provider on such a key is test/vaulttest.NewKeyProvider.)
+func WriteKEK(tb testing.TB) string {
+	tb.Helper()
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		tb.Fatal(err)
+	}
+	p := filepath.Join(tb.TempDir(), "kek")
+	if err := os.WriteFile(p, []byte(base64.StdEncoding.EncodeToString(raw)+"\n"), 0o600); err != nil {
+		tb.Fatal(err)
+	}
+	return p
+}

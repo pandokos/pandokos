@@ -11,3 +11,10 @@ id = "pandokos-key"
 description = "Pandokos platform or virtual key"
 regex = '''pdk_[tp][a-z2-7]{16}_[a-z2-7]{59}'''
 keywords = ["pdk_"]
+
+# Test values are synthetic and named so (`synthetic-…`, docs/operations/vault.md, plan rule 3);
+# the generic rule of gitleaks flags them in test request bodies. Only that prefix is allowed.
+[[allowlists]]
+description = "Synthetic secrets of the test suites"
+regexTarget = "secret"
+regexes = ['''^\s*synthetic-[a-z0-9-]*(\\x07)?[a-z0-9-]*(\\n)?\s*$''']

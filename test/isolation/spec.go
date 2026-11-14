@@ -42,6 +42,7 @@ func DefaultSpec() Spec {
 			"virtual_key_directory": {Reason: "Key ID to tenant, for the lookup function; no runtime role has any privilege on it"},
 			"platform_key":          {Reason: "Credentials of the platform; protected by its own policies", Restricted: true},
 			"platform_audit_event":  {Reason: "Audit log of the platform; protected by its own policies", Restricted: true},
+			"kek_version":           {Reason: "identifiers of key-encryption key versions; describes the installation, holds no key and no tenant information"},
 		},
 		Grants: map[string]map[string][]string{
 			"schema_migration": {
@@ -66,10 +67,31 @@ func DefaultSpec() Spec {
 				"pandokos_gateway": {"SELECT"},
 				"pandokos_admin":   {"DELETE", "INSERT(role,service_account_id,tenant_id)", "SELECT"},
 			},
+			"kek_version": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin":   {"INSERT(id,provider)", "SELECT"},
+				"pandokos_worker":  {"SELECT"},
+			},
+			"tenant_data_key": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin":   {"INSERT(kek_version,tenant_id,version,wrapped_key)", "SELECT"},
+			},
+			"provider_credential": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin": {
+					"DELETE",
+					"INSERT(description,expires_at,fingerprint,hint,id,is_default,key_version,label,provider,secret,tenant_id,validated_at)",
+					"SELECT(created_at,description,expires_at,fingerprint,hint,id,is_default,key_version,label,provider,rotated_at,state,state_changed_at,state_changed_by,state_reason,tenant_id,updated_at,validated_at)",
+					"UPDATE(description,expires_at,fingerprint,hint,is_default,key_version,label,secret,state,state_changed_by,state_reason,validated_at)",
+				},
+			},
+			"provider_credential_metadata": {
+				"pandokos_admin": {"SELECT"},
+			},
 			"virtual_key": {
 				"pandokos_gateway": {"SELECT"},
 				"pandokos_admin": {
-					"INSERT(description,expires_at,key_id,scopes,secret_hash,service_account_id,tenant_id)",
+					"INSERT(credential_id,description,expires_at,key_id,scopes,secret_hash,service_account_id,tenant_id)",
 					"SELECT",
 					"UPDATE(revoked_at)",
 				},
@@ -108,6 +130,17 @@ SELECT $1::uuid, sa.id, 't' || translate(substr(md5(random()::text), 1, 16), '01
        sha256(random()::text::bytea) FROM sa RETURNING id::text`,
 				Update: `description = 'changed'`,
 			},
+			"tenant_data_key": {
+				Insert: `WITH k AS (INSERT INTO pandokos.kek_version (id, provider) VALUES ('test-fixture', 'test') ON CONFLICT (id) DO NOTHING)
+INSERT INTO pandokos.tenant_data_key (tenant_id, kek_version, wrapped_key)
+VALUES ($1::uuid, 'test-fixture', decode(repeat('00', 61), 'hex')) RETURNING id::text`,
+				Update: `wrapped_key = decode(repeat('11', 61), 'hex')`,
+			},
+			"provider_credential": {
+				Insert: `INSERT INTO pandokos.provider_credential (tenant_id, provider, label, key_version, secret, fingerprint)
+VALUES ($1::uuid, 'openai', 'c-' || substr(md5(random()::text), 1, 12), 1, decode(repeat('00', 61), 'hex'), md5(random()::text)) RETURNING id::text`,
+				Update: `description = 'changed'`,
+			},
 			"audit_event": {
 				Insert: `INSERT INTO pandokos.audit_event (tenant_id, actor_type, action, resource_type, outcome)
 VALUES ($1::uuid, 'platform', 'test.fixture', 'test', 'success') RETURNING id::text`,
@@ -115,6 +148,7 @@ VALUES ($1::uuid, 'platform', 'test.fixture', 'test', 'success') RETURNING id::t
 			},
 		},
 		SecurityDefiner: []string{"virtual_key_lookup", "virtual_key_directory_add"},
+		Views:           []string{"provider_credential_metadata"},
 		AppendOnly:      []string{"audit_event", "platform_audit_event"},
 	}
 }

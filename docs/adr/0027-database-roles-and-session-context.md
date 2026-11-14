@@ -54,3 +54,4 @@ direct connection.
 ## History
 
 - 2026-11: sprint 1.3 adds the transaction with neither setting (Unscoped), the provisioning transaction with both (ADR 0031), and one LISTEN connection per gateway (ADR 0030).
+- 2026-11: sprint 2.1 adds lint rule L-19 (views run with the caller's rights) and the first view.

@@ -62,6 +62,21 @@ While a bootstrap key is usable, `serve` logs `bootstrap key active` at start an
 response to that key carries `X-Pandokos-Warning: bootstrap-key-active`, and the CLI prints a
 warning. Create a platform key and revoke the bootstrap key.
 
+## Pinning a key to a provider credential
+
+`pandokos key create --credential ID` (the field `credential_id` of the API) pins the new virtual
+key to one provider credential of the tenant. The pin is set when the key is created and cannot be
+changed; issue a new key to change it. The rule (decision D-6 of sprint 2.1): a pinned key uses its
+credential for that credential's provider, and the tenant's default credential for any other
+provider. Nothing ever falls back to another credential: if the pinned credential is disabled or
+revoked, calls for its provider fail. Deleting a credential clears the pin of the keys that held it
+(the audit row of the deletion says how many in `cleared_pins`). A key without a pin uses the default
+credential of each provider.
+
+A credential is opened for a call only when the key holds `credential:use`. A key with `scopes` therefore needs `credential:use` next to
+`model:invoke` for the credentials of its tenant ([permissions](../reference/permissions.md)). The
+built-in `inference` and `tenant-admin` roles hold both.
+
 ## Rotation
 
 A service account can hold several active keys. To rotate: create a second key, deploy it, revoke
@@ -82,6 +97,10 @@ cannot cross a pooler in transaction mode; when `database.address` is such a poo
 unavailable` and the bound is the full 30 s. The bound holds with no notification at all. A
 request that was authenticated before the event is not interrupted: a stream that is running
 finishes. The administration API does not cache.
+
+Disabling, revoking, replacing or deleting a provider credential, or moving the default, takes
+effect on the administration listener at the next request and on a running gateway within
+`cache.credential_ttl` (default 30 s; at most 60 s; see the [vault guide](vault.md)).
 
 ## What suspension does
 

@@ -32,6 +32,8 @@ type shared struct {
 	users     map[string]string
 	passwords map[string]string
 	extra     []string // logins created by CreateLogin
+	root      testing.TB
+	kekFile   string // made by the first call of Env, for the life of the database
 	mu        sync.Mutex
 }
 
@@ -104,7 +106,7 @@ func New(tb testing.TB) *Database {
 		}
 	}
 
-	s := &shared{admin: cfg, users: map[string]string{}, passwords: map[string]string{}}
+	s := &shared{admin: cfg, users: map[string]string{}, passwords: map[string]string{}, root: tb}
 	d := &Database{Name: name, Host: cfg.Host, Port: int(cfg.Port), s: s}
 	tb.Cleanup(func() {
 		c, cancel := ctx30()
@@ -400,7 +402,10 @@ func (d *Database) SetAcceptingConnections(tb testing.TB, accept bool) {
 
 // Env returns the PANDOKOS_DATABASE_* variables for a process: address, name, TLS mode
 // "disable", the three runtime users with password files, and the owner user with its
-// password file. Password files are created with testutil.WriteSecret.
+// password file, and PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE with the key-encryption key file of the
+// database (made with testutil.WriteKEK on the first call and the same on every later call, so a
+// process restarted on the same database finds the key that sealed its data). Password files are
+// created with testutil.WriteSecret.
 func (d *Database) Env(tb testing.TB) []string {
 	tb.Helper()
 	env := []string{
@@ -408,6 +413,12 @@ func (d *Database) Env(tb testing.TB) []string {
 		"PANDOKOS_DATABASE_NAME=" + d.Name,
 		"PANDOKOS_DATABASE_TLS_MODE=disable",
 	}
+	d.s.mu.Lock()
+	if d.s.kekFile == "" {
+		d.s.kekFile = testutil.WriteKEK(d.s.root)
+	}
+	env = append(env, "PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE="+d.s.kekFile)
+	d.s.mu.Unlock()
 	for _, r := range []string{"gateway", "admin", "worker", "owner"} {
 		up := strings.ToUpper(r)
 		env = append(env,
