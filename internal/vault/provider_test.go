@@ -255,26 +255,3 @@ func TestLocalProvider(t *testing.T) {
 		}
 	})
 }
-
-// TestProviders checks the list of providers that a credential may name until the catalogue
-// of sprint 2.2 exists (D-9).
-func TestProviders(t *testing.T) {
-	got := vault.Providers()
-	if len(got) != 2 || got[0] != "anthropic" || got[1] != "openai" {
-		t.Errorf("Providers() = %v, want [anthropic openai]", got)
-	}
-	got[0] = "changed"
-	if vault.Providers()[0] != "anthropic" {
-		t.Error("changing the returned slice changed the list")
-	}
-	for _, n := range []string{"openai", "anthropic"} {
-		if !vault.KnownProvider(n) {
-			t.Errorf("KnownProvider(%q) is false", n)
-		}
-	}
-	for _, n := range []string{"", "OpenAI", "gemini", "openai ", "open-ai"} {
-		if vault.KnownProvider(n) {
-			t.Errorf("KnownProvider(%q) is true", n)
-		}
-	}
-}

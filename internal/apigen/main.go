@@ -144,7 +144,8 @@ type schema struct {
 type generator struct {
 	doc      document
 	buf      bytes.Buffer
-	patterns []string // regular expressions, in order of first use
+	update   map[string]bool // update schemas: component objects used as the body of a PATCH operation
+	patterns []string        // regular expressions, in order of first use
 }
 
 func main() {
@@ -349,6 +350,9 @@ func sortedKeys[V any](m map[string]V) []string {
 
 func (g *generator) run() ([]byte, error) {
 	var body bytes.Buffer
+	if err := g.findUpdateSchemas(); err != nil {
+		return nil, err
+	}
 	if err := g.schemas(); err != nil {
 		return nil, err
 	}
@@ -367,6 +371,71 @@ func (g *generator) run() ([]byte, error) {
 	}
 	body.Write(g.buf.Bytes())
 	return body.Bytes(), nil
+}
+
+// findUpdateSchemas records the update schemas: the component objects that are the request body
+// of a PATCH operation. Such a schema is generated with Optional members, so it may not be used
+// anywhere else (as another operation's body, a member of another object, an item, a response).
+func (g *generator) findUpdateSchemas() error {
+	g.update = map[string]bool{}
+	elsewhere := map[string]string{}
+	var walk func(where string, s *schema)
+	walk = func(where string, s *schema) {
+		if s == nil {
+			return
+		}
+		if s.Ref != "" {
+			if n, err := refName(s.Ref, "schemas"); err == nil {
+				elsewhere[n] = where
+			}
+		}
+		walk(where, s.Items)
+		for _, pn := range s.Properties.Names {
+			walk(where, s.Properties.By[pn])
+		}
+	}
+	for _, name := range sortedKeys(g.doc.Components.Schemas) {
+		s := g.doc.Components.Schemas[name]
+		for _, pn := range s.Properties.Names {
+			walk("a member of schema "+name, s.Properties.By[pn])
+		}
+		walk("an item of schema "+name, s.Items)
+	}
+	for _, name := range sortedKeys(g.doc.Components.Responses) {
+		for _, m := range g.doc.Components.Responses[name].Content {
+			walk("response "+name, m.Schema)
+		}
+	}
+	for _, path := range sortedKeys(g.doc.Paths) {
+		item := g.doc.Paths[path]
+		for _, m := range []struct {
+			method string
+			op     *operation
+		}{{"GET", item.Get}, {"POST", item.Post}, {"PATCH", item.Patch}, {"PUT", item.Put}, {"DELETE", item.Delete}} {
+			if m.op == nil || m.op.RequestBody == nil {
+				continue
+			}
+			mt, ok := m.op.RequestBody.Content["application/json"]
+			if !ok || mt.Schema == nil || mt.Schema.Ref == "" {
+				continue // reported by operations
+			}
+			n, err := refName(mt.Schema.Ref, "schemas")
+			if err != nil {
+				continue
+			}
+			if m.method == "PATCH" {
+				g.update[n] = true
+			} else {
+				elsewhere[n] = m.method + " " + path
+			}
+		}
+	}
+	for _, n := range sortedKeys(g.update) {
+		if w, ok := elsewhere[n]; ok {
+			return fmt.Errorf("schema %s is the body of a PATCH operation (an update schema) and is also used by %s", n, w)
+		}
+	}
+	return nil
 }
 
 func (g *generator) schemas() error {
@@ -435,6 +504,7 @@ func (g *generator) object(name string, s *schema) error {
 	}
 	g.p("type %s struct {", name)
 	var checks bytes.Buffer
+	var nested []string // the members that are objects, or arrays of objects, for the presence check
 	for _, pn := range s.Properties.Names {
 		ps := s.Properties.By[pn]
 		f, err := g.fieldOf(ps, required[pn])
@@ -442,7 +512,16 @@ func (g *generator) object(name string, s *schema) error {
 			return fmt.Errorf("property %s: %w", pn, err)
 		}
 		tag := pn
+		optional := g.update[name] && !required[pn] && !f.nullable
 		switch {
+		case optional:
+			switch f.kind {
+			case "string", "enum", "int", "bool", "strings":
+			default:
+				return fmt.Errorf("property %s: an optional member of an update schema must be a string, enum, integer, boolean or array of strings", pn)
+			}
+			f.goType = "Optional[" + f.goType + "]"
+			tag += ",omitzero"
 		case f.nullable:
 			if required[pn] {
 				return fmt.Errorf("property %s: a nullable property cannot be required", pn)
@@ -455,10 +534,30 @@ func (g *generator) object(name string, s *schema) error {
 			g.p("// %s", d)
 		}
 		g.p("%s %s `json:%q`", fieldName(pn), f.goType, tag)
+		if f.kind == "object" || f.kind == "objects" {
+			target := strings.TrimLeft(f.goType, "[]*")
+			many := ""
+			if f.kind == "objects" {
+				many = "Many: true, "
+			}
+			nested = append(nested, fmt.Sprintf("{Name: %q, %sRequired: required%s, Nested: nested%s}", pn, many, target, target))
+		}
+		if optional {
+			// Validation runs only when the member is present.
+			fmt.Fprintf(&checks, "if v.%s.Set {\n", fieldName(pn))
+			g.check(&checks, "v."+fieldName(pn)+".Value", pn, f, true)
+			checks.WriteString("}\n")
+			continue
+		}
 		g.check(&checks, "v."+fieldName(pn), pn, f, required[pn])
 	}
 	g.p("}\n")
 	g.p("var required%s = []string{%s}\n", name, quoteList(s.Required))
+	if len(nested) == 0 {
+		g.p("var nested%s []nestedMember\n", name)
+	} else {
+		g.p("var nested%s = []nestedMember{%s}\n", name, strings.Join(nested, ", "))
+	}
 	g.p("// Validate returns the rules of the document that v breaks. A message never repeats a value.")
 	g.p("func (v *%s) Validate() []FieldError {", name)
 	g.p("var errs []FieldError")
@@ -493,6 +592,24 @@ func (g *generator) check(w *bytes.Buffer, expr, name string, f field, required 
 		}
 	}
 	switch f.kind {
+	case "object":
+		// The members of a nested object are checked by its own Validate; their names are
+		// prefixed with the name of the member.
+		if !required {
+			fmt.Fprintf(w, "if %s != nil {\n", expr)
+		}
+		fmt.Fprintf(w, "for _, e := range %s.Validate() {\nerrs = append(errs, FieldError{Field: %q + e.Field, Message: e.Message})\n}\n", expr, name+".")
+		if !required {
+			w.WriteString("}\n")
+		}
+	case "objects":
+		if f.s.MinItems != nil {
+			add(expr+" != nil && len("+expr+") < "+strconv.Itoa(*f.s.MinItems), "must have at least "+strconv.Itoa(*f.s.MinItems)+" items")
+		}
+		if f.s.MaxItems != nil {
+			add("len("+expr+") > "+strconv.Itoa(*f.s.MaxItems), "must have at most "+strconv.Itoa(*f.s.MaxItems)+" items")
+		}
+		fmt.Fprintf(w, "for i := range %s {\nfor _, e := range %s[i].Validate() {\nerrs = append(errs, FieldError{Field: %q + strconv.Itoa(i) + \"].\" + e.Field, Message: e.Message})\n}\n}\n", expr, expr, name+"[")
 	case "string":
 		if f.nullable {
 			str(expr+".Value", f.s, expr+".Set && !"+expr+".Null && ")
@@ -662,11 +779,6 @@ func (g *generator) operations() error {
 				if err != nil || sn == "" || s.Type.Name != "object" {
 					return fail(errors.New("a request body must be a component object"))
 				}
-				for _, pn := range s.Properties.Names {
-					if f, err := g.fieldOf(s.Properties.By[pn], false); err == nil && (f.kind == "object" || f.kind == "objects") {
-						return fail(fmt.Errorf("request body %s: member %s is an object; request bodies are flat", sn, pn))
-					}
-				}
 				info.body, info.bodyRequired = sn, op.RequestBody.Required
 			}
 			ops = append(ops, info)
@@ -763,7 +875,7 @@ func (g *generator) operations() error {
 			g.p("if len(errs) > 0 { h.fail(w, r, op, invalid(errs)); return }")
 		}
 		if o.body != "" {
-			g.p("if err := decodeBody(r, h.hooks.MaxBodyBytes, %t, required%s, &in.Body); err != nil { h.fail(w, r, op, err); return }", o.bodyRequired, o.body)
+			g.p("if err := decodeBody(r, h.hooks.MaxBodyBytes, %t, required%s, nested%s, &in.Body); err != nil { h.fail(w, r, op, err); return }", o.bodyRequired, o.body, o.body)
 			g.p("if errs := in.Body.Validate(); len(errs) > 0 { h.fail(w, r, op, invalid(errs)); return }")
 		}
 		g.p("out, err := h.server.%s(r.Context(), in)", goName(o.id))

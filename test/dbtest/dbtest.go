@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -405,8 +406,17 @@ func (d *Database) SetAcceptingConnections(tb testing.TB, accept bool) {
 // password file, and PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE with the key-encryption key file of the
 // database (made with testutil.WriteKEK on the first call and the same on every later call, so a
 // process restarted on the same database finds the key that sealed its data). Password files are
-// created with testutil.WriteSecret.
+// created with testutil.WriteSecret. It also sets PANDOKOS_PRICING_IMPORT_AT_START=false, so that
+// the price import of the first start does not write the audit rows that the tests count; a test
+// that wants the import asks for it with EnvWith.
 func (d *Database) Env(tb testing.TB) []string {
+	tb.Helper()
+	return d.EnvWith(tb, nil)
+}
+
+// EnvWith is Env with the variables of extra added after it (so that they win), for example
+// {"PANDOKOS_PRICING_IMPORT_AT_START": "true"}.
+func (d *Database) EnvWith(tb testing.TB, extra map[string]string) []string {
 	tb.Helper()
 	env := []string{
 		"PANDOKOS_DATABASE_ADDRESS=" + net.JoinHostPort(d.Host, strconv.Itoa(d.Port)),
@@ -425,6 +435,15 @@ func (d *Database) Env(tb testing.TB) []string {
 			"PANDOKOS_DATABASE_"+up+"_USER="+d.User(r),
 			"PANDOKOS_DATABASE_"+up+"_PASSWORD_FILE="+testutil.WriteSecret(tb, "db_"+r, d.s.passwords[r]),
 		)
+	}
+	env = append(env, "PANDOKOS_PRICING_IMPORT_AT_START=false")
+	names := make([]string, 0, len(extra))
+	for k := range extra {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	for _, k := range names {
+		env = append(env, k+"="+extra[k])
 	}
 	return env
 }

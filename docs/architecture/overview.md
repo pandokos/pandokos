@@ -211,7 +211,7 @@ revocation takes, so these numbers are part of the product's contract (IAM-05, V
 |---|---|---|
 | Principal for a virtual key (gateway only; lifetime `cache.principal_ttl`; the admin API does not cache) | 30 s (5 s for unknown keys) | PostgreSQL `NOTIFY` on change, lifetime as upper bound |
 | JWKS of a trusted issuer | as the issuer's cache headers say, at most 1 h | Refetch on unknown key ID, rate limited |
-| Catalogue and tenant state | 30 s | `NOTIFY` |
+| Catalogue (providers, endpoints, models, prices) and each tenant's model access | 30 s (`cache.catalog_ttl`, at most 5 m) | `NOTIFY` (`catalog`, `catalog:<tenant>`) |
 | Unwrapped tenant data key | 5 min | `NOTIFY` on tenant deletion or key rotation |
 | Decrypted provider credential | 60 s | `NOTIFY` on credential change |
 | Console session | 30 s | `NOTIFY` on sign-out, password change or disabling of the user |
@@ -302,7 +302,8 @@ internal/
   adminapi/  apigen/     generated administration API (types, router, client) and its generator
   cli/  requestid/       API commands of the CLI; request ID shared by both listeners
   tenant/  identity/     tenants, users, service accounts, keys, roles
-  catalog/  pricing/     providers, endpoints, models, prices
+  catalog/               providers, endpoints, models, access rule, gateway cache, price importer, remote fetch
+  pricing/               exact decimals, price versions, cost of a usage; pricing/genaiprices reads the price dataset (embedded snapshot)
   vault/                 envelope encryption, key providers, sealer, opener, validator
   limits/                counters: memory and Valkey
   ledger/  audit/        append-only writers and readers

@@ -161,10 +161,10 @@ func (s *server) UpdateServiceAccount(ctx context.Context, in adminapi.UpdateSer
 		return nil, err
 	}
 	b := in.Body
-	if b.Name == "" && b.Description == "" && !b.ValidFrom.Set && !b.ValidUntil.Set && b.Roles == nil {
+	if !b.Name.Set && !b.Description.Set && !b.ValidFrom.Set && !b.ValidUntil.Set && !b.Roles.Set {
 		return nil, invalid("body", "must change at least one member")
 	}
-	if err := checkRoles(b.Roles); err != nil {
+	if err := checkRoles(b.Roles.Value); err != nil {
 		return nil, err
 	}
 	p := principalOf(ctx)
@@ -184,13 +184,13 @@ func (s *server) UpdateServiceAccount(ctx context.Context, in adminapi.UpdateSer
 		}
 		detail := map[string]any{}
 		par := queries.UpdateServiceAccountParams{ID: cur.ID}
-		if b.Name != "" && b.Name != cur.Name {
-			par.SetName, par.Name = true, b.Name
-			detail["name"] = change(cur.Name, b.Name)
+		if b.Name.Set && b.Name.Value != cur.Name {
+			par.SetName, par.Name = true, b.Name.Value
+			detail["name"] = change(cur.Name, b.Name.Value)
 		}
-		if b.Description != "" && b.Description != cur.Description {
-			par.SetDescription, par.Description = true, b.Description
-			detail["description"] = change(cur.Description, b.Description)
+		if b.Description.Set && b.Description.Value != cur.Description {
+			par.SetDescription, par.Description = true, b.Description.Value
+			detail["description"] = change(cur.Description, b.Description.Value)
 		}
 		for _, bound := range []struct {
 			name  string
@@ -217,9 +217,9 @@ func (s *server) UpdateServiceAccount(ctx context.Context, in adminapi.UpdateSer
 			detail[bound.name] = change(fmtTime(bound.cur), fmtTime(want))
 		}
 		var newRoles []string
-		rolesChange := b.Roles != nil && !sameStrings(sortedCopy(b.Roles), sortedCopy(cur.Roles))
+		rolesChange := b.Roles.Set && !sameStrings(sortedCopy(b.Roles.Value), sortedCopy(cur.Roles))
 		if rolesChange {
-			newRoles = sortedCopy(b.Roles)
+			newRoles = sortedCopy(b.Roles.Value)
 			detail["roles"] = change(sortedCopy(cur.Roles), newRoles)
 		}
 		if len(detail) == 0 {

@@ -45,3 +45,8 @@ would be a permanent chore.
 privileged provider credentials.
 
 **Leaving cost to downstream systems.** Budgets in money (LIM-03) need the cost at request time.
+
+## History
+
+
+- 2026-11: sprint 2.2 implements it with the v2 format of the dataset, which replaced the frozen v1 files ([ADR 0036](0036-prices-costs-and-importer.md)).

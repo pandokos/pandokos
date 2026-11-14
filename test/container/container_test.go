@@ -90,7 +90,7 @@ func TestImage(t *testing.T) {
 
 	// The image creates the schema with its migrate command.
 	migrateArgs := append(append([]string{"run", "--rm"}, hardened...), dbEnv...)
-	if out := docker(t, append(migrateArgs, image, "migrate")...); !strings.Contains(out, "schema is at version 3") {
+	if out := docker(t, append(migrateArgs, image, "migrate")...); !strings.Contains(out, "schema is at version 4") {
 		t.Fatalf("migrate output: %q", out)
 	}
 
@@ -187,6 +187,13 @@ func TestImage(t *testing.T) {
 	// The key was read, the version is announced, and the mode of the file is warned about (T-362).
 	if !strings.Contains(logs, `"msg":"vault ready"`) || !strings.Contains(logs, `"kek_provider":"local"`) {
 		t.Errorf("the container did not log `vault ready`:\n%s", logs)
+	}
+	// T-412: the image imports the embedded snapshot at its first start; no network is needed.
+	if !regexp.MustCompile(`"msg":"prices imported"[^\n]*"source":"embedded"|"source":"embedded"[^\n]*"msg":"prices imported"`).MatchString(logs) {
+		t.Errorf("the container did not log `prices imported` for the embedded snapshot:\n%s", logs)
+	}
+	if strings.Contains(logs, `"msg":"price import failed"`) {
+		t.Errorf("the start-up price import failed in the container:\n%s", logs)
 	}
 	if !strings.Contains(logs, `"msg":"configuration warning"`) || !strings.Contains(logs, `"key":"vault.kek.local.key_file"`) {
 		t.Errorf("no warning about the mode of the key file in the container logs:\n%s", logs)

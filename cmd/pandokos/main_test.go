@@ -301,6 +301,14 @@ func TestInitAndClientUsage(t *testing.T) {
 			"platform-key list|create|get|revoke",
 			"credential list|create|get|update|replace|disable|enable|set-default|revoke|delete",
 			"tenant-credential list|get|disable|revoke",
+			"provider list|create|get|update|delete",
+			"endpoint list|create|get|update|delete",
+			"model list|create|get|update|delete|grants|grant|revoke-grant",
+			"price list|override|delete|clear-override",
+			"price-import list|get|run",
+			"tenant-model list",
+			"model-restriction get|set|clear",
+			"import-prices [--config FILE] (--file FILE | --embedded) [--dry-run]",
 			"kek generate --out FILE",
 			"Administer through the administration API;",
 			`"pandokos <command> --help" lists the flags`,
@@ -318,6 +326,8 @@ func TestInitAndClientUsage(t *testing.T) {
 	t.Run("a command group needs a sub-command", func(t *testing.T) {
 		for _, args := range [][]string{
 			{"tenant"}, {"service-account"}, {"key"}, {"platform-key"}, {"credential"}, {"tenant-credential"}, {"kek"},
+			{"provider"}, {"endpoint"}, {"model"}, {"price"}, {"price-import"}, {"tenant-model"}, {"model-restriction"},
+			{"provider", "frobnicate"}, {"model", "frobnicate"}, {"price", "frobnicate"}, {"price-import", "delete"}, {"tenant-model", "get"}, {"model-restriction", "list"},
 			{"tenant", "frobnicate"}, {"key", "delete"}, {"platform-key", "list", "extra"},
 			{"credential", "frobnicate"}, {"tenant-credential", "create"}, {"kek", "rotate"},
 		} {
@@ -333,6 +343,95 @@ func TestInitAndClientUsage(t *testing.T) {
 			if code != 2 || out != "" || !strings.Contains(errs, "key") {
 				t.Errorf("%v: code %d, stdout %q, stderr %q", args, code, out, errs)
 			}
+		}
+	})
+}
+
+// TestImportPricesUsage is the part of T-385 about the host command import-prices: the flag
+// rules and the exit codes that do not need a database (the run itself is T-394 and T-410).
+func TestImportPricesUsage(t *testing.T) {
+	t.Run("wrong usage is 2", func(t *testing.T) {
+		file := filepath.Join(t.TempDir(), "prices.json")
+		if err := os.WriteFile(file, []byte("[]"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		for name, args := range map[string][]string{
+			"no source":               {"import-prices"},
+			"only --dry-run":          {"import-prices", "--dry-run"},
+			"a file and the embedded": {"import-prices", "--file", file, "--embedded"},
+			"an empty file name":      {"import-prices", "--file", ""},
+			"a positional argument":   {"import-prices", "--embedded", "extra"},
+			"a positional file":       {"import-prices", file},
+			"an unknown flag":         {"import-prices", "--embedded", "--bogus"},
+			"a URL":                   {"import-prices", "--url", "https://prices.example.com/data.json"},
+			"--file without a value":  {"import-prices", "--file"},
+			"--embedded=false":        {"import-prices", "--embedded=false"},
+		} {
+			// The flags are checked before the configuration: the environment is empty.
+			code, out, errs := runCmd(t, nil, args...)
+			if code != 2 || out != "" || !strings.Contains(errs, "import-prices") {
+				t.Errorf("%s: code %d, stdout %q, stderr %q, want 2", name, code, out, errs)
+			}
+			if code, out, errs := runCmd(t, initEnv(t), args...); code != 2 || out != "" || errs == "" {
+				t.Errorf("%s with a valid configuration: code %d, stdout %q, stderr %q, want 2", name, code, out, errs)
+			}
+		}
+	})
+
+	t.Run("an invalid configuration is 1 and asks for the admin database user only", func(t *testing.T) {
+		code, out, errs := runCmd(t, nil, "import-prices", "--embedded")
+		if code != 1 || out != "" || !strings.Contains(errs, "error: database.address: must be set") || !strings.Contains(errs, "error: database.admin.password_file: must be set") {
+			t.Errorf("code %d, stdout %q, stderr %q", code, out, errs)
+		}
+		if strings.Contains(errs, "database.gateway") || strings.Contains(errs, "database.owner") || strings.Contains(errs, "database.worker") || strings.Contains(errs, "skeleton.") ||
+			strings.Contains(errs, "vault.") || strings.Contains(errs, "pricing.") {
+			t.Errorf("import-prices asked for something it does not need: %q", errs)
+		}
+	})
+
+	t.Run("a file that cannot be read is 1, before any database is reached", func(t *testing.T) {
+		env := append(initEnv(t), "PANDOKOS_DATABASE_ADDRESS=127.0.0.1:1") // nothing listens there
+		dir := t.TempDir()
+		big := filepath.Join(dir, "big.json")
+		content := strings.Repeat(" ", 16<<20+1)
+		if err := os.WriteFile(big, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		for name, path := range map[string]string{
+			"missing":     filepath.Join(dir, "missing.json"),
+			"a directory": dir,
+			"over 16 MiB": big,
+		} {
+			code, out, errs := runCmd(t, env, "import-prices", "--file", path)
+			if code != 1 || out != "" || errs == "" {
+				t.Errorf("%s: code %d, stdout %q, stderr %q, want 1", name, code, out, errs)
+			}
+			if !strings.Contains(strings.ToLower(errs), "file") {
+				t.Errorf("%s: the message does not say it is about the file (the file is read before the database is opened): %q", name, errs)
+			}
+			if strings.Contains(errs, "127.0.0.1:1") || strings.Contains(errs, "connect") {
+				t.Errorf("%s: the database was reached before the file was checked: %q", name, errs)
+			}
+		}
+	})
+
+	t.Run("a file that is read and a database that is not there is 1", func(t *testing.T) {
+		env := append(initEnv(t), "PANDOKOS_DATABASE_ADDRESS=127.0.0.1:1")
+		file := filepath.Join(t.TempDir(), "prices.json")
+		if err := os.WriteFile(file, []byte(`[]`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		for _, args := range [][]string{{"import-prices", "--file", file}, {"import-prices", "--embedded"}, {"import-prices", "--embedded", "--dry-run"}, {"import-prices", "--file", file, "--dry-run"}} {
+			if code, out, errs := runCmd(t, env, args...); code != 1 || out != "" || errs == "" {
+				t.Errorf("%v: code %d, stdout %q, stderr %q, want 1", args, code, out, errs)
+			}
+		}
+	})
+
+	t.Run("help", func(t *testing.T) {
+		code, out, _ := runCmd(t, nil, "help")
+		if code != 0 || !strings.Contains(out, "import-prices [--config FILE] (--file FILE | --embedded) [--dry-run]") {
+			t.Errorf("code %d, stdout %q", code, out)
 		}
 	})
 }

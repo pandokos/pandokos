@@ -60,6 +60,8 @@ type vkRow struct {
 	CreatedAt                                      time.Time
 	State                                          string
 	CredentialID                                   *string
+	Models                                         []string
+	ModelsRestricted                               bool
 }
 
 func (r vkRow) out() adminapi.VirtualKey {
@@ -72,6 +74,9 @@ func (r vkRow) out() adminapi.VirtualKey {
 	}
 	if r.Scoped {
 		k.Scopes = nonNil(r.Scopes)
+	}
+	if r.ModelsRestricted {
+		k.Models = nonNil(r.Models)
 	}
 	return k
 }

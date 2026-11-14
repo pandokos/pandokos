@@ -58,7 +58,7 @@ func TestTenants(t *testing.T) {
 		if m.PrincipalType != adminapi.PrincipalTypeServiceAccount || m.ID != sa.ID || m.Tenant == nil || m.Tenant.ID != out.Tenant.ID || m.Tenant.State != adminapi.TenantStateActive || m.Bootstrap {
 			t.Errorf("me: %+v", m)
 		}
-		if strings.Join(m.Roles, ",") != "tenant-admin" || len(m.Permissions) != 12 {
+		if strings.Join(m.Roles, ",") != "tenant-admin" || len(m.Permissions) != 14 {
 			t.Errorf("roles %v, permissions %v", m.Roles, m.Permissions)
 		}
 		// The default name of the first service account is admin; no expiry means none.
@@ -97,14 +97,14 @@ func TestTenants(t *testing.T) {
 			t.Fatalf("%+v %v", acme, err)
 		}
 		id := acme.Items[0].ID
-		upd, err := plat.UpdateTenant(ctx(t), adminapi.UpdateTenantInput{Tenant: id, Body: adminapi.TenantUpdate{Name: "acme-renamed"}})
+		upd, err := plat.UpdateTenant(ctx(t), adminapi.UpdateTenantInput{Tenant: id, Body: adminapi.TenantUpdate{Name: adminapi.Some("acme-renamed")}})
 		if err != nil || upd.Name != "acme-renamed" || upd.DisplayName != "Acme Inc" || !upd.UpdatedAt.After(acme.Items[0].UpdatedAt.Add(-time.Second)) {
 			t.Errorf("rename: %+v %v", upd, err)
 		}
 		if _, err := plat.CreateTenant(ctx(t), adminapi.CreateTenantInput{Body: adminapi.TenantCreate{Name: "acme"}}); err != nil {
 			t.Errorf("a name that was changed away is free: %v", err)
 		}
-		upd, err = plat.UpdateTenant(ctx(t), adminapi.UpdateTenantInput{Tenant: id, Body: adminapi.TenantUpdate{DisplayName: "Renamed Inc"}})
+		upd, err = plat.UpdateTenant(ctx(t), adminapi.UpdateTenantInput{Tenant: id, Body: adminapi.TenantUpdate{DisplayName: adminapi.Some("Renamed Inc")}})
 		if err != nil || upd.Name != "acme-renamed" || upd.DisplayName != "Renamed Inc" {
 			t.Errorf("display name: %+v %v", upd, err)
 		}
@@ -490,7 +490,7 @@ func TestPlatformKeys(t *testing.T) {
 	c := api.Client(boot)
 
 	m := me(t, api, boot)
-	if m.PrincipalType != adminapi.PrincipalTypePlatform || !m.Bootstrap || m.Tenant != nil || strings.Join(m.Roles, ",") != "platform-admin" || len(m.Permissions) != 9 {
+	if m.PrincipalType != adminapi.PrincipalTypePlatform || !m.Bootstrap || m.Tenant != nil || strings.Join(m.Roles, ",") != "platform-admin" || len(m.Permissions) != 12 {
 		t.Errorf("me: %+v", m)
 	}
 	r := api.Do(t, "GET", "/v1/me", boot, nil, nil)
@@ -595,8 +595,8 @@ func TestSuspensionBlocksAdministration(t *testing.T) {
 			}
 		}
 	}
-	if n != 21 {
-		t.Errorf("only %d operations were exercised, want 21", n)
+	if n != 25 {
+		t.Errorf("only %d operations were exercised, want 25 (getMe, the twenty tenant operations of epic 2.1 and the four of sprint 2.2)", n)
 	}
 	if after := w.api.SnapshotTenant(t, w.tenant.ID); after != before {
 		t.Error("a row of the suspended tenant changed")

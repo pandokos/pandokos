@@ -45,6 +45,7 @@ type Config struct {
 	Cache     Cache     `yaml:"cache"`
 	Database  Database  `yaml:"database"`
 	Vault     Vault     `yaml:"vault"`
+	Pricing   Pricing   `yaml:"pricing"`
 	Skeleton  Skeleton  `yaml:"skeleton"`
 }
 
@@ -92,7 +93,27 @@ type Cache struct {
 	PrincipalTTL  Duration `yaml:"principal_ttl"`
 	CredentialTTL Duration `yaml:"credential_ttl"`
 	DataKeyTTL    Duration `yaml:"data_key_ttl"`
+	CatalogTTL    Duration `yaml:"catalog_ttl"`
 }
+
+// Pricing configures the price list: the import of the embedded snapshot at start and the
+// optional periodic download. Only serve reads and validates the download settings.
+type Pricing struct {
+	ImportAtStart bool           `yaml:"import_at_start"`
+	Refresh       PricingRefresh `yaml:"refresh"`
+}
+
+// PricingRefresh configures the periodic download of the price dataset.
+type PricingRefresh struct {
+	Enabled  bool     `yaml:"enabled"`
+	URL      string   `yaml:"url"`
+	Interval Duration `yaml:"interval"`
+
+	ParsedURL *url.URL `yaml:"-"` // filled by Load when the purpose is serve
+}
+
+// DefaultPriceURL is the default address of the price dataset (the v2 data file of genai-prices).
+const DefaultPriceURL = "https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json"
 
 // Vault configures the credential vault.
 type Vault struct {
@@ -253,6 +274,11 @@ func Defaults() *Config {
 			PrincipalTTL:  Duration(30 * time.Second),
 			CredentialTTL: Duration(30 * time.Second),
 			DataKeyTTL:    Duration(5 * time.Minute),
+			CatalogTTL:    Duration(30 * time.Second),
+		},
+		Pricing: Pricing{
+			ImportAtStart: true,
+			Refresh:       PricingRefresh{URL: DefaultPriceURL, Interval: Duration(24 * time.Hour)},
 		},
 		Vault: Vault{KEK: VaultKEK{Provider: "local"}},
 		Database: Database{

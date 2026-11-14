@@ -194,6 +194,10 @@ func TestSealerDB(t *testing.T) {
 				defer wg.Done()
 				// One provider per credential: this test is about the data key, not the default.
 				provider := fmt.Sprintf("provider-%02d", i)
+				if _, err := w.d.Super(t).Exec(ctx(t), `INSERT INTO pandokos.provider (name, api_family) VALUES ($1, 'openai')`, provider); err != nil {
+					errs[i] = err
+					return
+				}
 				errs[i] = w.admin.WithTenant(ctx(t), tid, func(c context.Context, tx store.Tx) error {
 					q := queries.New(tx)
 					id, err := q.NewCredentialID(c)

@@ -1,0 +1,343 @@
+[
+  {
+    "id": "synthetic",
+    "name": "Synthetic shapes",
+    "models": [
+      {
+        "id": "synthetic-plain",
+        "name": "synthetic-plain",
+        "match": {
+          "equals": "synthetic-plain"
+        },
+        "prices": {
+          "input_mtok": 1,
+          "output_mtok": 2
+        }
+      },
+      {
+        "id": "synthetic-all-categories",
+        "name": "synthetic-all-categories",
+        "match": {
+          "equals": "synthetic-all-categories"
+        },
+        "prices": {
+          "input_mtok": 0.195,
+          "output_mtok": 0.78,
+          "cache_read_mtok": 0.0195,
+          "cache_write_mtok": 0.24,
+          "cache_write_1h_mtok": 0.39,
+          "input_audio_mtok": 3.5,
+          "output_audio_mtok": 7
+        },
+        "context_window": 32000,
+        "deprecated": true
+      },
+      {
+        "id": "synthetic-tiers",
+        "name": "synthetic-tiers",
+        "match": {
+          "equals": "synthetic-tiers"
+        },
+        "prices": {
+          "input_mtok": {
+            "base": 1,
+            "tiers": [
+              {
+                "start": 100000,
+                "price": 2
+              },
+              {
+                "start": 500000,
+                "price": 4
+              }
+            ]
+          },
+          "output_mtok": {
+            "base": 3,
+            "tiers": [
+              {
+                "start": 100000,
+                "price": 6
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "synthetic-conditional",
+        "name": "synthetic-conditional",
+        "match": {
+          "equals": "synthetic-conditional"
+        },
+        "prices": [
+          {
+            "prices": {
+              "input_mtok": 1,
+              "output_mtok": 2
+            }
+          },
+          {
+            "constraint": {
+              "start_date": "2020-01-01"
+            },
+            "prices": {
+              "input_mtok": 1.5,
+              "output_mtok": 2.5
+            }
+          }
+        ]
+      },
+      {
+        "id": "synthetic-scheduled",
+        "name": "synthetic-scheduled",
+        "match": {
+          "equals": "synthetic-scheduled"
+        },
+        "prices": [
+          {
+            "prices": {
+              "input_mtok": 1,
+              "output_mtok": 2
+            }
+          },
+          {
+            "constraint": {
+              "start_date": "2999-12-31"
+            },
+            "prices": {
+              "input_mtok": 9,
+              "output_mtok": 9
+            }
+          }
+        ]
+      },
+      {
+        "id": "synthetic-time-of-day",
+        "name": "synthetic-time-of-day",
+        "match": {
+          "equals": "synthetic-time-of-day"
+        },
+        "prices": [
+          {
+            "prices": {
+              "input_mtok": 1,
+              "output_mtok": 2
+            }
+          },
+          {
+            "constraint": {
+              "start_time": "00:30:00Z",
+              "end_time": "16:30:00Z"
+            },
+            "prices": {
+              "input_mtok": 0.5,
+              "output_mtok": 1
+            }
+          }
+        ]
+      },
+      {
+        "id": "synthetic-variants",
+        "name": "synthetic-variants",
+        "match": {
+          "equals": "synthetic-variants"
+        },
+        "prices": {
+          "input_mtok": 1,
+          "output_mtok": 2
+        },
+        "price_variants": [
+          {
+            "when": {
+              "service_tier": "flex"
+            },
+            "prices": {
+              "input_mtok": 0.5,
+              "output_mtok": 1
+            }
+          },
+          {
+            "when": {
+              "processing": "batch"
+            },
+            "prices": {
+              "input_mtok": 0.5,
+              "output_mtok": 1
+            },
+            "constraint": {
+              "start_date": "2020-01-01"
+            }
+          }
+        ]
+      },
+      {
+        "id": "synthetic-other-category",
+        "name": "synthetic-other-category",
+        "match": {
+          "equals": "synthetic-other-category"
+        },
+        "prices": {
+          "input_mtok": 1,
+          "output_mtok": 2,
+          "web_searches_kcount": 10,
+          "requests_kcount": 1,
+          "cache_audio_read_mtok": 0.1,
+          "input_image_mtok": 4
+        }
+      },
+      {
+        "id": "synthetic-no-supported-price",
+        "name": "synthetic-no-supported-price",
+        "match": {
+          "equals": "synthetic-no-supported-price"
+        },
+        "prices": {
+          "web_searches_kcount": 10
+        }
+      },
+      {
+        "id": "synthetic-negative",
+        "name": "synthetic-negative",
+        "match": {
+          "equals": "synthetic-negative"
+        },
+        "prices": {
+          "input_mtok": -1,
+          "output_mtok": 2
+        }
+      },
+      {
+        "id": "synthetic-too-many-digits",
+        "name": "synthetic-too-many-digits",
+        "match": {
+          "equals": "synthetic-too-many-digits"
+        },
+        "prices": {
+          "input_mtok": 0.1234567890123,
+          "output_mtok": 2
+        }
+      },
+      {
+        "id": "synthetic-above-limit",
+        "name": "synthetic-above-limit",
+        "match": {
+          "equals": "synthetic-above-limit"
+        },
+        "prices": {
+          "input_mtok": 1000000.5,
+          "output_mtok": 2
+        }
+      },
+      {
+        "id": "synthetic-tier-start-too-large",
+        "name": "synthetic-tier-start-too-large",
+        "match": {
+          "equals": "synthetic-tier-start-too-large"
+        },
+        "prices": {
+          "input_mtok": {
+            "base": 1,
+            "tiers": [
+              {
+                "start": 100000001,
+                "price": 2
+              }
+            ]
+          },
+          "output_mtok": 2
+        }
+      },
+      {
+        "id": "synthetic-match-starts-with",
+        "name": "synthetic-match-starts-with",
+        "match": {
+          "starts_with": "synthetic-sw-"
+        },
+        "prices": {
+          "input_mtok": 1,
+          "output_mtok": 2
+        }
+      },
+      {
+        "id": "synthetic-match-ends-with",
+        "name": "synthetic-match-ends-with",
+        "match": {
+          "ends_with": "-synthetic-ew"
+        },
+        "prices": {
+          "input_mtok": 1,
+          "output_mtok": 2
+        }
+      },
+      {
+        "id": "synthetic-match-contains",
+        "name": "synthetic-match-contains",
+        "match": {
+          "contains": "-synthetic-mid-"
+        },
+        "prices": {
+          "input_mtok": 1,
+          "output_mtok": 2
+        }
+      },
+      {
+        "id": "synthetic-match-regex",
+        "name": "synthetic-match-regex",
+        "match": {
+          "regex": "^synthetic-rx-\\d{8}$"
+        },
+        "prices": {
+          "input_mtok": 1,
+          "output_mtok": 2
+        }
+      },
+      {
+        "id": "synthetic-match-lookbehind",
+        "name": "synthetic-match-lookbehind",
+        "match": {
+          "regex": "(?<=x)synthetic-lb"
+        },
+        "prices": {
+          "input_mtok": 1,
+          "output_mtok": 2
+        }
+      },
+      {
+        "id": "synthetic-match-or",
+        "name": "synthetic-match-or",
+        "match": {
+          "or": [
+            {
+              "equals": "synthetic-or-a"
+            },
+            {
+              "equals": "synthetic-or-b"
+            }
+          ]
+        },
+        "prices": {
+          "input_mtok": 1,
+          "output_mtok": 2
+        }
+      },
+      {
+        "id": "synthetic-match-and",
+        "name": "synthetic-match-and",
+        "match": {
+          "and": [
+            {
+              "starts_with": "synthetic-and-"
+            },
+            {
+              "ends_with": "-end"
+            }
+          ]
+        },
+        "prices": {
+          "input_mtok": 1,
+          "output_mtok": 2
+        }
+      }
+    ]
+  }
+]

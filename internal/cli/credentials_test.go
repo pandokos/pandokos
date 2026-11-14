@@ -174,7 +174,7 @@ func TestCredentialCommands(t *testing.T) {
 			t.Errorf("get: %+v", got)
 		}
 		mustRun(t, r, "credential", "update", "--tenant", tid, "--label", "other", "--description", "d2", "--expires-at", t1.Format(time.RFC3339), cid)
-		want := adminapi.UpdateCredentialInput{Tenant: tid, Credential: cid, Body: adminapi.CredentialUpdate{Label: "other", Description: "d2", ExpiresAt: adminapi.Value(t1)}}
+		want := adminapi.UpdateCredentialInput{Tenant: tid, Credential: cid, Body: adminapi.CredentialUpdate{Label: adminapi.Some("other"), Description: adminapi.Some("d2"), ExpiresAt: adminapi.Value(t1)}}
 		if got := r.f.only(t, "updateCredential"); !reflect.DeepEqual(got, want) {
 			t.Errorf("update: %+v", got)
 		}

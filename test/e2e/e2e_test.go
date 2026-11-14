@@ -518,20 +518,20 @@ func TestMigrateCommand(t *testing.T) { // T-160
 	}
 
 	code, out, errs := runBinary(t, env, "migrate", "status")
-	if code != 1 || errs != "" || out != "0001_init  pending\n0002_identity_audit  pending\n0003_vault  pending\nschema is at version 0; this binary needs version 3\n" {
+	if code != 1 || errs != "" || out != "0001_init  pending\n0002_identity_audit  pending\n0003_vault  pending\n0004_catalogue  pending\nschema is at version 0; this binary needs version 4\n" {
 		t.Fatalf("status before: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate")
-	if code != 0 || errs != "" || out != "applied 0001_init\napplied 0002_identity_audit\napplied 0003_vault\nschema is at version 3\n" {
+	if code != 0 || errs != "" || out != "applied 0001_init\napplied 0002_identity_audit\napplied 0003_vault\napplied 0004_catalogue\nschema is at version 4\n" {
 		t.Fatalf("migrate: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate")
-	if code != 0 || errs != "" || out != "schema is at version 3\n" {
+	if code != 0 || errs != "" || out != "schema is at version 4\n" {
 		t.Fatalf("second migrate: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate", "status")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if code != 0 || errs != "" || len(lines) != 4 || !applied("0001_init").MatchString(lines[0]) || !applied("0002_identity_audit").MatchString(lines[1]) || !applied("0003_vault").MatchString(lines[2]) || lines[3] != "schema is at version 3; this binary needs version 3" {
+	if code != 0 || errs != "" || len(lines) != 5 || !applied("0001_init").MatchString(lines[0]) || !applied("0002_identity_audit").MatchString(lines[1]) || !applied("0003_vault").MatchString(lines[2]) || !applied("0004_catalogue").MatchString(lines[3]) || lines[4] != "schema is at version 4; this binary needs version 4" {
 		t.Fatalf("status after: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	testutil.AssertAbsent(t, "migrate output", out+errs, d.Passwords()...)
@@ -553,7 +553,7 @@ func TestServeRefusesUnmigratedDatabase(t *testing.T) { // T-161
 	}
 
 	d.Migrate(t)
-	if _, err := d.Super(t).Exec(context.Background(), "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (4, 'future', repeat('0', 64), 'x')"); err != nil {
+	if _, err := d.Super(t).Exec(context.Background(), "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (5, 'future', repeat('0', 64), 'x')"); err != nil {
 		t.Fatal(err)
 	}
 	code, out, errs = runBinary(t, serveEnv(t, d), "serve", "--config", writeConfig(t, "info"))
@@ -609,7 +609,7 @@ func TestServeBehindPooler(t *testing.T) { // T-163
 	d := dbtest.New(t)
 	pooled := d.Pooled(t)
 	code, out, errs := runBinary(t, pooled.Env(t), "migrate")
-	if code != 0 || !strings.Contains(out, "schema is at version 3") {
+	if code != 0 || !strings.Contains(out, "schema is at version 4") {
 		t.Fatalf("migrate through the pooler: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	up := fakeprovider.New(t)
@@ -799,7 +799,8 @@ func TestNoDefaultCredentials(t *testing.T) {
 			t.Errorf("inference with %v: %d\n%s", h, status, text)
 		}
 		for _, op := range adminapi.Operations {
-			c := apitest.CallFor(t, op, apitest.Params{Tenant: "0192f0f0-0000-7000-8000-000000000001", ServiceAccount: "0192f0f0-0000-7000-8000-000000000002", VirtualKey: "tabcdefghijklmnop", PlatformKey: "pabcdefghijklmnop", Credential: "0192f0f0-0000-7000-8000-000000000003"})
+			c := apitest.CallFor(t, op, apitest.Params{Tenant: "0192f0f0-0000-7000-8000-000000000001", ServiceAccount: "0192f0f0-0000-7000-8000-000000000002", VirtualKey: "tabcdefghijklmnop", PlatformKey: "pabcdefghijklmnop", Credential: "0192f0f0-0000-7000-8000-000000000003",
+				Provider: "synthetic-missing", Endpoint: "ep-missing", Model: "0192f0f0-0000-7000-8000-000000000004", PriceVersion: "0192f0f0-0000-7000-8000-000000000005", PriceImport: "0192f0f0-0000-7000-8000-000000000006"})
 			var body []byte
 			if c.Body != nil {
 				body, _ = json.Marshal(c.Body)

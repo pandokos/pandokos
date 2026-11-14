@@ -21,7 +21,8 @@ erDiagram
     PROVIDER ||--o{ ENDPOINT : exposes
     PROVIDER ||--o{ MODEL : offers
     MODEL ||--o{ PRICE_VERSION : priced
-    TENANT ||--o{ MODEL_GRANT : allowed
+    TENANT ||--o{ MODEL_TENANT_GRANT : granted
+    TENANT ||--o| TENANT_MODEL_RESTRICTION : restricts
     TENANT ||--o{ LIMIT_RULE : constrained
     TENANT ||--o{ USAGE_RECORD : produces
     TENANT ||--o{ AUDIT_EVENT : records
@@ -30,12 +31,33 @@ erDiagram
 
 | Group | Tables | Scope |
 |---|---|---|
-| Platform | `tenant`, `platform_key`, `virtual_key_directory` (no grant to any runtime role), `platform_role_assignment`, `provider`, `endpoint`, `model`, `price_version`, `rating_rule`, `platform_credential`, `platform_issuer`, `kek_version` | global |
+| Platform | `tenant`, `platform_key`, `virtual_key_directory` (no grant to any runtime role), `platform_role_assignment`, `provider`, `provider_endpoint`, `model`, `model_tenant_grant`, `price_version`, `price_rate`, `price_import`, `rating_rule`, `platform_credential`, `platform_issuer`, `kek_version` | global |
 | Identity | `app_user`, `local_account`, `console_session`, `membership`, `service_account`, `virtual_key`, `trusted_issuer`, `subject_mapping`, `role`, `role_permission`, `role_assignment` | tenant (`app_user`, `local_account` and `console_session` are global, memberships are tenant-scoped) |
 | Vault | `tenant_data_key`, `provider_credential` | tenant |
-| Policy | `model_grant`, `funding_mode`, `limit_rule` | tenant |
+| Policy | `tenant_model_restriction`, `funding_mode`, `limit_rule` | tenant |
 | Records | `usage_record`, `usage_correction`, `audit_event`, `platform_audit_event` | tenant, except the platform audit |
 | Delivery | `outbox_event`, `outbox_delivery` | tenant |
+
+## The catalogue (sprint 2.2)
+
+The catalogue tables of the platform group (`provider`, `provider_endpoint`, `model`,
+`model_tenant_grant`, `price_version`, `price_rate`, `price_import`) are **restricted global tables**:
+row-level security is forced, every runtime role that needs a table reads all its rows in any session
+(a tenant's session included), and only the admin role in platform scope writes them; the worker
+inserts prices, price rates and imports, also in platform scope. A handler that forgot the scope could
+not change the catalogue. Two tables are not plain catalogue tables:
+
+- `model_tenant_grant` (the `model_grant` of the first design, moved from the policy group to the
+  platform group) grants a model of availability `selected` to a tenant. It describes tenants, so a
+  tenant's session sees only its own rows; in platform scope the admin role sees all.
+- `tenant_model_restriction` is in the policy group with the canonical tenant policy: at most one row
+  per tenant, listing the model references the tenant narrows itself to.
+
+A virtual key gains `models` (a list of `provider/name` references, or NULL for no list), fixed when
+the key is issued. A price version belongs to a model and never changes; its rates, one per category
+and tier, are `numeric(24,12)` per million units. `price_import` is append-only and keeps the report
+of each run. Details: [database guide](../operations/database.md), [catalogue guide](../operations/catalogue.md),
+[ADR 0035](../adr/0035-catalogue-and-model-access.md) and [ADR 0036](../adr/0036-prices-costs-and-importer.md).
 
 ## Rules
 
@@ -87,7 +109,7 @@ are granted to the role, so users and passwords can change without a migration. 
 | `pandokos_owner` | `migrate` only | Own and alter the schema | Be used at run time |
 | `pandokos_gateway` | gateway | Read identities, catalogue, policy and credentials of the session tenant (not platform keys); call the key lookup function, which crosses the policy for one fact only: the tenant of a key ID; insert usage and outbox rows | Write identities, catalogue or credentials; read or change audit; update or delete usage |
 | `pandokos_admin` | admin API | Read and write the session tenant's configuration; write platform tables when acting as platform; insert audit rows (it cannot read them yet); read usage | Read the sealed secret of a credential, in any session (it holds no `SELECT` on that column); update or delete usage or audit |
-| `pandokos_worker` | worker | List tenants (in platform scope); run one job for one tenant inside that tenant's session; manage outbox deliveries | Run a statement over several tenants' data at once |
+| `pandokos_worker` | worker | List tenants (in platform scope); run one job for one tenant inside that tenant's session; manage outbox deliveries; import prices in platform scope (prices, rates, imports and the platform audit rows of the refresh job) | Run a statement over several tenants' data at once |
 
 Three details make this hold:
 

@@ -123,12 +123,21 @@ Without the listener (behind a pooler in transaction mode without `database.dire
 [keys](keys.md)) nothing else changes: the lifetime is the guarantee. A call that already holds the
 secret completes. Both caches hold at most 10 000 entries and are emptied when full.
 
+## 7a. Providers come from the catalogue
+
+The providers a credential may name are the providers of the catalogue ([catalogue guide](catalogue.md)),
+not a list in the program: `credential create --provider NAME` checks the provider in the catalogue
+and refuses an unknown one with `invalid_request` on `provider`. A provider that is disabled still
+accepts credentials, so a tenant can prepare one before the provider is enabled. A provider cannot be
+deleted while a credential references it.
+
 ## 8. Validation
 
 When a tenant asks (`validate`), a credential is checked once against the provider before it is
 stored: `GET <skeleton.openai.base_url>/models` with the secret as a bearer token, nothing else, on a
 connection that follows no proxy and no redirect, with a 10 s limit. Only the provider `openai` has a
-validator before the catalogue exists. A 2xx answer stores the credential as validated; 401 or 403
+validator; a request to validate a credential of another provider is refused with `invalid_request`
+on `validate`. A 2xx answer stores the credential as validated; 401 or 403
 returns 422 `credential_rejected`; anything else, including a timeout or a redirect, returns 502
 `validation_unavailable`. In both failures nothing is stored. The provider's answer is never logged.
 The log line `credential validation` carries only the outcome and the status.

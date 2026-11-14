@@ -136,11 +136,9 @@ var credentialCommands = []command{
 		if err != nil {
 			return err
 		}
-		descGiven := false
-		fs.Visit(func(f *flag.Flag) { descGiven = descGiven || f.Name == "description" })
-		body := adminapi.CredentialUpdate{Label: *label, Description: *desc}
-		if descGiven && *desc == "" {
-			body.Description = adminapi.EmptyDescription // an empty description clears it
+		body := adminapi.CredentialUpdate{Label: nonEmpty(*label)}
+		if given(fs, "description") {
+			body.Description = adminapi.Some(*desc) // an empty description clears it
 		}
 		switch {
 		case *noExpires && *expires != "":
@@ -154,7 +152,7 @@ var credentialCommands = []command{
 			}
 			body.ExpiresAt = adminapi.Value(*t)
 		}
-		if *label == "" && !descGiven && !body.ExpiresAt.Set {
+		if !body.Label.Set && !body.Description.Set && !body.ExpiresAt.Set {
 			return usagef("credential update needs a member to change")
 		}
 		if err := a.connect(); err != nil {

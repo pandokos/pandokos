@@ -1,0 +1,5 @@
+source: https://raw.githubusercontent.com/pydantic/genai-prices/5acfa1123141a4216ef77dc6b1c8a6aa948f9e81/prices/new_data/v2/data.json
+commit: 5acfa1123141a4216ef77dc6b1c8a6aa948f9e81
+retrieved: 2026-11-14
+sha256: 1aa26e77c74c171fe66e4215ecd5ecc22a378e4568cb4522984b1c048c0b3970
+license: MIT (LICENSE in this directory)

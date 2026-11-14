@@ -257,18 +257,26 @@ func internalDeps(t *testing.T, pkg string) []string {
 	return strings.Fields(string(out))
 }
 
-// TestPlanesDoNotImportEachOther is T-R13, extended by T-R20 (sprint 2.1, section 4).
+// TestPlanesDoNotImportEachOther is T-R13, extended by T-R20 (sprint 2.1, section 4) and by sprint
+// 2.2 (section 4): the catalogue is below the planes and knows neither of them; the gateway cannot
+// reach it (it cannot reach the store); the administration plane may.
 func TestPlanesDoNotImportEachOther(t *testing.T) {
 	const mod = "github.com/pandokos/pandokos/internal/"
 	rules := map[string][]string{
-		"gateway":  {"admin", "adminapi", "authn", "cli", "store", "vault"},
-		"admin":    {"gateway", "family", "server", "config"},
+		"gateway": {"admin", "adminapi", "authn", "cli", "store", "vault", "catalog"},
+		// internal/family itself (the leaf: Usage, error codes) is allowed: the catalogue prices
+		// usage (pricing.CostOf takes family.Usage) and the administration plane reaches the
+		// catalogue (sprint 2.2, C8). Its subpackages (the adapters) are not: see below.
+		"admin":    {"gateway", "server", "config"},
 		"cli":      {"store", "admin", "config"},
 		"authz":    {"store", "admin", "gateway", "config", "authn"},
 		"adminapi": {"store", "admin", "gateway", "authn", "authz", "config", "cli"},
 		// T-R20: the vault is below the planes and knows neither of them, nor the server, the CLI
 		// or the configuration.
 		"vault": {"admin", "adminapi", "gateway", "family", "server", "cli", "config"},
+		// Sprint 2.2: internal/catalog may not reach admin, adminapi, gateway, server, cli, config
+		// or the vault; internal/gateway does not reach it until sprint 3.1 gives it an interface.
+		"catalog": {"admin", "adminapi", "gateway", "server", "cli", "config", "vault"},
 	}
 	for pkg, banned := range rules {
 		deps := internalDeps(t, pkg)
@@ -278,6 +286,12 @@ func TestPlanesDoNotImportEachOther(t *testing.T) {
 					t.Errorf("internal/%s reaches internal/%s (through %s)", pkg, b, d)
 				}
 			}
+		}
+	}
+	// The administration plane may reach the leaf internal/family, never an adapter below it.
+	for _, d := range internalDeps(t, "admin") {
+		if strings.HasPrefix(d, mod+"family/") {
+			t.Errorf("internal/admin reaches the adapter %s", d)
 		}
 	}
 	// The generated client and router use the standard library only.
@@ -322,6 +336,49 @@ func TestPlanesDoNotImportEachOther(t *testing.T) {
 		}
 		if !found {
 			t.Error("internal/admin does not reach internal/vault")
+		}
+	})
+	// Sprint 2.2: what internal/catalog imports of the product, and that the administration plane uses it.
+	t.Run("what the catalogue imports", func(t *testing.T) {
+		cmd := exec.Command("go", "list", "-f", `{{join .Imports "\n"}}`, "./internal/catalog")
+		cmd.Dir = root(t)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("go list ./internal/catalog: %v", err)
+		}
+		allowed := map[string]bool{}
+		for _, a := range []string{"authz", "audit", "pricing", "pricing/genaiprices", "store", "store/queries", "tenant", "telemetry", "buildinfo"} {
+			allowed[mod+a] = true
+		}
+		n := 0
+		for _, imp := range strings.Fields(string(out)) {
+			first, _, _ := strings.Cut(imp, "/")
+			switch {
+			case strings.HasPrefix(imp, mod):
+				n++
+				if !allowed[imp] {
+					t.Errorf("internal/catalog imports %s", imp)
+				}
+			case strings.Contains(first, "."):
+				t.Errorf("internal/catalog imports %s, which is not the standard library or the product", imp)
+			}
+		}
+		if n == 0 {
+			t.Error("internal/catalog imports nothing of the product: the test would prove nothing")
+		}
+		for _, want := range []string{"catalog", "pricing"} {
+			found := false
+			for _, d := range internalDeps(t, "admin") {
+				found = found || d == mod+want
+			}
+			if !found {
+				t.Errorf("internal/admin does not reach internal/%s", want)
+			}
+		}
+		for _, d := range internalDeps(t, "gateway") {
+			if d == mod+"catalog" || d == mod+"pricing/genaiprices" {
+				t.Errorf("internal/gateway reaches %s", d)
+			}
 		}
 	})
 	// internal/authz and internal/requestid know only the tenant package.
@@ -405,6 +462,38 @@ func TestReferenceDocuments(t *testing.T) {
 			}
 		}
 	})
+	t.Run("catalogue (sprint 2.2)", func(t *testing.T) {
+		// T-R14 extended: the codes, the commands and the permissions of the sprint in the reference pages.
+		api := read(t, "docs/reference/admin-api.md")
+		for _, w := range []string{
+			"`price_source_unavailable`", "`price_dataset_invalid`", "502", "422",
+			"import-prices", "price-import", "tenant-model", "model-restriction", "revoke-grant", "clear-override",
+		} {
+			if !strings.Contains(api, w) {
+				t.Errorf("admin-api.md lacks %q", w)
+			}
+		}
+		perms := read(t, "docs/reference/permissions.md")
+		for _, p := range []string{"catalog:read", "catalog:write", "catalog:price", "model:read", "model:restrict"} {
+			if !strings.Contains(perms, "`"+p+"`") {
+				t.Errorf("permissions.md does not list %s", p)
+			}
+		}
+		keys := read(t, "docs/operations/keys.md")
+		for _, w := range []string{"--model"} {
+			if !strings.Contains(keys, w) {
+				t.Errorf("keys.md lacks %q", w)
+			}
+		}
+		for _, k := range config.Keys() {
+			switch k.Name {
+			case "cache.catalog_ttl", "pricing.import_at_start", "pricing.refresh.enabled", "pricing.refresh.url", "pricing.refresh.interval":
+				if !strings.Contains(read(t, "docs/operations/configuration.md"), k.Env) {
+					t.Errorf("configuration.md does not name the variable %s", k.Env)
+				}
+			}
+		}
+	})
 	t.Run("tls", func(t *testing.T) {
 		doc := read(t, "docs/operations/tls.md")
 		for _, k := range config.Keys() {
@@ -478,6 +567,30 @@ func TestOpenAPIDocument(t *testing.T) {
 	}
 	if n != len(adminapi.Operations) {
 		t.Errorf("the document has %d operations, the generated code %d", n, len(adminapi.Operations))
+	}
+	// Sprint 2.2: 64 operations, and money is never a JSON number: no schema of the document has a
+	// number type, and a rate is a string with a pattern.
+	if n != 64 {
+		t.Errorf("the document has %d operations, want 64 (35 and the 29 of sprint 2.2)", n)
+	}
+	if regexp.MustCompile(`(?m)type:\s*(number|\[[^\]]*number)`).MatchString(raw) || regexp.MustCompile(`format:\s*(float|double)`).MatchString(raw) {
+		t.Error("the document uses a floating-point type: prices travel as decimal strings")
+	}
+	var rate struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]struct {
+					Type    any    `yaml:"type"` // a string, or a list ([string, "null"]) for a nullable member
+					Pattern string `yaml:"pattern"`
+				} `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal([]byte(raw), &rate); err != nil {
+		t.Fatal(err)
+	}
+	if r := rate.Components.Schemas["PriceRate"].Properties["rate"]; r.Type != "string" || r.Pattern == "" {
+		t.Errorf("PriceRate.rate is %+v, want a string with a pattern", r)
 	}
 
 	var schemas struct {

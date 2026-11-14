@@ -74,6 +74,12 @@ func validate(c *Config, purpose Purpose) []Problem {
 	if d := time.Duration(c.Cache.DataKeyTTL); d < time.Second || d > 15*time.Minute {
 		add("cache.data_key_ttl", "must be between 1s and 15m")
 	}
+	if d := time.Duration(c.Cache.CatalogTTL); d < time.Second || d > 5*time.Minute {
+		add("cache.catalog_ttl", "must be between 1s and 5m")
+	}
+	if purpose == PurposeServe {
+		ps = append(ps, validatePricing(c)...)
+	}
 	if c.Vault.KEK.Provider != "local" {
 		add("vault.kek.provider", "must be local")
 	}
@@ -460,4 +466,28 @@ func keyFileWarning(c *Config) []Warning {
 		return nil
 	}
 	return []Warning{{Key: "vault.kek.local.key_file", Message: "the file can be accessed by other users; restrict it to the service user (chmod 600)"}}
+}
+
+// validatePricing applies the rules of the download settings; only serve reads them. No message
+// quotes the URL: it may hold a token in its path or query.
+func validatePricing(c *Config) []Problem {
+	var ps []Problem
+	r := &c.Pricing.Refresh
+	if d := time.Duration(r.Interval); d < time.Hour || d > 720*time.Hour {
+		ps = append(ps, Problem{"pricing.refresh.interval", "must be between 1h and 720h"})
+	}
+	u, err := url.Parse(r.URL)
+	switch {
+	case err != nil || strings.ContainsAny(r.URL, " \t\r\n"):
+		ps = append(ps, Problem{"pricing.refresh.url", "must be a valid URL"})
+	case u.Scheme != "https":
+		ps = append(ps, Problem{"pricing.refresh.url", "must be an https URL"})
+	case u.Host == "" || u.Hostname() == "":
+		ps = append(ps, Problem{"pricing.refresh.url", "must have a host"})
+	case u.User != nil:
+		ps = append(ps, Problem{"pricing.refresh.url", "must not contain user information"})
+	default:
+		r.ParsedURL = u
+	}
+	return ps
 }

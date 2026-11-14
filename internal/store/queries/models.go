@@ -31,6 +31,29 @@ type PandokosKekVersion struct {
 	CreatedAt time.Time
 }
 
+type PandokosModel struct {
+	ID              string
+	ProviderID      string
+	Name            string
+	UpstreamID      string
+	DisplayName     string
+	Description     string
+	Status          string
+	Availability    string
+	Capabilities    []string
+	ContextWindow   *int64
+	MaxOutputTokens *int64
+	PriceOverride   bool
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+type PandokosModelTenantGrant struct {
+	ModelID   string
+	TenantID  string
+	CreatedAt time.Time
+}
+
 type PandokosPlatformAuditEvent struct {
 	ID           string
 	OccurredAt   time.Time
@@ -58,6 +81,57 @@ type PandokosPlatformKey struct {
 	RevokedAt   *time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+}
+
+type PandokosPriceImport struct {
+	ID              string
+	StartedAt       time.Time
+	CreatedAt       time.Time
+	Source          string
+	SourceRef       string
+	DatasetFormat   string
+	Digest          string
+	Outcome         string
+	ErrorClass      string
+	ActorType       string
+	ActorID         string
+	ModelsSeen      int32
+	VersionsCreated int32
+	Unchanged       int32
+	Overridden      int32
+	Unmatched       int32
+	Skipped         int32
+	Report          string
+}
+
+type PandokosPriceRate struct {
+	PriceVersionID string
+	Category       string
+	Threshold      int64
+	Rate           string
+}
+
+type PandokosPriceVersion struct {
+	ID        string
+	ModelID   string
+	ValidFrom time.Time
+	Currency  string
+	Source    string
+	ImportID  *string
+	Note      string
+	CreatedAt time.Time
+}
+
+type PandokosProvider struct {
+	ID              string
+	Name            string
+	DisplayName     string
+	Description     string
+	ApiFamily       string
+	Enabled         bool
+	DatasetProvider string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 type PandokosProviderCredential struct {
@@ -101,6 +175,20 @@ type PandokosProviderCredentialMetadatum struct {
 	StateReason    string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+}
+
+type PandokosProviderEndpoint struct {
+	ID          string
+	ProviderID  string
+	Name        string
+	BaseUrl     string
+	Region      string
+	Private     bool
+	Enabled     bool
+	IsDefault   bool
+	Description string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 type PandokosRoleAssignment struct {
@@ -153,6 +241,14 @@ type PandokosTenantDataKey struct {
 	UpdatedAt  time.Time
 }
 
+type PandokosTenantModelRestriction struct {
+	TenantID  string
+	ID        string
+	Models    []string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type PandokosVirtualKey struct {
 	TenantID         string
 	ID               string
@@ -166,6 +262,7 @@ type PandokosVirtualKey struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	CredentialID     *string
+	Models           []string
 }
 
 type PandokosVirtualKeyDirectory struct {

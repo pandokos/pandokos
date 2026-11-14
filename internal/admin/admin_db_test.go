@@ -10,8 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pandokos/pandokos/internal/admin"
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/authn"
+	"github.com/pandokos/pandokos/internal/catalog"
 	"github.com/pandokos/pandokos/test/apitest"
 	"github.com/pandokos/pandokos/test/testutil"
 )
@@ -88,6 +90,12 @@ type world struct {
 	platform  string
 	platformK adminapi.PlatformKeyCreated
 	cred      adminapi.Credential // the default openai credential of the tenant
+
+	// The catalogue of sprint 2.2, for the tests that call every operation: a provider with an
+	// endpoint and two models, a price version of one of them, and a price import row.
+	cat apitest.Catalogue
+	pv  adminapi.PriceVersion
+	imp string
 }
 
 func newWorld(t *testing.T, name string) *world {
@@ -118,10 +126,24 @@ func (w *world) fill(t *testing.T, name string) {
 	}
 	w.platformK = *pk
 	w.cred = w.api.Credential(t, w.tenant.ID, w.adminKey, "openai", "world")
+
+	w.cat = w.api.Catalog(t)
+	pv, err := w.api.Client(w.platform).CreatePriceOverride(ctx(t), adminapi.CreatePriceOverrideInput{Model: w.cat.All.ID, Body: adminapi.PriceOverride{
+		Currency: "USD", Rates: []adminapi.PriceRate{{Category: adminapi.PriceCategoryInput, Rate: "1"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.pv = *pv
+	// An import row, made as superuser: running an import would write an audit row for every priced model.
+	if err := w.api.Super(t).QueryRow(ctx(t), `INSERT INTO pandokos.price_import (started_at, source, dataset_format, outcome, actor_type)
+		VALUES (now(), 'file', 'genai-prices-v2', 'success', 'host') RETURNING id::text`).Scan(&w.imp); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func (w *world) params() apitest.Params {
-	return apitest.Params{Tenant: w.tenant.ID, ServiceAccount: w.sa.ID, VirtualKey: w.key.Key.ID, PlatformKey: w.platformK.Key.ID, Credential: w.cred.ID}
+	return apitest.Params{Tenant: w.tenant.ID, ServiceAccount: w.sa.ID, VirtualKey: w.key.Key.ID, PlatformKey: w.platformK.Key.ID, Credential: w.cred.ID,
+		Provider: w.cat.Provider.Name, Endpoint: w.cat.Endpoint.Name, Model: w.cat.All.ID, PriceVersion: w.pv.ID, PriceImport: w.imp}
 }
 
 // call makes the valid call of op with the key.
@@ -512,6 +534,15 @@ func TestProblems(t *testing.T) {
 	if _, err := d.Super(t).Exec(ctx(t), "UPDATE pandokos.tenant SET state = 'deleting' WHERE id = $1::uuid", deleting.ID); err != nil {
 		t.Fatal(err)
 	}
+	// The two codes of sprint 2.2: a remote price import whose download fails, and whose
+	// document cannot be read. The handler gets its fetch function from the options.
+	remote := func(fetch func(context.Context, string) ([]byte, error)) *apitest.API {
+		return apitest.New(t, func(o *admin.Options) {
+			o.Refresh.Enabled, o.Refresh.URL, o.Refresh.Fetch = true, "https://prices.example.com/data.json", fetch
+		})
+	}
+	failing := remote(func(context.Context, string) ([]byte, error) { return nil, &catalog.FetchError{Class: "status"} })
+	garbled := remote(func(context.Context, string) ([]byte, error) { return []byte(`{"not": "a dataset"}`), nil })
 	rows := []row{
 		{adminapi.ProblemCodeInvalidRequest, 400, "Invalid request", "The request does not match the API description.",
 			func() *apitest.Response { return w.api.Do(t, "POST", "/v1/tenants", w.platform, map[string]any{}, nil) }},
@@ -542,6 +573,15 @@ func TestProblems(t *testing.T) {
 				return w.api.Do(t, "POST", "/v1/tenants", w.platform, `{"name":"x"}`, http.Header{"Content-Type": {"text/plain"}})
 			}},
 	}
+	rows = append(rows,
+		row{adminapi.ProblemCodePriceSourceUnavailable, 502, "Price source unavailable", "The price dataset could not be downloaded. Nothing was imported.",
+			func() *apitest.Response {
+				return failing.Do(t, "POST", "/v1/price-imports", failing.PlatformKey(), map[string]any{"source": "remote"}, nil)
+			}},
+		row{adminapi.ProblemCodePriceDatasetInvalid, 422, "Price dataset invalid", "The price dataset could not be read. Nothing was imported.",
+			func() *apitest.Response {
+				return garbled.Do(t, "POST", "/v1/price-imports", garbled.PlatformKey(), map[string]any{"source": "remote"}, nil)
+			}})
 	for _, r := range rows {
 		resp := r.get()
 		p := expect(t, resp, r.status, r.code)

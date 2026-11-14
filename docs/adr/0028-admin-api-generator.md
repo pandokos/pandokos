@@ -20,3 +20,8 @@ The project owns about 800 lines of generator; a construct outside the subset is
 ## Alternatives considered
 
 `oapi-codegen` (a runtime module, no validation, no permission); `ogen`; handlers written by hand and checked against the document by a test.
+
+## History
+
+
+- 2026-11: sprint 2.2 adds presence-aware optional members of update bodies and nested request objects; the description sentinel of 2.1 is removed.

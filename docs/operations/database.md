@@ -331,3 +331,39 @@ view `provider_credential_metadata`, and the pin `virtual_key.credential_id`.
   destroys the secret) and notifies `vault:<tenant>` on the notification channel.
 - The admin role may set `virtual_key.credential_id` when a key is created; deleting a credential
   clears the pins that point to it.
+
+## 11. Grants of migration 0004
+
+Migration `0004_catalogue` adds the catalogue ([catalogue guide](catalogue.md)): `provider`,
+`provider_endpoint`, `model`, `model_tenant_grant`, `price_import`, `price_version`, `price_rate` and
+`tenant_model_restriction`, plus the column `virtual_key.models`, and seeds the providers `openai` and
+`anthropic` with their endpoints and 17 models. No price is seeded.
+
+- The seven catalogue tables are global with forced row-level security. A `SELECT` policy lets the
+  roles that read them see every row in any session, a tenant session included. `INSERT`, `UPDATE` and
+  `DELETE` policies for the admin role (and for the worker, where listed) require platform scope: an
+  administration transaction in a tenant's session, or with no scope, cannot change the catalogue,
+  whatever a handler does. If a catalogue write fails with a row-level security error, the transaction
+  was not in platform scope; do not add a policy or a grant.
+- `provider`, `provider_endpoint` and `model`: all three runtime roles read `provider` and `model`; the
+  gateway and the admin role read `provider_endpoint`; the admin role inserts, updates (never the
+  name, the family or the owning provider) and deletes. Triggers refuse a change of an immutable
+  column.
+- `model_tenant_grant` is the `model_grant` of the data model, made a platform table. It describes tenants, so a
+  tenant's session sees only its own rows; in platform scope the admin role sees all of them and is
+  the only role that inserts or deletes.
+- `price_version` and `price_rate`: all roles read; the admin role and the worker insert in platform
+  scope; the admin role deletes, and a trigger allows it only for a version that has not started. A
+  version never changes. `price_import` is append-only: admin and worker read and insert in platform
+  scope; nobody updates or deletes a row, the owner included.
+- `tenant_model_restriction` carries the canonical tenant policy: the gateway reads it; the admin role
+  reads, inserts, updates the list `models` and deletes.
+- `virtual_key.models` is set at insert by the admin role and cannot change.
+- The worker gains `INSERT` on `price_import`, `price_version` and `price_rate`, and on
+  `platform_audit_event` with a policy that requires platform scope: the price refresh job writes its
+  audit rows there. It still reads no tenant data.
+- `provider_credential.provider` has a foreign key to `provider (name)`; a provider that credentials
+  name cannot be deleted.
+- Notifications: a change to the catalogue sends `catalog` on the notification channel and a change to
+  a grant or a restriction sends `catalog:<tenant>`; the gateway empties its cache on them.
+
