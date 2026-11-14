@@ -554,6 +554,7 @@ func TestClose(t *testing.T) {
 			defer cancel()
 			closed <- w.Close(cctx)
 		}()
+		time.Sleep(50 * time.Millisecond) // Admit in the poll below must not win the race with the goroutine and take a slot
 		testutil.Eventually(t, 2*time.Second, "Admit refused after Close started", func() bool { return !w.Admit() })
 		select {
 		case n := <-closed:
