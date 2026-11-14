@@ -63,3 +63,4 @@ bills.
 ## History
 
 - 2026-11: sprint 3.2 estimates only for a 2xx answer without readable usage, stores the provider's counters as a flat map of integers, and makes the forwarder independent of the reader's output when nothing is removed ([ADR 0039](0039-usage-record-admission-and-ledger-writer.md)).
+- 2026-11: sprint 3.3: a stream reader reports which totals it read; a record can have provider input and estimated output ([ADR 0041](0041-anthropic-api-family.md)).

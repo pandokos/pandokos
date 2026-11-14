@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -293,4 +294,287 @@ func TestGateEachEvent(t *testing.T) {
 	s.Release()
 	for range got {
 	}
+}
+
+// anthropicPost calls an Anthropic route of the fake with an x-api-key (empty: none).
+func anthropicPost(t *testing.T, s *Server, path, key, body string) (*http.Response, []byte, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.URL()+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key != "" {
+		req.Header.Set("X-Api-Key", key)
+	}
+	req.Header.Set("Anthropic-Version", "2026-10-21")
+	resp, err := s.ts.Client().Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	return resp, b, err
+}
+
+// TestAnthropicRoutes serves the Messages API: the key in X-Api-Key is checked against Accept, the
+// answers are the fixtures, and every answer carries a request-id.
+func TestAnthropicRoutes(t *testing.T) {
+	s := New(t)
+	key := fixtures.CanaryProviderKey
+	cases := []struct {
+		name, path, model string
+		stream            bool
+		status            int
+		want              []byte
+	}{
+		{"message", "/v1/messages", ModelBasic, false, 200, fixtures.ReadAnthropic("message.json")},
+		{"stream", "/v1/messages", ModelBasic, true, 200, fixtures.ReadAnthropic("message_stream.sse")},
+		{"cache", "/v1/messages", ModelCache, false, 200, fixtures.ReadAnthropic("message_cache.json")},
+		{"cache stream", "/v1/messages", ModelCache, true, 200, fixtures.ReadAnthropic("message_stream_cumulative.sse")},
+		{"tools", "/v1/messages", ModelTools, true, 200, fixtures.ReadAnthropic("message_stream_tools.sse")},
+		{"stream error", "/v1/messages", ModelStreamError, true, 200, fixtures.ReadAnthropic("message_stream_error.sse")},
+		{"crlf", "/v1/messages", ModelCRLF, true, 200, fixtures.ReadAnthropic("message_stream_ping_crlf.sse")},
+		{"count", "/v1/messages/count_tokens", ModelBasic, false, 200, fixtures.ReadAnthropic("count_tokens.json")},
+		{"count never streams", "/v1/messages/count_tokens", ModelBasic, true, 200, fixtures.ReadAnthropic("count_tokens.json")},
+		{"429", "/v1/messages", ModelError429, false, 429, fixtures.ReadAnthropic("error_429.json")},
+		{"529", "/v1/messages", ModelError529, false, 529, fixtures.ReadAnthropic("error_529.json")},
+		{"unknown model", "/v1/messages", "nope", false, 404, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			body := `{"model":"` + c.model + `"`
+			if c.stream {
+				body += `,"stream":true`
+			}
+			resp, b, err := anthropicPost(t, s, c.path, key, body+"}")
+			if err != nil || resp.StatusCode != c.status {
+				t.Fatalf("%v %v", resp, err)
+			}
+			if c.want != nil && !bytes.Equal(b, c.want) {
+				t.Errorf("body differs from the fixture: %.120s", b)
+			}
+			if !strings.HasPrefix(resp.Header.Get("Request-Id"), "req_synthetic-") {
+				t.Errorf("Request-Id %q", resp.Header.Get("Request-Id"))
+			}
+		})
+	}
+	t.Run("a wrong or missing key is error_401.json", func(t *testing.T) {
+		for _, k := range []string{"", "wrong"} {
+			resp, b, err := anthropicPost(t, s, "/v1/messages", k, `{"model":"fake-basic"}`)
+			if err != nil || resp.StatusCode != 401 || !bytes.Equal(b, fixtures.ReadAnthropic("error_401.json")) {
+				t.Errorf("%q: %v %s %v", k, resp, b, err)
+			}
+		}
+	})
+	t.Run("a bearer token is not a key", func(t *testing.T) {
+		req, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, s.URL()+"/v1/messages", strings.NewReader(`{"model":"fake-basic"}`))
+		req.Header.Set("Authorization", "Bearer "+key)
+		req.Header.Set("Anthropic-Version", "2026-10-21")
+		resp, err := s.ts.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 401 {
+			t.Errorf("%d", resp.StatusCode)
+		}
+	})
+	t.Run("Accept replaces the key set", func(t *testing.T) {
+		s.Accept("synthetic-other-key")
+		defer s.Accept(key)
+		if resp, _, _ := anthropicPost(t, s, "/v1/messages", key, `{"model":"fake-basic"}`); resp.StatusCode != 401 {
+			t.Errorf("old key: %d", resp.StatusCode)
+		}
+		if resp, _, _ := anthropicPost(t, s, "/v1/messages", "synthetic-other-key", `{"model":"fake-basic"}`); resp.StatusCode != 200 {
+			t.Errorf("new key: %d", resp.StatusCode)
+		}
+	})
+	t.Run("request ids are distinct", func(t *testing.T) {
+		a, _, _ := anthropicPost(t, s, "/v1/messages", key, `{"model":"fake-basic"}`)
+		b, _, _ := anthropicPost(t, s, "/v1/messages", key, `{"model":"fake-basic"}`)
+		if a.Header.Get("Request-Id") == b.Header.Get("Request-Id") {
+			t.Error("two answers share a request-id")
+		}
+	})
+	t.Run("the headers a gateway must filter are present", func(t *testing.T) {
+		resp, _, _ := anthropicPost(t, s, "/v1/messages", key, `{"model":"fake-basic"}`)
+		for _, n := range []string{"Set-Cookie", "Via", "X-Pandokos-Error", "Anthropic-Ratelimit-Requests-Remaining"} {
+			if resp.Header.Get(n) == "" {
+				t.Errorf("no %s", n)
+			}
+		}
+	})
+}
+
+// TestAnthropicBehaviours serves the behaviours of the 3.2 models and the new ones on the Messages
+// API.
+func TestAnthropicBehaviours(t *testing.T) {
+	s := New(t)
+	key := fixtures.CanaryProviderKey
+	for _, model := range []string{ModelNoUsage, ModelStreamError, ModelKeepalive, ModelTools, ModelTinyWrites, ModelCRLF, ModelBigEvent, ModelCut} {
+		for _, stream := range []bool{false, true} {
+			t.Run(model+map[bool]string{false: "", true: " stream"}[stream], func(t *testing.T) {
+				body := `{"model":"` + model + `"`
+				if stream {
+					body += `,"stream":true`
+				}
+				resp, b, err := anthropicPost(t, s, "/v1/messages", key, body+"}")
+				if model == ModelCut {
+					if err == nil {
+						t.Fatalf("a cut answer was read to its end (%d bytes)", len(b))
+					}
+					return
+				}
+				if err != nil || (resp.StatusCode/100 != 2 && (model != ModelStreamError || stream)) {
+					t.Fatalf("%v %v", resp, err)
+				}
+				if model == ModelNoUsage && bytes.Contains(b, []byte(`"usage":{`)) {
+					t.Errorf("the answer carries usage: %.200s", b)
+				}
+				if model == ModelBigEvent && stream && len(b) < BigAnthropicEventBytes {
+					t.Errorf("event of %d bytes is not over the bound", len(b))
+				}
+				if model == ModelKeepalive && stream && !bytes.HasPrefix(b, []byte(": ping\n\n")) {
+					t.Error("no comment event")
+				}
+			})
+		}
+	}
+	t.Run("cut after start sends message_start only and then fails", func(t *testing.T) {
+		resp, b, err := anthropicPost(t, s, "/v1/messages", key, `{"model":"fake-cut-after-start","stream":true}`)
+		if err == nil {
+			t.Fatalf("the stream ended cleanly: %d %s", resp.StatusCode, b)
+		}
+		if !bytes.HasPrefix(b, []byte("event: message_start")) || bytes.Contains(b, []byte("content_block")) {
+			t.Errorf("read %.200s", b)
+		}
+	})
+	t.Run("stall after first waits for the cancellation", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, s.URL()+"/v1/messages", strings.NewReader(`{"model":"fake-stall-after-first","stream":true}`))
+		req.Header.Set("X-Api-Key", key)
+		req.Header.Set("Anthropic-Version", "2026-10-21")
+		resp, err := s.ts.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		buf := make([]byte, 64)
+		if n, err := resp.Body.Read(buf); n == 0 || err != nil {
+			t.Fatalf("no first event: %d %v", n, err)
+		}
+		cancel()
+		resp.Body.Close()
+		if !s.WaitCancelled(2 * time.Second) {
+			t.Fatal("the handler did not see the cancellation")
+		}
+	})
+	t.Run("the same two models on the chat route", func(t *testing.T) {
+		resp, b, err := postPath(t, s, "/v1/chat/completions", `{"model":"fake-cut-after-start","stream":true}`)
+		if err == nil || resp == nil || !bytes.HasPrefix(b, []byte("data: ")) {
+			t.Errorf("cut after start: %v %q", err, b)
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, s.URL()+"/v1/chat/completions", strings.NewReader(`{"model":"fake-stall-after-first","stream":true}`))
+		req.Header.Set("Authorization", "Bearer "+key)
+		r2, err := s.ts.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = r2.Body.Read(make([]byte, 16))
+		cancel()
+		r2.Body.Close()
+		if !s.WaitCancelled(2 * time.Second) {
+			t.Fatal("no cancellation seen")
+		}
+	})
+	t.Run("a missing anthropic-version is the provider's 400", func(t *testing.T) {
+		req, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, s.URL()+"/v1/messages", strings.NewReader(`{"model":"fake-basic"}`))
+		req.Header.Set("X-Api-Key", key)
+		resp, err := s.ts.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 400 {
+			t.Errorf("%d", resp.StatusCode)
+		}
+	})
+}
+
+// TestCompatProfiles serves each compatible profile on the chat route, and the usual answers on
+// the other two operations.
+func TestCompatProfiles(t *testing.T) {
+	s := New(t)
+	cases := []struct {
+		name, model, body string
+		status            int
+		want              []byte
+	}{
+		{"last chunk", ModelCompatUsageLastChunk, `"stream":true`, 200, fixtures.ReadCompat("chat_stream_usage_last_content_chunk.sse")},
+		{"extra usage", ModelCompatExtraUsage, `"stream":true`, 200, fixtures.ReadCompat("chat_stream_extra_usage.sse")},
+		{"extra usage plain", ModelCompatExtraUsage, `"x":1`, 200, fixtures.ReadCompat("chat_completion_extra_usage.json")},
+		{"ignores without option", ModelCompatIgnoresOption, `"stream":true`, 200, fixtures.ReadCompat("chat_stream_no_usage.sse")},
+		{"ignores with option", ModelCompatIgnoresOption, `"stream":true,"stream_options":{"include_usage":true}`, 200, fixtures.ReadCompat("chat_stream_no_usage.sse")},
+		{"refuses with option", ModelCompatRefusesOption, `"stream":true,"stream_options":{"include_usage":true}`, 400, fixtures.ReadCompat("error_400_stream_options.json")},
+		{"refuses without option", ModelCompatRefusesOption, `"stream":true`, 200, fixtures.ReadCompat("chat_stream_no_usage.sse")},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			resp, b, err := postPath(t, s, "/v1/chat/completions", `{"model":"`+c.model+`",`+c.body+`}`)
+			if err != nil || resp.StatusCode != c.status || !bytes.Equal(b, c.want) {
+				t.Fatalf("%v %.200s %v", resp, b, err)
+			}
+		})
+	}
+	t.Run("a nested stream_options is not the option", func(t *testing.T) {
+		resp, _, err := postPath(t, s, "/v1/chat/completions", `{"model":"compat-refuses-option","stream":true,"metadata":{"stream_options":1}}`)
+		if err != nil || resp.StatusCode != 200 {
+			t.Fatalf("%v %v", resp, err)
+		}
+	})
+	t.Run("the other operations answer as usual", func(t *testing.T) {
+		for _, path := range []string{"/v1/responses", "/v1/embeddings"} {
+			for _, m := range []string{ModelCompatUsageLastChunk, ModelCompatExtraUsage, ModelCompatIgnoresOption, ModelCompatRefusesOption} {
+				if resp, _, err := postPath(t, s, path, `{"model":"`+m+`"}`); err != nil || resp.StatusCode != 200 {
+					t.Errorf("%s %s: %v %v", path, m, resp, err)
+				}
+			}
+		}
+	})
+}
+
+// TestBasePathAndNewOn: SetBasePath makes every route also answer under a prefix, and NewOn
+// listens on the address given.
+func TestBasePathAndNewOn(t *testing.T) {
+	s := NewOn(t, "127.0.0.1:0")
+	if s.Port() == 0 || !strings.HasSuffix(s.URL(), ":"+strconv.Itoa(s.Port())) {
+		t.Fatalf("URL %q port %d", s.URL(), s.Port())
+	}
+	s.SetBasePath("/compat-base")
+	for _, path := range []string{"/v1/chat/completions", "/compat-base/v1/chat/completions"} {
+		resp, _, err := postPath(t, s, path, `{"model":"fake-basic"}`)
+		if err != nil || resp.StatusCode != 200 {
+			t.Errorf("%s: %v %v", path, resp, err)
+		}
+	}
+	for _, path := range []string{"/v1/messages", "/compat-base/v1/messages"} {
+		if resp, _, err := anthropicPost(t, s, path, fixtures.CanaryProviderKey, `{"model":"fake-basic"}`); err != nil || resp.StatusCode != 200 {
+			t.Errorf("%s: %v %v", path, resp, err)
+		}
+	}
+	if resp, _, _ := postPath(t, s, "/other/v1/chat/completions", `{"model":"fake-basic"}`); resp.StatusCode != 404 {
+		t.Errorf("another prefix: %d", resp.StatusCode)
+	}
+	reqs := s.Requests()
+	if reqs[1].Path != "/compat-base/v1/chat/completions" {
+		t.Errorf("the recorded path is %q", reqs[1].Path)
+	}
+	t.Run("all interfaces", func(t *testing.T) {
+		any := NewOn(t, "0.0.0.0:0")
+		if resp, _, err := postPath(t, any, "/v1/chat/completions", `{"model":"fake-basic"}`); err != nil || resp.StatusCode != 200 {
+			t.Fatalf("%v %v", resp, err)
+		}
+	})
 }

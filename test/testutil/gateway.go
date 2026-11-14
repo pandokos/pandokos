@@ -128,10 +128,33 @@ func TargetFor(up *fakeprovider.Server, provider, model string) gateway.Target {
 	return gateway.Target{
 		Provider: provider, Endpoint: "synthetic-endpoint",
 		ModelID: "synthetic-model-" + provider + "-" + model, Model: model, UpstreamModel: model,
-		BaseURL: u, Private: true,
+		BaseURL: u, Private: true, StreamUsage: true,
 		Prices: []pricing.Version{syntheticPrice("synthetic-price-"+provider+"-"+model, "synthetic-model-"+provider+"-"+model,
 			time.Now().Add(-time.Hour), "3", "6")},
 	}
+}
+
+// TargetForFamily is TargetFor for a provider of the given API family. The price of an
+// "anthropic" model also carries the cache rates (read 0.3, 5-minute write 3.75 and 1-hour write
+// 6 per million), so that a test can compute the cost of cache usage exactly; every other family
+// gets the prices of TargetFor.
+func TargetForFamily(up *fakeprovider.Server, provider, family, model string) gateway.Target {
+	t := TargetFor(up, provider, model)
+	if family != "anthropic" {
+		return t
+	}
+	v := t.Prices[0]
+	for category, rate := range map[pricing.Category]string{
+		pricing.CategoryCacheRead: "0.3", pricing.CategoryCacheWrite: "3.75", pricing.CategoryCacheWrite1h: "6",
+	} {
+		d, err := pricing.ParseDecimal(rate)
+		if err != nil {
+			panic(err)
+		}
+		v.Rates = append(v.Rates, pricing.Rate{Category: category, PerMillion: d})
+	}
+	t.Prices = []pricing.Version{v}
+	return t
 }
 
 // syntheticPrice returns a USD price version with an input and an output rate (per million tokens).

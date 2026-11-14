@@ -62,3 +62,4 @@ through; a pinned key limited to its credential's provider.
 ## History
 
 - 2026-11: sprint 3.2 adds admission and attribution after authentication, and the usage record and spans at the end of every admitted request ([ADR 0039](0039-usage-record-admission-and-ledger-writer.md), [ADR 0040](0040-traces.md)).
+- 2026-11: sprint 3.3: the shape of an unrouted request comes from the family that recognizes it; the upstream request ID comes from the adapter ([ADR 0041](0041-anthropic-api-family.md)).

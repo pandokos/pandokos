@@ -593,3 +593,61 @@ func TestTargetPrices(t *testing.T) {
 		}
 	})
 }
+
+// TestStreamUsageTarget is T-540: Target.StreamUsage follows the provider row, and a change is seen
+// after the catalogue cache expires.
+func TestStreamUsageTarget(t *testing.T) {
+	w := newWorld(t)
+	tn, _ := w.api.Tenant(t, "tenant-stream-usage")
+	w.provider(t, "synth-add", "http://10.1.2.3:8080", true, "m", "m", "all")
+	w.provider(t, "synth-omit", "http://10.1.2.4:8080", true, "m", "m", "all")
+	w.platform(t, "PATCH", "/v1/providers/synth-omit", map[string]any{"stream_usage_option": "omit"})
+	cat := w.catalogue(t) // the cache lives one second
+	p := principal(t, tn.ID, "")
+
+	streamUsage := func(provider string) bool {
+		t.Helper()
+		target, err := cat.Resolve(ctx(t), p, provider, "m")
+		if err != nil {
+			t.Fatalf("Resolve(%s): %v", provider, err)
+		}
+		return target.StreamUsage
+	}
+
+	t.Run("each target follows its provider", func(t *testing.T) {
+		if !streamUsage("synth-add") {
+			t.Error("a provider with the option add resolves with StreamUsage false")
+		}
+		if streamUsage("synth-omit") {
+			t.Error("a provider with the option omit resolves with StreamUsage true")
+		}
+	})
+	t.Run("the seeded providers add the option", func(t *testing.T) {
+		for _, name := range []string{"openai", "anthropic"} {
+			var model string
+			if err := w.d.Super(t).QueryRow(ctx(t), `SELECT m.name FROM pandokos.model m JOIN pandokos.provider p ON p.id = m.provider_id WHERE p.name = $1 AND m.availability = 'all' LIMIT 1`, name).Scan(&model); err != nil {
+				t.Fatal(err)
+			}
+			target, err := cat.Resolve(ctx(t), p, name, model)
+			if err != nil || !target.StreamUsage {
+				t.Errorf("%s/%s: %+v %v", name, model, target, err)
+			}
+		}
+	})
+	t.Run("a change is seen after the cache expires", func(t *testing.T) {
+		w.platform(t, "PATCH", "/v1/providers/synth-add", map[string]any{"stream_usage_option": "omit"})
+		w.platform(t, "PATCH", "/v1/providers/synth-omit", map[string]any{"stream_usage_option": "add"})
+		testutil.Eventually(t, 10*time.Second, "the new options reach the targets", func() bool {
+			return !streamUsage("synth-add") && streamUsage("synth-omit")
+		})
+	})
+	t.Run("the decision comes from the snapshot that resolved the model", func(t *testing.T) {
+		target, err := cat.Resolve(ctx(t), p, "synth-add", "m")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if target.Provider != "synth-add" || target.StreamUsage {
+			t.Errorf("%+v", target)
+		}
+	})
+}

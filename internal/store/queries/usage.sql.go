@@ -7,6 +7,7 @@ package queries
 
 import (
 	"context"
+	"time"
 )
 
 const ensureUsagePartitions = `-- name: EnsureUsagePartitions :one
@@ -56,12 +57,159 @@ SELECT pandokos.current_tenant_id(), r.id, r.started_at, r.request_id, r.trace_i
 ON CONFLICT DO NOTHING
 `
 
-// Usage ledger. Insert only for the gateway: no statement reads, changes or removes a usage row
-// in the request path. records is a JSON array passed as text and cast (ADR 0027).
+// Usage ledger. Insert only for the gateway; the admin role lists a tenant's records in its
+// session (ListUsageRecords). No statement changes or removes a row. records is a JSON array
+// passed as text and cast (ADR 0027).
 func (q *Queries) InsertUsageRecords(ctx context.Context, records string) (int64, error) {
 	result, err := q.db.Exec(ctx, insertUsageRecords, records)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const listUsageRecords = `-- name: ListUsageRecords :many
+SELECT u.id, u.started_at, u.request_id, u.trace_id, u.principal_kind, u.principal_id, u.key_id, u.credential_id,
+       u.funding, u.provider, u.api_family, u.operation, u.endpoint, u.model, u.model_id, u.upstream_model, u.stream,
+       u.outcome, u.error_code, u.upstream_status, u.ttfb_ms, u.duration_ms, u.request_bytes, u.response_bytes,
+       u.input_source, u.output_source, u.input_tokens, u.output_tokens, u.cache_read_tokens, u.cache_write_tokens,
+       u.reasoning_tokens, u.other_units, u.provider_usage, u.estimated_input_tokens, u.estimated_output_tokens,
+       u.cost_status, u.cost_reason, u.cost, u.currency, u.price_version_id, u.cost_fallbacks, u.metadata,
+       u.metadata_dropped
+  FROM pandokos.usage_record u
+ WHERE u.started_at >= $1::timestamptz
+   AND u.started_at <  $2::timestamptz
+   AND ($3::text = '' OR u.provider = $3::text)
+   AND (NOT $4::boolean
+        OR (u.started_at, u.id) < ($5::timestamptz, $6::uuid))
+ ORDER BY u.started_at DESC, u.id DESC
+ LIMIT $7::integer
+`
+
+type ListUsageRecordsParams struct {
+	FromAt         time.Time
+	ToAt           time.Time
+	Provider       string
+	After          bool
+	AfterStartedAt time.Time
+	AfterID        string
+	PageSize       int32
+}
+
+type ListUsageRecordsRow struct {
+	ID                    string
+	StartedAt             time.Time
+	RequestID             string
+	TraceID               string
+	PrincipalKind         string
+	PrincipalID           string
+	KeyID                 string
+	CredentialID          *string
+	Funding               string
+	Provider              string
+	ApiFamily             string
+	Operation             string
+	Endpoint              string
+	Model                 string
+	ModelID               *string
+	UpstreamModel         string
+	Stream                *bool
+	Outcome               string
+	ErrorCode             string
+	UpstreamStatus        *int32
+	TtfbMs                *int64
+	DurationMs            int64
+	RequestBytes          *int64
+	ResponseBytes         *int64
+	InputSource           string
+	OutputSource          string
+	InputTokens           *int64
+	OutputTokens          *int64
+	CacheReadTokens       *int64
+	CacheWriteTokens      *int64
+	ReasoningTokens       *int64
+	OtherUnits            string
+	ProviderUsage         string
+	EstimatedInputTokens  *int64
+	EstimatedOutputTokens *int64
+	CostStatus            string
+	CostReason            string
+	Cost                  *string
+	Currency              *string
+	PriceVersionID        *string
+	CostFallbacks         []string
+	Metadata              string
+	MetadataDropped       int32
+}
+
+func (q *Queries) ListUsageRecords(ctx context.Context, arg ListUsageRecordsParams) ([]ListUsageRecordsRow, error) {
+	rows, err := q.db.Query(ctx, listUsageRecords,
+		arg.FromAt,
+		arg.ToAt,
+		arg.Provider,
+		arg.After,
+		arg.AfterStartedAt,
+		arg.AfterID,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUsageRecordsRow{}
+	for rows.Next() {
+		var i ListUsageRecordsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.StartedAt,
+			&i.RequestID,
+			&i.TraceID,
+			&i.PrincipalKind,
+			&i.PrincipalID,
+			&i.KeyID,
+			&i.CredentialID,
+			&i.Funding,
+			&i.Provider,
+			&i.ApiFamily,
+			&i.Operation,
+			&i.Endpoint,
+			&i.Model,
+			&i.ModelID,
+			&i.UpstreamModel,
+			&i.Stream,
+			&i.Outcome,
+			&i.ErrorCode,
+			&i.UpstreamStatus,
+			&i.TtfbMs,
+			&i.DurationMs,
+			&i.RequestBytes,
+			&i.ResponseBytes,
+			&i.InputSource,
+			&i.OutputSource,
+			&i.InputTokens,
+			&i.OutputTokens,
+			&i.CacheReadTokens,
+			&i.CacheWriteTokens,
+			&i.ReasoningTokens,
+			&i.OtherUnits,
+			&i.ProviderUsage,
+			&i.EstimatedInputTokens,
+			&i.EstimatedOutputTokens,
+			&i.CostStatus,
+			&i.CostReason,
+			&i.Cost,
+			&i.Currency,
+			&i.PriceVersionID,
+			&i.CostFallbacks,
+			&i.Metadata,
+			&i.MetadataDropped,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

@@ -1,0 +1,6 @@
+services:
+  migrate:
+    image: ${PANDOKOS_TEST_IMAGE:?}
+  pandokos:
+    image: ${PANDOKOS_TEST_IMAGE:?}
+    extra_hosts: ["host.docker.internal:host-gateway"]

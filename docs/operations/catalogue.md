@@ -3,9 +3,10 @@
 The catalogue says which providers, endpoints and models an installation knows, which tenants may use
 which models, and what each model costs. This guide is for the platform administrator. Decisions:
 [ADR 0035](../adr/0035-catalogue-and-model-access.md) (catalogue and access) and
-[ADR 0036](../adr/0036-prices-costs-and-importer.md) (prices). The inference route does not read the
-catalogue yet; it starts to in sprint 3.1, and costs are computed and recorded from sprint 3.2. Until
-then the catalogue is administered, imported and tested, not used for calls.
+[ADR 0036](../adr/0036-prices-costs-and-importer.md) (prices). The inference route reads the
+catalogue on every call to resolve the provider, endpoint, model access and credential
+([gateway guide](gateway.md)), and every recorded request carries a cost computed from these prices
+([usage guide](usage.md)).
 
 Every command below is a client of the administration API ([reference](../reference/admin-api.md)) and
 needs a platform key; model access for a tenant needs a key of that tenant.
@@ -36,13 +37,16 @@ To add an OpenAI-compatible provider, for example a self-hosted server that is n
 internet:
 
 ```
-pandokos provider create vllm --family openai --display-name "Our vLLM"
+pandokos provider create vllm --family openai --display-name "Our vLLM"   # add --stream-usage-option omit if the server refuses stream_options
 pandokos endpoint create vllm main --base-url http://models.internal:8000 --private
 pandokos model create vllm/llama-3-70b --upstream-id meta-llama/Llama-3-70b-instruct \
     --availability selected
 pandokos credential create --tenant ACME --provider vllm --secret-file ./vllm.key "vllm for ACME"
 pandokos model grant vllm/llama-3-70b --tenant ACME
 ```
+
+**`stream_usage_option`.** Each provider of the `openai` family has this setting: `add` (default) makes
+Pandokos add the usage option to a chat stream whose caller did not ask for usage ([ADR 0024](../adr/0024-openai-stream-usage-option.md)); `omit` never adds it, for a server that refuses unknown request members. With `omit` such streams are forwarded as the server sends them and their usage is estimated unless the server reports it anyway. Set it with `provider create` or `provider update` and `--stream-usage-option`; `omit` is refused for a provider of the `anthropic` family. A change reaches the gateway within `cache.catalog_ttl`. Compatible providers such as Groq, Mistral or Ollama are configuration only: see the [providers guide](providers.md) ([ADR 0042](../adr/0042-openai-compatible-providers-and-stream-usage-option.md)).
 
 - The first endpoint of a provider becomes its default; `endpoint update --default` moves the default
   in one step. The base URL has a scheme and a host, no user information, query or fragment, and no
@@ -240,4 +244,4 @@ version is recorded with the cost, so the record is self-consistent.
 - The dataset is third-party data under the MIT licence; its accuracy is not guaranteed.
 - A model the dataset does not match has no price until you set an override; its cost is unknown, not
   zero.
-- The inference route does not yet check access or compute costs (sprints 3.1 and 3.2).
+- A model without a price is served and recorded with an unknown cost, never a zero cost.

@@ -131,19 +131,20 @@ func (q *Queries) CreateModel(ctx context.Context, arg CreateModelParams) (strin
 }
 
 const createProvider = `-- name: CreateProvider :one
-INSERT INTO pandokos.provider (name, display_name, description, api_family, enabled, dataset_provider)
+INSERT INTO pandokos.provider (name, display_name, description, api_family, enabled, dataset_provider, stream_usage_option)
 VALUES ($1::text, $2::text, $3::text, $4::text,
-        $5::boolean, $6::text)
-RETURNING id, name, display_name, description, api_family, enabled, dataset_provider, created_at, updated_at
+        $5::boolean, $6::text, $7::text)
+RETURNING id, name, display_name, description, api_family, enabled, dataset_provider, created_at, updated_at, stream_usage_option
 `
 
 type CreateProviderParams struct {
-	Name            string
-	DisplayName     string
-	Description     string
-	ApiFamily       string
-	Enabled         bool
-	DatasetProvider string
+	Name              string
+	DisplayName       string
+	Description       string
+	ApiFamily         string
+	Enabled           bool
+	DatasetProvider   string
+	StreamUsageOption string
 }
 
 func (q *Queries) CreateProvider(ctx context.Context, arg CreateProviderParams) (PandokosProvider, error) {
@@ -154,6 +155,7 @@ func (q *Queries) CreateProvider(ctx context.Context, arg CreateProviderParams) 
 		arg.ApiFamily,
 		arg.Enabled,
 		arg.DatasetProvider,
+		arg.StreamUsageOption,
 	)
 	var i PandokosProvider
 	err := row.Scan(
@@ -166,6 +168,7 @@ func (q *Queries) CreateProvider(ctx context.Context, arg CreateProviderParams) 
 		&i.DatasetProvider,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.StreamUsageOption,
 	)
 	return i, err
 }
@@ -216,7 +219,7 @@ func (q *Queries) DeleteModel(ctx context.Context, id string) (int64, error) {
 const deleteProvider = `-- name: DeleteProvider :one
 DELETE FROM pandokos.provider
  WHERE name = $1::text
-RETURNING id, name, display_name, description, api_family, enabled, dataset_provider, created_at, updated_at
+RETURNING id, name, display_name, description, api_family, enabled, dataset_provider, created_at, updated_at, stream_usage_option
 `
 
 func (q *Queries) DeleteProvider(ctx context.Context, name string) (PandokosProvider, error) {
@@ -232,6 +235,7 @@ func (q *Queries) DeleteProvider(ctx context.Context, name string) (PandokosProv
 		&i.DatasetProvider,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.StreamUsageOption,
 	)
 	return i, err
 }
@@ -364,7 +368,8 @@ func (q *Queries) GetModelRestriction(ctx context.Context) (GetModelRestrictionR
 }
 
 const getProvider = `-- name: GetProvider :one
-SELECT p.id, p.name, p.display_name, p.description, p.api_family, p.enabled, p.dataset_provider, p.created_at, p.updated_at
+SELECT p.id, p.name, p.display_name, p.description, p.api_family, p.enabled, p.dataset_provider, p.created_at, p.updated_at,
+       p.stream_usage_option
   FROM pandokos.provider p
  WHERE p.name = $1::text
 `
@@ -382,12 +387,14 @@ func (q *Queries) GetProvider(ctx context.Context, name string) (PandokosProvide
 		&i.DatasetProvider,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.StreamUsageOption,
 	)
 	return i, err
 }
 
 const getProviderForUpdate = `-- name: GetProviderForUpdate :one
-SELECT p.id, p.name, p.display_name, p.description, p.api_family, p.enabled, p.dataset_provider, p.created_at, p.updated_at
+SELECT p.id, p.name, p.display_name, p.description, p.api_family, p.enabled, p.dataset_provider, p.created_at, p.updated_at,
+       p.stream_usage_option
   FROM pandokos.provider p
  WHERE p.name = $1::text
    FOR UPDATE
@@ -408,6 +415,7 @@ func (q *Queries) GetProviderForUpdate(ctx context.Context, name string) (Pandok
 		&i.DatasetProvider,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.StreamUsageOption,
 	)
 	return i, err
 }
@@ -632,7 +640,8 @@ func (q *Queries) ListModels(ctx context.Context, arg ListModelsParams) ([]ListM
 
 const listProviders = `-- name: ListProviders :many
 
-SELECT p.id, p.name, p.display_name, p.description, p.api_family, p.enabled, p.dataset_provider, p.created_at, p.updated_at
+SELECT p.id, p.name, p.display_name, p.description, p.api_family, p.enabled, p.dataset_provider, p.created_at, p.updated_at,
+       p.stream_usage_option
   FROM pandokos.provider p
  WHERE (NOT $1::boolean OR p.name > $2::text)
  ORDER BY p.name
@@ -669,6 +678,7 @@ func (q *Queries) ListProviders(ctx context.Context, arg ListProvidersParams) ([
 			&i.DatasetProvider,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.StreamUsageOption,
 		); err != nil {
 			return nil, err
 		}
@@ -880,17 +890,18 @@ func (q *Queries) LoadModels(ctx context.Context) ([]LoadModelsRow, error) {
 }
 
 const loadProviders = `-- name: LoadProviders :many
-SELECT p.id, p.name, p.api_family, p.enabled, p.dataset_provider
+SELECT p.id, p.name, p.api_family, p.enabled, p.dataset_provider, p.stream_usage_option
   FROM pandokos.provider p
  ORDER BY p.name
 `
 
 type LoadProvidersRow struct {
-	ID              string
-	Name            string
-	ApiFamily       string
-	Enabled         bool
-	DatasetProvider string
+	ID                string
+	Name              string
+	ApiFamily         string
+	Enabled           bool
+	DatasetProvider   string
+	StreamUsageOption string
 }
 
 func (q *Queries) LoadProviders(ctx context.Context) ([]LoadProvidersRow, error) {
@@ -908,6 +919,7 @@ func (q *Queries) LoadProviders(ctx context.Context) ([]LoadProvidersRow, error)
 			&i.ApiFamily,
 			&i.Enabled,
 			&i.DatasetProvider,
+			&i.StreamUsageOption,
 		); err != nil {
 			return nil, err
 		}
@@ -1127,21 +1139,24 @@ UPDATE pandokos.provider
    SET display_name     = CASE WHEN $1::boolean THEN $2::text ELSE display_name END,
        description      = CASE WHEN $3::boolean THEN $4::text ELSE description END,
        enabled          = CASE WHEN $5::boolean THEN $6::boolean ELSE enabled END,
-       dataset_provider = CASE WHEN $7::boolean THEN $8::text ELSE dataset_provider END
- WHERE name = $9::text
-RETURNING id, name, display_name, description, api_family, enabled, dataset_provider, created_at, updated_at
+       dataset_provider = CASE WHEN $7::boolean THEN $8::text ELSE dataset_provider END,
+       stream_usage_option = CASE WHEN $9::boolean THEN $10::text ELSE stream_usage_option END
+ WHERE name = $11::text
+RETURNING id, name, display_name, description, api_family, enabled, dataset_provider, created_at, updated_at, stream_usage_option
 `
 
 type UpdateProviderParams struct {
-	SetDisplayName     bool
-	DisplayName        string
-	SetDescription     bool
-	Description        string
-	SetEnabled         bool
-	Enabled            bool
-	SetDatasetProvider bool
-	DatasetProvider    string
-	Name               string
+	SetDisplayName       bool
+	DisplayName          string
+	SetDescription       bool
+	Description          string
+	SetEnabled           bool
+	Enabled              bool
+	SetDatasetProvider   bool
+	DatasetProvider      string
+	SetStreamUsageOption bool
+	StreamUsageOption    string
+	Name                 string
 }
 
 func (q *Queries) UpdateProvider(ctx context.Context, arg UpdateProviderParams) (PandokosProvider, error) {
@@ -1154,6 +1169,8 @@ func (q *Queries) UpdateProvider(ctx context.Context, arg UpdateProviderParams) 
 		arg.Enabled,
 		arg.SetDatasetProvider,
 		arg.DatasetProvider,
+		arg.SetStreamUsageOption,
+		arg.StreamUsageOption,
 		arg.Name,
 	)
 	var i PandokosProvider
@@ -1167,6 +1184,7 @@ func (q *Queries) UpdateProvider(ctx context.Context, arg UpdateProviderParams) 
 		&i.DatasetProvider,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.StreamUsageOption,
 	)
 	return i, err
 }

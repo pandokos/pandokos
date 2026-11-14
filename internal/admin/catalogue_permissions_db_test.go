@@ -74,8 +74,8 @@ func TestCatalogPermissions(t *testing.T) {
 			}
 		}
 	}
-	if platformOps != 25 || tenantOps != 4 {
-		t.Errorf("%d platform and %d tenant operations were exercised, want 25 and 4", platformOps, tenantOps)
+	if platformOps != 25 || tenantOps != 5 {
+		t.Errorf("%d platform and %d tenant operations were exercised, want 25 and 5", platformOps, tenantOps)
 	}
 
 	t.Run("model:read reads and model:restrict writes, and neither implies the other", func(t *testing.T) {

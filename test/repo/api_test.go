@@ -638,10 +638,10 @@ func TestOpenAPIDocument(t *testing.T) {
 	if n != len(adminapi.Operations) {
 		t.Errorf("the document has %d operations, the generated code %d", n, len(adminapi.Operations))
 	}
-	// Sprint 2.2: 64 operations, and money is never a JSON number: no schema of the document has a
+	// Sprint 2.2: 64 operations (66 with the two of sprint 3.3), and money is never a JSON number: no schema of the document has a
 	// number type, and a rate is a string with a pattern.
-	if n != 64 {
-		t.Errorf("the document has %d operations, want 64 (35 and the 29 of sprint 2.2)", n)
+	if n != 66 {
+		t.Errorf("the document has %d operations, want 66 (35, the 29 of sprint 2.2 and the 2 of sprint 3.3)", n)
 	}
 	if regexp.MustCompile(`(?m)type:\s*(number|\[[^\]]*number)`).MatchString(raw) || regexp.MustCompile(`format:\s*(float|double)`).MatchString(raw) {
 		t.Error("the document uses a floating-point type: prices travel as decimal strings")

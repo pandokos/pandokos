@@ -12,6 +12,7 @@ import (
 type Provider struct {
 	ID, Name, Family, DatasetProvider string
 	Enabled                           bool
+	StreamUsageOption                 string // "add" or "omit"
 }
 
 // Endpoint is an address of a provider.

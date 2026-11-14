@@ -31,6 +31,7 @@ const (
 	attrUpstreamError    = "pandokos.upstream.error"
 	attrTTFB             = "pandokos.ttfb_ms"
 	attrUsageSource      = "pandokos.usage.source"
+	attrUsageOutputSrc   = "pandokos.usage.output_source"
 	attrCostStatus       = "pandokos.cost.status"
 	attrCostAmount       = "pandokos.cost.amount"
 	attrCostCurrency     = "pandokos.cost.currency"
@@ -42,7 +43,7 @@ var SpanAttributes = []string{
 	attrHTTPMethod, attrHTTPRoute, attrHTTPStatus, attrRequestID, attrRecordID, attrTenantID,
 	attrPrincipalID, attrKeyID, attrProvider, attrOperation, attrOutcome, attrErrorCode,
 	attrEndpoint, attrModel, attrStream, attrCredentialID, attrFunding, attrUpstreamError,
-	attrTTFB, attrUsageSource, attrCostStatus, attrCostAmount, attrCostCurrency,
+	attrTTFB, attrUsageSource, attrUsageOutputSrc, attrCostStatus, attrCostAmount, attrCostCurrency,
 }
 
 // failed reports whether the outcome sets the status of a span to Error.
@@ -64,6 +65,7 @@ func (st *reqState) endClient(r *usage.Record) {
 		attribute.String(attrCredentialID, r.CredentialID),
 		attribute.String(attrFunding, r.Funding),
 		attribute.String(attrUsageSource, string(r.InputSource)),
+		attribute.String(attrUsageOutputSrc, string(r.OutputSource)),
 		attribute.String(attrCostStatus, r.CostStatus),
 	}
 	if r.Stream != nil {

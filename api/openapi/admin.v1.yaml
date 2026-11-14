@@ -24,6 +24,7 @@ tags:
   - name: prices
   - name: model-access
   - name: platform-keys
+  - name: usage
 paths:
   /v1/me:
     get:
@@ -1344,6 +1345,55 @@ paths:
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/capability:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: getCapability
+      tags: [model-access]
+      summary: Say whether the tenant can call a provider and model now
+      description: >-
+        Evaluates, on committed state, the rules the gateway applies to a call made with a key of
+        the tenant that has no pin and no model list: the provider is available, the model is
+        allowed, and the tenant has an active default credential for the provider. provider and
+        model are required. A tenant that is not active is answered 403 tenant_suspended.
+      x-pandokos-permission: model:read
+      parameters:
+        - {name: provider, in: query, description: The provider. Required., schema: {$ref: '#/components/schemas/ProviderName'}}
+        - {name: model, in: query, description: The public model name. Required., schema: {$ref: '#/components/schemas/ModelName'}}
+      responses:
+        "200": {$ref: '#/components/responses/Capability'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/usage-records:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: listUsageRecords
+      tags: [usage]
+      summary: List the tenant's usage records, newest first
+      description: >-
+        Records whose started_at is in [from, to). to defaults to now and from to 24 hours before to;
+        the window is at most 31 days. A cursor is valid only with the same from, to and provider.
+      x-pandokos-permission: usage:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {name: from, in: query, description: 'Start of the window, RFC 3339.', schema: {type: string, maxLength: 64}}
+        - {name: to, in: query, description: 'End of the window (excluded), RFC 3339.', schema: {type: string, maxLength: 64}}
+        - {name: provider, in: query, description: Only records of this provider., schema: {$ref: '#/components/schemas/ProviderName'}}
+      responses:
+        "200": {$ref: '#/components/responses/UsageRecordList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
 components:
   securitySchemes:
     key:
@@ -1568,6 +1618,16 @@ components:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
 
+    Capability:
+      description: Whether the tenant can call the provider and model now, and why not.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Capability'}
+    UsageRecordList:
+      description: One page of usage records.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/UsageRecordList'}
     Provider:
       description: The provider.
       content:
@@ -1707,10 +1767,131 @@ components:
     PriceImportRunSource:
       type: string
       enum: [embedded, remote]
+    StreamUsageOption:
+      type: string
+      description: add (default) adds the stream usage option to chat completion streams that do not ask for usage; omit never adds it. Only add is accepted for a provider of family anthropic.
+      enum: [add, omit]
+    CredentialAvailability:
+      type: string
+      enum: [active, missing, disabled, revoked]
+    BudgetAvailability:
+      type: string
+      description: not_enforced until limits exist.
+      enum: [not_enforced]
+    CapabilityChecks:
+      type: object
+      additionalProperties: false
+      required: [provider_available, model_allowed, credential, credential_validated, budget]
+      properties:
+        provider_available: {type: boolean}
+        model_allowed: {type: boolean}
+        credential: {$ref: '#/components/schemas/CredentialAvailability'}
+        credential_id: {type: string, description: The default credential of the tenant for the provider; absent when there is none.}
+        credential_validated: {type: boolean, description: The credential was accepted by the provider when it was stored or replaced. Informational.}
+        budget: {$ref: '#/components/schemas/BudgetAvailability'}
+    Capability:
+      type: object
+      additionalProperties: false
+      required: [provider, model, callable, reasons, checks, checked_at]
+      properties:
+        provider: {$ref: '#/components/schemas/ProviderName'}
+        model: {$ref: '#/components/schemas/ModelName'}
+        callable: {type: boolean}
+        reasons:
+          type: array
+          description: 'Every failing check, in this order: provider_unavailable, model_not_allowed, no_credential, credential_disabled, credential_revoked. Empty when callable.'
+          items: {type: string}
+        checks: {$ref: '#/components/schemas/CapabilityChecks'}
+        checked_at: {type: string, format: date-time}
+    UsageCounter:
+      type: object
+      additionalProperties: false
+      required: [name, value]
+      properties:
+        name: {type: string}
+        value: {type: integer}
+    MetadataEntry:
+      type: object
+      additionalProperties: false
+      required: [key, value]
+      properties:
+        key: {type: string}
+        value: {type: string}
+    UsageRecord:
+      type: object
+      additionalProperties: false
+      required: [id, request_id, trace_id, started_at, duration_ms, principal_kind, principal_id, key_id, credential_id,
+                 funding, provider, api_family, operation, endpoint, model, model_id, upstream_model, stream, outcome,
+                 error_code, upstream_status, ttfb_ms, request_bytes, response_bytes, input_source, output_source,
+                 input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
+                 estimated_input_tokens, estimated_output_tokens, other_units, provider_usage, cost_status, cost_reason,
+                 currency, price_version_id, cost_fallbacks, metadata, metadata_dropped]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        request_id: {type: string}
+        trace_id: {type: string, description: Empty when the request had no trace.}
+        started_at: {type: string, format: date-time}
+        duration_ms: {type: integer}
+        principal_kind: {type: string}
+        principal_id: {type: string}
+        key_id: {type: string}
+        credential_id: {type: string, description: Empty when no credential was opened.}
+        funding: {type: string}
+        provider: {type: string}
+        api_family: {type: string}
+        operation: {type: string}
+        endpoint: {type: string}
+        model: {type: string}
+        model_id: {type: string}
+        upstream_model: {type: string}
+        stream: {type: boolean, description: False also when the request was refused before its body was read.}
+        outcome: {type: string}
+        error_code: {type: string}
+        upstream_status: {type: integer, description: 0 when the provider did not answer.}
+        ttfb_ms: {type: integer, description: 0 when no body byte arrived.}
+        request_bytes: {type: integer}
+        response_bytes: {type: integer}
+        input_source: {type: string, description: 'provider, estimated or none.'}
+        output_source: {type: string, description: 'provider, estimated or none.'}
+        input_tokens: {type: integer, description: Reported by the provider; 0 unless input_source is provider. Includes cache_read_tokens and cache_write_tokens.}
+        output_tokens: {type: integer, description: Reported by the provider; 0 unless output_source is provider. Includes reasoning_tokens.}
+        cache_read_tokens: {type: integer}
+        cache_write_tokens: {type: integer}
+        reasoning_tokens: {type: integer}
+        estimated_input_tokens: {type: integer, description: 0 unless input_source is estimated.}
+        estimated_output_tokens: {type: integer, description: 0 unless output_source is estimated.}
+        other_units:
+          type: array
+          items: {$ref: '#/components/schemas/UsageCounter'}
+        provider_usage:
+          type: array
+          description: The provider's own integer counters, by path.
+          items: {$ref: '#/components/schemas/UsageCounter'}
+        cost_status: {type: string, description: 'known, unknown or none.'}
+        cost_reason: {type: string}
+        cost: {type: [string, "null"], description: Decimal amount in currency; null unless cost_status is known. Informational under BYOK.}
+        currency: {type: string}
+        price_version_id: {type: string}
+        cost_fallbacks:
+          type: array
+          items: {type: string}
+        metadata:
+          type: array
+          items: {$ref: '#/components/schemas/MetadataEntry'}
+        metadata_dropped: {type: integer}
+    UsageRecordList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/UsageRecord'}
+        next_cursor: {type: string, description: Absent on the last page.}
     Provider:
       type: object
       additionalProperties: false
-      required: [id, name, display_name, description, api_family, enabled, dataset_provider, created_at, updated_at]
+      required: [id, name, display_name, description, api_family, enabled, dataset_provider, stream_usage_option, created_at, updated_at]
       properties:
         id: {$ref: '#/components/schemas/ID'}
         name: {$ref: '#/components/schemas/ProviderName'}
@@ -1719,6 +1900,7 @@ components:
         api_family: {$ref: '#/components/schemas/ApiFamily'}
         enabled: {type: boolean}
         dataset_provider: {type: string, description: Identifier of the provider in the price dataset; empty when its prices are not imported.}
+        stream_usage_option: {$ref: '#/components/schemas/StreamUsageOption'}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
     ProviderCreate:
@@ -1731,6 +1913,7 @@ components:
         display_name: {type: string, maxLength: 200}
         description: {type: string, maxLength: 500}
         dataset_provider: {type: string, pattern: '^[a-z0-9][a-z0-9_.-]{0,62}$'}
+        stream_usage_option: {$ref: '#/components/schemas/StreamUsageOption'}
     ProviderUpdate:
       type: object
       additionalProperties: false
@@ -1739,6 +1922,7 @@ components:
         description: {type: string, maxLength: 500}
         enabled: {type: boolean}
         dataset_provider: {type: string, pattern: '^([a-z0-9][a-z0-9_.-]{0,62})?$', description: Empty stops imports for the provider.}
+        stream_usage_option: {$ref: '#/components/schemas/StreamUsageOption'}
     ProviderList:
       type: object
       additionalProperties: false
@@ -2040,7 +2224,7 @@ components:
       pattern: '^p[a-z2-7]{16}$'
     ProviderName:
       type: string
-      description: Identifier of a provider. This version accepts openai and anthropic.
+      description: Identifier of a provider of the catalogue.
       pattern: '^[a-z][a-z0-9-]{0,62}$'
     CredentialState:
       type: string

@@ -33,3 +33,7 @@ can break the nested module without the root build noticing; the CI job catches 
 - Calling the SDK from another language's test suite: rejected, it needs a second toolchain in CI
   for no gain now; it may return for the Python SDKs in sprint 3.3 under the same rule.
 - Hand-written HTTP requests instead of the SDK: rejected, it does not prove GW-02.
+
+## History
+
+- 2026-11: sprint 3.3: the nested module also runs the Python and TypeScript suites behind a build tag ([ADR 0044](0044-sdk-compatibility-suite-python-typescript.md)).

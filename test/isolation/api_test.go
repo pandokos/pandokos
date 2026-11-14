@@ -490,8 +490,8 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 		}
 		n++
 	}
-	if n != 24 {
-		t.Errorf("%d tenant operations, want 24 (20 and the four of sprint 2.2)", n)
+	if n != 26 {
+		t.Errorf("%d tenant operations, want 26 (24 and the two of sprint 3.3)", n)
 	}
 	if _, err := c.GetTenant(ctx(t), adminapi.GetTenantInput{Tenant: w.b.tenant.ID}); err == nil {
 		t.Error("a tenant key read a tenant")

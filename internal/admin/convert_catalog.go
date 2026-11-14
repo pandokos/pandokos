@@ -111,7 +111,8 @@ func boundParam(n int) *int64 {
 func providerOut(r queries.PandokosProvider) adminapi.Provider {
 	return adminapi.Provider{
 		ID: r.ID, Name: r.Name, DisplayName: r.DisplayName, Description: r.Description, ApiFamily: adminapi.ApiFamily(r.ApiFamily),
-		Enabled: r.Enabled, DatasetProvider: r.DatasetProvider, CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(),
+		Enabled: r.Enabled, DatasetProvider: r.DatasetProvider, StreamUsageOption: adminapi.StreamUsageOption(r.StreamUsageOption),
+		CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(),
 	}
 }
 

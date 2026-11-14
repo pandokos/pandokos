@@ -765,3 +765,89 @@ func TestConcurrency(t *testing.T) {
 	}
 	testutil.Eventually(t, 2*time.Second, "no goroutine is left", func() bool { return runtime.NumGoroutine() <= baseline+2 })
 }
+
+// TestRecordAfterCloseOmitsFailedFields is T-551: a record that fails Validate and arrives after
+// Close is logged as `usage record not written` without the fields that failed, the rule of the
+// normal rejection path; a record that passes Validate is logged with every field.
+func TestRecordAfterCloseOmitsFailedFields(t *testing.T) {
+	closed := func(t *testing.T) *rig {
+		t.Helper()
+		r := start(t, 5, 10, 5*time.Millisecond, &fakeStore{})
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		r.w.Close(ctx)
+		return r
+	}
+	rowOf := func(t *testing.T, line map[string]any) map[string]any {
+		t.Helper()
+		var row map[string]any
+		if err := json.Unmarshal([]byte(fmt.Sprint(line["row"])), &row); err != nil {
+			t.Fatalf("the line has no row: %v", line)
+		}
+		return row
+	}
+
+	t.Run("one failed field", func(t *testing.T) {
+		r := closed(t)
+		bad := testutil.ValidRecord(tenantID(t))
+		bad.RequestID = fixtures.CanaryPrompt // not 32 hex characters
+		if bad.Validate() == nil {
+			t.Fatal("the record passes Validate")
+		}
+		r.w.Record(bad)
+		lines := r.logs.Find(t, "usage record not written")
+		if len(lines) != 1 || lines[0]["record_id"] != bad.ID {
+			t.Fatalf("lines %v", lines)
+		}
+		row := rowOf(t, lines[0])
+		if _, ok := row["request_id"]; ok {
+			t.Errorf("the row holds the field that failed: %v", row)
+		}
+		if row["provider"] != "openai" || row["id"] != bad.ID || row["input_source"] == nil {
+			t.Errorf("the row lost the fields that passed: %v", row)
+		}
+		testutil.AssertNoCanary(t, "the log", r.logs.String())
+		if got := r.w.Stats().Unwritten; got != 1 {
+			t.Errorf("Unwritten %d", got)
+		}
+	})
+
+	t.Run("several failed fields", func(t *testing.T) {
+		r := closed(t)
+		bad := testutil.ValidRecord(tenantID(t))
+		bad.RequestID, bad.Provider, bad.Usage.InputTokens = fixtures.CanaryPrompt, "Not A Provider "+fixtures.CanaryCompletion, -1
+		failed := bad.Failed()
+		if len(failed) < 3 {
+			t.Fatalf("only %v fail", failed)
+		}
+		r.w.Record(bad)
+		lines := r.logs.Find(t, "usage record not written")
+		if len(lines) != 1 {
+			t.Fatalf("lines %v", lines)
+		}
+		row := rowOf(t, lines[0])
+		for _, f := range failed {
+			if _, ok := row[f]; ok {
+				t.Errorf("the row holds %s, a field that failed", f)
+			}
+		}
+		if row["api_family"] != "openai" || row["operation"] != "chat.completions" {
+			t.Errorf("the row lost the fields that passed: %v", row)
+		}
+		testutil.AssertNoCanary(t, "the log", r.logs.String())
+	})
+
+	t.Run("a valid record keeps every field", func(t *testing.T) {
+		r := closed(t)
+		good := testutil.ValidRecord(tenantID(t))
+		r.w.Record(good)
+		lines := r.logs.Find(t, "usage record not written")
+		if len(lines) != 1 {
+			t.Fatalf("lines %v", lines)
+		}
+		row := rowOf(t, lines[0])
+		if row["request_id"] != good.RequestID || row["provider"] != "openai" {
+			t.Errorf("the row: %v", row)
+		}
+	})
+}

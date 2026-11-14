@@ -157,6 +157,13 @@ code.
 What a user may do in a tenant is still in `membership` and `role_assignment`, under row-level
 security like every other tenant table.
 
+## Provider stream usage option (sprint 3.3)
+
+`provider.stream_usage_option` is `add` (default) or `omit` ([ADR 0042](../adr/0042-openai-compatible-providers-and-stream-usage-option.md)):
+whether the gateway adds the usage option to chat streams of a provider of the `openai` family. It is
+read with the catalogue snapshot. The administration API now also reads `usage_record`, as the admin
+role in a tenant session, to list a tenant's records ([ADR 0043](../adr/0043-tenant-capability-check-and-usage-list.md)).
+
 ## Usage ledger
 
 `usage_record` is partitioned by calendar month (UTC) on the request start `started_at`, with a

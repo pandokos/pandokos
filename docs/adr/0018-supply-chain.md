@@ -63,3 +63,4 @@ less noise in reviews.
 ## History
 
 - 2026-11: sprint 3.2 adds the OpenTelemetry SDK, the OTLP/HTTP exporter and logr as direct dependencies ([ADR 0040](0040-traces.md)).
+- 2026-11: sprint 3.3 adds hash-locked Python and npm packages for the SDK suite, CI only ([ADR 0044](0044-sdk-compatibility-suite-python-typescript.md)).

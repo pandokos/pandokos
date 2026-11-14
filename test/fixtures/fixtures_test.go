@@ -3,6 +3,7 @@ package fixtures
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -62,5 +63,53 @@ func TestFixturesAreWellFormed(t *testing.T) {
 	}
 	if len(Canaries()) != 4 {
 		t.Errorf("Canaries() returns %d values, want 4", len(Canaries()))
+	}
+}
+
+// TestSprint33FixturesAreWellFormed checks the Anthropic and compatible fixtures: JSON and event
+// data are valid, streams end with a blank line, and the directories list the files of sprint 3.3.
+func TestSprint33FixturesAreWellFormed(t *testing.T) {
+	wantAnthropic := []string{"count_tokens.json", "error_401.json", "error_429.json", "error_529.json", "message.json", "message_cache.json",
+		"message_stream.sse", "message_stream_cumulative.sse", "message_stream_error.sse", "message_stream_ping_crlf.sse", "message_stream_tools.sse"}
+	wantCompat := []string{"chat_completion_extra_usage.json", "chat_stream_extra_usage.sse", "chat_stream_no_usage.sse",
+		"chat_stream_usage_last_content_chunk.sse", "error_400_stream_options.json"}
+	for dir, want := range map[string][]string{"anthropic": wantAnthropic, "compat": wantCompat} {
+		got := Dir(dir)
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("%s holds %v, want %v", dir, got, want)
+		}
+		for _, name := range got {
+			b := read(dir + "/" + name)
+			switch {
+			case strings.HasSuffix(name, ".json"):
+				if !json.Valid(b) {
+					t.Errorf("%s/%s is not valid JSON", dir, name)
+				}
+			case strings.HasSuffix(name, ".sse"):
+				norm := bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n"))
+				if !bytes.HasSuffix(norm, []byte("\n\n")) {
+					t.Errorf("%s/%s does not end with a blank line", dir, name)
+				}
+				for _, line := range bytes.Split(norm, []byte("\n")) {
+					if payload, ok := bytes.CutPrefix(line, []byte("data: ")); ok && string(payload) != "[DONE]" && !json.Valid(payload) {
+						t.Errorf("%s/%s: invalid JSON payload", dir, name)
+					}
+				}
+			}
+		}
+	}
+	if !bytes.Contains(ReadAnthropic("message_stream_ping_crlf.sse"), []byte("\r\n\r\n")) {
+		t.Error("message_stream_ping_crlf.sse has no CRLF event end")
+	}
+	if bytes.Contains(ReadAnthropic("message_stream_error.sse"), []byte("message_delta")) {
+		t.Error("message_stream_error.sse must have no message_delta")
+	}
+	for _, name := range []string{"chat_stream_usage_last_content_chunk.sse", "chat_stream_extra_usage.sse", "chat_stream_no_usage.sse"} {
+		if !bytes.HasSuffix(ReadCompat(name), []byte("data: [DONE]\n\n")) {
+			t.Errorf("%s does not end with data: [DONE]", name)
+		}
+	}
+	if !bytes.Contains(ReadCompat("chat_stream_extra_usage.sse"), []byte(`"queue_time":0.012`)) {
+		t.Error("chat_stream_extra_usage.sse has no fractional member")
 	}
 }

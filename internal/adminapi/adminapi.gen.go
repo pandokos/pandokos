@@ -18,13 +18,13 @@ var (
 )
 
 var (
-	re0  = regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
-	re1  = regexp.MustCompile("^[a-z][a-z0-9-]{0,62}$")
-	re2  = regexp.MustCompile("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
-	re3  = regexp.MustCompile("^https?://[^/?#@\\s]+(/[^?#\\s]*)?$")
-	re4  = regexp.MustCompile("^[a-z0-9][a-z0-9-]{0,62}$")
-	re5  = regexp.MustCompile("^([a-z0-9][a-z0-9-]{0,62})?$")
-	re6  = regexp.MustCompile("^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$")
+	re0  = regexp.MustCompile("^[a-z][a-z0-9-]{0,62}$")
+	re1  = regexp.MustCompile("^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$")
+	re2  = regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+	re3  = regexp.MustCompile("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
+	re4  = regexp.MustCompile("^https?://[^/?#@\\s]+(/[^?#\\s]*)?$")
+	re5  = regexp.MustCompile("^[a-z0-9][a-z0-9-]{0,62}$")
+	re6  = regexp.MustCompile("^([a-z0-9][a-z0-9-]{0,62})?$")
 	re7  = regexp.MustCompile("^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$")
 	re8  = regexp.MustCompile("^[!-~]+$")
 	re9  = regexp.MustCompile("^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$")
@@ -53,6 +53,81 @@ func (v ApiFamily) Valid() bool {
 		return true
 	}
 	return false
+}
+
+// BudgetAvailability: not_enforced until limits exist.
+type BudgetAvailability string
+
+// Values of BudgetAvailability.
+const (
+	BudgetAvailabilityNotEnforced BudgetAvailability = "not_enforced"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v BudgetAvailability) Valid() bool {
+	switch v {
+	case BudgetAvailabilityNotEnforced:
+		return true
+	}
+	return false
+}
+
+// Capability is a schema of the administration API.
+type Capability struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+	Callable bool   `json:"callable"`
+	// Every failing check, in this order: provider_unavailable, model_not_allowed, no_credential, credential_disabled, credential_revoked. Empty when callable.
+	Reasons   []string         `json:"reasons"`
+	Checks    CapabilityChecks `json:"checks"`
+	CheckedAt time.Time        `json:"checked_at"`
+}
+
+var requiredCapability = []string{"provider", "model", "callable", "reasons", "checks", "checked_at"}
+
+var nestedCapability = []nestedMember{{Name: "checks", Required: requiredCapabilityChecks, Nested: nestedCapabilityChecks}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *Capability) Validate() []FieldError {
+	var errs []FieldError
+	if !re0.MatchString(v.Provider) {
+		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+	}
+	if !re1.MatchString(v.Model) {
+		errs = append(errs, FieldError{Field: "model", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
+	}
+	for _, e := range v.Checks.Validate() {
+		errs = append(errs, FieldError{Field: "checks." + e.Field, Message: e.Message})
+	}
+	return errs
+}
+
+// CapabilityChecks is a schema of the administration API.
+type CapabilityChecks struct {
+	ProviderAvailable bool                   `json:"provider_available"`
+	ModelAllowed      bool                   `json:"model_allowed"`
+	Credential        CredentialAvailability `json:"credential"`
+	// The default credential of the tenant for the provider; absent when there is none.
+	CredentialID string `json:"credential_id,omitempty"`
+	// The credential was accepted by the provider when it was stored or replaced. Informational.
+	CredentialValidated bool               `json:"credential_validated"`
+	Budget              BudgetAvailability `json:"budget"`
+}
+
+var requiredCapabilityChecks = []string{"provider_available", "model_allowed", "credential", "credential_validated", "budget"}
+
+var nestedCapabilityChecks []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *CapabilityChecks) Validate() []FieldError {
+	var errs []FieldError
+	if !v.Credential.Valid() {
+		errs = append(errs, FieldError{Field: "credential", Message: "must be one of active, missing, disabled, revoked"})
+	}
+	if !v.Budget.Valid() {
+		errs = append(errs, FieldError{Field: "budget", Message: "must be one of not_enforced"})
+	}
+	return errs
 }
 
 // Credential is a schema of the administration API.
@@ -90,16 +165,16 @@ var nestedCredential []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Credential) Validate() []FieldError {
 	var errs []FieldError
-	if !re0.MatchString(v.ID) {
+	if !re2.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re0.MatchString(v.TenantID) {
+	if !re2.MatchString(v.TenantID) {
 		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re1.MatchString(v.Provider) {
+	if !re0.MatchString(v.Provider) {
 		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
-	if !re2.MatchString(v.Label) {
+	if !re3.MatchString(v.Label) {
 		errs = append(errs, FieldError{Field: "label", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if !v.Owner.Valid() {
@@ -132,6 +207,26 @@ func (v CredentialActor) Valid() bool {
 	return false
 }
 
+// CredentialAvailability is an enumeration of the administration API.
+type CredentialAvailability string
+
+// Values of CredentialAvailability.
+const (
+	CredentialAvailabilityActive   CredentialAvailability = "active"
+	CredentialAvailabilityMissing  CredentialAvailability = "missing"
+	CredentialAvailabilityDisabled CredentialAvailability = "disabled"
+	CredentialAvailabilityRevoked  CredentialAvailability = "revoked"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v CredentialAvailability) Valid() bool {
+	switch v {
+	case CredentialAvailabilityActive, CredentialAvailabilityMissing, CredentialAvailabilityDisabled, CredentialAvailabilityRevoked:
+		return true
+	}
+	return false
+}
+
 // CredentialCreate is a schema of the administration API.
 type CredentialCreate struct {
 	Provider string `json:"provider"`
@@ -151,10 +246,10 @@ var nestedCredentialCreate []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *CredentialCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re1.MatchString(v.Provider) {
+	if !re0.MatchString(v.Provider) {
 		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
-	if !re2.MatchString(v.Label) {
+	if !re3.MatchString(v.Label) {
 		errs = append(errs, FieldError{Field: "label", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if runeCount(v.Secret) < 8 {
@@ -267,7 +362,7 @@ var nestedCredentialUpdate []nestedMember
 func (v *CredentialUpdate) Validate() []FieldError {
 	var errs []FieldError
 	if v.Label.Set {
-		if !re2.MatchString(v.Label.Value) {
+		if !re3.MatchString(v.Label.Value) {
 			errs = append(errs, FieldError{Field: "label", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 	}
@@ -304,13 +399,13 @@ var nestedEndpoint []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Endpoint) Validate() []FieldError {
 	var errs []FieldError
-	if !re0.MatchString(v.ID) {
+	if !re2.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re1.MatchString(v.Provider) {
+	if !re0.MatchString(v.Provider) {
 		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
-	if !re2.MatchString(v.Name) {
+	if !re3.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	return errs
@@ -333,10 +428,10 @@ var nestedEndpointCreate []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *EndpointCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.Name) {
+	if !re3.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
-	if !re3.MatchString(v.BaseURL) {
+	if !re4.MatchString(v.BaseURL) {
 		errs = append(errs, FieldError{Field: "base_url", Message: "must match ^https?://[^/?#@\\s]+(/[^?#\\s]*)?$"})
 	}
 	if runeCount(v.BaseURL) < 8 {
@@ -345,7 +440,7 @@ func (v *EndpointCreate) Validate() []FieldError {
 	if runeCount(v.BaseURL) > 2048 {
 		errs = append(errs, FieldError{Field: "base_url", Message: "length must be at most 2048"})
 	}
-	if v.Region != "" && !re4.MatchString(v.Region) {
+	if v.Region != "" && !re5.MatchString(v.Region) {
 		errs = append(errs, FieldError{Field: "region", Message: "must match ^[a-z0-9][a-z0-9-]{0,62}$"})
 	}
 	if runeCount(v.Description) > 500 {
@@ -395,7 +490,7 @@ var nestedEndpointUpdate []nestedMember
 func (v *EndpointUpdate) Validate() []FieldError {
 	var errs []FieldError
 	if v.BaseURL.Set {
-		if !re3.MatchString(v.BaseURL.Value) {
+		if !re4.MatchString(v.BaseURL.Value) {
 			errs = append(errs, FieldError{Field: "base_url", Message: "must match ^https?://[^/?#@\\s]+(/[^?#\\s]*)?$"})
 		}
 		if runeCount(v.BaseURL.Value) < 8 {
@@ -406,7 +501,7 @@ func (v *EndpointUpdate) Validate() []FieldError {
 		}
 	}
 	if v.Region.Set {
-		if !re5.MatchString(v.Region.Value) {
+		if !re6.MatchString(v.Region.Value) {
 			errs = append(errs, FieldError{Field: "region", Message: "must match ^([a-z0-9][a-z0-9-]{0,62})?$"})
 		}
 	}
@@ -495,6 +590,22 @@ func (v *Me) Validate() []FieldError {
 	return errs
 }
 
+// MetadataEntry is a schema of the administration API.
+type MetadataEntry struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+var requiredMetadataEntry = []string{"key", "value"}
+
+var nestedMetadataEntry []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *MetadataEntry) Validate() []FieldError {
+	var errs []FieldError
+	return errs
+}
+
 // Model is a schema of the administration API.
 type Model struct {
 	ID        string    `json:"id"`
@@ -526,16 +637,16 @@ var nestedModel []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Model) Validate() []FieldError {
 	var errs []FieldError
-	if !re0.MatchString(v.ID) {
+	if !re2.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re1.MatchString(v.Provider) {
+	if !re0.MatchString(v.Provider) {
 		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
 	if !v.ApiFamily.Valid() {
 		errs = append(errs, FieldError{Field: "api_family", Message: "must be one of openai, anthropic"})
 	}
-	if !re6.MatchString(v.Name) {
+	if !re1.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 	}
 	if !re7.MatchString(v.Ref) {
@@ -589,10 +700,10 @@ var nestedModelCreate []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ModelCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re1.MatchString(v.Provider) {
+	if !re0.MatchString(v.Provider) {
 		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
-	if !re6.MatchString(v.Name) {
+	if !re1.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 	}
 	if v.UpstreamID != "" && !re8.MatchString(v.UpstreamID) {
@@ -654,13 +765,13 @@ var nestedModelGrant []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ModelGrant) Validate() []FieldError {
 	var errs []FieldError
-	if !re0.MatchString(v.ModelID) {
+	if !re2.MatchString(v.ModelID) {
 		errs = append(errs, FieldError{Field: "model_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re0.MatchString(v.TenantID) {
+	if !re2.MatchString(v.TenantID) {
 		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re2.MatchString(v.TenantName) {
+	if !re3.MatchString(v.TenantName) {
 		errs = append(errs, FieldError{Field: "tenant_name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	return errs
@@ -1025,7 +1136,7 @@ var nestedPriceImport = []nestedMember{{Name: "items", Many: true, Required: req
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceImport) Validate() []FieldError {
 	var errs []FieldError
-	if v.ID != "" && !re0.MatchString(v.ID) {
+	if v.ID != "" && !re2.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	if !v.Source.Valid() {
@@ -1072,10 +1183,10 @@ var nestedPriceImportItem = []nestedMember{{Name: "issues", Many: true, Required
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceImportItem) Validate() []FieldError {
 	var errs []FieldError
-	if !re1.MatchString(v.Provider) {
+	if !re0.MatchString(v.Provider) {
 		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
-	if !re6.MatchString(v.Model) {
+	if !re1.MatchString(v.Model) {
 		errs = append(errs, FieldError{Field: "model", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 	}
 	for i := range v.Issues {
@@ -1270,16 +1381,16 @@ var nestedPriceVersion = []nestedMember{{Name: "rates", Many: true, Required: re
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceVersion) Validate() []FieldError {
 	var errs []FieldError
-	if !re0.MatchString(v.ID) {
+	if !re2.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re0.MatchString(v.ModelID) {
+	if !re2.MatchString(v.ModelID) {
 		errs = append(errs, FieldError{Field: "model_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	if !v.Source.Valid() {
 		errs = append(errs, FieldError{Field: "source", Message: "must be one of import, override"})
 	}
-	if v.ImportID != "" && !re0.MatchString(v.ImportID) {
+	if v.ImportID != "" && !re2.MatchString(v.ImportID) {
 		errs = append(errs, FieldError{Field: "import_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	for i := range v.Rates {
@@ -1402,37 +1513,42 @@ type Provider struct {
 	ApiFamily   ApiFamily `json:"api_family"`
 	Enabled     bool      `json:"enabled"`
 	// Identifier of the provider in the price dataset; empty when its prices are not imported.
-	DatasetProvider string    `json:"dataset_provider"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	DatasetProvider   string            `json:"dataset_provider"`
+	StreamUsageOption StreamUsageOption `json:"stream_usage_option"`
+	CreatedAt         time.Time         `json:"created_at"`
+	UpdatedAt         time.Time         `json:"updated_at"`
 }
 
-var requiredProvider = []string{"id", "name", "display_name", "description", "api_family", "enabled", "dataset_provider", "created_at", "updated_at"}
+var requiredProvider = []string{"id", "name", "display_name", "description", "api_family", "enabled", "dataset_provider", "stream_usage_option", "created_at", "updated_at"}
 
 var nestedProvider []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Provider) Validate() []FieldError {
 	var errs []FieldError
-	if !re0.MatchString(v.ID) {
+	if !re2.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re1.MatchString(v.Name) {
+	if !re0.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
 	if !v.ApiFamily.Valid() {
 		errs = append(errs, FieldError{Field: "api_family", Message: "must be one of openai, anthropic"})
+	}
+	if !v.StreamUsageOption.Valid() {
+		errs = append(errs, FieldError{Field: "stream_usage_option", Message: "must be one of add, omit"})
 	}
 	return errs
 }
 
 // ProviderCreate is a schema of the administration API.
 type ProviderCreate struct {
-	Name            string    `json:"name"`
-	ApiFamily       ApiFamily `json:"api_family"`
-	DisplayName     string    `json:"display_name,omitempty"`
-	Description     string    `json:"description,omitempty"`
-	DatasetProvider string    `json:"dataset_provider,omitempty"`
+	Name              string            `json:"name"`
+	ApiFamily         ApiFamily         `json:"api_family"`
+	DisplayName       string            `json:"display_name,omitempty"`
+	Description       string            `json:"description,omitempty"`
+	DatasetProvider   string            `json:"dataset_provider,omitempty"`
+	StreamUsageOption StreamUsageOption `json:"stream_usage_option,omitempty"`
 }
 
 var requiredProviderCreate = []string{"name", "api_family"}
@@ -1442,7 +1558,7 @@ var nestedProviderCreate []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ProviderCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re1.MatchString(v.Name) {
+	if !re0.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
 	if !v.ApiFamily.Valid() {
@@ -1456,6 +1572,9 @@ func (v *ProviderCreate) Validate() []FieldError {
 	}
 	if v.DatasetProvider != "" && !re13.MatchString(v.DatasetProvider) {
 		errs = append(errs, FieldError{Field: "dataset_provider", Message: "must match ^[a-z0-9][a-z0-9_.-]{0,62}$"})
+	}
+	if v.StreamUsageOption != "" && !v.StreamUsageOption.Valid() {
+		errs = append(errs, FieldError{Field: "stream_usage_option", Message: "must be one of add, omit"})
 	}
 	return errs
 }
@@ -1488,7 +1607,8 @@ type ProviderUpdate struct {
 	Description Optional[string] `json:"description,omitzero"`
 	Enabled     Optional[bool]   `json:"enabled,omitzero"`
 	// Empty stops imports for the provider.
-	DatasetProvider Optional[string] `json:"dataset_provider,omitzero"`
+	DatasetProvider   Optional[string]            `json:"dataset_provider,omitzero"`
+	StreamUsageOption Optional[StreamUsageOption] `json:"stream_usage_option,omitzero"`
 }
 
 var requiredProviderUpdate = []string{}
@@ -1513,6 +1633,11 @@ func (v *ProviderUpdate) Validate() []FieldError {
 	if v.DatasetProvider.Set {
 		if !re14.MatchString(v.DatasetProvider.Value) {
 			errs = append(errs, FieldError{Field: "dataset_provider", Message: "must match ^([a-z0-9][a-z0-9_.-]{0,62})?$"})
+		}
+	}
+	if v.StreamUsageOption.Set {
+		if !v.StreamUsageOption.Value.Valid() {
+			errs = append(errs, FieldError{Field: "stream_usage_option", Message: "must be one of add, omit"})
 		}
 	}
 	return errs
@@ -1580,13 +1705,13 @@ var nestedServiceAccount []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ServiceAccount) Validate() []FieldError {
 	var errs []FieldError
-	if !re0.MatchString(v.ID) {
+	if !re2.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re0.MatchString(v.TenantID) {
+	if !re2.MatchString(v.TenantID) {
 		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re2.MatchString(v.Name) {
+	if !re3.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if !v.State.Valid() {
@@ -1612,7 +1737,7 @@ var nestedServiceAccountCreate []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ServiceAccountCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.Name) {
+	if !re3.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if runeCount(v.Description) > 500 {
@@ -1625,7 +1750,7 @@ func (v *ServiceAccountCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "roles", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Roles {
-		if !re1.MatchString(item) {
+		if !re0.MatchString(item) {
 			errs = append(errs, FieldError{Field: "roles", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 		}
 	}
@@ -1689,7 +1814,7 @@ var nestedServiceAccountUpdate []nestedMember
 func (v *ServiceAccountUpdate) Validate() []FieldError {
 	var errs []FieldError
 	if v.Name.Set {
-		if !re2.MatchString(v.Name.Value) {
+		if !re3.MatchString(v.Name.Value) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 	}
@@ -1706,7 +1831,7 @@ func (v *ServiceAccountUpdate) Validate() []FieldError {
 			errs = append(errs, FieldError{Field: "roles", Message: "must not repeat an item"})
 		}
 		for _, item := range v.Roles.Value {
-			if !re1.MatchString(item) {
+			if !re0.MatchString(item) {
 				errs = append(errs, FieldError{Field: "roles", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 			}
 		}
@@ -1732,6 +1857,24 @@ func (v Sort) Valid() bool {
 	return false
 }
 
+// StreamUsageOption: add (default) adds the stream usage option to chat completion streams that do not ask for usage; omit never adds it. Only add is accepted for a provider of family anthropic.
+type StreamUsageOption string
+
+// Values of StreamUsageOption.
+const (
+	StreamUsageOptionAdd  StreamUsageOption = "add"
+	StreamUsageOptionOmit StreamUsageOption = "omit"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v StreamUsageOption) Valid() bool {
+	switch v {
+	case StreamUsageOptionAdd, StreamUsageOptionOmit:
+		return true
+	}
+	return false
+}
+
 // Tenant is a schema of the administration API.
 type Tenant struct {
 	ID             string      `json:"id"`
@@ -1750,10 +1893,10 @@ var nestedTenant []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Tenant) Validate() []FieldError {
 	var errs []FieldError
-	if !re0.MatchString(v.ID) {
+	if !re2.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re2.MatchString(v.Name) {
+	if !re3.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if !v.State.Valid() {
@@ -1779,13 +1922,13 @@ var nestedTenantCreate []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.Name) {
+	if !re3.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if runeCount(v.DisplayName) > 200 {
 		errs = append(errs, FieldError{Field: "display_name", Message: "length must be at most 200"})
 	}
-	if v.AdminServiceAccountName != "" && !re2.MatchString(v.AdminServiceAccountName) {
+	if v.AdminServiceAccountName != "" && !re3.MatchString(v.AdminServiceAccountName) {
 		errs = append(errs, FieldError{Field: "admin_service_account_name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	return errs
@@ -1901,10 +2044,10 @@ var nestedTenantRef []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantRef) Validate() []FieldError {
 	var errs []FieldError
-	if !re0.MatchString(v.ID) {
+	if !re2.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re2.MatchString(v.Name) {
+	if !re3.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if !v.State.Valid() {
@@ -1948,13 +2091,140 @@ var nestedTenantUpdate []nestedMember
 func (v *TenantUpdate) Validate() []FieldError {
 	var errs []FieldError
 	if v.Name.Set {
-		if !re2.MatchString(v.Name.Value) {
+		if !re3.MatchString(v.Name.Value) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 	}
 	if v.DisplayName.Set {
 		if runeCount(v.DisplayName.Value) > 200 {
 			errs = append(errs, FieldError{Field: "display_name", Message: "length must be at most 200"})
+		}
+	}
+	return errs
+}
+
+// UsageCounter is a schema of the administration API.
+type UsageCounter struct {
+	Name  string `json:"name"`
+	Value int    `json:"value"`
+}
+
+var requiredUsageCounter = []string{"name", "value"}
+
+var nestedUsageCounter []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *UsageCounter) Validate() []FieldError {
+	var errs []FieldError
+	return errs
+}
+
+// UsageRecord is a schema of the administration API.
+type UsageRecord struct {
+	ID        string `json:"id"`
+	RequestID string `json:"request_id"`
+	// Empty when the request had no trace.
+	TraceID       string    `json:"trace_id"`
+	StartedAt     time.Time `json:"started_at"`
+	DurationMs    int       `json:"duration_ms"`
+	PrincipalKind string    `json:"principal_kind"`
+	PrincipalID   string    `json:"principal_id"`
+	KeyID         string    `json:"key_id"`
+	// Empty when no credential was opened.
+	CredentialID  string `json:"credential_id"`
+	Funding       string `json:"funding"`
+	Provider      string `json:"provider"`
+	ApiFamily     string `json:"api_family"`
+	Operation     string `json:"operation"`
+	Endpoint      string `json:"endpoint"`
+	Model         string `json:"model"`
+	ModelID       string `json:"model_id"`
+	UpstreamModel string `json:"upstream_model"`
+	// False also when the request was refused before its body was read.
+	Stream    bool   `json:"stream"`
+	Outcome   string `json:"outcome"`
+	ErrorCode string `json:"error_code"`
+	// 0 when the provider did not answer.
+	UpstreamStatus int `json:"upstream_status"`
+	// 0 when no body byte arrived.
+	TtfbMs        int `json:"ttfb_ms"`
+	RequestBytes  int `json:"request_bytes"`
+	ResponseBytes int `json:"response_bytes"`
+	// provider, estimated or none.
+	InputSource string `json:"input_source"`
+	// provider, estimated or none.
+	OutputSource string `json:"output_source"`
+	// Reported by the provider; 0 unless input_source is provider. Includes cache_read_tokens and cache_write_tokens.
+	InputTokens int `json:"input_tokens"`
+	// Reported by the provider; 0 unless output_source is provider. Includes reasoning_tokens.
+	OutputTokens     int `json:"output_tokens"`
+	CacheReadTokens  int `json:"cache_read_tokens"`
+	CacheWriteTokens int `json:"cache_write_tokens"`
+	ReasoningTokens  int `json:"reasoning_tokens"`
+	// 0 unless input_source is estimated.
+	EstimatedInputTokens int `json:"estimated_input_tokens"`
+	// 0 unless output_source is estimated.
+	EstimatedOutputTokens int            `json:"estimated_output_tokens"`
+	OtherUnits            []UsageCounter `json:"other_units"`
+	// The provider's own integer counters, by path.
+	ProviderUsage []UsageCounter `json:"provider_usage"`
+	// known, unknown or none.
+	CostStatus string `json:"cost_status"`
+	CostReason string `json:"cost_reason"`
+	// Decimal amount in currency; null unless cost_status is known. Informational under BYOK.
+	Cost            Nullable[string] `json:"cost,omitzero"`
+	Currency        string           `json:"currency"`
+	PriceVersionID  string           `json:"price_version_id"`
+	CostFallbacks   []string         `json:"cost_fallbacks"`
+	Metadata        []MetadataEntry  `json:"metadata"`
+	MetadataDropped int              `json:"metadata_dropped"`
+}
+
+var requiredUsageRecord = []string{"id", "request_id", "trace_id", "started_at", "duration_ms", "principal_kind", "principal_id", "key_id", "credential_id", "funding", "provider", "api_family", "operation", "endpoint", "model", "model_id", "upstream_model", "stream", "outcome", "error_code", "upstream_status", "ttfb_ms", "request_bytes", "response_bytes", "input_source", "output_source", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens", "estimated_input_tokens", "estimated_output_tokens", "other_units", "provider_usage", "cost_status", "cost_reason", "currency", "price_version_id", "cost_fallbacks", "metadata", "metadata_dropped"}
+
+var nestedUsageRecord = []nestedMember{{Name: "other_units", Many: true, Required: requiredUsageCounter, Nested: nestedUsageCounter}, {Name: "provider_usage", Many: true, Required: requiredUsageCounter, Nested: nestedUsageCounter}, {Name: "metadata", Many: true, Required: requiredMetadataEntry, Nested: nestedMetadataEntry}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *UsageRecord) Validate() []FieldError {
+	var errs []FieldError
+	if !re2.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	for i := range v.OtherUnits {
+		for _, e := range v.OtherUnits[i].Validate() {
+			errs = append(errs, FieldError{Field: "other_units[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	for i := range v.ProviderUsage {
+		for _, e := range v.ProviderUsage[i].Validate() {
+			errs = append(errs, FieldError{Field: "provider_usage[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	for i := range v.Metadata {
+		for _, e := range v.Metadata[i].Validate() {
+			errs = append(errs, FieldError{Field: "metadata[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// UsageRecordList is a schema of the administration API.
+type UsageRecordList struct {
+	Items []UsageRecord `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredUsageRecordList = []string{"items"}
+
+var nestedUsageRecordList = []nestedMember{{Name: "items", Many: true, Required: requiredUsageRecord, Nested: nestedUsageRecord}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *UsageRecordList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
 		}
 	}
 	return errs
@@ -1987,13 +2257,13 @@ func (v *VirtualKey) Validate() []FieldError {
 	if !re15.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^t[a-z2-7]{16}$"})
 	}
-	if !re0.MatchString(v.TenantID) {
+	if !re2.MatchString(v.TenantID) {
 		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re0.MatchString(v.ServiceAccountID) {
+	if !re2.MatchString(v.ServiceAccountID) {
 		errs = append(errs, FieldError{Field: "service_account_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if v.CredentialID != "" && !re0.MatchString(v.CredentialID) {
+	if v.CredentialID != "" && !re2.MatchString(v.CredentialID) {
 		errs = append(errs, FieldError{Field: "credential_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	for _, item := range v.Models {
@@ -2024,13 +2294,13 @@ var nestedVirtualKeyCreate []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *VirtualKeyCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re0.MatchString(v.ServiceAccountID) {
+	if !re2.MatchString(v.ServiceAccountID) {
 		errs = append(errs, FieldError{Field: "service_account_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	if runeCount(v.Description) > 200 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
 	}
-	if v.CredentialID != "" && !re0.MatchString(v.CredentialID) {
+	if v.CredentialID != "" && !re2.MatchString(v.CredentialID) {
 		errs = append(errs, FieldError{Field: "credential_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	if v.Models != nil && len(v.Models) < 1 {
@@ -2111,67 +2381,69 @@ var Operations = []Operation{
 	{ID: "getMe", Method: "GET", Path: "/v1/me", Permission: "identity:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "listModels", Method: "GET", Path: "/v1/models", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "createModel", Method: "POST", Path: "/v1/models", Permission: "catalog:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getModel", Method: "GET", Path: "/v1/models/{model}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re0}}},
-	{ID: "updateModel", Method: "PATCH", Path: "/v1/models/{model}", Permission: "catalog:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re0}}},
-	{ID: "deleteModel", Method: "DELETE", Path: "/v1/models/{model}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re0}}},
-	{ID: "clearPriceOverride", Method: "POST", Path: "/v1/models/{model}/clear-price-override", Permission: "catalog:price", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re0}}},
-	{ID: "listModelGrants", Method: "GET", Path: "/v1/models/{model}/grants", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re0}}},
-	{ID: "grantModel", Method: "PUT", Path: "/v1/models/{model}/grants/{tenant}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re0}, {Name: "tenant", Pattern: re0}}},
-	{ID: "revokeModelGrant", Method: "DELETE", Path: "/v1/models/{model}/grants/{tenant}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re0}, {Name: "tenant", Pattern: re0}}},
-	{ID: "listPriceVersions", Method: "GET", Path: "/v1/models/{model}/prices", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re0}}},
-	{ID: "createPriceOverride", Method: "POST", Path: "/v1/models/{model}/prices", Permission: "catalog:price", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re0}}},
-	{ID: "deletePriceVersion", Method: "DELETE", Path: "/v1/models/{model}/prices/{price_version}", Permission: "catalog:price", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re0}, {Name: "price_version", Pattern: re0}}},
+	{ID: "getModel", Method: "GET", Path: "/v1/models/{model}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re2}}},
+	{ID: "updateModel", Method: "PATCH", Path: "/v1/models/{model}", Permission: "catalog:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re2}}},
+	{ID: "deleteModel", Method: "DELETE", Path: "/v1/models/{model}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re2}}},
+	{ID: "clearPriceOverride", Method: "POST", Path: "/v1/models/{model}/clear-price-override", Permission: "catalog:price", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re2}}},
+	{ID: "listModelGrants", Method: "GET", Path: "/v1/models/{model}/grants", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re2}}},
+	{ID: "grantModel", Method: "PUT", Path: "/v1/models/{model}/grants/{tenant}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re2}, {Name: "tenant", Pattern: re2}}},
+	{ID: "revokeModelGrant", Method: "DELETE", Path: "/v1/models/{model}/grants/{tenant}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re2}, {Name: "tenant", Pattern: re2}}},
+	{ID: "listPriceVersions", Method: "GET", Path: "/v1/models/{model}/prices", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re2}}},
+	{ID: "createPriceOverride", Method: "POST", Path: "/v1/models/{model}/prices", Permission: "catalog:price", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re2}}},
+	{ID: "deletePriceVersion", Method: "DELETE", Path: "/v1/models/{model}/prices/{price_version}", Permission: "catalog:price", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re2}, {Name: "price_version", Pattern: re2}}},
 	{ID: "listPlatformKeys", Method: "GET", Path: "/v1/platform-keys", Permission: "platform_key:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "createPlatformKey", Method: "POST", Path: "/v1/platform-keys", Permission: "platform_key:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
 	{ID: "getPlatformKey", Method: "GET", Path: "/v1/platform-keys/{key}", Permission: "platform_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "key", Pattern: re10}}},
 	{ID: "revokePlatformKey", Method: "POST", Path: "/v1/platform-keys/{key}/revoke", Permission: "platform_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "key", Pattern: re10}}},
 	{ID: "listPriceImports", Method: "GET", Path: "/v1/price-imports", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "runPriceImport", Method: "POST", Path: "/v1/price-imports", Permission: "catalog:price", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getPriceImport", Method: "GET", Path: "/v1/price-imports/{price_import}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "price_import", Pattern: re0}}},
+	{ID: "getPriceImport", Method: "GET", Path: "/v1/price-imports/{price_import}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "price_import", Pattern: re2}}},
 	{ID: "listProviders", Method: "GET", Path: "/v1/providers", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "createProvider", Method: "POST", Path: "/v1/providers", Permission: "catalog:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getProvider", Method: "GET", Path: "/v1/providers/{provider}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re1}}},
-	{ID: "updateProvider", Method: "PATCH", Path: "/v1/providers/{provider}", Permission: "catalog:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re1}}},
-	{ID: "deleteProvider", Method: "DELETE", Path: "/v1/providers/{provider}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re1}}},
-	{ID: "listEndpoints", Method: "GET", Path: "/v1/providers/{provider}/endpoints", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re1}}},
-	{ID: "createEndpoint", Method: "POST", Path: "/v1/providers/{provider}/endpoints", Permission: "catalog:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re1}}},
-	{ID: "getEndpoint", Method: "GET", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re1}, {Name: "endpoint", Pattern: re2}}},
-	{ID: "updateEndpoint", Method: "PATCH", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re1}, {Name: "endpoint", Pattern: re2}}},
-	{ID: "deleteEndpoint", Method: "DELETE", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re1}, {Name: "endpoint", Pattern: re2}}},
-	{ID: "listTenantCredentials", Method: "GET", Path: "/v1/tenant-credentials/{tenant}", Permission: "tenant_credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
-	{ID: "getTenantCredential", Method: "GET", Path: "/v1/tenant-credentials/{tenant}/{credential}", Permission: "tenant_credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
-	{ID: "disableTenantCredential", Method: "POST", Path: "/v1/tenant-credentials/{tenant}/{credential}/disable", Permission: "tenant_credential:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
-	{ID: "revokeTenantCredential", Method: "POST", Path: "/v1/tenant-credentials/{tenant}/{credential}/revoke", Permission: "tenant_credential:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
+	{ID: "getProvider", Method: "GET", Path: "/v1/providers/{provider}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re0}}},
+	{ID: "updateProvider", Method: "PATCH", Path: "/v1/providers/{provider}", Permission: "catalog:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re0}}},
+	{ID: "deleteProvider", Method: "DELETE", Path: "/v1/providers/{provider}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re0}}},
+	{ID: "listEndpoints", Method: "GET", Path: "/v1/providers/{provider}/endpoints", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re0}}},
+	{ID: "createEndpoint", Method: "POST", Path: "/v1/providers/{provider}/endpoints", Permission: "catalog:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re0}}},
+	{ID: "getEndpoint", Method: "GET", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re0}, {Name: "endpoint", Pattern: re3}}},
+	{ID: "updateEndpoint", Method: "PATCH", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re0}, {Name: "endpoint", Pattern: re3}}},
+	{ID: "deleteEndpoint", Method: "DELETE", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re0}, {Name: "endpoint", Pattern: re3}}},
+	{ID: "listTenantCredentials", Method: "GET", Path: "/v1/tenant-credentials/{tenant}", Permission: "tenant_credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "getTenantCredential", Method: "GET", Path: "/v1/tenant-credentials/{tenant}/{credential}", Permission: "tenant_credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
+	{ID: "disableTenantCredential", Method: "POST", Path: "/v1/tenant-credentials/{tenant}/{credential}/disable", Permission: "tenant_credential:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
+	{ID: "revokeTenantCredential", Method: "POST", Path: "/v1/tenant-credentials/{tenant}/{credential}/revoke", Permission: "tenant_credential:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
 	{ID: "listTenants", Method: "GET", Path: "/v1/tenants", Permission: "tenant:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "createTenant", Method: "POST", Path: "/v1/tenants", Permission: "tenant:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getTenant", Method: "GET", Path: "/v1/tenants/{tenant}", Permission: "tenant:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
-	{ID: "updateTenant", Method: "PATCH", Path: "/v1/tenants/{tenant}", Permission: "tenant:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
-	{ID: "listCredentials", Method: "GET", Path: "/v1/tenants/{tenant}/credentials", Permission: "credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
-	{ID: "createCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials", Permission: "credential:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
-	{ID: "getCredential", Method: "GET", Path: "/v1/tenants/{tenant}/credentials/{credential}", Permission: "credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
-	{ID: "updateCredential", Method: "PATCH", Path: "/v1/tenants/{tenant}/credentials/{credential}", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
-	{ID: "deleteCredential", Method: "DELETE", Path: "/v1/tenants/{tenant}/credentials/{credential}", Permission: "credential:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
-	{ID: "disableCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/disable", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
-	{ID: "enableCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/enable", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
-	{ID: "revokeCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/revoke", Permission: "credential:delete", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
-	{ID: "replaceCredentialSecret", Method: "PUT", Path: "/v1/tenants/{tenant}/credentials/{credential}/secret", Permission: "credential:rotate", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
-	{ID: "setDefaultCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/set-default", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "credential", Pattern: re0}}},
-	{ID: "getModelRestriction", Method: "GET", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
-	{ID: "setModelRestriction", Method: "PUT", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:restrict", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
-	{ID: "clearModelRestriction", Method: "DELETE", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:restrict", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
-	{ID: "listTenantModels", Method: "GET", Path: "/v1/tenants/{tenant}/models", Permission: "model:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
-	{ID: "reactivateTenant", Method: "POST", Path: "/v1/tenants/{tenant}/reactivate", Permission: "tenant:suspend", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
-	{ID: "listServiceAccounts", Method: "GET", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
-	{ID: "createServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
-	{ID: "getServiceAccount", Method: "GET", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}", Permission: "service_account:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "service_account", Pattern: re0}}},
-	{ID: "updateServiceAccount", Method: "PATCH", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "service_account", Pattern: re0}}},
-	{ID: "disableServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}/disable", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "service_account", Pattern: re0}}},
-	{ID: "enableServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}/enable", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "service_account", Pattern: re0}}},
-	{ID: "suspendTenant", Method: "POST", Path: "/v1/tenants/{tenant}/suspend", Permission: "tenant:suspend", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
-	{ID: "listVirtualKeys", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
-	{ID: "createVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}}},
-	{ID: "getVirtualKey", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys/{key}", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "key", Pattern: re15}}},
-	{ID: "revokeVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys/{key}/revoke", Permission: "virtual_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re0}, {Name: "key", Pattern: re15}}},
+	{ID: "getTenant", Method: "GET", Path: "/v1/tenants/{tenant}", Permission: "tenant:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "updateTenant", Method: "PATCH", Path: "/v1/tenants/{tenant}", Permission: "tenant:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "getCapability", Method: "GET", Path: "/v1/tenants/{tenant}/capability", Permission: "model:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "listCredentials", Method: "GET", Path: "/v1/tenants/{tenant}/credentials", Permission: "credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "createCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials", Permission: "credential:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "getCredential", Method: "GET", Path: "/v1/tenants/{tenant}/credentials/{credential}", Permission: "credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
+	{ID: "updateCredential", Method: "PATCH", Path: "/v1/tenants/{tenant}/credentials/{credential}", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
+	{ID: "deleteCredential", Method: "DELETE", Path: "/v1/tenants/{tenant}/credentials/{credential}", Permission: "credential:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
+	{ID: "disableCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/disable", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
+	{ID: "enableCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/enable", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
+	{ID: "revokeCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/revoke", Permission: "credential:delete", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
+	{ID: "replaceCredentialSecret", Method: "PUT", Path: "/v1/tenants/{tenant}/credentials/{credential}/secret", Permission: "credential:rotate", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
+	{ID: "setDefaultCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/set-default", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
+	{ID: "getModelRestriction", Method: "GET", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "setModelRestriction", Method: "PUT", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:restrict", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "clearModelRestriction", Method: "DELETE", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:restrict", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "listTenantModels", Method: "GET", Path: "/v1/tenants/{tenant}/models", Permission: "model:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "reactivateTenant", Method: "POST", Path: "/v1/tenants/{tenant}/reactivate", Permission: "tenant:suspend", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "listServiceAccounts", Method: "GET", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "createServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "getServiceAccount", Method: "GET", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}", Permission: "service_account:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "service_account", Pattern: re2}}},
+	{ID: "updateServiceAccount", Method: "PATCH", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "service_account", Pattern: re2}}},
+	{ID: "disableServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}/disable", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "service_account", Pattern: re2}}},
+	{ID: "enableServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}/enable", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "service_account", Pattern: re2}}},
+	{ID: "suspendTenant", Method: "POST", Path: "/v1/tenants/{tenant}/suspend", Permission: "tenant:suspend", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "listUsageRecords", Method: "GET", Path: "/v1/tenants/{tenant}/usage-records", Permission: "usage:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "listVirtualKeys", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "createVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "getVirtualKey", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys/{key}", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "key", Pattern: re15}}},
+	{ID: "revokeVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys/{key}/revoke", Permission: "virtual_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "key", Pattern: re15}}},
 }
 
 // GetMeInput is the input of getMe.
@@ -2409,6 +2681,13 @@ type UpdateTenantInput struct {
 	Body   TenantUpdate
 }
 
+// GetCapabilityInput is the input of getCapability.
+type GetCapabilityInput struct {
+	Tenant   string // path
+	Provider string // query; the zero value means absent
+	Model    string // query; the zero value means absent
+}
+
 // ListCredentialsInput is the input of listCredentials.
 type ListCredentialsInput struct {
 	Tenant   string          // path
@@ -2558,6 +2837,16 @@ type SuspendTenantInput struct {
 	Body   Reason
 }
 
+// ListUsageRecordsInput is the input of listUsageRecords.
+type ListUsageRecordsInput struct {
+	Tenant   string // path
+	Limit    int    // query; the zero value means absent
+	Cursor   string // query; the zero value means absent
+	From     string // query; the zero value means absent
+	To       string // query; the zero value means absent
+	Provider string // query; the zero value means absent
+}
+
 // ListVirtualKeysInput is the input of listVirtualKeys.
 type ListVirtualKeysInput struct {
 	Tenant           string   // path
@@ -2665,6 +2954,8 @@ type Server interface {
 	GetTenant(ctx context.Context, in GetTenantInput) (*Tenant, error)
 	// UpdateTenant: PATCH /v1/tenants/{tenant}. Change the name or the display name of a tenant
 	UpdateTenant(ctx context.Context, in UpdateTenantInput) (*Tenant, error)
+	// GetCapability: GET /v1/tenants/{tenant}/capability. Say whether the tenant can call a provider and model now
+	GetCapability(ctx context.Context, in GetCapabilityInput) (*Capability, error)
 	// ListCredentials: GET /v1/tenants/{tenant}/credentials. List the provider credentials of a tenant (metadata)
 	ListCredentials(ctx context.Context, in ListCredentialsInput) (*CredentialList, error)
 	// CreateCredential: POST /v1/tenants/{tenant}/credentials. Register a provider credential
@@ -2709,6 +3000,8 @@ type Server interface {
 	EnableServiceAccount(ctx context.Context, in EnableServiceAccountInput) (*ServiceAccount, error)
 	// SuspendTenant: POST /v1/tenants/{tenant}/suspend. Suspend a tenant
 	SuspendTenant(ctx context.Context, in SuspendTenantInput) (*Tenant, error)
+	// ListUsageRecords: GET /v1/tenants/{tenant}/usage-records. List the tenant's usage records, newest first
+	ListUsageRecords(ctx context.Context, in ListUsageRecordsInput) (*UsageRecordList, error)
 	// ListVirtualKeys: GET /v1/tenants/{tenant}/virtual-keys. List the virtual keys of a tenant
 	ListVirtualKeys(ctx context.Context, in ListVirtualKeysInput) (*VirtualKeyList, error)
 	// CreateVirtualKey: POST /v1/tenants/{tenant}/virtual-keys. Issue a virtual key for a service account
@@ -2781,7 +3074,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Provider = v
 		}
-		if in.Provider != "" && !re1.MatchString(in.Provider) {
+		if in.Provider != "" && !re0.MatchString(in.Provider) {
 			errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 		}
 		if v, ok := q["name"]; ok {
@@ -2790,7 +3083,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Name = v
 		}
-		if in.Name != "" && !re6.MatchString(in.Name) {
+		if in.Name != "" && !re1.MatchString(in.Name) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 		}
 		if v, ok := q["status"]; ok {
@@ -3544,7 +3837,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Provider = v
 		}
-		if in.Provider != "" && !re1.MatchString(in.Provider) {
+		if in.Provider != "" && !re0.MatchString(in.Provider) {
 			errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 		}
 		if len(errs) > 0 {
@@ -3669,7 +3962,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Name = v
 		}
-		if in.Name != "" && !re2.MatchString(in.Name) {
+		if in.Name != "" && !re3.MatchString(in.Name) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 		if len(errs) > 0 {
@@ -3736,6 +4029,43 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		writeJSON(w, 200, out)
+	case "getCapability":
+		var in GetCapabilityInput
+		in.Tenant = params["tenant"]
+		q, err := parseQuery(r, "provider", "model")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		if v, ok := q["provider"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "provider", Message: "must not be empty"})
+			}
+			in.Provider = v
+		}
+		if in.Provider != "" && !re0.MatchString(in.Provider) {
+			errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+		}
+		if v, ok := q["model"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "model", Message: "must not be empty"})
+			}
+			in.Model = v
+		}
+		if in.Model != "" && !re1.MatchString(in.Model) {
+			errs = append(errs, FieldError{Field: "model", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.GetCapability(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
 	case "listCredentials":
 		var in ListCredentialsInput
 		in.Tenant = params["tenant"]
@@ -3791,7 +4121,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Provider = v
 		}
-		if in.Provider != "" && !re1.MatchString(in.Provider) {
+		if in.Provider != "" && !re0.MatchString(in.Provider) {
 			errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 		}
 		if len(errs) > 0 {
@@ -4074,7 +4404,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Provider = v
 		}
-		if in.Provider != "" && !re1.MatchString(in.Provider) {
+		if in.Provider != "" && !re0.MatchString(in.Provider) {
 			errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 		}
 		if len(errs) > 0 {
@@ -4163,7 +4493,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Name = v
 		}
-		if in.Name != "" && !re2.MatchString(in.Name) {
+		if in.Name != "" && !re3.MatchString(in.Name) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 		if len(errs) > 0 {
@@ -4298,6 +4628,79 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		writeJSON(w, 200, out)
+	case "listUsageRecords":
+		var in ListUsageRecordsInput
+		in.Tenant = params["tenant"]
+		q, err := parseQuery(r, "limit", "cursor", "from", "to", "provider")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		if v, ok := q["from"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "from", Message: "must not be empty"})
+			}
+			in.From = v
+		}
+		if runeCount(in.From) > 64 {
+			errs = append(errs, FieldError{Field: "from", Message: "length must be at most 64"})
+		}
+		if v, ok := q["to"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "to", Message: "must not be empty"})
+			}
+			in.To = v
+		}
+		if runeCount(in.To) > 64 {
+			errs = append(errs, FieldError{Field: "to", Message: "length must be at most 64"})
+		}
+		if v, ok := q["provider"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "provider", Message: "must not be empty"})
+			}
+			in.Provider = v
+		}
+		if in.Provider != "" && !re0.MatchString(in.Provider) {
+			errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListUsageRecords(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
 	case "listVirtualKeys":
 		var in ListVirtualKeysInput
 		in.Tenant = params["tenant"]
@@ -4353,7 +4756,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.ServiceAccountID = v
 		}
-		if in.ServiceAccountID != "" && !re0.MatchString(in.ServiceAccountID) {
+		if in.ServiceAccountID != "" && !re2.MatchString(in.ServiceAccountID) {
 			errs = append(errs, FieldError{Field: "service_account_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 		}
 		if len(errs) > 0 {
@@ -4902,6 +5305,22 @@ func (c *Client) UpdateTenant(ctx context.Context, in UpdateTenantInput) (*Tenan
 	return &out, nil
 }
 
+// GetCapability calls GET /v1/tenants/{tenant}/capability. Say whether the tenant can call a provider and model now
+func (c *Client) GetCapability(ctx context.Context, in GetCapabilityInput) (*Capability, error) {
+	q := url.Values{}
+	if in.Provider != "" {
+		q.Set("provider", string(in.Provider))
+	}
+	if in.Model != "" {
+		q.Set("model", string(in.Model))
+	}
+	var out Capability
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/capability", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // ListCredentials calls GET /v1/tenants/{tenant}/credentials. List the provider credentials of a tenant (metadata)
 func (c *Client) ListCredentials(ctx context.Context, in ListCredentialsInput) (*CredentialList, error) {
 	q := url.Values{}
@@ -5156,6 +5575,31 @@ func (c *Client) SuspendTenant(ctx context.Context, in SuspendTenantInput) (*Ten
 	q := url.Values{}
 	var out Tenant
 	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/suspend", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListUsageRecords calls GET /v1/tenants/{tenant}/usage-records. List the tenant's usage records, newest first
+func (c *Client) ListUsageRecords(ctx context.Context, in ListUsageRecordsInput) (*UsageRecordList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	if in.From != "" {
+		q.Set("from", string(in.From))
+	}
+	if in.To != "" {
+		q.Set("to", string(in.To))
+	}
+	if in.Provider != "" {
+		q.Set("provider", string(in.Provider))
+	}
+	var out UsageRecordList
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/usage-records", q, nil, 200, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

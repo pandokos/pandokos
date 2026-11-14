@@ -7,8 +7,6 @@ import (
 	"sort"
 
 	"github.com/pandokos/pandokos/internal/authz"
-	"github.com/pandokos/pandokos/internal/family"
-	"github.com/pandokos/pandokos/internal/family/openai"
 	"github.com/pandokos/pandokos/internal/pricing"
 	"github.com/pandokos/pandokos/internal/secret"
 	"github.com/pandokos/pandokos/internal/usage"
@@ -22,6 +20,7 @@ type Target struct {
 	BaseURL            *url.URL
 	Private            bool
 	Prices             []pricing.Version // the model's price versions, from the snapshot that resolved it; read-only
+	StreamUsage        bool              // the provider's stream_usage_option is "add"
 }
 
 // Recorder receives the usage record of every admitted request.
@@ -83,18 +82,16 @@ type Route struct {
 // Routes lists, for every operation of every family, the route and its permissions.
 func Routes() []Route {
 	var routes []Route
-	names := make([]string, 0, len(knownAdapters))
-	for name := range knownAdapters {
+	adapters := Families()
+	names := make([]string, 0, len(adapters))
+	for name := range adapters {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		for _, op := range knownAdapters[name].Operations() {
+		for _, op := range adapters[name].Operations() {
 			routes = append(routes, Route{Method: op.Method, Path: "/{provider}" + op.Path, Permissions: []string{authz.ModelInvoke, authz.CredentialUse}})
 		}
 	}
 	return routes
 }
-
-// knownAdapters are the adapters of the families this build serves.
-var knownAdapters = map[string]family.Adapter{openai.Name: openai.Adapter()}
