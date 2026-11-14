@@ -51,6 +51,12 @@ const (
 	CredentialUse          = "credential:use"           //nolint:gosec // a permission name, not a credential
 	TenantCredentialRead   = "tenant_credential:read"   //nolint:gosec // a permission name, not a credential
 	TenantCredentialRevoke = "tenant_credential:revoke" //nolint:gosec // a permission name, not a credential
+
+	CatalogRead   = "catalog:read"
+	CatalogWrite  = "catalog:write"
+	CatalogPrice  = "catalog:price"
+	ModelRead     = "model:read"
+	ModelRestrict = "model:restrict"
 )
 
 var catalogue = []Permission{
@@ -74,6 +80,11 @@ var catalogue = []Permission{
 	{CredentialUse, ScopeTenant, "Having one's model calls authenticated to the provider with a credential of the tenant"},
 	{TenantCredentialRead, ScopePlatform, "Reading and listing the credentials of a tenant (metadata)"},
 	{TenantCredentialRevoke, ScopePlatform, "Disabling or revoking a credential of a tenant, with a reason"},
+	{CatalogRead, ScopePlatform, "Reading providers, endpoints, models, model grants, price versions and price imports"},
+	{CatalogWrite, ScopePlatform, "Creating, changing and deleting providers, endpoints and models; granting models to tenants and revoking grants"},
+	{CatalogPrice, ScopePlatform, "Setting and removing price overrides; running a price import"},
+	{ModelRead, ScopeTenant, "Listing the models available to the tenant, with their prices; reading the tenant's model restriction"},
+	{ModelRestrict, ScopeTenant, "Setting and clearing the tenant's model restriction"},
 }
 
 // Catalogue returns the permissions, in a fixed order.
@@ -122,10 +133,10 @@ func sorted(names ...string) []string {
 // Roles returns the three built-in roles, in a fixed order; the slices are copies.
 func Roles() []Role {
 	return []Role{
-		{RolePlatformAdmin, KindPlatform, sorted(IdentityRead, TenantRead, TenantWrite, TenantSuspend, PlatformKeyRead, PlatformKeyWrite, PlatformKeyRevoke, TenantCredentialRead, TenantCredentialRevoke),
+		{RolePlatformAdmin, KindPlatform, sorted(IdentityRead, TenantRead, TenantWrite, TenantSuspend, PlatformKeyRead, PlatformKeyWrite, PlatformKeyRevoke, TenantCredentialRead, TenantCredentialRevoke, CatalogRead, CatalogWrite, CatalogPrice),
 			"Administers the installation: tenants and platform keys"},
 		{RoleTenantAdmin, KindServiceAccount, sorted(IdentityRead, ServiceAccountRead, ServiceAccountWrite, VirtualKeyRead, VirtualKeyWrite, VirtualKeyRevoke, ModelInvoke,
-			CredentialRead, CredentialWrite, CredentialRotate, CredentialDelete, CredentialUse),
+			CredentialRead, CredentialWrite, CredentialRotate, CredentialDelete, CredentialUse, ModelRead, ModelRestrict),
 			"Administers one tenant: service accounts and virtual keys; may call models"},
 		{RoleInference, KindServiceAccount, sorted(ModelInvoke, CredentialUse), "Calls models through the inference listener"},
 	}
