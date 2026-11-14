@@ -22,6 +22,7 @@ import (
 	"github.com/pandokos/pandokos/internal/config"
 	"github.com/pandokos/pandokos/internal/egress"
 	"github.com/pandokos/pandokos/internal/pricing/genaiprices"
+	"github.com/pandokos/pandokos/internal/resolver"
 	"github.com/pandokos/pandokos/internal/server"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/migrations"
@@ -201,7 +202,13 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	srv, err := server.New(server.Options{Config: cfg, Logger: logger, Authenticator: gatewayAuth, Admin: adminHandler})
+	srv, err := server.New(server.Options{
+		Config: cfg, Logger: logger, Authenticator: gatewayAuth, Admin: adminHandler,
+		Catalogue:   resolver.NewCatalogue(catalogCache, logger),
+		Credentials: resolver.NewCredentials(opener),
+		Failures:    resolver.NewFailureAuditor(gatewayDB, logger, nil),
+		Egress:      guard,
+	})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1

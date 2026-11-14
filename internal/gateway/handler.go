@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
-	"net/url"
 	"os"
 	"runtime/debug"
 	"sort"
@@ -45,11 +44,6 @@ type Options struct {
 	MaxRequestBodyBytes    int64                     // must be positive
 	RequestBodyReadTimeout time.Duration             // must be positive
 	MaxRequestDuration     time.Duration             // must be positive
-
-	// Removed by the step that wires the server; New ignores them.
-	BaseURL     *url.URL
-	ProviderKey secret.Secret
-	Transport   http.RoundTripper
 }
 
 // Handler is the inference handler.
