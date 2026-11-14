@@ -114,19 +114,8 @@ func (s *Snapshot) Resolve(p authz.Principal, ta TenantAccess, provider, name st
 	if p.Kind != authz.KindServiceAccount || p.TenantID.IsZero() {
 		return Model{}, Endpoint{}, ErrModelNotAllowed
 	}
-	prov, ok := s.providers[provider]
-	if !ok || !prov.Enabled {
-		return Model{}, Endpoint{}, ErrProviderUnavailable
-	}
-	var ep Endpoint
-	found := false
-	for _, e := range s.endpoints[provider] {
-		if e.Default && e.Enabled {
-			ep, found = e, true
-			break
-		}
-	}
-	if !found {
+	ep, ok := s.DefaultEndpoint(provider)
+	if !ok {
 		return Model{}, Endpoint{}, ErrProviderUnavailable
 	}
 	m, ok := s.models[provider][name]
@@ -141,6 +130,26 @@ func (s *Snapshot) Resolve(p authz.Principal, ta TenantAccess, provider, name st
 		return Model{}, Endpoint{}, ErrModelNotAllowed
 	}
 	return m, ep, nil
+}
+
+// Provider returns the provider called name, enabled or not.
+func (s *Snapshot) Provider(name string) (Provider, bool) {
+	p, ok := s.providers[name]
+	return p, ok
+}
+
+// DefaultEndpoint returns the enabled default endpoint of an enabled provider.
+func (s *Snapshot) DefaultEndpoint(provider string) (Endpoint, bool) {
+	prov, ok := s.providers[provider]
+	if !ok || !prov.Enabled {
+		return Endpoint{}, false
+	}
+	for _, e := range s.endpoints[provider] {
+		if e.Default && e.Enabled {
+			return e, true
+		}
+	}
+	return Endpoint{}, false
 }
 
 func contains(list []string, s string) bool {

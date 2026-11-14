@@ -2,10 +2,10 @@ package vault
 
 import (
 	"context"
-	"crypto/tls"
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -38,12 +38,19 @@ func (v Verdict) String() string {
 	return "unknown"
 }
 
+// ValidationTarget is the endpoint a credential is presented to. It comes from the catalogue.
+type ValidationTarget struct {
+	Family  string // "openai", "anthropic"
+	BaseURL string // the endpoint's base URL
+	Private bool
+}
+
 // Validator presents a secret to a provider and reports what the provider made of it. It
 // returns the verdict and the HTTP status the provider answered (0 when there was none). It
 // never returns, logs or stores the body of the response or the text of a client error:
 // providers echo parts of the key in them.
 type Validator interface {
-	Validate(ctx context.Context, s secret.Secret) (v Verdict, upstreamStatus int)
+	Validate(ctx context.Context, t ValidationTarget, s secret.Secret) (v Verdict, upstreamStatus int)
 }
 
 const (
@@ -51,47 +58,65 @@ const (
 	maxValidationBody        = 64 * 1024
 )
 
-type openAIValidator struct {
-	url    string
-	client *http.Client
+// setCredential sets the headers that present a secret to a family's provider.
+type setCredential func(h http.Header, s secret.Secret)
+
+var validators = map[string]setCredential{
+	"openai": func(h http.Header, s secret.Secret) { h.Set("Authorization", "Bearer "+s.Reveal()) },
+	"anthropic": func(h http.Header, s secret.Secret) {
+		h.Set("x-api-key", s.Reveal())
+		h.Set("anthropic-version", "2023-06-01")
+	},
 }
 
-// NewOpenAIValidator returns a Validator that asks `GET <base>/models` with the secret as a
-// bearer token. The destination is operator configuration, never caller input. The call uses
-// its own transport: no proxy from the environment, certificates verified, TLS 1.2 or later,
-// redirects not followed, no connection reuse; timeout bounds the whole exchange (10 s when not
-// positive) and at most 64 KiB of the response is read and discarded.
-func NewOpenAIValidator(base *url.URL, timeout time.Duration) Validator {
+// ValidatorFamilies lists the API families a Validator knows, sorted.
+func ValidatorFamilies() []string {
+	out := make([]string, 0, len(validators))
+	for f := range validators {
+		out = append(out, f)
+	}
+	sort.Strings(out)
+	return out
+}
+
+type validator struct {
+	public, private http.RoundTripper
+	timeout         time.Duration
+}
+
+// NewValidator returns the validator of every family in ValidatorFamilies. public and private
+// are the round trippers of the two endpoint classes; timeout bounds one validation (10 s when
+// not positive). Redirects are never followed and at most 64 KiB of the response is read and
+// discarded.
+func NewValidator(public, private http.RoundTripper, timeout time.Duration) Validator {
 	if timeout <= 0 {
 		timeout = defaultValidationTimeout
 	}
-	u := *base
-	u.Path = strings.TrimRight(base.Path, "/") + "/models"
-	u.RawPath, u.RawQuery, u.Fragment, u.User = "", "", "", nil
-	tr := &http.Transport{
-		Proxy:                  nil,
-		DisableKeepAlives:      true,
-		TLSClientConfig:        &tls.Config{MinVersion: tls.VersionTLS12},
-		ForceAttemptHTTP2:      true,
-		TLSHandshakeTimeout:    timeout,
-		ResponseHeaderTimeout:  timeout,
-		MaxResponseHeaderBytes: maxValidationBody,
-	}
-	return &openAIValidator{url: u.String(), client: &http.Client{
-		Timeout:       timeout,
-		Transport:     tr,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}}
+	return &validator{public: public, private: private, timeout: timeout}
 }
 
 // Validate implements Validator.
-func (v *openAIValidator) Validate(ctx context.Context, s secret.Secret) (Verdict, int) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.url, nil)
+func (v *validator) Validate(ctx context.Context, t ValidationTarget, s secret.Secret) (Verdict, int) {
+	set, ok := validators[t.Family]
+	if !ok {
+		return Indeterminate, 0
+	}
+	u, err := url.Parse(strings.TrimRight(t.BaseURL, "/") + "/v1/models")
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+		return Indeterminate, 0
+	}
+	ctx, cancel := context.WithTimeout(ctx, v.timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return Indeterminate, 0
 	}
-	req.Header.Set("Authorization", "Bearer "+s.Reveal())
-	resp, err := v.client.Do(req) // the error text may quote the request: it is dropped
+	set(req.Header, s)
+	rt := v.public
+	if t.Private {
+		rt = v.private
+	}
+	resp, err := rt.RoundTrip(req) // the error text may quote the request: it is dropped
 	if err != nil {
 		return Indeterminate, 0
 	}

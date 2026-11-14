@@ -2,12 +2,14 @@ package admin
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/audit"
+	"github.com/pandokos/pandokos/internal/catalog"
 	"github.com/pandokos/pandokos/internal/secret"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/queries"
@@ -92,23 +94,39 @@ func fieldsError(fs ...*adminapi.FieldError) error {
 	return &invalidError{fields: out}
 }
 
-// validatorFor returns the validator of a provider when the request asks for validation.
-func (s *server) validatorFor(provider string, validate bool) (vault.Validator, *adminapi.FieldError) {
+// validationTarget returns the endpoint a credential of provider is presented to when the
+// request asks for validation: the family and the enabled default endpoint of an enabled
+// provider, read from the catalogue before any transaction of the write. The field error says
+// that validation is not available (no validator, a disabled provider, no enabled default
+// endpoint, a family without a validator); the error is a failure to read the catalogue.
+func (s *server) validationTarget(ctx context.Context, provider string, validate bool) (*vault.ValidationTarget, *adminapi.FieldError, error) {
 	if !validate {
-		return nil, nil
+		return nil, nil, nil
 	}
-	v, ok := s.validators[provider]
-	if !ok || v == nil {
-		return nil, &adminapi.FieldError{Field: "validate", Message: "is not available for this provider"}
+	unavailable := &adminapi.FieldError{Field: "validate", Message: "is not available for this provider"}
+	if s.validator == nil {
+		return nil, unavailable, nil
 	}
-	return v, nil
+	snap, err := catalog.LoadSnapshot(ctx, s.db)
+	if err != nil {
+		return nil, nil, err
+	}
+	prov, ok := snap.Provider(provider)
+	if !ok || !prov.Enabled || !slices.Contains(vault.ValidatorFamilies(), prov.Family) {
+		return nil, unavailable, nil
+	}
+	ep, ok := snap.DefaultEndpoint(provider)
+	if !ok {
+		return nil, unavailable, nil
+	}
+	return &vault.ValidationTarget{Family: prov.Family, BaseURL: ep.BaseURL, Private: ep.Private}, nil, nil
 }
 
 // validate presents the secret to the provider. It runs before any transaction is opened and
 // logs one line with the outcome and the status; the response of the provider is never seen.
-func (s *server) validate(ctx context.Context, tid tenant.ID, provider string, v vault.Validator, sec secret.Secret) error {
+func (s *server) validate(ctx context.Context, tid tenant.ID, provider string, t *vault.ValidationTarget, sec secret.Secret) error {
 	start := time.Now()
-	verdict, status := v.Validate(ctx, sec)
+	verdict, status := s.validator.Validate(ctx, *t, sec)
 	outcome := "unavailable"
 	switch verdict {
 	case vault.Accepted:
@@ -247,7 +265,10 @@ func (s *server) CreateCredential(ctx context.Context, in adminapi.CreateCredent
 		return nil, err
 	}
 	b := in.Body
-	v, verr := s.validatorFor(b.Provider, b.ValidateAtWrite)
+	v, verr, err := s.validationTarget(ctx, b.Provider, b.ValidateAtWrite)
+	if err != nil {
+		return nil, err
+	}
 	perr, err := s.checkProvider(ctx, tid, b.Provider)
 	if err != nil {
 		return nil, err
@@ -398,7 +419,10 @@ func (s *server) ReplaceCredentialSecret(ctx context.Context, in adminapi.Replac
 		}
 		return nil, err
 	}
-	v, verr := s.validatorFor(cur.Provider, b.ValidateAtWrite)
+	v, verr, err := s.validationTarget(ctx, cur.Provider, b.ValidateAtWrite)
+	if err != nil {
+		return nil, err
+	}
 	if err := fieldsError(verr); err != nil {
 		return nil, err
 	}
