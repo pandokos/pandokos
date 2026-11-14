@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -162,7 +163,11 @@ func (w *Writer) Record(r usage.Record) {
 		// Close has finished: nobody reads the queue any more.
 		w.unwritten++
 		w.mu.Unlock()
-		w.logNotWritten(&r)
+		var omit []string
+		if err != nil {
+			omit = r.Failed()
+		}
+		w.logNotWritten(&r, omit...)
 		return
 	}
 	covered := w.inUse > len(w.queue) // a slot is held for a request that has not recorded yet
@@ -483,9 +488,20 @@ func (w *Writer) reject(r *usage.Record, err error) {
 }
 
 // logNotWritten logs a record that will not reach the table: the identity fields and the whole
-// row as JSON, so that it can be inserted by hand; the values of the metadata are left out.
-func (w *Writer) logNotWritten(r *usage.Record) {
-	w.log.Error("usage record not written", w.identity(r, "metadata_count", len(r.Metadata), "row", rowJSON(r))...)
+// row as JSON, so that it can be inserted by hand; the values of the metadata are left out, and
+// so are the columns named in omit (the fields that failed Validate).
+func (w *Writer) logNotWritten(r *usage.Record, omit ...string) {
+	attrs := w.identity(r, "metadata_count", len(r.Metadata), "row", rowJSON(r, omit...))
+	if len(omit) > 0 { // the identity fields that failed Validate are not logged either
+		kept := attrs[:0:0]
+		for i := 0; i < len(attrs); i += 2 {
+			if k, _ := attrs[i].(string); !slices.Contains(omit, k) {
+				kept = append(kept, attrs[i], attrs[i+1])
+			}
+		}
+		attrs = kept
+	}
+	w.log.Error("usage record not written", attrs...)
 }
 
 // rowJSON is the record as the insert statement reads it, with the metadata values removed and
