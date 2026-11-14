@@ -41,8 +41,9 @@ func NewFailureAuditor(db *store.DB, log *slog.Logger, now func() time.Time) *Fa
 	return &FailureAuditor{db: db, log: log, now: now, tokens: bucketCapacity, last: now(), seen: map[string]time.Time{}}
 }
 
-// allow takes the suppression and the bucket decisions; it consumes a token only when the
-// failure is not suppressed.
+// allow takes the suppression and the bucket decisions, and reserves the key: a concurrent
+// identical failure is suppressed while the record is being written. It consumes a token only
+// when the failure is not suppressed.
 func (a *FailureAuditor) allow(key string) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -61,17 +62,19 @@ func (a *FailureAuditor) allow(key string) bool {
 		return false
 	}
 	a.tokens--
-	return true
-}
-
-// remember starts the suppression window of a key once its record is written.
-func (a *FailureAuditor) remember(key string) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
 	if len(a.seen) >= maxSeen {
 		clear(a.seen)
 	}
-	a.seen[key] = a.now()
+	a.seen[key] = t
+	return true
+}
+
+// release drops the reservation of a key whose record could not be written, so that the next
+// failure is recorded.
+func (a *FailureAuditor) release(key string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	delete(a.seen, key)
 }
 
 // Record reports whether a record was written. It writes only a failure that names a tenant,
@@ -93,8 +96,8 @@ func (a *FailureAuditor) Record(ctx context.Context, f gateway.AuthFailure) bool
 	})
 	if err != nil {
 		a.log.DebugContext(ctx, "authentication failure not recorded", "request_id", f.RequestID)
+		a.release(key)
 		return false
 	}
-	a.remember(key)
 	return true
 }

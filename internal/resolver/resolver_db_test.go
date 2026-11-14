@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -398,6 +400,31 @@ func TestFailureAuditor(t *testing.T) {
 		clock.t = clock.t.Add(2 * time.Minute) // eleven minutes after the first
 		if !au.Record(ctx(t), failure(6, "tbbbbbbbbbbbbbbbb", "expired")) || rows() != before+3 {
 			t.Error("a repeat after the window must be recorded")
+		}
+	})
+
+	t.Run("concurrent identical failures write one row", func(t *testing.T) {
+		au := newAuditor()
+		clock.t = clock.t.Add(time.Hour)
+		before := rows()
+		const n = 20
+		var wrote atomic.Int64
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				if au.Record(ctx(t), failure(400+i, "tffffffffffffffff", "revoked")) {
+					wrote.Add(1)
+				}
+			}()
+		}
+		close(start)
+		wg.Wait()
+		if wrote.Load() != 1 || rows() != before+1 {
+			t.Errorf("%d of %d concurrent identical failures were recorded, %d rows written; want 1", wrote.Load(), n, rows()-before)
 		}
 	})
 
