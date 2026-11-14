@@ -85,6 +85,8 @@ type Credential struct {
 
 var requiredCredential = []string{"id", "tenant_id", "provider", "label", "description", "owner", "state", "is_default", "fingerprint", "hint", "state_changed_at", "state_changed_by", "created_at"}
 
+var nestedCredential []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Credential) Validate() []FieldError {
 	var errs []FieldError
@@ -144,6 +146,8 @@ type CredentialCreate struct {
 
 var requiredCredentialCreate = []string{"provider", "label", "secret"}
 
+var nestedCredentialCreate []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *CredentialCreate) Validate() []FieldError {
 	var errs []FieldError
@@ -173,6 +177,8 @@ type CredentialList struct {
 }
 
 var requiredCredentialList = []string{"items"}
+
+var nestedCredentialList = []nestedMember{{Name: "items", Many: true, Required: requiredCredential, Nested: nestedCredential}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *CredentialList) Validate() []FieldError {
@@ -212,6 +218,8 @@ type CredentialSecret struct {
 }
 
 var requiredCredentialSecret = []string{"secret"}
+
+var nestedCredentialSecret []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *CredentialSecret) Validate() []FieldError {
@@ -253,6 +261,8 @@ type CredentialUpdate struct {
 
 var requiredCredentialUpdate = []string{}
 
+var nestedCredentialUpdate []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *CredentialUpdate) Validate() []FieldError {
 	var errs []FieldError
@@ -289,6 +299,8 @@ type Endpoint struct {
 
 var requiredEndpoint = []string{"id", "provider", "name", "base_url", "region", "private", "enabled", "is_default", "description", "created_at", "updated_at"}
 
+var nestedEndpoint []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Endpoint) Validate() []FieldError {
 	var errs []FieldError
@@ -315,6 +327,8 @@ type EndpointCreate struct {
 }
 
 var requiredEndpointCreate = []string{"name", "base_url"}
+
+var nestedEndpointCreate []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *EndpointCreate) Validate() []FieldError {
@@ -349,6 +363,8 @@ type EndpointList struct {
 
 var requiredEndpointList = []string{"items"}
 
+var nestedEndpointList = []nestedMember{{Name: "items", Many: true, Required: requiredEndpoint, Nested: nestedEndpoint}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *EndpointList) Validate() []FieldError {
 	var errs []FieldError
@@ -372,6 +388,8 @@ type EndpointUpdate struct {
 }
 
 var requiredEndpointUpdate = []string{}
+
+var nestedEndpointUpdate []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *EndpointUpdate) Validate() []FieldError {
@@ -416,6 +434,8 @@ type FieldError struct {
 
 var requiredFieldError = []string{"field", "message"}
 
+var nestedFieldError []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *FieldError) Validate() []FieldError {
 	var errs []FieldError
@@ -459,6 +479,8 @@ type Me struct {
 
 var requiredMe = []string{"principal_type", "id", "name", "key_id", "bootstrap", "roles", "permissions"}
 
+var nestedMe = []nestedMember{{Name: "tenant", Required: requiredTenantRef, Nested: nestedTenantRef}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Me) Validate() []FieldError {
 	var errs []FieldError
@@ -498,6 +520,8 @@ type Model struct {
 }
 
 var requiredModel = []string{"id", "provider", "api_family", "name", "ref", "upstream_id", "display_name", "description", "status", "availability", "capabilities", "context_window", "max_output_tokens", "price_override", "created_at", "updated_at"}
+
+var nestedModel []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Model) Validate() []FieldError {
@@ -559,6 +583,8 @@ type ModelCreate struct {
 }
 
 var requiredModelCreate = []string{"provider", "name"}
+
+var nestedModelCreate []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ModelCreate) Validate() []FieldError {
@@ -623,6 +649,8 @@ type ModelGrant struct {
 
 var requiredModelGrant = []string{"model_id", "tenant_id", "tenant_name", "created_at"}
 
+var nestedModelGrant []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ModelGrant) Validate() []FieldError {
 	var errs []FieldError
@@ -647,6 +675,8 @@ type ModelGrantList struct {
 
 var requiredModelGrantList = []string{"items"}
 
+var nestedModelGrantList = []nestedMember{{Name: "items", Many: true, Required: requiredModelGrant, Nested: nestedModelGrant}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ModelGrantList) Validate() []FieldError {
 	var errs []FieldError
@@ -666,6 +696,8 @@ type ModelList struct {
 }
 
 var requiredModelList = []string{"items"}
+
+var nestedModelList = []nestedMember{{Name: "items", Many: true, Required: requiredModel, Nested: nestedModel}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ModelList) Validate() []FieldError {
@@ -688,6 +720,8 @@ type ModelRestriction struct {
 
 var requiredModelRestriction = []string{"restricted", "models"}
 
+var nestedModelRestriction []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ModelRestriction) Validate() []FieldError {
 	var errs []FieldError
@@ -705,6 +739,8 @@ type ModelRestrictionSet struct {
 }
 
 var requiredModelRestrictionSet = []string{"models"}
+
+var nestedModelRestrictionSet []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ModelRestrictionSet) Validate() []FieldError {
@@ -757,6 +793,8 @@ type ModelUpdate struct {
 }
 
 var requiredModelUpdate = []string{}
+
+var nestedModelUpdate []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ModelUpdate) Validate() []FieldError {
@@ -855,6 +893,8 @@ type PlatformKey struct {
 
 var requiredPlatformKey = []string{"id", "description", "role", "bootstrap", "state", "created_at"}
 
+var nestedPlatformKey []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformKey) Validate() []FieldError {
 	var errs []FieldError
@@ -875,6 +915,8 @@ type PlatformKeyCreate struct {
 
 var requiredPlatformKeyCreate = []string{}
 
+var nestedPlatformKeyCreate []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformKeyCreate) Validate() []FieldError {
 	var errs []FieldError
@@ -893,6 +935,8 @@ type PlatformKeyCreated struct {
 
 var requiredPlatformKeyCreated = []string{"key", "secret"}
 
+var nestedPlatformKeyCreated = []nestedMember{{Name: "key", Required: requiredPlatformKey, Nested: nestedPlatformKey}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformKeyCreated) Validate() []FieldError {
 	var errs []FieldError
@@ -910,6 +954,8 @@ type PlatformKeyList struct {
 }
 
 var requiredPlatformKeyList = []string{"items"}
+
+var nestedPlatformKeyList = []nestedMember{{Name: "items", Many: true, Required: requiredPlatformKey, Nested: nestedPlatformKey}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformKeyList) Validate() []FieldError {
@@ -974,6 +1020,8 @@ type PriceImport struct {
 
 var requiredPriceImport = []string{"source", "dataset_format", "outcome", "models_seen", "versions_created", "unchanged", "overridden", "unmatched", "skipped", "started_at"}
 
+var nestedPriceImport = []nestedMember{{Name: "items", Many: true, Required: requiredPriceImportItem, Nested: nestedPriceImportItem}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceImport) Validate() []FieldError {
 	var errs []FieldError
@@ -999,6 +1047,8 @@ type PriceImportIssue struct {
 
 var requiredPriceImportIssue = []string{"reason"}
 
+var nestedPriceImportIssue []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceImportIssue) Validate() []FieldError {
 	var errs []FieldError
@@ -1016,6 +1066,8 @@ type PriceImportItem struct {
 }
 
 var requiredPriceImportItem = []string{"provider", "model", "outcome"}
+
+var nestedPriceImportItem = []nestedMember{{Name: "issues", Many: true, Required: requiredPriceImportIssue, Nested: nestedPriceImportIssue}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceImportItem) Validate() []FieldError {
@@ -1043,6 +1095,8 @@ type PriceImportList struct {
 
 var requiredPriceImportList = []string{"items"}
 
+var nestedPriceImportList = []nestedMember{{Name: "items", Many: true, Required: requiredPriceImport, Nested: nestedPriceImport}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceImportList) Validate() []FieldError {
 	var errs []FieldError
@@ -1061,6 +1115,8 @@ type PriceImportRun struct {
 }
 
 var requiredPriceImportRun = []string{"source"}
+
+var nestedPriceImportRun []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceImportRun) Validate() []FieldError {
@@ -1119,6 +1175,8 @@ type PriceOverride struct {
 
 var requiredPriceOverride = []string{"currency", "rates"}
 
+var nestedPriceOverride = []nestedMember{{Name: "rates", Many: true, Required: requiredPriceRate, Nested: nestedPriceRate}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceOverride) Validate() []FieldError {
 	var errs []FieldError
@@ -1152,6 +1210,8 @@ type PriceRate struct {
 }
 
 var requiredPriceRate = []string{"category", "threshold", "rate"}
+
+var nestedPriceRate []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceRate) Validate() []FieldError {
@@ -1205,6 +1265,8 @@ type PriceVersion struct {
 
 var requiredPriceVersion = []string{"id", "model_id", "valid_from", "currency", "source", "note", "rates", "created_at"}
 
+var nestedPriceVersion = []nestedMember{{Name: "rates", Many: true, Required: requiredPriceRate, Nested: nestedPriceRate}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceVersion) Validate() []FieldError {
 	var errs []FieldError
@@ -1236,6 +1298,8 @@ type PriceVersionList struct {
 }
 
 var requiredPriceVersionList = []string{"items"}
+
+var nestedPriceVersionList = []nestedMember{{Name: "items", Many: true, Required: requiredPriceVersion, Nested: nestedPriceVersion}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceVersionList) Validate() []FieldError {
@@ -1281,6 +1345,8 @@ type Problem struct {
 }
 
 var requiredProblem = []string{"type", "title", "status", "code", "detail", "request_id"}
+
+var nestedProblem = []nestedMember{{Name: "errors", Many: true, Required: requiredFieldError, Nested: nestedFieldError}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Problem) Validate() []FieldError {
@@ -1343,6 +1409,8 @@ type Provider struct {
 
 var requiredProvider = []string{"id", "name", "display_name", "description", "api_family", "enabled", "dataset_provider", "created_at", "updated_at"}
 
+var nestedProvider []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Provider) Validate() []FieldError {
 	var errs []FieldError
@@ -1368,6 +1436,8 @@ type ProviderCreate struct {
 }
 
 var requiredProviderCreate = []string{"name", "api_family"}
+
+var nestedProviderCreate []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ProviderCreate) Validate() []FieldError {
@@ -1399,6 +1469,8 @@ type ProviderList struct {
 
 var requiredProviderList = []string{"items"}
 
+var nestedProviderList = []nestedMember{{Name: "items", Many: true, Required: requiredProvider, Nested: nestedProvider}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ProviderList) Validate() []FieldError {
 	var errs []FieldError
@@ -1420,6 +1492,8 @@ type ProviderUpdate struct {
 }
 
 var requiredProviderUpdate = []string{}
+
+var nestedProviderUpdate []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ProviderUpdate) Validate() []FieldError {
@@ -1452,6 +1526,8 @@ type Reason struct {
 
 var requiredReason = []string{}
 
+var nestedReason []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Reason) Validate() []FieldError {
 	var errs []FieldError
@@ -1468,6 +1544,8 @@ type RequiredReason struct {
 }
 
 var requiredRequiredReason = []string{"reason"}
+
+var nestedRequiredReason []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *RequiredReason) Validate() []FieldError {
@@ -1496,6 +1574,8 @@ type ServiceAccount struct {
 }
 
 var requiredServiceAccount = []string{"id", "tenant_id", "name", "description", "state", "roles", "created_at", "updated_at"}
+
+var nestedServiceAccount []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ServiceAccount) Validate() []FieldError {
@@ -1526,6 +1606,8 @@ type ServiceAccountCreate struct {
 }
 
 var requiredServiceAccountCreate = []string{"name"}
+
+var nestedServiceAccountCreate []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ServiceAccountCreate) Validate() []FieldError {
@@ -1558,6 +1640,8 @@ type ServiceAccountList struct {
 }
 
 var requiredServiceAccountList = []string{"items"}
+
+var nestedServiceAccountList = []nestedMember{{Name: "items", Many: true, Required: requiredServiceAccount, Nested: nestedServiceAccount}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ServiceAccountList) Validate() []FieldError {
@@ -1598,6 +1682,8 @@ type ServiceAccountUpdate struct {
 }
 
 var requiredServiceAccountUpdate = []string{}
+
+var nestedServiceAccountUpdate []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ServiceAccountUpdate) Validate() []FieldError {
@@ -1659,6 +1745,8 @@ type Tenant struct {
 
 var requiredTenant = []string{"id", "name", "display_name", "state", "created_at", "updated_at", "state_changed_at"}
 
+var nestedTenant []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Tenant) Validate() []FieldError {
 	var errs []FieldError
@@ -1686,6 +1774,8 @@ type TenantCreate struct {
 
 var requiredTenantCreate = []string{"name"}
 
+var nestedTenantCreate []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantCreate) Validate() []FieldError {
 	var errs []FieldError
@@ -1709,6 +1799,8 @@ type TenantCreated struct {
 }
 
 var requiredTenantCreated = []string{"tenant", "admin_service_account", "admin_key"}
+
+var nestedTenantCreated = []nestedMember{{Name: "tenant", Required: requiredTenant, Nested: nestedTenant}, {Name: "admin_service_account", Required: requiredServiceAccount, Nested: nestedServiceAccount}, {Name: "admin_key", Required: requiredVirtualKeyCreated, Nested: nestedVirtualKeyCreated}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantCreated) Validate() []FieldError {
@@ -1734,6 +1826,8 @@ type TenantList struct {
 
 var requiredTenantList = []string{"items"}
 
+var nestedTenantList = []nestedMember{{Name: "items", Many: true, Required: requiredTenant, Nested: nestedTenant}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantList) Validate() []FieldError {
 	var errs []FieldError
@@ -1754,6 +1848,8 @@ type TenantModel struct {
 }
 
 var requiredTenantModel = []string{"model", "allowed"}
+
+var nestedTenantModel = []nestedMember{{Name: "model", Required: requiredModel, Nested: nestedModel}, {Name: "price", Required: requiredPriceVersion, Nested: nestedPriceVersion}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantModel) Validate() []FieldError {
@@ -1778,6 +1874,8 @@ type TenantModelList struct {
 
 var requiredTenantModelList = []string{"items"}
 
+var nestedTenantModelList = []nestedMember{{Name: "items", Many: true, Required: requiredTenantModel, Nested: nestedTenantModel}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantModelList) Validate() []FieldError {
 	var errs []FieldError
@@ -1797,6 +1895,8 @@ type TenantRef struct {
 }
 
 var requiredTenantRef = []string{"id", "name", "state"}
+
+var nestedTenantRef []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantRef) Validate() []FieldError {
@@ -1842,6 +1942,8 @@ type TenantUpdate struct {
 
 var requiredTenantUpdate = []string{}
 
+var nestedTenantUpdate []nestedMember
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantUpdate) Validate() []FieldError {
 	var errs []FieldError
@@ -1876,6 +1978,8 @@ type VirtualKey struct {
 }
 
 var requiredVirtualKey = []string{"id", "tenant_id", "service_account_id", "description", "state", "created_at"}
+
+var nestedVirtualKey []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *VirtualKey) Validate() []FieldError {
@@ -1914,6 +2018,8 @@ type VirtualKeyCreate struct {
 }
 
 var requiredVirtualKeyCreate = []string{"service_account_id"}
+
+var nestedVirtualKeyCreate []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *VirtualKeyCreate) Validate() []FieldError {
@@ -1967,6 +2073,8 @@ type VirtualKeyCreated struct {
 
 var requiredVirtualKeyCreated = []string{"key", "secret"}
 
+var nestedVirtualKeyCreated = []nestedMember{{Name: "key", Required: requiredVirtualKey, Nested: nestedVirtualKey}}
+
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *VirtualKeyCreated) Validate() []FieldError {
 	var errs []FieldError
@@ -1984,6 +2092,8 @@ type VirtualKeyList struct {
 }
 
 var requiredVirtualKeyList = []string{"items"}
+
+var nestedVirtualKeyList = []nestedMember{{Name: "items", Many: true, Required: requiredVirtualKey, Nested: nestedVirtualKey}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *VirtualKeyList) Validate() []FieldError {
@@ -2711,7 +2821,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredModelCreate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredModelCreate, nestedModelCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -2745,7 +2855,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredModelUpdate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredModelUpdate, nestedModelUpdate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -2779,7 +2889,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -2932,7 +3042,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredPriceOverride, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredPriceOverride, nestedPriceOverride, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -3024,7 +3134,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredPlatformKeyCreate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredPlatformKeyCreate, nestedPlatformKeyCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -3058,7 +3168,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -3123,7 +3233,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredPriceImportRun, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredPriceImportRun, nestedPriceImportRun, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -3201,7 +3311,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredProviderCreate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredProviderCreate, nestedProviderCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -3235,7 +3345,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredProviderUpdate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredProviderUpdate, nestedProviderUpdate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -3315,7 +3425,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredEndpointCreate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredEndpointCreate, nestedEndpointCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -3351,7 +3461,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredEndpointUpdate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredEndpointUpdate, nestedEndpointUpdate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -3469,7 +3579,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredRequiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredRequiredReason, nestedRequiredReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -3491,7 +3601,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredRequiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredRequiredReason, nestedRequiredReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -3578,7 +3688,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredTenantCreate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredTenantCreate, nestedTenantCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -3612,7 +3722,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredTenantUpdate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredTenantUpdate, nestedTenantUpdate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -3701,7 +3811,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredCredentialCreate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredCredentialCreate, nestedCredentialCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -3737,7 +3847,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredCredentialUpdate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredCredentialUpdate, nestedCredentialUpdate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -3773,7 +3883,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -3795,7 +3905,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -3817,7 +3927,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -3839,7 +3949,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredCredentialSecret, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredCredentialSecret, nestedCredentialSecret, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -3861,7 +3971,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -3895,7 +4005,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredModelRestrictionSet, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredModelRestrictionSet, nestedModelRestrictionSet, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -3984,7 +4094,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -4073,7 +4183,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredServiceAccountCreate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredServiceAccountCreate, nestedServiceAccountCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -4109,7 +4219,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredServiceAccountUpdate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredServiceAccountUpdate, nestedServiceAccountUpdate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -4131,7 +4241,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -4153,7 +4263,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -4174,7 +4284,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -4263,7 +4373,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredVirtualKeyCreate, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredVirtualKeyCreate, nestedVirtualKeyCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}
@@ -4299,7 +4409,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
-		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, &in.Body); err != nil {
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
 		}

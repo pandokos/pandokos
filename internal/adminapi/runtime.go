@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -225,9 +226,56 @@ func parseQuery(r *http.Request, allowed ...string) (map[string]string, error) {
 	return out, nil
 }
 
-// decodeBody reads a JSON object into dst. Unknown members, missing required members, a second
-// JSON value and a body over the limit are errors. A body that is not required may be empty.
-func decodeBody(r *http.Request, limit int64, bodyRequired bool, required []string, dst any) error {
+// nestedMember describes a member of a schema that is an object (or an array of objects): the
+// members that object requires, and its own nested members.
+type nestedMember struct {
+	Name     string
+	Many     bool // an array of objects
+	Required []string
+	Nested   []nestedMember
+}
+
+// missingNested lists the required members that are absent (or null) in the nested objects of
+// members, with the name of the member and the index of the item in front of their names.
+func missingNested(members map[string]json.RawMessage, nested []nestedMember, prefix string) []FieldError {
+	var errs []FieldError
+	for _, n := range nested {
+		raw, ok := members[n.Name]
+		if !ok {
+			continue
+		}
+		var items []json.RawMessage
+		if n.Many {
+			if json.Unmarshal(raw, &items) != nil {
+				continue // the wrong type is reported by the decoder
+			}
+		} else {
+			items = []json.RawMessage{raw}
+		}
+		for i, item := range items {
+			var obj map[string]json.RawMessage
+			if json.Unmarshal(item, &obj) != nil || obj == nil {
+				continue
+			}
+			path := prefix + n.Name
+			if n.Many {
+				path += "[" + strconv.Itoa(i) + "]"
+			}
+			for _, name := range n.Required {
+				if v, ok := obj[name]; !ok || string(v) == "null" {
+					errs = append(errs, FieldError{Field: path + "." + name, Message: "is required"})
+				}
+			}
+			errs = append(errs, missingNested(obj, n.Nested, path+".")...)
+		}
+	}
+	return errs
+}
+
+// decodeBody reads a JSON object into dst. Unknown members, missing required members (of the body
+// and of the objects nested in it), a second JSON value and a body over the limit are errors. A
+// body that is not required may be empty.
+func decodeBody(r *http.Request, limit int64, bodyRequired bool, required []string, nested []nestedMember, dst any) error {
 	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, limit))
 	if err != nil {
 		var tooLarge *http.MaxBytesError
@@ -255,6 +303,7 @@ func decodeBody(r *http.Request, limit int64, bodyRequired bool, required []stri
 			errs = append(errs, FieldError{Field: name, Message: "is required"})
 		}
 	}
+	errs = append(errs, missingNested(members, nested, "")...)
 	if len(errs) > 0 {
 		return invalid(errs)
 	}

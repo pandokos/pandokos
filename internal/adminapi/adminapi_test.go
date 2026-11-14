@@ -729,6 +729,32 @@ func TestRouterAndClient(t *testing.T) {
 		}
 	})
 
+	t.Run("a required member of a nested object must be present", func(t *testing.T) {
+		r := newRig(t, 1<<20)
+		for name, c := range map[string]struct{ body, field string }{
+			"threshold absent":  {`{"currency":"USD","rates":[{"category":"input","rate":"1"}]}`, "rates[0].threshold"},
+			"second rate empty": {`{"currency":"USD","rates":[{"category":"input","threshold":0,"rate":"1"},{"category":"output","threshold":0}]}`, "rates[1].rate"},
+			"rate null":         {`{"currency":"USD","rates":[{"category":"input","threshold":0,"rate":null}]}`, "rates[0].rate"},
+		} {
+			status, pb, text := r.raw(t, "POST", "/v1/models/0192f0f0-0000-7000-8000-000000000001/prices", "application/json", c.body)
+			named := false
+			for _, e := range pb.Errors {
+				named = named || e.Field == c.field
+			}
+			if status != 400 || !named {
+				t.Errorf("%s: status %d, %q not named: %s", name, status, c.field, text)
+			}
+		}
+		if got := r.f.last("createPriceOverride"); got != nil {
+			t.Errorf("the server was called with %+v", got)
+		}
+		status, _, text := r.raw(t, "POST", "/v1/models/0192f0f0-0000-7000-8000-000000000001/prices", "application/json",
+			`{"currency":"USD","rates":[{"category":"input","threshold":0,"rate":"1"}]}`)
+		if status != 201 {
+			t.Errorf("a complete rate: %d %s", status, text)
+		}
+	})
+
 	t.Run("bad queries are 400", func(t *testing.T) {
 		r := newRig(t, 1<<20)
 		const canary = "canary-value-xyz"

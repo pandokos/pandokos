@@ -180,7 +180,8 @@ Flags of the catalogue commands: `provider create NAME --family F [--display-nam
 --rate category[@threshold]=amount ... [--valid-from --note]`; `price clear-override MODEL --reason R`;
 `price-import run [--source embedded|remote] [--dry-run]`; `model-restriction set --tenant T --model REF
 ...` or `--none`. Update commands clear an optional text member with `--flag ""`; booleans are set with
-`--enabled=false` and `--private=false`.
+`--enabled=false` and `--private=false`. In the API every rate states its `threshold` (0 for the base rate);
+the command sends `threshold: 0` when no `@threshold` is given.
 
 `pandokos import-prices` (a host command, not an API client) prints one `name: value` line for each of
 `models_seen`, `created`, `unchanged`, `overridden`, `unmatched` and `skipped`, then one line per item

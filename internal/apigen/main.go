@@ -504,6 +504,7 @@ func (g *generator) object(name string, s *schema) error {
 	}
 	g.p("type %s struct {", name)
 	var checks bytes.Buffer
+	var nested []string // the members that are objects, or arrays of objects, for the presence check
 	for _, pn := range s.Properties.Names {
 		ps := s.Properties.By[pn]
 		f, err := g.fieldOf(ps, required[pn])
@@ -533,6 +534,14 @@ func (g *generator) object(name string, s *schema) error {
 			g.p("// %s", d)
 		}
 		g.p("%s %s `json:%q`", fieldName(pn), f.goType, tag)
+		if f.kind == "object" || f.kind == "objects" {
+			target := strings.TrimLeft(f.goType, "[]*")
+			many := ""
+			if f.kind == "objects" {
+				many = "Many: true, "
+			}
+			nested = append(nested, fmt.Sprintf("{Name: %q, %sRequired: required%s, Nested: nested%s}", pn, many, target, target))
+		}
 		if optional {
 			// Validation runs only when the member is present.
 			fmt.Fprintf(&checks, "if v.%s.Set {\n", fieldName(pn))
@@ -544,6 +553,11 @@ func (g *generator) object(name string, s *schema) error {
 	}
 	g.p("}\n")
 	g.p("var required%s = []string{%s}\n", name, quoteList(s.Required))
+	if len(nested) == 0 {
+		g.p("var nested%s []nestedMember\n", name)
+	} else {
+		g.p("var nested%s = []nestedMember{%s}\n", name, strings.Join(nested, ", "))
+	}
 	g.p("// Validate returns the rules of the document that v breaks. A message never repeats a value.")
 	g.p("func (v *%s) Validate() []FieldError {", name)
 	g.p("var errs []FieldError")
@@ -861,7 +875,7 @@ func (g *generator) operations() error {
 			g.p("if len(errs) > 0 { h.fail(w, r, op, invalid(errs)); return }")
 		}
 		if o.body != "" {
-			g.p("if err := decodeBody(r, h.hooks.MaxBodyBytes, %t, required%s, &in.Body); err != nil { h.fail(w, r, op, err); return }", o.bodyRequired, o.body)
+			g.p("if err := decodeBody(r, h.hooks.MaxBodyBytes, %t, required%s, nested%s, &in.Body); err != nil { h.fail(w, r, op, err); return }", o.bodyRequired, o.body, o.body)
 			g.p("if errs := in.Body.Validate(); len(errs) > 0 { h.fail(w, r, op, invalid(errs)); return }")
 		}
 		g.p("out, err := h.server.%s(r.Context(), in)", goName(o.id))

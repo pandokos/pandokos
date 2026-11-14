@@ -289,6 +289,9 @@ func TestOptionalMembersGenerated(t *testing.T) {
 		"Extra *Rate `json:\"extra,omitempty\"`",
 		"if v.Extra != nil {",
 		"for i := range v.Rates {",
+		// The presence of the required members of nested objects is checked by decodeBody.
+		`{Name: "rates", Many: true, Required: requiredRate, Nested: nestedRate}`,
+		`{Name: "extra", Required: requiredRate, Nested: nestedRate}`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the generated code does not contain %q", want)
