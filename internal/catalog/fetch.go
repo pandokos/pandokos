@@ -89,6 +89,11 @@ func Fetch(ctx context.Context, rawURL string, o FetchOptions) ([]byte, error) {
 	if len(body) > maxDownload {
 		return nil, &FetchError{Class: "too_large"}
 	}
+	// net/http returns a response that races the end of the context; a download whose context
+	// ended is not accepted, whatever arrived.
+	if err := ctx.Err(); err != nil {
+		return nil, &FetchError{Class: failureClass(ctx, err)}
+	}
 	return body, nil
 }
 

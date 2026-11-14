@@ -126,6 +126,8 @@ func priceServer(tb testing.TB, body []byte, behaviour, host string) (string, fu
 			case <-done:
 			case <-r.Context().Done():
 			}
+			// Never answer: abort the connection instead of the implicit empty 200.
+			panic(http.ErrAbortHandler)
 		case PriceHuge:
 			w.Header().Set("Content-Type", "application/json")
 			chunk := bytes.Repeat([]byte(" "), 1<<20)
