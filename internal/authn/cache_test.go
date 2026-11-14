@@ -47,6 +47,25 @@ func TestCache(t *testing.T) {
 		}
 	})
 
+	t.Run("the lifetime counts from the start of the lookup, not from its end", func(t *testing.T) {
+		c, clk := newTestCache(30 * time.Second)
+		start := clk.now()
+		clk.advance(10 * time.Second) // the reads took 10 s
+		c.putAt("tkey", tenantA, &entry{}, start)
+		c.putNegativeAt("tunknown", start)
+		clk.advance(20*time.Second - time.Nanosecond)
+		if _, ok := c.get("tkey"); !ok {
+			t.Fatal("the entry is gone before its lifetime from the start ends")
+		}
+		clk.advance(time.Nanosecond)
+		if _, ok := c.get("tkey"); ok {
+			t.Fatal("the entry outlived start + lifetime: it was stamped at the end of the reads")
+		}
+		if c.negative("tunknown") {
+			t.Fatal("the negative entry (5 s) outlived start + lifetime")
+		}
+	})
+
 	t.Run("negative entries last 5 seconds", func(t *testing.T) {
 		c, clk := newTestCache(time.Minute)
 		c.putNegative("tunknown")

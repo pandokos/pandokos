@@ -133,6 +133,7 @@ func (a *Authenticator) virtual(ctx context.Context, keyID string, hash [32]byte
 		e, _ = a.cache.get(keyID)
 	}
 	if e == nil {
+		start := a.now() // the lifetime of what is cached counts from here, before the reads
 		var tenantText string
 		err := a.db.Unscoped(ctx, func(ctx context.Context, tx store.Tx) error {
 			var err error
@@ -145,7 +146,7 @@ func (a *Authenticator) virtual(ctx context.Context, keyID string, hash [32]byte
 		tid, perr := tenant.ParseID(tenantText)
 		if tenantText == "" || perr != nil {
 			if a.cache != nil {
-				a.cache.putNegative(keyID)
+				a.cache.putNegativeAt(keyID, start)
 			}
 			return authz.Principal{}, &Failure{Reason: "unknown_key", KeyID: keyID}
 		}
@@ -158,7 +159,7 @@ func (a *Authenticator) virtual(ctx context.Context, keyID string, hash [32]byte
 		switch {
 		case errors.Is(err, store.ErrNoRows):
 			if a.cache != nil {
-				a.cache.putNegative(keyID)
+				a.cache.putNegativeAt(keyID, start)
 			}
 			return authz.Principal{}, &Failure{Reason: "unknown_key", KeyID: keyID}
 		case err != nil:
@@ -166,7 +167,7 @@ func (a *Authenticator) virtual(ctx context.Context, keyID string, hash [32]byte
 		}
 		e = &entry{row: row}
 		if a.cache != nil {
-			a.cache.put(keyID, row.TenantID, e)
+			a.cache.putAt(keyID, row.TenantID, e, start)
 		}
 	}
 	return a.check(e, keyID, hash)

@@ -68,28 +68,35 @@ func (c *cache) removeLocked(keyID string) {
 	}
 }
 
-func (c *cache) put(keyID, tenantID string, e *entry) {
+func (c *cache) put(keyID, tenantID string, e *entry) { c.putAt(keyID, tenantID, e, c.now()) }
+
+// putAt caches e for the lifetime counted from start, the moment the lookup began: the bound on
+// how long a revocation can go unseen does not grow with the latency of the reads.
+func (c *cache) putAt(keyID, tenantID string, e *entry, start time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if _, exists := c.pos[keyID]; !exists && len(c.pos) >= maxEntries {
 		c.flushLocked("full")
 	}
 	c.removeLocked(keyID)
-	c.pos[keyID] = positive{e: e, tenantID: tenantID, expires: c.now().Add(c.ttl)}
+	c.pos[keyID] = positive{e: e, tenantID: tenantID, expires: start.Add(c.ttl)}
 	if c.byTenant[tenantID] == nil {
 		c.byTenant[tenantID] = map[string]bool{}
 	}
 	c.byTenant[tenantID][keyID] = true
 }
 
-func (c *cache) putNegative(keyID string) {
+func (c *cache) putNegative(keyID string) { c.putNegativeAt(keyID, c.now()) }
+
+// putNegativeAt is putAt for an unknown key.
+func (c *cache) putNegativeAt(keyID string, start time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if _, exists := c.neg[keyID]; !exists && len(c.neg) >= maxEntries {
 		c.neg = map[string]time.Time{}
 		c.log.Debug("principal cache flushed", "reason", "full")
 	}
-	c.neg[keyID] = c.now().Add(negativeTTL)
+	c.neg[keyID] = start.Add(negativeTTL)
 }
 
 func (c *cache) negative(keyID string) bool {

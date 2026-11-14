@@ -66,6 +66,7 @@ type fakeSource struct {
 	deks     map[string]queries.GetDataKeyRow
 	fail     map[string]error // by kind: "cred", "def", "dek"
 	reads    map[string]int   // "cred:<tenant>", "def:<tenant>", "dek:<tenant>"
+	onRead   func()           // called by every read, outside the lock: the latency of the database
 }
 
 func newFakeSource() *fakeSource {
@@ -76,6 +77,12 @@ func newFakeSource() *fakeSource {
 }
 
 func (f *fakeSource) credentialByID(_ context.Context, id tenant.ID, credentialID string) (queries.GetCredentialForUseRow, error) {
+	f.mu.Lock()
+	hook := f.onRead
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.reads["cred:"+id.String()]++
@@ -91,6 +98,12 @@ func (f *fakeSource) credentialByID(_ context.Context, id tenant.ID, credentialI
 
 func (f *fakeSource) defaultCredential(_ context.Context, id tenant.ID, provider string) (queries.GetDefaultCredentialForUseRow, error) {
 	f.mu.Lock()
+	hook := f.onRead
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
+	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.reads["def:"+id.String()]++
 	if err := f.fail["def"]; err != nil {
@@ -104,6 +117,12 @@ func (f *fakeSource) defaultCredential(_ context.Context, id tenant.ID, provider
 }
 
 func (f *fakeSource) dataKey(_ context.Context, id tenant.ID, version int32) (queries.GetDataKeyRow, error) {
+	f.mu.Lock()
+	hook := f.onRead
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.reads["dek:"+id.String()]++
@@ -280,6 +299,35 @@ func TestOpenerCache(t *testing.T) {
 		var nu *NotUsableError
 		if !errors.As(err, &nu) || nu.State != "disabled" {
 			t.Errorf("after the lifetime: %v, want NotUsableError{disabled}", err)
+		}
+	})
+
+	t.Run("the lifetime counts from the start of Open, not from the end of its reads", func(t *testing.T) {
+		w := newUWorld(t)
+		w.addTenant(a)
+		w.addCredential(a, cuid(1), "openai", "main", "active", "plaintext-one-0001", true)
+		p := principalOf(a, "")
+		const latency = 10 * time.Second
+		w.src.onRead = func() { w.clk.advance(latency) } // the default and the data key: 20s in all
+		w.mustOpen(p, "openai", "plaintext-one-0001")
+		w.src.onRead = nil
+		// 20s have passed; the entry was stamped at the start, so it dies 10s from now.
+		w.clk.advance(ttlCredential - 2*latency - time.Nanosecond)
+		w.mustOpen(p, "openai", "plaintext-one-0001")
+		if n := w.src.count("def", a); n != 1 {
+			t.Fatalf("read again %d times before the lifetime from the start", n-1)
+		}
+		w.clk.advance(time.Nanosecond)
+		w.mustOpen(p, "openai", "plaintext-one-0001")
+		if n := w.src.count("def", a); n != 2 {
+			t.Fatalf("%d reads of the default, want 2: the lifetime counted from the end of the reads", n)
+		}
+		// The data key read by the first open dies at its start plus the data key lifetime too: the
+		// clock is at 30s, the second open found the key cached.
+		w.clk.advance(ttlDataKey - ttlCredential)
+		w.mustOpen(p, "openai", "plaintext-one-0001")
+		if n := w.src.count("dek", a); n != 2 {
+			t.Fatalf("%d reads of the data key, want 2: its lifetime counted from the end of the reads", n)
 		}
 	})
 

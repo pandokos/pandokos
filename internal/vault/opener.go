@@ -206,7 +206,7 @@ func (o *Opener) Open(ctx context.Context, u Use) (Opened, error) {
 		return Opened{}, ErrDenied
 	}
 	tid := p.TenantID
-	epoch := o.epochNow()
+	epoch, start := o.epochNow(), o.now()
 
 	if p.CredentialID != "" {
 		if ent, ok := o.cachedCredential(tid, p.CredentialID); ok {
@@ -225,7 +225,7 @@ func (o *Opener) Open(ctx context.Context, u Use) (Opened, error) {
 			if row.Provider == u.Provider {
 				cr := credRow{id: row.ID, provider: row.Provider, label: row.Label, state: row.State,
 					fingerprint: row.Fingerprint, keyVersion: row.KeyVersion, sealed: row.Secret}
-				return o.openRow(ctx, u, cr, true, "", epoch)
+				return o.openRow(ctx, u, cr, true, "", epoch, start)
 			}
 		}
 	}
@@ -242,11 +242,11 @@ func (o *Opener) Open(ctx context.Context, u Use) (Opened, error) {
 	}
 	cr := credRow{id: row.ID, provider: row.Provider, label: row.Label, state: row.State,
 		fingerprint: row.Fingerprint, keyVersion: row.KeyVersion, sealed: row.Secret}
-	return o.openRow(ctx, u, cr, false, u.Provider, epoch)
+	return o.openRow(ctx, u, cr, false, u.Provider, epoch, start)
 }
 
 // openRow checks the state of a credential read from the database, opens it and caches it.
-func (o *Opener) openRow(ctx context.Context, u Use, r credRow, pinned bool, alias string, epoch uint64) (Opened, error) {
+func (o *Opener) openRow(ctx context.Context, u Use, r credRow, pinned bool, alias string, epoch uint64, start time.Time) (Opened, error) {
 	if r.state != "active" {
 		return Opened{}, &NotUsableError{State: r.state}
 	}
@@ -256,7 +256,7 @@ func (o *Opener) openRow(ctx context.Context, u Use, r credRow, pinned bool, ali
 			"data_key_version", r.keyVersion, "kek_version", kek, "cause", cause)
 		return Opened{}, err
 	}
-	dk, kek, cause, err := o.dataKey(ctx, tid, r.keyVersion, epoch)
+	dk, kek, cause, err := o.dataKey(ctx, tid, r.keyVersion, epoch, start)
 	if err != nil {
 		if cause == "" { // the database, not the key material
 			return Opened{}, err
@@ -269,14 +269,14 @@ func (o *Opener) openRow(ctx context.Context, u Use, r credRow, pinned bool, ali
 	}
 	op := Opened{ID: r.id, Provider: r.provider, Label: r.label, Fingerprint: r.fingerprint, Secret: secret.New(string(plain))}
 	clear(plain)
-	o.putCredential(tid, op, alias, epoch)
+	o.putCredential(tid, op, alias, epoch, start)
 	return o.opened(u, op, pinned, false), nil
 }
 
 // dataKey returns the derived data key of a tenant, from the cache or from the database. cause
 // is set, and err is one of the errors of Open, when the key material is at fault; it is empty
 // when the database is out of reach.
-func (o *Opener) dataKey(ctx context.Context, tid tenant.ID, version int32, epoch uint64) (dk *DataKey, kek, cause string, err error) {
+func (o *Opener) dataKey(ctx context.Context, tid tenant.ID, version int32, epoch uint64, start time.Time) (dk *DataKey, kek, cause string, err error) {
 	if e, ok := o.cachedDataKey(tid, version); ok {
 		return e.key, e.kekVersion, "", nil
 	}
@@ -299,7 +299,7 @@ func (o *Opener) dataKey(ctx context.Context, tid tenant.ID, version int32, epoc
 	if err != nil {
 		return nil, row.KekVersion, "data_key_unwrap", fmt.Errorf("%w: the data key is not usable", ErrUndecryptable)
 	}
-	o.putDataKey(tid, row.Version, dekEntry{key: dk, kekVersion: row.KekVersion}, epoch)
+	o.putDataKey(tid, row.Version, dekEntry{key: dk, kekVersion: row.KekVersion}, epoch, start)
 	return dk, row.KekVersion, "", nil
 }
 
@@ -431,7 +431,7 @@ func (o *Opener) cachedDefault(tid tenant.ID, provider string) (credEntry, bool)
 
 // putCredential caches a successful open. A read that started before an invalidation is not
 // cached: it may carry what the invalidation was sent for.
-func (o *Opener) putCredential(tid tenant.ID, op Opened, alias string, epoch uint64) {
+func (o *Opener) putCredential(tid tenant.ID, op Opened, alias string, epoch uint64, start time.Time) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.epoch != epoch {
@@ -452,7 +452,7 @@ func (o *Opener) putCredential(tid tenant.ID, op Opened, alias string, epoch uin
 		o.log.Debug("vault cache flushed", "reason", "full")
 	}
 	t := o.tenantLocked(tid)
-	t.creds[op.ID] = credEntry{opened: op, expires: o.now().Add(o.credTTL), alias: alias}
+	t.creds[op.ID] = credEntry{opened: op, expires: start.Add(o.credTTL), alias: alias}
 	if alias != "" {
 		t.aliases[alias] = op.ID
 	}
@@ -479,7 +479,7 @@ func (o *Opener) cachedDataKey(tid tenant.ID, version int32) (dekEntry, bool) {
 	return e, true
 }
 
-func (o *Opener) putDataKey(tid tenant.ID, version int32, e dekEntry, epoch uint64) {
+func (o *Opener) putDataKey(tid tenant.ID, version int32, e dekEntry, epoch uint64, start time.Time) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.epoch != epoch {
@@ -503,7 +503,7 @@ func (o *Opener) putDataKey(tid tenant.ID, version int32, e dekEntry, epoch uint
 		}
 		o.log.Debug("vault cache flushed", "reason", "full")
 	}
-	e.expires = o.now().Add(o.dekTTL)
+	e.expires = start.Add(o.dekTTL)
 	o.tenantLocked(tid).deks[version] = e
 	o.nDeks++
 }
