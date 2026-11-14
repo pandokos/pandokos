@@ -16,7 +16,7 @@
    D, one for E.
 2. **Dependencies are exactly those of §7**, added in part A with the commands given there.
    No other module is added; no version is typed by hand into `go.mod`. `go.mod` keeps
-   `go 1.25.0` and no `toolchain` line.
+   `go 1.25.0` and no `toolchain` line (amended: floor 1.26.0, SDK v1.47.0 — see O-1).
 3. **No content anywhere.** Nothing of a request or response body, no header value (metadata
    values included), no secret and no unresolved model string goes to a log, a span, an error
    or the ledger. The log fields of §5.5, the span attributes of §5.9 and the columns of §5.5
@@ -89,7 +89,7 @@ It adds declarations and dependencies only: nothing changes behaviour.
 
    The last command printed `v1.11.0`, `v1.36.12` and `v1.4.4` when the design was written;
    whatever `go mod tidy` resolves from the four pins is what is committed. If `go.mod` no
-   longer says `go 1.25.0`, a pin is wrong: stop and ask.
+   longer says `go 1.25.0` (amended: floor 1.26.0, SDK v1.47.0 — see O-1), a pin is wrong: stop and ask.
 3. **Linter** (`.golangci.yml`, `depguard`): add to the allow-list of rule `all`
    `go.opentelemetry.io/otel`, `go.opentelemetry.io/proto/otlp`, `google.golang.org/protobuf`,
    `github.com/go-logr/logr`. New rules: `otel-sdk-in-telemetry` (lax; files `**/cmd/**`,

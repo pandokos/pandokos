@@ -768,7 +768,7 @@ and `partitioner.Run`. After `srv.Serve` returns: step 3 of §5.8, then the exis
   v1.46.0), `github.com/go-logr/logr` (the bridge from the SDK's logger to `slog`); direct for
   tests only, already in the exporter's graph: `go.opentelemetry.io/proto/otlp`,
   `google.golang.org/protobuf`. Versions are those `go get` resolves from the four pins; the
-  commands are in plan.md part A. `go 1.25.0` stays. `depguard` and T-R28 hold the new modules
+  commands are in plan.md part A. `go 1.25.0` stays (amended: floor 1.26.0, SDK v1.47.0 — see O-1). `depguard` and T-R28 hold the new modules
   to `internal/telemetry` (API packages: gateway too) and tests.
 - `make fuzz` gains `FuzzResponsesStreamReader`, `FuzzFlattenUsage`, `FuzzParseMetadata`;
   `FuzzStreamReader`, `FuzzReadUsage` and `FuzzParseRequest` cover the new operations. T-R30
@@ -793,7 +793,7 @@ and `partitioner.Run`. After `srv.Serve` returns: step 3 of §5.8, then the exis
 | D-12 | **Admission: a request takes a ledger slot after authentication and frees it when its row is written** | It is the only way to keep both promises of ADR 0013 and USE-01: the buffer is bounded, and a served request always has room for its record. Cost: `ledger.buffer_size` also caps admitted requests (O-6) |
 | D-13 | **Time to first byte is the first body byte, not the headers** | It is the figure operators mean, and for a stream the headers arrive long before the first token |
 | D-14 | **The flush has its own bound, `ledger.shutdown_flush_timeout`, after the drain; unwritten records are logged in full** | The drain deadline is for callers; a database that is slow at that moment should not be given less time because streams used it. Logging turns a loss into a recoverable event |
-| D-15 | **OpenTelemetry Go SDK v1.46.0 with the OTLP/HTTP exporter; no gRPC exporter; the collector is reached through the guard's private transport** | ADR 0015 and 0002 chose the SDK; 6.1's metrics need it. v1.46.0 keeps the Go floor. HTTP alone keeps the exporter set to one module; the guard gives the collector the TLS and no-proxy rules of every other outbound path (O-1, O-2) |
+| D-15 | **OpenTelemetry Go SDK v1.46.0 (amended: floor 1.26.0, SDK v1.47.0 — see O-1) with the OTLP/HTTP exporter; no gRPC exporter; the collector is reached through the guard's private transport** | ADR 0015 and 0002 chose the SDK; 6.1's metrics need it. v1.46.0 keeps the Go floor. HTTP alone keeps the exporter set to one module; the guard gives the collector the TLS and no-proxy rules of every other outbound path (O-1, O-2) |
 | D-16 | **Spans exist only for admitted requests; the server span is created after authentication with the start time of step 1** | An anonymous caller cannot make Pandokos emit telemetry or choose a trace ID; "trace headers are never used for authentication" holds by construction |
 | D-17 | **Parent-based sampling: the caller's sampled flag is followed** | It is what "attached to the caller's trace" needs: a trace sampled at the caller must contain the provider span. The queue bounds what a caller can cause (O-9) |
 | D-18 | **Propagation to the provider is off by default and sends Pandokos's own span context** | ADR 0015; a provider learns trace IDs only when the operator decides |
@@ -869,7 +869,7 @@ the built binary, S SDK module, C container, R repository. IDs continue after T-
 | T-512 | `e2e.TestNoContentAnywhere` | E | At `info` and `debug`, after plain and streamed calls of the three operations, cancellations and refusals: prompt, completion, every form of the virtual key, of the credential and of the collector header value are absent from stdout, stderr, every column of `usage_record` cast to text, the raw bodies received by the collector and both audit tables; the metadata canary is in `usage_record.metadata` and nowhere else | exit 4, **USE-02**, **OBS-04** |
 | T-513 | `sdk.TestResponses`, `sdk.TestResponsesStream`, `sdk.TestEmbeddings` | S | The official Go SDK calls the two new operations, streaming included, with only base URL and key changed; one record each with provider usage | **GW-02**, GW-14 |
 | T-514 | `sdk.TestMetadataAndTraceHeaders` | S | Headers set through the SDK's request options arrive as metadata and trace context on the record and do not reach the provider | GW-13, GW-12 |
-| T-R28 | `repo.TestDependencies` (changed), `repo.TestTelemetryImports`, `repo.TestPlanesDoNotImportEachOther` (extended) | R | The exact list of direct requirements of §7 and `go 1.25.0`; the import rules of §4 | OBS-01 |
+| T-R28 | `repo.TestDependencies` (changed), `repo.TestTelemetryImports`, `repo.TestPlanesDoNotImportEachOther` (extended) | R | The exact list of direct requirements of §7 and `go 1.25.0` (amended: floor 1.26.0, SDK v1.47.0 — see O-1); the import rules of §4 | OBS-01 |
 | T-R29 | `repo.TestUsageAndTelemetryGuides` | R | `usage.md` names every column of the table (read from the migration), every outcome, source and cost status, the metadata bounds (read from `usage`), the loss window and the four `ledger.*` keys; `telemetry.md` names every key of `gateway.SpanAttributes`, every `telemetry.*` key and the environment rule; `data-flows.md` has a row per destination (provider, collector, database, log) with what is and is never sent; the gateway guide lists the three operations and the metadata header | **PRV-02** |
 | T-R30 | `repo.TestFuzzTargetsAreRun` | R | Every `Fuzz…` function under `internal/` appears in the `fuzz` target of the Makefile | — |
 
@@ -951,7 +951,7 @@ the built binary, S SDK module, C container, R repository. IDs continue after T-
 - [ ] `make check` passes locally and in CI with both toolchains; `make image` and
       `make test-container` pass; `make fuzz FUZZTIME=30s` passes with the new targets;
       `make vuln` reports nothing for the new modules.
-- [ ] `go.mod` has exactly the direct requirements of §7 and still says `go 1.25.0`; the pull
+- [ ] `go.mod` has exactly the direct requirements of §7 and still says `go 1.25.0` (amended: floor 1.26.0, SDK v1.47.0 — see O-1); the pull
       request justifies each new direct dependency (ADR 0018) and states the size of the binary
       before and after.
 - [ ] `migrations.sum` has the line of `0006_usage_ledger.sql`; `make generate-check` passes.
