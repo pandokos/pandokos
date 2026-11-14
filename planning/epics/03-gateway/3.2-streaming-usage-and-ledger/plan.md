@@ -682,7 +682,7 @@ CREATE TABLE pandokos.usage_record (
     CONSTRAINT usage_record_api_family_format CHECK (api_family ~ '^[a-z0-9-]{1,63}$'),
     CONSTRAINT usage_record_operation_format CHECK (operation ~ '^[a-z0-9._-]{1,63}$'),
     CONSTRAINT usage_record_endpoint_length CHECK (char_length(endpoint) <= 63),
-    CONSTRAINT usage_record_model_length CHECK (char_length(model) <= 200 AND char_length(upstream_model) <= 200),
+    CONSTRAINT usage_record_model_length CHECK (char_length(model) <= 128 AND char_length(upstream_model) <= 256), -- (amended at review: the length of the columns they are copied from)
     CONSTRAINT usage_record_outcome_valid CHECK (outcome IN ('ok', 'upstream_error', 'cancelled', 'timeout',
                                                              'rejected_limit', 'rejected_policy', 'internal_error')),
     CONSTRAINT usage_record_error_code_format CHECK (error_code ~ '^[a-z_]{0,40}$'),

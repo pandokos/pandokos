@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -454,6 +455,17 @@ func TestRecordFields(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("an upstream identifier of 256 characters is recorded whole", func(t *testing.T) {
+		h := newHarness(t, nil)
+		tgt := h.targets["openai/fake-basic"]
+		tgt.UpstreamModel = strings.Repeat("u", 256)
+		h.targets["openai/fake-basic"] = tgt
+		h.sendAuthed(t, route, chat("fake-basic", false))
+		if r := h.oneRecord(t); r.UpstreamModel != tgt.UpstreamModel || r.Validate() != nil {
+			t.Errorf("upstream model of %d characters, %v", len(r.UpstreamModel), r.Validate())
+		}
+	})
 }
 
 // TestAdmissionRefused is T-487: with no room in the ledger the request is refused with 503
@@ -500,5 +512,89 @@ func TestAdmissionRefused(t *testing.T) {
 		if _, ok := line[k]; ok {
 			t.Errorf("the field %s is logged for a request that was not admitted", k)
 		}
+	}
+}
+
+// TestRecordsAlwaysValidate is the principle of the ledger: a record built by the gateway passes
+// usage.Record.Validate whatever the caller or the provider sends. Bounded values are saturated at
+// the source, so no call is answered without its row.
+func TestRecordsAlwaysValidate(t *testing.T) {
+	rawChat := func(status int, body string) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.Copy(io.Discard, r.Body)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(body))
+		}
+	}
+	const okBody = `{"id":"x","object":"chat.completion","choices":[],"usage":{"prompt_tokens":3,"completion_tokens":4}}`
+	const hugeBody = `{"id":"x","object":"chat.completion","choices":[],"usage":{"prompt_tokens":9223372036854775807,"completion_tokens":9223372036854775807}}`
+	rate, err := pricing.ParseDecimal("1000000000000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dear := []pricing.Version{{ID: "synthetic-price-dear", ModelID: "synthetic-model-openai-fake-basic", ValidFrom: time.Now().Add(-time.Hour),
+		Currency: "USD", Source: "override",
+		Rates: []pricing.Rate{{Category: pricing.CategoryInput, PerMillion: rate}, {Category: pricing.CategoryOutput, PerMillion: rate}}}}
+
+	manyHeaders := http.Header{}
+	for i := 0; i < 1200; i++ {
+		manyHeaders["X-Pandokos-Metadata-Bad."+strconv.Itoa(i)] = []string{"v"}
+	}
+
+	for _, c := range []struct {
+		name    string
+		handler http.HandlerFunc
+		hdr     http.Header
+		target  func(*gateway.Target)
+		check   func(*testing.T, captured, usage.Record)
+	}{
+		{name: "1200 metadata headers", handler: rawChat(200, okBody), hdr: manyHeaders, check: func(t *testing.T, c captured, r usage.Record) {
+			if r.MetadataDropped != 1000 || c.header.Get("X-Pandokos-Metadata-Dropped") != "1000" {
+				t.Errorf("dropped %d, header %q", r.MetadataDropped, c.header.Get("X-Pandokos-Metadata-Dropped"))
+			}
+		}},
+		{name: "the longest model name and upstream id of the catalogue", handler: rawChat(200, okBody), target: func(g *gateway.Target) {
+			g.Model, g.UpstreamModel = "fake-basic", strings.Repeat("u", 256)
+		}},
+		{name: "a status outside 100-599", handler: rawChat(999, `{}`), check: func(t *testing.T, c captured, r usage.Record) {
+			if c.status != 999 || r.UpstreamStatus != 0 || r.Outcome != usage.OutcomeUpstreamError {
+				t.Errorf("status %d, recorded %d, outcome %q", c.status, r.UpstreamStatus, r.Outcome)
+			}
+		}},
+		{name: "a status of 600", handler: rawChat(600, `{}`), check: func(t *testing.T, c captured, r usage.Record) {
+			if r.UpstreamStatus != 0 {
+				t.Errorf("recorded %d", r.UpstreamStatus)
+			}
+		}},
+		{name: "a status of 599", handler: rawChat(599, `{}`), check: func(t *testing.T, c captured, r usage.Record) {
+			if r.UpstreamStatus != 599 {
+				t.Errorf("recorded %d", r.UpstreamStatus)
+			}
+		}},
+		{name: "usage and prices whose cost the column cannot hold", handler: rawChat(200, hugeBody),
+			target: func(g *gateway.Target) { g.Prices = dear },
+			check: func(t *testing.T, c captured, r usage.Record) {
+				if r.CostStatus != "unknown" || r.Cost.Reason != pricing.ReasonInconsistentUsage || r.Cost.Known {
+					t.Errorf("cost %q %+v", r.CostStatus, r.Cost)
+				}
+			}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := newRaw(t, c.handler)
+			if c.target != nil {
+				tgt := h.targets["openai/fake-basic"]
+				c.target(&tgt)
+				h.targets["openai/fake-basic"] = tgt
+			}
+			resp := h.send(t, http.MethodPost, route, chat("fake-basic", false), withHeaders(c.hdr))
+			r := h.oneRecord(t)
+			if err := r.Validate(); err != nil {
+				t.Fatalf("the record is refused (status %d): %v", resp.status, err)
+			}
+			if c.check != nil {
+				c.check(t, resp, r)
+			}
+		})
 	}
 }

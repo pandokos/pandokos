@@ -1118,3 +1118,12 @@ Changes to the design made while building, each declared and documented:
    (`cache.principal_ttl` and `cache.credential_ttl`, at most 60 s; `cache.catalog_ttl`). Documented
    in the database, keys and architecture guides; history line on ADR 0030.
 
+3. **A record built by the gateway always passes `Validate` and the table's checks** (at review).
+   Bounded values are saturated at the source: the count of dropped metadata entries stops at 1000
+   (record, log and response header), a provider status outside 100–599 is recorded as no status
+   (the call is still forwarded and logged with what the provider sent), and a cost the column
+   `numeric(38,18)` cannot hold is recorded as an unknown cost (`inconsistent_usage`). Migration 0006
+   (unreleased) widens `usage_record_model_length` to the columns the values are copied from: `model`
+   up to 128 and `upstream_model` up to 256 characters (appendix A of the plan amended); every other
+   text bound already covered its source. T-466, T-469, T-485, T-488 and a new table test
+   (`TestRecordsAlwaysValidate`) drive the gateway's record builder with adversarial input.

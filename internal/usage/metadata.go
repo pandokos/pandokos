@@ -12,13 +12,16 @@ const (
 	maxMetadata     = 8
 	maxMetadataKey  = 32
 	maxMetadataVal  = 128
+	// maxDropped is the bound of the table's count (usage_record_metadata_dropped_range): the
+	// count saturates, whatever the caller sends.
+	maxDropped = 1000
 )
 
 // ParseMetadata reads the caller metadata headers (X-Pandokos-Metadata-*) and returns the
 // entries kept and how many were dropped. The key is the rest of the header name, lower-cased,
 // of [a-z0-9][a-z0-9_-]{0,31}; the value is one value of 1 to 128 printable ASCII bytes, trimmed
 // of spaces. An entry that breaks a rule is dropped, and so are the entries after the eighth in key
-// order. The header is not modified; nothing is allocated when no header qualifies.
+// order. The count saturates at 1000. The header is not modified; nothing is allocated when no header qualifies.
 func ParseMetadata(h http.Header) (kept map[string]string, dropped int) {
 	type entry struct {
 		key, val string
@@ -61,7 +64,7 @@ func ParseMetadata(h http.Header) (kept map[string]string, dropped int) {
 		}
 		kept[e.key] = val
 	}
-	return kept, dropped
+	return kept, min(dropped, maxDropped)
 }
 
 func lowerASCII(s string) string {

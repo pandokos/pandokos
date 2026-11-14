@@ -1,6 +1,7 @@
 package usage_test
 
 import (
+	"fmt"
 	"net/http"
 	"reflect"
 	"strings"
@@ -92,6 +93,18 @@ func TestParseMetadata(t *testing.T) {
 		})
 	}
 
+	t.Run("the dropped count saturates at the bound of the table", func(t *testing.T) {
+		h := http.Header{}
+		for i := 0; i < 1200; i++ {
+			h[fmt.Sprintf("%sbad.%d", p, i)] = []string{"v"}
+		}
+		h[p+"ok"] = []string{"v"}
+		kept, dropped := usage.ParseMetadata(h)
+		if dropped != 1000 || len(kept) != 1 {
+			t.Errorf("kept %d dropped %d, want 1 and 1000", len(kept), dropped)
+		}
+	})
+
 	t.Run("no header that qualifies allocates nothing", func(t *testing.T) {
 		h := hdr("Authorization", "Bearer x", "Content-Type", "application/json", "X-Pandokos-Request-Id", "r", "X-Pandokos-Metadata-Dropped", "3")
 		allocs := testing.AllocsPerRun(100, func() { usage.ParseMetadata(h) })
@@ -137,7 +150,7 @@ func FuzzParseMetadata(f *testing.F) {
 		if len(kept) > 8 {
 			t.Fatalf("%d entries kept", len(kept))
 		}
-		if dropped < 0 {
+		if dropped < 0 || dropped > 1000 {
 			t.Fatalf("dropped %d", dropped)
 		}
 		for k, v := range kept {

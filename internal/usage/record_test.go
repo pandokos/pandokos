@@ -76,8 +76,8 @@ var violations = map[string]violation{
 	"usage_record_api_family_format":    {func(r *usage.Record) { r.APIFamily = badText }, []string{"api_family"}, badText},
 	"usage_record_operation_format":     {func(r *usage.Record) { r.Operation = badText }, []string{"operation"}, badText},
 	"usage_record_endpoint_length":      {func(r *usage.Record) { r.Endpoint = strings.Repeat("e", 64) }, []string{"endpoint"}, strings.Repeat("e", 64)},
-	"usage_record_model_length": {func(r *usage.Record) { r.UpstreamModel = strings.Repeat("m", 201) }, []string{"upstream_model", "model"},
-		strings.Repeat("m", 201)},
+	"usage_record_model_length": {func(r *usage.Record) { r.UpstreamModel = strings.Repeat("m", 257) }, []string{"upstream_model", "model"},
+		strings.Repeat("m", 257)},
 	"usage_record_outcome_valid":         {func(r *usage.Record) { r.Outcome = usage.Outcome(badText) }, []string{"outcome"}, badText},
 	"usage_record_error_code_format":     {func(r *usage.Record) { r.ErrorCode = badText }, []string{"error_code"}, badText},
 	"usage_record_upstream_status_range": {func(r *usage.Record) { r.UpstreamStatus = 777 }, []string{"upstream_status"}, "777"},
@@ -172,6 +172,18 @@ func TestValidate(t *testing.T) {
 		}
 	}
 
+	t.Run("a cost the column cannot hold", func(t *testing.T) {
+		r := testutil.ValidRecord(tid())
+		big, err := pricing.ParseDecimal("100000000000000000000") // 1e20; numeric(38,18) holds less
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.CostStatus, r.Cost = "known", pricing.Cost{Known: true, Amount: big, Currency: "USD", VersionID: "v"}
+		if err := r.Validate(); err == nil || !strings.Contains(err.Error(), "cost") {
+			t.Errorf("%v", err)
+		}
+	})
+
 	t.Run("records the gateway builds are valid", func(t *testing.T) {
 		stream := true
 		ttfb := time.Duration(0)
@@ -197,6 +209,9 @@ func TestValidate(t *testing.T) {
 			"a trace ID":                         func(r *usage.Record) { r.TraceID = strings.Repeat("ab", 16) },
 			"an upstream error":                  func(r *usage.Record) { r.Outcome, r.UpstreamStatus = usage.OutcomeUpstreamError, 503 },
 			"metadata":                           func(r *usage.Record) { r.Metadata, r.MetadataDropped = map[string]string{"team": "alpha"}, 2 },
+			"the longest upstream id and model name of the catalogue": func(r *usage.Record) {
+				r.UpstreamModel, r.Model = strings.Repeat("u", 256), strings.Repeat("m", 128)
+			},
 			"a cancelled request": func(r *usage.Record) {
 				r.Outcome, r.UpstreamStatus, r.Stream = usage.OutcomeCancelled, 0, nil
 			},

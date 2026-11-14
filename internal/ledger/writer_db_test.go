@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -214,6 +215,12 @@ func roundTripRecords(t testing.TB, tid tenant.ID, base time.Time) []usage.Recor
 			r.InputSource, r.OutputSource = usage.SourceEstimated, usage.SourceEstimated
 			r.Usage, r.Estimated = family.Usage{}, family.Usage{InputTokens: 3, OutputTokens: 0}
 			r.Cost, r.CostStatus = pricing.Cost{}, "none"
+		}),
+		mk(base.Add(5*time.Second), func(r *usage.Record) { // the bounds of the table, each at its limit
+			r.Model, r.UpstreamModel = strings.Repeat("m", 128), strings.Repeat("u", 256)
+			r.Endpoint = strings.Repeat("e", 63)
+			r.MetadataDropped = 1000
+			r.Cost = pricing.Cost{Known: true, Amount: dec(t, "99999999999999999999.999999999999999999"), Currency: "USD", VersionID: testutil.RandomUUID()}
 		}),
 	}
 }

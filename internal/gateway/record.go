@@ -105,7 +105,11 @@ func (h *Handler) recordOf(st *reqState, logOutcome string) usage.Record {
 		n := int64(st.requestBytes)
 		r.RequestBytes = &n
 	}
-	r.UpstreamStatus = st.upstreamStatus
+	// A status the table cannot hold (Go accepts any three digits) is recorded as no status;
+	// the call itself is still forwarded and logged with what the provider sent.
+	if st.upstreamStatus >= 100 && st.upstreamStatus <= 599 {
+		r.UpstreamStatus = st.upstreamStatus
+	}
 	if d, ok := st.ttfb(); ok {
 		r.TTFB = &d
 	}
@@ -137,6 +141,10 @@ func (h *Handler) recordOf(st *reqState, logOutcome string) usage.Record {
 	if r.InputSource != usage.SourceNone {
 		v, found := pricing.VersionAt(st.target.Prices, st.start)
 		r.Cost = pricing.CostOf(st.costUsage, v, found)
+		if r.Cost.Known && !usage.CostFits(r.Cost.Amount) {
+			// An amount the column cannot hold: the figures are not credible.
+			r.Cost = pricing.Cost{Reason: pricing.ReasonInconsistentUsage, Currency: v.Currency, VersionID: v.ID}
+		}
 		r.CostStatus = "unknown"
 		if r.Cost.Known {
 			r.CostStatus = "known"

@@ -102,8 +102,8 @@ func (r *Record) checks() []check {
 		{"api_family", inRange(r.APIFamily, 1, 63) && allOf(r.APIFamily, lowerAlnum+"-")},
 		{"operation", inRange(r.Operation, 1, 63) && allOf(r.Operation, lowerAlnum+"._-")},
 		{"endpoint", utf8.RuneCountInString(r.Endpoint) <= 63},
-		{"model", utf8.RuneCountInString(r.Model) <= 200},
-		{"upstream_model", utf8.RuneCountInString(r.UpstreamModel) <= 200},
+		{"model", utf8.RuneCountInString(r.Model) <= 128},
+		{"upstream_model", utf8.RuneCountInString(r.UpstreamModel) <= 256},
 		{"outcome", validOutcome(r.Outcome)},
 		{"error_code", len(r.ErrorCode) <= 40 && allOf(r.ErrorCode, "abcdefghijklmnopqrstuvwxyz_")},
 		{"upstream_status", r.UpstreamStatus == 0 || (r.UpstreamStatus >= 100 && r.UpstreamStatus <= 599)},
@@ -125,11 +125,25 @@ func (r *Record) checks() []check {
 		{"cost_status", status == "known" || status == "unknown" || status == "none"},
 		{"cost_reason", (status == "unknown") == validCostReason(r.Cost.Reason) && (status == "unknown" || r.Cost.Reason == "")},
 		{"currency", r.Cost.Currency == "" && !known || r.Cost.Currency != "" && len(r.Cost.Currency) == 3 && allOf(r.Cost.Currency, "ABCDEFGHIJKLMNOPQRSTUVWXYZ")},
-		{"cost", (status == "known") == known && (!known || (r.Cost.Amount.Sign() >= 0 && r.Cost.Currency != "" && r.Cost.VersionID != ""))},
+		{"cost", (status == "known") == known && (!known || (r.Cost.Amount.Sign() >= 0 && CostFits(r.Cost.Amount) && r.Cost.Currency != "" && r.Cost.VersionID != ""))},
 		{"cost_fallbacks", len(r.Cost.Fallbacks) <= 8},
 		{"metadata", metadataSize(r.Metadata) <= 4096},
 		{"metadata_dropped", r.MetadataDropped >= 0 && r.MetadataDropped <= 1000},
 	}
+}
+
+// maxCost is the first amount the column numeric(38,18) cannot hold.
+var maxCost = mustDecimal("100000000000000000000")
+
+// CostFits says whether the column of the cost can hold the amount.
+func CostFits(d pricing.Decimal) bool { return d.Cmp(maxCost) < 0 }
+
+func mustDecimal(s string) pricing.Decimal {
+	d, err := pricing.ParseDecimal(s)
+	if err != nil {
+		panic(err)
+	}
+	return d
 }
 
 const (
