@@ -54,6 +54,10 @@ func (c *Catalogue) Resolve(ctx context.Context, p authz.Principal, provider, mo
 	case err != nil:
 		return gateway.Target{}, err
 	}
+	snap, err := c.src.Snapshot(ctx)
+	if err != nil {
+		return gateway.Target{}, err
+	}
 	var base *url.URL
 	norm, err := catalog.ValidateEndpointURL(ep.BaseURL, ep.Private)
 	if err == nil {
@@ -65,6 +69,6 @@ func (c *Catalogue) Resolve(ctx context.Context, p authz.Principal, provider, mo
 	}
 	return gateway.Target{
 		Provider: provider, Endpoint: ep.Name, ModelID: m.ID, Model: m.Name, UpstreamModel: m.UpstreamID,
-		BaseURL: base, Private: ep.Private,
+		BaseURL: base, Private: ep.Private, Prices: snap.Versions(m.ID),
 	}, nil
 }
