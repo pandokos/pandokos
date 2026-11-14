@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"runtime/debug"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/pandokos/pandokos/internal/requestid"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/tenant"
+	"github.com/pandokos/pandokos/internal/vault"
 )
 
 const maxBodyBytes = 1048576
@@ -29,6 +31,11 @@ type Options struct {
 	DB            *store.DB            // required: the admin pool
 	Authenticator *authn.Authenticator // required: the admin authenticator
 	Now           func() time.Time     // time.Now when nil
+	// Sealer seals the secrets of credentials and creates the data keys of tenants (required).
+	Sealer *vault.Sealer
+	// Validators maps a provider identifier to the validator used for `validate: true`; a
+	// provider without one refuses `validate`.
+	Validators map[string]vault.Validator
 }
 
 type server struct {
@@ -37,6 +44,9 @@ type server struct {
 	auth    *authn.Authenticator
 	now     func() time.Time
 	limiter *failureLimiter
+	sealer  *vault.Sealer
+	// validators is a private copy of Options.Validators.
+	validators map[string]vault.Validator
 }
 
 // reqState is the state of one request, shared by the outer handler and the hooks.
@@ -45,6 +55,8 @@ type reqState struct {
 	operation string
 	principal *authz.Principal
 	errCode   adminapi.ProblemCode
+	// descriptionGiven: the body of updateCredential names the description (see peekUpdate).
+	descriptionGiven bool
 }
 
 type stateKey struct{}
@@ -67,8 +79,10 @@ func New(o Options) (http.Handler, error) {
 		return nil, errors.New("admin: DB is required")
 	case o.Authenticator == nil:
 		return nil, errors.New("admin: Authenticator is required")
+	case o.Sealer == nil:
+		return nil, errors.New("admin: Sealer is required")
 	}
-	s := &server{log: o.Logger, db: o.DB, auth: o.Authenticator, now: o.Now}
+	s := &server{log: o.Logger, db: o.DB, auth: o.Authenticator, now: o.Now, sealer: o.Sealer, validators: maps.Clone(o.Validators)}
 	if s.now == nil {
 		s.now = time.Now
 	}
@@ -161,6 +175,9 @@ func (s *server) before(ctx context.Context, r *http.Request, op *adminapi.Opera
 	default:
 		return ctx, errForbidden
 	}
+	if op.ID == "updateCredential" {
+		peekUpdate(r, st)
+	}
 	return authz.WithPrincipal(ctx, p), nil
 }
 
@@ -232,6 +249,31 @@ func (s *server) fail(w http.ResponseWriter, r *http.Request, _ *adminapi.Operat
 		code = adminapi.ProblemCodeConflict
 	case errors.Is(err, errInvalidState):
 		code = adminapi.ProblemCodeInvalidState
+	case errors.Is(err, errCredentialRejected):
+		code = adminapi.ProblemCodeCredentialRejected
+	case errors.Is(err, errValidationUnavailable):
+		code = adminapi.ProblemCodeValidationUnavailable
+	case errors.Is(err, vault.ErrUnavailable):
+		// A key-encryption key version that is not available, or a data key that does not
+		// unwrap. Nothing of the error is logged but its class and identifiers: provider errors
+		// can carry paths. The write-time counterpart of the line of section 5.10.
+		code = adminapi.ProblemCodeUnavailable
+		attrs := []any{"request_id", st.id, "operation", st.operation, "cause", "kek_unavailable"}
+		var se *vault.SealError
+		if errors.As(err, &se) {
+			attrs = []any{"request_id", st.id, "operation", st.operation, "tenant_id", se.TenantID.String()}
+			if se.CredentialID != "" {
+				attrs = append(attrs, "credential_id", se.CredentialID)
+			}
+			if se.DataKeyVersion != 0 {
+				attrs = append(attrs, "data_key_version", se.DataKeyVersion)
+			}
+			if se.KEKVersion != "" {
+				attrs = append(attrs, "kek_version", se.KEKVersion)
+			}
+			attrs = append(attrs, "cause", se.Cause)
+		}
+		s.log.Error("credential cannot be sealed", attrs...)
 	case errors.Is(err, authz.ErrUnavailable) || store.IsUnavailable(err):
 		code = adminapi.ProblemCodeUnavailable
 	default:

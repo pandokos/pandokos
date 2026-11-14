@@ -1,7 +1,7 @@
 ---
 id: EPIC-2
 title: Vault and catalogue
-status: todo
+status: in-progress
 release: v0.1
 depends_on: [EPIC-1]
 ---

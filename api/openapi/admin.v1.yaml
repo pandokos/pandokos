@@ -18,6 +18,8 @@ tags:
   - name: tenants
   - name: service-accounts
   - name: virtual-keys
+  - name: credentials
+  - name: tenant-credentials
   - name: platform-keys
 paths:
   /v1/me:
@@ -403,6 +405,357 @@ paths:
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/credentials:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: listCredentials
+      tags: [credentials]
+      summary: List the provider credentials of a tenant (metadata)
+      x-pandokos-permission: credential:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/Sort'}
+        - name: state
+          in: query
+          description: Only credentials in this state.
+          schema: {$ref: '#/components/schemas/CredentialState'}
+        - name: provider
+          in: query
+          description: Only credentials of this provider.
+          schema: {$ref: '#/components/schemas/ProviderName'}
+      responses:
+        "200": {$ref: '#/components/responses/CredentialList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: createCredential
+      tags: [credentials]
+      summary: Register a provider credential
+      description: >-
+        The secret is encrypted under the data key of the tenant and is never returned, by this
+        or by any other operation. The first credential of a provider becomes its default. With
+        validate, the secret is first presented to the provider and nothing is stored unless the
+        provider accepts it.
+      x-pandokos-permission: credential:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CredentialCreate'}
+      responses:
+        "201": {$ref: '#/components/responses/CredentialCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/CredentialRejected'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "502": {$ref: '#/components/responses/ValidationUnavailable'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/credentials/{credential}:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/Credential'}
+    get:
+      operationId: getCredential
+      tags: [credentials]
+      summary: Read the metadata of a credential
+      x-pandokos-permission: credential:read
+      responses:
+        "200": {$ref: '#/components/responses/Credential'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    patch:
+      operationId: updateCredential
+      tags: [credentials]
+      summary: Change the label, the description or the known expiry of a credential
+      x-pandokos-permission: credential:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CredentialUpdate'}
+      responses:
+        "200": {$ref: '#/components/responses/Credential'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    delete:
+      operationId: deleteCredential
+      tags: [credentials]
+      summary: Delete a credential
+      description: >-
+        Removes the row and its sealed secret; the response is the metadata as it was. Refused
+        with invalid_state while a virtual key that is neither revoked nor expired is pinned to
+        the credential, and while it is the default of a provider that has another credential
+        that is not revoked. Pins of revoked and expired keys are cleared.
+      x-pandokos-permission: credential:delete
+      responses:
+        "200": {$ref: '#/components/responses/Credential'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/credentials/{credential}/secret:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/Credential'}
+    put:
+      operationId: replaceCredentialSecret
+      tags: [credentials]
+      summary: Replace the secret of a credential
+      description: >-
+        The credential keeps its identifier, label, default flag and pins. The known expiry is
+        replaced by the one given, or cleared. A revoked credential is invalid_state.
+      x-pandokos-permission: credential:rotate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CredentialSecret'}
+      responses:
+        "200": {$ref: '#/components/responses/Credential'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/CredentialRejected'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "502": {$ref: '#/components/responses/ValidationUnavailable'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/credentials/{credential}/disable:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/Credential'}
+    post:
+      operationId: disableCredential
+      tags: [credentials]
+      summary: Disable a credential
+      description: >-
+        Takes effect on every instance within the documented bound. Disabling a disabled
+        credential changes nothing; a revoked credential is invalid_state. A disabled default
+        stays the default: calls for its provider are refused, not moved to another credential.
+      x-pandokos-permission: credential:write
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/Credential'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/credentials/{credential}/enable:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/Credential'}
+    post:
+      operationId: enableCredential
+      tags: [credentials]
+      summary: Enable a disabled credential
+      description: Enabling an active credential changes nothing; a revoked credential is invalid_state.
+      x-pandokos-permission: credential:write
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/Credential'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/credentials/{credential}/set-default:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/Credential'}
+    post:
+      operationId: setDefaultCredential
+      tags: [credentials]
+      summary: Make a credential the default of its provider
+      description: >-
+        The previous default of the provider stops being the default in the same transaction.
+        Naming the current default changes nothing; a revoked credential is invalid_state.
+      x-pandokos-permission: credential:write
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/Credential'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/credentials/{credential}/revoke:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/Credential'}
+    post:
+      operationId: revokeCredential
+      tags: [credentials]
+      summary: Revoke a credential
+      description: >-
+        Destroys the sealed secret at once and takes effect on every instance within the
+        documented bound. A revocation cannot be undone. Revoking a revoked credential changes
+        nothing. The metadata stays until the credential is deleted.
+      x-pandokos-permission: credential:delete
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/Credential'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenant-credentials/{tenant}:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: listTenantCredentials
+      tags: [tenant-credentials]
+      summary: List the credentials of a tenant as a platform administrator (metadata)
+      x-pandokos-permission: tenant_credential:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/Sort'}
+        - name: state
+          in: query
+          description: Only credentials in this state.
+          schema: {$ref: '#/components/schemas/CredentialState'}
+        - name: provider
+          in: query
+          description: Only credentials of this provider.
+          schema: {$ref: '#/components/schemas/ProviderName'}
+      responses:
+        "200": {$ref: '#/components/responses/CredentialList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenant-credentials/{tenant}/{credential}:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/Credential'}
+    get:
+      operationId: getTenantCredential
+      tags: [tenant-credentials]
+      summary: Read the metadata of a credential of a tenant as a platform administrator
+      x-pandokos-permission: tenant_credential:read
+      responses:
+        "200": {$ref: '#/components/responses/Credential'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenant-credentials/{tenant}/{credential}/disable:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/Credential'}
+    post:
+      operationId: disableTenantCredential
+      tags: [tenant-credentials]
+      summary: Disable a credential of a tenant as a platform administrator
+      description: >-
+        The reason is mandatory and is recorded in the audit log of the tenant and on the
+        credential, where the tenant reads it. The tenant can enable the credential again.
+      x-pandokos-permission: tenant_credential:revoke
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RequiredReason'}
+      responses:
+        "200": {$ref: '#/components/responses/Credential'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenant-credentials/{tenant}/{credential}/revoke:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/Credential'}
+    post:
+      operationId: revokeTenantCredential
+      tags: [tenant-credentials]
+      summary: Revoke a credential of a tenant as a platform administrator
+      description: >-
+        Destroys the sealed secret; it cannot be undone. The reason is mandatory and is recorded
+        in the audit log of the tenant and on the credential.
+      x-pandokos-permission: tenant_credential:revoke
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RequiredReason'}
+      responses:
+        "200": {$ref: '#/components/responses/Credential'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
   /v1/platform-keys:
     get:
       operationId: listPlatformKeys
@@ -514,6 +867,12 @@ components:
       required: true
       description: Key ID of a platform key (the public part of the key).
       schema: {$ref: '#/components/schemas/PlatformKeyID'}
+    Credential:
+      name: credential
+      in: path
+      required: true
+      description: Credential ID.
+      schema: {$ref: '#/components/schemas/ID'}
     Limit:
       name: limit
       in: query
@@ -600,6 +959,31 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/PlatformKeyList'}
+    Credential:
+      description: The metadata of the credential. The secret is never returned.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Credential'}
+    CredentialCreated:
+      description: The metadata of the new credential. The secret is never returned.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Credential'}
+    CredentialList:
+      description: One page of credentials (metadata).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/CredentialList'}
+    CredentialRejected:
+      description: 'The provider refused the secret; nothing was stored. Code: credential_rejected.'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    ValidationUnavailable:
+      description: 'The provider could not be asked or gave no clear answer; nothing was stored. Code: validation_unavailable.'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
     InvalidRequest:
       description: 'The request is malformed or breaks a rule of this document. Code: invalid_request.'
       content:
@@ -660,6 +1044,85 @@ components:
     PlatformKeyID:
       type: string
       pattern: '^p[a-z2-7]{16}$'
+    ProviderName:
+      type: string
+      description: Identifier of a provider. This version accepts openai and anthropic.
+      pattern: '^[a-z][a-z0-9-]{0,62}$'
+    CredentialState:
+      type: string
+      description: active, disabled (can be enabled again) or revoked (final; the sealed secret is destroyed).
+      enum: [active, disabled, revoked]
+    CredentialOwner:
+      type: string
+      description: Who owns the credential and pays the provider. Credentials of the platform come with a later version.
+      enum: [tenant]
+    CredentialActor:
+      type: string
+      description: Which side last changed the state of the credential.
+      enum: [tenant, platform]
+    Credential:
+      type: object
+      additionalProperties: false
+      required: [id, tenant_id, provider, label, description, owner, state, is_default, fingerprint, hint, state_changed_at, state_changed_by, created_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        tenant_id: {$ref: '#/components/schemas/ID'}
+        provider: {$ref: '#/components/schemas/ProviderName'}
+        label: {$ref: '#/components/schemas/Name'}
+        description: {type: string}
+        owner: {$ref: '#/components/schemas/CredentialOwner'}
+        state: {$ref: '#/components/schemas/CredentialState'}
+        is_default: {type: boolean, description: Whether calls for the provider use this credential when the key is not pinned to another.}
+        fingerprint: {type: string, description: 'Keyed hash of the secret, 32 hexadecimal characters. Equal secrets of one tenant have equal fingerprints; it cannot be computed outside Pandokos.'}
+        hint: {type: string, description: 'The last four characters of the secret; empty when the secret is shorter than 16 characters.'}
+        expires_at: {type: string, format: date-time, description: Expiry as declared by the tenant. Informative.}
+        validated_at: {type: string, format: date-time, description: When the provider last accepted the current secret.}
+        rotated_at: {type: string, format: date-time, description: When the secret was last replaced.}
+        state_changed_at: {type: string, format: date-time}
+        state_changed_by: {$ref: '#/components/schemas/CredentialActor'}
+        state_reason: {type: string, description: The reason given with the last change of state.}
+        created_at: {type: string, format: date-time}
+    CredentialCreate:
+      type: object
+      additionalProperties: false
+      required: [provider, label, secret]
+      properties:
+        provider: {$ref: '#/components/schemas/ProviderName'}
+        label: {$ref: '#/components/schemas/Name'}
+        secret: {type: string, minLength: 8, maxLength: 8192, description: 'The provider API key. Write-only: no operation returns it.'}
+        description: {type: string, maxLength: 500}
+        expires_at: {type: string, format: date-time}
+        validate: {type: boolean, description: Present the secret to the provider before storing it.}
+    CredentialUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        label: {$ref: '#/components/schemas/Name'}
+        description: {type: string, maxLength: 500}
+        expires_at: {type: [string, "null"], format: date-time}
+    CredentialSecret:
+      type: object
+      additionalProperties: false
+      required: [secret]
+      properties:
+        secret: {type: string, minLength: 8, maxLength: 8192, description: 'The new provider API key. Write-only.'}
+        expires_at: {type: string, format: date-time}
+        validate: {type: boolean, description: Present the secret to the provider before storing it.}
+    CredentialList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Credential'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    RequiredReason:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: {type: string, minLength: 1, maxLength: 500, description: Recorded in the audit log of the tenant and on the credential.}
     Sort:
       type: string
       enum: [created_at, -created_at]
@@ -696,6 +1159,8 @@ components:
         - unsupported_media_type
         - internal
         - unavailable
+        - credential_rejected
+        - validation_unavailable
     Problem:
       type: object
       description: RFC 9457 problem details with the members code, request_id and errors.
@@ -862,6 +1327,7 @@ components:
         tenant_id: {$ref: '#/components/schemas/ID'}
         service_account_id: {$ref: '#/components/schemas/ID'}
         description: {type: string}
+        credential_id: {$ref: '#/components/schemas/ID'}
         scopes:
           type: array
           description: Permissions the key is limited to. Absent means every permission of the service account's roles.
@@ -877,6 +1343,7 @@ components:
       properties:
         service_account_id: {$ref: '#/components/schemas/ID'}
         description: {type: string, maxLength: 200}
+        credential_id: {$ref: '#/components/schemas/ID'}
         scopes:
           type: array
           minItems: 1

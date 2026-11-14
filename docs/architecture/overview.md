@@ -303,7 +303,7 @@ internal/
   cli/  requestid/       API commands of the CLI; request ID shared by both listeners
   tenant/  identity/     tenants, users, service accounts, keys, roles
   catalog/  pricing/     providers, endpoints, models, prices
-  vault/                 envelope encryption, KEK providers
+  vault/                 envelope encryption, key providers, sealer, opener, validator
   limits/                counters: memory and Valkey
   ledger/  audit/        append-only writers and readers
   outbox/  billing/      event relay and destinations

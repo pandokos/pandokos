@@ -15,6 +15,7 @@ import (
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/test/apitest"
+	"github.com/pandokos/pandokos/test/fixtures"
 	"github.com/pandokos/pandokos/test/testutil"
 )
 
@@ -103,21 +104,23 @@ type step struct {
 	want func(resp *apitest.Response) []auditRow
 }
 
-// fixtures is what the steps act on.
-type fixtures struct {
+// fixt is what the steps act on.
+type fixt struct {
 	w        *world
 	platID   string // key ID of the platform key that acts
 	platName string
 	admin    adminapi.Me
 	frozen   adminapi.Tenant // suspended, with an administrator key
 	dormant  adminapi.ServiceAccount
+	spare    adminapi.Credential // an active credential that is not the default
+	off      adminapi.Credential // a disabled one
 }
 
-func newFixtures(t *testing.T, opts ...func(*admin.Options)) *fixtures {
+func newFixtures(t *testing.T, opts ...func(*admin.Options)) *fixt {
 	t.Helper()
 	w := &world{api: apitest.New(t, opts...)}
 	w.fill(t, "audited")
-	f := &fixtures{w: w, platID: w.api.PlatformKey()[4:21], platName: "apitest"}
+	f := &fixt{w: w, platID: w.api.PlatformKey()[4:21], platName: "apitest"}
 	f.admin = *me(t, w.api, w.adminKey)
 	frozen, _ := w.api.Tenant(t, "frozen")
 	if _, err := w.api.Client(w.platform).SuspendTenant(ctx(t), adminapi.SuspendTenantInput{Tenant: frozen.ID}); err != nil {
@@ -132,21 +135,37 @@ func newFixtures(t *testing.T, opts ...func(*admin.Options)) *fixtures {
 		t.Fatal(err)
 	}
 	f.dormant = *dormant
+	f.spare = w.api.Credential(t, w.tenant.ID, w.adminKey, "openai", "spare")
+	f.off = w.api.Credential(t, w.tenant.ID, w.adminKey, "anthropic", "off")
+	if _, err := w.api.Client(w.adminKey).DisableCredential(ctx(t), adminapi.DisableCredentialInput{Tenant: w.tenant.ID, Credential: f.off.ID}); err != nil {
+		t.Fatal(err)
+	}
 	return f
 }
 
-func (f *fixtures) platActor(r auditRow) auditRow {
+// kekVersion is the version of the key-encryption key that wraps the data keys of the API.
+func kekVersion(t testing.TB, api *apitest.API) string {
+	t.Helper()
+	v, _, err := api.KeyProvider.Wrap(ctx(t), make([]byte, 32), []byte("version probe"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+func (f *fixt) platActor(r auditRow) auditRow {
 	r.Log, r.ActorType, r.ActorID, r.ActorName, r.KeyID, r.Outcome = "platform", "platform", f.platID, f.platName, f.platID, "success"
 	return r
 }
 
-func (f *fixtures) tenantActor(r auditRow, tenantID string) auditRow {
+func (f *fixt) tenantActor(r auditRow, tenantID string) auditRow {
 	r.Log, r.TenantID, r.ActorType, r.ActorID, r.ActorName, r.KeyID, r.Outcome = "tenant", tenantID, "service_account", f.admin.ID, f.admin.Name, f.admin.KeyID, "success"
 	return r
 }
 
-// steps lists the twelve mutating operations, in an order in which each step finds what it needs.
-func (f *fixtures) steps(t *testing.T) []step {
+// steps lists the mutating operations (the twelve of epic 1 and the ten of sprint 2.1), in an order
+// in which each step finds what it needs.
+func (f *fixt) steps(t *testing.T) []step {
 	t.Helper()
 	w := f.w
 	tid := w.tenant.ID
@@ -157,6 +176,9 @@ func (f *fixtures) steps(t *testing.T) []step {
 	var newKey adminapi.VirtualKeyCreated
 	var newPlat adminapi.PlatformKeyCreated
 	var newTenant adminapi.TenantCreated
+	var cred1, cred2, rotated adminapi.Credential
+	var pinnedKey adminapi.VirtualKeyCreated
+	kek := kekVersion(t, w.api)
 	decode := func(resp *apitest.Response, into any) {
 		t.Helper()
 		if err := json.Unmarshal(resp.Body, into); err != nil {
@@ -221,6 +243,139 @@ func (f *fixtures) steps(t *testing.T) []step {
 				return []auditRow{f.tenantActor(auditRow{Action: "virtual_key.revoke", ResourceType: "virtual_key", ResourceID: newKey.Key.ID, RequestID: rid(r), Reason: "leaked",
 					Detail: map[string]any{"service_account_id": newSA.ID}}, tid)}
 			}},
+		// Sprint 2.1: credentials. The first is created with an expiry; a key is pinned to it and
+		// revoked; the secret is replaced; the state goes round; the default moves there and back;
+		// the platform acts on the second; the first is revoked and deleted.
+		{"createCredential",
+			func() *apitest.Response {
+				return w.api.Do(t, "POST", "/v1/tenants/"+tid+"/credentials", w.adminKey, map[string]any{
+					"provider": "openai", "label": "audited-cred", "secret": fixtures.CanaryCredential, "expires_at": rfc(exp)}, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				decode(r, &cred1)
+				return []auditRow{f.tenantActor(auditRow{Action: "credential.create", ResourceType: "credential", ResourceID: cred1.ID, RequestID: rid(r),
+					Detail: map[string]any{"provider": "openai", "label": "audited-cred", "fingerprint": cred1.Fingerprint, "hint": cred1.Hint, "is_default": false, "validated": false, "expires_at": rfc(exp)}}, tid)}
+			}},
+		{"createCredential",
+			func() *apitest.Response {
+				return w.api.Do(t, "POST", "/v1/tenants/"+tid+"/credentials", w.adminKey, map[string]any{
+					"provider": "anthropic", "label": "audited-second", "secret": "synthetic-audit-second-secret-0002"}, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				decode(r, &cred2)
+				return []auditRow{f.tenantActor(auditRow{Action: "credential.create", ResourceType: "credential", ResourceID: cred2.ID, RequestID: rid(r),
+					Detail: map[string]any{"provider": "anthropic", "label": "audited-second", "fingerprint": cred2.Fingerprint, "hint": cred2.Hint, "is_default": false, "validated": false}}, tid)}
+			}},
+		{"createVirtualKey",
+			func() *apitest.Response {
+				return w.api.Do(t, "POST", "/v1/tenants/"+tid+"/virtual-keys", w.adminKey, map[string]any{"service_account_id": newSA.ID, "credential_id": cred1.ID}, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				decode(r, &pinnedKey)
+				return []auditRow{f.tenantActor(auditRow{Action: "virtual_key.create", ResourceType: "virtual_key", ResourceID: pinnedKey.Key.ID, RequestID: rid(r),
+					Detail: map[string]any{"service_account_id": newSA.ID, "credential_id": cred1.ID}}, tid)}
+			}},
+		{"revokeVirtualKey",
+			func() *apitest.Response {
+				return w.api.Do(t, "POST", "/v1/tenants/"+tid+"/virtual-keys/"+pinnedKey.Key.ID+"/revoke", w.adminKey, nil, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				return []auditRow{f.tenantActor(auditRow{Action: "virtual_key.revoke", ResourceType: "virtual_key", ResourceID: pinnedKey.Key.ID, RequestID: rid(r),
+					Detail: map[string]any{"service_account_id": newSA.ID}}, tid)}
+			}},
+		{"updateCredential",
+			func() *apitest.Response {
+				return w.api.Do(t, "PATCH", "/v1/tenants/"+tid+"/credentials/"+cred1.ID, w.adminKey, map[string]any{
+					"label": "audited-renamed", "description": "new text", "expires_at": nil}, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				return []auditRow{f.tenantActor(auditRow{Action: "credential.update", ResourceType: "credential", ResourceID: cred1.ID, RequestID: rid(r),
+					Detail: map[string]any{
+						"label":       map[string]any{"from": "audited-cred", "to": "audited-renamed"},
+						"description": map[string]any{"from": "", "to": "new text"},
+						"expires_at":  map[string]any{"from": rfc(exp), "to": nil},
+					}}, tid)}
+			}},
+		{"replaceCredentialSecret",
+			func() *apitest.Response {
+				return w.api.Do(t, "PUT", "/v1/tenants/"+tid+"/credentials/"+cred1.ID+"/secret", w.adminKey, map[string]any{"secret": "synthetic-audit-replacement-0003"}, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				decode(r, &rotated)
+				return []auditRow{f.tenantActor(auditRow{Action: "credential.rotate", ResourceType: "credential", ResourceID: cred1.ID, RequestID: rid(r),
+					Detail: map[string]any{"provider": "openai", "label": "audited-renamed", "fingerprint": map[string]any{"from": cred1.Fingerprint, "to": rotated.Fingerprint},
+						"hint": rotated.Hint, "validated": false}}, tid)}
+			}},
+		{"disableCredential",
+			func() *apitest.Response {
+				return w.api.Do(t, "POST", "/v1/tenants/"+tid+"/credentials/"+cred1.ID+"/disable", w.adminKey, map[string]any{"reason": "lost"}, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				return []auditRow{f.tenantActor(auditRow{Action: "credential.disable", ResourceType: "credential", ResourceID: cred1.ID, RequestID: rid(r), Reason: "lost",
+					Detail: map[string]any{"provider": "openai", "label": "audited-renamed", "fingerprint": rotated.Fingerprint}}, tid)}
+			}},
+		{"enableCredential",
+			func() *apitest.Response {
+				return w.api.Do(t, "POST", "/v1/tenants/"+tid+"/credentials/"+cred1.ID+"/enable", w.adminKey, nil, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				return []auditRow{f.tenantActor(auditRow{Action: "credential.enable", ResourceType: "credential", ResourceID: cred1.ID, RequestID: rid(r),
+					Detail: map[string]any{"provider": "openai", "label": "audited-renamed", "fingerprint": rotated.Fingerprint}}, tid)}
+			}},
+		{"setDefaultCredential",
+			func() *apitest.Response {
+				return w.api.Do(t, "POST", "/v1/tenants/"+tid+"/credentials/"+cred1.ID+"/set-default", w.adminKey, nil, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				// The credential of the world is the default of openai until now.
+				return []auditRow{f.tenantActor(auditRow{Action: "credential.set_default", ResourceType: "credential", ResourceID: cred1.ID, RequestID: rid(r),
+					Detail: map[string]any{"provider": "openai", "label": "audited-renamed", "previous": w.cred.ID}}, tid)}
+			}},
+		{"setDefaultCredential",
+			func() *apitest.Response {
+				return w.api.Do(t, "POST", "/v1/tenants/"+tid+"/credentials/"+w.cred.ID+"/set-default", w.adminKey, nil, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				return []auditRow{f.tenantActor(auditRow{Action: "credential.set_default", ResourceType: "credential", ResourceID: w.cred.ID, RequestID: rid(r),
+					Detail: map[string]any{"provider": "openai", "label": "world", "previous": cred1.ID}}, tid)}
+			}},
+		{"disableTenantCredential",
+			func() *apitest.Response {
+				return w.api.Do(t, "POST", "/v1/tenant-credentials/"+tid+"/"+cred2.ID+"/disable", w.platform, map[string]any{"reason": "abuse report"}, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				row := f.platActor(auditRow{Action: "credential.disable", ResourceType: "credential", ResourceID: cred2.ID, RequestID: rid(r), Reason: "abuse report",
+					Detail: map[string]any{"provider": "anthropic", "label": "audited-second", "fingerprint": cred2.Fingerprint}})
+				row.Log, row.TenantID = "tenant", tid // the log of the tenant, with the platform as the actor
+				return []auditRow{row}
+			}},
+		{"revokeTenantCredential",
+			func() *apitest.Response {
+				return w.api.Do(t, "POST", "/v1/tenant-credentials/"+tid+"/"+cred2.ID+"/revoke", w.platform, map[string]any{"reason": "abuse confirmed"}, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				row := f.platActor(auditRow{Action: "credential.revoke", ResourceType: "credential", ResourceID: cred2.ID, RequestID: rid(r), Reason: "abuse confirmed",
+					Detail: map[string]any{"provider": "anthropic", "label": "audited-second", "fingerprint": cred2.Fingerprint}})
+				row.Log, row.TenantID = "tenant", tid
+				return []auditRow{row}
+			}},
+		{"revokeCredential",
+			func() *apitest.Response {
+				return w.api.Do(t, "POST", "/v1/tenants/"+tid+"/credentials/"+cred1.ID+"/revoke", w.adminKey, map[string]any{"reason": "leaked"}, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				return []auditRow{f.tenantActor(auditRow{Action: "credential.revoke", ResourceType: "credential", ResourceID: cred1.ID, RequestID: rid(r), Reason: "leaked",
+					Detail: map[string]any{"provider": "openai", "label": "audited-renamed", "fingerprint": rotated.Fingerprint}}, tid)}
+			}},
+		{"deleteCredential",
+			func() *apitest.Response {
+				return w.api.Do(t, "DELETE", "/v1/tenants/"+tid+"/credentials/"+cred1.ID, w.adminKey, nil, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				// Revoked, and no longer the default: the pin of the key that was revoked is cleared.
+				return []auditRow{f.tenantActor(auditRow{Action: "credential.delete", ResourceType: "credential", ResourceID: cred1.ID, RequestID: rid(r),
+					Detail: map[string]any{"provider": "openai", "label": "audited-renamed", "fingerprint": rotated.Fingerprint, "state": "revoked", "cleared_pins": float64(1)}}, tid)}
+			}},
 		{"createPlatformKey",
 			func() *apitest.Response {
 				return w.api.Do(t, "POST", "/v1/platform-keys", w.platform, map[string]any{"description": "ops", "expires_at": rfc(exp)}, nil)
@@ -261,6 +416,12 @@ func (f *fixtures) steps(t *testing.T) []step {
 						row.Log, row.TenantID = "tenant", nt
 						return row
 					}(),
+					func() auditRow {
+						row := f.platActor(auditRow{Action: "data_key.create", ResourceType: "data_key", ResourceID: "1", RequestID: rid(r),
+							Detail: map[string]any{"version": float64(1), "kek_version": kek}})
+						row.Log, row.TenantID = "tenant", nt
+						return row
+					}(),
 				}
 			}},
 		{"updateTenant",
@@ -290,7 +451,8 @@ func (f *fixtures) steps(t *testing.T) []step {
 	}
 }
 
-// TestEveryChangeIsAudited is T-281.
+// TestEveryChangeIsAudited is T-281, extended in sprint 2.1 (T-343): the ten mutating operations
+// on credentials write the rows of section 5.10, and createTenant writes data_key.create.
 func TestEveryChangeIsAudited(t *testing.T) {
 	f := newFixtures(t)
 	api := f.w.api
@@ -414,8 +576,9 @@ func TestEveryChangeIsAudited(t *testing.T) {
 	}
 }
 
-// TestAuditIsAtomic is T-282: with an audit insert that fails, every mutating operation answers
-// 500 and leaves every table as it was.
+// TestAuditIsAtomic is T-282, extended in sprint 2.1 (T-343): with an audit insert that fails,
+// every mutating operation, the credential operations too, answers 500 and leaves every table
+// as it was.
 func TestAuditIsAtomic(t *testing.T) {
 	f := newFixtures(t)
 	api := f.w.api
@@ -458,6 +621,36 @@ func TestAuditIsAtomic(t *testing.T) {
 		},
 		"revokePlatformKey": func() *apitest.Response {
 			return api.Do(t, "POST", "/v1/platform-keys/"+f.w.platformK.Key.ID+"/revoke", api.PlatformKey(), nil, nil)
+		},
+		"createCredential": func() *apitest.Response {
+			return api.Do(t, "POST", "/v1/tenants/"+tid+"/credentials", f.w.adminKey, map[string]any{"provider": "anthropic", "label": "atomic", "secret": "synthetic-atomic-secret-0001"}, nil)
+		},
+		"updateCredential": func() *apitest.Response {
+			return api.Do(t, "PATCH", "/v1/tenants/"+tid+"/credentials/"+f.spare.ID, f.w.adminKey, map[string]any{"label": "atomic-renamed", "description": "changed"}, nil)
+		},
+		"replaceCredentialSecret": func() *apitest.Response {
+			return api.Do(t, "PUT", "/v1/tenants/"+tid+"/credentials/"+f.spare.ID+"/secret", f.w.adminKey, map[string]any{"secret": "synthetic-atomic-secret-0002"}, nil)
+		},
+		"disableCredential": func() *apitest.Response {
+			return api.Do(t, "POST", "/v1/tenants/"+tid+"/credentials/"+f.spare.ID+"/disable", f.w.adminKey, nil, nil)
+		},
+		"enableCredential": func() *apitest.Response {
+			return api.Do(t, "POST", "/v1/tenants/"+tid+"/credentials/"+f.off.ID+"/enable", f.w.adminKey, nil, nil)
+		},
+		"setDefaultCredential": func() *apitest.Response {
+			return api.Do(t, "POST", "/v1/tenants/"+tid+"/credentials/"+f.spare.ID+"/set-default", f.w.adminKey, nil, nil)
+		},
+		"revokeCredential": func() *apitest.Response {
+			return api.Do(t, "POST", "/v1/tenants/"+tid+"/credentials/"+f.spare.ID+"/revoke", f.w.adminKey, nil, nil)
+		},
+		"deleteCredential": func() *apitest.Response {
+			return api.Do(t, "DELETE", "/v1/tenants/"+tid+"/credentials/"+f.spare.ID, f.w.adminKey, nil, nil)
+		},
+		"disableTenantCredential": func() *apitest.Response {
+			return api.Do(t, "POST", "/v1/tenant-credentials/"+tid+"/"+f.spare.ID+"/disable", api.PlatformKey(), map[string]any{"reason": "atomic"}, nil)
+		},
+		"revokeTenantCredential": func() *apitest.Response {
+			return api.Do(t, "POST", "/v1/tenant-credentials/"+tid+"/"+f.spare.ID+"/revoke", api.PlatformKey(), map[string]any{"reason": "atomic"}, nil)
 		},
 	}
 	for _, op := range adminapi.Operations {

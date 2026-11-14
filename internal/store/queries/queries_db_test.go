@@ -3,6 +3,7 @@ package queries_test
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"reflect"
 	"sort"
 	"testing"
@@ -36,9 +37,10 @@ func equalTime(t *testing.T, what string, got *time.Time, want *time.Time) {
 	}
 }
 
-// TestEveryStatement is T-230: each of the 28 generated methods is called through a store
-// helper, directly and through the pooler. Identifiers, times, null times, arrays, null arrays,
-// hashes and JSON go in and come back unchanged.
+// TestEveryStatement is T-230, extended by T-323: each of the 47 generated methods (28 of epic 1
+// and the 19 of sprint 2.1) is called through a store helper, directly and through the pooler.
+// Identifiers, times, null times, arrays, null arrays, hashes, sealed bytes and JSON go in and
+// come back unchanged.
 func TestEveryStatement(t *testing.T) {
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		called := map[string]bool{}
@@ -421,7 +423,10 @@ func TestEveryStatement(t *testing.T) {
 			t.Errorf("platform audit rows: %d %v", n, err)
 		}
 
-		// The 28 statements, and nothing was prepared on the server.
+		// Sprint 2.1: key-encryption key versions, data keys, credentials and the pin of a key.
+		vaultStatements(c, t, admin, gateway, tid, ten.ID, sa.ID, hash, called)
+
+		// The 47 statements, and nothing was prepared on the server.
 		var names []string
 		typ := reflect.TypeOf(&queries.Queries{})
 		for i := 0; i < typ.NumMethod(); i++ {
@@ -430,8 +435,8 @@ func TestEveryStatement(t *testing.T) {
 			}
 		}
 		sort.Strings(names)
-		if len(names) != 28 {
-			t.Errorf("the generated package has %d statements, want 28: %v", len(names), names)
+		if len(names) != 47 {
+			t.Errorf("the generated package has %d statements, want 47: %v", len(names), names)
 		}
 		for _, name := range names {
 			if !called[name] {
@@ -453,4 +458,266 @@ func TestEveryStatement(t *testing.T) {
 			}
 		}
 	})
+}
+
+// vaultStatements is the part of T-323 that covers the vault and credential statements.
+func vaultStatements(c context.Context, t *testing.T, admin, gateway *store.DB, tid tenant.ID, tenantID, serviceAccountID string, hash []byte, called map[string]bool) {
+	t.Helper()
+	mark := func(name string) { called[name] = true }
+	must := func(what string, err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatalf("%s: %v", what, err)
+		}
+	}
+	random := func(n int) []byte {
+		b := make([]byte, n)
+		if _, err := rand.Read(b); err != nil {
+			t.Fatal(err)
+		}
+		b[0], b[1], b[2] = 0x00, '\\', '\'' // bytes that text protocols mangle
+		return b
+	}
+	const kek = "local-0123456789abcdef"
+	wrapped, sealed1, sealed2 := random(61), random(48), random(52)
+	expires := usec(time.Now().Add(72 * time.Hour))
+	var c1, c2, c3 queries.CreateCredentialRow
+
+	must("vault statements", admin.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
+		q := queries.New(tx)
+		mark("RegisterKEKVersion")
+		for i := 0; i < 2; i++ { // the second call changes nothing
+			if err := q.RegisterKEKVersion(c, queries.RegisterKEKVersionParams{ID: kek, Provider: "local"}); err != nil {
+				return err
+			}
+		}
+		mark("ListKEKVersions")
+		versions, err := q.ListKEKVersions(c)
+		if err != nil || !reflect.DeepEqual(versions, []queries.ListKEKVersionsRow{{ID: kek, Provider: "local"}}) {
+			t.Errorf("ListKEKVersions: %+v %v", versions, err)
+		}
+		mark("CreateDataKey")
+		if n, err := q.CreateDataKey(c, queries.CreateDataKeyParams{TenantID: tenantID, Version: 1, KekVersion: kek, WrappedKey: wrapped}); err != nil || n != 1 {
+			t.Errorf("CreateDataKey: %d %v", n, err)
+		}
+		if n, err := q.CreateDataKey(c, queries.CreateDataKeyParams{TenantID: tenantID, Version: 1, KekVersion: kek, WrappedKey: random(61)}); err != nil || n != 0 {
+			t.Errorf("a second CreateDataKey of the same version: %d %v, want 0 rows and no error", n, err)
+		}
+		mark("GetDataKey")
+		dk, err := q.GetDataKey(c, 1)
+		if err != nil || dk.Version != 1 || dk.KekVersion != kek || !reflect.DeepEqual(dk.WrappedKey, wrapped) {
+			t.Errorf("GetDataKey: %+v %v (the first writer wins and the bytes come back unchanged)", dk, err)
+		}
+		if _, err := q.GetDataKey(c, 2); !errors.Is(err, store.ErrNoRows) {
+			t.Errorf("GetDataKey of a version that does not exist: %v", err)
+		}
+
+		mark("NewCredentialID")
+		id1, err := q.NewCredentialID(c)
+		if err != nil || len(id1) != 36 {
+			t.Fatalf("NewCredentialID: %q %v", id1, err)
+		}
+		time.Sleep(3 * time.Millisecond) // the order of identifiers is the order of milliseconds
+		id2, _ := q.NewCredentialID(c)
+		time.Sleep(3 * time.Millisecond)
+		id3, _ := q.NewCredentialID(c)
+		if id1 == id2 || id2 == id3 || id1 >= id2 || id2 >= id3 {
+			t.Errorf("identifiers are not new and increasing: %s %s %s", id1, id2, id3)
+		}
+		mark("CreateCredential")
+		base := queries.CreateCredentialParams{TenantID: tenantID, KeyVersion: 1}
+		p1, p2, p3 := base, base, base
+		p1.ID, p1.Provider, p1.Label, p1.Description, p1.Secret, p1.Fingerprint, p1.Hint, p1.ExpiresAt, p1.Validated =
+			id1, "openai", "main", "the first, ünï", sealed1, "0123456789abcdef0123456789abcdef", "wxyz", &expires, true
+		p2.ID, p2.Provider, p2.Label, p2.Secret, p2.Fingerprint = id2, "openai", "second", sealed2, "fedcba9876543210fedcba9876543210"
+		p3.ID, p3.Provider, p3.Label, p3.Secret, p3.Fingerprint = id3, "anthropic", "claude", sealed1, "00112233445566778899aabbccddeeff"
+		if c1, err = q.CreateCredential(c, p1); err != nil {
+			return err
+		}
+		if c2, err = q.CreateCredential(c, p2); err != nil {
+			return err
+		}
+		if c3, err = q.CreateCredential(c, p3); err != nil {
+			return err
+		}
+		equalTime(t, "expires_at", c1.ExpiresAt, &expires)
+		if !c1.IsDefault || c2.IsDefault || !c3.IsDefault {
+			t.Errorf("defaults: %v %v %v, want the first credential of each provider only", c1.IsDefault, c2.IsDefault, c3.IsDefault)
+		}
+		if c1.State != "active" || c1.Provider != "openai" || c1.Label != "main" || c1.Description != "the first, ünï" || c1.Fingerprint != p1.Fingerprint || c1.Hint != "wxyz" ||
+			c1.ValidatedAt == nil || c1.RotatedAt != nil || c1.StateChangedBy != "tenant" || c1.StateReason != "" || c1.TenantID != tenantID || c1.KeyVersion != 1 {
+			t.Errorf("CreateCredential: %+v", c1)
+		}
+		if c2.ValidatedAt != nil || c2.ExpiresAt != nil || c2.Hint != "" {
+			t.Errorf("CreateCredential (not validated, no expiry): %+v", c2)
+		}
+
+		mark("GetCredential")
+		got, err := q.GetCredential(c, id1)
+		if err != nil || got.ID != id1 || got.Label != "main" || got.Fingerprint != p1.Fingerprint || !got.IsDefault || got.Hint != "wxyz" || got.ValidatedAt == nil {
+			t.Errorf("GetCredential: %+v %v", got, err)
+		}
+		if _, err := q.GetCredential(c, "0192f0f0-0000-7000-8000-000000000bad"); !errors.Is(err, store.ErrNoRows) {
+			t.Errorf("GetCredential of a credential that does not exist: %v", err)
+		}
+		mark("ListCredentials")
+		for _, sortBy := range []string{"created_at", "-created_at"} {
+			all, err := q.ListCredentials(c, queries.ListCredentialsParams{AfterID: zeroID, Sort: sortBy, PageSize: 10})
+			if err != nil || len(all) != 3 {
+				t.Fatalf("ListCredentials %s: %d rows, %v", sortBy, len(all), err)
+			}
+			want := map[string]string{"created_at": id1, "-created_at": id3}[sortBy]
+			if all[0].ID != want {
+				t.Errorf("ListCredentials %s: first is %s, want %s", sortBy, all[0].ID, want)
+			}
+			next, err := q.ListCredentials(c, queries.ListCredentialsParams{Sort: sortBy, PageSize: 10, After: true, AfterID: all[0].ID})
+			if err != nil || len(next) != 2 || next[0].ID != all[1].ID {
+				t.Errorf("ListCredentials %s after the first: %+v %v", sortBy, next, err)
+			}
+		}
+		if byProvider, err := q.ListCredentials(c, queries.ListCredentialsParams{AfterID: zeroID, Sort: "created_at", PageSize: 10, Provider: "openai", State: "active"}); err != nil || len(byProvider) != 2 {
+			t.Errorf("ListCredentials by provider and state: %+v %v", byProvider, err)
+		}
+		if none, err := q.ListCredentials(c, queries.ListCredentialsParams{AfterID: zeroID, Sort: "created_at", PageSize: 10, State: "revoked"}); err != nil || len(none) != 0 {
+			t.Errorf("ListCredentials by another state: %+v %v", none, err)
+		}
+		if one, err := q.ListCredentials(c, queries.ListCredentialsParams{AfterID: zeroID, Sort: "created_at", PageSize: 1}); err != nil || len(one) != 1 {
+			t.Errorf("ListCredentials with a page size of 1: %+v %v", one, err)
+		}
+		mark("LockCredential")
+		lock, err := q.LockCredential(c, id1)
+		if err != nil || lock != (queries.LockCredentialRow{ID: id1, Provider: "openai", Label: "main", State: "active", IsDefault: true, Fingerprint: p1.Fingerprint, Hint: "wxyz"}) {
+			t.Errorf("LockCredential: %+v %v", lock, err)
+		}
+		mark("UpdateCredential")
+		upd, err := q.UpdateCredential(c, queries.UpdateCredentialParams{ID: id2, SetLabel: true, Label: "renamed", SetExpiresAt: true, ExpiresAt: &expires})
+		if err != nil || upd.Label != "renamed" || upd.Description != "" {
+			t.Errorf("UpdateCredential (label and expiry): %+v %v", upd, err)
+		}
+		equalTime(t, "expires_at after the update", upd.ExpiresAt, &expires)
+		upd, err = q.UpdateCredential(c, queries.UpdateCredentialParams{ID: id2, SetDescription: true, Description: "d, é", SetExpiresAt: true, ExpiresAt: nil})
+		if err != nil || upd.Label != "renamed" || upd.Description != "d, é" || upd.ExpiresAt != nil {
+			t.Errorf("UpdateCredential (description, expiry cleared): %+v %v", upd, err)
+		}
+		if upd, err = q.UpdateCredential(c, queries.UpdateCredentialParams{ID: id2}); err != nil || upd.Label != "renamed" || upd.Description != "d, é" {
+			t.Errorf("an update that sets nothing: %+v %v", upd, err)
+		}
+		mark("ReplaceCredentialSecret")
+		rep, err := q.ReplaceCredentialSecret(c, queries.ReplaceCredentialSecretParams{ID: id1, KeyVersion: 1, Secret: sealed2, Fingerprint: p2.Fingerprint, Hint: "abcd", Validated: false})
+		if err != nil || rep.Fingerprint != p2.Fingerprint || rep.Hint != "abcd" || rep.RotatedAt == nil || rep.ValidatedAt != nil || rep.ExpiresAt != nil {
+			t.Errorf("ReplaceCredentialSecret: %+v %v (rotated_at is set, validated_at and the expiry are cleared)", rep, err)
+		}
+		if rep, err = q.ReplaceCredentialSecret(c, queries.ReplaceCredentialSecretParams{ID: id1, KeyVersion: 1, Secret: sealed1, Fingerprint: p1.Fingerprint, Hint: "wxyz", ExpiresAt: &expires, Validated: true}); err != nil ||
+			rep.ValidatedAt == nil || rep.ExpiresAt == nil || rep.Fingerprint != p1.Fingerprint {
+			t.Errorf("ReplaceCredentialSecret (validated, with an expiry): %+v %v", rep, err)
+		}
+		mark("SetCredentialState")
+		st, err := q.SetCredentialState(c, queries.SetCredentialStateParams{ID: id3, State: "disabled", ChangedBy: "platform", Reason: "abuse, ünï"})
+		if err != nil || st.State != "disabled" || st.StateChangedBy != "platform" || st.StateReason != "abuse, ünï" {
+			t.Errorf("SetCredentialState: %+v %v", st, err)
+		}
+		if st, err = q.SetCredentialState(c, queries.SetCredentialStateParams{ID: id3, State: "active", ChangedBy: "tenant"}); err != nil || st.State != "active" || st.StateReason != "" {
+			t.Errorf("SetCredentialState back: %+v %v", st, err)
+		}
+		mark("ClearDefaultCredential")
+		cleared, err := q.ClearDefaultCredential(c, "openai")
+		if err != nil || cleared != id1 {
+			t.Errorf("ClearDefaultCredential: %q %v, want %s", cleared, err, id1)
+		}
+		if _, err := q.ClearDefaultCredential(c, "openai"); !errors.Is(err, store.ErrNoRows) {
+			t.Errorf("ClearDefaultCredential when there is none: %v", err)
+		}
+		mark("SetDefaultCredential")
+		def, err := q.SetDefaultCredential(c, id2)
+		if err != nil || !def.IsDefault || def.ID != id2 {
+			t.Errorf("SetDefaultCredential: %+v %v", def, err)
+		}
+		mark("CountOtherCredentials")
+		if n, err := q.CountOtherCredentials(c, queries.CountOtherCredentialsParams{Provider: "openai", ID: id2}); err != nil || n != 1 {
+			t.Errorf("CountOtherCredentials: %d %v, want 1", n, err)
+		}
+		if n, err := q.CountOtherCredentials(c, queries.CountOtherCredentialsParams{Provider: "anthropic", ID: id3}); err != nil || n != 0 {
+			t.Errorf("CountOtherCredentials of a provider with one credential: %d %v", n, err)
+		}
+
+		mark("CountUsablePins")
+		if n, err := q.CountUsablePins(c, id2); err != nil || n != 0 {
+			t.Errorf("CountUsablePins with no key: %d %v", n, err)
+		}
+		pin := id2
+		k1, err := q.CreateVirtualKey(c, queries.CreateVirtualKeyParams{TenantID: tenantID, ServiceAccountID: serviceAccountID, KeyID: "tpinnedkeyaaaaaaa", SecretHash: hash, CredentialID: &pin})
+		if err != nil {
+			return err
+		}
+		if k1.CredentialID == nil || *k1.CredentialID != id2 {
+			t.Errorf("CreateVirtualKey returned the pin %v, want %s", k1.CredentialID, id2)
+		}
+		if gk, err := q.GetVirtualKey(c, "tpinnedkeyaaaaaaa"); err != nil || gk.CredentialID == nil || *gk.CredentialID != id2 {
+			t.Errorf("GetVirtualKey: pin %v %v", gk.CredentialID, err)
+		}
+		list, err := q.ListVirtualKeys(c, queries.ListVirtualKeysParams{AfterID: zeroID, ServiceAccountID: zeroID, Sort: "-created_at", PageSize: 1})
+		if err != nil || len(list) != 1 || list[0].CredentialID == nil || *list[0].CredentialID != id2 {
+			t.Errorf("ListVirtualKeys: %+v %v", list, err)
+		}
+		if n, err := q.CountUsablePins(c, id2); err != nil || n != 1 {
+			t.Errorf("CountUsablePins with a usable key: %d %v, want 1", n, err)
+		}
+		if n, err := q.RevokeVirtualKey(c, "tpinnedkeyaaaaaaa"); err != nil || n != 1 {
+			t.Fatalf("revoke: %d %v", n, err)
+		}
+		if n, err := q.CountUsablePins(c, id2); err != nil || n != 0 {
+			t.Errorf("CountUsablePins with a revoked key: %d %v, want 0", n, err)
+		}
+		return nil
+	}))
+
+	// The gateway reads the sealed secret in the tenant's session: the two ForUse statements.
+	must("gateway statements", gateway.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
+		q := queries.New(tx)
+		var id1, id2 string
+		if err := tx.QueryRow(c, `SELECT id::text FROM pandokos.provider_credential WHERE label = 'main'`).Scan(&id1); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(c, `SELECT id::text FROM pandokos.provider_credential WHERE label = 'renamed'`).Scan(&id2); err != nil {
+			return err
+		}
+		mark("GetCredentialForUse")
+		got, err := q.GetCredentialForUse(c, id1)
+		if err != nil || got.ID != id1 || got.Provider != "openai" || got.Label != "main" || got.State != "active" || got.KeyVersion != 1 ||
+			!reflect.DeepEqual(got.Secret, sealed1) || got.Fingerprint != "0123456789abcdef0123456789abcdef" {
+			t.Errorf("GetCredentialForUse: %+v %v (the sealed bytes come back unchanged)", got, err)
+		}
+		if _, err := q.GetCredentialForUse(c, "0192f0f0-0000-7000-8000-000000000bad"); !errors.Is(err, store.ErrNoRows) {
+			t.Errorf("GetCredentialForUse of a credential that does not exist: %v", err)
+		}
+		mark("GetDefaultCredentialForUse")
+		def, err := q.GetDefaultCredentialForUse(c, "openai")
+		if err != nil || def.ID != id2 || def.Label != "renamed" || !reflect.DeepEqual(def.Secret, sealed2) {
+			t.Errorf("GetDefaultCredentialForUse: %+v %v, want the credential that was made the default", def, err)
+		}
+		if _, err := q.GetDefaultCredentialForUse(c, "no-such-provider"); !errors.Is(err, store.ErrNoRows) {
+			t.Errorf("GetDefaultCredentialForUse of a provider with no credential: %v", err)
+		}
+		if dk, err := q.GetDataKey(c, 1); err != nil || !reflect.DeepEqual(dk.WrappedKey, wrapped) {
+			t.Errorf("the gateway reads the data key: %v", err)
+		}
+		return nil
+	}))
+
+	// The last statement of the list: the credential goes, and with it its sealed secret.
+	must("delete", admin.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
+		q := queries.New(tx)
+		var victim string
+		if err := tx.QueryRow(c, `SELECT id::text FROM pandokos.provider_credential_metadata WHERE provider = 'anthropic'`).Scan(&victim); err != nil {
+			return err
+		}
+		mark("DeleteCredential")
+		if n, err := q.DeleteCredential(c, victim); err != nil || n != 1 {
+			t.Errorf("DeleteCredential: %d %v", n, err)
+		}
+		if n, err := q.DeleteCredential(c, victim); err != nil || n != 0 {
+			t.Errorf("a second DeleteCredential: %d %v", n, err)
+		}
+		return nil
+	}))
 }

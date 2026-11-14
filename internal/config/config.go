@@ -44,6 +44,7 @@ type Config struct {
 	Shutdown  Shutdown  `yaml:"shutdown"`
 	Cache     Cache     `yaml:"cache"`
 	Database  Database  `yaml:"database"`
+	Vault     Vault     `yaml:"vault"`
 	Skeleton  Skeleton  `yaml:"skeleton"`
 }
 
@@ -86,9 +87,29 @@ type ListenerTLS struct {
 	Certificate *tls.Certificate `yaml:"-"` // filled by Load when the purpose is serve and both files are set
 }
 
-// Cache configures the principal cache of the gateway.
+// Cache configures the caches of the gateway.
 type Cache struct {
-	PrincipalTTL Duration `yaml:"principal_ttl"`
+	PrincipalTTL  Duration `yaml:"principal_ttl"`
+	CredentialTTL Duration `yaml:"credential_ttl"`
+	DataKeyTTL    Duration `yaml:"data_key_ttl"`
+}
+
+// Vault configures the credential vault.
+type Vault struct {
+	KEK VaultKEK `yaml:"kek"`
+}
+
+// VaultKEK configures the key-encryption key.
+type VaultKEK struct {
+	Provider string        `yaml:"provider"`
+	Local    VaultKEKLocal `yaml:"local"`
+}
+
+// VaultKEKLocal configures the local key provider: a key file.
+type VaultKEKLocal struct {
+	KeyFile string `yaml:"key_file"`
+
+	Key secret.Secret `yaml:"-"` // filled by Load when the purpose is serve
 }
 
 // Limits configures request limits.
@@ -228,7 +249,12 @@ func Defaults() *Config {
 		},
 		Upstream: Upstream{ConnectTimeout: Duration(10 * time.Second)},
 		Shutdown: Shutdown{DrainTimeout: Duration(30 * time.Second)},
-		Cache:    Cache{PrincipalTTL: Duration(30 * time.Second)},
+		Cache: Cache{
+			PrincipalTTL:  Duration(30 * time.Second),
+			CredentialTTL: Duration(30 * time.Second),
+			DataKeyTTL:    Duration(5 * time.Minute),
+		},
+		Vault: Vault{KEK: VaultKEK{Provider: "local"}},
 		Database: Database{
 			Name:           "pandokos",
 			TLS:            DatabaseTLS{Mode: "verify-full"},

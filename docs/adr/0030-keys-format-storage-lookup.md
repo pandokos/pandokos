@@ -29,3 +29,7 @@ Two round trips on a cache miss; behind a transaction pooler the listener needs 
 ## Alternatives considered
 
 The tenant ID inside the key (no directory, longer key, tenant visible in the key); a policy for the owner on `virtual_key`; one key table with a nullable tenant; a cache on the admin API.
+
+## History
+
+- 2026-11: sprint 2.1 adds the payload `vault:<tenant>`, which the principal cache ignores.

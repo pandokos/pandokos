@@ -59,12 +59,16 @@ type vkRow struct {
 	ExpiresAt, RevokedAt                           *time.Time
 	CreatedAt                                      time.Time
 	State                                          string
+	CredentialID                                   *string
 }
 
 func (r vkRow) out() adminapi.VirtualKey {
 	k := adminapi.VirtualKey{
 		ID: r.KeyID, TenantID: r.TenantID, ServiceAccountID: r.ServiceAccountID, Description: r.Description,
 		State: adminapi.KeyState(r.State), ExpiresAt: utc(r.ExpiresAt), RevokedAt: utc(r.RevokedAt), CreatedAt: r.CreatedAt.UTC(),
+	}
+	if r.CredentialID != nil {
+		k.CredentialID = *r.CredentialID
 	}
 	if r.Scoped {
 		k.Scopes = nonNil(r.Scopes)
@@ -84,5 +88,20 @@ func (r pkRow) out() adminapi.PlatformKey {
 	return adminapi.PlatformKey{
 		ID: r.KeyID, Description: r.Description, Role: r.Role, Bootstrap: r.Bootstrap, State: adminapi.KeyState(r.State),
 		ExpiresAt: utc(r.ExpiresAt), RevokedAt: utc(r.RevokedAt), CreatedAt: r.CreatedAt.UTC(),
+	}
+}
+
+// credRow is the metadata of a credential: every row shape that sqlc generates for the
+// statements of credentials has these members and no other, so each converts to it directly.
+// The sealed secret is not among them and no statement of the admin role can return it.
+type credRow = queries.PandokosProviderCredentialMetadatum
+
+func credentialOut(r credRow) adminapi.Credential {
+	return adminapi.Credential{
+		ID: r.ID, TenantID: r.TenantID, Provider: r.Provider, Label: r.Label, Description: r.Description,
+		Owner: adminapi.CredentialOwnerTenant, State: adminapi.CredentialState(r.State), IsDefault: r.IsDefault,
+		Fingerprint: r.Fingerprint, Hint: r.Hint, ExpiresAt: utc(r.ExpiresAt), ValidatedAt: utc(r.ValidatedAt), RotatedAt: utc(r.RotatedAt),
+		StateChangedAt: r.StateChangedAt.UTC(), StateChangedBy: adminapi.CredentialActor(r.StateChangedBy), StateReason: r.StateReason,
+		CreatedAt: r.CreatedAt.UTC(),
 	}
 }

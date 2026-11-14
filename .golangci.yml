@@ -142,6 +142,37 @@ linters:
             - github.com/pandokos/pandokos/internal/adminapi
             - github.com/pandokos/pandokos/internal/secret
             - github.com/pandokos/pandokos/internal/buildinfo
+        vault-is-below-the-planes:
+          list-mode: lax
+          files:
+            - "**/internal/vault/**"
+          deny:
+            - pkg: github.com/pandokos/pandokos/internal/admin
+              desc: the vault is used by the planes and does not know them
+            - pkg: github.com/pandokos/pandokos/internal/adminapi
+              desc: the vault is used by the planes and does not know them
+            - pkg: github.com/pandokos/pandokos/internal/gateway
+              desc: the vault is used by the planes and does not know them
+            - pkg: github.com/pandokos/pandokos/internal/family
+              desc: the vault is used by the planes and does not know them
+            - pkg: github.com/pandokos/pandokos/internal/server
+              desc: the vault does not know the server
+            - pkg: github.com/pandokos/pandokos/internal/cli
+              desc: the vault does not know the CLI
+            - pkg: github.com/pandokos/pandokos/internal/config
+              desc: the vault receives plain values
+        encryption-only-in-vault:
+          list-mode: lax
+          files:
+            - $all
+            - "!**/internal/vault/**"
+          deny:
+            - pkg: crypto/aes
+              desc: sealing and unsealing live in internal/vault only (ADR 0008)
+            - pkg: crypto/cipher
+              desc: sealing and unsealing live in internal/vault only (ADR 0008)
+            - pkg: crypto/hkdf
+              desc: key derivation lives in internal/vault only (ADR 0008)
     forbidigo:
       forbid:
         - pattern: '^(fmt\.Print(|f|ln)|print|println)$'

@@ -6,6 +6,7 @@ package container
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"io"
 	"net"
 	"net/http"
@@ -73,11 +74,23 @@ func TestImage(t *testing.T) {
 			"-e", "PANDOKOS_DATABASE_"+strings.ToUpper(role)+"_PASSWORD_FILE=/run/secrets/db_"+role,
 		)
 	}
+	// The key-encryption key: a file of mode 0444, so that the user of the image can read it
+	// through the read-only mount; the warning about the mode is expected and asserted.
+	kekBytes, err := os.ReadFile(testutil.WriteKEK(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "pandokos_kek"), kekBytes, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(dir, "pandokos_kek"), 0o444); err != nil {
+		t.Fatal(err)
+	}
 	hardened := []string{"--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--network", "host", "-v", dir + ":/run/secrets:ro"}
 
 	// The image creates the schema with its migrate command.
 	migrateArgs := append(append([]string{"run", "--rm"}, hardened...), dbEnv...)
-	if out := docker(t, append(migrateArgs, image, "migrate")...); !strings.Contains(out, "schema is at version 2") {
+	if out := docker(t, append(migrateArgs, image, "migrate")...); !strings.Contains(out, "schema is at version 3") {
 		t.Fatalf("migrate output: %q", out)
 	}
 
@@ -113,6 +126,7 @@ func TestImage(t *testing.T) {
 		"-e", "PANDOKOS_LISTENERS_ADMIN_ADDRESS="+adminAddr,
 		"-e", "PANDOKOS_SKELETON_OPENAI_API_KEY_FILE=/run/secrets/openai_api_key",
 		"-e", "PANDOKOS_SKELETON_OPENAI_BASE_URL="+up.BaseURL(),
+		"-e", "PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE=/run/secrets/pandokos_kek",
 		image)
 	id := docker(t, serveArgs...)
 	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", id).Run() })
@@ -170,6 +184,18 @@ func TestImage(t *testing.T) {
 		t.Errorf("exit code %s", code)
 	}
 	logs := docker(t, "logs", id)
+	// The key was read, the version is announced, and the mode of the file is warned about (T-362).
+	if !strings.Contains(logs, `"msg":"vault ready"`) || !strings.Contains(logs, `"kek_provider":"local"`) {
+		t.Errorf("the container did not log `vault ready`:\n%s", logs)
+	}
+	if !strings.Contains(logs, `"msg":"configuration warning"`) || !strings.Contains(logs, `"key":"vault.kek.local.key_file"`) {
+		t.Errorf("no warning about the mode of the key file in the container logs:\n%s", logs)
+	}
+	line := strings.TrimSpace(string(kekBytes))
+	testutil.AssertAbsent(t, "container logs", logs, testutil.SecretForms(line)...)
+	if raw, err := base64.StdEncoding.DecodeString(line); err == nil {
+		testutil.AssertAbsent(t, "container logs", logs, testutil.SecretForms(string(raw))...)
+	}
 	testutil.AssertNoCanary(t, "container logs", logs)
 	testutil.AssertAbsent(t, "container logs", logs, d.Passwords()...)
 	for _, k := range []string{m[1], tm[1], inferenceKey} {

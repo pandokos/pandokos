@@ -67,12 +67,13 @@ func writeConfig(t *testing.T, content string) string {
 	return p
 }
 
-// secretEnv is a valid environment for the serve purpose: the provider key and the database
+// secretEnv is a valid environment for the serve purpose: the provider key, the key-encryption key file and the database
 // settings, with the three runtime password files.
 func secretEnv(t *testing.T) []string {
 	t.Helper()
 	return []string{
 		"PANDOKOS_SKELETON_OPENAI_API_KEY_FILE=" + testutil.WriteSecret(t, "key", fixtures.CanaryProviderKey),
+		"PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE=" + testutil.WriteKEK(t),
 		"PANDOKOS_DATABASE_ADDRESS=127.0.0.1:5432",
 		"PANDOKOS_DATABASE_TLS_MODE=disable",
 		"PANDOKOS_DATABASE_GATEWAY_PASSWORD_FILE=" + testutil.WriteSecret(t, "db_gateway", "pw-gateway-test"),
@@ -298,6 +299,9 @@ func TestInitAndClientUsage(t *testing.T) {
 			"service-account list|create|get|update|disable|enable",
 			"key list|create|get|revoke",
 			"platform-key list|create|get|revoke",
+			"credential list|create|get|update|replace|disable|enable|set-default|revoke|delete",
+			"tenant-credential list|get|disable|revoke",
+			"kek generate --out FILE",
 			"Administer through the administration API;",
 			`"pandokos <command> --help" lists the flags`,
 			"config check [--config FILE] [--for serve|migrate|init]",
@@ -313,8 +317,9 @@ func TestInitAndClientUsage(t *testing.T) {
 	})
 	t.Run("a command group needs a sub-command", func(t *testing.T) {
 		for _, args := range [][]string{
-			{"tenant"}, {"service-account"}, {"key"}, {"platform-key"},
+			{"tenant"}, {"service-account"}, {"key"}, {"platform-key"}, {"credential"}, {"tenant-credential"}, {"kek"},
 			{"tenant", "frobnicate"}, {"key", "delete"}, {"platform-key", "list", "extra"},
+			{"credential", "frobnicate"}, {"tenant-credential", "create"}, {"kek", "rotate"},
 		} {
 			code, out, errs := runCmd(t, nil, args...)
 			if code != 2 || out != "" || errs == "" {

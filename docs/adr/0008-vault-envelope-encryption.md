@@ -67,3 +67,7 @@ logs and statistics.
 
 **A general cryptography framework with key-set management.** Adds dependencies for a narrow use
 of one AEAD and one key hierarchy.
+
+## History
+
+- 2026-11: sprint 2.1 fixes formats, derived subkeys, key identifiers and cache numbers (ADR 0033) and the credential model (ADR 0034).

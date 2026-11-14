@@ -40,11 +40,20 @@ docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
   -e PANDOKOS_DATABASE_ADMIN_PASSWORD_FILE=/run/secrets/db_admin \
   -e PANDOKOS_DATABASE_WORKER_USER=acme_worker \
   -e PANDOKOS_DATABASE_WORKER_PASSWORD_FILE=/run/secrets/db_worker \
+  -e PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE=/run/secrets/pandokos_kek \
   -e PANDOKOS_SKELETON_OPENAI_API_KEY_FILE=/run/secrets/openai_api_key \
   ghcr.io/pandokos/pandokos:<version>
 ```
 
 `serve` never reads the owner's password file.
+
+**The key-encryption key.** `serve` needs the key file of the vault ([vault guide](vault.md)): create it
+once with `pandokos kek generate --out ./secrets/pandokos_kek` and mount it like the other secrets. The
+image runs as user 65532, so the file must be readable by that user: mode 0444 in a read-only mount
+that only you can reach, or mode 0440 with the group set through `--group-add` or `fsGroup`. Any
+permission for other users makes `serve` log the warning `configuration warning` for
+`vault.kek.local.key_file`; it still starts. The key is never in the image and never in a
+configuration file. Keep a copy of it separately from the database backups.
 
 ## The administration API
 
@@ -180,6 +189,10 @@ The SBOM is generated from the amd64 variant and attested against the image inde
 dependencies are the same on both platforms.
 
 ## Limits of this pre-release
+
+Provider credentials are stored encrypted (sprint 2.1), but the inference listener does not use them
+yet: it still sends the single provider key of the `skeleton` configuration.
+
 
 One static access token shared by all callers, no rotation; plain HTTP, so terminate TLS in front
 of it; one endpoint; the database holds tenants and service accounts with tested isolation, but

@@ -518,20 +518,20 @@ func TestMigrateCommand(t *testing.T) { // T-160
 	}
 
 	code, out, errs := runBinary(t, env, "migrate", "status")
-	if code != 1 || errs != "" || out != "0001_init  pending\n0002_identity_audit  pending\nschema is at version 0; this binary needs version 2\n" {
+	if code != 1 || errs != "" || out != "0001_init  pending\n0002_identity_audit  pending\n0003_vault  pending\nschema is at version 0; this binary needs version 3\n" {
 		t.Fatalf("status before: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate")
-	if code != 0 || errs != "" || out != "applied 0001_init\napplied 0002_identity_audit\nschema is at version 2\n" {
+	if code != 0 || errs != "" || out != "applied 0001_init\napplied 0002_identity_audit\napplied 0003_vault\nschema is at version 3\n" {
 		t.Fatalf("migrate: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate")
-	if code != 0 || errs != "" || out != "schema is at version 2\n" {
+	if code != 0 || errs != "" || out != "schema is at version 3\n" {
 		t.Fatalf("second migrate: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate", "status")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if code != 0 || errs != "" || len(lines) != 3 || !applied("0001_init").MatchString(lines[0]) || !applied("0002_identity_audit").MatchString(lines[1]) || lines[2] != "schema is at version 2; this binary needs version 2" {
+	if code != 0 || errs != "" || len(lines) != 4 || !applied("0001_init").MatchString(lines[0]) || !applied("0002_identity_audit").MatchString(lines[1]) || !applied("0003_vault").MatchString(lines[2]) || lines[3] != "schema is at version 3; this binary needs version 3" {
 		t.Fatalf("status after: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	testutil.AssertAbsent(t, "migrate output", out+errs, d.Passwords()...)
@@ -553,7 +553,7 @@ func TestServeRefusesUnmigratedDatabase(t *testing.T) { // T-161
 	}
 
 	d.Migrate(t)
-	if _, err := d.Super(t).Exec(context.Background(), "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (3, 'future', repeat('0', 64), 'x')"); err != nil {
+	if _, err := d.Super(t).Exec(context.Background(), "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (4, 'future', repeat('0', 64), 'x')"); err != nil {
 		t.Fatal(err)
 	}
 	code, out, errs = runBinary(t, serveEnv(t, d), "serve", "--config", writeConfig(t, "info"))
@@ -609,7 +609,7 @@ func TestServeBehindPooler(t *testing.T) { // T-163
 	d := dbtest.New(t)
 	pooled := d.Pooled(t)
 	code, out, errs := runBinary(t, pooled.Env(t), "migrate")
-	if code != 0 || !strings.Contains(out, "schema is at version 2") {
+	if code != 0 || !strings.Contains(out, "schema is at version 3") {
 		t.Fatalf("migrate through the pooler: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	up := fakeprovider.New(t)
@@ -799,7 +799,7 @@ func TestNoDefaultCredentials(t *testing.T) {
 			t.Errorf("inference with %v: %d\n%s", h, status, text)
 		}
 		for _, op := range adminapi.Operations {
-			c := apitest.CallFor(t, op, apitest.Params{Tenant: "0192f0f0-0000-7000-8000-000000000001", ServiceAccount: "0192f0f0-0000-7000-8000-000000000002", VirtualKey: "tabcdefghijklmnop", PlatformKey: "pabcdefghijklmnop"})
+			c := apitest.CallFor(t, op, apitest.Params{Tenant: "0192f0f0-0000-7000-8000-000000000001", ServiceAccount: "0192f0f0-0000-7000-8000-000000000002", VirtualKey: "tabcdefghijklmnop", PlatformKey: "pabcdefghijklmnop", Credential: "0192f0f0-0000-7000-8000-000000000003"})
 			var body []byte
 			if c.Body != nil {
 				body, _ = json.Marshal(c.Body)
@@ -1008,7 +1008,7 @@ func TestExitScenario(t *testing.T) {
 	}
 	for _, x := range ts {
 		got := auditActions(t, p.db, "SELECT action FROM pandokos.audit_event WHERE tenant_id = $1::uuid ORDER BY occurred_at, action", x.id)
-		if want := "service_account.create,virtual_key.create,service_account.create,virtual_key.create"; strings.Join(got, ",") != want {
+		if want := "data_key.create,service_account.create,virtual_key.create,service_account.create,virtual_key.create"; strings.Join(got, ",") != want {
 			t.Errorf("tenant log: %v, want %s", got, want)
 		}
 	}

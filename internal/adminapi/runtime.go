@@ -14,6 +14,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"reflect"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -236,11 +237,57 @@ func decodeBody(r *http.Request, limit int64, bodyRequired bool, required []stri
 			return invalidField(te.Field, "has the wrong type")
 		}
 		if name, ok := strings.CutPrefix(err.Error(), "json: unknown field "); ok {
+			if carriesSecret(dst) {
+				// A secret put in the place of a member name must not come back in the answer.
+				return invalidField("body", "has a member that is not part of this body")
+			}
 			return invalidField(strings.Trim(name, `"`), "is not a member of this body")
+		}
+		if name := wrongMember(members, dst); name != "" {
+			return invalidField(name, "is not a valid value")
 		}
 		return invalidField("body", "does not match the schema")
 	}
 	return nil
+}
+
+// carriesSecret reports whether the body type has a member named secret: the unknown members of
+// such a body are not quoted, because a caller may have put the secret where a name belongs.
+func carriesSecret(dst any) bool {
+	t := reflect.TypeOf(dst)
+	if t == nil || t.Kind() != reflect.Pointer || t.Elem().Kind() != reflect.Struct {
+		return false
+	}
+	st := t.Elem()
+	for i := range st.NumField() {
+		if name, _, _ := strings.Cut(st.Field(i).Tag.Get("json"), ","); name == "secret" {
+			return true
+		}
+	}
+	return false
+}
+
+// wrongMember names the member of the body that does not decode into its field, for the errors
+// that encoding/json reports without a field name (a malformed date-time, for one). It returns
+// "" when no single member is at fault.
+func wrongMember(members map[string]json.RawMessage, dst any) string {
+	t := reflect.TypeOf(dst)
+	if t == nil || t.Kind() != reflect.Pointer || t.Elem().Kind() != reflect.Struct {
+		return ""
+	}
+	st := t.Elem()
+	for i := range st.NumField() {
+		f := st.Field(i)
+		name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+		raw, ok := members[name]
+		if !ok || name == "" || name == "-" {
+			continue
+		}
+		if json.Unmarshal(raw, reflect.New(f.Type).Interface()) != nil {
+			return name
+		}
+	}
+	return ""
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -345,4 +392,22 @@ func (c *Client) do(ctx context.Context, method, path string, q url.Values, body
 		return fmt.Errorf("adminapi: decode the response: %w", err)
 	}
 	return nil
+}
+
+// EmptyDescription is the value of CredentialUpdate.Description that asks to clear the
+// description. The generated member is omitted when empty, so an empty description could not be sent; the
+// marshalling below writes this value as "". It is never a real description (a control character).
+const EmptyDescription = "\x00"
+
+// MarshalJSON writes the update, with an empty description when Description is EmptyDescription.
+func (v CredentialUpdate) MarshalJSON() ([]byte, error) {
+	type plain CredentialUpdate
+	if v.Description != EmptyDescription {
+		return json.Marshal(plain(v))
+	}
+	v.Description = ""
+	return json.Marshal(struct {
+		plain
+		Description string `json:"description"`
+	}{plain(v), ""})
 }

@@ -30,7 +30,9 @@ func TestSchemaLint(t *testing.T) {
 	}
 }
 
-// TestDefaultSpecMatchesDesign is T-142: the spec is the one of sprint 1.3, sections 5.10, 6.1.
+// TestDefaultSpecMatchesDesign is T-142 (changed in sprint 2.1): the spec is the one of sprint 1.3,
+// sections 5.10 and 6.1, with the vault tables, the metadata view and the pin of sprint 2.1,
+// sections 5.3 and 6.
 func TestDefaultSpecMatchesDesign(t *testing.T) {
 	want := Spec{
 		Global: map[string]GlobalTable{
@@ -39,12 +41,34 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 			"virtual_key_directory": {Reason: "Key ID to tenant, for the lookup function; no runtime role has any privilege on it"},
 			"platform_key":          {Reason: "Credentials of the platform; protected by its own policies", Restricted: true},
 			"platform_audit_event":  {Reason: "Audit log of the platform; protected by its own policies", Restricted: true},
+			"kek_version":           {Reason: "identifiers of key-encryption key versions; describes the installation, holds no key and no tenant information"},
 		},
 		Grants: map[string]map[string][]string{
 			"schema_migration": {
 				"pandokos_gateway": {"SELECT"},
 				"pandokos_admin":   {"SELECT"},
 				"pandokos_worker":  {"SELECT"},
+			},
+			"kek_version": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin":   {"INSERT(id,provider)", "SELECT"},
+				"pandokos_worker":  {"SELECT"},
+			},
+			"tenant_data_key": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin":   {"INSERT(kek_version,tenant_id,version,wrapped_key)", "SELECT"},
+			},
+			"provider_credential": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin": {
+					"DELETE",
+					"INSERT(description,expires_at,fingerprint,hint,id,is_default,key_version,label,provider,secret,tenant_id,validated_at)",
+					"SELECT(created_at,description,expires_at,fingerprint,hint,id,is_default,key_version,label,provider,rotated_at,state,state_changed_at,state_changed_by,state_reason,tenant_id,updated_at,validated_at)",
+					"UPDATE(description,expires_at,fingerprint,hint,is_default,key_version,label,secret,state,state_changed_by,state_reason,validated_at)",
+				},
+			},
+			"provider_credential_metadata": {
+				"pandokos_admin": {"SELECT"},
 			},
 			"tenant": {
 				"pandokos_gateway": {"SELECT"},
@@ -66,7 +90,7 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 			"virtual_key": {
 				"pandokos_gateway": {"SELECT"},
 				"pandokos_admin": {
-					"INSERT(description,expires_at,key_id,scopes,secret_hash,service_account_id,tenant_id)",
+					"INSERT(credential_id,description,expires_at,key_id,scopes,secret_hash,service_account_id,tenant_id)",
 					"SELECT",
 					"UPDATE(revoked_at)",
 				},
@@ -105,6 +129,17 @@ SELECT $1::uuid, sa.id, 't' || translate(substr(md5(random()::text), 1, 16), '01
        sha256(random()::text::bytea) FROM sa RETURNING id::text`,
 				Update: `description = 'changed'`,
 			},
+			"tenant_data_key": {
+				Insert: `WITH k AS (INSERT INTO pandokos.kek_version (id, provider) VALUES ('test-fixture', 'test') ON CONFLICT (id) DO NOTHING)
+INSERT INTO pandokos.tenant_data_key (tenant_id, kek_version, wrapped_key)
+VALUES ($1::uuid, 'test-fixture', decode(repeat('00', 61), 'hex')) RETURNING id::text`,
+				Update: `wrapped_key = decode(repeat('11', 61), 'hex')`,
+			},
+			"provider_credential": {
+				Insert: `INSERT INTO pandokos.provider_credential (tenant_id, provider, label, key_version, secret, fingerprint)
+VALUES ($1::uuid, 'openai', 'c-' || substr(md5(random()::text), 1, 12), 1, decode(repeat('00', 61), 'hex'), md5(random()::text)) RETURNING id::text`,
+				Update: `description = 'changed'`,
+			},
 			"audit_event": {
 				Insert: `INSERT INTO pandokos.audit_event (tenant_id, actor_type, action, resource_type, outcome)
 VALUES ($1::uuid, 'platform', 'test.fixture', 'test', 'success') RETURNING id::text`,
@@ -112,14 +147,15 @@ VALUES ($1::uuid, 'platform', 'test.fixture', 'test', 'success') RETURNING id::t
 			},
 		},
 		SecurityDefiner: []string{"virtual_key_lookup", "virtual_key_directory_add"},
+		Views:           []string{"provider_credential_metadata"},
 		AppendOnly:      []string{"audit_event", "platform_audit_event"},
 	}
 	got := DefaultSpec()
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("DefaultSpec() differs from the design:\n got %+v\nwant %+v", got, want)
 	}
-	if len(got.Views) != 0 {
-		t.Error("no view is allowed")
+	if !reflect.DeepEqual(got.Views, []string{"provider_credential_metadata"}) {
+		t.Errorf("Views = %v, want only provider_credential_metadata", got.Views)
 	}
 }
 
@@ -137,7 +173,8 @@ const (
 	ok = enable + force + policy
 )
 
-// TestSchemaLintDetects is T-141: for each rule a deliberately defective object makes it fire.
+// TestSchemaLintDetects is T-141: for each rule L-01 to L-19 a deliberately defective object makes
+// it fire.
 func TestSchemaLintDetects(t *testing.T) {
 	type row struct {
 		name string
@@ -150,6 +187,8 @@ func TestSchemaLintDetects(t *testing.T) {
 	rows := []row{
 		{name: "owner", ddl: canonicalTable + ok, post: `ALTER TABLE pandokos.zz OWNER TO pandokos_admin`, rule: "L-01,L-15"},
 		{name: "view", ddl: `CREATE VIEW pandokos.zz_v AS SELECT id FROM pandokos.service_account`, rule: "L-02"},
+		{name: "view-without-security-invoker", ddl: `CREATE VIEW pandokos.zz_v AS SELECT 1 AS x`,
+			spec: func(s *Spec) { s.Views = append(s.Views, "zz_v") }, rule: "L-19"},
 		{name: "no-tenant-column", ddl: `CREATE TABLE pandokos.zz (id uuid PRIMARY KEY)`, rule: "L-03"},
 		{name: "nullable-tenant", ddl: `CREATE TABLE pandokos.zz (
     tenant_id uuid REFERENCES pandokos.tenant (id),

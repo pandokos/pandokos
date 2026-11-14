@@ -488,3 +488,37 @@ func TestRevocationByNotification(t *testing.T) {
 		return err == nil && authz.Decide(p, authz.ModelInvoke, authz.Target{TenantID: p.TenantID}) == authz.Allow
 	})
 }
+
+// TestPrincipalCarriesThePin is the database half of T-345: the credential a key is pinned to
+// reaches the principal; a key without a pin has none; the pin is part of what the principal
+// cache holds and goes away with the credential.
+func TestPrincipalCarriesThePin(t *testing.T) {
+	api := apitest.New(t)
+	auth, _ := newAuth(t, api.DB.Open(t, store.RoleGateway), 0, authn.KindTenant)
+	c := newKey(t, api, "pinned", authz.RoleInference)
+	cl := api.Client(c.admin)
+	cred := api.Credential(t, c.tenant.ID, c.admin, "openai", "pinned")
+
+	pinned, err := cl.CreateVirtualKey(ctx(t), adminapi.CreateVirtualKeyInput{Tenant: c.tenant.ID, Body: adminapi.VirtualKeyCreate{ServiceAccountID: c.sa.ID, CredentialID: cred.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, err := auth.Authenticate(ctx(t), pinned.Secret); err != nil || p.CredentialID != cred.ID {
+		t.Errorf("the principal of a pinned key: credential %q, %v; want %s", p.CredentialID, err, cred.ID)
+	}
+	if p, err := auth.Authenticate(ctx(t), c.key); err != nil || p.CredentialID != "" {
+		t.Errorf("the principal of an unpinned key: credential %q, %v; want none", p.CredentialID, err)
+	}
+	// Revoking the key, then deleting the credential, clears the pin in the database (a pin to
+	// a credential that no longer exists must not reach a principal).
+	if _, err := cl.RevokeVirtualKey(ctx(t), adminapi.RevokeVirtualKeyInput{Tenant: c.tenant.ID, Key: pinned.Key.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cl.DeleteCredential(ctx(t), adminapi.DeleteCredentialInput{Tenant: c.tenant.ID, Credential: cred.ID}); err != nil {
+		t.Fatal(err)
+	}
+	var pin *string
+	if err := api.Super(t).QueryRow(ctx(t), `SELECT credential_id::text FROM pandokos.virtual_key WHERE key_id = $1`, pinned.Key.ID).Scan(&pin); err != nil || pin != nil {
+		t.Errorf("the pin of a revoked key after the deletion of its credential: %v, %v", pin, err)
+	}
+}

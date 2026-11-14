@@ -13,8 +13,11 @@ Commands:
   service-account list|create|get|update|disable|enable
   key list|create|get|revoke
   platform-key list|create|get|revoke
+  credential list|create|get|update|replace|disable|enable|set-default|revoke|delete
+  tenant-credential list|get|disable|revoke
                                    Administer through the administration API;
                                    "pandokos <command> --help" lists the flags
+  kek generate --out FILE          Write a new key-encryption key to a new file (mode 0600)
   config check [--config FILE] [--for serve|migrate|init]
                                    Load and validate the configuration, then exit
   version                          Print the version

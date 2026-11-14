@@ -87,6 +87,7 @@ type world struct {
 	key       adminapi.VirtualKeyCreated
 	platform  string
 	platformK adminapi.PlatformKeyCreated
+	cred      adminapi.Credential // the default openai credential of the tenant
 }
 
 func newWorld(t *testing.T, name string) *world {
@@ -116,10 +117,11 @@ func (w *world) fill(t *testing.T, name string) {
 		t.Fatal(err)
 	}
 	w.platformK = *pk
+	w.cred = w.api.Credential(t, w.tenant.ID, w.adminKey, "openai", "world")
 }
 
 func (w *world) params() apitest.Params {
-	return apitest.Params{Tenant: w.tenant.ID, ServiceAccount: w.sa.ID, VirtualKey: w.key.Key.ID, PlatformKey: w.platformK.Key.ID}
+	return apitest.Params{Tenant: w.tenant.ID, ServiceAccount: w.sa.ID, VirtualKey: w.key.Key.ID, PlatformKey: w.platformK.Key.ID, Credential: w.cred.ID}
 }
 
 // call makes the valid call of op with the key.

@@ -3,11 +3,13 @@ package config
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"io"
 	"net"
 	"net/url"
 	"os"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -65,6 +67,15 @@ func validate(c *Config, purpose Purpose) []Problem {
 	}
 	if d := time.Duration(c.Cache.PrincipalTTL); d < time.Second || d > time.Minute {
 		add("cache.principal_ttl", "must be between 1s and 60s")
+	}
+	if d := time.Duration(c.Cache.CredentialTTL); d < time.Second || d > time.Minute {
+		add("cache.credential_ttl", "must be between 1s and 60s")
+	}
+	if d := time.Duration(c.Cache.DataKeyTTL); d < time.Second || d > 15*time.Minute {
+		add("cache.data_key_ttl", "must be between 1s and 15m")
+	}
+	if c.Vault.KEK.Provider != "local" {
+		add("vault.kek.provider", "must be local")
 	}
 	if n := c.Limits.MaxRequestBodyBytes; n < 1 || n > 104857600 {
 		add("limits.max_request_body_bytes", "must be between 1 and 104857600")
@@ -400,19 +411,53 @@ func listenerAndURLWarnings(c *Config) []Warning {
 	if c.Database.TLS.Mode == "disable" && c.Database.Host != "" && !isLoopback(c.Database.Host) {
 		ws = append(ws, Warning{Key: "database.tls.mode", Message: "the database connection is not encrypted"})
 	}
-	return ws
+	return append(ws, keyFileWarning(c)...)
 }
 
-// loadSecrets reads the provider key.
+// loadSecrets reads the provider key and the key-encryption key.
 func loadSecrets(c *Config) []Problem {
 	const apiKey = "skeleton.openai.api_key_file"
+	var ps []Problem
 	if c.Skeleton.OpenAI.APIKeyFile == "" {
-		return []Problem{{Key: apiKey, Message: "must be set"}}
+		ps = append(ps, Problem{Key: apiKey, Message: "must be set"})
+	} else if s, err := secret.ReadFile(c.Skeleton.OpenAI.APIKeyFile); err != nil {
+		ps = append(ps, Problem{Key: apiKey, Message: err.Error()})
+	} else {
+		c.Skeleton.OpenAI.APIKey = s
 	}
-	s, err := secret.ReadFile(c.Skeleton.OpenAI.APIKeyFile)
+	return append(ps, loadKEK(c)...)
+}
+
+// loadKEK reads the key file and checks that it holds 32 bytes in standard base64. No message
+// quotes any of the content.
+func loadKEK(c *Config) []Problem {
+	const key = "vault.kek.local.key_file"
+	path := c.Vault.KEK.Local.KeyFile
+	if path == "" {
+		return []Problem{{Key: key, Message: "must be set"}}
+	}
+	s, err := secret.ReadFile(path)
 	if err != nil {
-		return []Problem{{Key: apiKey, Message: err.Error()}}
+		return []Problem{{Key: key, Message: err.Error()}}
 	}
-	c.Skeleton.OpenAI.APIKey = s
+	raw, err := base64.StdEncoding.Strict().DecodeString(s.Reveal())
+	if err != nil || len(raw) != 32 {
+		clear(raw)
+		return []Problem{{Key: key, Message: "must hold 32 bytes in standard base64 (44 characters); create one with pandokos kek generate"}}
+	}
+	clear(raw)
+	c.Vault.KEK.Local.Key = s
 	return nil
+}
+
+// keyFileWarning says when the key file can be accessed by users other than its owner and group.
+func keyFileWarning(c *Config) []Warning {
+	if c.Vault.KEK.Local.Key.IsZero() || runtime.GOOS == "windows" {
+		return nil
+	}
+	fi, err := os.Stat(c.Vault.KEK.Local.KeyFile) // follows links: the mode of the target counts
+	if err != nil || fi.Mode().Perm()&0o007 == 0 {
+		return nil
+	}
+	return []Warning{{Key: "vault.kek.local.key_file", Message: "the file can be accessed by other users; restrict it to the service user (chmod 600)"}}
 }

@@ -39,6 +39,8 @@ A record is *proposed* until its pull request is merged by the maintainer, then 
 | [0030](0030-keys-format-storage-lookup.md) | Keys: format, storage, lookup, platform keys, revocation bound | proposed |
 | [0031](0031-authorization-core-and-provisioning.md) | Authorization core and tenant provisioning | proposed |
 | [0032](0032-audit-log-first-version.md) | Audit log, first version | proposed |
+| [0033](0033-vault-formats-and-key-identifiers.md) | Vault: formats, derived keys, key identifiers, caches | proposed |
+| [0034](0034-credential-model-and-platform-oversight.md) | Credential model and platform oversight | proposed |
 
 ## Questions from SOW 0.1 and where they were decided
 

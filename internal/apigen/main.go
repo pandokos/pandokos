@@ -228,6 +228,16 @@ func (g *generator) re(pattern string) string {
 	return "re" + strconv.Itoa(len(g.patterns)-1)
 }
 
+// fieldName is the Go name of a schema property. A property whose name would collide with the
+// generated Validate method of its type (a "validate" flag) is named ValidateAtWrite; the wire
+// name does not change.
+func fieldName(pn string) string {
+	if n := goName(pn); n != "Validate" {
+		return n
+	}
+	return "ValidateAtWrite"
+}
+
 func goName(s string) string {
 	var b strings.Builder
 	up := true
@@ -444,8 +454,8 @@ func (g *generator) object(name string, s *schema) error {
 		if d := comment(ps.Description); d != "" {
 			g.p("// %s", d)
 		}
-		g.p("%s %s `json:%q`", goName(pn), f.goType, tag)
-		g.check(&checks, "v."+goName(pn), pn, f, required[pn])
+		g.p("%s %s `json:%q`", fieldName(pn), f.goType, tag)
+		g.check(&checks, "v."+fieldName(pn), pn, f, required[pn])
 	}
 	g.p("}\n")
 	g.p("var required%s = []string{%s}\n", name, quoteList(s.Required))

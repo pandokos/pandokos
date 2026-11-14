@@ -43,6 +43,14 @@ const (
 	VirtualKeyWrite     = "virtual_key:write"
 	VirtualKeyRevoke    = "virtual_key:revoke"
 	ModelInvoke         = "model:invoke"
+
+	CredentialRead         = "credential:read"          //nolint:gosec // a permission name, not a credential
+	CredentialWrite        = "credential:write"         //nolint:gosec // a permission name, not a credential
+	CredentialRotate       = "credential:rotate"        //nolint:gosec // a permission name, not a credential
+	CredentialDelete       = "credential:delete"        //nolint:gosec // a permission name, not a credential
+	CredentialUse          = "credential:use"           //nolint:gosec // a permission name, not a credential
+	TenantCredentialRead   = "tenant_credential:read"   //nolint:gosec // a permission name, not a credential
+	TenantCredentialRevoke = "tenant_credential:revoke" //nolint:gosec // a permission name, not a credential
 )
 
 var catalogue = []Permission{
@@ -59,6 +67,13 @@ var catalogue = []Permission{
 	{VirtualKeyWrite, ScopeTenant, "Issuing a virtual key"},
 	{VirtualKeyRevoke, ScopeTenant, "Revoking a virtual key"},
 	{ModelInvoke, ScopeTenant, "Calling a model through the inference listener"},
+	{CredentialRead, ScopeTenant, "Reading and listing provider credentials (metadata)"},
+	{CredentialWrite, ScopeTenant, "Registering a credential; changing its label, description and expiry; disabling and enabling it; choosing the default"},
+	{CredentialRotate, ScopeTenant, "Replacing the secret of a credential"},
+	{CredentialDelete, ScopeTenant, "Revoking and deleting a credential"},
+	{CredentialUse, ScopeTenant, "Having one's model calls authenticated to the provider with a credential of the tenant"},
+	{TenantCredentialRead, ScopePlatform, "Reading and listing the credentials of a tenant (metadata)"},
+	{TenantCredentialRevoke, ScopePlatform, "Disabling or revoking a credential of a tenant, with a reason"},
 }
 
 // Catalogue returns the permissions, in a fixed order.
@@ -107,11 +122,12 @@ func sorted(names ...string) []string {
 // Roles returns the three built-in roles, in a fixed order; the slices are copies.
 func Roles() []Role {
 	return []Role{
-		{RolePlatformAdmin, KindPlatform, sorted(IdentityRead, TenantRead, TenantWrite, TenantSuspend, PlatformKeyRead, PlatformKeyWrite, PlatformKeyRevoke),
+		{RolePlatformAdmin, KindPlatform, sorted(IdentityRead, TenantRead, TenantWrite, TenantSuspend, PlatformKeyRead, PlatformKeyWrite, PlatformKeyRevoke, TenantCredentialRead, TenantCredentialRevoke),
 			"Administers the installation: tenants and platform keys"},
-		{RoleTenantAdmin, KindServiceAccount, sorted(IdentityRead, ServiceAccountRead, ServiceAccountWrite, VirtualKeyRead, VirtualKeyWrite, VirtualKeyRevoke, ModelInvoke),
+		{RoleTenantAdmin, KindServiceAccount, sorted(IdentityRead, ServiceAccountRead, ServiceAccountWrite, VirtualKeyRead, VirtualKeyWrite, VirtualKeyRevoke, ModelInvoke,
+			CredentialRead, CredentialWrite, CredentialRotate, CredentialDelete, CredentialUse),
 			"Administers one tenant: service accounts and virtual keys; may call models"},
-		{RoleInference, KindServiceAccount, sorted(ModelInvoke), "Calls models through the inference listener"},
+		{RoleInference, KindServiceAccount, sorted(ModelInvoke, CredentialUse), "Calls models through the inference listener"},
 	}
 }
 
@@ -137,6 +153,8 @@ type Principal struct {
 	TenantState tenant.State
 	Roles       []string
 	Scopes      []string // nil: no restriction; otherwise the permissions the key is limited to
+	// CredentialID is the provider credential the key in use is pinned to; empty for none.
+	CredentialID string
 }
 
 // Effective returns the permissions p holds: the union of the permissions of its roles that

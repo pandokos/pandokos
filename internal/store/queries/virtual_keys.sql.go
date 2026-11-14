@@ -11,13 +11,13 @@ import (
 )
 
 const createVirtualKey = `-- name: CreateVirtualKey :one
-INSERT INTO pandokos.virtual_key (tenant_id, service_account_id, key_id, description, secret_hash, scopes, expires_at)
+INSERT INTO pandokos.virtual_key (tenant_id, service_account_id, key_id, description, secret_hash, scopes, expires_at, credential_id)
 VALUES ($1::uuid, $2::uuid, $3::text,
         $4::text, $5::bytea,
         CASE WHEN $6::boolean THEN $7::text[] END,
-        $8::timestamptz)
+        $8::timestamptz, $9::uuid)
 RETURNING key_id, tenant_id, service_account_id, description, COALESCE(scopes, '{}')::text[] AS scopes,
-          (scopes IS NOT NULL)::boolean AS scoped, expires_at, revoked_at, created_at,
+          (scopes IS NOT NULL)::boolean AS scoped, expires_at, revoked_at, created_at, credential_id,
           (CASE WHEN revoked_at IS NOT NULL THEN 'revoked' WHEN expires_at <= now() THEN 'expired' ELSE 'active' END)::text AS state
 `
 
@@ -30,6 +30,7 @@ type CreateVirtualKeyParams struct {
 	Scoped           bool
 	Scopes           []string
 	ExpiresAt        *time.Time
+	CredentialID     *string
 }
 
 type CreateVirtualKeyRow struct {
@@ -42,6 +43,7 @@ type CreateVirtualKeyRow struct {
 	ExpiresAt        *time.Time
 	RevokedAt        *time.Time
 	CreatedAt        time.Time
+	CredentialID     *string
 	State            string
 }
 
@@ -55,6 +57,7 @@ func (q *Queries) CreateVirtualKey(ctx context.Context, arg CreateVirtualKeyPara
 		arg.Scoped,
 		arg.Scopes,
 		arg.ExpiresAt,
+		arg.CredentialID,
 	)
 	var i CreateVirtualKeyRow
 	err := row.Scan(
@@ -67,6 +70,7 @@ func (q *Queries) CreateVirtualKey(ctx context.Context, arg CreateVirtualKeyPara
 		&i.ExpiresAt,
 		&i.RevokedAt,
 		&i.CreatedAt,
+		&i.CredentialID,
 		&i.State,
 	)
 	return i, err
@@ -74,7 +78,7 @@ func (q *Queries) CreateVirtualKey(ctx context.Context, arg CreateVirtualKeyPara
 
 const getKeyPrincipal = `-- name: GetKeyPrincipal :one
 SELECT k.key_id, k.secret_hash, COALESCE(k.scopes, '{}')::text[] AS scopes, (k.scopes IS NOT NULL)::boolean AS scoped,
-       k.expires_at, k.revoked_at,
+       k.expires_at, k.revoked_at, k.credential_id,
        s.id AS service_account_id, s.name AS service_account_name, s.state AS service_account_state,
        s.valid_from, s.valid_until,
        t.id AS tenant_id, t.name AS tenant_name, t.state AS tenant_state,
@@ -93,6 +97,7 @@ type GetKeyPrincipalRow struct {
 	Scoped              bool
 	ExpiresAt           *time.Time
 	RevokedAt           *time.Time
+	CredentialID        *string
 	ServiceAccountID    string
 	ServiceAccountName  string
 	ServiceAccountState string
@@ -114,6 +119,7 @@ func (q *Queries) GetKeyPrincipal(ctx context.Context, keyID string) (GetKeyPrin
 		&i.Scoped,
 		&i.ExpiresAt,
 		&i.RevokedAt,
+		&i.CredentialID,
 		&i.ServiceAccountID,
 		&i.ServiceAccountName,
 		&i.ServiceAccountState,
@@ -129,7 +135,7 @@ func (q *Queries) GetKeyPrincipal(ctx context.Context, keyID string) (GetKeyPrin
 
 const getVirtualKey = `-- name: GetVirtualKey :one
 SELECT k.key_id, k.tenant_id, k.service_account_id, k.description, COALESCE(k.scopes, '{}')::text[] AS scopes,
-       (k.scopes IS NOT NULL)::boolean AS scoped, k.expires_at, k.revoked_at, k.created_at,
+       (k.scopes IS NOT NULL)::boolean AS scoped, k.expires_at, k.revoked_at, k.created_at, k.credential_id,
        (CASE WHEN k.revoked_at IS NOT NULL THEN 'revoked' WHEN k.expires_at <= now() THEN 'expired' ELSE 'active' END)::text AS state
   FROM pandokos.virtual_key k
  WHERE k.key_id = $1::text
@@ -145,6 +151,7 @@ type GetVirtualKeyRow struct {
 	ExpiresAt        *time.Time
 	RevokedAt        *time.Time
 	CreatedAt        time.Time
+	CredentialID     *string
 	State            string
 }
 
@@ -161,6 +168,7 @@ func (q *Queries) GetVirtualKey(ctx context.Context, keyID string) (GetVirtualKe
 		&i.ExpiresAt,
 		&i.RevokedAt,
 		&i.CreatedAt,
+		&i.CredentialID,
 		&i.State,
 	)
 	return i, err
@@ -168,7 +176,7 @@ func (q *Queries) GetVirtualKey(ctx context.Context, keyID string) (GetVirtualKe
 
 const listVirtualKeys = `-- name: ListVirtualKeys :many
 SELECT k.id, k.key_id, k.tenant_id, k.service_account_id, k.description, COALESCE(k.scopes, '{}')::text[] AS scopes,
-       (k.scopes IS NOT NULL)::boolean AS scoped, k.expires_at, k.revoked_at, k.created_at,
+       (k.scopes IS NOT NULL)::boolean AS scoped, k.expires_at, k.revoked_at, k.created_at, k.credential_id,
        (CASE WHEN k.revoked_at IS NOT NULL THEN 'revoked' WHEN k.expires_at <= now() THEN 'expired' ELSE 'active' END)::text AS state
   FROM pandokos.virtual_key k
  WHERE ($1::text = ''
@@ -204,6 +212,7 @@ type ListVirtualKeysRow struct {
 	ExpiresAt        *time.Time
 	RevokedAt        *time.Time
 	CreatedAt        time.Time
+	CredentialID     *string
 	State            string
 }
 
@@ -235,6 +244,7 @@ func (q *Queries) ListVirtualKeys(ctx context.Context, arg ListVirtualKeysParams
 			&i.ExpiresAt,
 			&i.RevokedAt,
 			&i.CreatedAt,
+			&i.CredentialID,
 			&i.State,
 		); err != nil {
 			return nil, err

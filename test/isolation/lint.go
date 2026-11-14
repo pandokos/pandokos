@@ -24,6 +24,7 @@ var (
 type relation struct {
 	name, kind, owner string
 	rls, forced       bool
+	options           []string // pg_class.reloptions
 }
 
 type policyRow struct {
@@ -42,7 +43,7 @@ type constraint struct {
 
 // Lint reads the system catalogues of schema pandokos through the connection (a superuser's, so
 // that it can read every privilege) and returns one finding per violation of the rules L-01 to
-// L-16 of sprint 1.2, section 6.1, sorted by rule and object. A table is tenant-scoped unless
+// L-16 of sprint 1.2, section 6.1 and L-19 of sprint 2.1 (nineteen rules), sorted by rule and object. A table is tenant-scoped unless
 // spec.Global lists it.
 func Lint(ctx context.Context, conn *pgx.Conn, spec Spec) ([]Finding, error) {
 	var findings []Finding
@@ -77,6 +78,9 @@ func Lint(ctx context.Context, conn *pgx.Conn, spec Spec) ([]Finding, error) {
 		case "v":
 			if !allowedViews[r.name] {
 				add("L-02", r.name, "a view that is not listed in Spec.Views")
+			}
+			if !contains(r.options, "security_invoker=true") {
+				add("L-19", r.name, "a view without security_invoker=true")
 			}
 		case "m":
 			add("L-02", r.name, "a materialized view; they are never allowed")
@@ -268,7 +272,7 @@ func pairsTenant(c constraint) bool {
 }
 
 func readRelations(ctx context.Context, conn *pgx.Conn) ([]relation, error) {
-	rows, err := conn.Query(ctx, `SELECT c.relname::text, c.relkind::text, pg_catalog.pg_get_userbyid(c.relowner)::text, c.relrowsecurity, c.relforcerowsecurity
+	rows, err := conn.Query(ctx, `SELECT c.relname::text, c.relkind::text, pg_catalog.pg_get_userbyid(c.relowner)::text, c.relrowsecurity, c.relforcerowsecurity, COALESCE(c.reloptions, '{}')::text[]
   FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
  WHERE n.nspname = 'pandokos' AND c.relkind IN ('r', 'p', 'v', 'm', 'f') AND NOT c.relispartition
  ORDER BY 1`)
@@ -277,7 +281,7 @@ func readRelations(ctx context.Context, conn *pgx.Conn) ([]relation, error) {
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (relation, error) {
 		var x relation
-		err := r.Scan(&x.name, &x.kind, &x.owner, &x.rls, &x.forced)
+		err := r.Scan(&x.name, &x.kind, &x.owner, &x.rls, &x.forced, &x.options)
 		return x, err
 	})
 }

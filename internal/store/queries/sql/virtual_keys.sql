@@ -6,7 +6,7 @@ SELECT COALESCE(pandokos.virtual_key_lookup(sqlc.arg(key_id)::text)::text, '')::
 
 -- name: GetKeyPrincipal :one
 SELECT k.key_id, k.secret_hash, COALESCE(k.scopes, '{}')::text[] AS scopes, (k.scopes IS NOT NULL)::boolean AS scoped,
-       k.expires_at, k.revoked_at,
+       k.expires_at, k.revoked_at, k.credential_id,
        s.id AS service_account_id, s.name AS service_account_name, s.state AS service_account_state,
        s.valid_from, s.valid_until,
        t.id AS tenant_id, t.name AS tenant_name, t.state AS tenant_state,
@@ -18,25 +18,25 @@ SELECT k.key_id, k.secret_hash, COALESCE(k.scopes, '{}')::text[] AS scopes, (k.s
  WHERE k.key_id = sqlc.arg(key_id)::text;
 
 -- name: CreateVirtualKey :one
-INSERT INTO pandokos.virtual_key (tenant_id, service_account_id, key_id, description, secret_hash, scopes, expires_at)
+INSERT INTO pandokos.virtual_key (tenant_id, service_account_id, key_id, description, secret_hash, scopes, expires_at, credential_id)
 VALUES (sqlc.arg(tenant_id)::uuid, sqlc.arg(service_account_id)::uuid, sqlc.arg(key_id)::text,
         sqlc.arg(description)::text, sqlc.arg(secret_hash)::bytea,
         CASE WHEN sqlc.arg(scoped)::boolean THEN sqlc.arg(scopes)::text[] END,
-        sqlc.narg(expires_at)::timestamptz)
+        sqlc.narg(expires_at)::timestamptz, sqlc.narg(credential_id)::uuid)
 RETURNING key_id, tenant_id, service_account_id, description, COALESCE(scopes, '{}')::text[] AS scopes,
-          (scopes IS NOT NULL)::boolean AS scoped, expires_at, revoked_at, created_at,
+          (scopes IS NOT NULL)::boolean AS scoped, expires_at, revoked_at, created_at, credential_id,
           (CASE WHEN revoked_at IS NOT NULL THEN 'revoked' WHEN expires_at <= now() THEN 'expired' ELSE 'active' END)::text AS state;
 
 -- name: GetVirtualKey :one
 SELECT k.key_id, k.tenant_id, k.service_account_id, k.description, COALESCE(k.scopes, '{}')::text[] AS scopes,
-       (k.scopes IS NOT NULL)::boolean AS scoped, k.expires_at, k.revoked_at, k.created_at,
+       (k.scopes IS NOT NULL)::boolean AS scoped, k.expires_at, k.revoked_at, k.created_at, k.credential_id,
        (CASE WHEN k.revoked_at IS NOT NULL THEN 'revoked' WHEN k.expires_at <= now() THEN 'expired' ELSE 'active' END)::text AS state
   FROM pandokos.virtual_key k
  WHERE k.key_id = sqlc.arg(key_id)::text;
 
 -- name: ListVirtualKeys :many
 SELECT k.id, k.key_id, k.tenant_id, k.service_account_id, k.description, COALESCE(k.scopes, '{}')::text[] AS scopes,
-       (k.scopes IS NOT NULL)::boolean AS scoped, k.expires_at, k.revoked_at, k.created_at,
+       (k.scopes IS NOT NULL)::boolean AS scoped, k.expires_at, k.revoked_at, k.created_at, k.credential_id,
        (CASE WHEN k.revoked_at IS NOT NULL THEN 'revoked' WHEN k.expires_at <= now() THEN 'expired' ELSE 'active' END)::text AS state
   FROM pandokos.virtual_key k
  WHERE (sqlc.arg(state)::text = ''

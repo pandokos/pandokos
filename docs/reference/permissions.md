@@ -17,6 +17,13 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | `platform_key:revoke` | platform | Revoking a platform key |
 | `service_account:read` | tenant | Reading and listing service accounts and their roles |
 | `service_account:write` | tenant | Creating, changing, disabling and enabling service accounts; assigning roles |
+| `credential:read` | tenant | Reading and listing provider credentials (metadata, never the secret) |
+| `credential:write` | tenant | Registering a credential; changing its label, description and expiry; disabling and enabling it; choosing the default |
+| `credential:rotate` | tenant | Replacing the secret of a credential |
+| `credential:delete` | tenant | Revoking and deleting a credential |
+| `credential:use` | tenant | Having one's model calls authenticated to the provider with a credential of the tenant; the vault checks it when asked to open a credential |
+| `tenant_credential:read` | platform | Reading and listing the credentials of a named tenant (metadata) |
+| `tenant_credential:revoke` | platform | Disabling or revoking a credential of a named tenant, with a reason |
 | `virtual_key:read` | tenant | Reading and listing virtual keys (metadata) |
 | `virtual_key:write` | tenant | Issuing a virtual key |
 | `virtual_key:revoke` | tenant | Revoking a virtual key |
@@ -31,9 +38,9 @@ Roles are defined in code and cannot be changed; `role_assignment.role` holds a 
 
 | Role | Held by | Permissions |
 |---|---|---|
-| `platform-admin` | platform principals | `identity:read`, `platform_key:read`, `platform_key:revoke`, `platform_key:write`, `tenant:read`, `tenant:suspend`, `tenant:write` |
-| `tenant-admin` | service accounts | `identity:read`, `model:invoke`, `service_account:read`, `service_account:write`, `virtual_key:read`, `virtual_key:revoke`, `virtual_key:write` |
-| `inference` | service accounts | `model:invoke` |
+| `platform-admin` | platform principals | `identity:read`, `platform_key:read`, `platform_key:revoke`, `platform_key:write`, `tenant:read`, `tenant:suspend`, `tenant:write`, `tenant_credential:read`, `tenant_credential:revoke` |
+| `tenant-admin` | service accounts | `credential:delete`, `credential:read`, `credential:rotate`, `credential:use`, `credential:write`, `identity:read`, `model:invoke`, `service_account:read`, `service_account:write`, `virtual_key:read`, `virtual_key:revoke`, `virtual_key:write` |
+| `inference` | service accounts | `credential:use`, `model:invoke` |
 
 ## Decision
 
@@ -50,3 +57,8 @@ The first rule that applies wins:
 
 The permissions a principal holds are the union of its roles' permissions, narrowed to the scopes
 of the key when the key has any. A role that is unknown, or of the other kind, grants nothing.
+
+A platform administrator holds no tenant permission, `credential:*` included, and no permission that
+returns or replaces a secret: the platform credential operations name a tenant, return metadata only
+and disable or revoke with a reason. A virtual key with `scopes` needs `credential:use` next to
+`model:invoke` for the credentials of its tenant to be opened for it.

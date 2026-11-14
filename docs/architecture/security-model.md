@@ -83,6 +83,7 @@ disk the operator's database administrators can read, and by auditing every admi
 | The database or a backup is copied | Credentials are ciphertext under per-tenant keys wrapped by a key that is not in the database (VLT-09, VLT-13). Virtual keys are stored as hashes |
 | The key-encryption key leaks | Rotation by re-wrapping (VLT-10). The leak alone exposes nothing without the database |
 | A ciphertext is copied onto another tenant's row | The tenant and credential IDs are bound into the ciphertext as associated data, so decryption fails (VLT-07) |
+| An attacker with the database guesses a credential from its fingerprint or hint | The fingerprint is a keyed hash under a key derived from the tenant's data key, which needs the key-encryption key; fingerprints differ between tenants. The hint is four characters and absent for short secrets |
 | A platform administrator abuses the role | No read path for secrets in API or database grants (AZ-08). Support actions inside a tenant need a reason and are audited in the tenant's log (AZ-09) |
 | The proxy is used to reach internal services (SSRF) | Destinations come from the catalogue only. Redirects are not followed. The dialled address is checked against private ranges (GW-05, GW-06) |
 | The provider credential is sent elsewhere | It is attached only to requests for the registered host (GW-05) |
@@ -105,12 +106,23 @@ flowchart TB
     dek2 --> c2[Credential ciphertexts of B]
 ```
 
+- The data key is a 32-byte root and is never used directly: HKDF-SHA-256 derives from it an
+  encryption key (AES-256-GCM) and a separate fingerprint key. A credential is sealed with a random
+  nonce and with associated data that name the tenant, the credential and the data key version.
+- A credential shows a fingerprint (the first 16 bytes of an HMAC under the fingerprint key) and a
+  hint (the last four characters, withheld for secrets shorter than 16 characters). The fingerprint
+  is keyed per tenant: it identifies a secret within a tenant, and the fingerprints of one secret
+  in two tenants cannot be compared. Formats and numbers: [ADR 0033](../adr/0033-vault-formats-and-key-identifiers.md).
 - One data key per tenant limits the effect of a leaked data key to one tenant and makes
   cryptographic erasure a single deletion.
 - Rotating the key-encryption key re-wraps the data keys; credentials are not touched.
 - Losing the key-encryption key makes every tenant credential unrecoverable. Tenants must then
   re-enter them. This is stated in the operations guide and is the reason the key has its own
   backup procedure.
+- Backups and erasure: a database backup also holds the wrapped data key. Destroying a data key
+  therefore makes older backups unreadable only once the key-encryption key version that wrapped it
+  is retired, or when the backups have expired (open point O-8; the remedy is designed with tenant
+  deletion). The [vault guide](../operations/vault.md) states the limit.
 
 ## Credentials issued by Pandokos
 
