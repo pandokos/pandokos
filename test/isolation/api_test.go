@@ -387,6 +387,8 @@ func TestCrossTenantIndistinguishable(t *testing.T) {
 			if r := w.api.Do(t, own.Method, own.Path, w.b.adminKey, own.Body, nil); r.Status != 200 && r.Status != 201 {
 				t.Errorf("%s: B naming its own model gives %d\n%s", op.ID, r.Status, r.Body)
 			}
+			// B's own call changed B's rows on purpose: the baseline of the following operations moves with it.
+			rows = w.api.SnapshotTenant(t, w.b.tenant.ID)
 			checked += 3
 		}
 	}

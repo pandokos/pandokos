@@ -799,7 +799,8 @@ func TestNoDefaultCredentials(t *testing.T) {
 			t.Errorf("inference with %v: %d\n%s", h, status, text)
 		}
 		for _, op := range adminapi.Operations {
-			c := apitest.CallFor(t, op, apitest.Params{Tenant: "0192f0f0-0000-7000-8000-000000000001", ServiceAccount: "0192f0f0-0000-7000-8000-000000000002", VirtualKey: "tabcdefghijklmnop", PlatformKey: "pabcdefghijklmnop", Credential: "0192f0f0-0000-7000-8000-000000000003"})
+			c := apitest.CallFor(t, op, apitest.Params{Tenant: "0192f0f0-0000-7000-8000-000000000001", ServiceAccount: "0192f0f0-0000-7000-8000-000000000002", VirtualKey: "tabcdefghijklmnop", PlatformKey: "pabcdefghijklmnop", Credential: "0192f0f0-0000-7000-8000-000000000003",
+				Provider: "synthetic-missing", Endpoint: "ep-missing", Model: "0192f0f0-0000-7000-8000-000000000004", PriceVersion: "0192f0f0-0000-7000-8000-000000000005", PriceImport: "0192f0f0-0000-7000-8000-000000000006"})
 			var body []byte
 			if c.Body != nil {
 				body, _ = json.Marshal(c.Body)

@@ -158,7 +158,7 @@ func (s *server) CreateTenant(ctx context.Context, in adminapi.CreateTenantInput
 				Tenant:              tenantOut(active),
 				AdminServiceAccount: saOut.out(),
 				AdminKey: adminapi.VirtualKeyCreated{
-					Key:    vkRow{vk.KeyID, vk.TenantID, vk.ServiceAccountID, vk.Description, vk.Scopes, vk.Scoped, vk.ExpiresAt, vk.RevokedAt, vk.CreatedAt, vk.State, vk.CredentialID}.out(),
+					Key:    vkRow{vk.KeyID, vk.TenantID, vk.ServiceAccountID, vk.Description, vk.Scopes, vk.Scoped, vk.ExpiresAt, vk.RevokedAt, vk.CreatedAt, vk.State, vk.CredentialID, vk.Models, vk.ModelsRestricted}.out(),
 					Secret: revealOnce(key),
 				},
 			}

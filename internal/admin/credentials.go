@@ -33,12 +33,30 @@ const (
 	changedByPlat  = "platform"
 )
 
-// checkProvider refuses a provider that is not one of vault.Providers.
-func checkProvider(name string) *adminapi.FieldError {
-	if !vault.KnownProvider(name) {
-		return &adminapi.FieldError{Field: "provider", Message: "must name a provider this installation supports"}
+// errUnknownProvider is the refusal of a credential that names a provider the catalogue does not hold.
+var errUnknownProvider = &adminapi.FieldError{Field: "provider", Message: "must name a provider this installation supports"}
+
+// checkProvider refuses a provider that is not in the catalogue. A disabled provider still
+// accepts credentials. The catalogue is readable in every session.
+func (s *server) checkProvider(ctx context.Context, tid tenant.ID, name string) (*adminapi.FieldError, error) {
+	var known bool
+	err := s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
+		_, err := queries.New(tx).GetProvider(ctx, name)
+		switch {
+		case err == nil:
+			known = true
+		case !isNoRowsErr(err):
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	if !known {
+		return errUnknownProvider, nil
+	}
+	return nil, nil
 }
 
 // checkSecret applies the rules of the secret: 8 to 8192 bytes, no control character, no white
@@ -230,7 +248,11 @@ func (s *server) CreateCredential(ctx context.Context, in adminapi.CreateCredent
 	}
 	b := in.Body
 	v, verr := s.validatorFor(b.Provider, b.ValidateAtWrite)
-	if err := fieldsError(checkProvider(b.Provider), checkSecret(b.Secret), verr); err != nil {
+	perr, err := s.checkProvider(ctx, tid, b.Provider)
+	if err != nil {
+		return nil, err
+	}
+	if err := fieldsError(perr, checkSecret(b.Secret), verr); err != nil {
 		return nil, err
 	}
 	sec := secret.New(b.Secret)
@@ -276,6 +298,10 @@ func (s *server) CreateCredential(ctx context.Context, in adminapi.CreateCredent
 			case name == "provider_credential_default_key" && attempt == 0:
 				continue // two first credentials of a provider at once: the loser retries as a non-default
 			}
+		}
+		if kind, name, ok := store.ConstraintViolation(err); ok && kind == "foreign_key" && name == "provider_credential_provider_fkey" {
+			// The provider was deleted between the check and the insert.
+			return nil, fieldsError(errUnknownProvider)
 		}
 		if err != nil {
 			return nil, err

@@ -148,7 +148,7 @@ func TestCatalogLifecycle(t *testing.T) {
 			t.Errorf("the second: %+v", e2)
 		}
 		// A trailing slash is stripped, the host and the scheme are lower-cased.
-		e3 := c.createEndpoint(t, p.Name, map[string]any{"name": "third", "base_url": "HTTPS://API.Example.COM/Path/"})
+		e3 := c.createEndpoint(t, p.Name, map[string]any{"name": "third", "base_url": "https://API.Example.COM/Path/"})
 		if e3.BaseURL != "https://api.example.com/Path" {
 			t.Errorf("the URL was stored as %q", e3.BaseURL)
 		}

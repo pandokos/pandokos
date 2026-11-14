@@ -528,7 +528,7 @@ func TestPrincipalCarriesThePin(t *testing.T) {
 // made, and the order is the one given. A platform principal has none.
 func TestPrincipalCarriesTheModels(t *testing.T) {
 	api := apitest.New(t)
-	auth, _ := newAuth(t, api.DB.Open(t, store.RoleGateway), 0, authn.KindTenant, authn.KindPlatform)
+	auth, _ := newAuth(t, api.DB.Open(t, store.RoleAdmin), 0, authn.KindTenant, authn.KindPlatform)
 	c := newKey(t, api, "listed", authz.RoleInference)
 	cl := api.Client(c.admin)
 	cat := api.Catalog(t)

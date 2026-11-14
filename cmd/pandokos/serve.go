@@ -18,6 +18,7 @@ import (
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/buildinfo"
 	"github.com/pandokos/pandokos/internal/config"
+	"github.com/pandokos/pandokos/internal/pricing/genaiprices"
 	"github.com/pandokos/pandokos/internal/server"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/migrations"
@@ -172,6 +173,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	adminHandler, err := admin.New(admin.Options{
 		Logger: logger, DB: adminDB, Authenticator: adminAuth, Sealer: sealer,
 		Validators: map[string]vault.Validator{"openai": vault.NewOpenAIValidator(cfg.Skeleton.OpenAI.ParsedBaseURL, 10*time.Second)},
+		Snapshot:   genaiprices.Snapshot(),
 	})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())

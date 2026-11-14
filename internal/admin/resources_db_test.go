@@ -58,7 +58,7 @@ func TestTenants(t *testing.T) {
 		if m.PrincipalType != adminapi.PrincipalTypeServiceAccount || m.ID != sa.ID || m.Tenant == nil || m.Tenant.ID != out.Tenant.ID || m.Tenant.State != adminapi.TenantStateActive || m.Bootstrap {
 			t.Errorf("me: %+v", m)
 		}
-		if strings.Join(m.Roles, ",") != "tenant-admin" || len(m.Permissions) != 12 {
+		if strings.Join(m.Roles, ",") != "tenant-admin" || len(m.Permissions) != 14 {
 			t.Errorf("roles %v, permissions %v", m.Roles, m.Permissions)
 		}
 		// The default name of the first service account is admin; no expiry means none.
@@ -490,7 +490,7 @@ func TestPlatformKeys(t *testing.T) {
 	c := api.Client(boot)
 
 	m := me(t, api, boot)
-	if m.PrincipalType != adminapi.PrincipalTypePlatform || !m.Bootstrap || m.Tenant != nil || strings.Join(m.Roles, ",") != "platform-admin" || len(m.Permissions) != 9 {
+	if m.PrincipalType != adminapi.PrincipalTypePlatform || !m.Bootstrap || m.Tenant != nil || strings.Join(m.Roles, ",") != "platform-admin" || len(m.Permissions) != 12 {
 		t.Errorf("me: %+v", m)
 	}
 	r := api.Do(t, "GET", "/v1/me", boot, nil, nil)

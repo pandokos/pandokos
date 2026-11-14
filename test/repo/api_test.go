@@ -263,8 +263,11 @@ func internalDeps(t *testing.T, pkg string) []string {
 func TestPlanesDoNotImportEachOther(t *testing.T) {
 	const mod = "github.com/pandokos/pandokos/internal/"
 	rules := map[string][]string{
-		"gateway":  {"admin", "adminapi", "authn", "cli", "store", "vault", "catalog"},
-		"admin":    {"gateway", "family", "server", "config"},
+		"gateway": {"admin", "adminapi", "authn", "cli", "store", "vault", "catalog"},
+		// "family" is not listed: the catalogue prices usage (pricing.CostOf takes family.Usage), and
+		// the administration plane reaches the catalogue (sprint 2.2, C8), so it reaches family
+		// transitively through internal/pricing.
+		"admin":    {"gateway", "server", "config"},
 		"cli":      {"store", "admin", "config"},
 		"authz":    {"store", "admin", "gateway", "config", "authn"},
 		"adminapi": {"store", "admin", "gateway", "authn", "authz", "config", "cli"},
@@ -571,7 +574,7 @@ func TestOpenAPIDocument(t *testing.T) {
 		Components struct {
 			Schemas map[string]struct {
 				Properties map[string]struct {
-					Type    string `yaml:"type"`
+					Type    any    `yaml:"type"` // a string, or a list ([string, "null"]) for a nullable member
 					Pattern string `yaml:"pattern"`
 				} `yaml:"properties"`
 			} `yaml:"schemas"`

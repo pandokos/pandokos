@@ -17,6 +17,7 @@ import (
 	"github.com/pandokos/pandokos/internal/audit"
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/authz"
+	"github.com/pandokos/pandokos/internal/catalog"
 	"github.com/pandokos/pandokos/internal/requestid"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/tenant"
@@ -36,6 +37,22 @@ type Options struct {
 	// Validators maps a provider identifier to the validator used for `validate: true`; a
 	// provider without one refuses `validate`.
 	Validators map[string]vault.Validator
+	// Snapshot is the embedded price dataset (genaiprices.Snapshot), the source of an import with
+	// source embedded (required).
+	Snapshot []byte
+	// Refresh configures the download of the price dataset; an import with source remote is
+	// refused unless Refresh.Enabled.
+	Refresh RefreshOptions
+}
+
+// RefreshOptions say whether and from where the price dataset may be downloaded.
+type RefreshOptions struct {
+	Enabled bool
+	// URL is the only address that is ever downloaded; a request never names one.
+	URL string
+	// Fetch downloads url. It returns a *catalog.FetchError for a failure; any other error is
+	// treated as an unreachable source. It runs before, never inside, a transaction.
+	Fetch func(ctx context.Context, url string) ([]byte, error)
 }
 
 type server struct {
@@ -47,6 +64,8 @@ type server struct {
 	sealer  *vault.Sealer
 	// validators is a private copy of Options.Validators.
 	validators map[string]vault.Validator
+	snapshot   []byte
+	refresh    RefreshOptions
 }
 
 // reqState is the state of one request, shared by the outer handler and the hooks.
@@ -79,8 +98,13 @@ func New(o Options) (http.Handler, error) {
 		return nil, errors.New("admin: Authenticator is required")
 	case o.Sealer == nil:
 		return nil, errors.New("admin: Sealer is required")
+	case len(o.Snapshot) == 0:
+		return nil, errors.New("admin: Snapshot is required")
+	case o.Refresh.Enabled && (o.Refresh.URL == "" || o.Refresh.Fetch == nil):
+		return nil, errors.New("admin: Refresh needs a URL and a Fetch function when enabled")
 	}
-	s := &server{log: o.Logger, db: o.DB, auth: o.Authenticator, now: o.Now, sealer: o.Sealer, validators: maps.Clone(o.Validators)}
+	s := &server{log: o.Logger, db: o.DB, auth: o.Authenticator, now: o.Now, sealer: o.Sealer, validators: maps.Clone(o.Validators),
+		snapshot: o.Snapshot, refresh: o.Refresh}
 	if s.now == nil {
 		s.now = time.Now
 	}
@@ -227,6 +251,7 @@ func (s *server) fail(w http.ResponseWriter, r *http.Request, _ *adminapi.Operat
 	var fields []adminapi.FieldError
 	var re *adminapi.RequestError
 	var ie *invalidError
+	var fe *catalog.FetchError
 	switch {
 	case errors.As(err, &re):
 		code, fields = re.Code, re.Fields
@@ -248,6 +273,11 @@ func (s *server) fail(w http.ResponseWriter, r *http.Request, _ *adminapi.Operat
 		code = adminapi.ProblemCodeCredentialRejected
 	case errors.Is(err, errValidationUnavailable):
 		code = adminapi.ProblemCodeValidationUnavailable
+	case errors.As(err, &fe):
+		// Nothing of the failure but its class reaches the log: the cause can carry addresses.
+		code = adminapi.ProblemCodePriceSourceUnavailable
+	case errors.Is(err, catalog.ErrDatasetInvalid):
+		code = adminapi.ProblemCodePriceDatasetInvalid
 	case errors.Is(err, vault.ErrUnavailable):
 		// A key-encryption key version that is not available, or a data key that does not
 		// unwrap. Nothing of the error is logged but its class and identifiers: provider errors

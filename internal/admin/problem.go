@@ -30,6 +30,10 @@ var problems = map[adminapi.ProblemCode]problemSpec{
 	// Sprint 2.1, section 5.4: the two outcomes of a validation at write time.
 	adminapi.ProblemCodeCredentialRejected:    {422, "Credential rejected", "The provider did not accept the credential. Nothing was stored."},
 	adminapi.ProblemCodeValidationUnavailable: {502, "Validation unavailable", "The provider could not confirm the credential. Nothing was stored."},
+
+	// Sprint 2.2, section 5.8: the two outcomes of a price import that fails before anything is written.
+	adminapi.ProblemCodePriceSourceUnavailable: {502, "Price source unavailable", "The price dataset could not be downloaded. Nothing was imported."},
+	adminapi.ProblemCodePriceDatasetInvalid:    {422, "Price dataset invalid", "The price dataset could not be read. Nothing was imported."},
 }
 
 // The errors of the handlers and of the hooks; the Error hook turns each into a problem.
