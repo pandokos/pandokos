@@ -276,7 +276,7 @@ func catalogStatements(c context.Context, t *testing.T, admin, gateway *store.DB
 		if err != nil || !hist.DigestSeen || hist.NewerImport {
 			t.Errorf("PriceImportHistory after an embedded import: %+v %v", hist, err)
 		}
-		if hist, err = q.PriceImportHistory(c, queries.PriceImportHistoryParams{Digest: digest[:63] + "f", Since: time.Now().Add(-time.Hour)}); err != nil || hist.DigestSeen {
+		if hist, err = q.PriceImportHistory(c, queries.PriceImportHistoryParams{Digest: digest[:63] + "0", Since: time.Now().Add(-time.Hour)}); err != nil || hist.DigestSeen {
 			t.Errorf("PriceImportHistory for another digest: %+v %v", hist, err)
 		}
 		tick()

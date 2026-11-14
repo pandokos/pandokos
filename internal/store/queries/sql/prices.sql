@@ -6,6 +6,7 @@
 -- name: LockPriceImports :exec
 SELECT pg_catalog.pg_advisory_xact_lock(7203391045122417921);
 
+-- last_remote is the epoch when no remote import succeeded.
 -- name: PriceImportHistory :one
 SELECT EXISTS (SELECT 1 FROM pandokos.price_import i
                 WHERE i.digest = sqlc.arg(digest)::text AND i.outcome = 'success')::boolean AS digest_seen,
@@ -13,7 +14,7 @@ SELECT EXISTS (SELECT 1 FROM pandokos.price_import i
                 WHERE i.source IN ('file', 'remote') AND i.outcome = 'success'
                   AND i.created_at > sqlc.arg(since)::timestamptz)::boolean AS newer_import,
        COALESCE((SELECT max(i.created_at) FROM pandokos.price_import i
-                  WHERE i.source = 'remote' AND i.outcome = 'success'), '-infinity'::timestamptz)::timestamptz AS last_remote;
+                  WHERE i.source = 'remote' AND i.outcome = 'success'), 'epoch'::timestamptz)::timestamptz AS last_remote;
 
 -- name: CreatePriceImport :one
 INSERT INTO pandokos.price_import (started_at, source, source_ref, dataset_format, digest, outcome, error_class, actor_type,

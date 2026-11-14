@@ -513,7 +513,7 @@ SELECT EXISTS (SELECT 1 FROM pandokos.price_import i
                 WHERE i.source IN ('file', 'remote') AND i.outcome = 'success'
                   AND i.created_at > $2::timestamptz)::boolean AS newer_import,
        COALESCE((SELECT max(i.created_at) FROM pandokos.price_import i
-                  WHERE i.source = 'remote' AND i.outcome = 'success'), '-infinity'::timestamptz)::timestamptz AS last_remote
+                  WHERE i.source = 'remote' AND i.outcome = 'success'), 'epoch'::timestamptz)::timestamptz AS last_remote
 `
 
 type PriceImportHistoryParams struct {
@@ -527,6 +527,7 @@ type PriceImportHistoryRow struct {
 	LastRemote  time.Time
 }
 
+// last_remote is the epoch when no remote import succeeded.
 func (q *Queries) PriceImportHistory(ctx context.Context, arg PriceImportHistoryParams) (PriceImportHistoryRow, error) {
 	row := q.db.QueryRow(ctx, priceImportHistory, arg.Digest, arg.Since)
 	var i PriceImportHistoryRow
