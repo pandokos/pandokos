@@ -1,6 +1,7 @@
 package admin_test
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/url"
 	"reflect"
@@ -480,6 +481,36 @@ func TestListUsageRecords(t *testing.T) {
 			"another provider": {"from": all["from"], "to": all["to"], "limit": {"2"}, "provider": {"anthropic"}, "cursor": {first.NextCursor}},
 			"tampered":         {"from": all["from"], "to": all["to"], "limit": {"2"}, "cursor": {"x" + first.NextCursor}},
 			"truncated":        {"from": all["from"], "to": all["to"], "limit": {"2"}, "cursor": {first.NextCursor[:len(first.NextCursor)/2]}},
+		}
+		// Crafted cursors: each is well formed JSON but carries something no page of ours makes.
+		id := first.Items[len(first.Items)-1].ID
+		ts := now.UTC().Format(time.RFC3339Nano)
+		fromTs, toTs := now.Add(-time.Hour).UTC().Format(time.RFC3339Nano), now.UTC().Format(time.RFC3339Nano)
+		long := strings.Repeat("a", 65)
+		type cur struct {
+			S string `json:"s"`
+			N string `json:"n"`
+			I string `json:"i"`
+			F string `json:"f,omitempty"`
+			T string `json:"t,omitempty"`
+			P string `json:"p,omitempty"`
+		}
+		crafted := map[string]cur{
+			"no window":           {S: "usage", N: ts, I: id},
+			"a window of 40 days": {S: "usage", N: ts, I: id, F: now.Add(-40 * 24 * time.Hour).UTC().Format(time.RFC3339Nano), T: toTs},
+			"an empty window":     {S: "usage", N: ts, I: id, F: toTs, T: toTs},
+			"an inverted window":  {S: "usage", N: ts, I: id, F: toTs, T: fromTs},
+			"the legacy sort key": {S: "usage:" + fromTs + "|" + toTs + "|", N: ts, I: id, F: fromTs, T: toTs},
+			"a long from":         {S: "usage", N: ts, I: id, F: long, T: toTs},
+			"a long to":           {S: "usage", N: ts, I: id, F: fromTs, T: long},
+			"a long provider":     {S: "usage", N: ts, I: id, F: fromTs, T: toTs, P: long},
+		}
+		for name, c := range crafted {
+			raw, err := json.Marshal(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cursorCase[name] = url.Values{"cursor": {base64.RawURLEncoding.EncodeToString(raw)}}
 		}
 		for name, q := range cursorCase {
 			p := expect(t, listUsage(t, c, c.ka, c.a.ID, q), 400, adminapi.ProblemCodeInvalidRequest)
