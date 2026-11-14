@@ -179,7 +179,11 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	guard, err := egress.New(egress.Options{ConnectTimeout: time.Duration(cfg.Upstream.ConnectTimeout)})
+	guard, err := egress.New(egress.Options{
+		ConnectTimeout: time.Duration(cfg.Upstream.ConnectTimeout),
+		RootCAs:        cfg.Upstream.TLS.RootCAs,
+		Proxy:          cfg.Upstream.Proxy.ParsedURL,
+	})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
