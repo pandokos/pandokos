@@ -3,7 +3,7 @@ id: SPRINT-3.1
 title: Authenticated passthrough
 epic: EPIC-3
 release: v0.1
-status: in-progress
+status: done
 design: draft 2026-11-14
 ---
 
