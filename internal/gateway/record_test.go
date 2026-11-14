@@ -562,19 +562,19 @@ func TestRecordsAlwaysValidate(t *testing.T) {
 				t.Errorf("status %d, recorded %d, outcome %q", c.status, r.UpstreamStatus, r.Outcome)
 			}
 		}},
-		{name: "a status of 600", handler: rawChat(600, `{}`), check: func(t *testing.T, c captured, r usage.Record) {
+		{name: "a status of 600", handler: rawChat(600, `{}`), check: func(t *testing.T, _ captured, r usage.Record) {
 			if r.UpstreamStatus != 0 {
 				t.Errorf("recorded %d", r.UpstreamStatus)
 			}
 		}},
-		{name: "a status of 599", handler: rawChat(599, `{}`), check: func(t *testing.T, c captured, r usage.Record) {
+		{name: "a status of 599", handler: rawChat(599, `{}`), check: func(t *testing.T, _ captured, r usage.Record) {
 			if r.UpstreamStatus != 599 {
 				t.Errorf("recorded %d", r.UpstreamStatus)
 			}
 		}},
 		{name: "usage and prices whose cost the column cannot hold", handler: rawChat(200, hugeBody),
 			target: func(g *gateway.Target) { g.Prices = dear },
-			check: func(t *testing.T, c captured, r usage.Record) {
+			check: func(t *testing.T, _ captured, r usage.Record) {
 				if r.CostStatus != "unknown" || r.Cost.Reason != pricing.ReasonInconsistentUsage || r.Cost.Known {
 					t.Errorf("cost %q %+v", r.CostStatus, r.Cost)
 				}

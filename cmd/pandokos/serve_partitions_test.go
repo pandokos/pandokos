@@ -19,7 +19,7 @@ func TestServeContinuesWhenPartitionsFail(t *testing.T) {
 	secretCanary := "synthetic-secret-in-the-error"
 	calls := 0
 	old := ensurePartitions
-	ensurePartitions = func(ctx context.Context, p *ledger.Partitioner) error {
+	ensurePartitions = func(ctx context.Context, _ *ledger.Partitioner) error {
 		calls++
 		if _, ok := ctx.Deadline(); ok && calls == 1 {
 			t.Error("the context of the call carries a deadline of its own")
