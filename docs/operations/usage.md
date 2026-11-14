@@ -6,7 +6,8 @@ cost. A row holds no content: no prompt, no completion, no header value and no s
 says when a row is written, what each column means, how tokens and cost are decided, how the writer
 behaves and what to look for in the log. It applies from sprint 3.2; decisions:
 [ADR 0010](../adr/0010-usage-extraction.md), [ADR 0013](../adr/0013-ledger-and-audit.md) and
-[ADR 0039](../adr/0039-usage-record-admission-and-ledger-writer.md).
+[ADR 0039](../adr/0039-usage-record-admission-and-ledger-writer.md); sprint 3.3 adds the `anthropic` family
+([ADR 0041](../adr/0041-anthropic-api-family.md)) and the list of records ([ADR 0043](../adr/0043-tenant-capability-check-and-usage-list.md)).
 
 ## 1. When a record is written
 
@@ -21,7 +22,7 @@ Two cases have no record:
 - The buffer is full. The request is refused with `503 unavailable` and the log field
   `ledger: full`, before it costs anything. This is the one authenticated request without a record.
 
-No API, command or page reads usage yet; see section 9 for inspecting rows with SQL.
+A tenant administrator reads its records with `pandokos usage list` (section 9); inspecting rows with SQL is the operator's alternative.
 
 ## 2. The columns
 
@@ -50,7 +51,7 @@ group; the table is `pandokos.usage_record`.
 | Column | Meaning |
 |---|---|
 | `provider`, `api_family` | the catalogue provider and its API family |
-| `operation` | `chat.completions`, `responses` or `embeddings` |
+| `operation` | `chat.completions`, `responses`, `embeddings`, `messages` or `messages.count_tokens` |
 | `endpoint` | the endpoint name; empty until it was chosen |
 | `model` | the catalogue name of the model; empty until the model resolved |
 | `model_id` | the catalogue ID of the model, when it resolved |
@@ -133,10 +134,14 @@ What was recorded depends on what happened:
 | 2xx and usage was read | `provider` | `provider` |
 | 2xx and no usage was read: the provider sent none, the stream was cut, cancelled or timed out, or the reader gave up | `estimated` | `estimated` |
 
+The two sides can have different sources. When an `anthropic` stream ends after `message_start` (cut, cancelled or failed) the record keeps the provider's input figures (`input_source` is `provider`) and an estimated output (`output_source` is `estimated`); the cost is then computed from the provider's input side and the estimated output. The log line has `usage_output_source` only when the two sources differ, and the provider span has `pandokos.usage.output_source` always. An operation without usage, `messages.count_tokens`, is recorded with both sources `none` and `cost_status` `none`: counting tokens consumes nothing.
+
 A status that is not 2xx is recorded without usage: a refused request generated nothing Pandokos
 observed, and a provider does not bill it. Failed provider calls therefore show no consumption.
 
-**The estimates are coarse by design** (no tokenizer; ADR 0010). For the `openai` family: input is
+**Anthropic normalization.** Totals are inclusive: `input_tokens` is the provider's `input_tokens` plus `cache_creation_input_tokens` plus `cache_read_input_tokens`; the cache read and write figures are kept apart; `output_tokens` includes thinking, as the provider counts it; the 1-hour cache write (`cache_creation.ephemeral_1h_input_tokens`) is priced as `cache_write_1h`; `server_tool_use.web_search_requests` is kept in `other_units` and is not priced. In a stream `message_start` reports the input side and each `message_delta` replaces the members it carries (cumulative counts). A negative or non-integer count makes the usage unusable and the request is estimated.
+
+**The estimates are coarse by design** (no tokenizer; ADR 0010). For the `openai` and `anthropic` families: input is
 the request body size in bytes divided by four, rounded up; output is one token per content event
 of a stream, or the response body size divided by four, rounded up, for a plain answer (0 for
 `embeddings`). They are stored in their own columns and marked `estimated`. Use them to see that
@@ -244,7 +249,27 @@ and the late records of the requests just cancelled, under its own deadline
 
 ## 9. Inspecting rows
 
-Nothing reads the ledger through an API in this release. Row-level security is forced, so even the
+A tenant administrator lists the tenant's records, newest first, through the administration API
+(`listUsageRecords`, permission `usage:read`, held by `tenant-admin`) or the CLI:
+
+```sh
+pandokos usage list --tenant demo [--from 2026-11-19T00:00:00Z] [--to 2026-11-20T00:00:00Z] [--provider anthropic]
+```
+
+`to` defaults to now and `from` to 24 hours before `to`; the window is at most 31 days and `from`
+must be before `to` (otherwise `invalid_request` on `from`). The records are those with
+`from` <= `started_at` < `to`. Pages hold 1 to 200 records (default 50); the cursor carries the
+resolved window and the filter (so a list without `to` pages over the window of its first page),
+and a cursor used with an explicit `from`, `to` or `provider` that differs from them is
+`invalid_request` on `cursor`. The
+list is read as the admin role under the tenant's row-level security policy and is not audited. In
+the answer `other_units` and `provider_usage` are arrays of `{name, value}` sorted by name, `metadata` is an
+array of `{key, value}` (the caller's own labels), a token figure is 0 when its source is not
+`provider`, an estimate is 0 when its source is not `estimated`, `cost` is `null` unless
+`cost_status` is `known`, and a text column that is absent is the empty string. A record never holds
+content, so the list returns none.
+
+The operator can also read the table with SQL. Row-level security is forced, so even the
 owner sees no row without a tenant. As the database owner, set the tenant in a transaction:
 
 ```sql

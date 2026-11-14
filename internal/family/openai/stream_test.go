@@ -61,7 +61,7 @@ func TestStreamReaderTee(t *testing.T) {
 		if got := run(r, data, chunk); !bytes.Equal(got, data) {
 			t.Fatalf("chunk %d: output differs from input", chunk)
 		}
-		if u, ok := r.Usage(); !ok || !reflect.DeepEqual(core(u), wantUsage) {
+		if u, ok := reported(r); !ok || !reflect.DeepEqual(core(u), wantUsage) {
 			t.Fatalf("chunk %d: usage %+v %v", chunk, u, ok)
 		}
 		if r.Failed() {
@@ -89,7 +89,7 @@ func TestStreamReaderStrip(t *testing.T) {
 		if got := run(r, data, chunk); !bytes.Equal(got, want) {
 			t.Fatalf("chunk %d: output differs", chunk)
 		}
-		if u, ok := r.Usage(); !ok || !reflect.DeepEqual(core(u), wantUsage) {
+		if u, ok := reported(r); !ok || !reflect.DeepEqual(core(u), wantUsage) {
 			t.Fatalf("chunk %d: usage %+v %v", chunk, u, ok)
 		}
 	}
@@ -118,7 +118,7 @@ func TestStreamReaderVariants(t *testing.T) {
 			if got := run(r, in, chunk); !bytes.Equal(got, want) {
 				t.Fatalf("chunk %d: output\n%q\nwant\n%q", chunk, got, want)
 			}
-			u, ok := r.Usage()
+			u, ok := reported(r)
 			if ok != wantOK || (ok && !reflect.DeepEqual(core(u), wantU)) {
 				t.Fatalf("chunk %d: usage %+v %v", chunk, u, ok)
 			}
@@ -190,7 +190,7 @@ func TestStreamReaderBounded(t *testing.T) {
 		if !r.Failed() {
 			t.Errorf("strip=%v: Failed() is false", strip)
 		}
-		if _, ok := r.Usage(); ok {
+		if _, ok := reported(r); ok {
 			t.Errorf("strip=%v: usage reported", strip)
 		}
 	}
@@ -198,7 +198,7 @@ func TestStreamReaderBounded(t *testing.T) {
 		in := append(append([]byte(nil), fixtures.Read("chat_stream_usage_on_last_chunk.sse")...), big...)
 		r := NewStreamReader(false)
 		run(r, in, 1000)
-		if u, ok := r.Usage(); !ok || !reflect.DeepEqual(core(u), wantUsage) || !r.Failed() {
+		if u, ok := reported(r); !ok || !reflect.DeepEqual(core(u), wantUsage) || !r.Failed() {
 			t.Fatalf("usage %+v %v failed=%v", u, ok, r.Failed())
 		}
 	})
@@ -207,8 +207,8 @@ func TestStreamReaderBounded(t *testing.T) {
 			r := NewStreamReader(strip)
 			for i, ev := range events(fixtures.Read("chat_stream_usage.sse")) {
 				r.Filter(ev)
-				if len(r.buf) != 0 {
-					t.Fatalf("strip=%v event %d: %d bytes held", strip, i, len(r.buf))
+				if held := len(r.Take()); held != 0 {
+					t.Fatalf("strip=%v event %d: %d bytes held", strip, i, held)
 				}
 			}
 		}

@@ -22,6 +22,8 @@ Commands:
   price-import list|get|run
   tenant-model list
   model-restriction get|set|clear
+  capability check --provider P --model M
+  usage list [--from T] [--to T] [--provider P]
                                    Administer through the administration API;
                                    "pandokos <command> --help" lists the flags
   import-prices [--config FILE] (--file FILE | --embedded) [--dry-run]

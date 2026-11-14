@@ -9,3 +9,4 @@ change afterwards.
 |---|---|---|---|
 | 1 — Foundations | v0.1 | 2026-11-13 | [epic-01-foundations](epic-01-foundations/README.md) |
 | 2 — Vault and catalogue | v0.1 | 2026-11-14 | [epic-02-vault-and-catalogue](epic-02-vault-and-catalogue/README.md) |
+| 3 — Gateway | v0.1 | 2026-11-14 | [epic-03-gateway](epic-03-gateway/README.md) |

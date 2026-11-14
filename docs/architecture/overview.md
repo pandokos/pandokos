@@ -100,7 +100,7 @@ flowchart TB
         limits[limits<br/>reserve and settle]
         resolve[resolver<br/>provider, endpoint, credential]
         fwd[forwarder<br/>streaming reverse proxy]
-        families[API families<br/>openai, anthropic, gemini]
+        families[API families<br/>openai, anthropic; gemini later]
         meter[usage<br/>record, outcome, cost]
     end
     subgraph shared[shared packages]
@@ -139,7 +139,7 @@ flowchart TB
   supported, where the model name is, how the credential is sent, how usage is read from a
   response or a stream, and what an error looks like
   ([ADR 0009](../adr/0009-native-passthrough-by-api-family.md),
-  [ADR 0010](../adr/0010-usage-extraction.md)).
+  [ADR 0010](../adr/0010-usage-extraction.md)). As built: `openai` and `anthropic` ([ADR 0041](../adr/0041-anthropic-api-family.md)); a provider that speaks the `openai` wire is configuration ([ADR 0042](../adr/0042-openai-compatible-providers-and-stream-usage-option.md)). The administration API reads usage for the first time: the usage record list and the capability check ([ADR 0043](../adr/0043-tenant-capability-check-and-usage-list.md)).
 - **vault** encrypts and decrypts provider credentials
   ([ADR 0008](../adr/0008-vault-envelope-encryption.md)).
 - **usage** (`internal/usage`) is the record of one request, the identifier of a record and the

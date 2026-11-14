@@ -83,7 +83,11 @@ func expectedCost(t *testing.T, u family.Usage) pricing.Cost {
 // sendLoose sends a request and returns what arrived, also when the answer was cut.
 func (h *harness) sendLoose(t *testing.T, path string, body []byte) (status int, got []byte, readErr error) {
 	t.Helper()
-	resp, err := h.request(ctx5(t), t, http.MethodPost, path, body, authed())
+	hdr := authed()
+	if strings.HasPrefix(path, "/anthropic/") {
+		hdr.Set("Anthropic-Version", anthropicVersion) // the provider refuses a Messages call without it
+	}
+	resp, err := h.request(ctx5(t), t, http.MethodPost, path, body, hdr)
 	if err != nil {
 		return 0, nil, err
 	}

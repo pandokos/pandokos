@@ -1,7 +1,7 @@
 ---
 id: EPIC-3
 title: Gateway
-status: in-progress
+status: done
 release: v0.1
 depends_on: [EPIC-2]
 ---
@@ -16,7 +16,7 @@ estimated cost and one span. This completes v0.1 together with sprint 4.1.
 
 ## Decisions it implements
 
-ADR 0009, 0010, 0013 (ledger), 0015 (traces), 0020, 0024, 0039, 0040.
+ADR 0009, 0010, 0013 (ledger), 0015 (traces), 0020, 0024, 0039, 0040, 0041, 0042, 0043, 0044.
 
 ## Sprints
 

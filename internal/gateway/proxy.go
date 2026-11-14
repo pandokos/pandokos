@@ -108,7 +108,7 @@ func (h *Handler) modifyResponse(resp *http.Response) error {
 		return errRedirect
 	}
 	st.answered = true
-	if id := resp.Header.Get("X-Request-Id"); id != "" && len(id) <= maxUpstreamRequestID && printableASCII(id) {
+	if id := st.adapter.UpstreamRequestID(resp.Header); id != "" && len(id) <= maxUpstreamRequestID && printableASCII(id) {
 		st.upstreamRequestID = id
 	}
 

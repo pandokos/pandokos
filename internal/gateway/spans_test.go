@@ -98,7 +98,7 @@ var serverAttrs = []string{
 var clientAttrs = []string{
 	"pandokos.provider", "pandokos.endpoint", "pandokos.model", "pandokos.operation", "pandokos.stream", "pandokos.credential.id",
 	"pandokos.funding", "http.response.status_code", "pandokos.ttfb_ms", "pandokos.usage.source", "pandokos.cost.status",
-	"pandokos.cost.amount", "pandokos.cost.currency",
+	"pandokos.cost.amount", "pandokos.cost.currency", "pandokos.usage.output_source",
 }
 
 // TestSpans is T-495.
@@ -166,7 +166,8 @@ func TestSpans(t *testing.T) {
 		for k, want := range map[string]string{
 			"pandokos.provider": "openai", "pandokos.endpoint": "synthetic-endpoint", "pandokos.model": "fake-basic", "pandokos.operation": "chat.completions",
 			"pandokos.credential.id": "synthetic-credential-openai", "pandokos.funding": "byok", "pandokos.usage.source": "provider",
-			"pandokos.cost.status": "known", "pandokos.cost.amount": rec.Cost.Amount.String(), "pandokos.cost.currency": "USD",
+			"pandokos.usage.output_source": "provider",
+			"pandokos.cost.status":         "known", "pandokos.cost.amount": rec.Cost.Amount.String(), "pandokos.cost.currency": "USD",
 		} {
 			if ca[k].AsString() != want {
 				t.Errorf("client %s = %q, want %q", k, ca[k].AsString(), want)
@@ -270,6 +271,9 @@ func TestSpans(t *testing.T) {
 		}
 		if got := attrs(client)["pandokos.usage.source"].AsString(); got != "none" {
 			t.Errorf("usage source %q", got)
+		}
+		if got := attrs(client)["pandokos.usage.output_source"].AsString(); got != "none" {
+			t.Errorf("usage output source %q", got)
 		}
 	})
 

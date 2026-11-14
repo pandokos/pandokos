@@ -39,8 +39,9 @@ type fakeAPI struct {
 	got             map[string][]any
 	out             map[string]any
 	fail            map[string]error
-	// pages answers listTenants by cursor.
-	pages map[string]adminapi.TenantList
+	// pages answers listTenants by cursor, usagePages listUsageRecords.
+	pages      map[string]adminapi.TenantList
+	usagePages map[string]adminapi.UsageRecordList
 	// patchBody is the raw body of the last PATCH: the generated types cannot tell an absent
 	// member from an empty one, the wire can.
 	patchBody string

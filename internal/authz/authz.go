@@ -57,6 +57,7 @@ const (
 	CatalogPrice  = "catalog:price"
 	ModelRead     = "model:read"
 	ModelRestrict = "model:restrict"
+	UsageRead     = "usage:read"
 )
 
 var catalogue = []Permission{
@@ -85,6 +86,7 @@ var catalogue = []Permission{
 	{CatalogPrice, ScopePlatform, "Setting and removing price overrides; running a price import"},
 	{ModelRead, ScopeTenant, "Listing the models available to the tenant, with their prices; reading the tenant's model restriction"},
 	{ModelRestrict, ScopeTenant, "Setting and clearing the tenant's model restriction"},
+	{UsageRead, ScopeTenant, "Listing the tenant's usage records"},
 }
 
 // Catalogue returns the permissions, in a fixed order.
@@ -136,7 +138,7 @@ func Roles() []Role {
 		{RolePlatformAdmin, KindPlatform, sorted(IdentityRead, TenantRead, TenantWrite, TenantSuspend, PlatformKeyRead, PlatformKeyWrite, PlatformKeyRevoke, TenantCredentialRead, TenantCredentialRevoke, CatalogRead, CatalogWrite, CatalogPrice),
 			"Administers the installation: tenants and platform keys"},
 		{RoleTenantAdmin, KindServiceAccount, sorted(IdentityRead, ServiceAccountRead, ServiceAccountWrite, VirtualKeyRead, VirtualKeyWrite, VirtualKeyRevoke, ModelInvoke,
-			CredentialRead, CredentialWrite, CredentialRotate, CredentialDelete, CredentialUse, ModelRead, ModelRestrict),
+			CredentialRead, CredentialWrite, CredentialRotate, CredentialDelete, CredentialUse, ModelRead, ModelRestrict, UsageRead),
 			"Administers one tenant: service accounts and virtual keys; may call models"},
 		{RoleInference, KindServiceAccount, sorted(ModelInvoke, CredentialUse), "Calls models through the inference listener"},
 	}

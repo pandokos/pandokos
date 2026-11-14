@@ -88,6 +88,32 @@ linters:
               desc: families do not know the server
             - pkg: github.com/pandokos/pandokos/internal/config
               desc: families receive plain values
+        sse-is-a-leaf:
+          list-mode: strict
+          files:
+            - "**/internal/family/sse/**"
+            - "!$test"
+          allow:
+            - $gostd
+        anthropic-family:
+          list-mode: strict
+          files:
+            - "**/internal/family/anthropic/**"
+            - "!$test"
+          allow:
+            - $gostd
+            - github.com/pandokos/pandokos/internal/family
+            - github.com/pandokos/pandokos/internal/family/sse
+        admin-never-opens:
+          list-mode: lax
+          files:
+            - "**/internal/admin/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/pandokos/pandokos/internal/gateway
+              desc: the administration plane never opens a credential
+            - pkg: github.com/pandokos/pandokos/internal/resolver
+              desc: the administration plane never opens a credential
         gateway-takes-plain-values:
           list-mode: lax
           files:

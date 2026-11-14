@@ -3,6 +3,8 @@
 Pandokos issues two kinds of key. Both are bearer credentials: whoever holds the key acts as its
 owner, so keep it in a file with restricted access and never in a command line or a log.
 
+A virtual key is presented in the header of the family being called: `Authorization: Bearer <key>` on `openai` routes; on `anthropic` routes either `Authorization: Bearer <key>` or `X-Api-Key: <key>` (both present must be equal; see the [gateway guide](gateway.md)).
+
 - A **platform key** belongs to the installation. It has the role `platform-admin` and administers
   tenants and platform keys. It has no permission inside a tenant.
 - A **virtual key** belongs to one service account of one tenant. What it may do follows from the

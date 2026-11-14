@@ -47,6 +47,10 @@ A record is *proposed* until its pull request is merged by the maintainer, then 
 | [0038](0038-egress-guard-upstream-tls-and-proxy.md) | Egress guard, upstream TLS and proxy | proposed |
 | [0039](0039-usage-record-admission-and-ledger-writer.md) | Usage record, admission and the ledger writer | proposed |
 | [0040](0040-traces.md) | Traces: SDK, span model, sampling and propagation | proposed |
+| [0041](0041-anthropic-api-family.md) | The anthropic API family | proposed |
+| [0042](0042-openai-compatible-providers-and-stream-usage-option.md) | OpenAI-compatible providers and the per-provider stream usage option | proposed |
+| [0043](0043-tenant-capability-check-and-usage-list.md) | The tenant capability check and the minimal usage list | proposed |
+| [0044](0044-sdk-compatibility-suite-python-typescript.md) | The SDK compatibility suite in Python and TypeScript | proposed |
 
 ## Questions from SOW 0.1 and where they were decided
 

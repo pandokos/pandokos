@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/pandokos/pandokos/internal/family"
+	"github.com/pandokos/pandokos/internal/family/sse"
 )
 
 // maxResponsesEventBytes is the size bound of a buffered JSON answer: the terminal event repeats
@@ -16,7 +17,7 @@ const maxResponsesEventBytes = 4 << 20
 // whether usage-only events are removed (chat completions only).
 func NewStreamReaderFor(operation string, strip bool) family.StreamReader {
 	if operation == OperationResponses {
-		return &ResponsesStreamReader{framing: framing{max: maxResponsesEventBytes}}
+		return &ResponsesStreamReader{Framing: sse.Framing{Max: maxResponsesEventBytes}}
 	}
 	return NewStreamReader(strip)
 }
@@ -24,7 +25,7 @@ func NewStreamReaderFor(operation string, strip bool) family.StreamReader {
 // ResponsesStreamReader reads usage from a responses event stream. It never strips: it forwards
 // what it is given.
 type ResponsesStreamReader struct {
-	framing
+	sse.Framing
 	usage    family.Usage
 	hasUsage bool
 	deltas   int64
@@ -39,19 +40,19 @@ type responsesEvent struct {
 
 // Filter reads the stream and returns p.
 func (r *ResponsesStreamReader) Filter(p []byte) []byte {
-	if r.failed {
+	if r.Failed() {
 		return p
 	}
-	r.split(p, r.inspect)
+	r.Split(p, r.inspect)
 	return p
 }
 
 // Flush reads an event the stream ended in the middle of and returns nil.
 func (r *ResponsesStreamReader) Flush() []byte {
-	if r.failed {
+	if r.Failed() {
 		return nil
 	}
-	if b := r.take(); len(b) > 0 {
+	if b := r.Take(); len(b) > 0 {
 		r.inspect(b)
 	}
 	return nil
@@ -63,7 +64,7 @@ var (
 )
 
 func (r *ResponsesStreamReader) inspect(ev []byte) {
-	data := eventData(ev)
+	data := sse.Data(ev)
 	if len(data) == 0 || data[0] != '{' || (!bytes.Contains(data, usageMark) && !bytes.Contains(data, deltaMark)) {
 		return
 	}
@@ -88,10 +89,12 @@ func (r *ResponsesStreamReader) inspect(ev []byte) {
 }
 
 // Usage returns the usage read so far; ok is false when none was seen.
-func (r *ResponsesStreamReader) Usage() (family.Usage, bool) { return r.usage, r.hasUsage }
+func (r *ResponsesStreamReader) Usage() (family.Usage, family.Parts) {
+	return r.usage, partsOf(r.hasUsage)
+}
 
 // Failed reports that the reader gave up because an event exceeded the size bound.
-func (r *ResponsesStreamReader) Failed() bool { return r.failed }
+func (r *ResponsesStreamReader) Failed() bool { return r.Framing.Failed() }
 
 // Deltas counts the events whose type ends in .delta.
 func (r *ResponsesStreamReader) Deltas() int64 { return r.deltas }

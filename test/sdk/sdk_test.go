@@ -45,11 +45,6 @@ func start(t *testing.T) (baseURL string, up *fakeprovider.Server) {
 func startRecording(t *testing.T) (baseURL string, up *fakeprovider.Server, rec *testutil.MemoryRecorder) {
 	t.Helper()
 	up = fakeprovider.New(t)
-	rec = &testutil.MemoryRecorder{}
-	tp, _ := testutil.SpanRecorder(t)
-	cfg := config.Defaults()
-	cfg.Listeners.Inference.Address = "127.0.0.1:0"
-	cfg.Listeners.Admin.Address = "127.0.0.1:0"
 	targets := map[string]gateway.Target{}
 	for _, m := range []string{
 		fakeprovider.ModelBasic, fakeprovider.ModelDetails, fakeprovider.ModelGatedStream, fakeprovider.ModelHang,
@@ -57,11 +52,25 @@ func startRecording(t *testing.T) (baseURL string, up *fakeprovider.Server, rec 
 	} {
 		targets["openai/"+m] = testutil.TargetFor(up, "openai", m)
 	}
+	addr, rec := startServer(t, map[string]string{"openai": "openai"}, targets, map[string]string{"openai": fixtures.CanaryProviderKey})
+	return "http://" + addr + "/openai/v1", up, rec
+}
+
+// startServer runs the in-process Pandokos over a catalogue of the given providers (name to
+// family) and targets ("provider/model"), with one secret per provider, and returns the address
+// of its inference listener and the recorder of its usage records.
+func startServer(t *testing.T, providers map[string]string, targets map[string]gateway.Target, secrets map[string]string) (addr string, rec *testutil.MemoryRecorder) {
+	t.Helper()
+	rec = &testutil.MemoryRecorder{}
+	tp, _ := testutil.SpanRecorder(t)
+	cfg := config.Defaults()
+	cfg.Listeners.Inference.Address = "127.0.0.1:0"
+	cfg.Listeners.Admin.Address = "127.0.0.1:0"
 	srv, err := server.New(server.Options{
 		Config: cfg, Logger: telemetry.NewLogger(io.Discard, "info"), Admin: http.NotFoundHandler(),
 		Authenticator: testutil.StaticAuthenticator(map[string]authz.Principal{testKey: testutil.InferencePrincipal()}),
-		Catalogue:     testutil.StaticCatalogue(map[string]string{"openai": "openai"}, targets),
-		Credentials:   testutil.StaticCredentials(map[string]string{"openai": fixtures.CanaryProviderKey}),
+		Catalogue:     testutil.StaticCatalogue(providers, targets),
+		Credentials:   testutil.StaticCredentials(secrets),
 		Egress:        testutil.TestGuard(t),
 		Recorder:      rec,
 		Tracer:        tp,
@@ -83,7 +92,7 @@ func startRecording(t *testing.T) (baseURL string, up *fakeprovider.Server, rec 
 		}
 	})
 	testutil.Eventually(t, 5*time.Second, "readiness", func() bool { return srv.Health().Ready(context.Background()) })
-	return "http://" + srv.InferenceAddr().String() + "/openai/v1", up, rec
+	return srv.InferenceAddr().String(), rec
 }
 
 func newClient(baseURL, key string) openai.Client {

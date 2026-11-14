@@ -57,6 +57,20 @@ flowchart LR
    [ADR 0040](../adr/0040-traces.md)); what each destination receives is listed in
    [data flows](../reference/data-flows.md).
 
+**The capability check** (`getCapability`, [ADR 0043](../adr/0043-tenant-capability-check-and-usage-list.md))
+runs in the administration plane and reads only catalogue state and credential metadata
+(`provider_credential_metadata`); it never opens a credential, holds no vault or key material and
+audits nothing.
+
+**The Compose reference** ([guide](../operations/compose.md)) makes these trust choices: both listeners
+use TLS from a self-signed certificate that `setup.sh` generates; ports are published on the host's
+loopback only; PostgreSQL is on a network with no route out and is not published, and the server
+verifies its certificate (`verify-full`); the Pandokos containers are read-only, drop all capabilities
+and cannot gain privileges; secrets are files, never environment values. The secret files are
+readable by every user of the host that can enter the `secrets` directory (the directory is mode 0700,
+the files 0444, because the containers run as other users), so the vault reports the key-file
+permission warning, which is expected there. The reference is for a first trial, not for production.
+
 ## What Pandokos does not protect against
 
 A person or process that controls the host, the container runtime, the database, the backups and

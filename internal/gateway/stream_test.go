@@ -186,7 +186,7 @@ func (r *brokenReader) Filter(p []byte) []byte {
 	return out
 }
 func (r *brokenReader) Flush() []byte { return r.real.Flush() }
-func (r *brokenReader) Usage() (family.Usage, bool) {
+func (r *brokenReader) Usage() (family.Usage, family.Parts) {
 	if r.panicUsage {
 		panic(fixtures.CanaryPrompt)
 	}

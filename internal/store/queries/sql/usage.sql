@@ -1,5 +1,6 @@
--- Usage ledger. Insert only for the gateway: no statement reads, changes or removes a usage row
--- in the request path. records is a JSON array passed as text and cast (ADR 0027).
+-- Usage ledger. Insert only for the gateway; the admin role lists a tenant's records in its
+-- session (ListUsageRecords). No statement changes or removes a row. records is a JSON array
+-- passed as text and cast (ADR 0027).
 
 -- name: InsertUsageRecords :execrows
 INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, trace_id, principal_kind, principal_id, key_id,
@@ -32,3 +33,20 @@ ON CONFLICT DO NOTHING;
 -- name: EnsureUsagePartitions :one
 SELECT created::integer AS created, default_in_use::boolean AS default_in_use
   FROM pandokos.ensure_usage_partitions(sqlc.arg(ahead)::integer);
+
+-- name: ListUsageRecords :many
+SELECT u.id, u.started_at, u.request_id, u.trace_id, u.principal_kind, u.principal_id, u.key_id, u.credential_id,
+       u.funding, u.provider, u.api_family, u.operation, u.endpoint, u.model, u.model_id, u.upstream_model, u.stream,
+       u.outcome, u.error_code, u.upstream_status, u.ttfb_ms, u.duration_ms, u.request_bytes, u.response_bytes,
+       u.input_source, u.output_source, u.input_tokens, u.output_tokens, u.cache_read_tokens, u.cache_write_tokens,
+       u.reasoning_tokens, u.other_units, u.provider_usage, u.estimated_input_tokens, u.estimated_output_tokens,
+       u.cost_status, u.cost_reason, u.cost, u.currency, u.price_version_id, u.cost_fallbacks, u.metadata,
+       u.metadata_dropped
+  FROM pandokos.usage_record u
+ WHERE u.started_at >= sqlc.arg(from_at)::timestamptz
+   AND u.started_at <  sqlc.arg(to_at)::timestamptz
+   AND (sqlc.arg(provider)::text = '' OR u.provider = sqlc.arg(provider)::text)
+   AND (NOT sqlc.arg(after)::boolean
+        OR (u.started_at, u.id) < (sqlc.arg(after_started_at)::timestamptz, sqlc.arg(after_id)::uuid))
+ ORDER BY u.started_at DESC, u.id DESC
+ LIMIT sqlc.arg(page_size)::integer;

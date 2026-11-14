@@ -11,6 +11,18 @@ import (
 
 func init() { commands = append(commands, catalogueCommands...) }
 
+// parseStreamUsageOption reads --stream-usage-option; an empty value is allowed (and means the
+// server's default) only when emptyOK.
+func parseStreamUsageOption(v string, emptyOK bool) (adminapi.StreamUsageOption, error) {
+	switch o := adminapi.StreamUsageOption(v); {
+	case o == "" && emptyOK:
+		return "", nil
+	case o == adminapi.StreamUsageOptionAdd, o == adminapi.StreamUsageOptionOmit:
+		return o, nil
+	}
+	return "", usagef("--stream-usage-option must be add or omit")
+}
+
 // registerPaging registers the flags of a list that has no state filter and no sort.
 func (l *listFlags) registerPaging(fs *flag.FlagSet) {
 	fs.StringVar(&l.cursor, "cursor", "", "the next_cursor of the previous page")
@@ -142,6 +154,7 @@ var catalogueCommands = []command{
 		display := fs.String("display-name", "", "display name")
 		desc := fs.String("description", "", "description")
 		dataset := fs.String("dataset-provider", "", "provider id in the price dataset")
+		option := fs.String("stream-usage-option", "", "add (default) or omit: whether the stream usage option is added to chat completion streams")
 		pos, err := parse(fs, args, 1)
 		if err != nil {
 			return err
@@ -153,8 +166,12 @@ var catalogueCommands = []command{
 		if err := a.connect(); err != nil {
 			return err
 		}
+		opt, err := parseStreamUsageOption(*option, true)
+		if err != nil {
+			return err
+		}
 		p, err := a.client.CreateProvider(a.ctx, adminapi.CreateProviderInput{Body: adminapi.ProviderCreate{
-			Name: pos[0], ApiFamily: f, DisplayName: *display, Description: *desc, DatasetProvider: *dataset}})
+			Name: pos[0], ApiFamily: f, DisplayName: *display, Description: *desc, DatasetProvider: *dataset, StreamUsageOption: opt}})
 		if err != nil {
 			return err
 		}
@@ -179,6 +196,7 @@ var catalogueCommands = []command{
 		desc := fs.String("description", "", "new description (empty clears)")
 		dataset := fs.String("dataset-provider", "", "provider id in the price dataset (empty stops imports)")
 		enabled := fs.Bool("enabled", false, "enable (--enabled) or disable (--enabled=false)")
+		option := fs.String("stream-usage-option", "", "add or omit: whether the stream usage option is added to chat completion streams")
 		pos, err := parse(fs, args, 1)
 		if err != nil {
 			return err
@@ -196,7 +214,14 @@ var catalogueCommands = []command{
 		if given(fs, "enabled") {
 			body.Enabled = adminapi.Some(*enabled)
 		}
-		if !body.DisplayName.Set && !body.Description.Set && !body.DatasetProvider.Set && !body.Enabled.Set {
+		if given(fs, "stream-usage-option") {
+			opt, err := parseStreamUsageOption(*option, false)
+			if err != nil {
+				return err
+			}
+			body.StreamUsageOption = adminapi.Some(opt)
+		}
+		if !body.DisplayName.Set && !body.Description.Set && !body.DatasetProvider.Set && !body.Enabled.Set && !body.StreamUsageOption.Set {
 			return usagef("provider update needs a member to change")
 		}
 		if err := a.connect(); err != nil {

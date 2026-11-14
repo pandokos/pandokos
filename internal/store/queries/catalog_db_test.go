@@ -39,7 +39,7 @@ func catalogStatements(c context.Context, t *testing.T, admin, gateway *store.DB
 
 		// Providers.
 		mark("CreateProvider")
-		p, err := q.CreateProvider(c, queries.CreateProviderParams{Name: "synthetic-393", DisplayName: "Synthetic, ünï", Description: "d, é", ApiFamily: "openai", Enabled: true, DatasetProvider: "synthetic"})
+		p, err := q.CreateProvider(c, queries.CreateProviderParams{Name: "synthetic-393", DisplayName: "Synthetic, ünï", Description: "d, é", ApiFamily: "openai", Enabled: true, DatasetProvider: "synthetic", StreamUsageOption: "add"})
 		if err != nil {
 			return err
 		}
@@ -589,7 +589,7 @@ func catalogStatements(c context.Context, t *testing.T, admin, gateway *store.DB
 	}
 	must("a provider with nothing under it is deleted", admin.Platform(c, func(c context.Context, tx store.Tx) error {
 		q := queries.New(tx)
-		if _, err := q.CreateProvider(c, queries.CreateProviderParams{Name: "synthetic-393-gone", ApiFamily: "anthropic", Enabled: true}); err != nil {
+		if _, err := q.CreateProvider(c, queries.CreateProviderParams{Name: "synthetic-393-gone", ApiFamily: "anthropic", Enabled: true, StreamUsageOption: "add"}); err != nil {
 			return err
 		}
 		mark("DeleteProvider")

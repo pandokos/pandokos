@@ -54,6 +54,31 @@ const (
 	ModelCRLF = "fake-crlf"
 	// ModelBigEvent sends an event (or, for a plain answer, a body) over the bounds of the readers.
 	ModelBigEvent = "fake-big-event"
+	// ModelCache answers the Anthropic way with cache usage (message_cache.json, and
+	// message_stream_cumulative.sse for a stream); for the openai family it is ModelBasic.
+	ModelCache = "fake-cache"
+	// ModelCutAfterStart streams the first event (message_start for Anthropic) and closes the
+	// connection without ending the stream.
+	ModelCutAfterStart = "fake-cut-after-start"
+	// ModelStallAfterFirst streams the first event and then waits until the request is cancelled.
+	ModelStallAfterFirst = "fake-stall-after-first"
+	// ModelError529 answers 529 with error_529.json (Anthropic routes; 503 for the openai family).
+	ModelError529 = "fake-error-529"
+)
+
+// The compatible profiles of OpenAI-compatible servers, selected by model (chat completions,
+// embeddings and responses; the profile concerns the chat wire).
+const (
+	// ModelCompatUsageLastChunk streams usage on the last content chunk, with no usage-only chunk.
+	ModelCompatUsageLastChunk = "compat-usage-last-chunk"
+	// ModelCompatExtraUsage streams a usage-only chunk whose usage holds provider-specific members
+	// (integer, fractional and nested).
+	ModelCompatExtraUsage = "compat-extra-usage"
+	// ModelCompatIgnoresOption always streams without usage, whatever stream_options says.
+	ModelCompatIgnoresOption = "compat-ignores-option"
+	// ModelCompatRefusesOption answers 400 when the body has a top-level stream_options member and
+	// streams without usage otherwise.
+	ModelCompatRefusesOption = "compat-refuses-option"
 )
 
 // Sizes of the oversized event or body of ModelBigEvent: over the 1 MiB bound of the chat reader,
@@ -69,6 +94,9 @@ const (
 	pathChat       = "/v1/chat/completions"
 	pathResponses  = "/v1/responses"
 	pathEmbeddings = "/v1/embeddings"
+	// The Anthropic operations.
+	pathMessages    = "/v1/messages"
+	pathCountTokens = "/v1/messages/count_tokens" //nolint:gosec // a URL path, not a credential
 )
 
 // Request is a request the fake received.
@@ -94,6 +122,8 @@ type Server struct {
 	conns     atomic.Int64
 	stepping  atomic.Bool
 	steps     chan struct{}
+	basePath  string
+	nextReqID atomic.Int64
 }
 
 // New starts a plain HTTP/1.1 fake on 127.0.0.1; it is closed through tb.Cleanup.
@@ -114,6 +144,48 @@ func (s *Server) countConnections() {
 			s.conns.Add(1)
 		}
 	}
+}
+
+// NewOn starts a plain HTTP/1.1 fake listening on addr ("host:port"; "0.0.0.0:0" lets containers
+// reach it through the host gateway); it is closed through tb.Cleanup. URL still reports the
+// loopback address of the listener's port.
+func NewOn(tb testing.TB, addr string) *Server {
+	tb.Helper()
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	s := newServer()
+	s.ts = httptest.NewUnstartedServer(http.HandlerFunc(s.handle))
+	s.ts.Listener.Close()
+	s.ts.Listener = l
+	s.countConnections()
+	s.ts.Start()
+	s.ts.URL = "http://127.0.0.1:" + strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
+	tb.Cleanup(s.close)
+	return s
+}
+
+// Port returns the TCP port the fake listens on.
+func (s *Server) Port() int { return s.ts.Listener.Addr().(*net.TCPAddr).Port }
+
+// SetBasePath makes every route also answer under the path prefix p ("/compat-base"), for a
+// provider whose endpoint has a base path. The routes still answer without it.
+func (s *Server) SetBasePath(p string) {
+	s.mu.Lock()
+	s.basePath = strings.TrimRight(p, "/")
+	s.mu.Unlock()
+}
+
+// trim returns path without the base path, when it starts with it.
+func (s *Server) trim(path string) string {
+	s.mu.Lock()
+	bp := s.basePath
+	s.mu.Unlock()
+	if bp != "" && strings.HasPrefix(path, bp+"/") {
+		return strings.TrimPrefix(path, bp)
+	}
+	return path
 }
 
 // NewTLS starts a fake with TLS and HTTP/2 enabled.
@@ -323,11 +395,15 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	})
 	s.mu.Unlock()
 
-	if r.Method == http.MethodGet && (r.URL.Path == "/v1/models" || r.URL.Path == modelsMovedPath) {
+	op := s.trim(r.URL.Path)
+	if r.Method == http.MethodGet && (op == "/v1/models" || op == modelsMovedPath) {
 		s.handleModels(w, r)
 		return
 	}
-	op := r.URL.Path
+	if r.Method == http.MethodPost && (op == pathMessages || op == pathCountTokens) {
+		s.handleAnthropic(w, r, op, body)
+		return
+	}
 	if r.Method != http.MethodPost || (op != pathChat && op != pathResponses && op != pathEmbeddings) {
 		writeJSON(w, http.StatusNotFound, []byte(`{"error":{"message":"not found","type":"invalid_request_error","param":null,"code":null}}`))
 		return
@@ -366,8 +442,14 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	includeUsage := req.StreamOptions != nil && req.StreamOptions.IncludeUsage
 
 	switch req.Model {
-	case ModelBasic:
+	case ModelBasic, ModelCache:
 		s.answer(w, r, op, req.Stream, includeUsage, false)
+	case ModelCompatUsageLastChunk, ModelCompatExtraUsage, ModelCompatIgnoresOption, ModelCompatRefusesOption:
+		s.compat(w, r, op, req.Model, req.Stream, body)
+	case ModelCutAfterStart, ModelStallAfterFirst:
+		s.firstThen(w, r, req.Model, base2(op, req.Stream))
+	case ModelError529:
+		writeJSON(w, http.StatusServiceUnavailable, []byte(`{"error":{"message":"synthetic: overloaded","type":"server_error","param":null,"code":null}}`))
 	case ModelDetails:
 		writeJSON(w, http.StatusOK, oneOf(op, "chat_completion_details.json"))
 	case ModelGatedStream:
@@ -453,15 +535,18 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, op string, strea
 	s.stream(w, r, fixtures.Read(name), gated)
 }
 
-// dropUsage removes the usage object from a JSON document, at the top level and under "response".
+// dropUsage removes the usage object from a JSON document, at the top level and under "response"
+// (responses) and "message" (the message_start event of Anthropic).
 func dropUsage(b []byte) []byte {
 	var doc map[string]any
 	if json.Unmarshal(b, &doc) != nil {
 		return b
 	}
 	delete(doc, "usage")
-	if resp, ok := doc["response"].(map[string]any); ok {
-		delete(resp, "usage")
+	for _, key := range []string{"response", "message"} {
+		if member, ok := doc[key].(map[string]any); ok {
+			delete(member, "usage")
+		}
 	}
 	out, err := json.Marshal(doc)
 	if err != nil {

@@ -5,44 +5,48 @@
 -- tenant session.
 
 -- name: ListProviders :many
-SELECT p.id, p.name, p.display_name, p.description, p.api_family, p.enabled, p.dataset_provider, p.created_at, p.updated_at
+SELECT p.id, p.name, p.display_name, p.description, p.api_family, p.enabled, p.dataset_provider, p.created_at, p.updated_at,
+       p.stream_usage_option
   FROM pandokos.provider p
  WHERE (NOT sqlc.arg(after)::boolean OR p.name > sqlc.arg(after_name)::text)
  ORDER BY p.name
  LIMIT sqlc.arg(page_size)::integer;
 
 -- name: GetProvider :one
-SELECT p.id, p.name, p.display_name, p.description, p.api_family, p.enabled, p.dataset_provider, p.created_at, p.updated_at
+SELECT p.id, p.name, p.display_name, p.description, p.api_family, p.enabled, p.dataset_provider, p.created_at, p.updated_at,
+       p.stream_usage_option
   FROM pandokos.provider p
  WHERE p.name = sqlc.arg(name)::text;
 
 -- Writes of the endpoints of a provider lock its row: they move the default endpoint and check
 -- what is left, and two of them at once would collide on provider_endpoint_default_key.
 -- name: GetProviderForUpdate :one
-SELECT p.id, p.name, p.display_name, p.description, p.api_family, p.enabled, p.dataset_provider, p.created_at, p.updated_at
+SELECT p.id, p.name, p.display_name, p.description, p.api_family, p.enabled, p.dataset_provider, p.created_at, p.updated_at,
+       p.stream_usage_option
   FROM pandokos.provider p
  WHERE p.name = sqlc.arg(name)::text
    FOR UPDATE;
 
 -- name: CreateProvider :one
-INSERT INTO pandokos.provider (name, display_name, description, api_family, enabled, dataset_provider)
+INSERT INTO pandokos.provider (name, display_name, description, api_family, enabled, dataset_provider, stream_usage_option)
 VALUES (sqlc.arg(name)::text, sqlc.arg(display_name)::text, sqlc.arg(description)::text, sqlc.arg(api_family)::text,
-        sqlc.arg(enabled)::boolean, sqlc.arg(dataset_provider)::text)
-RETURNING id, name, display_name, description, api_family, enabled, dataset_provider, created_at, updated_at;
+        sqlc.arg(enabled)::boolean, sqlc.arg(dataset_provider)::text, sqlc.arg(stream_usage_option)::text)
+RETURNING id, name, display_name, description, api_family, enabled, dataset_provider, created_at, updated_at, stream_usage_option;
 
 -- name: UpdateProvider :one
 UPDATE pandokos.provider
    SET display_name     = CASE WHEN sqlc.arg(set_display_name)::boolean THEN sqlc.arg(display_name)::text ELSE display_name END,
        description      = CASE WHEN sqlc.arg(set_description)::boolean THEN sqlc.arg(description)::text ELSE description END,
        enabled          = CASE WHEN sqlc.arg(set_enabled)::boolean THEN sqlc.arg(enabled)::boolean ELSE enabled END,
-       dataset_provider = CASE WHEN sqlc.arg(set_dataset_provider)::boolean THEN sqlc.arg(dataset_provider)::text ELSE dataset_provider END
+       dataset_provider = CASE WHEN sqlc.arg(set_dataset_provider)::boolean THEN sqlc.arg(dataset_provider)::text ELSE dataset_provider END,
+       stream_usage_option = CASE WHEN sqlc.arg(set_stream_usage_option)::boolean THEN sqlc.arg(stream_usage_option)::text ELSE stream_usage_option END
  WHERE name = sqlc.arg(name)::text
-RETURNING id, name, display_name, description, api_family, enabled, dataset_provider, created_at, updated_at;
+RETURNING id, name, display_name, description, api_family, enabled, dataset_provider, created_at, updated_at, stream_usage_option;
 
 -- name: DeleteProvider :one
 DELETE FROM pandokos.provider
  WHERE name = sqlc.arg(name)::text
-RETURNING id, name, display_name, description, api_family, enabled, dataset_provider, created_at, updated_at;
+RETURNING id, name, display_name, description, api_family, enabled, dataset_provider, created_at, updated_at, stream_usage_option;
 
 -- name: ListEndpoints :many
 SELECT e.id, e.provider_id, e.name, e.base_url, e.region, e.private, e.enabled, e.is_default, e.description, e.created_at, e.updated_at
@@ -202,7 +206,7 @@ RETURNING models, updated_at;
 DELETE FROM pandokos.tenant_model_restriction;
 
 -- name: LoadProviders :many
-SELECT p.id, p.name, p.api_family, p.enabled, p.dataset_provider
+SELECT p.id, p.name, p.api_family, p.enabled, p.dataset_provider, p.stream_usage_option
   FROM pandokos.provider p
  ORDER BY p.name;
 

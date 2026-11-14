@@ -28,6 +28,7 @@ import (
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/egress"
 	"github.com/pandokos/pandokos/internal/family"
+	"github.com/pandokos/pandokos/internal/family/anthropic"
 	"github.com/pandokos/pandokos/internal/family/openai"
 	"github.com/pandokos/pandokos/internal/gateway"
 	"github.com/pandokos/pandokos/internal/telemetry"
@@ -1070,11 +1071,16 @@ func TestUpstreamUnreachable(t *testing.T) {
 func TestRouteDeclaresAPermission(t *testing.T) {
 	routes := gateway.Routes()
 	want := map[string]bool{}
-	for _, op := range openai.Adapter().Operations() {
-		want[op.Method+" /{provider}"+op.Path] = false
+	for _, a := range []family.Adapter{openai.Adapter(), anthropic.Adapter()} {
+		for _, op := range a.Operations() {
+			want[op.Method+" /{provider}"+op.Path] = false
+		}
 	}
-	if len(want) == 0 {
-		t.Fatal("the openai adapter has no operation")
+	if len(want) != 5 {
+		t.Fatalf("the adapters have %d operations, want 5 (three openai, two anthropic)", len(want))
+	}
+	if len(routes) != 5 {
+		t.Errorf("%d routes, want 5", len(routes))
 	}
 	for _, r := range routes {
 		key := r.Method + " " + r.Path
@@ -1099,8 +1105,10 @@ func TestRouteDeclaresAPermission(t *testing.T) {
 			t.Errorf("the operation %s has no route", key)
 		}
 	}
-	if !want["POST /{provider}/v1/chat/completions"] {
-		t.Error("POST /{provider}/v1/chat/completions is not a route")
+	for _, key := range []string{"POST /{provider}/v1/chat/completions", "POST /{provider}/v1/messages", "POST /{provider}/v1/messages/count_tokens"} {
+		if !want[key] {
+			t.Errorf("%s is not a route", key)
+		}
 	}
 }
 
