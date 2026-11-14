@@ -30,6 +30,12 @@ func (f *framing) split(p []byte, each func(ev []byte)) (overflow []byte) {
 		if end < 0 {
 			break
 		}
+		if end-start > f.max { // a complete event over the bound: give up like for an incomplete one
+			f.failed = true
+			overflow = append([]byte(nil), f.buf[start:]...)
+			f.buf, f.scan = nil, 0
+			return overflow
+		}
 		each(f.buf[start:end])
 		start = end
 	}

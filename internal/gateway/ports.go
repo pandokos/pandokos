@@ -33,18 +33,6 @@ type Recorder interface {
 	Record(r usage.Record)
 }
 
-// SpanAttributes lists every attribute key the gateway sets on a span.
-var SpanAttributes = []string{
-	// server span
-	"http.request.method", "http.route", "http.response.status_code", "pandokos.request.id",
-	"pandokos.record.id", "pandokos.tenant.id", "pandokos.principal.id", "pandokos.key.id",
-	"pandokos.provider", "pandokos.operation", "pandokos.outcome", "pandokos.error.code",
-	// provider span (the keys it shares with the server span are listed once)
-	"pandokos.endpoint", "pandokos.model", "pandokos.stream", "pandokos.credential.id",
-	"pandokos.funding", "pandokos.upstream.error", "pandokos.ttfb_ms", "pandokos.usage.source",
-	"pandokos.cost.status", "pandokos.cost.amount", "pandokos.cost.currency",
-}
-
 // Catalogue is the gateway's view of the catalogue.
 type Catalogue interface {
 	// Provider returns the API family of an enabled provider; ok is false for a name that is

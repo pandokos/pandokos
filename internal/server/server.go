@@ -35,8 +35,8 @@ type Options struct {
 	Credentials   gateway.Credentials     // required: opens the provider credential of a call
 	Failures      gateway.FailureRecorder // optional: records authentication failures
 	Egress        *egress.Guard           // required: the only way out of the process
-	Recorder      gateway.Recorder        // receives the usage record of every admitted request
-	Tracer        trace.TracerProvider    // the trace provider of the gateway
+	Recorder      gateway.Recorder        // required: receives the usage record of every admitted request
+	Tracer        trace.TracerProvider    // required: the trace provider of the gateway
 }
 
 // listener is one HTTP listener with its server.
@@ -80,6 +80,10 @@ func New(o Options) (*Server, error) {
 		return nil, errors.New("server: Credentials is required")
 	case o.Egress == nil:
 		return nil, errors.New("server: Egress is required")
+	case o.Recorder == nil:
+		return nil, errors.New("server: Recorder is required")
+	case o.Tracer == nil:
+		return nil, errors.New("server: Tracer is required")
 	}
 	cfg, logger := o.Config, o.Logger
 	s := &Server{cfg: cfg, logger: logger, health: health.New(logger), admin: o.Admin, egress: o.Egress}
@@ -99,6 +103,7 @@ func New(o Options) (*Server, error) {
 		MaxRequestDuration:     time.Duration(cfg.Limits.MaxRequestDuration),
 		Recorder:               o.Recorder,
 		Tracer:                 o.Tracer,
+		PropagateTrace:         cfg.Telemetry.Traces.Propagate,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("server: %w", err)

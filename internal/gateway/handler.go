@@ -16,11 +16,14 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/pandokos/pandokos/internal/authz"
+	"github.com/pandokos/pandokos/internal/buildinfo"
 	"github.com/pandokos/pandokos/internal/family"
 	"github.com/pandokos/pandokos/internal/secret"
+	"github.com/pandokos/pandokos/internal/usage"
 )
 
 // ErrShutdown is the cancellation cause of the base context of a server whose drain deadline
@@ -46,8 +49,8 @@ type Options struct {
 	MaxRequestBodyBytes    int64                     // must be positive
 	RequestBodyReadTimeout time.Duration             // must be positive
 	MaxRequestDuration     time.Duration             // must be positive
-	Recorder               Recorder                  // required from sprint 3.2 on; nil is accepted for now
-	Tracer                 trace.TracerProvider      // required from sprint 3.2 on; nil is accepted for now
+	Recorder               Recorder                  // required: receives the usage record of every admitted request
+	Tracer                 trace.TracerProvider      // required
 	PropagateTrace         bool                      // send traceparent and tracestate to the provider
 }
 
@@ -65,7 +68,8 @@ type Handler struct {
 	maxDuration time.Duration
 	proxy       *httputil.ReverseProxy
 	recorder    Recorder
-	tracer      trace.TracerProvider
+	tracer      trace.Tracer
+	propagator  propagation.TextMapPropagator
 	propagate   bool
 }
 
@@ -92,6 +96,10 @@ func New(o Options) (*Handler, error) {
 		return nil, errors.New("gateway: RequestBodyReadTimeout must be positive")
 	case o.MaxRequestDuration <= 0:
 		return nil, errors.New("gateway: MaxRequestDuration must be positive")
+	case o.Recorder == nil:
+		return nil, errors.New("gateway: Recorder is required")
+	case o.Tracer == nil:
+		return nil, errors.New("gateway: Tracer is required")
 	}
 	families := make(map[string]family.Adapter, len(o.Families))
 	for name, a := range o.Families {
@@ -116,7 +124,8 @@ func New(o Options) (*Handler, error) {
 		readTimeout: o.RequestBodyReadTimeout,
 		maxDuration: o.MaxRequestDuration,
 		recorder:    o.Recorder,
-		tracer:      o.Tracer,
+		tracer:      o.Tracer.Tracer(instrumentationScope, trace.WithInstrumentationVersion(buildinfo.Version)),
+		propagator:  propagation.TraceContext{},
 		propagate:   o.PropagateTrace,
 	}
 	h.proxy = h.newProxy(&classTransport{public: o.Public, private: o.Private})
@@ -163,10 +172,26 @@ type reqState struct {
 
 	answered          bool
 	upstreamStatus    int
-	ttfb              time.Duration
 	upstreamErr       string
 	egressReason      string
 	upstreamRequestID string
+
+	// Sprint 3.2: the usage record and the spans of an admitted request.
+	admitted        bool
+	ledgerFull      bool
+	recordID        string
+	traceID         string
+	metadata        map[string]string
+	metadataDropped int
+	streamKnown     bool // the stream flag was read (step 6 passed)
+	server, client  trace.Span
+	serverCx        context.Context
+	firstByte       time.Time
+	readerAbandoned bool // a family reader panicked and is no longer called
+	readerFailed    bool // a reader panicked or gave up: logged as usage_reader
+	deltas          int64
+	costUsage       family.Usage // the figures the cost was computed on
+	rec             *usage.Record
 
 	streamBody *streamBody
 	teeBody    *teeBody
@@ -218,9 +243,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !h.route(r, st) { // step 2
 		return
 	}
-	if !h.authenticate(r, st) { // steps 3 and 4
+	if !h.authenticate(r, st) { // steps 3, 3a, 3b and 4
 		return
 	}
+	r = r.WithContext(st.serverCx)
 
 	// Step 5: the body.
 	if r.ContentLength > h.maxBody {
@@ -252,6 +278,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.fail(st, family.CodeInvalidRequest)
 		return
 	}
+
+	st.streamKnown, st.stream = true, parsed.Stream()
 
 	// Step 7: the model.
 	target, err := h.catalogue.Resolve(r.Context(), *st.principal, st.provider, parsed.Model())
@@ -292,6 +320,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	outCx, cancel := context.WithTimeout(r.Context(), h.maxDuration)
 	defer cancel()
+	outCx, st.client = h.tracer.Start(outCx, st.op.Name+" "+st.target.Model, trace.WithSpanKind(trace.SpanKindClient))
 	st.outCx = outCx
 	req := r.WithContext(context.WithValue(outCx, stateKey{}, st))
 	req.Body = io.NopCloser(bytes.NewReader(prepared))
@@ -377,6 +406,21 @@ func (h *Handler) authenticate(r *http.Request, st *reqState) bool {
 		return false
 	}
 	st.principal = &p
+	// Step 3a: room in the ledger for this request's usage record.
+	if !h.recorder.Admit() {
+		st.ledgerFull = true
+		h.fail(st, family.CodeUnavailable)
+		return false
+	}
+	st.admitted = true
+	// Step 3b: attribution. Nothing of this runs for a caller that is not authenticated.
+	st.metadata, st.metadataDropped = usage.ParseMetadata(r.Header)
+	metadataHeader(st.sw.Header(), st.metadataDropped)
+	st.recordID = usage.NewID(st.start)
+	ctx := h.propagator.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+	ctx, st.server = h.tracer.Start(ctx, routeLabelOf(st), trace.WithTimestamp(st.start), trace.WithSpanKind(trace.SpanKindServer))
+	st.serverCx = ctx
+	st.traceID = traceIDOf(st.server)
 	// Under BYOK a call needs both permissions (D-4).
 	for _, perm := range []string{authz.ModelInvoke, authz.CredentialUse} {
 		switch authz.Decide(p, perm, authz.Target{TenantID: p.TenantID}) {
@@ -466,6 +510,9 @@ func (h *Handler) finish(st *reqState, rec any) {
 		st.errCode = family.CodeInternal
 		outcome = "pandokos_error"
 	}
+	if st.admitted {
+		h.finishRecord(st, outcome)
+	}
 	h.logRequest(st, outcome)
 
 	switch {
@@ -511,8 +558,8 @@ func (h *Handler) logRequest(st *reqState, outcome string) {
 	if st.upstreamStatus != 0 {
 		attrs = append(attrs, "upstream_status", st.upstreamStatus)
 	}
-	if st.answered {
-		attrs = append(attrs, "ttfb_ms", st.ttfb.Milliseconds())
+	if d, ok := st.ttfb(); ok {
+		attrs = append(attrs, "ttfb_ms", d.Milliseconds())
 	}
 	if st.upstreamErr != "" {
 		attrs = append(attrs, "upstream_error", st.upstreamErr)
@@ -528,11 +575,36 @@ func (h *Handler) logRequest(st *reqState, outcome string) {
 	}
 	if st.answered {
 		attrs = append(attrs, "response_bytes", st.responseBytes())
-		if u, ok := st.usage(); ok {
-			attrs = append(attrs, "usage_source", "provider", usageAttr(u))
-		} else {
-			attrs = append(attrs, "usage_source", "none")
+		source := usage.SourceNone
+		if st.rec != nil {
+			source = st.rec.InputSource
 		}
+		attrs = append(attrs, "usage_source", string(source))
+		if source != usage.SourceNone {
+			attrs = append(attrs, usageAttr(st.costUsage))
+		}
+	}
+	if st.ledgerFull {
+		attrs = append(attrs, "ledger", "full")
+	}
+	if r := st.rec; r != nil {
+		attrs = append(attrs, "record_id", r.ID)
+		if r.TraceID != "" {
+			attrs = append(attrs, "trace_id", r.TraceID)
+		}
+		attrs = append(attrs, "cost_status", r.CostStatus)
+		if r.Cost.Known {
+			attrs = append(attrs, "cost", r.Cost.Amount.String(), "currency", r.Cost.Currency)
+		}
+		if n := len(r.Metadata); n > 0 {
+			attrs = append(attrs, "metadata_count", n)
+		}
+		if r.MetadataDropped > 0 {
+			attrs = append(attrs, "metadata_dropped", r.MetadataDropped)
+		}
+	}
+	if st.readerFailed {
+		attrs = append(attrs, "usage_reader", "failed")
 	}
 	h.logger.Info("request", attrs...)
 }
@@ -554,16 +626,6 @@ func (st *reqState) responseBytes() int64 {
 		return st.countBody.bytes
 	}
 	return 0
-}
-
-func (st *reqState) usage() (family.Usage, bool) {
-	switch {
-	case st.streamBody != nil:
-		return st.streamBody.reader.Usage()
-	case st.teeBody != nil:
-		return st.teeBody.usage()
-	}
-	return family.Usage{}, false
 }
 
 func usageAttr(u family.Usage) slog.Attr {
