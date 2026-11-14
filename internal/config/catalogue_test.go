@@ -103,7 +103,6 @@ func TestCatalogueConfiguration(t *testing.T) {
 			"a user without a pass": "https://user@prices.example.com/data.json",
 			"no host":               "https:///data.json",
 			"no scheme":             "prices.example.com/data.json",
-			"empty":                 "",
 			"a space":               "https://prices.example.com/da ta.json",
 		} {
 			src := validSource(t)
@@ -118,7 +117,14 @@ func TestCatalogueConfiguration(t *testing.T) {
 				t.Errorf("%s: the problem quotes the URL: %v", name, err)
 			}
 		}
+		// An empty environment variable means "not set" for every key, so an empty URL is tested
+		// through the file.
 		src := validSource(t)
+		src.File = writeFile(t, "pricing:\n  refresh:\n    enabled: true\n    url: \"\"\n")
+		if _, _, err := Load(src); !hasProblem(err, "pricing.refresh.url") {
+			t.Errorf("an empty URL was accepted: %v", err)
+		}
+		src = validSource(t)
 		src.Environ = append(src.Environ, envOf["pricing.refresh.enabled"]+"=true", envOf["pricing.refresh.url"]+"=https://prices.example.com:8443/dir/data.json")
 		c, _ := mustLoad(t, src)
 		if !c.Pricing.Refresh.Enabled || c.Pricing.Refresh.ParsedURL == nil || c.Pricing.Refresh.ParsedURL.Host != "prices.example.com:8443" || c.Pricing.Refresh.ParsedURL.Path != "/dir/data.json" {
