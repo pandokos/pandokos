@@ -144,7 +144,9 @@ func build(t *testing.T, targets map[string]gateway.Target, guard *egress.Guard,
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(g)
+	srv := httptest.NewUnstartedServer(g)
+	allowManyHeaderValues(srv.Config)
+	srv.Start()
 	t.Cleanup(srv.Close)
 	return &harness{srv: srv, handler: g, logs: logs, cat: cat, creds: creds, targets: targets, rec: rec, spans: spans}
 }
