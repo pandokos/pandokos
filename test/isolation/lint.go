@@ -43,7 +43,7 @@ type constraint struct {
 
 // Lint reads the system catalogues of schema pandokos through the connection (a superuser's, so
 // that it can read every privilege) and returns one finding per violation of the rules L-01 to
-// L-16 of sprint 1.2, section 6.1 and L-19 of sprint 2.1 (nineteen rules), sorted by rule and object. A table is tenant-scoped unless
+// L-16 of sprint 1.2, section 6.1, L-19 of sprint 2.1 and L-20 of sprint 3.2 (twenty rules), sorted by rule and object. A table is tenant-scoped unless
 // spec.Global lists it.
 func Lint(ctx context.Context, conn *pgx.Conn, spec Spec) ([]Finding, error) {
 	var findings []Finding
@@ -196,6 +196,9 @@ func Lint(ctx context.Context, conn *pgx.Conn, spec Spec) ([]Finding, error) {
 		return nil, err
 	}
 	if err := lintAppendOnly(ctx, conn, spec, add); err != nil {
+		return nil, err
+	}
+	if err := lintPartitions(ctx, conn, spec, rels, add); err != nil {
 		return nil, err
 	}
 
@@ -561,6 +564,129 @@ func lintAppendOnly(ctx context.Context, conn *pgx.Conn, spec Spec, add func(rul
 		}
 		if !truncTrigger {
 			add("L-17", table, "no enabled BEFORE TRUNCATE statement trigger that executes pandokos.append_only()")
+		}
+	}
+	return nil
+}
+
+// lintPartitions is rule L-20 of sprint 3.2, section 5.7: for every relation with relispartition,
+// (a) it is owned by pandokos_owner, (b) no runtime role and not PUBLIC holds a table or column
+// privilege, (c) when the parent is tenant-scoped, row-level security is enabled and forced and
+// exactly one policy exists, the canonical tenant_isolation, and (d) when the parent is in
+// Spec.AppendOnly, an enabled BEFORE TRUNCATE trigger executes append_only().
+func lintPartitions(ctx context.Context, conn *pgx.Conn, spec Spec, rels []relation, add func(rule, object, format string, args ...any)) error {
+	type part struct {
+		name, owner, parent string
+		rls, forced         bool
+	}
+	rows, err := conn.Query(ctx, `SELECT c.relname::text, pg_catalog.pg_get_userbyid(c.relowner)::text, c.relrowsecurity, c.relforcerowsecurity, p.relname::text
+  FROM pg_catalog.pg_class c
+  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+  JOIN pg_catalog.pg_inherits i ON i.inhrelid = c.oid
+  JOIN pg_catalog.pg_class p ON p.oid = i.inhparent
+ WHERE n.nspname = 'pandokos' AND c.relispartition AND c.relkind IN ('r', 'p')
+ ORDER BY 1`)
+	if err != nil {
+		return err
+	}
+	parts, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (part, error) {
+		var x part
+		err := r.Scan(&x.name, &x.owner, &x.rls, &x.forced, &x.parent)
+		return x, err
+	})
+	if err != nil {
+		return err
+	}
+	appendOnly := map[string]bool{}
+	for _, t := range spec.AppendOnly {
+		appendOnly[t] = true
+	}
+	for _, p := range parts {
+		if p.owner != ownerRole {
+			add("L-20", p.name, "(a) partition owned by %s, not by %s", p.owner, ownerRole)
+		}
+
+		var holders []string
+		for _, grantee := range append(append([]string{}, runtimeRoleNames...), "public") {
+			if grantee == p.owner { // an owner holds every privilege; rule (a) reports it
+				continue
+			}
+			var held bool
+			if err := conn.QueryRow(ctx, `SELECT pg_catalog.has_table_privilege($2, $1::regclass, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+    OR pg_catalog.has_any_column_privilege($2, $1::regclass, 'SELECT, INSERT, UPDATE, REFERENCES')`, qualified(p.name), grantee).Scan(&held); err != nil {
+				return err
+			}
+			if held {
+				holders = append(holders, grantee)
+			}
+		}
+		if len(holders) > 0 {
+			add("L-20", p.name, "(b) %s hold a table or column privilege on the partition", strings.Join(holders, ", "))
+		}
+
+		parentScoped := false
+		for _, r := range rels {
+			if r.name == p.parent && (r.kind == "r" || r.kind == "p") {
+				_, global := spec.Global[r.name]
+				parentScoped = !global
+			}
+		}
+		if parentScoped {
+			if !p.rls {
+				add("L-20", p.name, "(c) row-level security is not enabled on the partition")
+			}
+			if !p.forced {
+				add("L-20", p.name, "(c) row-level security is not forced on the partition")
+			}
+			pols, err := readPolicies(ctx, conn, p.name)
+			if err != nil {
+				return err
+			}
+			switch {
+			case len(pols) == 0:
+				add("L-20", p.name, "(c) the partition has no policy")
+			case len(pols) > 1:
+				var names []string
+				for _, pol := range pols {
+					names = append(names, pol.name)
+				}
+				add("L-20", p.name, "(c) the partition has %d policies (%s), want only tenant_isolation", len(pols), strings.Join(names, ", "))
+			default:
+				pol := pols[0]
+				if pol.name != "tenant_isolation" || pol.cmd != "*" || !pol.permissive || !equal(pol.roles, []string{"public"}) ||
+					collapse(pol.using) != canonicalCheck || collapse(pol.withChek) != canonicalCheck {
+					add("L-20", p.name, "(c) the policy %s of the partition is not the canonical tenant_isolation", pol.name)
+				}
+			}
+		}
+
+		if appendOnly[p.parent] {
+			trows, err := conn.Query(ctx, `SELECT t.tgtype::int, p.proname::text, t.tgenabled::text
+  FROM pg_catalog.pg_trigger t JOIN pg_catalog.pg_proc p ON p.oid = t.tgfoid
+ WHERE t.tgrelid = $1::regclass AND NOT t.tgisinternal`, qualified(p.name))
+			if err != nil {
+				return err
+			}
+			found := false
+			for trows.Next() {
+				var tgtype int
+				var fn, enabled string
+				if err := trows.Scan(&tgtype, &fn, &enabled); err != nil {
+					trows.Close()
+					return err
+				}
+				const row, before, trunc = 1, 2, 32
+				if fn == "append_only" && enabled != "D" && tgtype&row == 0 && tgtype&before != 0 && tgtype&trunc != 0 {
+					found = true
+				}
+			}
+			trows.Close()
+			if err := trows.Err(); err != nil {
+				return err
+			}
+			if !found {
+				add("L-20", p.name, "(d) no enabled BEFORE TRUNCATE trigger that executes pandokos.append_only()")
+			}
 		}
 	}
 	return nil

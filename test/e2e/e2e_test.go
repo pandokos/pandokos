@@ -27,6 +27,7 @@ import (
 	"github.com/pandokos/pandokos/test/dbtest"
 	"github.com/pandokos/pandokos/test/fakeprovider"
 	"github.com/pandokos/pandokos/test/fixtures"
+	"github.com/pandokos/pandokos/test/otlptest"
 	"github.com/pandokos/pandokos/test/testcert"
 	"github.com/pandokos/pandokos/test/testutil"
 )
@@ -66,6 +67,15 @@ type opts struct {
 	db        *dbtest.Database // nil: a new database of the test
 	noMigrate bool             // true: the database is used as it is
 	tls       bool             // both listeners serve TLS with a certificate of testcert
+
+	// Sprint 3.2: the ledger and the traces.
+	ledgerBuffer int                 // ledger.buffer_size and ledger.batch_size; 0 keeps the defaults
+	flushTimeout string              // ledger.shutdown_flush_timeout, for example "2s"
+	otlpEndpoint string              // telemetry.otlp.endpoint ("" exports nothing)
+	otlpHeader   string              // the value of the header X-Collector-Key sent with every export
+	otlpTimeout  string              // telemetry.otlp.timeout
+	propagate    bool                // telemetry.traces.propagate
+	collector    *otlptest.Collector // the collector at otlpEndpoint, when the test has one
 }
 
 type proc struct {
@@ -86,6 +96,8 @@ type proc struct {
 	platformFile string // the key file of the bootstrap key, once init ran
 	tenantKey    string // an inference key of a tenant made by inferenceKey
 	tenants      int
+
+	col *otlptest.Collector // the collector the process exports to, if the test started one
 
 	up      *fakeprovider.Server
 	upURL   string // the base URL the endpoint of openai is pointed at
@@ -193,6 +205,71 @@ func completeLines(b *testutil.LogBuffer, msg string) []map[string]any {
 	return out
 }
 
+// sprint32Env is the configuration of the ledger and of the traces that the options ask for.
+func (o opts) sprint32Env(t *testing.T) []string {
+	t.Helper()
+	var env []string
+	if o.ledgerBuffer > 0 {
+		env = append(env, fmt.Sprintf("PANDOKOS_LEDGER_BUFFER_SIZE=%d", o.ledgerBuffer), fmt.Sprintf("PANDOKOS_LEDGER_BATCH_SIZE=%d", o.ledgerBuffer))
+	}
+	if o.flushTimeout != "" {
+		env = append(env, "PANDOKOS_LEDGER_SHUTDOWN_FLUSH_TIMEOUT="+o.flushTimeout)
+	}
+	if o.otlpEndpoint != "" {
+		env = append(env, "PANDOKOS_TELEMETRY_OTLP_ENDPOINT="+o.otlpEndpoint)
+	}
+	if o.otlpHeader != "" {
+		env = append(env, "PANDOKOS_TELEMETRY_OTLP_HEADERS_FILE="+testutil.WriteSecret(t, "otlp-headers", "X-Collector-Key: "+o.otlpHeader))
+	}
+	if o.otlpTimeout != "" {
+		env = append(env, "PANDOKOS_TELEMETRY_OTLP_TIMEOUT="+o.otlpTimeout)
+	}
+	if o.propagate {
+		env = append(env, "PANDOKOS_TELEMETRY_TRACES_PROPAGATE=true")
+	}
+	return env
+}
+
+// collector returns the collector the process exports to; the test started it and gave its URL
+// to the process through opts.
+func (p *proc) collector(t *testing.T) *otlptest.Collector {
+	t.Helper()
+	if p.col == nil {
+		t.Fatal("the process has no collector")
+	}
+	return p.col
+}
+
+// usageRows reads the usage records of a tenant as the superuser of the test database, one JSON
+// object per row (to_jsonb), in the order of the start.
+func usageRows(t *testing.T, d *dbtest.Database, tenantID string) []map[string]any {
+	t.Helper()
+	conn := d.Super(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	rows, err := conn.Query(ctx, `SELECT to_jsonb(u) FROM pandokos.usage_record u WHERE tenant_id = $1::uuid ORDER BY started_at, id`, tenantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var out []map[string]any
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
 func startBinary(t *testing.T, o opts) *proc {
 	t.Helper()
 	p := &proc{stdout: &testutil.LogBuffer{}, stderr: &testutil.LogBuffer{}, exited: make(chan struct{}), scheme: "http", client: http.DefaultClient}
@@ -204,7 +281,9 @@ func startBinary(t *testing.T, o opts) *proc {
 	}
 	p.db = o.db
 	p.cfg = writeConfig(t, o.level)
-	extra := append(o.db.Env(t), o.env...) // the options of the test come last and win
+	extra := append(o.db.Env(t), o.sprint32Env(t)...)
+	extra = append(extra, o.env...) // the options of the test come last and win
+	p.col = o.collector
 	if o.tls {
 		ca, cert, key := testcert.Files(t, []string{"localhost"}, []net.IP{net.ParseIP("127.0.0.1")})
 		for _, l := range []string{"INFERENCE", "ADMIN"} {
@@ -595,20 +674,20 @@ func TestMigrateCommand(t *testing.T) { // T-160
 	}
 
 	code, out, errs := runBinary(t, env, "migrate", "status")
-	if code != 1 || errs != "" || out != "0001_init  pending\n0002_identity_audit  pending\n0003_vault  pending\n0004_catalogue  pending\n0005_gateway_auth_failures  pending\nschema is at version 0; this binary needs version 5\n" {
+	if code != 1 || errs != "" || out != "0001_init  pending\n0002_identity_audit  pending\n0003_vault  pending\n0004_catalogue  pending\n0005_gateway_auth_failures  pending\n0006_usage_ledger  pending\nschema is at version 0; this binary needs version 6\n" {
 		t.Fatalf("status before: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate")
-	if code != 0 || errs != "" || out != "applied 0001_init\napplied 0002_identity_audit\napplied 0003_vault\napplied 0004_catalogue\napplied 0005_gateway_auth_failures\nschema is at version 5\n" {
+	if code != 0 || errs != "" || out != "applied 0001_init\napplied 0002_identity_audit\napplied 0003_vault\napplied 0004_catalogue\napplied 0005_gateway_auth_failures\napplied 0006_usage_ledger\nschema is at version 6\n" {
 		t.Fatalf("migrate: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate")
-	if code != 0 || errs != "" || out != "schema is at version 5\n" {
+	if code != 0 || errs != "" || out != "schema is at version 6\n" {
 		t.Fatalf("second migrate: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate", "status")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if code != 0 || errs != "" || len(lines) != 6 || !applied("0001_init").MatchString(lines[0]) || !applied("0002_identity_audit").MatchString(lines[1]) || !applied("0003_vault").MatchString(lines[2]) || !applied("0004_catalogue").MatchString(lines[3]) || !applied("0005_gateway_auth_failures").MatchString(lines[4]) || lines[5] != "schema is at version 5; this binary needs version 5" {
+	if code != 0 || errs != "" || len(lines) != 7 || !applied("0001_init").MatchString(lines[0]) || !applied("0002_identity_audit").MatchString(lines[1]) || !applied("0003_vault").MatchString(lines[2]) || !applied("0004_catalogue").MatchString(lines[3]) || !applied("0005_gateway_auth_failures").MatchString(lines[4]) || !applied("0006_usage_ledger").MatchString(lines[5]) || lines[6] != "schema is at version 6; this binary needs version 6" {
 		t.Fatalf("status after: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	testutil.AssertAbsent(t, "migrate output", out+errs, d.Passwords()...)
@@ -630,7 +709,7 @@ func TestServeRefusesUnmigratedDatabase(t *testing.T) { // T-161
 	}
 
 	d.Migrate(t)
-	if _, err := d.Super(t).Exec(context.Background(), "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (6, 'future', repeat('0', 64), 'x')"); err != nil {
+	if _, err := d.Super(t).Exec(context.Background(), "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (7, 'future', repeat('0', 64), 'x')"); err != nil {
 		t.Fatal(err)
 	}
 	code, out, errs = runBinary(t, serveEnv(t, d), "serve", "--config", writeConfig(t, "info"))
@@ -686,7 +765,7 @@ func TestServeBehindPooler(t *testing.T) { // T-163
 	d := dbtest.New(t)
 	pooled := d.Pooled(t)
 	code, out, errs := runBinary(t, pooled.Env(t), "migrate")
-	if code != 0 || !strings.Contains(out, "schema is at version 5") {
+	if code != 0 || !strings.Contains(out, "schema is at version 6") {
 		t.Fatalf("migrate through the pooler: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	up := fakeprovider.New(t)

@@ -192,7 +192,7 @@ func TestRouteByProvider(t *testing.T) {
 			"/",
 			"/openai",
 			"/openai/",
-			"/openai/v1/embeddings",
+			"/openai/v1/models",
 			"/openai/chat/completions",
 			"/Openai/v1/chat/completions",
 			"/openai.x/v1/chat/completions",
@@ -229,7 +229,7 @@ func TestRouteByProvider(t *testing.T) {
 		if n := cat.Providers.Load(); n != 0 {
 			t.Errorf("the catalogue was asked %d times about names that cannot be provider names", n)
 		}
-		h.send(t, http.MethodPost, "/openai/v1/embeddings", nil, authed())
+		h.send(t, http.MethodPost, "/openai/v1/models", nil, authed())
 		h.send(t, http.MethodPost, "/"+strings.Repeat("a", 63)+"/v1/chat/completions", nil, authed())
 		if n := cat.Providers.Load(); n != 2 {
 			t.Errorf("the catalogue was asked %d times, want 2 (a plausible name each)", n)
@@ -371,8 +371,36 @@ func TestPipelineOrder(t *testing.T) {
 			if c.wantCode == family.CodeRequestTimeout && res.Header.Get("Connection") != "close" {
 				t.Errorf("a 408 must carry Connection: close, got %q", res.Header.Get("Connection"))
 			}
+			// Sprint 3.2: a request that is authenticated is admitted and recorded once; a
+			// request that fails step 2 or 3 is neither.
+			wantAdmits := 1
+			if strings.HasPrefix(c.name, "step 2:") || strings.HasPrefix(c.name, "step 3:") {
+				wantAdmits = 0
+			}
+			if got := h.rec.Admits(); got != wantAdmits {
+				t.Errorf("Admit called %d times, want %d", got, wantAdmits)
+			}
+			testutil.Eventually(t, 2*time.Second, "the record", func() bool { return len(h.rec.Records()) == wantAdmits })
 		})
 	}
+
+	// Admit comes after Authenticate and before the first authz.Decide.
+	t.Run("Admit comes after Authenticate and before the first Decide", func(t *testing.T) {
+		full := func() *testutil.MemoryRecorder {
+			r := &testutil.MemoryRecorder{Capacity: 1}
+			r.Admit()
+			return r
+		}
+		noRole := with(func(p *authz.Principal) { p.Roles = nil })
+		h := newHarness(t, func(o *gateway.Options) { o.Authenticator = fixedAuth{p: noRole}; o.Recorder = full() })
+		assertContract(t, "a caller that would be forbidden, with a full ledger", h.sendAuthed(t, route, good), family.CodeUnavailable)
+
+		h = newHarness(t, func(o *gateway.Options) {
+			o.Authenticator = fixedAuth{err: authz.ErrUnauthenticated}
+			o.Recorder = full()
+		})
+		assertContract(t, "an unauthenticated caller, with a full ledger", h.sendAuthed(t, route, good), family.CodeUnauthenticated)
+	})
 }
 
 // TestModelCheck is T-427.
@@ -444,6 +472,9 @@ func TestInvalidRequest(t *testing.T) {
 			h := newHarness(t, nil)
 			r := h.sendAuthed(t, route, []byte(c.body))
 			assertContract(t, c.name, r, family.CodeInvalidRequest)
+			if !strings.Contains(string(r.body), "must not ask for background processing") {
+				t.Errorf("the message of invalid_request is not the one of sprint 3.2: %s", r.body)
+			}
 			line := h.awaitOutcome(t, "pandokos_error")
 			if line["invalid_reason"] != c.reason || line["error_code"] != "invalid_request" || line["status"] != float64(400) {
 				t.Errorf("line: %v", line)
@@ -1111,32 +1142,18 @@ func TestRequestLogFields(t *testing.T) {
 	resolved := setOf("model", "model_id", "endpoint")
 	credential := setOf("credential_id", "credential_pinned", "funding")
 	response := setOf("stream", "usage_injected", "upstream_status", "ttfb_ms", "request_bytes", "response_bytes", "usage_source", "usage", "upstream_request_id")
+	// Sprint 3.2 (section 5.5): every admitted request has a record ID, a trace ID and a cost
+	// status; a known cost has an amount and a currency; the number of metadata entries may be
+	// logged (metadata_count), and the fields below are absent unless the case says otherwise.
+	ledger := setOf("record_id", "trace_id", "cost_status")
+	cost := setOf("cost", "currency")
+	optional := setOf("metadata_count")
 	forbid := func(line map[string]any, names ...string) {
 		t.Helper()
 		for _, n := range names {
 			if _, ok := line[n]; ok {
 				t.Errorf("the field %s is logged: %v", n, line)
 			}
-		}
-	}
-	exactly := func(t *testing.T, line map[string]any, want map[string]bool) {
-		t.Helper()
-		got := requestFields(line)
-		var missing, extra []string
-		for k := range want {
-			if !got[k] {
-				missing = append(missing, k)
-			}
-		}
-		for k := range got {
-			if !want[k] {
-				extra = append(extra, k)
-			}
-		}
-		sort.Strings(missing)
-		sort.Strings(extra)
-		if len(missing) > 0 || len(extra) > 0 {
-			t.Errorf("fields: missing %v, unexpected %v", missing, extra)
 		}
 	}
 	within := func(t *testing.T, line map[string]any, required, allowed map[string]bool) {
@@ -1158,7 +1175,11 @@ func TestRequestLogFields(t *testing.T) {
 		h := newHarness(t, nil)
 		h.sendAuthed(t, route, chat("fake-basic", false))
 		line := h.lastRequestLine(t)
-		exactly(t, line, union(base, op, who, resolved, credential, response))
+		within(t, line, union(base, op, who, resolved, credential, response, ledger, cost), optional)
+		rec := h.oneRecord(t)
+		if line["record_id"] != rec.ID || line["trace_id"] != rec.TraceID || line["cost_status"] != "known" || line["currency"] != "USD" || line["usage_source"] != "provider" {
+			t.Errorf("the line does not match the record %s: %v", rec.ID, line)
+		}
 		for k, v := range map[string]any{"api_family": "openai", "provider": "openai", "operation": "chat.completions", "model": "fake-basic",
 			"endpoint": "synthetic-endpoint", "model_id": "synthetic-model-openai-fake-basic", "funding": "byok", "credential_pinned": false,
 			"upstream_request_id": "req_fake_0001", "route": "POST /{provider}/v1/chat/completions", "outcome": "ok"} {
@@ -1166,13 +1187,13 @@ func TestRequestLogFields(t *testing.T) {
 				t.Errorf("%s = %v, want %v", k, line[k], v)
 			}
 		}
-		forbid(line, "invalid_reason", "upstream_error", "egress_reason", "error_code")
+		forbid(line, "invalid_reason", "upstream_error", "egress_reason", "error_code", "usage_reader", "ledger", "metadata_dropped")
 	})
 	t.Run("a stream", func(t *testing.T) {
 		h := newHarness(t, nil)
 		h.sendAuthed(t, route, chat("fake-basic", true))
 		line := h.lastRequestLine(t)
-		exactly(t, line, union(base, op, who, resolved, credential, response))
+		within(t, line, union(base, op, who, resolved, credential, response, ledger, cost), optional)
 		if line["stream"] != true || line["usage_injected"] != true {
 			t.Errorf("line: %v", line)
 		}
@@ -1181,9 +1202,14 @@ func TestRequestLogFields(t *testing.T) {
 		h := newHarness(t, nil)
 		h.sendAuthed(t, route, chat(fakeprovider.ModelError429, false))
 		// A provider error carries no usage: usage_source says none and there is no usage group.
-		withoutUsage := union(base, op, who, resolved, credential, response)
+		withoutUsage := union(base, op, who, resolved, credential, response, ledger)
 		delete(withoutUsage, "usage")
-		exactly(t, h.lastRequestLine(t), withoutUsage)
+		line := h.lastRequestLine(t)
+		within(t, line, withoutUsage, optional)
+		if line["usage_source"] != "none" || line["cost_status"] != "none" {
+			t.Errorf("a provider error carries usage or cost: %v", line)
+		}
+		forbid(line, "cost", "currency")
 	})
 
 	refusal := func(name string, mutate func(*gateway.Options), do func(t *testing.T, h *harness), required, allowed map[string]bool, absent ...string) {
@@ -1191,8 +1217,16 @@ func TestRequestLogFields(t *testing.T) {
 			h := newHarness(t, mutate)
 			do(t, h)
 			line := h.awaitOutcome(t, "pandokos_error")
+			// A request that failed step 2 or 3 was not admitted: nothing of the ledger.
+			admitted := !strings.HasPrefix(name, "step 2:") && !strings.HasPrefix(name, "step 3:")
+			if admitted {
+				required, allowed = union(required, ledger), union(allowed, optional)
+			} else {
+				absent = append(append([]string(nil), absent...), "record_id", "trace_id", "cost_status", "cost", "currency", "metadata_count")
+			}
 			within(t, line, union(required, setOf("error_code")), allowed)
 			forbid(line, absent...)
+			forbid(line, "cost", "currency", "usage_source")
 			testutil.AssertNoCanary(t, "the logs", h.logs.String())
 			testutil.AssertAbsent(t, "the logs", h.logs.String(), testutil.KeyForms(testKey)...)
 		})

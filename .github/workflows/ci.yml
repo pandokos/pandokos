@@ -25,13 +25,16 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.25.14"
+          go-version: "1.26.11"
       - run: make fmt-check
       - run: make vet
       - run: make tidy
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.5.0
+          # Built with the Go of setup-go: the released binary of v2.5.0 is built with Go 1.25 and
+          # refuses a module whose floor is Go 1.26.
+          install-mode: goinstall
 
   generate:
     runs-on: ubuntu-24.04
@@ -51,7 +54,7 @@ jobs:
       matrix:
         include:
           - name: floor
-            go-version: "1.25.14"
+            go-version: "1.26.11"
             go-version-file: ""
           - name: release
             go-version: ""

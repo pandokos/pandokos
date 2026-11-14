@@ -7,11 +7,100 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/pandokos/pandokos/internal/family"
 	"github.com/pandokos/pandokos/test/familycodes"
 )
+
+// opNamed returns the operation of the adapter with the given name.
+func opNamed(t testing.TB, a family.Adapter, name string) family.Operation {
+	t.Helper()
+	for _, op := range a.Operations() {
+		if op.Name == name {
+			return op
+		}
+	}
+	t.Fatalf("the adapter has no operation %q", name)
+	return family.Operation{}
+}
+
+// TestOperations is T-456: the adapter lists three operations and Match accepts the method and
+// the native path of each, exactly.
+func TestOperations(t *testing.T) {
+	a := Adapter()
+	native := map[string]string{
+		"chat.completions": "/v1/chat/completions",
+		"responses":        "/v1/responses",
+		"embeddings":       "/v1/embeddings",
+	}
+	ops := a.Operations()
+	if len(ops) != len(native) {
+		t.Fatalf("%d operations, want %d: %+v", len(ops), len(native), ops)
+	}
+	for _, op := range ops {
+		path, ok := native[op.Name]
+		if !ok {
+			t.Errorf("unknown operation %q", op.Name)
+			continue
+		}
+		if op.Method != "POST" || op.Path != path {
+			t.Errorf("%s: %s %s", op.Name, op.Method, op.Path)
+		}
+		got, ok := a.Match("POST", path)
+		if !ok || got != op {
+			t.Errorf("Match(POST, %s) = %+v %v, want %+v", path, got, ok, op)
+		}
+		if name, ok := Match("POST", path); !ok || name != op.Name {
+			t.Errorf("openai.Match(POST, %s) = %q %v", path, name, ok)
+		}
+		for _, bad := range []struct{ method, path string }{
+			{"GET", path}, {"PUT", path}, {"post", path}, {"POST", path + "/"}, {"POST", "/" + path},
+			{"POST", strings.ToUpper(path)}, {"POST", path + "?x=1"}, {"POST", "/openai" + path},
+			{"POST", strings.TrimPrefix(path, "/v1")},
+		} {
+			if got, ok := a.Match(bad.method, bad.path); ok {
+				t.Errorf("%s %s matched %+v", bad.method, bad.path, got)
+			}
+		}
+	}
+	for _, c := range []struct{ name, want string }{
+		{OperationChatCompletions, "chat.completions"}, {OperationResponses, "responses"}, {OperationEmbeddings, "embeddings"},
+		{PathChatCompletions, "/v1/chat/completions"}, {PathResponses, "/v1/responses"}, {PathEmbeddings, "/v1/embeddings"},
+	} {
+		if c.name != c.want {
+			t.Errorf("constant %q, want %q", c.name, c.want)
+		}
+	}
+}
+
+// TestAdapterDelegatesByOperation checks that the adapter's methods follow the operation they get.
+func TestAdapterDelegatesByOperation(t *testing.T) {
+	a := Adapter()
+	resp, emb := opNamed(t, a, "responses"), opNamed(t, a, "embeddings")
+	if _, err := a.ParseRequest(resp, []byte(`{"model":"m","background":true}`)); family.InvalidReason(err) != "background_not_supported" {
+		t.Errorf("responses: %v", err)
+	}
+	r, err := a.ParseRequest(emb, []byte(`{"model":"m","stream":true}`))
+	if err != nil || r.Stream() {
+		t.Errorf("embeddings: %v stream=%v", err, err == nil && r.Stream())
+	}
+	u, ok, err := a.ReadUsage(emb, []byte(`{"usage":{"prompt_tokens":8,"total_tokens":8}}`))
+	if err != nil || !ok || u.InputTokens != 8 || u.OutputTokens != 0 {
+		t.Errorf("embeddings usage: %+v %v %v", u, ok, err)
+	}
+	u, ok, err = a.ReadUsage(resp, []byte(`{"usage":{"input_tokens":3,"output_tokens":4}}`))
+	if err != nil || !ok || u.InputTokens != 3 || u.OutputTokens != 4 {
+		t.Errorf("responses usage: %+v %v %v", u, ok, err)
+	}
+	if got := a.EstimateUsage(emb, family.Evidence{RequestBytes: 9, ResponseBytes: 100}); got.InputTokens != 3 || got.OutputTokens != 0 {
+		t.Errorf("embeddings estimate: %+v", got)
+	}
+	if sr := a.NewStreamReader(resp, true); sr == nil {
+		t.Error("no responses stream reader")
+	}
+}
 
 // TestAdapter is T-424: the adapter of the openai family.
 func TestAdapter(t *testing.T) {
@@ -21,14 +110,23 @@ func TestAdapter(t *testing.T) {
 		if a.Name() != "openai" {
 			t.Errorf("Name = %q", a.Name())
 		}
-		want := []family.Operation{{Name: "chat.completions", Method: "POST", Path: "/v1/chat/completions"}}
-		if got := a.Operations(); !reflect.DeepEqual(got, want) {
+		want := []family.Operation{
+			{Name: "chat.completions", Method: "POST", Path: "/v1/chat/completions"},
+			{Name: "responses", Method: "POST", Path: "/v1/responses"},
+			{Name: "embeddings", Method: "POST", Path: "/v1/embeddings"},
+		}
+		got := a.Operations()
+		sort.Slice(got, func(i, j int) bool { return got[i].Name < got[j].Name })
+		sort.Slice(want, func(i, j int) bool { return want[i].Name < want[j].Name })
+		if !reflect.DeepEqual(got, want) {
 			t.Errorf("Operations = %+v, want %+v", got, want)
 		}
 		ops := a.Operations()
 		ops[0].Path = "/changed"
-		if a.Operations()[0].Path != "/v1/chat/completions" {
-			t.Error("Operations returns the adapter's own slice")
+		for _, op := range a.Operations() {
+			if op.Path == "/changed" {
+				t.Error("Operations returns the adapter's own slice")
+			}
 		}
 	})
 
@@ -43,8 +141,6 @@ func TestAdapter(t *testing.T) {
 			{"POST", "//v1/chat/completions"},
 			{"GET", "/v1/chat/completions"},
 			{"post", "/v1/chat/completions"},
-			{"POST", "/v1/embeddings"},
-			{"POST", "/v1/responses"},
 			{"POST", "/v1"},
 			{"POST", "/"},
 			{"POST", ""},
@@ -105,7 +201,7 @@ func TestAdapter(t *testing.T) {
 	})
 
 	t.Run("ParseRequest", func(t *testing.T) {
-		op := a.Operations()[0]
+		op := opNamed(t, a, "chat.completions")
 		r, err := a.ParseRequest(op, []byte(`{"model":"m","stream":true}`))
 		if err != nil || r.Model() != "m" || !r.Stream() {
 			t.Fatalf("%v %v", r, err)
@@ -121,7 +217,7 @@ func TestAdapter(t *testing.T) {
 	})
 
 	t.Run("usage readers", func(t *testing.T) {
-		op := a.Operations()[0]
+		op := opNamed(t, a, "chat.completions")
 		u, ok, err := a.ReadUsage(op, []byte(`{"usage":{"prompt_tokens":9,"completion_tokens":12,"total_tokens":21}}`))
 		if err != nil || !ok || u.InputTokens != 9 || u.OutputTokens != 12 {
 			t.Errorf("ReadUsage: %+v %v %v", u, ok, err)

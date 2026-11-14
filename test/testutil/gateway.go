@@ -12,10 +12,15 @@ import (
 	"testing"
 	"time"
 
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/egress"
 	"github.com/pandokos/pandokos/internal/gateway"
+	"github.com/pandokos/pandokos/internal/pricing"
 	"github.com/pandokos/pandokos/internal/secret"
+	"github.com/pandokos/pandokos/internal/usage"
 	"github.com/pandokos/pandokos/test/fakeprovider"
 )
 
@@ -124,6 +129,37 @@ func TargetFor(up *fakeprovider.Server, provider, model string) gateway.Target {
 		Provider: provider, Endpoint: "synthetic-endpoint",
 		ModelID: "synthetic-model-" + provider + "-" + model, Model: model, UpstreamModel: model,
 		BaseURL: u, Private: true,
+		Prices: []pricing.Version{syntheticPrice("synthetic-price-"+provider+"-"+model, "synthetic-model-"+provider+"-"+model,
+			time.Now().Add(-time.Hour), "3", "6")},
+	}
+}
+
+// syntheticPrice returns a USD price version with an input and an output rate (per million tokens).
+func syntheticPrice(id, modelID string, validFrom time.Time, input, output string) pricing.Version {
+	in, err := pricing.ParseDecimal(input)
+	if err != nil {
+		panic(err)
+	}
+	out, err := pricing.ParseDecimal(output)
+	if err != nil {
+		panic(err)
+	}
+	return pricing.Version{
+		ID: id, ModelID: modelID, ValidFrom: validFrom, Currency: "USD", Source: "override",
+		Rates: []pricing.Rate{
+			{Category: pricing.CategoryInput, PerMillion: in},
+			{Category: pricing.CategoryOutput, PerMillion: out},
+		},
+	}
+}
+
+// TwoPrices returns two versions of a price, "synthetic-price-before" valid from before (input 1,
+// output 2 per million) and "synthetic-price-after" valid from after (input 10, output 20), for a
+// test of the version in force at the start of a request.
+func TwoPrices(before, after time.Time) []pricing.Version {
+	return []pricing.Version{
+		syntheticPrice("synthetic-price-before", "synthetic-model", before, "1", "2"),
+		syntheticPrice("synthetic-price-after", "synthetic-model", after, "10", "20"),
 	}
 }
 
@@ -194,4 +230,56 @@ func ConnectProxy(tb testing.TB) (proxyURL *url.URL, requests func() []*http.Req
 		defer mu.Unlock()
 		return append([]*http.Request(nil), seen...)
 	}
+}
+
+// MemoryRecorder is a gateway.Recorder that keeps the records in memory.
+type MemoryRecorder struct {
+	// Capacity is the number of admissions; zero means no limit. Set it before use.
+	Capacity int
+
+	mu      sync.Mutex
+	records []usage.Record
+	admits  int
+}
+
+// Admit takes a slot while Capacity allows.
+func (m *MemoryRecorder) Admit() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.Capacity > 0 && m.admits >= m.Capacity {
+		return false
+	}
+	m.admits++
+	return true
+}
+
+// Record keeps the record.
+func (m *MemoryRecorder) Record(r usage.Record) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.records = append(m.records, r)
+}
+
+// Records returns the records received, in order.
+func (m *MemoryRecorder) Records() []usage.Record {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]usage.Record(nil), m.records...)
+}
+
+// Admits returns the number of successful Admit calls.
+func (m *MemoryRecorder) Admits() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.admits
+}
+
+// SpanRecorder returns an SDK tracer provider that samples everything into an in-memory
+// recorder; the provider is shut down when the test ends.
+func SpanRecorder(tb testing.TB) (*sdktrace.TracerProvider, *tracetest.SpanRecorder) {
+	tb.Helper()
+	rec := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec), sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	tb.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+	return tp, rec
 }

@@ -47,6 +47,47 @@ type Config struct {
 	Database  Database  `yaml:"database"`
 	Vault     Vault     `yaml:"vault"`
 	Pricing   Pricing   `yaml:"pricing"`
+	Ledger    Ledger    `yaml:"ledger"`
+	Telemetry Telemetry `yaml:"telemetry"`
+}
+
+// Ledger configures the usage ledger writer. Only serve reads and validates these settings.
+type Ledger struct {
+	FlushInterval        Duration `yaml:"flush_interval"`
+	BatchSize            int      `yaml:"batch_size"`
+	BufferSize           int      `yaml:"buffer_size"`
+	ShutdownFlushTimeout Duration `yaml:"shutdown_flush_timeout"`
+}
+
+// Telemetry configures trace export. Only serve reads and validates these settings.
+type Telemetry struct {
+	OTLP     TelemetryOTLP     `yaml:"otlp"`
+	Traces   TelemetryTraces   `yaml:"traces"`
+	Resource TelemetryResource `yaml:"resource"`
+
+	ResourceAttributes map[string]string `yaml:"-"` // filled by Load when the purpose is serve
+}
+
+// TelemetryOTLP configures the OTLP/HTTP trace exporter.
+type TelemetryOTLP struct {
+	Endpoint    string   `yaml:"endpoint"`
+	Protocol    string   `yaml:"protocol"`
+	HeadersFile string   `yaml:"headers_file"`
+	Timeout     Duration `yaml:"timeout"`
+
+	ParsedEndpoint *url.URL                 `yaml:"-"` // filled by Load when the purpose is serve and Endpoint is set
+	Headers        map[string]secret.Secret `yaml:"-"` // filled by Load when the purpose is serve and HeadersFile is set
+}
+
+// TelemetryTraces configures sampling and propagation.
+type TelemetryTraces struct {
+	SampleRatio float64 `yaml:"sample_ratio"`
+	Propagate   bool    `yaml:"propagate"`
+}
+
+// TelemetryResource configures the resource attributes: comma-separated key=value pairs.
+type TelemetryResource struct {
+	Attributes string `yaml:"attributes"`
 }
 
 // Log configures logging.
@@ -283,6 +324,16 @@ func Defaults() *Config {
 		Pricing: Pricing{
 			ImportAtStart: true,
 			Refresh:       PricingRefresh{URL: DefaultPriceURL, Interval: Duration(24 * time.Hour)},
+		},
+		Ledger: Ledger{
+			FlushInterval:        Duration(50 * time.Millisecond),
+			BatchSize:            500,
+			BufferSize:           10000,
+			ShutdownFlushTimeout: Duration(10 * time.Second),
+		},
+		Telemetry: Telemetry{
+			OTLP:   TelemetryOTLP{Protocol: "http/protobuf", Timeout: Duration(10 * time.Second)},
+			Traces: TelemetryTraces{SampleRatio: 1},
 		},
 		Vault: Vault{KEK: VaultKEK{Provider: "local"}},
 		Database: Database{

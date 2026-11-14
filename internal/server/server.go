@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/pandokos/pandokos/internal/config"
 	"github.com/pandokos/pandokos/internal/egress"
 	"github.com/pandokos/pandokos/internal/family"
@@ -33,6 +35,8 @@ type Options struct {
 	Credentials   gateway.Credentials     // required: opens the provider credential of a call
 	Failures      gateway.FailureRecorder // optional: records authentication failures
 	Egress        *egress.Guard           // required: the only way out of the process
+	Recorder      gateway.Recorder        // required: receives the usage record of every admitted request
+	Tracer        trace.TracerProvider    // required: the trace provider of the gateway
 }
 
 // listener is one HTTP listener with its server.
@@ -42,6 +46,10 @@ type listener struct {
 	ln   net.Listener
 	tls  *config.ListenerTLS
 }
+
+// handlerWait bounds the wait for the handlers that the forced close cancelled, so that their usage
+// records exist when Serve returns. It comes after the drain and before the flush of the ledger.
+const handlerWait = 5 * time.Second
 
 // Server serves two listeners with two handlers: the inference gateway and the administration
 // API. They share the health state, the logger and the shutdown sequence.
@@ -57,6 +65,7 @@ type Server struct {
 
 	baseCtx    context.Context
 	cancelBase context.CancelCauseFunc
+	handlers   atomic.Int64 // inference handlers still running
 }
 
 // New wires logger, health, gateway and the two HTTP servers. It performs no I/O.
@@ -76,6 +85,10 @@ func New(o Options) (*Server, error) {
 		return nil, errors.New("server: Credentials is required")
 	case o.Egress == nil:
 		return nil, errors.New("server: Egress is required")
+	case o.Recorder == nil:
+		return nil, errors.New("server: Recorder is required")
+	case o.Tracer == nil:
+		return nil, errors.New("server: Tracer is required")
 	}
 	cfg, logger := o.Config, o.Logger
 	s := &Server{cfg: cfg, logger: logger, health: health.New(logger), admin: o.Admin, egress: o.Egress}
@@ -93,6 +106,9 @@ func New(o Options) (*Server, error) {
 		MaxRequestBodyBytes:    cfg.Limits.MaxRequestBodyBytes,
 		RequestBodyReadTimeout: time.Duration(cfg.Limits.RequestBodyReadTimeout),
 		MaxRequestDuration:     time.Duration(cfg.Limits.MaxRequestDuration),
+		Recorder:               o.Recorder,
+		Tracer:                 o.Tracer,
+		PropagateTrace:         cfg.Telemetry.Traces.Propagate,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("server: %w", err)
@@ -209,6 +225,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 			"duration_ms", time.Since(start).Milliseconds())
 		return
 	}
+	s.handlers.Add(1)
+	defer s.handlers.Add(-1)
 	s.gw.ServeHTTP(w, r)
 }
 
@@ -282,6 +300,11 @@ func (s *Server) Serve(ctx context.Context) error {
 		s.cancelBase(gateway.ErrShutdown)
 		_ = s.inf.srv.Close()
 		_ = s.adm.srv.Close()
+		// Close does not wait for handlers: a cancelled handler still records its request, and
+		// the ledger is closed after Serve returns, so wait for them (bounded).
+		for deadline := time.Now().Add(handlerWait); s.handlers.Load() > 0 && time.Now().Before(deadline); {
+			time.Sleep(time.Millisecond)
+		}
 	} else {
 		s.cancelBase(nil)
 	}

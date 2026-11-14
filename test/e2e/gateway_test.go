@@ -189,7 +189,7 @@ func TestGatewayExitScenario(t *testing.T) {
 	refused("a model that is selected and not granted", a.key, 403, "model_not_allowed", func() (int, string) { return p.chatCall(t, a.key, "fake-selected", false) })
 	refused("a model that does not exist", a.key, 403, "model_not_allowed", func() (int, string) { return p.chatCall(t, a.key, "no-such-model", false) })
 	refused("an operation that is not supported", a.key, 404, "endpoint_not_supported", func() (int, string) {
-		return exchangeWith(t, p.client, "POST", p.url("/openai/v1/embeddings"), authHeader(a.key), []byte(`{"model":"x","input":"y"}`))
+		return exchangeWith(t, p.client, "POST", p.url("/openai/v1/models"), authHeader(a.key), []byte(`{"model":"x","input":"y"}`))
 	})
 	refused("a provider that is not served", a.key, 404, "endpoint_not_supported", func() (int, string) {
 		return exchangeWith(t, p.client, "POST", p.url("/nope/v1/chat/completions"), authHeader(a.key), chatBody("fake-basic", false, "x"))
@@ -339,7 +339,7 @@ func TestGatewayCanaries(t *testing.T) {
 			call("scoped key", scoped, fakeprovider.ModelBasic, false)
 			call("no credential", keyNo, fakeprovider.ModelBasic, false)
 			raw("no authorization", "POST", chatPath, http.Header{"Content-Type": {"application/json"}}, chatBody("fake-basic", false, fixtures.CanaryPrompt))
-			raw("embeddings", "POST", "/openai/v1/embeddings", authHeader(key), chatBody("fake-basic", false, fixtures.CanaryPrompt))
+			raw("models", "POST", "/openai/v1/models", authHeader(key), chatBody("fake-basic", false, fixtures.CanaryPrompt))
 			raw("invalid body", "POST", chatPath, authHeader(key), []byte(`{"messages":[{"content":"`+fixtures.CanaryPrompt+`"}]}`))
 			raw("too large", "POST", chatPath, authHeader(key), chatBody("fake-basic", false, strings.Repeat(fixtures.CanaryPrompt, 200)))
 			raw("wrong key", "POST", chatPath, authHeader(testutil.NewKey(t)), chatBody("fake-basic", false, fixtures.CanaryPrompt))

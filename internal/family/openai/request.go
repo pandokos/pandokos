@@ -142,7 +142,13 @@ type Request struct {
 // Parse reads a chat completions request body. Every error wraps family.ErrInvalidRequest and
 // carries a reason (family.InvalidReason): not_object, model_missing, model_duplicate or
 // model_not_string. The body is not modified and is kept by the Request.
-func Parse(body []byte) (*Request, error) {
+func Parse(body []byte) (*Request, error) { return ParseOperation(OperationChatCompletions, body) }
+
+// ParseOperation reads the request body of an operation of the family. Every error wraps
+// family.ErrInvalidRequest as for Parse, which stays and means chat completions. For responses a
+// body whose last top-level background member is true is refused (background_not_supported); for
+// embeddings the request never streams.
+func ParseOperation(operation string, body []byte) (*Request, error) {
 	members, closeIdx, err := scanObject(body)
 	if err != nil {
 		return nil, family.Invalid("not_object")
@@ -166,7 +172,17 @@ func Parse(body []byte) (*Request, error) {
 	if len(raw) == 0 || raw[0] != '"' || json.Unmarshal(raw, &model) != nil || model == "" {
 		return nil, family.Invalid("model_not_string")
 	}
-	e, stream := usageEdit(body, members, closeIdx)
+	var e *edit
+	var stream bool
+	switch operation {
+	case OperationChatCompletions:
+		e, stream = usageEdit(body, members, closeIdx)
+	case OperationResponses:
+		if bm, ok := last(members, "background"); ok && bytes.Equal(body[bm.start:bm.end], []byte("true")) {
+			return nil, family.Invalid("background_not_supported")
+		}
+		_, stream = usageEdit(body, members, closeIdx)
+	}
 	return &Request{body: body, model: model, stream: stream, modelV: mm, usage: e}, nil
 }
 

@@ -7,7 +7,8 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"strings"
-	"time"
+
+	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/pandokos/pandokos/internal/family"
 )
@@ -88,6 +89,11 @@ func (h *Handler) rewrite(pr *httputil.ProxyRequest) {
 		}
 	}
 	st.adapter.AttachCredential(hdr, st.credential.Reveal())
+	if h.propagate {
+		// The context of the client span; the caller's own trace headers are not on the
+		// allow-list and are never copied.
+		h.propagator.Inject(pr.Out.Context(), propagation.HeaderCarrier(hdr))
+	}
 	pr.Out.Header = hdr
 }
 
@@ -102,7 +108,6 @@ func (h *Handler) modifyResponse(resp *http.Response) error {
 		return errRedirect
 	}
 	st.answered = true
-	st.ttfb = time.Since(st.start)
 	if id := resp.Header.Get("X-Request-Id"); id != "" && len(id) <= maxUpstreamRequestID && printableASCII(id) {
 		st.upstreamRequestID = id
 	}
@@ -119,17 +124,17 @@ func (h *Handler) modifyResponse(resp *http.Response) error {
 	contentType := resp.Header.Get("Content-Type")
 	switch {
 	case resp.StatusCode == http.StatusOK && strings.HasPrefix(contentType, "text/event-stream"):
-		st.streamBody = newStreamBody(resp, st.adapter.NewStreamReader(st.op, st.strip))
+		st.streamBody = newStreamBody(h, st, resp, st.adapter.NewStreamReader(st.op, st.strip), st.strip)
 		resp.Body = st.streamBody
 		if st.strip {
 			resp.Header.Del("Content-Length")
 			resp.ContentLength = -1
 		}
 	case resp.StatusCode == http.StatusOK && strings.HasPrefix(contentType, "application/json"):
-		st.teeBody = &teeBody{src: resp.Body, trailers: trailerGuard{resp}, adapter: st.adapter, op: st.op}
+		st.teeBody = &teeBody{st: st, src: resp.Body, trailers: trailerGuard{resp}, adapter: st.adapter, op: st.op}
 		resp.Body = st.teeBody
 	default:
-		st.countBody = &countBody{src: resp.Body, trailers: trailerGuard{resp}}
+		st.countBody = &countBody{st: st, src: resp.Body, trailers: trailerGuard{resp}}
 		resp.Body = st.countBody
 	}
 	return nil

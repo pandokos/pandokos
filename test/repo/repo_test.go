@@ -126,11 +126,11 @@ func TestDependencies(t *testing.T) {
 		}
 	}
 	sort.Strings(direct)
-	if want := []string{"github.com/jackc/pgx/v5", "go.yaml.in/yaml/v3"}; !reflect.DeepEqual(direct, want) {
+	if want := []string{"github.com/go-logr/logr", "github.com/jackc/pgx/v5", "go.opentelemetry.io/otel", "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp", "go.opentelemetry.io/otel/sdk", "go.opentelemetry.io/otel/trace", "go.opentelemetry.io/proto/otlp", "go.yaml.in/yaml/v3", "google.golang.org/protobuf"}; !reflect.DeepEqual(direct, want) {
 		t.Errorf("direct requirements = %v, want exactly %v", direct, want)
 	}
-	if !regexp.MustCompile(`(?m)^go 1\.25\.0$`).MatchString(gomod) {
-		t.Error("go.mod must declare go 1.25.0")
+	if !regexp.MustCompile(`(?m)^go 1\.26\.0$`).MatchString(gomod) {
+		t.Error("go.mod must declare go 1.26.0")
 	}
 	if regexp.MustCompile(`(?m)^toolchain\b`).MatchString(gomod) {
 		t.Error("go.mod must not have a toolchain line")
@@ -254,6 +254,12 @@ func TestConfigurationReference(t *testing.T) {
 			t.Errorf("configuration.md does not mention the default %q of %s", k.Default, k.Name)
 		}
 	}
+	// Sprint 3.2: the two warnings about the environment of OpenTelemetry.
+	for _, w := range []string{"OTEL_RESOURCE_ATTRIBUTES", "OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"} {
+		if !strings.Contains(doc, w) {
+			t.Errorf("configuration.md does not mention %s", w)
+		}
+	}
 }
 
 func TestReleaseWorkflowShape(t *testing.T) {
@@ -356,6 +362,8 @@ func TestDatabaseGuide(t *testing.T) {
 		"the database schema is newer than this binary",
 		"a migration recorded in the database differs from this binary",
 		"pool_mode = transaction",
+		// Sprint 3.2: the grants of migration 0006, the usage partitions and the definer function.
+		"Grants of migration 0006", "Usage partitions", "ensure_usage_partitions", "usage_record_default",
 	} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("database.md lacks %q", want)

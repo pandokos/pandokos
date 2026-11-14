@@ -34,3 +34,4 @@ The tenant ID inside the key (no directory, longer key, tenant visible in the ke
 
 - 2026-11: sprint 2.1 adds the payload `vault:<tenant>`, which the principal cache ignores.
 - 2026-11: sprint 2.2 adds the payloads `catalog` and `catalog:<tenant>`, which the principal cache ignores.
+- 2026-11: sprint 3.2: the notification listener no longer empties the caches when its connection is lost, only when it connects again, so that calls continue from the caches while the database is stopped; the bound on revocation stays the cache lifetimes (`cache.principal_ttl`, at most 60 s).

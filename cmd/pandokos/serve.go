@@ -21,6 +21,7 @@ import (
 	"github.com/pandokos/pandokos/internal/catalog"
 	"github.com/pandokos/pandokos/internal/config"
 	"github.com/pandokos/pandokos/internal/egress"
+	"github.com/pandokos/pandokos/internal/ledger"
 	"github.com/pandokos/pandokos/internal/pricing/genaiprices"
 	"github.com/pandokos/pandokos/internal/resolver"
 	"github.com/pandokos/pandokos/internal/server"
@@ -52,6 +53,9 @@ func warnBootstrap(ctx context.Context, logger *slog.Logger, db *store.DB) {
 		}
 	}
 }
+
+// ensurePartitions creates the partitions at start; a variable so that a test can make it fail.
+var ensurePartitions = func(ctx context.Context, p *ledger.Partitioner) error { return p.Ensure(ctx) }
 
 func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, environ []string) int {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
@@ -206,12 +210,49 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
+	// Traces: the collector's headers are secrets, revealed here and nowhere else.
+	tracesOpts := telemetry.TracesOptions{
+		Endpoint:       cfg.Telemetry.OTLP.ParsedEndpoint,
+		Timeout:        time.Duration(cfg.Telemetry.OTLP.Timeout),
+		SampleRatio:    cfg.Telemetry.Traces.SampleRatio,
+		Attributes:     cfg.Telemetry.ResourceAttributes,
+		ServiceVersion: buildinfo.Version,
+		Logger:         logger,
+	}
+	if cfg.Telemetry.OTLP.ParsedEndpoint != nil {
+		tracesOpts.Transport = guard.Transport(true)
+		tracesOpts.Headers = make(map[string]string, len(cfg.Telemetry.OTLP.Headers))
+		for name, v := range cfg.Telemetry.OTLP.Headers {
+			tracesOpts.Headers[name] = v.Reveal()
+		}
+	}
+	traces, err := telemetry.NewTraces(tracesOpts)
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
+	writer, err := ledger.New(ledger.Options{
+		DB: gatewayDB, Logger: logger, BufferSize: cfg.Ledger.BufferSize, BatchSize: cfg.Ledger.BatchSize,
+		FlushInterval: time.Duration(cfg.Ledger.FlushInterval),
+	})
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
+	partitioner := &ledger.Partitioner{DB: workerDB, Logger: logger}
+	// Ensure bounds itself. A failure is a warning: the keeper retries, and rows whose month has
+	// no partition land in the default one.
+	if err := ensurePartitions(ctx, partitioner); err != nil {
+		partitioner.Warn(err)
+	}
 	srv, err := server.New(server.Options{
 		Config: cfg, Logger: logger, Authenticator: gatewayAuth, Admin: adminHandler,
 		Catalogue:   resolver.NewCatalogue(catalogCache, logger),
 		Credentials: resolver.NewCredentials(opener),
 		Failures:    resolver.NewFailureAuditor(gatewayDB, logger, nil),
 		Egress:      guard,
+		Recorder:    writer,
+		Tracer:      traces.Provider(),
 	})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
@@ -220,6 +261,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	for _, db := range dbs {
 		srv.Health().AddCheck("database-"+string(db.Role()), db.Ready)
 	}
+	srv.Health().AddCheck("ledger", writer.Ready)
 	if cfg.Pricing.ImportAtStart {
 		ictx, icancel := context.WithTimeout(ctx, 60*time.Second)
 		catalog.ImportAtStart(ictx, workerDB, logger)
@@ -233,9 +275,16 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	background, stopBackground := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	defer func() { stopBackground(); wg.Wait() }()
-	wg.Add(2)
+	wg.Add(3)
 	go func() { defer wg.Done(); listener.Run(background) }()
 	go func() { defer wg.Done(); warnBootstrap(background, logger, adminDB) }()
+	go func() { defer wg.Done(); partitioner.Run(background) }()
+	// The writer is not stopped by the signal: it runs until Close has returned.
+	writerCtx, stopWriter := context.WithCancel(context.WithoutCancel(ctx))
+	var writerDone sync.WaitGroup
+	writerDone.Add(1)
+	go func() { defer writerDone.Done(); writer.Run(writerCtx) }()
+	defer func() { stopWriter(); writerDone.Wait() }()
 	if cfg.Pricing.Refresh.Enabled {
 		refresher := &catalog.Refresher{
 			DB: workerDB, Logger: logger, URL: cfg.Pricing.Refresh.ParsedURL.String(),
@@ -252,8 +301,22 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		<-sigCtx.Done()
 		stop() // a second signal terminates the process with the Go default behaviour
 	}()
-	if err := srv.Serve(sigCtx); err != nil {
-		logger.Error("startup failed", "error", fmt.Sprint(err))
+	serveErr := srv.Serve(sigCtx)
+
+	// Every handler has recorded: write what is queued and flush the spans, together, within
+	// ledger.shutdown_flush_timeout (OPS-12).
+	flushCtx, flushCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Duration(cfg.Ledger.ShutdownFlushTimeout))
+	var unwritten int
+	var flush sync.WaitGroup
+	flush.Add(2)
+	go func() { defer flush.Done(); unwritten = writer.Close(flushCtx) }()
+	go func() { defer flush.Done(); _ = traces.Shutdown(flushCtx) }()
+	flush.Wait()
+	flushCancel()
+	logger.Info("ledger flushed", "unwritten", unwritten)
+
+	if serveErr != nil {
+		logger.Error("startup failed", "error", fmt.Sprint(serveErr))
 		return 1
 	}
 	return 0
