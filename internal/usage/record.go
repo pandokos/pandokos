@@ -77,6 +77,18 @@ func (r *Record) Validate() error {
 	return nil
 }
 
+// Failed returns the names of the fields that break a constraint of the table, in the order of
+// Validate. It names fields, never values.
+func (r *Record) Failed() []string {
+	var out []string
+	for _, c := range r.checks() {
+		if !c.ok {
+			out = append(out, c.field)
+		}
+	}
+	return out
+}
+
 // fieldError is a violated constraint. Its text names the column and never holds a value.
 type fieldError string
 

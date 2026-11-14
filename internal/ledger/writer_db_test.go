@@ -533,6 +533,13 @@ func TestRejectedRecord(t *testing.T) {
 	if l["level"] != "ERROR" || l["sqlstate"] != "23514" || l["constraint"] != "usage_record_request_id_format" || l["record_id"] != bad.ID {
 		t.Errorf("the line: %v", l)
 	}
+	var logged map[string]any
+	if err := json.Unmarshal([]byte(fmt.Sprint(l["row"])), &logged); err != nil || logged["id"] != bad.ID || logged["provider"] == nil {
+		t.Errorf("the row of the line: %v (%v)", l["row"], err)
+	}
+	if m, _ := logged["metadata"].(map[string]any); len(m) != 0 {
+		t.Errorf("the row holds metadata values: %v", m)
+	}
 	testutil.AssertNoCanary(t, "the log", logs.String())
 	cctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -561,8 +568,17 @@ func TestClose(t *testing.T) {
 			defer cancel()
 			closed <- w.Close(cctx)
 		}()
-		time.Sleep(50 * time.Millisecond) // Admit in the poll below must not win the race with the goroutine and take a slot
-		testutil.Eventually(t, 2*time.Second, "Admit refused after Close started", func() bool { return !w.Admit() })
+		// An Admit that wins the race with Close is answered at once with a record, so that the poll
+		// never holds a slot.
+		extra := 0
+		testutil.Eventually(t, 2*time.Second, "Admit refused after Close started", func() bool {
+			if w.Admit() {
+				w.Record(testutil.ValidRecord(tid))
+				extra++
+				return false
+			}
+			return true
+		})
 		select {
 		case n := <-closed:
 			t.Fatalf("Close returned %d before the admitted request recorded", n)
@@ -583,7 +599,7 @@ func TestClose(t *testing.T) {
 			t.Error("Run did not return")
 		}
 		got := idsOf(t, d, tid)
-		if len(got) != 2 || got[first.ID] != 1 || got[late.ID] != 1 {
+		if len(got) != 2+extra || got[first.ID] != 1 || got[late.ID] != 1 {
 			t.Errorf("rows %v", got)
 		}
 		if w.Admit() {

@@ -92,6 +92,7 @@ type Writer struct {
 	queue      []usage.Record
 	saturated  bool
 	closing    bool
+	closed     bool // Close has taken the queue: a later record is written off at once
 	running    bool
 	cancelRun  context.CancelFunc
 	warnedFree bool // `usage record without admission` was logged
@@ -157,6 +158,13 @@ func (w *Writer) Admit() bool {
 func (w *Writer) Record(r usage.Record) {
 	err := r.Validate()
 	w.mu.Lock()
+	if w.closed {
+		// Close has finished: nobody reads the queue any more.
+		w.unwritten++
+		w.mu.Unlock()
+		w.logNotWritten(&r)
+		return
+	}
 	covered := w.inUse > len(w.queue) // a slot is held for a request that has not recorded yet
 	if err != nil {
 		w.rejected++
@@ -169,7 +177,9 @@ func (w *Writer) Record(r usage.Record) {
 			w.warnedFree = true
 		}
 		w.mu.Unlock()
-		w.log.Error("usage record rejected", "record_id", r.ID, "tenant_id", r.TenantID.String(), "error", err.Error())
+		// What is logged: the fields that passed their checks, never the one that failed.
+		w.log.Error("usage record rejected", "record_id", r.ID, "tenant_id", r.TenantID.String(), "error", err.Error(),
+			"row", rowJSON(&r, r.Failed()...))
 		if warn {
 			w.log.Error("usage record without admission")
 		}
@@ -391,7 +401,7 @@ groups:
 			l.succeeded()
 			continue
 		}
-		if store.IsUnavailable(err) {
+		if retryable(err) {
 			unavailable = err
 			break
 		}
@@ -408,7 +418,7 @@ groups:
 				settled[j] = true
 				written++
 				l.succeeded()
-			case store.IsUnavailable(err):
+			case retryable(err):
 				unavailable = err
 				break groups
 			default:
@@ -463,12 +473,53 @@ func (l *loop) succeeded() {
 	l.failures = 0
 }
 
-// reject logs a record the database refuses; its slot is freed by the caller.
+// reject logs a record the database refuses; its slot is freed by the caller. The line carries
+// the SQLSTATE, the constraint and the row, without the values of the metadata.
 func (w *Writer) reject(r *usage.Record, err error) {
 	attrs := w.identity(r, "sqlstate", store.SQLState(err))
 	_, constraint, _ := store.ConstraintViolation(err)
-	attrs = append(attrs, "constraint", constraint)
+	attrs = append(attrs, "constraint", constraint, "metadata_count", len(r.Metadata), "row", rowJSON(r))
 	w.log.Error("usage record rejected", attrs...)
+}
+
+// logNotWritten logs a record that will not reach the table: the identity fields and the whole
+// row as JSON, so that it can be inserted by hand; the values of the metadata are left out.
+func (w *Writer) logNotWritten(r *usage.Record) {
+	w.log.Error("usage record not written", w.identity(r, "metadata_count", len(r.Metadata), "row", rowJSON(r))...)
+}
+
+// rowJSON is the record as the insert statement reads it, with the metadata values removed and
+// the columns named in omit left out.
+func rowJSON(r *usage.Record, omit ...string) string {
+	rw := rowOf(r)
+	rw.Metadata = map[string]string{}
+	b, err := json.Marshal(rw)
+	if err != nil || len(omit) == 0 {
+		return string(b)
+	}
+	var m map[string]any
+	if json.Unmarshal(b, &m) != nil {
+		return ""
+	}
+	for _, k := range omit {
+		delete(m, k)
+	}
+	b, _ = json.Marshal(m)
+	return string(b)
+}
+
+// retryable says whether a refusal is about the state of the database and not about the record:
+// the database is out of reach, or it is busy or failing over (serialization failure, deadlock,
+// lock not available, read-only transaction). The records stay queued and the loop backs off.
+func retryable(err error) bool {
+	if store.IsUnavailable(err) {
+		return true
+	}
+	switch store.SQLState(err) {
+	case "40001", "40P01", "55P03", "25006":
+		return true
+	}
+	return false
 }
 
 // Close flushes what it can until ctx ends and returns the number of records not written. It
@@ -517,14 +568,11 @@ func (w *Writer) Close(ctx context.Context) (unwritten int) {
 	w.inUse = 0
 	w.unwritten += int64(len(remaining))
 	w.closeCount = len(remaining)
+	w.closed = true
 	w.mu.Unlock()
 
 	for i := range remaining {
-		r := &remaining[i]
-		rw := rowOf(r)
-		rw.Metadata = map[string]string{}
-		row, _ := json.Marshal(rw)
-		w.log.Error("usage record not written", w.identity(r, "metadata_count", len(r.Metadata), "row", string(row))...)
+		w.logNotWritten(&remaining[i])
 	}
 	if len(remaining) > 0 || missing > 0 {
 		w.log.Error("ledger closed with records lost", "unwritten", len(remaining), "missing", missing)

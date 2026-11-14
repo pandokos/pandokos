@@ -2,6 +2,7 @@ package ledger
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/pandokos/pandokos/internal/telemetry"
 	"github.com/pandokos/pandokos/internal/tenant"
@@ -322,7 +325,83 @@ func TestAdmission(t *testing.T) {
 			t.Fatalf("%d lines", len(lines))
 		}
 		testutil.AssertNoCanary(t, "the log", r.logs.String())
+		// The line carries the fields that passed their checks, as JSON, and not the one that failed.
+		var row map[string]any
+		if err := json.Unmarshal([]byte(fmt.Sprint(lines[0]["row"])), &row); err != nil {
+			t.Fatalf("the line has no row: %v", lines[0])
+		}
+		if row["provider"] != "openai" || row["id"] == nil {
+			t.Errorf("the row: %v", row)
+		}
+		if _, ok := row["request_id"]; ok {
+			t.Errorf("the row holds the field that failed: %v", row)
+		}
+		if !strings.Contains(fmt.Sprint(lines[0]["error"]), "request_id") {
+			t.Errorf("the error does not name the field: %v", lines[0]["error"])
+		}
 	})
+
+	t.Run("a record after Close has finished is written off and counted", func(t *testing.T) {
+		r := start(t, 5, 10, 5*time.Millisecond, &fakeStore{})
+		tid := tenantID(t)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		r.w.Close(ctx)
+		late := testutil.ValidRecord(tid)
+		late.Metadata = map[string]string{"note": fixtures.CanaryPrompt}
+		r.w.Record(late)
+		lines := r.logs.Find(t, "usage record not written")
+		if len(lines) != 1 || lines[0]["level"] != "ERROR" || lines[0]["record_id"] != late.ID || lines[0]["row"] == nil {
+			t.Fatalf("lines %v", lines)
+		}
+		if n := len(r.logs.Find(t, "usage record without admission")); n != 0 {
+			t.Errorf("%d `without admission` lines", n)
+		}
+		if got := r.w.Stats().Unwritten; got != 1 {
+			t.Errorf("Unwritten %d", got)
+		}
+		if n := len(r.fs.committed()); n != 0 {
+			t.Errorf("%d records written", n)
+		}
+		testutil.AssertNoCanary(t, "the log", r.logs.String())
+	})
+}
+
+// TestRetryableStates: the states of a database that is busy or failing over keep the records
+// queued, with backoff, like an unreachable one; none of them rejects a record.
+func TestRetryableStates(t *testing.T) {
+	oldInitial, oldMax := backoffInitial, backoffMax
+	backoffInitial, backoffMax = 5*time.Millisecond, 20*time.Millisecond
+	t.Cleanup(func() { backoffInitial, backoffMax = oldInitial, oldMax })
+	for _, state := range []string{"40001", "40P01", "55P03", "25006"} {
+		t.Run(state, func(t *testing.T) {
+			fs := &fakeStore{}
+			var down atomic.Bool
+			down.Store(true)
+			fs.setFail(func(tenant.ID, []usage.Record) error {
+				if down.Load() {
+					return &pgconn.PgError{Code: state, Message: "synthetic"}
+				}
+				return nil
+			})
+			r := start(t, 10, 5, 5*time.Millisecond, fs)
+			tid := tenantID(t)
+			r.admitRecord(t, tid)
+			r.admitRecord(t, tid)
+			r.wait(t, "three attempts", func() bool { return len(fs.allCalls()) >= 3 })
+			if s := r.w.Stats(); s.Rejected != 0 || s.InUse != 2 {
+				t.Errorf("%+v", s)
+			}
+			if n := len(r.logs.Find(t, "usage record rejected")); n != 0 {
+				t.Errorf("%d rejections", n)
+			}
+			if n := len(r.logs.Find(t, "ledger write failing")); n != 1 {
+				t.Errorf("%d `ledger write failing` lines", n)
+			}
+			down.Store(false)
+			r.wait(t, "both written", func() bool { return len(fs.committed()) == 2 })
+		})
+	}
 }
 
 // TestBatching is T-472.
@@ -499,8 +578,17 @@ func TestCloseWithFake(t *testing.T) {
 		defer cancel()
 		closed <- w.Close(ctx)
 	}()
-	time.Sleep(50 * time.Millisecond) // Admit in the poll below must not win the race with the goroutine and take a slot
-	testutil.Eventually(t, 2*time.Second, "Admit refused after Close started", func() bool { return !w.Admit() })
+	// An Admit that wins the race with Close is answered at once with a record, so that the poll
+	// never holds a slot.
+	extra := 0
+	testutil.Eventually(t, 2*time.Second, "Admit refused after Close started", func() bool {
+		if w.Admit() {
+			w.Record(testutil.ValidRecord(tid))
+			extra++
+			return false
+		}
+		return true
+	})
 	select {
 	case n := <-closed:
 		t.Fatalf("Close returned (%d) while an admitted request had not recorded", n)
@@ -515,8 +603,8 @@ func TestCloseWithFake(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("Close did not return")
 	}
-	if n := len(fs.committed()); n != 2 {
-		t.Errorf("%d records written", n)
+	if n := len(fs.committed()); n != 2+extra {
+		t.Errorf("%d records written, want %d", n, 2+extra)
 	}
 	select {
 	case <-runDone:

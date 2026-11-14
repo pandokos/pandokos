@@ -1131,3 +1131,11 @@ Changes to the design made while building, each declared and documented:
    `usage partitions not ensured` at warn, with `error_class` (and `sqlstate` when there is one, never the
    text of the error) and continues; the extra 30 s context around `Ensure`, which has its own
    10 s, is gone. The hourly keeper logs the same line.
+5. **Refusals of the ledger log the record's fields; busy-database states are retried** (at review,
+   §5.6). `usage record rejected` carries `row`: for a refusal of the table, the whole row with the
+   metadata values removed (with the SQLSTATE and the constraint); for a record that fails `Validate`,
+   only the fields that passed their checks (`usage.Record.Failed` names the others; their values are
+   never logged). SQLSTATEs 40001, 40P01, 55P03 and 25006 are classified like an unreachable database:
+   the records stay queued and the writer backs off. A record that arrives after `Close` has finished
+   is logged as `usage record not written` (with the row, metadata values removed) and counted in
+   `Stats.Unwritten`; it is no longer reported as `usage record without admission`.
