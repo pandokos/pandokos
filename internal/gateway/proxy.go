@@ -153,8 +153,9 @@ func (h *Handler) errorHandler(_ http.ResponseWriter, r *http.Request, err error
 	var b blocked
 	switch {
 	case st.callerCx.Err() != nil:
-		// The caller is gone: nothing to write.
-		return
+		// The caller is gone: nothing to write, and the connection is aborted so that net/http
+		// does not send an empty 200.
+		panic(http.ErrAbortHandler)
 	case errors.As(err, &b):
 		st.upstreamErr, st.egressReason = "egress", b.BlockedReason()
 		attrs := []any{"request_id", st.id, "provider", st.provider, "endpoint", st.target.Endpoint, "reason", b.BlockedReason()}

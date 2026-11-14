@@ -710,7 +710,11 @@ func TestShutdownDuringResolution(t *testing.T) {
 			t.Fatal("Serve did not return within 3 s")
 		}
 		select {
-		case <-resp:
+		case r := <-resp:
+			// An aborted request ends the connection: no answer, never an empty 200.
+			if r != nil && r.StatusCode/100 == 2 {
+				t.Errorf("the caller of an aborted request got %d", r.StatusCode)
+			}
 		case <-time.After(5 * time.Second):
 			t.Fatal("the request did not end")
 		}

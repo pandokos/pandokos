@@ -174,10 +174,11 @@ func (h *Handler) fail(st *reqState, code family.ErrorCode) {
 }
 
 // unavailable answers 503, unless the caller is gone or the server is being forced down: then
-// the failure is the cancellation, there is nobody to answer and the outcome says so.
+// the failure is the cancellation, there is nobody to answer and the outcome says so. The
+// connection is aborted: returning without a write would let net/http send an empty 200.
 func (h *Handler) unavailable(st *reqState) {
 	if st.callerCx.Err() != nil {
-		return
+		panic(http.ErrAbortHandler)
 	}
 	h.fail(st, family.CodeUnavailable)
 }
@@ -273,7 +274,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Step 9: forward. A request that was cancelled in steps 2 to 8 is not forwarded.
 	if r.Context().Err() != nil {
-		return
+		panic(http.ErrAbortHandler)
 	}
 	prepared, strip := parsed.Prepare(target.UpstreamModel)
 	st.parsed, st.stream, st.strip = true, parsed.Stream(), strip

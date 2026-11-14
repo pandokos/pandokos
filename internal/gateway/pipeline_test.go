@@ -1200,3 +1200,47 @@ func TestRequestLogIsNotLeaky(t *testing.T) {
 	testutil.AssertNoCanary(t, "the logs", h.logs.String())
 	testutil.AssertAbsent(t, "the logs", h.logs.String(), append(testutil.KeyForms(testKey), "query-value")...)
 }
+
+// TestCancelledBeforeForwarding: a request whose caller is gone (or whose server is being forced
+// down) before the forward is not forwarded and gets no answer: the handler aborts the
+// connection instead of letting net/http send an empty 200.
+func TestCancelledBeforeForwarding(t *testing.T) {
+	for name, tc := range map[string]struct {
+		block   bool
+		cause   error
+		outcome string
+	}{
+		"in resolution, forced shutdown": {true, gateway.ErrShutdown, "shutdown_aborted"},
+		"in resolution, caller gone":     {true, nil, "client_cancelled"},
+		"before the forward, shutdown":   {false, gateway.ErrShutdown, "shutdown_aborted"},
+		"before the forward, caller":     {false, nil, "client_cancelled"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t, nil)
+			if tc.block {
+				h.cat.Block = make(chan struct{})
+			}
+			ctx, cancel := context.WithCancelCause(context.Background())
+			cancel(tc.cause)
+			req := httptest.NewRequest(http.MethodPost, route, bytes.NewReader(chat("fake-basic", false))).WithContext(ctx)
+			req.Header.Set("Authorization", "Bearer "+testKey)
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			var got any
+			func() {
+				defer func() { got = recover() }()
+				h.handler.ServeHTTP(rec, req)
+			}()
+			if got != http.ErrAbortHandler {
+				t.Errorf("the handler ended with %v (status %d), want a panic of http.ErrAbortHandler", got, rec.Code)
+			}
+			if rec.Body.Len() != 0 {
+				t.Errorf("the caller got %q", rec.Body.String())
+			}
+			h.awaitOutcome(t, tc.outcome)
+			if n := len(h.up.Requests()); n != 0 {
+				t.Errorf("the provider received %d requests", n)
+			}
+		})
+	}
+}
