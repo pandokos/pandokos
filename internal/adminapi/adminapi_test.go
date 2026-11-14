@@ -299,6 +299,15 @@ func (f *fake) ListTenantModels(_ context.Context, in adminapi.ListTenantModelsI
 	return &adminapi.TenantModelList{}, nil
 }
 
+func (f *fake) GetCapability(_ context.Context, in adminapi.GetCapabilityInput) (*adminapi.Capability, error) {
+	f.rec("getCapability", in)
+	return &adminapi.Capability{}, nil
+}
+func (f *fake) ListUsageRecords(_ context.Context, in adminapi.ListUsageRecordsInput) (*adminapi.UsageRecordList, error) {
+	f.rec("listUsageRecords", in)
+	return &adminapi.UsageRecordList{}, nil
+}
+
 var _ adminapi.Server = (*fake)(nil)
 
 // problemBody is what the test's Error hook writes: enough to see the code and the members.
@@ -644,12 +653,20 @@ func TestRouterAndClient(t *testing.T) {
 			add("listTenantModels", in, func() error { _, err := c.ListTenantModels(ctx, in); return err })
 		}
 		{
+			in := adminapi.GetCapabilityInput{Tenant: tid, Provider: "openai", Model: "gpt-4o-mini"}
+			add("getCapability", in, func() error { _, err := c.GetCapability(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListUsageRecordsInput{Tenant: tid, Limit: 2, From: "2026-11-01T00:00:00Z", Provider: "openai"}
+			add("listUsageRecords", in, func() error { _, err := c.ListUsageRecords(ctx, in); return err })
+		}
+		{
 			in := adminapi.CreatePriceOverrideInput{Model: mid, Body: adminapi.PriceOverride{Currency: "EUR", ValidFrom: &future, Note: "n",
 				Rates: []adminapi.PriceRate{{Category: adminapi.PriceCategoryInput, Threshold: 0, Rate: "2.5"}, {Category: adminapi.PriceCategoryOutput, Threshold: 100000, Rate: "10.000000000001"}}}}
 			add("createPriceOverride", in, func() error { _, err := c.CreatePriceOverride(ctx, in); return err })
 		}
-		if len(adminapi.Operations) != 64 {
-			t.Fatalf("%d operations, want 64 (the 35 of epic 1 and sprint 2.1 and the 29 of sprint 2.2)", len(adminapi.Operations))
+		if len(adminapi.Operations) != 66 {
+			t.Fatalf("%d operations, want 66 (the 35 of epic 1 and sprint 2.1, the 29 of sprint 2.2 and the 2 of sprint 3.3)", len(adminapi.Operations))
 		}
 		for _, op := range adminapi.Operations {
 			tc, ok := calls[op.ID]

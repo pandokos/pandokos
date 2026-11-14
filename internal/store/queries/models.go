@@ -123,15 +123,16 @@ type PandokosPriceVersion struct {
 }
 
 type PandokosProvider struct {
-	ID              string
-	Name            string
-	DisplayName     string
-	Description     string
-	ApiFamily       string
-	Enabled         bool
-	DatasetProvider string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                string
+	Name              string
+	DisplayName       string
+	Description       string
+	ApiFamily         string
+	Enabled           bool
+	DatasetProvider   string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	StreamUsageOption string
 }
 
 type PandokosProviderCredential struct {

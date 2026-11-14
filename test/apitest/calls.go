@@ -46,6 +46,7 @@ func UniqueName(prefix string) string {
 func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 	tb.Helper()
 	var body any
+	var query string
 	switch op.ID {
 	case "getMe", "listTenants", "getTenant", "listServiceAccounts", "getServiceAccount",
 		"listVirtualKeys", "getVirtualKey", "listPlatformKeys", "getPlatformKey":
@@ -78,7 +79,9 @@ func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 	case "listProviders", "getProvider", "deleteProvider", "listEndpoints", "getEndpoint", "deleteEndpoint",
 		"listModels", "getModel", "deleteModel", "listModelGrants", "grantModel", "revokeModelGrant",
 		"listPriceVersions", "deletePriceVersion", "listPriceImports", "getPriceImport",
-		"listTenantModels", "getModelRestriction", "clearModelRestriction":
+		"listTenantModels", "getModelRestriction", "clearModelRestriction", "listUsageRecords":
+	case "getCapability":
+		query = "?provider=openai&model=gpt-4o-mini"
 	case "createProvider":
 		body = map[string]any{"name": UniqueName("synthetic"), "api_family": "openai"}
 	case "createEndpoint":
@@ -111,5 +114,5 @@ func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 	} else {
 		path = strings.ReplaceAll(path, "{key}", p.VirtualKey)
 	}
-	return Call{Method: op.Method, Path: path, Body: body}
+	return Call{Method: op.Method, Path: path + query, Body: body}
 }

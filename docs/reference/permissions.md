@@ -33,6 +33,7 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | `catalog:price` | platform | Setting and removing price overrides; running a price import |
 | `model:read` | tenant | Listing the models available to the tenant, with their prices; reading the tenant's model restriction |
 | `model:restrict` | tenant | Setting and clearing the tenant's model restriction |
+| `usage:read` | tenant | Listing the tenant's usage records |
 
 Scope *platform*: held by platform principals only. Scope *tenant*: held by principals of that
 tenant only, and checked against the tenant of the request. Scope *self*: the caller itself.
@@ -44,7 +45,7 @@ Roles are defined in code and cannot be changed; `role_assignment.role` holds a 
 | Role | Held by | Permissions |
 |---|---|---|
 | `platform-admin` | platform principals | `catalog:price`, `catalog:read`, `catalog:write`, `identity:read`, `platform_key:read`, `platform_key:revoke`, `platform_key:write`, `tenant:read`, `tenant:suspend`, `tenant:write`, `tenant_credential:read`, `tenant_credential:revoke` |
-| `tenant-admin` | service accounts | `credential:delete`, `credential:read`, `credential:rotate`, `credential:use`, `credential:write`, `identity:read`, `model:invoke`, `model:read`, `model:restrict`, `service_account:read`, `service_account:write`, `virtual_key:read`, `virtual_key:revoke`, `virtual_key:write` |
+| `tenant-admin` | service accounts | `credential:delete`, `credential:read`, `credential:rotate`, `credential:use`, `credential:write`, `identity:read`, `model:invoke`, `model:read`, `model:restrict`, `service_account:read`, `service_account:write`, `usage:read`, `virtual_key:read`, `virtual_key:revoke`, `virtual_key:write` |
 | `inference` | service accounts | `credential:use`, `model:invoke` |
 
 ## Decision

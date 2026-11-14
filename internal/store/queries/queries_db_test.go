@@ -429,6 +429,15 @@ func TestEveryStatement(t *testing.T) {
 			}
 			return err
 		}))
+		mark("ListUsageRecords")
+		must("usage records list", admin.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
+			rows, err := queries.New(tx).ListUsageRecords(c, queries.ListUsageRecordsParams{
+				FromAt: time.Now().Add(-time.Hour), ToAt: time.Now().Add(time.Hour), AfterID: "00000000-0000-0000-0000-000000000000", PageSize: 10})
+			if err == nil && len(rows) != 1 {
+				err = errors.New("ListUsageRecords did not return the one row")
+			}
+			return err
+		}))
 		mark("RecordAuthFailure")
 		must("auth failure", gateway.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
 			return queries.New(tx).RecordAuthFailure(c, queries.RecordAuthFailureParams{KeyID: keyScoped, Reason: "bad_secret", RequestID: "0123456789abcdef0123456789abcdef"})
@@ -457,7 +466,7 @@ func TestEveryStatement(t *testing.T) {
 		// Sprint 2.2: the catalogue, the model access and the prices.
 		catalogStatements(c, t, admin, gateway, tid, ten.ID, sa.ID, hash, called)
 
-		// The 95 statements, and nothing was prepared on the server.
+		// The 96 statements, and nothing was prepared on the server.
 		var names []string
 		typ := reflect.TypeOf(&queries.Queries{})
 		for i := 0; i < typ.NumMethod(); i++ {
@@ -466,8 +475,8 @@ func TestEveryStatement(t *testing.T) {
 			}
 		}
 		sort.Strings(names)
-		if len(names) != 95 {
-			t.Errorf("the generated package has %d statements, want 95: %v", len(names), names)
+		if len(names) != 96 {
+			t.Errorf("the generated package has %d statements, want 96: %v", len(names), names)
 		}
 		for _, name := range names {
 			if !called[name] {

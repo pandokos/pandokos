@@ -63,3 +63,21 @@ func (adapter) EstimateUsage(op family.Operation, e family.Evidence) family.Usag
 }
 
 func (adapter) WriteError(w http.ResponseWriter, code family.ErrorCode) { WriteError(w, code) }
+
+// Recognizes reports whether a request looks like a call of this family: its method and native
+// path are one of the operations of the family.
+func (adapter) Recognizes(method, nativePath string, _ http.Header) bool {
+	_, ok := Match(method, nativePath)
+	return ok
+}
+
+// UpstreamRequestID returns the provider's X-Request-Id header value, unchecked.
+func (adapter) UpstreamRequestID(h http.Header) string { return h.Get("X-Request-Id") }
+
+// partsOf maps "the provider reported usage" to the parts of a family.Usage.
+func partsOf(reported bool) family.Parts {
+	if reported {
+		return family.PartsAll
+	}
+	return 0
+}

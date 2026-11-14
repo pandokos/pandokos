@@ -58,7 +58,7 @@ func TestTenants(t *testing.T) {
 		if m.PrincipalType != adminapi.PrincipalTypeServiceAccount || m.ID != sa.ID || m.Tenant == nil || m.Tenant.ID != out.Tenant.ID || m.Tenant.State != adminapi.TenantStateActive || m.Bootstrap {
 			t.Errorf("me: %+v", m)
 		}
-		if strings.Join(m.Roles, ",") != "tenant-admin" || len(m.Permissions) != 14 {
+		if strings.Join(m.Roles, ",") != "tenant-admin" || len(m.Permissions) != 15 {
 			t.Errorf("roles %v, permissions %v", m.Roles, m.Permissions)
 		}
 		// The default name of the first service account is admin; no expiry means none.
@@ -595,8 +595,8 @@ func TestSuspensionBlocksAdministration(t *testing.T) {
 			}
 		}
 	}
-	if n != 25 {
-		t.Errorf("only %d operations were exercised, want 25 (getMe, the twenty tenant operations of epic 2.1 and the four of sprint 2.2)", n)
+	if n != 27 {
+		t.Errorf("only %d operations were exercised, want 27 (getMe, the twenty tenant operations of epic 2.1, the four of sprint 2.2 and the two of sprint 3.3)", n)
 	}
 	if after := w.api.SnapshotTenant(t, w.tenant.ID); after != before {
 		t.Error("a row of the suspended tenant changed")

@@ -19,7 +19,6 @@ import (
 
 	"github.com/pandokos/pandokos/internal/config"
 	"github.com/pandokos/pandokos/internal/egress"
-	"github.com/pandokos/pandokos/internal/family"
 	"github.com/pandokos/pandokos/internal/family/openai"
 	"github.com/pandokos/pandokos/internal/gateway"
 	"github.com/pandokos/pandokos/internal/health"
@@ -99,7 +98,7 @@ func New(o Options) (*Server, error) {
 		Catalogue:              o.Catalogue,
 		Credentials:            o.Credentials,
 		Failures:               o.Failures,
-		Families:               map[string]family.Adapter{openai.Name: openai.Adapter()},
+		Families:               gateway.Families(),
 		DefaultFamily:          openai.Name,
 		Public:                 o.Egress.Transport(false),
 		Private:                o.Egress.Transport(true),

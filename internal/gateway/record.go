@@ -48,7 +48,11 @@ func (h *Handler) providerUsage(st *reqState) (u family.Usage, ok, gaveUp bool) 
 	case st.streamBody != nil:
 		r := st.streamBody.reader
 		h.soft(st, func() { st.deltas = r.Deltas() })
-		h.soft(st, func() { u, ok = r.Usage() })
+		h.soft(st, func() {
+			var parts family.Parts
+			u, parts = r.Usage()
+			ok = parts == family.PartsAll
+		})
 		h.soft(st, func() { gaveUp = r.Failed() })
 		// A reader that gave up cannot vouch for what it saw afterwards.
 		gaveUp = gaveUp || st.readerAbandoned

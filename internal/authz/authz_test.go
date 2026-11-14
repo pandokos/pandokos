@@ -53,10 +53,11 @@ func TestCatalogue(t *testing.T) {
 		{"catalog:price", ScopePlatform},
 		{"model:read", ScopeTenant},
 		{"model:restrict", ScopeTenant},
+		{"usage:read", ScopeTenant},
 	}
 	got := Catalogue()
-	if len(got) != 25 {
-		t.Fatalf("%d permissions, want 25", len(got))
+	if len(got) != 26 {
+		t.Fatalf("%d permissions, want 26", len(got))
 	}
 	re := regexp.MustCompile(`^[a-z_]+:[a-z_]+$`)
 	seen := map[string]bool{}
@@ -89,7 +90,7 @@ func TestCatalogue(t *testing.T) {
 		"CredentialDelete": CredentialDelete, "CredentialUse": CredentialUse,
 		"TenantCredentialRead": TenantCredentialRead, "TenantCredentialRevoke": TenantCredentialRevoke,
 		"CatalogRead": CatalogRead, "CatalogWrite": CatalogWrite, "CatalogPrice": CatalogPrice,
-		"ModelRead": ModelRead, "ModelRestrict": ModelRestrict,
+		"ModelRead": ModelRead, "ModelRestrict": ModelRestrict, "UsageRead": UsageRead,
 	} {
 		if _, ok := Lookup(c); !ok {
 			t.Errorf("constant %s = %q is not in the catalogue", name, c)
@@ -104,7 +105,7 @@ func TestRoles(t *testing.T) {
 	platform := []string{IdentityRead, TenantRead, TenantWrite, TenantSuspend, PlatformKeyRead, PlatformKeyWrite, PlatformKeyRevoke,
 		TenantCredentialRead, TenantCredentialRevoke, CatalogRead, CatalogWrite, CatalogPrice}
 	tenantAll := []string{IdentityRead, ServiceAccountRead, ServiceAccountWrite, VirtualKeyRead, VirtualKeyWrite, VirtualKeyRevoke, ModelInvoke,
-		CredentialRead, CredentialWrite, CredentialRotate, CredentialDelete, CredentialUse, ModelRead, ModelRestrict}
+		CredentialRead, CredentialWrite, CredentialRotate, CredentialDelete, CredentialUse, ModelRead, ModelRestrict, UsageRead}
 	want := []struct {
 		name string
 		kind Kind
@@ -254,7 +255,7 @@ func TestEffective(t *testing.T) {
 	}{
 		{"union of roles", sa(id(1), tenant.StateActive, []string{RoleInference, RoleTenantAdmin}, nil),
 			[]string{CredentialDelete, CredentialRead, CredentialRotate, CredentialUse, CredentialWrite, IdentityRead, ModelInvoke,
-				ModelRead, ModelRestrict, ServiceAccountRead, ServiceAccountWrite, VirtualKeyRead, VirtualKeyRevoke, VirtualKeyWrite}},
+				ModelRead, ModelRestrict, ServiceAccountRead, ServiceAccountWrite, UsageRead, VirtualKeyRead, VirtualKeyRevoke, VirtualKeyWrite}},
 		{"scopes intersect", sa(id(1), tenant.StateActive, []string{RoleTenantAdmin}, []string{VirtualKeyRead, "tenant:read", ModelInvoke}),
 			[]string{ModelInvoke, VirtualKeyRead}},
 		{"unknown role", sa(id(1), tenant.StateActive, []string{"ghost"}, nil), nil},

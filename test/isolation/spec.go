@@ -121,9 +121,9 @@ func DefaultSpec() Spec {
 				"pandokos_gateway": {"SELECT"},
 				"pandokos_admin": {
 					"DELETE",
-					"INSERT(api_family,dataset_provider,description,display_name,enabled,name)",
+					"INSERT(api_family,dataset_provider,description,display_name,enabled,name,stream_usage_option)",
 					"SELECT",
-					"UPDATE(dataset_provider,description,display_name,enabled)",
+					"UPDATE(dataset_provider,description,display_name,enabled,stream_usage_option)",
 				},
 				"pandokos_worker": {"SELECT"},
 			},

@@ -315,7 +315,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Context().Err() != nil {
 		panic(http.ErrAbortHandler)
 	}
-	prepared, strip := parsed.Prepare(target.UpstreamModel)
+	prepared, strip := parsed.Prepare(family.Preparation{UpstreamModel: target.UpstreamModel, StreamUsage: true})
 	st.parsed, st.stream, st.strip = true, parsed.Stream(), strip
 
 	outCx, cancel := context.WithTimeout(r.Context(), h.maxDuration)

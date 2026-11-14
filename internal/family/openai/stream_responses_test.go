@@ -87,7 +87,7 @@ func TestResponsesStreamReader(t *testing.T) {
 		want := family.Usage{InputTokens: 20, OutputTokens: 15, CacheReadTokens: 5, ReasoningTokens: 4,
 			Reported: map[string]int64{"input_tokens": 20, "input_tokens_details.cached_tokens": 5,
 				"output_tokens": 15, "output_tokens_details.reasoning_tokens": 4, "total_tokens": 35}}
-		if u, ok := r.Usage(); !ok || !reflect.DeepEqual(u, want) {
+		if u, ok := reported(r); !ok || !reflect.DeepEqual(u, want) {
 			t.Errorf("usage %+v %v, want %+v", u, ok, want)
 		}
 		if r.Deltas() != 2 || r.Failed() {
@@ -97,7 +97,7 @@ func TestResponsesStreamReader(t *testing.T) {
 	t.Run("usage from response.incomplete", func(t *testing.T) {
 		r := newReader()
 		feed(r, fixtures.Read("responses_stream_incomplete.sse"), nil)
-		u, ok := r.Usage()
+		u, ok := reported(r)
 		if !ok || u.InputTokens != 20 || u.OutputTokens != 6 || u.Reported["total_tokens"] != 26 {
 			t.Errorf("%+v %v", u, ok)
 		}
@@ -110,7 +110,7 @@ func TestResponsesStreamReader(t *testing.T) {
 			"event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"usage\":null,\"error\":{\"code\":\"synthetic\"}}}\n\n")
 		r := newReader()
 		feed(r, data, nil)
-		if u, ok := r.Usage(); ok {
+		if u, ok := reported(r); ok {
 			t.Errorf("usage %+v", u)
 		}
 		if r.Deltas() != 1 {
@@ -121,7 +121,7 @@ func TestResponsesStreamReader(t *testing.T) {
 		data := []byte("event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"usage\":{\"input_tokens\":2,\"output_tokens\":0}}}\n\n")
 		r := newReader()
 		feed(r, data, nil)
-		if u, ok := r.Usage(); !ok || u.InputTokens != 2 || u.OutputTokens != 0 {
+		if u, ok := reported(r); !ok || u.InputTokens != 2 || u.OutputTokens != 0 {
 			t.Errorf("%+v %v", u, ok)
 		}
 	})
@@ -129,7 +129,7 @@ func TestResponsesStreamReader(t *testing.T) {
 		data := []byte("data: {\"type\":\"response.created\",\"response\":{\"usage\":{\"input_tokens\":2,\"output_tokens\":3}}}\n\n")
 		r := newReader()
 		feed(r, data, nil)
-		if u, ok := r.Usage(); ok {
+		if u, ok := reported(r); ok {
 			t.Errorf("usage %+v from response.created", u)
 		}
 	})
@@ -249,7 +249,7 @@ func TestStreamEdgeCases(t *testing.T) {
 					if !bytes.Equal(out, want) {
 						t.Fatalf("%s: the output differs (%d bytes, want %d)", label, len(out), len(want))
 					}
-					u, ok := r.Usage()
+					u, ok := reported(r)
 					switch {
 					case c.usage == nil && ok:
 						t.Fatalf("%s: usage %+v from a stream without any", label, u)
@@ -322,7 +322,7 @@ func TestStreamReaderBounds(t *testing.T) {
 			if !r.Failed() {
 				t.Error("Failed() is false")
 			}
-			if _, ok := r.Usage(); ok {
+			if _, ok := reported(r); ok {
 				t.Error("usage reported")
 			}
 			if got := r.Flush(); len(got) != 0 {
@@ -350,7 +350,7 @@ func TestStreamReaderBounds(t *testing.T) {
 		in = append(in, bytes.Repeat([]byte("a"), 1<<20+10)...)
 		r := NewStreamReaderFor(OperationChatCompletions, false)
 		feed(r, in, []int{1000})
-		if u, ok := r.Usage(); !ok || u.InputTokens != 9 || !r.Failed() {
+		if u, ok := reported(r); !ok || u.InputTokens != 9 || !r.Failed() {
 			t.Fatalf("usage %+v %v failed=%v", u, ok, r.Failed())
 		}
 	})
@@ -383,8 +383,8 @@ func fuzzReader(t *testing.T, op string, data, cuts []byte, strip bool) {
 	if !bytes.Equal(outA, outB) {
 		t.Fatal("the output depends on the chunking")
 	}
-	ua, oka := a.Usage()
-	ub, okb := b.Usage()
+	ua, oka := reported(a)
+	ub, okb := reported(b)
 	if oka != okb || !reflect.DeepEqual(ua, ub) {
 		t.Fatal("the usage depends on the chunking")
 	}

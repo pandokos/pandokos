@@ -206,7 +206,7 @@ func TestAdapter(t *testing.T) {
 		if err != nil || r.Model() != "m" || !r.Stream() {
 			t.Fatalf("%v %v", r, err)
 		}
-		out, strip := r.Prepare("u")
+		out, strip := r.Prepare(family.Preparation{UpstreamModel: "u"})
 		if string(out) != `{"model":"u","stream":true,"stream_options":{"include_usage":true}}` || !strip {
 			t.Errorf("Prepare: %q %v", out, strip)
 		}
@@ -231,7 +231,7 @@ func TestAdapter(t *testing.T) {
 		if string(out) != string(in) {
 			t.Errorf("a reader that does not strip changed the stream: %q", out)
 		}
-		if u, ok := sr.Usage(); !ok || u.InputTokens != 1 || u.OutputTokens != 2 || sr.Failed() {
+		if u, ok := reported(sr); !ok || u.InputTokens != 1 || u.OutputTokens != 2 || sr.Failed() {
 			t.Errorf("stream usage: %+v %v failed=%v", u, ok, sr.Failed())
 		}
 	})
@@ -281,4 +281,12 @@ func TestAdapterErrors(t *testing.T) {
 			t.Errorf("%s: body %s", name, rec.Body.String())
 		}
 	}
+}
+
+// reported adapts the readers' Usage to the "was anything reported" form these tests assert on.
+func reported(r interface {
+	Usage() (family.Usage, family.Parts)
+}) (family.Usage, bool) {
+	u, parts := r.Usage()
+	return u, parts != 0
 }

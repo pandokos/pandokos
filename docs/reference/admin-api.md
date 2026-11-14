@@ -89,6 +89,8 @@ Every operation has one CLI command that only calls the generated client. `TENAN
 | `price-import list`, `get`, `run` | `listPriceImports`, `getPriceImport`, `runPriceImport` |
 | `tenant-model list` | `listTenantModels` |
 | `model-restriction get`, `set`, `clear` | `getModelRestriction`, `setModelRestriction`, `clearModelRestriction` |
+| `capability check` | `getCapability` |
+| `usage list` | `listUsageRecords` |
 | `import-prices (--file FILE \| --embedded) [--dry-run]` | none: a host command that reads a price dataset and writes through the database ([catalogue guide](../operations/catalogue.md)) |
 | `kek generate --out FILE` | none: a local command that writes a key-encryption key ([vault guide](../operations/vault.md)) |
 
@@ -150,6 +152,8 @@ reference `provider/name` wherever it takes a model.
 | `runPriceImport` | `POST /v1/price-imports` | `catalog:price` |
 | `listTenantModels` | `GET /v1/tenants/{tenant}/models` | `model:read` |
 | `getModelRestriction`, `setModelRestriction`, `clearModelRestriction` | `GET`, `PUT`, `DELETE /v1/tenants/{tenant}/model-restriction` | `model:read`, `model:restrict`, `model:restrict` |
+| `getCapability` | `GET /v1/tenants/{tenant}/capability` | `model:read` |
+| `listUsageRecords` | `GET /v1/tenants/{tenant}/usage-records` | `usage:read` |
 
 - Collections: `listModels` filters by `provider`, `name`, `status` and `availability`. `createModel`
   takes `availability` `selected` unless told otherwise. `listPriceVersions` takes `at` (RFC 3339) and

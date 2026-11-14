@@ -236,7 +236,7 @@ func TestPrepare(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out, strip := r.Prepare(c.upstream)
+			out, strip := r.Prepare(family.Preparation{UpstreamModel: c.upstream})
 			if !bytes.Equal(in, orig) {
 				t.Fatal("Prepare modified the caller's bytes")
 			}
@@ -271,8 +271,8 @@ func TestPrepare(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		a, _ := r.Prepare("u")
-		b, _ := r.Prepare("u")
+		a, _ := r.Prepare(family.Preparation{UpstreamModel: "u"})
+		b, _ := r.Prepare(family.Preparation{UpstreamModel: "u"})
 		if !bytes.Equal(a, b) {
 			t.Errorf("%q then %q", a, b)
 		}
@@ -321,7 +321,7 @@ func FuzzParseRequest(f *testing.F) {
 			t.Fatalf("encoding/json reads model %q (%v), Parse read %q", model, err, r.Model())
 		}
 		const upstream = `synthetic"up\stream`
-		out, _ := r.Prepare(upstream)
+		out, _ := r.Prepare(family.Preparation{UpstreamModel: upstream})
 		var got map[string]json.RawMessage
 		if err := json.Unmarshal(out, &got); err != nil {
 			t.Fatalf("the output is not a JSON object: %v", err)
@@ -416,7 +416,7 @@ func TestParseOperation(t *testing.T) {
 		if err != nil || r.Stream() {
 			t.Fatalf("stream=%v %v", r != nil && r.Stream(), err)
 		}
-		if out, strip := r.Prepare("m"); strip || string(out) != `{"model":"m","stream":true,"input":"x"}` {
+		if out, strip := r.Prepare(family.Preparation{UpstreamModel: "m"}); strip || string(out) != `{"model":"m","stream":true,"input":"x"}` {
 			t.Errorf("Prepare: %q %v", out, strip)
 		}
 	})
@@ -437,7 +437,7 @@ func TestParseOperation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out, strip := r.Prepare("up")
+			out, strip := r.Prepare(family.Preparation{UpstreamModel: "up"})
 			if string(out) != want[op].out || strip != want[op].strip {
 				t.Errorf("%s: %q %v, want %q %v", op, out, strip, want[op].out, want[op].strip)
 			}
@@ -446,7 +446,7 @@ func TestParseOperation(t *testing.T) {
 			}
 			// The same name: no change at all for the operations that splice nothing.
 			if op != OperationChatCompletions {
-				if out, strip := r.Prepare("nick"); strip || &out[0] != &body[0] {
+				if out, strip := r.Prepare(family.Preparation{UpstreamModel: "nick"}); strip || &out[0] != &body[0] {
 					t.Errorf("%s: a request that needs no change is not the input slice", op)
 				}
 			}

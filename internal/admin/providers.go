@@ -61,10 +61,15 @@ func (s *server) CreateProvider(ctx context.Context, in adminapi.CreateProviderI
 	if err := catalog.ValidateProviderName(b.Name); err != nil {
 		return nil, refusal("name", err)
 	}
+	option := b.StreamUsageOption
+	if option == "" {
+		option = adminapi.StreamUsageOptionAdd
+	}
 	var out adminapi.Provider
 	err := s.inPlatform(ctx, func(ctx context.Context, tx store.Tx, q *queries.Queries) error {
 		row, err := q.CreateProvider(ctx, queries.CreateProviderParams{
 			Name: b.Name, DisplayName: b.DisplayName, Description: b.Description, ApiFamily: string(b.ApiFamily), Enabled: true, DatasetProvider: b.DatasetProvider,
+			StreamUsageOption: string(option),
 		})
 		if err != nil {
 			return err
@@ -72,7 +77,7 @@ func (s *server) CreateProvider(ctx context.Context, in adminapi.CreateProviderI
 		out = providerOut(row)
 		return audit.RecordPlatform(ctx, tx, s.platformEvent(ctx, "provider.create", "provider", row.Name, map[string]any{
 			"name": row.Name, "api_family": row.ApiFamily, "display_name": row.DisplayName, "description": row.Description,
-			"dataset_provider": row.DatasetProvider, "enabled": row.Enabled}))
+			"dataset_provider": row.DatasetProvider, "enabled": row.Enabled, "stream_usage_option": row.StreamUsageOption}))
 	})
 	if err != nil {
 		return nil, mapCatalogError(err)
@@ -109,6 +114,10 @@ func (s *server) UpdateProvider(ctx context.Context, in adminapi.UpdateProviderI
 		if b.DatasetProvider.Set && b.DatasetProvider.Value != cur.DatasetProvider {
 			par.SetDatasetProvider, par.DatasetProvider = true, b.DatasetProvider.Value
 			detail["dataset_provider"] = change(cur.DatasetProvider, b.DatasetProvider.Value)
+		}
+		if b.StreamUsageOption.Set && string(b.StreamUsageOption.Value) != cur.StreamUsageOption {
+			par.SetStreamUsageOption, par.StreamUsageOption = true, string(b.StreamUsageOption.Value)
+			detail["stream_usage_option"] = change(cur.StreamUsageOption, string(b.StreamUsageOption.Value))
 		}
 		if len(detail) == 0 {
 			out = providerOut(cur)

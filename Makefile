@@ -14,7 +14,7 @@ FUZZTIME ?= 30s
 # Loads local/testdb/env (written by make db-up) unless the variable is already set.
 DBENV = set -a; if [ -z "$$PANDOKOS_TEST_DATABASE_URL" ] && [ -f local/testdb/env ]; then . ./local/testdb/env; fi; set +a;
 
-.PHONY: help build test test-sdk test-container fuzz bench fmt fmt-check vet lint tidy vuln image check clean db-up db-down test-nodb migrations-sum generate generate-check secrets
+.PHONY: help build test test-sdk test-sdk-python sdk-python-env test-sdk-ts test-compose test-container fuzz bench fmt fmt-check vet lint tidy vuln image check clean db-up db-down test-nodb migrations-sum generate generate-check secrets
 
 help: ## Show the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -30,6 +30,22 @@ test-nodb: ## The same without the tests that need PostgreSQL (local use only, r
 
 test-sdk: ## Official SDK suite (nested module, release toolchain)
 	cd test/sdk && GOTOOLCHAIN=go$(RELEASE_GO) go test -race -count=1 ./...
+
+test-sdk-python: ## Python SDK suite (needs python3.13 and the locked packages: make sdk-python-env)
+	cd test/sdk && PANDOKOS_SDK_PYTHON=$(CURDIR)/local/sdk-venv/bin/python GOTOOLCHAIN=go$(RELEASE_GO) \
+		go test -tags sdkexternal -count=1 -run '^TestPythonSDK$$' ./...
+
+sdk-python-env: ## Create local/sdk-venv from the hash-locked requirements
+	python3.13 -m venv local/sdk-venv
+	local/sdk-venv/bin/pip install --require-hashes --no-deps --only-binary :all: -r test/sdk/python/requirements.txt
+
+test-sdk-ts: ## TypeScript SDK suite (needs node 22: npm ci runs first)
+	cd test/sdk/ts && npm ci --ignore-scripts --no-audit --no-fund
+	cd test/sdk && PANDOKOS_SDK_NODE=$$(command -v node) GOTOOLCHAIN=go$(RELEASE_GO) \
+		go test -tags sdkexternal -count=1 -run '^TestTypeScriptSDK$$' ./...
+
+test-compose: ## The Compose quick-start against a built image: make image first
+	PANDOKOS_TEST_IMAGE=$(IMAGE) go test -tags compose -count=1 -timeout 15m ./test/compose/
 
 test-container: ## Tests against a built image: make image and make db-up first
 	@$(DBENV) PANDOKOS_TEST_IMAGE=$(IMAGE) go test -tags container -count=1 ./test/container/

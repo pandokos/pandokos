@@ -10,6 +10,25 @@ type Operation struct {
 	Name   string // "chat.completions"
 	Method string // "POST"
 	Path   string // native path appended to the endpoint base URL: "/v1/chat/completions"
+	// NoUsage marks an operation that consumes no tokens (token counting): its records carry no
+	// usage, no estimate and no cost.
+	NoUsage bool
+}
+
+// Parts says which totals of a Usage the provider reported.
+type Parts uint8
+
+// The parts of a Usage a provider can report.
+const (
+	PartInput  Parts = 1 << iota // InputTokens, CacheReadTokens, CacheWriteTokens
+	PartOutput                   // OutputTokens, ReasoningTokens
+	PartsAll   = PartInput | PartOutput
+)
+
+// Preparation is what Request.Prepare needs from the catalogue.
+type Preparation struct {
+	UpstreamModel string // replaces the model when not empty and different from Model()
+	StreamUsage   bool   // the provider accepts the stream usage option (openai family only)
 }
 
 // Request is what a family read from a request body.
@@ -17,16 +36,17 @@ type Request interface {
 	Model() string // as the caller wrote it, JSON-decoded
 	Stream() bool
 	// Prepare returns the body to forward: the caller's bytes, with the usage option added
-	// when the family needs it (strip reports that) and the model replaced by upstreamModel
-	// when that is not empty and differs from Model().
-	Prepare(upstreamModel string) (body []byte, strip bool)
+	// when the family needs it and p.StreamUsage allows it (strip reports that) and the model
+	// replaced by p.UpstreamModel when that is not empty and differs from Model().
+	Prepare(p Preparation) (body []byte, strip bool)
 }
 
 // StreamReader reads usage from a response stream and says what to forward.
 type StreamReader interface {
 	Filter(p []byte) []byte
 	Flush() []byte
-	Usage() (Usage, bool)
+	// Usage returns the usage read so far and which parts of it the provider reported.
+	Usage() (Usage, Parts)
 	Failed() bool
 	// Deltas counts the content events seen so far, the evidence of an estimate.
 	Deltas() int64
@@ -47,6 +67,11 @@ type Adapter interface {
 	// EstimateUsage estimates the usage of a request whose provider reported none.
 	EstimateUsage(op Operation, e Evidence) Usage
 	WriteError(w http.ResponseWriter, code ErrorCode)
+	// Recognizes reports whether a request that reached no provider looks like a call of this
+	// family. It reads the method, the native path and the header only.
+	Recognizes(method, nativePath string, h http.Header) bool
+	// UpstreamRequestID returns the provider's request ID header value, unchecked; "" if none.
+	UpstreamRequestID(h http.Header) string
 }
 
 // ErrInvalidRequest is wrapped by every refusal of ParseRequest.
