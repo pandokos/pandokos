@@ -39,7 +39,7 @@ func LoadSnapshot(ctx context.Context, db *store.DB) (*Snapshot, error) {
 		nameOf := make(map[string]string, len(provs))
 		for _, p := range provs {
 			nameOf[p.ID] = p.Name
-			d.Providers = append(d.Providers, Provider{ID: p.ID, Name: p.Name, Family: p.ApiFamily, DatasetProvider: p.DatasetProvider, Enabled: p.Enabled})
+			d.Providers = append(d.Providers, Provider{ID: p.ID, Name: p.Name, Family: p.ApiFamily, DatasetProvider: p.DatasetProvider, Enabled: p.Enabled, StreamUsageOption: p.StreamUsageOption})
 		}
 		for _, e := range eps {
 			name, ok := nameOf[e.ProviderID]

@@ -64,8 +64,10 @@ func (c *Catalogue) Resolve(ctx context.Context, p authz.Principal, provider, mo
 		c.log.ErrorContext(ctx, "endpoint unusable", "provider", provider, "endpoint", ep.Name)
 		return gateway.Target{}, gateway.ErrProviderUnavailable
 	}
+	prov, _ := snap.Provider(provider)
 	return gateway.Target{
-		Provider: provider, Endpoint: ep.Name, ModelID: m.ID, Model: m.Name, UpstreamModel: m.UpstreamID,
+		StreamUsage: prov.StreamUsageOption != "omit",
+		Provider:    provider, Endpoint: ep.Name, ModelID: m.ID, Model: m.Name, UpstreamModel: m.UpstreamID,
 		BaseURL: base, Private: ep.Private, Prices: snap.Versions(m.ID),
 	}, nil
 }
