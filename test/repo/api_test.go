@@ -264,9 +264,9 @@ func TestPlanesDoNotImportEachOther(t *testing.T) {
 	const mod = "github.com/pandokos/pandokos/internal/"
 	rules := map[string][]string{
 		"gateway": {"admin", "adminapi", "authn", "cli", "store", "vault", "catalog"},
-		// "family" is not listed: the catalogue prices usage (pricing.CostOf takes family.Usage), and
-		// the administration plane reaches the catalogue (sprint 2.2, C8), so it reaches family
-		// transitively through internal/pricing.
+		// internal/family itself (the leaf: Usage, error codes) is allowed: the catalogue prices
+		// usage (pricing.CostOf takes family.Usage) and the administration plane reaches the
+		// catalogue (sprint 2.2, C8). Its subpackages (the adapters) are not: see below.
 		"admin":    {"gateway", "server", "config"},
 		"cli":      {"store", "admin", "config"},
 		"authz":    {"store", "admin", "gateway", "config", "authn"},
@@ -286,6 +286,12 @@ func TestPlanesDoNotImportEachOther(t *testing.T) {
 					t.Errorf("internal/%s reaches internal/%s (through %s)", pkg, b, d)
 				}
 			}
+		}
+	}
+	// The administration plane may reach the leaf internal/family, never an adapter below it.
+	for _, d := range internalDeps(t, "admin") {
+		if strings.HasPrefix(d, mod+"family/") {
+			t.Errorf("internal/admin reaches the adapter %s", d)
 		}
 	}
 	// The generated client and router use the standard library only.

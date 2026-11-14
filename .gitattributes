@@ -1,4 +1,4 @@
 *.sql text eol=lf
 *.sum text eol=lf
 *.sh  text eol=lf
-internal/pricing/genaiprices/snapshot/data.json -diff linguist-generated
+internal/pricing/genaiprices/snapshot/data.json binary linguist-generated
