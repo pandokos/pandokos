@@ -464,7 +464,12 @@ var commands = []command{
 		expires := fs.String("expires-at", "", "expiry (RFC 3339)")
 		keyFile := fs.String("key-out", "", "write the key to this new file")
 		credFlag := fs.String("credential", "", "pin the key to this credential (ID)")
+		var models multi
+		fs.Var(&models, "model", "model reference provider/name the key is limited to (repeatable)")
 		if _, err := parse(fs, args, 0); err != nil {
+			return err
+		}
+		if err := checkRefs("--model", models); err != nil {
 			return err
 		}
 		if *saFlag == "" {
@@ -490,7 +495,7 @@ var commands = []command{
 			return err
 		}
 		res, err := a.client.CreateVirtualKey(a.ctx, adminapi.CreateVirtualKeyInput{Tenant: tid, Body: adminapi.VirtualKeyCreate{
-			ServiceAccountID: sa, Description: *desc, CredentialID: *credFlag, Scopes: scopes, ExpiresAt: exp}})
+			ServiceAccountID: sa, Description: *desc, CredentialID: *credFlag, Models: models, Scopes: scopes, ExpiresAt: exp}})
 		if err != nil {
 			out.abandon()
 			return err

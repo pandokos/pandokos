@@ -49,7 +49,7 @@ func Load(src Source) (*Config, []Warning, error) {
 	}
 
 	env := parseEnviron(src.Environ)
-	known := map[string]bool{"PANDOKOS_CONFIG": true}
+	known := map[string]bool{"PANDOKOS_CONFIG": true, "PANDOKOS_TEST_REFRESH_DELAY": true} // the second is a test hook of serve, not a key
 	for _, k := range keyTable {
 		known[k.Env] = true
 		if v, ok := env[k.Env]; ok {

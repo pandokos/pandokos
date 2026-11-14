@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/pandokos/pandokos/internal/admin"
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/buildinfo"
+	"github.com/pandokos/pandokos/internal/catalog"
 	"github.com/pandokos/pandokos/internal/config"
 	"github.com/pandokos/pandokos/internal/pricing/genaiprices"
 	"github.com/pandokos/pandokos/internal/server"
@@ -122,7 +124,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Info("database ready", "role", string(r.role), "schema_version", len(ms))
 	}
 
-	gatewayDB, adminDB := dbs[0], dbs[1]
+	gatewayDB, adminDB, workerDB := dbs[0], dbs[1], dbs[2]
 	kp, err := vault.NewLocalProvider(cfg.Vault.KEK.Local.Key)
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
@@ -159,21 +161,34 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
+	catalogCache, err := catalog.NewCache(catalog.CacheOptions{DB: gatewayDB, Logger: logger, TTL: time.Duration(cfg.Cache.CatalogTTL)})
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
 	listenConn := connOptions(cfg, cfg.Database.Gateway.User, cfg.Database.Gateway.Password)
 	listenConn.Host, listenConn.Port = cfg.Database.DirectHost, cfg.Database.DirectPort
 	listener, err := store.NewListener(store.ListenerOptions{
 		Conn: listenConn, Role: store.RoleGateway, Logger: logger, Direct: cfg.Database.DirectAddress != "",
-		OnNotify: func(p string) { gatewayAuth.Invalidate(p); opener.Invalidate(p) },
-		OnReset:  func() { gatewayAuth.Flush(); opener.Flush() },
+		OnNotify: func(p string) { gatewayAuth.Invalidate(p); opener.Invalidate(p); catalogCache.Invalidate(p) },
+		OnReset:  func() { gatewayAuth.Flush(); opener.Flush(); catalogCache.Flush() },
 	})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
+	refresh := admin.RefreshOptions{}
+	if cfg.Pricing.Refresh.Enabled {
+		refresh = admin.RefreshOptions{Enabled: true, URL: cfg.Pricing.Refresh.ParsedURL.String(),
+			Fetch: func(ctx context.Context, u string) ([]byte, error) {
+				return catalog.Fetch(ctx, u, catalog.FetchOptions{})
+			}}
+	}
 	adminHandler, err := admin.New(admin.Options{
 		Logger: logger, DB: adminDB, Authenticator: adminAuth, Sealer: sealer,
 		Validators: map[string]vault.Validator{"openai": vault.NewOpenAIValidator(cfg.Skeleton.OpenAI.ParsedBaseURL, 10*time.Second)},
 		Snapshot:   genaiprices.Snapshot(),
+		Refresh:    refresh,
 	})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
@@ -187,6 +202,11 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	for _, db := range dbs {
 		srv.Health().AddCheck("database-"+string(db.Role()), db.Ready)
 	}
+	if cfg.Pricing.ImportAtStart {
+		ictx, icancel := context.WithTimeout(ctx, 60*time.Second)
+		catalog.ImportAtStart(ictx, workerDB, logger)
+		icancel()
+	}
 	if err := srv.Listen(); err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
@@ -198,6 +218,14 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	wg.Add(2)
 	go func() { defer wg.Done(); listener.Run(background) }()
 	go func() { defer wg.Done(); warnBootstrap(background, logger, adminDB) }()
+	if cfg.Pricing.Refresh.Enabled {
+		refresher := &catalog.Refresher{
+			DB: workerDB, Logger: logger, URL: cfg.Pricing.Refresh.ParsedURL.String(),
+			Interval: time.Duration(cfg.Pricing.Refresh.Interval), FirstDelay: refreshStartDelay(environ),
+		}
+		wg.Add(1)
+		go func() { defer wg.Done(); refresher.Run(background) }()
+	}
 
 	sigCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -210,4 +238,19 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		return 1
 	}
 	return 0
+}
+
+// refreshStartDelay is the wait before the first price refresh: one minute, or the value of the
+// test-only variable PANDOKOS_TEST_REFRESH_DELAY (a Go duration). The variable is not a
+// configuration key; it shortens that one wait and nothing else.
+func refreshStartDelay(environ []string) time.Duration {
+	for i := len(environ) - 1; i >= 0; i-- {
+		if v, ok := strings.CutPrefix(environ[i], "PANDOKOS_TEST_REFRESH_DELAY="); ok {
+			if d, err := time.ParseDuration(v); err == nil && d > 0 {
+				return d
+			}
+			break
+		}
+	}
+	return time.Minute
 }

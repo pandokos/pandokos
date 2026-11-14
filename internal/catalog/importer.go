@@ -466,10 +466,10 @@ func ImportAtStart(ctx context.Context, db *store.DB, logger *slog.Logger) {
 		switch {
 		case err != nil:
 			return "", err
-		case h.DigestSeen:
-			return "digest_seen", nil
 		case h.NewerImport:
 			return "newer_import", nil
+		case h.DigestSeen:
+			return "digest_seen", nil
 		}
 		return "", nil
 	}

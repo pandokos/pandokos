@@ -221,13 +221,13 @@ func TestCatalogueCommands(t *testing.T) {
 		}
 		r = withModel(t)
 		mustRun(t, r, "model", "get", "openai/gpt-4o")
-		check(t, r.f.only(t, "listModels"), adminapi.ListModelsInput{Provider: "openai", Name: "gpt-4o"})
+		check(t, r.f.only(t, "listModels"), adminapi.ListModelsInput{Provider: "openai", Name: "gpt-4o", Limit: 50, Sort: adminapi.SortCreatedAt})
 		check(t, r.f.only(t, "getModel"), adminapi.GetModelInput{Model: mid})
 		// A name with slashes is split at the first one.
 		r = withModel(t)
 		r.f.out["listModels"] = &adminapi.ModelList{Items: []adminapi.Model{{ID: mid, Provider: "ollama", Name: "meta-llama/Llama-3"}}}
 		mustRun(t, r, "model", "get", "ollama/meta-llama/Llama-3")
-		check(t, r.f.only(t, "listModels"), adminapi.ListModelsInput{Provider: "ollama", Name: "meta-llama/Llama-3"})
+		check(t, r.f.only(t, "listModels"), adminapi.ListModelsInput{Provider: "ollama", Name: "meta-llama/Llama-3", Limit: 50, Sort: adminapi.SortCreatedAt})
 		check(t, r.f.only(t, "getModel"), adminapi.GetModelInput{Model: mid})
 
 		for _, c := range []struct {
@@ -297,7 +297,7 @@ func TestCatalogueCommands(t *testing.T) {
 			mustRun(t, r, "price", "list", "--at", "2026-11-14T12:00:00Z", "--limit", "2", ref)
 			check(t, r.f.only(t, "listPriceVersions"), adminapi.ListPriceVersionsInput{Model: mid, At: "2026-11-14T12:00:00Z", Limit: 2})
 		}
-		check(t, call(t, "listPriceVersions", "price", "list", mid), adminapi.ListPriceVersionsInput{Model: mid})
+		check(t, call(t, "listPriceVersions", "price", "list", mid), adminapi.ListPriceVersionsInput{Model: mid, Limit: 50})
 		check(t, call(t, "deletePriceVersion", "price", "delete", mid, pvid), adminapi.DeletePriceVersionInput{Model: mid, PriceVersion: pvid})
 		check(t, call(t, "clearPriceOverride", "price", "clear-override", "--reason", "why", mid), adminapi.ClearPriceOverrideInput{Model: mid, Body: adminapi.Reason{Reason: "why"}})
 		check(t, call(t, "clearPriceOverride", "price", "clear-override", mid), adminapi.ClearPriceOverrideInput{Model: mid})
