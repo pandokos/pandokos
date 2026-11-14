@@ -58,7 +58,7 @@ group; the table is `pandokos.usage_record`.
 | `stream` | whether a stream was asked for; empty until the body was read |
 | `outcome` | how the request ended, section 3 |
 | `error_code` | the Pandokos error code, when Pandokos raised one |
-| `upstream_status` | the provider's status; empty when it did not answer |
+| `upstream_status` | the provider's status (100 to 599); empty when it did not answer or answered a status outside that range (the answer is still forwarded) |
 | `ttfb_ms` | milliseconds from the start of the request to the first body byte from the provider; empty when no body byte arrived |
 | `duration_ms` | milliseconds from the start to the end of the request |
 | `request_bytes`, `response_bytes` | body bytes received from the caller and sent to the caller |
@@ -88,7 +88,7 @@ Provider values and estimates never share a column; check constraints enforce it
 | Column | Meaning |
 |---|---|
 | `cost_status` | `known`, `unknown` or `none`, section 4 |
-| `cost_reason` | when the status is `unknown`: `no_price`, `category_unpriced` or `inconsistent_usage` |
+| `cost_reason` | when the status is `unknown`: `no_price`, `category_unpriced` or `inconsistent_usage` (also when the amount would not fit the column) |
 | `cost` | the amount, exact (`numeric(38,18)`), in the currency of the price |
 | `currency` | the three-letter code of the price version |
 | `price_version_id` | the price version in force when the request started |
@@ -169,7 +169,7 @@ authentication and stored in `metadata`:
 An entry that breaks a rule (a bad key, an empty or bad value, two values for one key, a ninth key)
 is dropped and counted; the request proceeds. The count is stored in `metadata_dropped` and, when
 not zero, returned in the response header `X-Pandokos-Metadata-Dropped` and logged as
-`metadata_dropped`. Metadata is never forwarded to a provider, never logged, never put on a span,
+`metadata_dropped`; the count stops at 1000. Metadata is never forwarded to a provider, never logged, never put on a span,
 and no decision reads it.
 
 **Metadata is stored exactly as sent.** It is the caller's to keep free of personal data and of
@@ -210,8 +210,9 @@ should send traffic elsewhere.
 |---|---|---|
 | `ledger write failing` | warn | the database refused or could not be reached; logged when the state begins and once a minute; records stay queued. Look at the `database-*` readiness checks and the database |
 | `ledger write recovered` | info | writing works again |
-| `usage record rejected` | error | the database refused one record (fields: SQLSTATE, constraint name, `record_id`); the record is dropped and the others are not held up. It means the checks in Go and the table disagree: report it |
-| `usage record not written` | error | a record still in memory when the writer's shutdown deadline ended: its identity fields (`record_id`, `request_id`, `tenant_id`, `outcome`, ...) and `row`, the whole row as JSON with the metadata values removed. **Rebuild the rows from these lines** with an `INSERT` as the owner; the record ID makes a repeated insert harmless. A last line, `ledger closed with records lost`, gives the count |
+| `usage record rejected` | error | one record was refused and dropped; the others are not held up. Either the table refused it (fields: SQLSTATE, constraint name, `record_id` and `row`, the row as JSON without the metadata values), or the check in Go (`Validate`) refused it before it was sent (fields: `error` naming the column, `record_id`, and `row` with only the fields that passed). The gateway saturates what the caller or the provider can make too large, so this should not happen: it means a bug, or the checks in Go and the table disagree. Report it with the line. States of a busy database (serialization failure, deadlock, lock not available, read-only transaction) are not rejections: the records stay queued and the writer retries |
+| `usage partitions not ensured` | warn | creating the monthly partitions failed (at start, which carries on, or in the hourly job); fields `error_class` and `sqlstate`. Rows still go to the default partition; look at the worker role and the database |
+| `usage record not written` | error | a record still in memory when the writer's shutdown deadline ended, or one that arrived after the writer had closed: its identity fields (`record_id`, `request_id`, `tenant_id`, `outcome`, ...) and `row`, the whole row as JSON with the metadata values removed. **Rebuild the rows from these lines** with an `INSERT` as the owner; the record ID makes a repeated insert harmless. A last line, `ledger closed with records lost`, gives the count |
 | `usage record without admission` | error | a handler recorded without having been admitted; once per start; report it |
 
 ## 7. Partitions
