@@ -11,10 +11,11 @@ import (
 	"github.com/pandokos/pandokos/internal/gateway"
 )
 
-// source is what the adapter reads: the two methods of *catalog.Cache that it uses.
+// source is what the adapter reads: the two methods of *catalog.Cache that it uses. Resolve takes
+// one snapshot, which serves the model and its prices.
 type source interface {
 	Snapshot(ctx context.Context) (*catalog.Snapshot, error)
-	Resolve(ctx context.Context, p authz.Principal, provider, name string) (catalog.Model, catalog.Endpoint, error)
+	ResolveIn(ctx context.Context, p authz.Principal, provider, name string) (*catalog.Snapshot, catalog.Model, catalog.Endpoint, error)
 }
 
 // Catalogue implements gateway.Catalogue over the catalogue cache.
@@ -45,17 +46,13 @@ func (c *Catalogue) Provider(ctx context.Context, name string) (string, bool, er
 // Resolve returns the target for a model. The base URL of the endpoint is validated again: a
 // stored URL that fails is logged (names only, never the URL) and is ErrProviderUnavailable.
 func (c *Catalogue) Resolve(ctx context.Context, p authz.Principal, provider, model string) (gateway.Target, error) {
-	m, ep, err := c.src.Resolve(ctx, p, provider, model)
+	snap, m, ep, err := c.src.ResolveIn(ctx, p, provider, model)
 	switch {
 	case errors.Is(err, catalog.ErrModelNotAllowed):
 		return gateway.Target{}, gateway.ErrModelNotAllowed
 	case errors.Is(err, catalog.ErrProviderUnavailable):
 		return gateway.Target{}, gateway.ErrProviderUnavailable
 	case err != nil:
-		return gateway.Target{}, err
-	}
-	snap, err := c.src.Snapshot(ctx)
-	if err != nil {
 		return gateway.Target{}, err
 	}
 	var base *url.URL

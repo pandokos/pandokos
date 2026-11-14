@@ -190,17 +190,26 @@ func (c *Cache) Access(ctx context.Context, id tenant.ID) (TenantAccess, error) 
 // is refused without loading anything of a tenant; a failed load is an error that is neither
 // refusal.
 func (c *Cache) Resolve(ctx context.Context, p authz.Principal, provider, name string) (Model, Endpoint, error) {
+	_, m, e, err := c.ResolveIn(ctx, p, provider, name)
+	return m, e, err
+}
+
+// ResolveIn is Resolve that also returns the snapshot the answer came from, so that a caller that
+// needs more of the same state (the price versions of the model) reads no second snapshot, which
+// could be another one or fail on its own.
+func (c *Cache) ResolveIn(ctx context.Context, p authz.Principal, provider, name string) (*Snapshot, Model, Endpoint, error) {
 	s, err := c.Snapshot(ctx)
 	if err != nil {
-		return Model{}, Endpoint{}, err
+		return nil, Model{}, Endpoint{}, err
 	}
 	var ta TenantAccess
 	if p.Kind == authz.KindServiceAccount && !p.TenantID.IsZero() {
 		if ta, err = c.Access(ctx, p.TenantID); err != nil {
-			return Model{}, Endpoint{}, err
+			return nil, Model{}, Endpoint{}, err
 		}
 	}
-	return s.Resolve(p, ta, provider, name)
+	m, e, err := s.Resolve(p, ta, provider, name)
+	return s, m, e, err
 }
 
 // Invalidate applies a notification payload: catalog marks the snapshot stale; catalog:<tenant>

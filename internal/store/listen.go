@@ -145,6 +145,9 @@ func (l *Listener) Run(ctx context.Context) {
 				log.Warn("cache invalidation unavailable", "role", string(l.o.Role), "detail", unavailableDetail)
 			}
 			closeConn()
+			// The caches are emptied here, unlike when an established connection is lost: a
+			// listener that cannot prove itself is not trusted, so this fails closed, and the
+			// next connection empties them again anyway.
 			l.o.OnReset()
 			wait()
 			continue

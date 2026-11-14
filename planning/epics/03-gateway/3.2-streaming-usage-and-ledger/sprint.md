@@ -1147,3 +1147,10 @@ Changes to the design made while building, each declared and documented:
 7. **A trailing usage-only event is removed in strip mode too** (at review, §5.3): when the stream
    ends in the middle of the usage-only event that Pandokos asked for, `Flush` reads it for its usage
    and does not forward it (T-460).
+8. **One snapshot per `Resolve`** (at review): `catalog.Cache.ResolveIn` returns the snapshot the
+   resolution used, and the gateway's catalogue adapter takes the price versions from it instead of
+   reading a second snapshot that could differ or fail on its own.
+9. **The probe-failure path of the cache listener still empties the caches** (at review, decision):
+   unlike the loss of an established connection (amendment 2), a listener that cannot prove itself
+   fails closed; the next connection resets anyway. A comment in `internal/store/listen.go` and the
+   database guide say so.
