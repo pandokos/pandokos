@@ -1,0 +1,107 @@
+# Pandokos reference deployment: one instance and PostgreSQL 16 (OPS-02). Prepare with ./setup.sh,
+# then docker compose up -d --wait. Guide: docs/operations/compose.md.
+name: pandokos
+
+x-database: &database
+  PANDOKOS_DATABASE_ADDRESS: postgres:5432
+  PANDOKOS_DATABASE_NAME: pandokos
+  PANDOKOS_DATABASE_TLS_MODE: verify-full
+  PANDOKOS_DATABASE_TLS_CA_FILE: /run/secrets/tls_cert
+
+services:
+  postgres:
+    image: postgres:16-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -eu
+        mkdir -p /run/pandokos-tls
+        install -o postgres -g postgres -m 0644 /run/secrets/tls_cert /run/pandokos-tls/server.pem
+        install -o postgres -g postgres -m 0600 /run/secrets/tls_key /run/pandokos-tls/server.key
+        exec docker-entrypoint.sh "$$@"
+      - --
+    command: [postgres, -c, ssl=on, -c, ssl_cert_file=/run/pandokos-tls/server.pem, -c, ssl_key_file=/run/pandokos-tls/server.key]
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_superuser
+    secrets: [db_superuser, db_owner, db_gateway, db_admin, db_worker, tls_cert, tls_key]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+      - ../postgres/roles.sql:/pandokos/roles.sql:ro
+    networks: [database]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  migrate:
+    image: ${PANDOKOS_IMAGE:-ghcr.io/pandokos/pandokos:0.1}
+    command: [migrate]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      <<: *database
+      PANDOKOS_DATABASE_OWNER_USER: pandokos_owner
+      PANDOKOS_DATABASE_OWNER_PASSWORD_FILE: /run/secrets/db_owner
+    secrets: [db_owner, tls_cert]
+    networks: [database]
+    depends_on:
+      postgres: {condition: service_healthy}
+    restart: "no"
+
+  pandokos:
+    image: ${PANDOKOS_IMAGE:-ghcr.io/pandokos/pandokos:0.1}
+    command: [serve]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 45s
+    environment:
+      <<: *database
+      PANDOKOS_LISTENERS_INFERENCE_ADDRESS: 0.0.0.0:8080
+      PANDOKOS_LISTENERS_INFERENCE_TLS_CERT_FILE: /run/secrets/tls_cert
+      PANDOKOS_LISTENERS_INFERENCE_TLS_KEY_FILE: /run/secrets/tls_key
+      PANDOKOS_LISTENERS_ADMIN_ADDRESS: 0.0.0.0:8081
+      PANDOKOS_LISTENERS_ADMIN_TLS_CERT_FILE: /run/secrets/tls_cert
+      PANDOKOS_LISTENERS_ADMIN_TLS_KEY_FILE: /run/secrets/tls_key
+      PANDOKOS_DATABASE_GATEWAY_USER: pandokos_gateway
+      PANDOKOS_DATABASE_GATEWAY_PASSWORD_FILE: /run/secrets/db_gateway
+      PANDOKOS_DATABASE_ADMIN_USER: pandokos_admin
+      PANDOKOS_DATABASE_ADMIN_PASSWORD_FILE: /run/secrets/db_admin
+      PANDOKOS_DATABASE_WORKER_USER: pandokos_worker
+      PANDOKOS_DATABASE_WORKER_PASSWORD_FILE: /run/secrets/db_worker
+      PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE: /run/secrets/pandokos_kek
+      PANDOKOS_CLI_SERVER: https://localhost:8081
+      PANDOKOS_CLI_CA_FILE: /run/secrets/tls_cert
+    secrets: [db_gateway, db_admin, db_worker, pandokos_kek, tls_cert, tls_key]
+    volumes:
+      - cli:/home/nonroot
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8081:8081"
+    networks: [database, egress]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: unless-stopped
+
+secrets:
+  db_superuser: {file: ./secrets/db_superuser}
+  db_owner: {file: ./secrets/db_owner}
+  db_gateway: {file: ./secrets/db_gateway}
+  db_admin: {file: ./secrets/db_admin}
+  db_worker: {file: ./secrets/db_worker}
+  pandokos_kek: {file: ./secrets/pandokos_kek}
+  tls_cert: {file: ./secrets/tls_cert}
+  tls_key: {file: ./secrets/tls_key}
+
+volumes:
+  pgdata: {}
+  cli: {}
+
+networks:
+  database: {internal: true}
+  egress: {}

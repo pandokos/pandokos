@@ -76,6 +76,10 @@ fuzz: ## Run each fuzz target for FUZZTIME
 	go test ./internal/usage/ -run '^$$' -fuzz '^FuzzParseMetadata$$' -fuzztime $(FUZZTIME)
 	go test ./internal/pricing/ -run '^$$' -fuzz '^FuzzParseDecimal$$' -fuzztime $(FUZZTIME)
 	go test ./internal/authn/ -run '^$$' -fuzz '^FuzzParse$$' -fuzztime $(FUZZTIME)
+	go test ./internal/family/anthropic/ -run '^$$' -fuzz '^FuzzAnthropicStreamReader$$' -fuzztime $(FUZZTIME)
+	go test ./internal/family/anthropic/ -run '^$$' -fuzz '^FuzzAnthropicReadUsage$$' -fuzztime $(FUZZTIME)
+	go test ./internal/family/anthropic/ -run '^$$' -fuzz '^FuzzAnthropicParseRequest$$' -fuzztime $(FUZZTIME)
+	go test ./internal/family/sse/ -run '^$$' -fuzz '^FuzzFraming$$' -fuzztime $(FUZZTIME)
 
 bench: ## Usage reader benchmark
 	go test ./internal/family/openai/ -run '^$$' -bench . -benchmem
