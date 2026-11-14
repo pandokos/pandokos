@@ -20,7 +20,9 @@ import (
 	"github.com/pandokos/pandokos/internal/buildinfo"
 	"github.com/pandokos/pandokos/internal/catalog"
 	"github.com/pandokos/pandokos/internal/config"
+	"github.com/pandokos/pandokos/internal/egress"
 	"github.com/pandokos/pandokos/internal/pricing/genaiprices"
+	"github.com/pandokos/pandokos/internal/resolver"
 	"github.com/pandokos/pandokos/internal/server"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/migrations"
@@ -177,24 +179,40 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	refresh := admin.RefreshOptions{}
-	if cfg.Pricing.Refresh.Enabled {
-		refresh = admin.RefreshOptions{Enabled: true, URL: cfg.Pricing.Refresh.ParsedURL.String(),
-			Fetch: func(ctx context.Context, u string) ([]byte, error) {
-				return catalog.Fetch(ctx, u, catalog.FetchOptions{})
-			}}
-	}
-	adminHandler, err := admin.New(admin.Options{
-		Logger: logger, DB: adminDB, Authenticator: adminAuth, Sealer: sealer,
-		Validators: map[string]vault.Validator{"openai": vault.NewOpenAIValidator(cfg.Skeleton.OpenAI.ParsedBaseURL, 10*time.Second)},
-		Snapshot:   genaiprices.Snapshot(),
-		Refresh:    refresh,
+	guard, err := egress.New(egress.Options{
+		ConnectTimeout: time.Duration(cfg.Upstream.ConnectTimeout),
+		RootCAs:        cfg.Upstream.TLS.RootCAs,
+		Proxy:          cfg.Upstream.Proxy.ParsedURL,
 	})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	srv, err := server.New(server.Options{Config: cfg, Logger: logger, Authenticator: gatewayAuth, Admin: adminHandler})
+	defer guard.CloseIdleConnections()
+	fetchPrices := func(ctx context.Context, u string) ([]byte, error) {
+		return catalog.Fetch(ctx, u, catalog.FetchOptions{Transport: guard.Transport(false)})
+	}
+	refresh := admin.RefreshOptions{}
+	if cfg.Pricing.Refresh.Enabled {
+		refresh = admin.RefreshOptions{Enabled: true, URL: cfg.Pricing.Refresh.ParsedURL.String(), Fetch: fetchPrices}
+	}
+	adminHandler, err := admin.New(admin.Options{
+		Logger: logger, DB: adminDB, Authenticator: adminAuth, Sealer: sealer,
+		Validator: vault.NewValidator(guard.Transport(false), guard.Transport(true), 10*time.Second),
+		Snapshot:  genaiprices.Snapshot(),
+		Refresh:   refresh,
+	})
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
+	srv, err := server.New(server.Options{
+		Config: cfg, Logger: logger, Authenticator: gatewayAuth, Admin: adminHandler,
+		Catalogue:   resolver.NewCatalogue(catalogCache, logger),
+		Credentials: resolver.NewCredentials(opener),
+		Failures:    resolver.NewFailureAuditor(gatewayDB, logger, nil),
+		Egress:      guard,
+	})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
@@ -222,6 +240,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		refresher := &catalog.Refresher{
 			DB: workerDB, Logger: logger, URL: cfg.Pricing.Refresh.ParsedURL.String(),
 			Interval: time.Duration(cfg.Pricing.Refresh.Interval), FirstDelay: refreshStartDelay(environ),
+			Fetch: fetchPrices,
 		}
 		wg.Add(1)
 		go func() { defer wg.Done(); refresher.Run(background) }()

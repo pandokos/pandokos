@@ -67,12 +67,11 @@ func writeConfig(t *testing.T, content string) string {
 	return p
 }
 
-// secretEnv is a valid environment for the serve purpose: the provider key, the key-encryption key file and the database
-// settings, with the three runtime password files.
+// secretEnv is a valid environment for the serve purpose: the key-encryption key file and the
+// database settings, with the three runtime password files.
 func secretEnv(t *testing.T) []string {
 	t.Helper()
 	return []string{
-		"PANDOKOS_SKELETON_OPENAI_API_KEY_FILE=" + testutil.WriteSecret(t, "key", fixtures.CanaryProviderKey),
 		"PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE=" + testutil.WriteKEK(t),
 		"PANDOKOS_DATABASE_ADDRESS=127.0.0.1:5432",
 		"PANDOKOS_DATABASE_TLS_MODE=disable",
@@ -106,13 +105,12 @@ func migrateEnv(t *testing.T) []string {
 
 func TestConfigCheck(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
-		file := writeConfig(t, "log:\n  level: debug\nlisteners:\n  inference:\n    address: 0.0.0.0:8080\nskeleton:\n  openai:\n    base_url: http://example.com/v1\n")
+		file := writeConfig(t, "log:\n  level: debug\nlisteners:\n  inference:\n    address: 0.0.0.0:8080\n")
 		code, out, errs := runCmd(t, secretEnv(t), "config", "check", "--config", file)
 		if code != 0 || strings.TrimSpace(out) != "configuration OK" {
 			t.Fatalf("code %d, stdout %q, stderr %q", code, out, errs)
 		}
-		if !strings.Contains(errs, "warning: skeleton.openai.base_url: the provider key is sent without TLS") ||
-			!strings.Contains(errs, "warning: listeners.inference.address: the listener serves plain HTTP; set listeners.inference.tls.cert_file and key_file, or terminate TLS in front of it") {
+		if !strings.Contains(errs, "warning: listeners.inference.address: the listener serves plain HTTP; set listeners.inference.tls.cert_file and key_file, or terminate TLS in front of it") {
 			t.Errorf("warnings: %q", errs)
 		}
 		testutil.AssertNoCanary(t, "stdout", out)
@@ -120,7 +118,7 @@ func TestConfigCheck(t *testing.T) {
 	})
 	t.Run("invalid", func(t *testing.T) {
 		env := append(secretEnv(t), "PANDOKOS_LOG_LEVEL=verbose", "PANDOKOS_LISTENERS_INFERENCE_MAX_HEADER_BYTES=1")
-		file := writeConfig(t, "skeleton:\n  openai:\n    api_key: "+fixtures.CanaryProviderKey+"\n")
+		file := writeConfig(t, "upstream:\n  proxy:\n    password: "+fixtures.CanaryProviderKey+"\n")
 		code, out, errs := runCmd(t, env, "config", "check", "--config", file)
 		if code != 1 || out != "" {
 			t.Fatalf("code %d, stdout %q", code, out)
@@ -203,7 +201,7 @@ func TestMigrateUsage(t *testing.T) {
 					t.Errorf("%v: stderr lacks %q: %q", args, want, errs)
 				}
 			}
-			if strings.Contains(errs, "skeleton.") || strings.Contains(errs, "database.gateway") {
+			if strings.Contains(errs, "database.gateway") {
 				t.Errorf("%v: migrate asked for a secret it does not need: %q", args, errs)
 			}
 		}
@@ -245,7 +243,7 @@ func TestConfigCheckFor(t *testing.T) {
 		}
 		code, _, errs = runCmd(t, migrateEnv(t), "config", "check", "--for", "init")
 		if code != 1 || !strings.Contains(errs, "error: database.admin.password_file: must be set") ||
-			strings.Contains(errs, "database.gateway") || strings.Contains(errs, "skeleton.") {
+			strings.Contains(errs, "database.gateway") {
 			t.Errorf("code %d, stderr %q", code, errs)
 		}
 	})
@@ -282,7 +280,7 @@ func TestInitAndClientUsage(t *testing.T) {
 		if code != 1 || out != "" || !strings.Contains(errs, "error: database.address: must be set") || !strings.Contains(errs, "error: database.admin.password_file: must be set") {
 			t.Errorf("code %d, stdout %q, stderr %q", code, out, errs)
 		}
-		if strings.Contains(errs, "database.gateway") || strings.Contains(errs, "database.owner") || strings.Contains(errs, "skeleton.") {
+		if strings.Contains(errs, "database.gateway") || strings.Contains(errs, "database.owner") {
 			t.Errorf("init asked for a secret it does not need: %q", errs)
 		}
 	})
@@ -383,7 +381,7 @@ func TestImportPricesUsage(t *testing.T) {
 		if code != 1 || out != "" || !strings.Contains(errs, "error: database.address: must be set") || !strings.Contains(errs, "error: database.admin.password_file: must be set") {
 			t.Errorf("code %d, stdout %q, stderr %q", code, out, errs)
 		}
-		if strings.Contains(errs, "database.gateway") || strings.Contains(errs, "database.owner") || strings.Contains(errs, "database.worker") || strings.Contains(errs, "skeleton.") ||
+		if strings.Contains(errs, "database.gateway") || strings.Contains(errs, "database.owner") || strings.Contains(errs, "database.worker") ||
 			strings.Contains(errs, "vault.") || strings.Contains(errs, "pricing.") {
 			t.Errorf("import-prices asked for something it does not need: %q", errs)
 		}

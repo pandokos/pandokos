@@ -51,6 +51,7 @@ generate-check: generate ## Fail if the generated code is not what is committed
 	@test -z "$$(git status --porcelain -- $(GENERATED))" || { git status --porcelain -- $(GENERATED); echo "generated code is not current: run make generate and commit the result"; exit 1; }
 
 fuzz: ## Run each fuzz target for FUZZTIME
+	go test ./internal/family/openai/ -run '^$$' -fuzz '^FuzzParseRequest$$' -fuzztime $(FUZZTIME)
 	go test ./internal/family/openai/ -run '^$$' -fuzz '^FuzzPrepareRequest$$' -fuzztime $(FUZZTIME)
 	go test ./internal/family/openai/ -run '^$$' -fuzz '^FuzzReadUsage$$' -fuzztime $(FUZZTIME)
 	go test ./internal/family/openai/ -run '^$$' -fuzz '^FuzzStreamReader$$' -fuzztime $(FUZZTIME)

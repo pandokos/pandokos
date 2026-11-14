@@ -65,8 +65,9 @@ of the key when the key has any. A role that is unknown, or of the other kind, g
 
 A platform administrator holds no tenant permission, `credential:*` included, and no permission that
 returns or replaces a secret: the platform credential operations name a tenant, return metadata only
-and disable or revoke with a reason. A virtual key with `scopes` needs `credential:use` next to
-`model:invoke` for the credentials of its tenant to be opened for it.
+and disable or revoke with a reason. A call to the inference listener needs both `model:invoke` and `credential:use`, and both are decided
+before the request body is read: a virtual key whose `scopes` leave only `model:invoke` authenticates and
+is refused with `forbidden` (see the [gateway guide](../operations/gateway.md)).
 
 Issuing a virtual key with a model list (`models`) needs only `virtual_key:write`. The catalogue is
 administered by platform principals only; a tenant sees the models available to it with `model:read`

@@ -107,7 +107,7 @@ are granted to the role, so users and passwords can change without a migration. 
 | Role | Used by | Can | Cannot |
 |---|---|---|---|
 | `pandokos_owner` | `migrate` only | Own and alter the schema | Be used at run time |
-| `pandokos_gateway` | gateway | Read identities, catalogue, policy and credentials of the session tenant (not platform keys); call the key lookup function, which crosses the policy for one fact only: the tenant of a key ID; insert usage and outbox rows | Write identities, catalogue or credentials; read or change audit; update or delete usage |
+| `pandokos_gateway` | gateway | Read identities, catalogue, policy and credentials of the session tenant (not platform keys); call the key lookup function, which crosses the policy for one fact only: the tenant of a key ID; insert usage and outbox rows; execute `record_auth_failure`, which writes one `auth.failure` audit row in the session tenant | Write identities, catalogue or credentials; hold any privilege on the audit tables (it can only call that function); update or delete usage |
 | `pandokos_admin` | admin API | Read and write the session tenant's configuration; write platform tables when acting as platform; insert audit rows (it cannot read them yet); read usage | Read the sealed secret of a credential, in any session (it holds no `SELECT` on that column); update or delete usage or audit |
 | `pandokos_worker` | worker | List tenants (in platform scope); run one job for one tenant inside that tenant's session; manage outbox deliveries; import prices in platform scope (prices, rates, imports and the platform audit rows of the refresh job) | Run a statement over several tenants' data at once |
 

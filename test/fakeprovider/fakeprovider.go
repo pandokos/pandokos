@@ -3,10 +3,14 @@ package fakeprovider
 
 import (
 	"bytes"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -25,13 +29,22 @@ const (
 	ModelError429         = "fake-error-429"
 	ModelError500Echo     = "fake-error-500-echo"
 	ModelUsageOnLastChunk = "fake-usage-on-last-chunk"
+	// ModelRedirect answers the status of the request header X-Fake-Status (default 307) with
+	// Location set by RedirectTo.
+	ModelRedirect = "fake-redirect"
+	// ModelEchoAuth answers 200 (or X-Fake-Status) and copies the Authorization it received into
+	// the response headers X-Echo-Authorization and Www-Authenticate.
+	ModelEchoAuth = "fake-echo-auth"
+	// ModelClose hijacks the connection and closes it without a response.
+	ModelClose = "fake-close"
 )
 
 // Request is a request the fake received.
 type Request struct {
-	Method, Path, RawQuery, Proto string
-	Header                        http.Header
-	Body                          []byte
+	Method, Path, EscapedPath, RawQuery, Proto, Host string
+	ContentLength                                    int64
+	Header                                           http.Header
+	Body                                             []byte
 }
 
 // Server is the fake upstream.
@@ -45,15 +58,28 @@ type Server struct {
 	inflight  atomic.Int64
 	accepted  map[string]bool
 	models    string
+	redirect  string
+	conns     atomic.Int64
 }
 
 // New starts a plain HTTP/1.1 fake on 127.0.0.1; it is closed through tb.Cleanup.
 func New(tb testing.TB) *Server {
 	tb.Helper()
 	s := newServer()
-	s.ts = httptest.NewServer(http.HandlerFunc(s.handle))
+	s.ts = httptest.NewUnstartedServer(http.HandlerFunc(s.handle))
+	s.countConnections()
+	s.ts.Start()
 	tb.Cleanup(s.close)
 	return s
+}
+
+// countConnections makes the server count the connections it accepts.
+func (s *Server) countConnections() {
+	s.ts.Config.ConnState = func(_ net.Conn, st http.ConnState) {
+		if st == http.StateNew {
+			s.conns.Add(1)
+		}
+	}
 }
 
 // NewTLS starts a fake with TLS and HTTP/2 enabled.
@@ -62,6 +88,7 @@ func NewTLS(tb testing.TB) *Server {
 	s := newServer()
 	s.ts = httptest.NewUnstartedServer(http.HandlerFunc(s.handle))
 	s.ts.EnableHTTP2 = true
+	s.countConnections()
 	s.ts.StartTLS()
 	tb.Cleanup(s.close)
 	return s
@@ -72,8 +99,9 @@ func newServer() *Server {
 		accepted: map[string]bool{fixtures.CanaryProviderKey: true}}
 }
 
-// Accept replaces the set of bearer tokens GET /v1/models accepts (default: the canary provider
-// key).
+// Accept replaces the set of credentials the fake accepts, for GET /v1/models (a bearer token,
+// or the x-api-key of a request that carries anthropic-version) and for chat completions (a
+// bearer token). The default is the canary provider key.
 func (s *Server) Accept(keys ...string) {
 	set := make(map[string]bool, len(keys))
 	for _, k := range keys {
@@ -83,6 +111,16 @@ func (s *Server) Accept(keys ...string) {
 	s.accepted = set
 	s.mu.Unlock()
 }
+
+// RedirectTo sets the Location of the model fake-redirect.
+func (s *Server) RedirectTo(location string) {
+	s.mu.Lock()
+	s.redirect = location
+	s.mu.Unlock()
+}
+
+// Connections returns the number of connections the server accepted.
+func (s *Server) Connections() int { return int(s.conns.Load()) }
 
 // ModelsBehaviour makes GET /v1/models misbehave: "403", "429", "500" answer that status,
 // "redirect" answers 302 to another path of the fake that answers 200, and "stall" gives no
@@ -98,11 +136,10 @@ const modelsMovedPath = "/v1/models-moved"
 
 // handleModels answers the credential check of the vault validator.
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
+	presented, ok := credential(r)
 	s.mu.Lock()
 	behaviour := s.models
-	accepted := s.accepted[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")] &&
-		strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ")
-	presented := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	accepted := ok && s.accepted[presented]
 	s.mu.Unlock()
 
 	if r.URL.Path == modelsMovedPath {
@@ -136,16 +173,47 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusUnauthorized, b)
 }
 
+// credential returns the credential a request presents: x-api-key for a request that carries
+// anthropic-version, otherwise the bearer token.
+func credential(r *http.Request) (string, bool) {
+	if r.Header.Get("Anthropic-Version") != "" {
+		v := r.Header.Get("X-Api-Key")
+		return v, v != ""
+	}
+	v, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	return v, ok
+}
+
 func (s *Server) close() {
 	s.Release()
 	s.ts.Close()
 }
 
-// URL returns scheme://127.0.0.1:port.
+// URL returns scheme://127.0.0.1:port, the base URL of the endpoint of a provider in the
+// catalogue (the native path, which includes /v1, is appended to it).
 func (s *Server) URL() string { return s.ts.URL }
 
-// BaseURL returns URL() + "/v1".
-func (s *Server) BaseURL() string { return s.ts.URL + "/v1" }
+// CertPool returns a pool that holds the certificate of a TLS server (nil for a plain one), for
+// the RootCAs of a guard or a client that must trust it.
+func (s *Server) CertPool() *x509.CertPool {
+	cert := s.ts.Certificate()
+	if cert == nil {
+		return nil
+	}
+	pool := x509.NewCertPool()
+	pool.AddCert(cert)
+	return pool
+}
+
+// CertPEM returns the certificate of a TLS server as PEM (nil for a plain one), for a file that a
+// process under test reads as its CA file.
+func (s *Server) CertPEM() []byte {
+	cert := s.ts.Certificate()
+	if cert == nil {
+		return nil
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
+}
 
 // Transport returns a transport that trusts the server.
 func (s *Server) Transport() http.RoundTripper { return s.ts.Client().Transport }
@@ -200,8 +268,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	s.mu.Lock()
 	s.requests = append(s.requests, Request{
-		Method: r.Method, Path: r.URL.Path, RawQuery: r.URL.RawQuery, Proto: r.Proto,
-		Header: r.Header.Clone(), Body: body,
+		Method: r.Method, Path: r.URL.Path, EscapedPath: r.URL.EscapedPath(), RawQuery: r.URL.RawQuery, Proto: r.Proto, Host: r.Host,
+		ContentLength: r.ContentLength, Header: r.Header.Clone(), Body: body,
 	})
 	s.mu.Unlock()
 
@@ -213,7 +281,15 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, []byte(`{"error":{"message":"not found","type":"invalid_request_error","param":null,"code":null}}`))
 		return
 	}
-	if r.Header.Get("Authorization") != "Bearer "+fixtures.CanaryProviderKey {
+	presented, hasCred := r.Header.Get("Authorization"), r.Header.Get("Authorization") != ""
+	s.mu.Lock()
+	ok := s.accepted[strings.TrimPrefix(presented, "Bearer ")] && strings.HasPrefix(presented, "Bearer ")
+	s.mu.Unlock()
+	if !ok {
+		if hasCred { // a provider that quotes what it was given in its headers
+			w.Header().Set("X-Echo-Authorization", presented)
+			w.Header().Set("Www-Authenticate", presented)
+		}
 		writeJSON(w, http.StatusUnauthorized, fixtures.Read("error_401.json"))
 		return
 	}
@@ -259,6 +335,30 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		msg := "upstream failure echo: " + fixtures.CanaryPrompt + " " + fixtures.CanaryCompletion
 		b, _ := json.Marshal(map[string]any{"error": map[string]any{"message": msg, "type": "server_error", "param": nil, "code": nil}})
 		writeJSON(w, http.StatusInternalServerError, b)
+	case ModelRedirect:
+		s.mu.Lock()
+		location := s.redirect
+		s.mu.Unlock()
+		status := http.StatusTemporaryRedirect
+		if v, err := strconv.Atoi(r.Header.Get("X-Fake-Status")); err == nil && v >= 300 && v < 400 {
+			status = v
+		}
+		h.Set("Location", location)
+		w.WriteHeader(status)
+	case ModelEchoAuth:
+		status := http.StatusOK
+		if v, err := strconv.Atoi(r.Header.Get("X-Fake-Status")); err == nil && v >= 200 && v < 600 {
+			status = v
+		}
+		h.Set("X-Echo-Authorization", r.Header.Get("Authorization"))
+		h.Set("Www-Authenticate", r.Header.Get("Authorization"))
+		writeJSON(w, status, fixtures.Read("chat_completion.json"))
+	case ModelClose:
+		if hj, ok := w.(http.Hijacker); ok {
+			if conn, _, err := hj.Hijack(); err == nil {
+				_ = conn.Close()
+			}
+		}
 	case ModelUsageOnLastChunk:
 		s.stream(w, r, fixtures.Read("chat_stream_usage_on_last_chunk.sse"), false)
 	default:

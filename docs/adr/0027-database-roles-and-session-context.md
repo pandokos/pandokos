@@ -56,3 +56,4 @@ direct connection.
 - 2026-11: sprint 1.3 adds the transaction with neither setting (Unscoped), the provisioning transaction with both (ADR 0031), and one LISTEN connection per gateway (ADR 0030).
 - 2026-11: sprint 2.1 adds lint rule L-19 (views run with the caller's rights) and the first view.
 - 2026-11: sprint 2.2 adds restricted global catalogue tables read in any session, and insert grants for the worker on prices and the platform audit log ([ADR 0035](0035-catalogue-and-model-access.md)).
+- 2026-11: sprint 3.1 adds the definer function record_auth_failure, executable by the gateway role only; the role still holds no privilege on the audit tables.

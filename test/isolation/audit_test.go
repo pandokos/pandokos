@@ -2,10 +2,12 @@ package isolation
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/test/dbtest"
 )
 
@@ -147,4 +149,166 @@ func TestAuditIsAppendOnly(t *testing.T) {
 			t.Errorf("%s: %d rows survive, %v", tb.name, n, err)
 		}
 	}
+}
+
+// TestRecordAuthFailure is T-443: the function through which the gateway role writes one kind of
+// audit row (migration 0005, sprint 3.1 section 5.10).
+func TestRecordAuthFailure(t *testing.T) {
+	d := dbtest.NewMigrated(t)
+	a := d.SeedTenant(t, "tenant-a")
+	b := d.SeedTenant(t, "tenant-b")
+	super := d.Super(t)
+	const (
+		call      = `SELECT pandokos.record_auth_failure($1, $2, $3)`
+		keyID     = "tabcdefghijklmnop"
+		requestID = "0123456789abcdef0123456789abcdef"
+	)
+	rows := func(tenantID tenant.ID) int {
+		t.Helper()
+		var n int
+		if err := super.QueryRow(ctx(t), `SELECT count(*) FROM pandokos.audit_event WHERE tenant_id = $1::uuid AND action = 'auth.failure'`, tenantID.String()).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	invoke := func(conn *pgx.Conn, s session, key, reason, request string) error {
+		return inSession(t, conn, s, func(c context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(c, call, key, reason, request)
+			return err
+		})
+	}
+	tenantA := sessions(a)[0]
+	gateway := d.Connect(t, "gateway")
+
+	t.Run("the gateway role writes the row of the tenant of its session", func(t *testing.T) {
+		if err := invoke(gateway, tenantA, keyID, "revoked", requestID); err != nil {
+			t.Fatal(err)
+		}
+		var actor, resType, resID, outcome, request, key string
+		var detail string
+		if err := super.QueryRow(ctx(t), `SELECT actor_type, resource_type, resource_id, outcome, request_id, key_id, detail::text FROM pandokos.audit_event WHERE tenant_id = $1::uuid AND action = 'auth.failure'`, a.String()).
+			Scan(&actor, &resType, &resID, &outcome, &request, &key, &detail); err != nil {
+			t.Fatal(err)
+		}
+		if actor != "anonymous" || resType != "virtual_key" || resID != keyID || outcome != "failure" || request != requestID || key != keyID {
+			t.Errorf("the row: %s %s %s %s %s %s", actor, resType, resID, outcome, request, key)
+		}
+		var ok bool
+		if err := super.QueryRow(ctx(t), `SELECT $1::jsonb = '{"reason": "revoked", "listener": "inference"}'::jsonb`, detail).Scan(&ok); err != nil || !ok {
+			t.Errorf("detail %s (%v), want exactly reason and listener", detail, err)
+		}
+		if err := invoke(gateway, sessions(b)[0], keyID, "expired", requestID); err != nil {
+			t.Fatal(err)
+		}
+		if rows(a) != 1 || rows(b) != 1 {
+			t.Errorf("rows: tenant a %d, tenant b %d, want one each: the function writes for the tenant of the session", rows(a), rows(b))
+		}
+	})
+
+	t.Run("outside a tenant session the row is refused", func(t *testing.T) {
+		before := rows(a) + rows(b)
+		for _, s := range sessions(a)[1:] {
+			if err := invoke(gateway, s, keyID, "revoked", requestID); sqlstate(err) != insufficientPrivilege {
+				t.Errorf("session %s: %v, want SQLSTATE %s", s.name, err, insufficientPrivilege)
+			}
+		}
+		if rows(a)+rows(b) != before {
+			t.Error("a row was written outside a tenant session")
+		}
+	})
+
+	t.Run("nobody else may execute it", func(t *testing.T) {
+		before := rows(a)
+		for _, role := range []string{"admin", "worker"} {
+			if err := invoke(d.Connect(t, role), tenantA, keyID, "revoked", requestID); sqlstate(err) != insufficientPrivilege {
+				t.Errorf("the %s role: %v, want SQLSTATE %s", role, err, insufficientPrivilege)
+			}
+		}
+		// A login that belongs to no role, given the right to connect and to see the schema, so
+		// that what stops it is the privilege on the function, which only the gateway role holds.
+		login := d.CreateLogin(t, "nobody", "")
+		for _, stmt := range []string{
+			"GRANT CONNECT ON DATABASE " + pgx.Identifier{d.Name}.Sanitize() + " TO " + pgx.Identifier{login.User}.Sanitize(),
+			"GRANT USAGE ON SCHEMA pandokos TO " + pgx.Identifier{login.User}.Sanitize(),
+		} {
+			if _, err := super.Exec(ctx(t), stmt); err != nil {
+				t.Fatal(err)
+			}
+		}
+		nobody := d.ConnectWith(t, login)
+		if err := invoke(nobody, tenantA, keyID, "revoked", requestID); sqlstate(err) != insufficientPrivilege {
+			t.Errorf("a login with no role membership: %v, want SQLSTATE %s", err, insufficientPrivilege)
+		}
+		var acl string
+		if err := super.QueryRow(ctx(t), `SELECT proacl::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'pandokos' AND p.proname = 'record_auth_failure'`).Scan(&acl); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(acl, "pandokos_gateway=X/") || strings.Contains(acl, "{=X") || strings.Contains(acl, ",=X") {
+			t.Errorf("the privileges of the function: %s (PUBLIC must not execute it)", acl)
+		}
+		if rows(a) != before {
+			t.Error("a role that may not execute the function wrote a row")
+		}
+	})
+
+	t.Run("malformed arguments are refused", func(t *testing.T) {
+		before := rows(a)
+		bad := []struct{ name, key, reason, request string }{
+			{"a key ID without the t", "xabcdefghijklmnop", "revoked", requestID},
+			{"a key ID that is too short", "tabcdef", "revoked", requestID},
+			{"a key ID with a digit outside the alphabet", "tabcdefghijklmn018", "revoked", requestID},
+			{"a key that looks like a whole key", "pdk_tabcdefghijklmnop_synthetic", "revoked", requestID},
+			{"an empty key ID", "", "revoked", requestID},
+			{"an upper-case reason", keyID, "Revoked", requestID},
+			{"a reason with a space", keyID, "wrong secret", requestID},
+			{"a reason with digits", keyID, "pdk_abc123_secret", requestID},
+			{"an empty reason", keyID, "", requestID},
+			{"a reason of 41 characters", keyID, strings.Repeat("a", 41), requestID},
+			{"a request ID of 31 characters", keyID, "revoked", requestID[:31]},
+			{"a request ID in upper case", keyID, "revoked", strings.ToUpper(requestID)},
+			{"a request ID that is a statement", keyID, "revoked", "0123456789abcdef'; DROP TABLE x;--"},
+			{"a request ID with a newline", keyID, "revoked", requestID[:31] + "\n"},
+		}
+		for _, c := range bad {
+			if err := invoke(gateway, tenantA, c.key, c.reason, c.request); sqlstate(err) != checkViolation {
+				t.Errorf("%s: %v, want SQLSTATE %s", c.name, err, checkViolation)
+			}
+		}
+		if rows(a) != before {
+			t.Error("a malformed call wrote a row")
+		}
+		if err := invoke(gateway, tenantA, keyID, strings.Repeat("a", 40), requestID); err != nil {
+			t.Errorf("a reason of 40 characters: %v", err)
+		}
+	})
+
+	t.Run("the gateway role still holds no privilege on the audit table", func(t *testing.T) {
+		for op, sql := range map[string]string{
+			"INSERT": `INSERT INTO pandokos.audit_event (tenant_id, actor_type, action, resource_type, outcome, request_id) VALUES ($1::uuid, 'anonymous', 'auth.failure', 'virtual_key', 'failure', 'req-443')`,
+			"SELECT": `SELECT count(*) FROM pandokos.audit_event`,
+		} {
+			err := inSession(t, d.Connect(t, "gateway"), tenantA, func(c context.Context, tx pgx.Tx) error {
+				var err error
+				if op == "INSERT" {
+					_, err = tx.Exec(c, sql, a.String())
+				} else {
+					_, err = tx.Exec(c, sql)
+				}
+				return err
+			})
+			if sqlstate(err) != insufficientPrivilege {
+				t.Errorf("%s as the gateway role: %v, want SQLSTATE %s", op, err, insufficientPrivilege)
+			}
+		}
+	})
+
+	t.Run("the lint has no finding", func(t *testing.T) {
+		findings, err := Lint(ctx(t), super, DefaultSpec())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(findings) != 0 {
+			t.Errorf("findings: %v", findings)
+		}
+	})
 }

@@ -49,7 +49,7 @@ func TestCatalogue(t *testing.T) {
 	d := dbtest.New(t)
 	importAtStart := []string{"PANDOKOS_PRICING_IMPORT_AT_START=true"}
 
-	p := startBinary(t, opts{level: "info", baseURL: up.BaseURL(), db: d, env: importAtStart})
+	p := startBinary(t, opts{level: "info", up: up, db: d, env: importAtStart})
 	var imported []map[string]any
 	testutil.Eventually(t, 10*time.Second, "the price import of the first start", func() bool {
 		imported = completeLines(p.stdout, "prices imported")
@@ -192,7 +192,7 @@ func TestCatalogue(t *testing.T) {
 	}
 
 	// A restart: a file was imported after the snapshot was made, so the snapshot does not go over it.
-	p2 := startBinary(t, opts{level: "info", baseURL: up.BaseURL(), db: d, env: importAtStart})
+	p2 := startBinary(t, opts{level: "info", up: up, db: d, env: importAtStart})
 	var skipped []map[string]any
 	testutil.Eventually(t, 10*time.Second, "the skipped import of the restart", func() bool {
 		skipped = completeLines(p2.stdout, "price import skipped")
@@ -218,8 +218,14 @@ func TestCatalogue(t *testing.T) {
 func TestPriceRefresh(t *testing.T) {
 	up := fakeprovider.New(t)
 	ca := testutil.SSLCertFile(t)
-	refreshEnv := func(url string) []string {
+	// The download is a public one, made by the egress guard: it refuses a loopback address, so
+	// the test reaches its local server by name, through a proxy of the operator's kind
+	// (upstream.proxy.url): the proxy resolves the name.
+	refreshEnv := func(t *testing.T, url string) []string {
+		proxy, _ := testutil.ConnectProxy(t)
+		url = strings.Replace(url, "127.0.0.1", "localhost", 1)
 		return []string{
+			"PANDOKOS_UPSTREAM_PROXY_URL=" + proxy.String(),
 			"PANDOKOS_PRICING_REFRESH_ENABLED=true",
 			"PANDOKOS_PRICING_REFRESH_URL=" + url,
 			"PANDOKOS_PRICING_REFRESH_INTERVAL=1h",
@@ -231,7 +237,7 @@ func TestPriceRefresh(t *testing.T) {
 	t.Run("one remote import", func(t *testing.T) {
 		url := testutil.PriceServer(t, priceFixture(t, "changed.json"), testutil.PriceOK)
 		d := dbtest.New(t)
-		p := startBinary(t, opts{level: "info", baseURL: up.BaseURL(), db: d, env: refreshEnv(url)})
+		p := startBinary(t, opts{level: "info", up: up, db: d, env: refreshEnv(t, url)})
 		var imported []map[string]any
 		testutil.Eventually(t, 15*time.Second, "the first refresh", func() bool {
 			imported = completeLines(p.stdout, "prices imported")
@@ -261,7 +267,7 @@ func TestPriceRefresh(t *testing.T) {
 	t.Run("a server that says 404", func(t *testing.T) {
 		url := testutil.PriceServer(t, []byte("synthetic-marker-in-a-404"), testutil.PriceNotFound)
 		d := dbtest.New(t)
-		p := startBinary(t, opts{level: "info", baseURL: up.BaseURL(), db: d, env: refreshEnv(url)})
+		p := startBinary(t, opts{level: "info", up: up, db: d, env: refreshEnv(t, url)})
 		var failed []map[string]any
 		testutil.Eventually(t, 15*time.Second, "the failed refresh", func() bool {
 			failed = completeLines(p.stdout, "price import failed")
@@ -288,7 +294,7 @@ func TestPriceRefresh(t *testing.T) {
 
 	t.Run("refresh is off by default and the test hook alone does nothing", func(t *testing.T) {
 		d := dbtest.New(t)
-		p := startBinary(t, opts{level: "info", baseURL: up.BaseURL(), db: d, env: []string{"PANDOKOS_TEST_REFRESH_DELAY=1s"}})
+		p := startBinary(t, opts{level: "info", up: up, db: d, env: []string{"PANDOKOS_TEST_REFRESH_DELAY=1s"}})
 		time.Sleep(3 * time.Second)
 		if got := completeLines(p.stdout, "prices imported"); len(got) != 0 {
 			t.Errorf("an import without a configuration: %v", got)

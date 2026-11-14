@@ -125,6 +125,10 @@ var keyTable = []keyDef{
 		setDuration(func(c *Config) *Duration { return &c.Limits.MaxRequestDuration })),
 	def("upstream.connect_timeout", "duration", "10s", "TCP connect timeout, and separately TLS handshake timeout, towards the provider",
 		setDuration(func(c *Config) *Duration { return &c.Upstream.ConnectTimeout })),
+	def("upstream.tls.ca_file", "path", "", "PEM file with certificate authorities added to the system roots for every outbound TLS connection (providers, validation, price download)",
+		setString(func(c *Config) *string { return &c.Upstream.TLS.CAFile })),
+	def("upstream.proxy.url", "URL", "", "Proxy for provider calls to public endpoints, credential validation and the price download; http or https, no user information",
+		setString(func(c *Config) *string { return &c.Upstream.Proxy.URL })),
 	def("shutdown.drain_timeout", "duration", "30s", "Time in-flight requests get to finish after a termination signal",
 		setDuration(func(c *Config) *Duration { return &c.Shutdown.DrainTimeout })),
 	def("cache.principal_ttl", "duration", "30s", "Lifetime of a cached principal in the gateway: the upper bound on the time a revocation or a suspension takes to reach the inference listener",
@@ -202,10 +206,6 @@ var keyTable = []keyDef{
 		setString(func(c *Config) *string { return &c.Pricing.Refresh.URL })),
 	def("pricing.refresh.interval", "duration", "24h", "Time between downloads; 1h to 720h",
 		setDuration(func(c *Config) *Duration { return &c.Pricing.Refresh.Interval })),
-	def("skeleton.openai.base_url", "URL", "https://api.openai.com/v1", "Provider base URL, in the form SDKs use (ends with /v1)",
-		setString(func(c *Config) *string { return &c.Skeleton.OpenAI.BaseURL })),
-	def("skeleton.openai.api_key_file", "path", "", "File with the provider API key (required)",
-		setString(func(c *Config) *string { return &c.Skeleton.OpenAI.APIKeyFile })),
 }
 
 // Keys returns every configuration key, in a fixed order.

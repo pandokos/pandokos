@@ -49,6 +49,8 @@ replaced by `_`.
 | `limits.request_body_read_timeout` | `PANDOKOS_LIMITS_REQUEST_BODY_READ_TIMEOUT` | duration | `30s` | Time allowed to read the request body |
 | `limits.max_request_duration` | `PANDOKOS_LIMITS_MAX_REQUEST_DURATION` | duration | `10m` | Total time for one proxied request, stream included, measured from the end of the body read |
 | `upstream.connect_timeout` | `PANDOKOS_UPSTREAM_CONNECT_TIMEOUT` | duration | `10s` | TCP connect timeout, and separately TLS handshake timeout, towards the provider |
+| `upstream.tls.ca_file` | `PANDOKOS_UPSTREAM_TLS_CA_FILE` | path | none | PEM file whose certificates are added to the system roots for every outbound TLS connection of the server (providers, validation, price download, an `https` proxy); read by `serve` only |
+| `upstream.proxy.url` | `PANDOKOS_UPSTREAM_PROXY_URL` | URL | none | Proxy for provider calls to public endpoints, credential validation and the price download; private endpoints go direct; `HTTPS_PROXY` and similar variables are never read; read by `serve` only |
 | `shutdown.drain_timeout` | `PANDOKOS_SHUTDOWN_DRAIN_TIMEOUT` | duration | `30s` | Time in-flight requests get to finish after a termination signal |
 | `cache.principal_ttl` | `PANDOKOS_CACHE_PRINCIPAL_TTL` | duration | `30s` | Lifetime of a cached principal in the gateway: the upper bound on the time a revocation or a suspension takes to reach the inference listener (1s to 60s) |
 | `cache.credential_ttl` | `PANDOKOS_CACHE_CREDENTIAL_TTL` | duration | `30s` | Lifetime of a cached provider credential in the gateway: the upper bound on the time a disable, revocation or replacement takes to reach the inference listener when notifications are not delivered (1s to 60s) |
@@ -77,8 +79,6 @@ replaced by `_`.
 | `pricing.refresh.enabled` | `PANDOKOS_PRICING_REFRESH_ENABLED` | boolean | `false` | Download the price dataset periodically: an outbound request to `pricing.refresh.url` |
 | `pricing.refresh.url` | `PANDOKOS_PRICING_REFRESH_URL` | URL | `https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json` | Address of the price dataset; `https` only, no user information. Pin it to a commit to control what is imported |
 | `pricing.refresh.interval` | `PANDOKOS_PRICING_REFRESH_INTERVAL` | duration | `24h` | Time between downloads (1h to 720h) |
-| `skeleton.openai.base_url` | `PANDOKOS_SKELETON_OPENAI_BASE_URL` | URL | `https://api.openai.com/v1` | Provider base URL, in the form SDKs use (ends with `/v1`) |
-| `skeleton.openai.api_key_file` | `PANDOKOS_SKELETON_OPENAI_API_KEY_FILE` | path | none, required | File with the provider API key |
 
 Durations are strings in Go syntax (`"30s"`, `"10m"`); a YAML number is rejected for a duration.
 Sizes are integers in bytes.
@@ -96,7 +96,6 @@ required and read:
 
 | | `serve`, `config check` (`--for serve`, the default) | `migrate`, `migrate status`, `config check --for migrate` | `init`, `config check --for init` |
 |---|---|---|---|
-| `skeleton.openai.api_key_file` | required, read | not read | not read |
 | `vault.kek.local.key_file` | required, read | not read | not read |
 | `database.gateway.password_file`, `database.worker.password_file` | required, read | not read | not read |
 | `database.admin.password_file` | required, read | not read | required, read |
@@ -108,7 +107,7 @@ credential that can change the schema. Every format rule below applies to both p
 
 ## Secret files
 
-There is no key that holds a secret value: `skeleton.openai.api_key: ...` is an unknown key and
+There is no key that holds a secret value: a key such as `vault.kek.local.key: ...` is an unknown key and
 fails. A secret file is read once, at start; changing it needs a restart.
 
 - Leading and trailing white space (including the final newline) is removed.
@@ -120,7 +119,7 @@ With Docker or Kubernetes, mount the secret as a file and point the key at it:
 
 ```
 docker run -v ./secrets:/run/secrets:ro \
-  -e PANDOKOS_SKELETON_OPENAI_API_KEY_FILE=/run/secrets/openai_api_key \
+  -e PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE=/run/secrets/pandokos_kek \
   ghcr.io/pandokos/pandokos:<version>
 ```
 
@@ -144,7 +143,8 @@ All problems are reported together, not only the first. Each is attached to a ke
 | `database.admin.user`, `database.worker.user`, `database.owner.user` | differs from every user that precedes it in the order gateway, admin, worker, owner: each role needs its own database user |
 | `database.gateway.max_connections`, `database.admin.max_connections`, `database.worker.max_connections` | 1 to 1000 |
 | the password files the purpose needs | set and readable (see Purposes) |
-| `skeleton.openai.base_url` | an absolute URL with scheme `http` or `https`, a host, no user information, no query, no fragment; a trailing `/` on the path is removed |
+| `upstream.tls.ca_file` | when set (`serve` only): a readable file with at least one PEM certificate ("cannot be read", "holds no certificate"); no message quotes the content |
+| `upstream.proxy.url` | when set (`serve` only): scheme `http` or `https`, a host, no user information, no query, no fragment, path empty or `/` |
 | `listeners.admin.address` | as the inference address; differs from `listeners.inference.address` unless the port is 0; a host that is not loopback needs TLS or `listeners.admin.allow_plaintext` |
 | `listeners.admin.max_header_bytes` | 4096 to 1048576 |
 | `listeners.<l>.tls.min_version` | `TLS1.2` or `TLS1.3` |
@@ -158,7 +158,6 @@ All problems are reported together, not only the first. Each is attached to a ke
 | `vault.kek.provider` | `local` |
 | `vault.kek.local.key_file` | set; a readable regular file holding 32 bytes in standard base64 (44 characters); no message quotes the content |
 | `database.direct_address` | when set, the three address rules of `database.address` |
-| `skeleton.openai.api_key_file` | set; readable |
 
 ## Warnings
 
@@ -167,7 +166,7 @@ they do not prevent start.
 
 | Key | Condition | Message |
 |---|---|---|
-| `skeleton.openai.base_url` | the scheme is `http` and the host is not a loopback address or `localhost` | the provider key is sent without TLS |
+| `upstream.proxy.url` | `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY` (or the lower-case name) is set in the environment and the key is not (`serve` only) | `<VARIABLE>` is set in the environment and is not used; set upstream.proxy.url to send provider traffic through a proxy |
 | `listeners.inference.address` | no TLS and the host is not a loopback address or `localhost` | the listener serves plain HTTP; set listeners.inference.tls.cert_file and key_file, or terminate TLS in front of it |
 | `listeners.admin.address` | no TLS, host not loopback, `allow_plaintext` true | the administration API is served without TLS; keys travel in clear text unless TLS ends in front of it |
 | `listeners.admin.allow_plaintext` | true while TLS is configured or the host is loopback | has no effect |
@@ -244,18 +243,13 @@ pricing:
     enabled: false
     url: https://raw.githubusercontent.com/pydantic/genai-prices/<commit>/prices/new_data/v2/data.json
     interval: 24h
-skeleton:
-  openai:
-    base_url: https://api.openai.com/v1
-    api_key_file: /run/secrets/openai_api_key
+upstream:
+  connect_timeout: 10s
+  tls:
+    ca_file: /run/secrets/upstream_ca.pem
+  proxy:
+    url: http://proxy.internal.example:3128
 ```
-
-## The `skeleton` section is temporary
-
-The `skeleton` section belongs to the walking skeleton. The access token went away with sprint 1.3
-(virtual keys, [keys](keys.md)); the provider endpoint and key go away when the catalogue and the
-vault replace them (sprint 3.1). Do not build on it. The catalogue ([guide](catalogue.md)) already holds the providers and
-endpoints; nothing reads it on the inference route until then.
 
 ## Variables of the API commands
 

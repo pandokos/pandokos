@@ -102,6 +102,30 @@ linters:
               desc: the gateway does not know the CLI
             - pkg: github.com/pandokos/pandokos/internal/store
               desc: the gateway does not reach the database itself
+            - pkg: github.com/pandokos/pandokos/internal/resolver
+              desc: the gateway sees the catalogue and the vault through its own ports
+            - pkg: github.com/pandokos/pandokos/internal/egress
+              desc: the gateway receives round trippers through Options
+            - pkg: github.com/pandokos/pandokos/internal/vault
+              desc: the gateway sees credentials through gateway.Credentials
+            - pkg: github.com/pandokos/pandokos/internal/catalog
+              desc: the gateway sees the catalogue through gateway.Catalogue
+        egress-is-a-leaf:
+          list-mode: strict
+          files:
+            - "**/internal/egress/**"
+            - "!$test"
+          allow:
+            - $gostd
+        resolver-is-wiring:
+          list-mode: lax
+          files:
+            - "**/internal/**"
+            - "!**/internal/resolver/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/pandokos/pandokos/internal/resolver
+              desc: only the command composes the resolver (ADR 0037)
         admin-takes-plain-values:
           list-mode: lax
           files:

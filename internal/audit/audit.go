@@ -127,3 +127,11 @@ func RecordPlatform(ctx context.Context, tx store.Tx, e Event) error {
 		RequestID: e.RequestID, Reason: e.Reason, Detail: detail,
 	})
 }
+
+// RecordAuthFailure writes an authentication failure of the inference listener to the audit
+// log of the tenant whose session tx is, through the one function the gateway role may
+// execute. keyID is the key ID that was presented, reason a lower-case word, requestID the
+// 32-hex request ID.
+func RecordAuthFailure(ctx context.Context, tx store.Tx, keyID, reason, requestID string) error {
+	return queries.New(tx).RecordAuthFailure(ctx, queries.RecordAuthFailureParams{KeyID: keyID, Reason: reason, RequestID: requestID})
+}

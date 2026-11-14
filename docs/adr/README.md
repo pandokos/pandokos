@@ -43,6 +43,8 @@ A record is *proposed* until its pull request is merged by the maintainer, then 
 | [0034](0034-credential-model-and-platform-oversight.md) | Credential model and platform oversight | proposed |
 | [0035](0035-catalogue-and-model-access.md) | Catalogue and model access | proposed |
 | [0036](0036-prices-costs-and-importer.md) | Prices, costs and the price importer | proposed |
+| [0037](0037-request-pipeline-and-resolution.md) | Request pipeline and resolution | proposed |
+| [0038](0038-egress-guard-upstream-tls-and-proxy.md) | Egress guard, upstream TLS and proxy | proposed |
 
 ## Questions from SOW 0.1 and where they were decided
 

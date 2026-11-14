@@ -16,7 +16,7 @@ func post(t *testing.T, s *Server, key, body string) (*http.Response, []byte) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.BaseURL()+"/chat/completions", strings.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.URL()+"/v1/chat/completions", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestFakeProvider(t *testing.T) {
 	})
 	t.Run("hang is cancelled", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
-		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, s.BaseURL()+"/chat/completions", strings.NewReader(`{"model":"fake-hang"}`))
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, s.URL()+"/v1/chat/completions", strings.NewReader(`{"model":"fake-hang"}`))
 		req.Header.Set("Authorization", "Bearer "+key)
 		go func() {
 			time.Sleep(100 * time.Millisecond)
@@ -80,6 +80,103 @@ func TestFakeProvider(t *testing.T) {
 		}
 		if !s.WaitCancelled(2 * time.Second) {
 			t.Fatal("handler did not see the cancellation")
+		}
+	})
+}
+
+func TestFakeProviderBehaviours(t *testing.T) {
+	s := New(t)
+	key := fixtures.CanaryProviderKey
+	do := func(method, path string, hdr http.Header, body string) (*http.Response, error) {
+		req, _ := http.NewRequestWithContext(t.Context(), method, s.URL()+path, strings.NewReader(body))
+		for k, v := range hdr {
+			req.Header[k] = v
+		}
+		return s.ts.Client().Do(req)
+	}
+	noFollow := s.ts.Client()
+	noFollow.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+
+	t.Run("redirect", func(t *testing.T) {
+		s.RedirectTo("http://127.0.0.1:1/elsewhere")
+		for _, c := range []struct {
+			hdr  string
+			want int
+		}{{"", 307}, {"302", 302}, {"308", 308}} {
+			req, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, s.URL()+"/v1/chat/completions", strings.NewReader(`{"model":"fake-redirect"}`))
+			req.Header.Set("Authorization", "Bearer "+key)
+			if c.hdr != "" {
+				req.Header.Set("X-Fake-Status", c.hdr)
+			}
+			resp, err := noFollow.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+			if resp.StatusCode != c.want || resp.Header.Get("Location") != "http://127.0.0.1:1/elsewhere" {
+				t.Errorf("%q: %d %q", c.hdr, resp.StatusCode, resp.Header.Get("Location"))
+			}
+		}
+	})
+
+	t.Run("echo", func(t *testing.T) {
+		resp, err := do("POST", "/v1/chat/completions", http.Header{"Authorization": {"Bearer " + key}}, `{"model":"fake-echo-auth"}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 200 || resp.Header.Get("X-Echo-Authorization") != "Bearer "+key || resp.Header.Get("Www-Authenticate") != "Bearer "+key {
+			t.Errorf("%d %v", resp.StatusCode, resp.Header)
+		}
+	})
+
+	t.Run("close", func(t *testing.T) {
+		resp, err := do("POST", "/v1/chat/completions", http.Header{"Authorization": {"Bearer " + key}}, `{"model":"fake-close"}`)
+		if err == nil {
+			resp.Body.Close()
+			t.Fatalf("answered %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("connections", func(t *testing.T) {
+		if s.Connections() < 1 {
+			t.Errorf("%d connections counted", s.Connections())
+		}
+	})
+
+	t.Run("models accepts an anthropic key with anthropic-version", func(t *testing.T) {
+		s.Accept("synthetic-anthropic-key")
+		defer s.Accept(key)
+		resp, err := do("GET", "/v1/models", http.Header{"X-Api-Key": {"synthetic-anthropic-key"}, "Anthropic-Version": {"2023-06-01"}}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Errorf("x-api-key with anthropic-version: %d", resp.StatusCode)
+		}
+		resp, _ = do("GET", "/v1/models", http.Header{"X-Api-Key": {"synthetic-anthropic-key"}}, "")
+		resp.Body.Close()
+		if resp.StatusCode != 401 {
+			t.Errorf("x-api-key without anthropic-version: %d", resp.StatusCode)
+		}
+		resp, _ = do("GET", "/v1/models", http.Header{"Authorization": {"Bearer synthetic-anthropic-key"}, "Anthropic-Version": {"2023-06-01"}}, "")
+		resp.Body.Close()
+		if resp.StatusCode != 401 {
+			t.Errorf("a bearer with anthropic-version: %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("requests record method, path, query, header and body", func(t *testing.T) {
+		before := len(s.Requests())
+		resp, err := do("POST", "/v1/chat/completions?a=b", http.Header{"Authorization": {"Bearer " + key}, "X-Test": {"v"}}, `{"model":"fake-basic"}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		r := s.Requests()[before]
+		if r.Method != "POST" || r.Path != "/v1/chat/completions" || r.RawQuery != "a=b" || r.Header.Get("X-Test") != "v" || string(r.Body) != `{"model":"fake-basic"}` {
+			t.Errorf("%+v", r)
 		}
 	})
 }

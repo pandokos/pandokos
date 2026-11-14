@@ -13,7 +13,6 @@ import (
 
 	"github.com/pandokos/pandokos/internal/admin"
 	"github.com/pandokos/pandokos/internal/adminapi"
-	"github.com/pandokos/pandokos/internal/vault"
 	"github.com/pandokos/pandokos/test/apitest"
 	"github.com/pandokos/pandokos/test/fakeprovider"
 	"github.com/pandokos/pandokos/test/fixtures"
@@ -592,10 +591,8 @@ func parseURL(t *testing.T, s string) *url.URL {
 func TestNoResponseHoldsASecret(t *testing.T) {
 	fake := fakeprovider.New(t)
 	fake.Accept() // nothing is accepted: the provider answers 401 and echoes the key
-	base := parseURL(t, fake.BaseURL())
-	w := newCW(t, "no-secret", func(o *admin.Options) {
-		o.Validators = map[string]vault.Validator{"openai": vault.NewOpenAIValidator(base, 2*time.Second)}
-	})
+	w := newCW(t, "no-secret", withValidator(t, 2*time.Second))
+	w.pointAt(t, "openai", "default", fake)
 	other := newCWOn(t, w.api, "no-secret-other")
 	secretOne := fixtures.CanaryCredential
 	cred := w.create(t, "openai", "main", secretOne)

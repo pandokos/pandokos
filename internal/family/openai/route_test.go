@@ -6,27 +6,29 @@ import (
 )
 
 func TestMatch(t *testing.T) {
-	op, ok := Match("POST", "/chat/completions")
+	op, ok := Match("POST", "/v1/chat/completions")
 	if !ok || op != "chat.completions" {
 		t.Fatalf("got %q %v", op, ok)
 	}
 	for _, c := range []struct{ method, path string }{
-		{"GET", "/chat/completions"},
-		{"PUT", "/chat/completions"},
-		{"post", "/chat/completions"},
-		{"POST", "/chat/completions/"},
-		{"POST", "/chat/completion"},
-		{"POST", "/embeddings"},
+		{"GET", "/v1/chat/completions"},
+		{"PUT", "/v1/chat/completions"},
+		{"post", "/v1/chat/completions"},
+		{"POST", "/v1/chat/completions/"},
+		{"POST", "/v1/chat/completion"},
+		{"POST", "/chat/completions"},
+		{"POST", "/v1/embeddings"},
+		{"POST", "/v1/responses"},
 		{"POST", "/"},
 		{"POST", ""},
-		{"POST", "chat/completions"},
-		{"POST", "/Chat/Completions"},
+		{"POST", "v1/chat/completions"},
+		{"POST", "/V1/Chat/Completions"},
 	} {
 		if op, ok := Match(c.method, c.path); ok {
 			t.Errorf("%s %s matched %q", c.method, c.path, op)
 		}
 	}
-	if Name != "openai" || PathChatCompletions != "/chat/completions" {
+	if Name != "openai" || PathChatCompletions != "/v1/chat/completions" {
 		t.Error("constants")
 	}
 }
@@ -77,7 +79,13 @@ func TestAllowResponseHeader(t *testing.T) {
 			t.Errorf("%s allowed", n)
 		}
 	}
-	if len(RequestHeaders) != 3 || RequestHeaders[0] != "Accept" || RequestHeaders[1] != "Content-Type" || RequestHeaders[2] != "User-Agent" {
-		t.Errorf("RequestHeaders = %v", RequestHeaders)
+	want := []string{"Accept", "Content-Type", "User-Agent", "OpenAI-Organization", "OpenAI-Project", "OpenAI-Beta"}
+	if len(RequestHeaders) != len(want) {
+		t.Fatalf("RequestHeaders = %v", RequestHeaders)
+	}
+	for i := range want {
+		if http.CanonicalHeaderKey(RequestHeaders[i]) != http.CanonicalHeaderKey(want[i]) {
+			t.Errorf("RequestHeaders[%d] = %q, want %q", i, RequestHeaders[i], want[i])
+		}
 	}
 }

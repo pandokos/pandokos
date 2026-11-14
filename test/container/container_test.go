@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -54,7 +55,9 @@ func TestImage(t *testing.T) {
 	if err := os.Chmod(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for name, v := range map[string]string{"openai_api_key": fixtures.CanaryProviderKey} {
+	// The secret of the tenant's credential, read by the CLI inside the container.
+	up.Accept(fixtures.CanaryCredential)
+	for name, v := range map[string]string{"provider_secret": fixtures.CanaryCredential} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(v+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -90,7 +93,7 @@ func TestImage(t *testing.T) {
 
 	// The image creates the schema with its migrate command.
 	migrateArgs := append(append([]string{"run", "--rm"}, hardened...), dbEnv...)
-	if out := docker(t, append(migrateArgs, image, "migrate")...); !strings.Contains(out, "schema is at version 4") {
+	if out := docker(t, append(migrateArgs, image, "migrate")...); !strings.Contains(out, "schema is at version 5") {
 		t.Fatalf("migrate output: %q", out)
 	}
 
@@ -124,8 +127,6 @@ func TestImage(t *testing.T) {
 	serveArgs = append(serveArgs,
 		"-e", "PANDOKOS_LISTENERS_INFERENCE_ADDRESS=127.0.0.1:"+port,
 		"-e", "PANDOKOS_LISTENERS_ADMIN_ADDRESS="+adminAddr,
-		"-e", "PANDOKOS_SKELETON_OPENAI_API_KEY_FILE=/run/secrets/openai_api_key",
-		"-e", "PANDOKOS_SKELETON_OPENAI_BASE_URL="+up.BaseURL(),
 		"-e", "PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE=/run/secrets/pandokos_kek",
 		image)
 	id := docker(t, serveArgs...)
@@ -163,20 +164,53 @@ func TestImage(t *testing.T) {
 	}
 	inferenceKey := km[1]
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, base+"/openai/v1/chat/completions",
-		strings.NewReader(`{"model":"fake-basic","stream":true,"messages":[{"role":"user","content":"`+fixtures.CanaryPrompt+`"}]}`))
-	req.Header.Set("Authorization", "Bearer "+inferenceKey)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	// The catalogue route: the default endpoint of openai is the fake provider, as seen from the
+	// container (host networking), marked private; the model exists; the tenant has a credential.
+	cli("platform.key", "endpoint", "update", "--base-url", up.URL(), "--private", "openai", "default")
+	cli("platform.key", "model", "create", "--availability", "all", "openai/"+fakeprovider.ModelBasic)
+	cli("admin.key", "credential", "create", "--provider", "openai", "--secret-file", "/run/secrets/provider_secret", "container-credential")
+
+	call := func() (int, string, string) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, base+"/openai/v1/chat/completions",
+			strings.NewReader(`{"model":"fake-basic","stream":true,"messages":[{"role":"user","content":"`+fixtures.CanaryPrompt+`"}]}`))
+		req.Header.Set("Authorization", "Bearer "+inferenceKey)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return 0, "", err.Error()
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(bufio.NewReader(resp.Body))
+		return resp.StatusCode, resp.Header.Get("X-Pandokos-Error"), string(body)
+	}
+	// The server learns of the endpoint change through a notification.
+	var status int
+	var code, body string
+	testutil.Eventually(t, 20*time.Second, "the streaming call through the catalogue route", func() bool {
+		status, code, body = call()
+		return status == 200
+	})
+	if !strings.HasSuffix(body, "data: [DONE]\n\n") {
+		t.Fatalf("streaming call: %d %q", status, body)
+	}
+
+	// The same fake, now through a public endpoint: the admin API refuses an http URL or a
+	// loopback literal there, so the endpoint is https://localhost:<port>. It passes the
+	// validation, and the guard refuses the resolved loopback address when connecting, before
+	// any TLS handshake.
+	upURL, err := url.Parse(up.URL())
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, _ := io.ReadAll(bufio.NewReader(resp.Body))
-	resp.Body.Close()
-	if resp.StatusCode != 200 || !strings.HasSuffix(string(body), "data: [DONE]\n\n") {
-		t.Fatalf("streaming call: %d %q", resp.StatusCode, body)
+	cli("platform.key", "endpoint", "update", "--base-url", "https://localhost:"+upURL.Port(), "--private=false", "openai", "default")
+	testutil.Eventually(t, 20*time.Second, "the refusal of a private address on a public endpoint", func() bool {
+		status, code, body = call()
+		return status != 200
+	})
+	if status != 502 || code != "upstream_unreachable" {
+		t.Fatalf("call to a private address through a public endpoint: %d %q %q", status, code, body)
 	}
 
 	docker(t, "stop", "-t", "10", id)
@@ -184,6 +218,9 @@ func TestImage(t *testing.T) {
 		t.Errorf("exit code %s", code)
 	}
 	logs := docker(t, "logs", id)
+	if !strings.Contains(logs, "egress blocked") {
+		t.Errorf("the container did not log the refusal of the private address:\n%s", logs)
+	}
 	// The key was read, the version is announced, and the mode of the file is warned about (T-362).
 	if !strings.Contains(logs, `"msg":"vault ready"`) || !strings.Contains(logs, `"kek_provider":"local"`) {
 		t.Errorf("the container did not log `vault ready`:\n%s", logs)

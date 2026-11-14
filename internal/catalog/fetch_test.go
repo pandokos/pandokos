@@ -2,11 +2,14 @@ package catalog
 
 import (
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"net"
+	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,9 +17,9 @@ import (
 	"github.com/pandokos/pandokos/test/testutil"
 )
 
-// testRoots trusts the certificate authority of testutil.PriceServer. The product reads the
-// system roots; the unexported roots option is how the unit test substitutes them (the
-// end-to-end tests use SSL_CERT_FILE instead).
+// testRoots trusts the certificate authority of testutil.PriceServer. Fetch takes its transport
+// from the caller (the guard in production); the unit test builds one that trusts the test
+// authority.
 func testRoots(t *testing.T) *x509.CertPool {
 	t.Helper()
 	pem, err := os.ReadFile(testutil.SSLCertFile(t))
@@ -28,6 +31,18 @@ func testRoots(t *testing.T) *x509.CertPool {
 		t.Fatal("the test certificate authority is not PEM")
 	}
 	return pool
+}
+
+// transportWith returns a plain transport that trusts roots (the system roots when nil), the
+// way the egress guard is configured, and closes it at cleanup.
+func transportWith(t *testing.T, roots *x509.CertPool) http.RoundTripper {
+	t.Helper()
+	tr := &http.Transport{
+		TLSClientConfig:    &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots},
+		DisableCompression: true, // the request carries Accept and User-Agent only
+	}
+	t.Cleanup(tr.CloseIdleConnections)
+	return tr
 }
 
 func fetchClass(t *testing.T, err error) string {
@@ -46,7 +61,7 @@ func TestFetch(t *testing.T) {
 
 	t.Run("200 is accepted and returned whole", func(t *testing.T) {
 		u := testutil.PriceServer(t, body, testutil.PriceOK)
-		got, err := Fetch(ctx, u, FetchOptions{roots: testRoots(t)})
+		got, err := Fetch(ctx, u, FetchOptions{Transport: transportWith(t, testRoots(t))})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -71,7 +86,7 @@ func TestFetch(t *testing.T) {
 			t.Run(c.name, func(t *testing.T) {
 				u := testutil.PriceServer(t, body, c.behaviour)
 				start := time.Now()
-				got, err := Fetch(ctx, u, FetchOptions{roots: testRoots(t), Timeout: c.timeout})
+				got, err := Fetch(ctx, u, FetchOptions{Transport: transportWith(t, testRoots(t)), Timeout: c.timeout})
 				if err == nil {
 					t.Fatalf("accepted: %d bytes", len(got))
 				}
@@ -98,7 +113,7 @@ func TestFetch(t *testing.T) {
 		}
 		addr := l.Addr().String()
 		l.Close()
-		_, err = Fetch(ctx, "https://"+addr+"/data.json", FetchOptions{roots: testRoots(t), Timeout: 5 * time.Second})
+		_, err = Fetch(ctx, "https://"+addr+"/data.json", FetchOptions{Transport: transportWith(t, testRoots(t)), Timeout: 5 * time.Second})
 		if class := fetchClass(t, err); class != "unreachable" {
 			t.Errorf("class %q (%v)", class, err)
 		}
@@ -107,7 +122,7 @@ func TestFetch(t *testing.T) {
 	t.Run("a certificate nobody trusts is unreachable", func(t *testing.T) {
 		u := testutil.PriceServer(t, body, testutil.PriceOK)
 		// Empty roots: the system pool of the machine does not contain the test authority.
-		_, err := Fetch(ctx, u, FetchOptions{Timeout: 5 * time.Second})
+		_, err := Fetch(ctx, u, FetchOptions{Transport: transportWith(t, nil), Timeout: 5 * time.Second})
 		if class := fetchClass(t, err); class != "unreachable" {
 			t.Errorf("class %q (%v)", class, err)
 		}
@@ -123,7 +138,7 @@ func TestFetch(t *testing.T) {
 			t.Fatalf("%d bytes", len(doc))
 		}
 		u := testutil.PriceServer(t, doc, testutil.PriceOK)
-		got, err := Fetch(ctx, u, FetchOptions{roots: testRoots(t), Timeout: 30 * time.Second})
+		got, err := Fetch(ctx, u, FetchOptions{Transport: transportWith(t, testRoots(t)), Timeout: 30 * time.Second})
 		if err != nil || len(got) != 16<<20 {
 			t.Fatalf("%d bytes, %v", len(got), err)
 		}
@@ -134,7 +149,7 @@ func TestFetch(t *testing.T) {
 		cctx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
 		defer cancel()
 		start := time.Now()
-		_, err := Fetch(cctx, u, FetchOptions{roots: testRoots(t)})
+		_, err := Fetch(cctx, u, FetchOptions{Transport: transportWith(t, testRoots(t))})
 		if err == nil {
 			t.Fatal("accepted")
 		}
@@ -148,14 +163,14 @@ func TestFetch(t *testing.T) {
 	})
 
 	t.Run("an http URL is refused before any connection", func(t *testing.T) {
-		if _, err := Fetch(ctx, "http://example.invalid/data.json", FetchOptions{}); err == nil {
+		if _, err := Fetch(ctx, "http://example.invalid/data.json", FetchOptions{Transport: transportWith(t, nil)}); err == nil {
 			t.Error("accepted")
 		}
 	})
 
 	t.Run("only the two headers are sent", func(t *testing.T) {
 		u, requests := testutil.PriceServerOn(t, body, testutil.PriceOK, "127.0.0.1")
-		if _, err := Fetch(ctx, u, FetchOptions{roots: testRoots(t)}); err != nil {
+		if _, err := Fetch(ctx, u, FetchOptions{Transport: transportWith(t, testRoots(t))}); err != nil {
 			t.Fatal(err)
 		}
 		reqs := requests()
@@ -183,57 +198,55 @@ func TestFetch(t *testing.T) {
 	t.Run("a response byte is never in an error", func(t *testing.T) {
 		const marker = "synthetic-marker-response-byte"
 		u := testutil.PriceServer(t, []byte(marker), testutil.PriceNotFound)
-		_, err := Fetch(ctx, u, FetchOptions{roots: testRoots(t)})
+		_, err := Fetch(ctx, u, FetchOptions{Transport: transportWith(t, testRoots(t))})
 		if err == nil || strings.Contains(err.Error(), marker) {
 			t.Fatalf("%v", err)
 		}
 		u = testutil.PriceServer(t, []byte(marker), testutil.PriceRedirect)
-		_, err = Fetch(ctx, u, FetchOptions{roots: testRoots(t)})
+		_, err = Fetch(ctx, u, FetchOptions{Transport: transportWith(t, testRoots(t))})
 		if err == nil || strings.Contains(err.Error(), marker) {
 			t.Fatalf("%v", err)
 		}
 	})
 
-	t.Run("HTTPS_PROXY and HTTP_PROXY are not used", func(t *testing.T) {
-		l, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
+	t.Run("the transport given is the one used, and Fetch needs one", func(t *testing.T) {
+		u, requests := testutil.PriceServerOn(t, body, testutil.PriceOK, "127.0.0.1")
+		var calls atomic.Int64
+		counting := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			calls.Add(1)
+			return transportWith(t, testRoots(t)).RoundTrip(r)
+		})
+		if _, err := Fetch(ctx, u, FetchOptions{Transport: counting}); err != nil {
 			t.Fatal(err)
 		}
-		contacted := make(chan struct{}, 1)
-		go func() {
-			for {
-				c, err := l.Accept()
-				if err != nil {
-					return
-				}
-				select {
-				case contacted <- struct{}{}:
-				default:
-				}
-				c.Close()
-			}
-		}()
-		t.Cleanup(func() { l.Close() })
-		proxy := "http://" + l.Addr().String()
-		for _, k := range []string{"HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy", "ALL_PROXY", "all_proxy"} {
-			t.Setenv(k, proxy)
+		if calls.Load() != 1 || len(requests()) != 1 {
+			t.Errorf("%d calls of the transport, %d requests at the server", calls.Load(), len(requests()))
 		}
-		t.Setenv("NO_PROXY", "")
-		t.Setenv("no_proxy", "")
-		// Go never proxies a loopback destination, so the server is reached through an address
-		// of the machine that is not loopback when there is one; otherwise through loopback.
-		host := testutil.NonLoopbackHost()
-		if host == "" {
-			host = "127.0.0.1"
+		_, err := Fetch(ctx, u, FetchOptions{})
+		if err == nil {
+			t.Fatal("a nil transport is accepted")
 		}
-		u, _ := testutil.PriceServerOn(t, body, testutil.PriceOK, host)
-		if _, err := Fetch(ctx, u, FetchOptions{roots: testRoots(t), Timeout: 5 * time.Second}); err != nil {
-			t.Fatalf("a fetch with a proxy in the environment: %v", err)
+		var fe *FetchError
+		if errors.As(err, &fe) && strings.Contains(err.Error(), "127.0.0.1") {
+			t.Errorf("the error names the URL: %v", err)
 		}
-		select {
-		case <-contacted:
-			t.Error("the proxy of the environment was contacted")
-		default:
+		if strings.Contains(err.Error(), u) {
+			t.Errorf("the error names the URL: %v", err)
+		}
+		if n := len(requests()); n != 1 {
+			t.Errorf("Fetch without a transport made a request: %d", n)
+		}
+	})
+
+	t.Run("the transport's refusal is a failure of the download, without its text", func(t *testing.T) {
+		const marker = "synthetic-marker-refusal-text"
+		refusing := roundTripFunc(func(*http.Request) (*http.Response, error) { return nil, errors.New(marker) })
+		_, err := Fetch(ctx, "https://prices.example.test/data.json", FetchOptions{Transport: refusing})
+		if class := fetchClass(t, err); class != "unreachable" {
+			t.Errorf("class %q", class)
+		}
+		if strings.Contains(err.Error(), marker) || strings.Contains(err.Error(), "prices.example.test") {
+			t.Errorf("the error quotes the refusal: %v", err)
 		}
 	})
 
@@ -247,3 +260,8 @@ func TestFetch(t *testing.T) {
 	})
 
 }
+
+// roundTripFunc is an http.RoundTripper made of a function.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

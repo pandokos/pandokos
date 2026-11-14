@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"sort"
 	"strings"
 	"testing"
@@ -13,8 +12,9 @@ import (
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/authz"
+	"github.com/pandokos/pandokos/internal/family"
+	"github.com/pandokos/pandokos/internal/family/openai"
 	"github.com/pandokos/pandokos/internal/gateway"
-	"github.com/pandokos/pandokos/internal/secret"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/telemetry"
 	"github.com/pandokos/pandokos/test/apitest"
@@ -423,15 +423,15 @@ func inferenceHandler(t *testing.T, w *apiWorld) (*httptest.Server, *testutil.Lo
 		t.Fatal(err)
 	}
 	up := fakeprovider.New(t)
-	base, err := url.Parse(up.BaseURL())
-	if err != nil {
-		t.Fatal(err)
-	}
-	tr := gateway.NewTransport(2 * time.Second)
-	t.Cleanup(tr.CloseIdleConnections)
+	guard := testutil.TestGuard(t)
 	h, err := gateway.New(gateway.Options{
-		Logger: logger, BaseURL: base, ProviderKey: secret.New(fixtures.CanaryProviderKey), Authenticator: auth,
-		MaxRequestBodyBytes: 1 << 20, RequestBodyReadTimeout: 2 * time.Second, MaxRequestDuration: 10 * time.Second, Transport: tr,
+		Logger: logger, Authenticator: auth,
+		Catalogue:     testutil.StaticCatalogue(map[string]string{"openai": "openai"}, map[string]gateway.Target{"openai/fake-basic": testutil.TargetFor(up, "openai", "fake-basic")}),
+		Credentials:   testutil.StaticCredentials(map[string]string{"openai": fixtures.CanaryProviderKey}),
+		Families:      map[string]family.Adapter{"openai": openai.Adapter()},
+		DefaultFamily: "openai",
+		Public:        guard.Transport(false), Private: guard.Transport(true),
+		MaxRequestBodyBytes: 1 << 20, RequestBodyReadTimeout: 2 * time.Second, MaxRequestDuration: 10 * time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)

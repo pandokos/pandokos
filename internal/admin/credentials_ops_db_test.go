@@ -11,6 +11,7 @@ import (
 	"github.com/pandokos/pandokos/internal/admin"
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/authz"
+	"github.com/pandokos/pandokos/internal/egress"
 	"github.com/pandokos/pandokos/internal/vault"
 	"github.com/pandokos/pandokos/test/apitest"
 	"github.com/pandokos/pandokos/test/fakeprovider"
@@ -381,9 +382,8 @@ func TestCredentialAudit(t *testing.T) {
 func TestValidationAtWrite(t *testing.T) {
 	fake := fakeprovider.New(t)
 	fake.Accept(fixtures.CanaryCredential)
-	w := newCW(t, "validated", func(o *admin.Options) {
-		o.Validators = map[string]vault.Validator{"openai": vault.NewOpenAIValidator(parseURL(t, fake.BaseURL()), 700*time.Millisecond)}
-	})
+	w := newCW(t, "validated", withValidator(t, 700*time.Millisecond))
+	w.pointAt(t, "openai", "default", fake)
 	api := w.api
 	count := func() int {
 		var n int
@@ -501,16 +501,14 @@ func TestValidationAtWrite(t *testing.T) {
 		fake.ModelsBehaviour("")
 	})
 
-	t.Run("validate for a provider without a validator is a mistake of the request", func(t *testing.T) {
+	t.Run("validate where there is nothing to validate against is a mistake of the request", func(t *testing.T) {
 		before := len(fake.Requests())
-		r := w.do(t, "POST", w.path(), w.admin, map[string]any{"provider": "anthropic", "label": "claude", "secret": fixtures.CanaryCredential, "validate": true})
-		problemWith(t, r, 400, adminapi.ProblemCodeInvalidRequest, "validate")
-		if n := len(fake.Requests()); n != before {
-			t.Errorf("the provider received %d requests", n-before)
-		}
-		c := w.create(t, "anthropic", "claude", fixtures.CanaryCredential)
-		r = w.do(t, "PUT", w.path(c.ID, "secret"), w.admin, map[string]any{"secret": fixtures.CanaryCredential, "validate": true})
-		problemWith(t, r, 400, adminapi.ProblemCodeInvalidRequest, "validate")
+		// No validator at all.
+		bare := newCW(t, "bare")
+		problemWith(t, bare.do(t, "POST", bare.path(), bare.admin, map[string]any{"provider": "openai", "label": "x", "secret": fixtures.CanaryCredential, "validate": true}), 400, adminapi.ProblemCodeInvalidRequest, "validate")
+		// A provider without an endpoint has nothing to ask.
+		name := w.newProvider(t, "openai", "", false)
+		problemWith(t, w.do(t, "POST", w.path(), w.admin, map[string]any{"provider": name, "label": "x", "secret": fixtures.CanaryCredential, "validate": true}), 400, adminapi.ProblemCodeInvalidRequest, "validate")
 		if n := len(fake.Requests()); n != before {
 			t.Errorf("the provider received %d requests", n-before)
 		}
@@ -842,3 +840,125 @@ func TestCredentialPermissions(t *testing.T) {
 }
 
 func keyPath(tenantID string) string { return "/v1/tenants/" + tenantID + "/virtual-keys" }
+
+// guardValidator is the validator of the administration plane over a real egress guard.
+func guardValidator(t *testing.T, timeout time.Duration, opts ...func(*egress.Options)) vault.Validator {
+	t.Helper()
+	g := testutil.TestGuard(t, opts...)
+	return vault.NewValidator(g.Transport(false), g.Transport(true), timeout)
+}
+
+// withValidator gives the handler a validator over a real guard.
+func withValidator(t *testing.T, timeout time.Duration, opts ...func(*egress.Options)) func(*admin.Options) {
+	t.Helper()
+	return func(o *admin.Options) { o.Validator = guardValidator(t, timeout, opts...) }
+}
+
+// pointAt makes an endpoint of a provider the fake provider, as a private endpoint.
+func (w *cw) pointAt(t *testing.T, provider, endpoint string, up *fakeprovider.Server) {
+	t.Helper()
+	r := w.do(t, "PATCH", "/v1/providers/"+provider+"/endpoints/"+endpoint, w.api.PlatformKey(), map[string]any{"base_url": up.URL(), "private": true})
+	if r.Status != 200 {
+		t.Fatalf("pointing %s/%s at the fake: %d %s", provider, endpoint, r.Status, r.Body)
+	}
+}
+
+// newProvider creates a provider of the given family with one endpoint and returns its name.
+func (w *cw) newProvider(t *testing.T, family, baseURL string, private bool) string {
+	t.Helper()
+	name := apitest.UniqueName("synthetic")
+	if r := w.do(t, "POST", "/v1/providers", w.api.PlatformKey(), map[string]any{"name": name, "api_family": family}); r.Status != 201 {
+		t.Fatalf("create provider: %d %s", r.Status, r.Body)
+	}
+	if baseURL != "" {
+		if r := w.do(t, "POST", "/v1/providers/"+name+"/endpoints", w.api.PlatformKey(), map[string]any{"name": "main", "base_url": baseURL, "private": private}); r.Status != 201 {
+			t.Fatalf("create endpoint: %d %s", r.Status, r.Body)
+		}
+	}
+	return name
+}
+
+// TestValidationUsesTheCatalogue is T-445: the target of a validation comes from the catalogue.
+func TestValidationUsesTheCatalogue(t *testing.T) {
+	first, second, claude := fakeprovider.New(t), fakeprovider.New(t), fakeprovider.New(t)
+	for _, f := range []*fakeprovider.Server{first, second, claude} {
+		f.Accept(fixtures.CanaryCredential)
+	}
+	tls := fakeprovider.NewTLS(t)
+	tls.Accept(fixtures.CanaryCredential)
+	w := newCW(t, "catalogue", withValidator(t, 2*time.Second))
+	w.pointAt(t, "openai", "default", first)
+	secondName := w.newProvider(t, "openai", second.URL(), true)
+	claudeName := w.newProvider(t, "anthropic", claude.URL(), true)
+	disabled := w.newProvider(t, "openai", second.URL(), true)
+	if r := w.do(t, "PATCH", "/v1/providers/"+disabled, w.api.PlatformKey(), map[string]any{"enabled": false}); r.Status != 200 {
+		t.Fatalf("disable: %d %s", r.Status, r.Body)
+	}
+	noEndpoint := w.newProvider(t, "openai", "", false)
+	local := w.newProvider(t, "openai", "https://localhost:"+portOf(t, tls.URL()), false)
+
+	var responses []string
+	create := func(provider string) *apitest.Response {
+		r := w.do(t, "POST", w.path(), w.admin, map[string]any{"provider": provider, "label": apitest.UniqueName("c"), "secret": fixtures.CanaryCredential, "validate": true})
+		responses = append(responses, string(r.Body)+fmt.Sprint(r.Header))
+		return r
+	}
+
+	t.Run("a provider of family openai reaches its own default endpoint", func(t *testing.T) {
+		if r := create(secondName); r.Status != 201 {
+			t.Fatalf("%d %s", r.Status, r.Body)
+		}
+		reqs := second.Requests()
+		if len(reqs) != 1 || reqs[0].Method != "GET" || reqs[0].Path != "/v1/models" || reqs[0].Header.Get("Authorization") != "Bearer "+fixtures.CanaryCredential {
+			t.Fatalf("the second provider received %+v", reqs)
+		}
+		if n := len(first.Requests()); n != 0 {
+			t.Errorf("the seeded provider's endpoint received %d requests for another provider", n)
+		}
+		if r := create("openai"); r.Status != 201 || len(first.Requests()) != 1 {
+			t.Errorf("the seeded provider: %d, %d requests at its endpoint", r.Status, len(first.Requests()))
+		}
+	})
+
+	t.Run("a provider of family anthropic is validated the way of its family", func(t *testing.T) {
+		if r := create(claudeName); r.Status != 201 {
+			t.Fatalf("%d %s", r.Status, r.Body)
+		}
+		reqs := claude.Requests()
+		if len(reqs) != 1 || reqs[0].Path != "/v1/models" || reqs[0].Header.Get("X-Api-Key") != fixtures.CanaryCredential ||
+			reqs[0].Header.Get("Anthropic-Version") == "" || reqs[0].Header.Get("Authorization") != "" {
+			t.Fatalf("the anthropic provider received %+v", reqs)
+		}
+	})
+
+	t.Run("where there is nothing to validate against", func(t *testing.T) {
+		before := len(second.Requests()) + len(first.Requests()) + len(claude.Requests())
+		for _, provider := range []string{disabled, noEndpoint} { // a disabled provider; one without an endpoint
+			problemWith(t, create(provider), 400, adminapi.ProblemCodeInvalidRequest, "validate")
+		}
+		bare := newCW(t, "catalogue-bare") // no validator
+		problemWith(t, bare.do(t, "POST", bare.path(), bare.admin, map[string]any{"provider": "openai", "label": "x", "secret": fixtures.CanaryCredential, "validate": true}), 400, adminapi.ProblemCodeInvalidRequest, "validate")
+		if n := len(second.Requests()) + len(first.Requests()) + len(claude.Requests()); n != before {
+			t.Errorf("%d requests were made", n-before)
+		}
+	})
+
+	t.Run("a public endpoint named localhost is refused by the guard", func(t *testing.T) {
+		p := expect(t, create(local), 502, adminapi.ProblemCodeValidationUnavailable)
+		if p.Detail != "The provider could not confirm the credential. Nothing was stored." {
+			t.Errorf("%+v", p)
+		}
+		if n := tls.Connections(); n != 0 || len(tls.Requests()) != 0 {
+			t.Errorf("the fake accepted %d connections and received %d requests", n, len(tls.Requests()))
+		}
+	})
+
+	testutil.AssertAbsent(t, "a response", strings.Join(responses, "\n"), testutil.SecretForms(fixtures.CanaryCredential)...)
+	testutil.AssertAbsent(t, "the logs", w.api.Logs.String(), testutil.SecretForms(fixtures.CanaryCredential)...)
+}
+
+func portOf(t *testing.T, rawURL string) string {
+	t.Helper()
+	u := parseURL(t, rawURL)
+	return u.Port()
+}

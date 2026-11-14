@@ -19,10 +19,7 @@ import (
 	"github.com/pandokos/pandokos/test/testutil"
 )
 
-const (
-	envAPIKey  = "PANDOKOS_SKELETON_OPENAI_API_KEY_FILE"
-	envKEKFile = "PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE"
-)
+const envKEKFile = "PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE"
 
 func randomSecret(t *testing.T) string {
 	t.Helper()
@@ -46,12 +43,11 @@ func dbServeEnv(t *testing.T) []string {
 	}
 }
 
-// validSource returns a Source for the serve purpose with the provider key file and the database
-// settings in the environment.
+// validSource returns a Source for the serve purpose with the key-encryption key file and the
+// database settings in the environment.
 func validSource(t *testing.T) Source {
 	t.Helper()
 	return Source{Environ: append([]string{
-		envAPIKey + "=" + testutil.WriteSecret(t, "key", fixtures.CanaryProviderKey),
 		envKEKFile + "=" + testutil.WriteKEK(t),
 	}, dbServeEnv(t)...)}
 }
@@ -207,12 +203,12 @@ func TestDefaults(t *testing.T) {
 		{"database.owner.password_file", d.Database.Owner.PasswordFile, ""},
 		{"vault.kek.provider", d.Vault.KEK.Provider, "local"},
 		{"vault.kek.local.key_file", d.Vault.KEK.Local.KeyFile, ""},
+		{"upstream.tls.ca_file", d.Upstream.TLS.CAFile, ""},
+		{"upstream.proxy.url", d.Upstream.Proxy.URL, ""},
 		{"pricing.import_at_start", d.Pricing.ImportAtStart, true},
 		{"pricing.refresh.enabled", d.Pricing.Refresh.Enabled, false},
 		{"pricing.refresh.url", d.Pricing.Refresh.URL, "https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json"},
 		{"pricing.refresh.interval", time.Duration(d.Pricing.Refresh.Interval), 24 * time.Hour},
-		{"skeleton.openai.base_url", d.Skeleton.OpenAI.BaseURL, "https://api.openai.com/v1"},
-		{"skeleton.openai.api_key_file", d.Skeleton.OpenAI.APIKeyFile, ""},
 	}
 	for _, c := range checks {
 		if !reflect.DeepEqual(c.got, c.want) {
@@ -242,6 +238,8 @@ var wantKeys = []string{
 	"limits.request_body_read_timeout",
 	"limits.max_request_duration",
 	"upstream.connect_timeout",
+	"upstream.tls.ca_file",
+	"upstream.proxy.url",
 	"shutdown.drain_timeout",
 	"cache.principal_ttl",
 	"cache.credential_ttl",
@@ -270,17 +268,14 @@ var wantKeys = []string{
 	"pricing.refresh.enabled",
 	"pricing.refresh.url",
 	"pricing.refresh.interval",
-	"skeleton.openai.base_url",
-	"skeleton.openai.api_key_file",
 }
 
 var wantDefaultText = []string{"info", "0.0.0.0:8080", "10s", "120s", "65536", "", "", "TLS1.2",
 	"127.0.0.1:8081", "10s", "120s", "65536", "", "", "TLS1.2", "false",
-	"10485760", "30s", "10m", "10s", "30s", "30s", "30s", "5m", "30s",
+	"10485760", "30s", "10m", "10s", "", "", "30s", "30s", "30s", "5m", "30s",
 	"", "", "pandokos", "verify-full", "", "5s", "pandokos_gateway", "", "10", "pandokos_admin", "", "10", "pandokos_worker", "", "5", "pandokos_owner", "",
 	"local", "",
-	"true", "false", "https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json", "24h",
-	"https://api.openai.com/v1", ""}
+	"true", "false", "https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json", "24h"}
 
 func leafKeys(t reflect.Type, prefix string, out *[]string) {
 	for i := 0; i < t.NumField(); i++ {
@@ -407,8 +402,8 @@ func keyCases(t *testing.T) []keyCase {
 		{key: "database.owner.password_file", a: mk("owp_a", "pw-owner-a"), b: mk("owp_b", "pw-owner-b")},
 		{key: "vault.kek.provider", a: "local", b: "local"},
 		{key: "vault.kek.local.key_file", a: testutil.WriteKEK(t), b: testutil.WriteKEK(t)},
-		{key: "skeleton.openai.base_url", a: "http://127.0.0.1:1/v1", b: "http://127.0.0.1:2/v1"},
-		{key: "skeleton.openai.api_key_file", a: mk("ka", "key-a"), b: mk("kb", "key-b")},
+		{key: "upstream.tls.ca_file", a: testutil.WriteCA(t), b: testutil.WriteCA(t)},
+		{key: "upstream.proxy.url", a: "http://proxy-a.example.test:3128", b: "https://proxy-b.example.test:3129"},
 	}
 }
 
@@ -517,10 +512,10 @@ func field(c *Config, key string) string {
 		return c.Database.Owner.User
 	case "database.owner.password_file":
 		return c.Database.Owner.PasswordFile
-	case "skeleton.openai.base_url":
-		return c.Skeleton.OpenAI.BaseURL
-	case "skeleton.openai.api_key_file":
-		return c.Skeleton.OpenAI.APIKeyFile
+	case "upstream.tls.ca_file":
+		return c.Upstream.TLS.CAFile
+	case "upstream.proxy.url":
+		return c.Upstream.Proxy.URL
 	}
 	panic("unknown key " + key)
 }
@@ -599,8 +594,8 @@ func TestLoadFile(t *testing.T) {
 			t.Errorf("%s: got %q, want %q", kc.key, got, want)
 		}
 	}
-	if c.Skeleton.OpenAI.APIKey.Reveal() != "key-a" {
-		t.Error("the provider key was not read from its file")
+	if c.Upstream.TLS.RootCAs == nil {
+		t.Error("the upstream roots were not built from the CA file")
 	}
 	if got, err := os.ReadFile(caseOf(t, cases, "vault.kek.local.key_file").a); err != nil || c.Vault.KEK.Local.Key.Reveal() != strings.TrimSpace(string(got)) {
 		t.Errorf("the key-encryption key was not read from its file: %v", err)
@@ -611,8 +606,8 @@ func TestLoadFile(t *testing.T) {
 	if c.Database.DirectHost != "db-direct-a.example.test" || c.Database.DirectPort != 5432 {
 		t.Errorf("DirectHost and DirectPort: %q %d", c.Database.DirectHost, c.Database.DirectPort)
 	}
-	if c.Skeleton.OpenAI.ParsedBaseURL == nil || c.Skeleton.OpenAI.ParsedBaseURL.Host != "127.0.0.1:1" {
-		t.Error("ParsedBaseURL not filled")
+	if c.Upstream.Proxy.ParsedURL == nil || c.Upstream.Proxy.ParsedURL.Host != "proxy-a.example.test:3128" {
+		t.Error("the parsed proxy URL was not filled")
 	}
 	d := c.Database
 	if d.Host != "db-a.example.test" || d.Port != 5432 {
@@ -689,7 +684,7 @@ func TestNoFile(t *testing.T) {
 func TestUnknownKeyRejected(t *testing.T) {
 	inputs := map[string]string{
 		"unknown key":        "nope: 1\n",
-		"secret as value":    "skeleton:\n  openai:\n    api_key: " + fixtures.CanaryProviderKey + "\n",
+		"secret as value":    "upstream:\n  proxy:\n    password: " + fixtures.CanaryProviderKey + "\n",
 		"second document":    "log:\n  level: info\n---\nlog:\n  level: debug\n",
 		"unknown nested key": "log:\n  levl: info\n",
 	}
@@ -723,7 +718,7 @@ func TestUnknownKeyRejected(t *testing.T) {
 
 func TestYAMLErrorsDoNotQuoteValues(t *testing.T) {
 	inputs := []string{
-		"skeleton: " + fixtures.CanaryProviderKey + "\n",
+		"upstream: " + fixtures.CanaryProviderKey + "\n",
 		"listeners:\n  inference:\n    max_header_bytes: " + fixtures.CanaryProviderKey + "\n",
 		"log: [" + fixtures.CanaryProviderKey + "]\n",
 		"log:\n  level: {" + fixtures.CanaryProviderKey + ": 1}\n",
@@ -794,12 +789,6 @@ func TestValidation(t *testing.T) {
 		{"listeners.inference.max_header_bytes", "2000000"},
 		{"limits.max_request_body_bytes", "0"},
 		{"limits.max_request_body_bytes", "104857601"},
-		{"skeleton.openai.base_url", "ftp://x/v1"},
-		{"skeleton.openai.base_url", "https://user:pw@x/v1"},
-		{"skeleton.openai.base_url", "https://x/v1?a=b"},
-		{"skeleton.openai.base_url", "https://x/v1#f"},
-		{"skeleton.openai.base_url", "/v1"},
-		{"skeleton.openai.base_url", "https:///v1"},
 	}
 	envOf := map[string]string{}
 	for _, k := range Keys() {
@@ -826,14 +815,6 @@ func TestValidation(t *testing.T) {
 			mustLoad(t, src)
 		}
 	})
-	t.Run("trailing slash is removed", func(t *testing.T) {
-		src := validSource(t)
-		src.Environ = append(src.Environ, envOf["skeleton.openai.base_url"]+"=https://x/v1/")
-		c, _ := mustLoad(t, src)
-		if c.Skeleton.OpenAI.ParsedBaseURL.Path != "/v1" {
-			t.Errorf("path %q", c.Skeleton.OpenAI.ParsedBaseURL.Path)
-		}
-	})
 }
 
 func TestAllProblemsReported(t *testing.T) {
@@ -856,39 +837,6 @@ func TestAllProblemsReported(t *testing.T) {
 	}
 }
 
-func TestSecretFiles(t *testing.T) {
-	other := func(name, content string) string { return testutil.WriteSecret(t, name, content) }
-	t.Run("read and trimmed", func(t *testing.T) {
-		src := Source{Environ: append([]string{
-			envAPIKey + "=" + writeFile(t, "\t"+fixtures.CanaryProviderKey+"\r\n"),
-			envKEKFile + "=" + testutil.WriteKEK(t),
-		}, dbServeEnv(t)...)}
-		c, _ := mustLoad(t, src)
-		if c.Skeleton.OpenAI.APIKey.Reveal() != fixtures.CanaryProviderKey {
-			t.Error("the provider key was not trimmed or not read")
-		}
-	})
-	bad := []struct {
-		name    string
-		environ []string
-		key     string
-	}{
-		{"key file missing", []string{envAPIKey + "=/nonexistent/key"}, "skeleton.openai.api_key_file"},
-		{"key empty", []string{envAPIKey + "=" + writeFile(t, " ")}, "skeleton.openai.api_key_file"},
-		{"key not set", nil, "skeleton.openai.api_key_file"},
-		{"key with a control character", []string{envAPIKey + "=" + other("k9", "a\x01b")}, "skeleton.openai.api_key_file"},
-	}
-	for _, b := range bad {
-		t.Run(b.name, func(t *testing.T) {
-			_, _, err := Load(Source{Environ: append(b.environ, dbServeEnv(t)...)})
-			if err == nil || !hasProblem(err, b.key) {
-				t.Fatalf("expected a problem under %s, got %v", b.key, err)
-			}
-			testutil.AssertNoCanary(t, "error text", err.Error())
-		})
-	}
-}
-
 func TestWarnings(t *testing.T) {
 	envOf := map[string]string{}
 	for _, k := range Keys() {
@@ -905,21 +853,10 @@ func TestWarnings(t *testing.T) {
 		}
 		return out
 	}
-	const (
-		kURL  = "skeleton.openai.base_url"
-		kAddr = "listeners.inference.address"
-	)
-	w := warn(t, envOf[kURL]+"=http://example.com/v1", envOf[kAddr]+"=0.0.0.0:8080")
-	if w[kURL] != "the provider key is sent without TLS" {
-		t.Errorf("base_url warning: %q", w[kURL])
-	}
+	const kAddr = "listeners.inference.address"
+	w := warn(t, envOf[kAddr]+"=0.0.0.0:8080")
 	if w[kAddr] != "the listener serves plain HTTP; set listeners.inference.tls.cert_file and key_file, or terminate TLS in front of it" {
 		t.Errorf("address warning: %q", w[kAddr])
-	}
-	for _, u := range []string{"http://127.0.0.1:1/v1", "http://localhost:1/v1", "http://[::1]:1/v1", "https://example.com/v1"} {
-		if m, ok := warn(t, envOf[kURL]+"="+u, envOf[kAddr]+"=127.0.0.1:0")[kURL]; ok {
-			t.Errorf("unexpected warning for %s: %s", u, m)
-		}
 	}
 	t.Run("unknown environment variable", func(t *testing.T) {
 		w := warn(t, "PANDOKOS_BOGUS=x")
@@ -1109,9 +1046,6 @@ func TestPurpose(t *testing.T) {
 		if !c.Database.Owner.Password.IsZero() {
 			t.Error("the owner password must not be read by serve")
 		}
-		if c.Skeleton.OpenAI.APIKey.IsZero() {
-			t.Error("serve must read the provider key")
-		}
 		for _, k := range []string{"database.gateway.password_file", "database.admin.password_file", "database.worker.password_file"} {
 			s := validSource(t)
 			s.Environ = without(s.Environ, envOf[k])
@@ -1130,12 +1064,11 @@ func TestPurpose(t *testing.T) {
 		ow := randomSecret(t)
 		src := validMigrateSource(t)
 		src.Environ = append(without(src.Environ, envOf["database.owner.password_file"]), envOf["database.owner.password_file"]+"="+testutil.WriteSecret(t, "o", ow))
-		// The runtime password files and the skeleton secrets may point to files that do not exist.
+		// The runtime password files may point to files that do not exist.
 		src.Environ = append(src.Environ,
 			envOf["database.gateway.password_file"]+"=/nonexistent/gateway",
 			envOf["database.admin.password_file"]+"=/nonexistent/admin",
 			envOf["database.worker.password_file"]+"=/nonexistent/worker",
-			envAPIKey+"=/nonexistent/key",
 			envKEKFile+"=/nonexistent/kek",
 		)
 		c, _ := mustLoad(t, src)
@@ -1145,7 +1078,7 @@ func TestPurpose(t *testing.T) {
 		if c.Database.Owner.Password.Reveal() != ow {
 			t.Error("the owner password was not read")
 		}
-		if !c.Database.Gateway.Password.IsZero() || !c.Database.Admin.Password.IsZero() || !c.Database.Worker.Password.IsZero() || !c.Skeleton.OpenAI.APIKey.IsZero() {
+		if !c.Database.Gateway.Password.IsZero() || !c.Database.Admin.Password.IsZero() || !c.Database.Worker.Password.IsZero() {
 			t.Error("migrate must not read the other secrets")
 		}
 		// And it needs none of them to be set.
@@ -1529,7 +1462,6 @@ func TestInitPurposeAndNewKeys(t *testing.T) {
 			envOf["database.gateway.password_file"]+"=/nonexistent/gateway",
 			envOf["database.worker.password_file"]+"=/nonexistent/worker",
 			envOf["database.owner.password_file"]+"=/nonexistent/owner",
-			envAPIKey+"=/nonexistent/key",
 			envKEKFile+"=/nonexistent/kek",
 		)
 		c, _ := mustLoad(t, src)
@@ -1539,7 +1471,7 @@ func TestInitPurposeAndNewKeys(t *testing.T) {
 		if c.Database.Admin.Password.IsZero() {
 			t.Error("the admin password was not read")
 		}
-		if !c.Database.Gateway.Password.IsZero() || !c.Database.Worker.Password.IsZero() || !c.Database.Owner.Password.IsZero() || !c.Skeleton.OpenAI.APIKey.IsZero() {
+		if !c.Database.Gateway.Password.IsZero() || !c.Database.Worker.Password.IsZero() || !c.Database.Owner.Password.IsZero() {
 			t.Error("init read a secret it does not need")
 		}
 		mustLoad(t, validInitSource(t))
@@ -1600,25 +1532,6 @@ func TestInitPurposeAndNewKeys(t *testing.T) {
 		c, _ = mustLoad(t, validSource(t))
 		if c.Database.DirectHost != c.Database.Host || c.Database.DirectPort != c.Database.Port || c.Database.DirectHost == "" {
 			t.Errorf("without a direct address the direct host is the host: %q %d", c.Database.DirectHost, c.Database.DirectPort)
-		}
-	})
-	t.Run("the static access token is gone", func(t *testing.T) {
-		src := validSource(t)
-		src.File = writeFile(t, "skeleton:\n  access_token_file: /run/secrets/access_token\n")
-		_, _, err := Load(src)
-		msg, ok := problemMessage(err, "file")
-		if !ok || !strings.Contains(msg, "unknown key access_token_file") {
-			t.Errorf("%q %v", msg, err)
-		}
-		src = validSource(t)
-		src.Environ = append(src.Environ, "PANDOKOS_SKELETON_ACCESS_TOKEN_FILE=/run/secrets/access_token")
-		_, ws := mustLoad(t, src)
-		found := false
-		for _, w := range ws {
-			found = found || (w.Key == "environment" && w.Message == "unknown variable PANDOKOS_SKELETON_ACCESS_TOKEN_FILE ignored")
-		}
-		if !found {
-			t.Errorf("no warning for the old variable: %+v", ws)
 		}
 	})
 	t.Run("the CLI variables belong to the API commands", func(t *testing.T) {

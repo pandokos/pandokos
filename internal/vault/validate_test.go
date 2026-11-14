@@ -3,18 +3,18 @@ package vault_test
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"os"
-	"os/exec"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/pandokos/pandokos/internal/egress"
 	"github.com/pandokos/pandokos/internal/secret"
 	"github.com/pandokos/pandokos/internal/vault"
 	"github.com/pandokos/pandokos/test/fixtures"
@@ -24,7 +24,6 @@ import (
 type recorded struct {
 	Method, Path, RawQuery string
 	Header                 http.Header
-	Close                  bool
 	ContentLength          int64
 }
 
@@ -40,7 +39,7 @@ func newModels(t *testing.T, serve func(w http.ResponseWriter, r *http.Request))
 	m := &models{serve: serve}
 	m.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		m.mu.Lock()
-		m.reqs = append(m.reqs, recorded{r.Method, r.URL.Path, r.URL.RawQuery, r.Header.Clone(), r.Close, r.ContentLength})
+		m.reqs = append(m.reqs, recorded{r.Method, r.URL.Path, r.URL.RawQuery, r.Header.Clone(), r.ContentLength})
 		m.mu.Unlock()
 		m.serve(w, r)
 	}))
@@ -54,15 +53,6 @@ func (m *models) requests() []recorded {
 	return append([]recorded(nil), m.reqs...)
 }
 
-func baseOf(t *testing.T, raw string) *url.URL {
-	t.Helper()
-	u, err := url.Parse(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return u
-}
-
 func status(code int, body string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(code)
@@ -70,94 +60,191 @@ func status(code int, body string) func(http.ResponseWriter, *http.Request) {
 	}
 }
 
-// TestOpenAIValidator is T-307.
-func TestOpenAIValidator(t *testing.T) {
+// tripper is a round tripper that counts what goes through it. It is a plain transport: the
+// guard is the subject of its own tests.
+type tripper struct {
+	inner        http.RoundTripper
+	calls        atomic.Int64
+	bodyRead     atomic.Int64
+	bodiesClosed atomic.Int64
+}
+
+func newTripper() *tripper { return &tripper{inner: &http.Transport{}} }
+
+func (p *tripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	p.calls.Add(1)
+	resp, err := p.inner.RoundTrip(r)
+	if err == nil {
+		resp.Body = &countingBody{ReadCloser: resp.Body, p: p}
+	}
+	return resp, err
+}
+
+type countingBody struct {
+	io.ReadCloser
+	p *tripper
+}
+
+func (b *countingBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	b.p.bodyRead.Add(int64(n))
+	return n, err
+}
+
+func (b *countingBody) Close() error {
+	b.p.bodiesClosed.Add(1)
+	return b.ReadCloser.Close()
+}
+
+type failing struct{ err error }
+
+func (f failing) RoundTrip(*http.Request) (*http.Response, error) { return nil, f.err }
+
+// TestValidator is T-444: one validator for every family, against a target given per call.
+func TestValidator(t *testing.T) {
 	key := secret.New(fixtures.CanaryCredential)
 	echo := `{"error":{"message":"Incorrect API key provided: ` + fixtures.CanaryCredential + `.","type":"invalid_request_error"}}`
+	families := []string{"openai", "anthropic"}
+	target := func(family, base string) vault.ValidationTarget {
+		return vault.ValidationTarget{Family: family, BaseURL: base}
+	}
+	newValidator := func(timeout time.Duration) (vault.Validator, *tripper, *tripper) {
+		pub, priv := newTripper(), newTripper()
+		return vault.NewValidator(pub, priv, timeout), pub, priv
+	}
+
+	t.Run("the families it knows", func(t *testing.T) {
+		if got := vault.ValidatorFamilies(); !reflect.DeepEqual(got, []string{"anthropic", "openai"}) {
+			t.Errorf("ValidatorFamilies = %v, want [anthropic openai] (sorted)", got)
+		}
+	})
 
 	t.Run("the verdict follows the status", func(t *testing.T) {
-		for _, c := range []struct {
-			code int
-			want vault.Verdict
-		}{
-			{200, vault.Accepted}, {204, vault.Accepted},
-			{401, vault.Rejected}, {403, vault.Rejected},
-			{400, vault.Indeterminate}, {404, vault.Indeterminate}, {429, vault.Indeterminate},
-			{500, vault.Indeterminate}, {502, vault.Indeterminate}, {503, vault.Indeterminate},
-		} {
-			m := newModels(t, status(c.code, echo))
-			v := vault.NewOpenAIValidator(baseOf(t, m.srv.URL), 2*time.Second)
-			got, upstream := v.Validate(t.Context(), key)
-			if got != c.want || upstream != c.code {
-				t.Errorf("HTTP %d: verdict %v, upstream status %d; want %v, %d", c.code, got, upstream, c.want, c.code)
-			}
-			if n := len(m.requests()); n != 1 {
-				t.Errorf("HTTP %d: %d requests, want exactly one", c.code, n)
-			}
-			// Nothing a caller receives holds the body, which echoes the key.
-			if strings.Contains(fmt.Sprint(got, upstream), fixtures.CanaryCredential) {
-				t.Errorf("HTTP %d: the key is in what Validate returns", c.code)
+		for _, fam := range families {
+			for _, c := range []struct {
+				code int
+				want vault.Verdict
+			}{
+				{200, vault.Accepted}, {204, vault.Accepted},
+				{401, vault.Rejected}, {403, vault.Rejected},
+				{302, vault.Indeterminate}, {307, vault.Indeterminate},
+				{400, vault.Indeterminate}, {404, vault.Indeterminate}, {429, vault.Indeterminate},
+				{500, vault.Indeterminate}, {502, vault.Indeterminate}, {503, vault.Indeterminate},
+			} {
+				m := newModels(t, status(c.code, echo))
+				v, _, _ := newValidator(2 * time.Second)
+				got, upstream := v.Validate(t.Context(), target(fam, m.srv.URL), key)
+				if got != c.want || upstream != c.code {
+					t.Errorf("%s, HTTP %d: verdict %v, upstream status %d; want %v, %d", fam, c.code, got, upstream, c.want, c.code)
+				}
+				if n := len(m.requests()); n != 1 {
+					t.Errorf("%s, HTTP %d: %d requests, want exactly one", fam, c.code, n)
+				}
+				if strings.Contains(fmt.Sprint(got, upstream), fixtures.CanaryCredential) {
+					t.Errorf("%s, HTTP %d: the key is in what Validate returns", fam, c.code)
+				}
 			}
 		}
 	})
 
-	t.Run("the request is GET models with the bearer and nothing else", func(t *testing.T) {
-		m := newModels(t, status(200, `{"object":"list","data":[]}`))
-		v := vault.NewOpenAIValidator(baseOf(t, m.srv.URL+"/v1"), 2*time.Second)
-		if got, _ := v.Validate(t.Context(), key); got != vault.Accepted {
-			t.Fatalf("verdict %v", got)
-		}
-		reqs := m.requests()
-		if len(reqs) != 1 {
-			t.Fatalf("%d requests", len(reqs))
-		}
-		r := reqs[0]
-		if r.Method != "GET" || r.Path != "/v1/models" || r.RawQuery != "" || r.ContentLength > 0 {
-			t.Errorf("request %s %s?%s with %d bytes of body", r.Method, r.Path, r.RawQuery, r.ContentLength)
-		}
-		if got := r.Header.Get("Authorization"); got != "Bearer "+fixtures.CanaryCredential {
-			t.Errorf("Authorization header is %q", got)
-		}
-		allowed := map[string]bool{"Authorization": true, "User-Agent": true, "Accept-Encoding": true, "Connection": true} // Connection: close is what DisableKeepAlives sends
-		for name := range r.Header {
-			if !allowed[name] {
-				t.Errorf("the request carries the header %s", name)
+	t.Run("the request of each family", func(t *testing.T) {
+		for _, fam := range families {
+			for _, c := range []struct{ name, base, path string }{
+				{"a base without a path", "", "/v1/models"},
+				{"a base with a path", "/prefix", "/prefix/v1/models"},
+				{"a trailing slash is not doubled", "/prefix/", "/prefix/v1/models"},
+				{"a trailing slash on the root", "/", "/v1/models"},
+			} {
+				m := newModels(t, status(200, `{"object":"list","data":[]}`))
+				v, _, _ := newValidator(2 * time.Second)
+				if got, _ := v.Validate(t.Context(), target(fam, m.srv.URL+c.base), key); got != vault.Accepted {
+					t.Fatalf("%s, %s: verdict %v", fam, c.name, got)
+				}
+				reqs := m.requests()
+				if len(reqs) != 1 {
+					t.Fatalf("%s, %s: %d requests", fam, c.name, len(reqs))
+				}
+				r := reqs[0]
+				if r.Method != "GET" || r.Path != c.path || r.RawQuery != "" || r.ContentLength > 0 {
+					t.Errorf("%s, %s: request %s %s?%s with %d bytes of body", fam, c.name, r.Method, r.Path, r.RawQuery, r.ContentLength)
+				}
+			}
+			m := newModels(t, status(200, `{}`))
+			v, _, _ := newValidator(2 * time.Second)
+			v.Validate(t.Context(), target(fam, m.srv.URL), key)
+			h := m.requests()[0].Header
+			allowed := map[string]bool{"User-Agent": true, "Accept-Encoding": true}
+			switch fam {
+			case "openai":
+				if got := h.Get("Authorization"); got != "Bearer "+fixtures.CanaryCredential {
+					t.Errorf("openai: Authorization is %q", got)
+				}
+				allowed["Authorization"] = true
+			case "anthropic":
+				if got := h.Get("X-Api-Key"); got != fixtures.CanaryCredential {
+					t.Errorf("anthropic: x-api-key is %q", got)
+				}
+				if got := h.Get("Anthropic-Version"); got != "2023-06-01" {
+					t.Errorf("anthropic: anthropic-version is %q", got)
+				}
+				if h.Get("Authorization") != "" {
+					t.Error("anthropic: an Authorization header is sent")
+				}
+				allowed["X-Api-Key"], allowed["Anthropic-Version"] = true, true
+			}
+			for name := range h {
+				if !allowed[name] {
+					t.Errorf("%s: the request carries the header %s", fam, name)
+				}
 			}
 		}
-		if !r.Close {
-			t.Error("the connection is not closed after the request: connections are not reused")
-		}
+	})
 
-		// A base without a path.
-		m2 := newModels(t, status(200, `{}`))
-		vault.NewOpenAIValidator(baseOf(t, m2.srv.URL), time.Second).Validate(t.Context(), key)
-		if reqs := m2.requests(); len(reqs) != 1 || reqs[0].Path != "/models" {
-			t.Errorf("a base without a path: %+v", reqs)
+	t.Run("an unknown family sends nothing", func(t *testing.T) {
+		m := newModels(t, status(200, `{}`))
+		v, pub, priv := newValidator(2 * time.Second)
+		for _, fam := range []string{"", "gemini", "OpenAI", "bedrock"} {
+			if got, upstream := v.Validate(t.Context(), target(fam, m.srv.URL), key); got != vault.Indeterminate || upstream != 0 {
+				t.Errorf("family %q: %v %d", fam, got, upstream)
+			}
 		}
-		// A base with a trailing slash does not double it.
-		m3 := newModels(t, status(200, `{}`))
-		vault.NewOpenAIValidator(baseOf(t, m3.srv.URL+"/v1/"), time.Second).Validate(t.Context(), key)
-		if reqs := m3.requests(); len(reqs) != 1 || reqs[0].Path != "/v1/models" {
-			t.Errorf("a base with a trailing slash: %+v", reqs)
+		if n := len(m.requests()) + int(pub.calls.Load()+priv.calls.Load()); n != 0 {
+			t.Errorf("%d requests for unknown families", n)
+		}
+	})
+
+	t.Run("Private selects the round tripper", func(t *testing.T) {
+		m := newModels(t, status(200, `{}`))
+		v, pub, priv := newValidator(2 * time.Second)
+		v.Validate(t.Context(), vault.ValidationTarget{Family: "openai", BaseURL: m.srv.URL, Private: false}, key)
+		if pub.calls.Load() != 1 || priv.calls.Load() != 0 {
+			t.Errorf("a public target: public %d, private %d", pub.calls.Load(), priv.calls.Load())
+		}
+		v.Validate(t.Context(), vault.ValidationTarget{Family: "openai", BaseURL: m.srv.URL, Private: true}, key)
+		if pub.calls.Load() != 1 || priv.calls.Load() != 1 {
+			t.Errorf("a private target: public %d, private %d", pub.calls.Load(), priv.calls.Load())
 		}
 	})
 
 	t.Run("a redirect is not followed", func(t *testing.T) {
 		var hits atomic.Int64
-		target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			hits.Add(1)
 			w.WriteHeader(200)
 		}))
-		t.Cleanup(target.Close)
-		m := newModels(t, func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, target.URL+"/models", http.StatusFound)
-		})
-		got, upstream := vault.NewOpenAIValidator(baseOf(t, m.srv.URL+"/v1"), 2*time.Second).Validate(t.Context(), key)
-		if got != vault.Indeterminate || upstream != 302 {
-			t.Errorf("a 302: verdict %v, status %d, want Indeterminate and 302", got, upstream)
+		t.Cleanup(other.Close)
+		for _, fam := range families {
+			m := newModels(t, func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, other.URL+"/v1/models", http.StatusFound)
+			})
+			v, _, _ := newValidator(2 * time.Second)
+			got, upstream := v.Validate(t.Context(), target(fam, m.srv.URL), key)
+			if got != vault.Indeterminate || upstream != 302 {
+				t.Errorf("%s, a 302: verdict %v, status %d, want Indeterminate and 302", fam, got, upstream)
+			}
 		}
 		if hits.Load() != 0 {
-			t.Error("the redirect was followed, and the bearer sent to another address")
+			t.Error("the redirect was followed, and the credential sent to another address")
 		}
 	})
 
@@ -170,8 +257,9 @@ func TestOpenAIValidator(t *testing.T) {
 			}
 		})
 		t.Cleanup(func() { close(release) })
+		v, _, _ := newValidator(300 * time.Millisecond)
 		start := time.Now()
-		got, upstream := vault.NewOpenAIValidator(baseOf(t, m.srv.URL), 300*time.Millisecond).Validate(t.Context(), key)
+		got, upstream := v.Validate(t.Context(), target("openai", m.srv.URL), key)
 		if got != vault.Indeterminate || upstream != 0 {
 			t.Errorf("a stall: verdict %v, status %d, want Indeterminate and 0", got, upstream)
 		}
@@ -191,8 +279,9 @@ func TestOpenAIValidator(t *testing.T) {
 		t.Cleanup(func() { close(release) })
 		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
 		defer cancel()
+		v, _, _ := newValidator(30 * time.Second)
 		start := time.Now()
-		got, _ := vault.NewOpenAIValidator(baseOf(t, m.srv.URL), 30*time.Second).Validate(ctx, key)
+		got, _ := v.Validate(ctx, target("anthropic", m.srv.URL), key)
 		if got != vault.Indeterminate || time.Since(start) > 5*time.Second {
 			t.Errorf("verdict %v after %s", got, time.Since(start))
 		}
@@ -205,71 +294,48 @@ func TestOpenAIValidator(t *testing.T) {
 		}
 		addr := l.Addr().String()
 		l.Close()
-		got, upstream := vault.NewOpenAIValidator(baseOf(t, "http://"+addr), 2*time.Second).Validate(t.Context(), key)
+		v, _, _ := newValidator(2 * time.Second)
+		got, upstream := v.Validate(t.Context(), target("openai", "http://"+addr), key)
 		if got != vault.Indeterminate || upstream != 0 {
 			t.Errorf("a refused connection: verdict %v, status %d", got, upstream)
 		}
 	})
 
-	t.Run("a server whose certificate is not trusted", func(t *testing.T) {
-		var hits atomic.Int64
-		srv := httptest.NewTLSServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) { hits.Add(1) }))
-		t.Cleanup(srv.Close)
-		got, upstream := vault.NewOpenAIValidator(baseOf(t, srv.URL), 2*time.Second).Validate(t.Context(), key)
-		if got != vault.Indeterminate || upstream != 0 || hits.Load() != 0 {
-			t.Errorf("an untrusted certificate: verdict %v, status %d, %d requests reached the handler", got, upstream, hits.Load())
+	t.Run("a refusal of the guard is indeterminate", func(t *testing.T) {
+		const marker = "synthetic-marker-error-text"
+		v := vault.NewValidator(failing{&egress.BlockedError{Reason: "private_address"}}, failing{fmt.Errorf("%s %s", marker, fixtures.CanaryCredential)}, time.Second)
+		for _, private := range []bool{false, true} {
+			got, upstream := v.Validate(t.Context(), vault.ValidationTarget{Family: "openai", BaseURL: "https://provider.example.test", Private: private}, key)
+			if got != vault.Indeterminate || upstream != 0 {
+				t.Errorf("private=%v: verdict %v, status %d", private, got, upstream)
+			}
+			if strings.Contains(fmt.Sprint(got, upstream), marker) {
+				t.Error("the error text is in what Validate returns")
+			}
 		}
 	})
 
-	t.Run("the proxy of the environment is not used", func(t *testing.T) {
-		// Go reads the proxy environment once per process, so the proof runs in a child process
-		// where the validator call is the first HTTP activity (TestProxyChild below).
-		proxy, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { proxy.Close() })
-		var contacted atomic.Int64
-		go func() {
-			for {
-				c, err := proxy.Accept()
-				if err != nil {
-					return
-				}
-				contacted.Add(1)
-				c.Close()
-			}
-		}()
-		cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestProxyChild$", "-test.count=1")
-		for _, kv := range os.Environ() {
-			name, _, _ := strings.Cut(kv, "=")
-			if !strings.HasSuffix(strings.ToLower(name), "_proxy") {
-				cmd.Env = append(cmd.Env, kv)
+	t.Run("a malformed base URL sends nothing", func(t *testing.T) {
+		v, pub, priv := newValidator(time.Second)
+		for _, base := range []string{"", "://", "not a url", "http://[::1"} {
+			if got, upstream := v.Validate(t.Context(), target("openai", base), key); got != vault.Indeterminate || upstream != 0 {
+				t.Errorf("%q: %v %d", base, got, upstream)
 			}
 		}
-		cmd.Env = append(cmd.Env, proxyChildEnv+"=1", "NO_PROXY=", "no_proxy=")
-		for _, name := range []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"} {
-			cmd.Env = append(cmd.Env, name+"=http://"+proxy.Addr().String())
-		}
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("the child failed: %v\n%s", err, out)
-		}
-		if n := contacted.Load(); n != 0 {
-			t.Errorf("the validator talked to the proxy of the environment %d times", n)
+		if pub.calls.Load()+priv.calls.Load() != 0 {
+			t.Error("a request was made for a malformed base URL")
 		}
 	})
 
-	t.Run("at most 64 KiB of the response is read", func(t *testing.T) {
-		var written atomic.Int64
+	t.Run("at most 64 KiB of the response is read, and the body is closed", func(t *testing.T) {
 		chunk := []byte(strings.Repeat("x", 4096))
 		m := newModels(t, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			f, _ := w.(http.Flusher)
-			for i := 0; i < 64*1024; i++ { // 256 MiB if nobody stops it
+			for i := 0; i < 256; i++ { // 1 MiB if nobody stops it
 				if _, err := w.Write(chunk); err != nil {
 					return
 				}
-				written.Add(int64(len(chunk)))
 				if f != nil {
 					f.Flush()
 				}
@@ -278,39 +344,28 @@ func TestOpenAIValidator(t *testing.T) {
 				}
 			}
 		})
+		v, pub, _ := newValidator(5 * time.Second)
 		start := time.Now()
-		got, upstream := vault.NewOpenAIValidator(baseOf(t, m.srv.URL), 5*time.Second).Validate(t.Context(), key)
+		got, upstream := v.Validate(t.Context(), target("openai", m.srv.URL), key)
 		if got != vault.Accepted || upstream != 200 {
 			t.Errorf("verdict %v, status %d for a 200 with a long body", got, upstream)
 		}
 		if d := time.Since(start); d > 4*time.Second {
 			t.Errorf("the call took %s: the body was read to its end", d)
 		}
-		time.Sleep(200 * time.Millisecond)
-		if n := written.Load(); n > 32<<20 {
-			t.Errorf("the server wrote %d MiB before the client stopped reading", n>>20)
+		if n := pub.bodyRead.Load(); n > 64*1024 {
+			t.Errorf("%d bytes of the response were read, want at most 65536", n)
+		}
+		if pub.bodiesClosed.Load() != 1 {
+			t.Errorf("%d response bodies closed, want 1", pub.bodiesClosed.Load())
 		}
 	})
-}
 
-const proxyChildEnv = "PANDOKOS_TEST_PROXY_CHILD"
-
-// TestProxyChild is the child of the sub-test "the proxy of the environment is not used": it
-// does nothing in a normal run. The environment holds a proxy that counts connections; the
-// validator call is the first HTTP activity of the process.
-func TestProxyChild(t *testing.T) {
-	if os.Getenv(proxyChildEnv) == "" {
-		t.Skip("run by TestOpenAIValidator")
-	}
-	// A destination that is not loopback (Go never proxies loopback) and where nothing answers.
-	const dest = "http://192.0.2.1:9" // TEST-NET-1, reserved for documentation
-	// The control: the standard library does pick the proxy of the environment up here.
-	req, _ := http.NewRequest("GET", dest+"/models", nil)
-	if u, err := http.ProxyFromEnvironment(req); err != nil || u == nil {
-		t.Fatalf("the control failed: ProxyFromEnvironment = %v, %v; the test would prove nothing", u, err)
-	}
-	got, upstream := vault.NewOpenAIValidator(baseOf(t, dest), 500*time.Millisecond).Validate(t.Context(), secret.New(fixtures.CanaryCredential))
-	if got != vault.Indeterminate || upstream != 0 {
-		t.Errorf("verdict %v, status %d", got, upstream)
-	}
+	t.Run("a timeout that is not positive means ten seconds", func(t *testing.T) {
+		m := newModels(t, status(200, `{}`))
+		v := vault.NewValidator(newTripper(), newTripper(), 0)
+		if got, _ := v.Validate(t.Context(), target("openai", m.srv.URL), key); got != vault.Accepted {
+			t.Errorf("verdict %v", got)
+		}
+	})
 }

@@ -1,7 +1,7 @@
 ---
 id: EPIC-3
 title: Gateway
-status: todo
+status: in-progress
 release: v0.1
 depends_on: [EPIC-2]
 ---
@@ -32,9 +32,10 @@ ADR 0009, 0010, 0013 (ledger), 0015 (traces), 0020.
 - The error contract with stable codes and the `x-pandokos-error` header.
 - Request IDs; limits on body size and duration.
 - Replaces the hard-wired route of sprint 1.1.
+- Only chat completions on the allow-list; the shutdown sequence and its bounds (OPS-12).
 
 Requirements: GW-01, GW-02, GW-05 to GW-12, GW-16 (size, duration), FND-01 and FND-02 (BYOK),
-SEC-01, SEC-02.
+SEC-01, SEC-02, OPS-12.
 
 Exit: a non-streaming call succeeds with a tenant's key and credential; a call for a model not
 granted, to an unsupported path, or from a suspended tenant is refused with the documented code;
@@ -52,9 +53,11 @@ attempts to reach an internal address through a crafted endpoint or redirect fai
 - Cancellation on client disconnect; draining on shutdown.
 - OTLP traces: server span and provider span joined to the caller's trace.
 - Fuzz tests for the stream reader.
+- The `responses` and `embeddings` endpoints of the `openai` family, with their usage readers
+  (moved from 3.1, whose allow-list holds chat completions only).
 
 Requirements: GW-03, GW-04, GW-13, GW-14, USE-01 to USE-05 (append-only), OBS-01 (traces),
-OBS-02, OBS-04, OBS-05, OPS-12, PRV-02.
+OBS-02, OBS-04, OBS-05, PRV-02; OPS-12 is completed in 3.1 and touched here for the ledger flush.
 
 Exit: a streamed call delivers events without added buffering and produces one record with
 provider-reported tokens and cost; a cancelled stream produces a record marked cancelled; with the

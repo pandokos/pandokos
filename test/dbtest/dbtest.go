@@ -313,6 +313,17 @@ func (d *Database) Connect(tb testing.TB, role string) *pgx.Conn {
 	return d.connect(tb, cfg)
 }
 
+// ConnectWith returns a raw connection for connection options made by CreateLogin (or
+// ConnOptions), in QueryExecModeExec, closed at cleanup.
+func (d *Database) ConnectWith(tb testing.TB, o store.ConnOptions) *pgx.Conn {
+	tb.Helper()
+	cfg := d.rawConfig(tb, o.User, o.Password.Reveal(), o.Host, o.Port)
+	cfg.DefaultQueryExecMode = pgx.QueryExecModeExec
+	cfg.StatementCacheCapacity = 0
+	cfg.DescriptionCacheCapacity = 0
+	return d.connect(tb, cfg)
+}
+
 // Super returns a superuser connection to this database (always direct). It bypasses
 // row-level security: tests use it to arrange data and to verify.
 func (d *Database) Super(tb testing.TB) *pgx.Conn {

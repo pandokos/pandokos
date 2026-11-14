@@ -20,3 +20,7 @@ Nothing reads the audit log before sprint 6.2, which adds the read API, the chai
 ## Alternatives considered
 
 The hash chain now; partitions now; audit rows written by a database trigger (no actor, no request ID).
+
+## History
+
+- 2026-11: sprint 3.1 records authentication failures of the inference listener that name a key of a tenant, in that tenant's log (detail.listener "inference"), at most once per key and reason in ten minutes and within 60 a minute per instance; failures that name no tenant are logged only.

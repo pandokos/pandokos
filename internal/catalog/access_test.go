@@ -270,3 +270,53 @@ func mustDecimal(t testing.TB, s string) pricing.Decimal {
 	}
 	return d
 }
+
+// TestSnapshotAccessors is T-446 (the accessors): the provider and the default endpoint that the
+// gateway's resolver and the credential validation of the administration plane read.
+func TestSnapshotAccessors(t *testing.T) {
+	s := synthetic()
+
+	t.Run("Provider", func(t *testing.T) {
+		p, ok := s.Provider("p-open")
+		if !ok || p.Name != "p-open" || p.Family != "openai" || p.ID != "pid-open" || !p.Enabled {
+			t.Errorf("p-open: %+v %v", p, ok)
+		}
+		p, ok = s.Provider("p-off")
+		if !ok || p.Enabled || p.Family != "openai" {
+			t.Errorf("a disabled provider is returned with Enabled false: %+v %v", p, ok)
+		}
+		for _, name := range []string{"nope", "", "P-OPEN", "p-open "} {
+			if _, ok := s.Provider(name); ok {
+				t.Errorf("%q: found", name)
+			}
+		}
+	})
+
+	t.Run("DefaultEndpoint", func(t *testing.T) {
+		e, ok := s.DefaultEndpoint("p-open")
+		if !ok || e.Name != "main" || e.BaseURL != "https://a.example.com" || !e.Default || !e.Enabled {
+			t.Errorf("p-open: %+v %v", e, ok)
+		}
+		for name, why := range map[string]string{
+			"p-noep":   "no endpoint",
+			"p-nodef":  "no default endpoint",
+			"p-defoff": "the default endpoint is disabled",
+			"nope":     "an unknown provider",
+		} {
+			if e, ok := s.DefaultEndpoint(name); ok {
+				t.Errorf("%s (%s): %+v", name, why, e)
+			}
+		}
+	})
+
+	t.Run("Resolve returns the default endpoint", func(t *testing.T) {
+		_, ep, err := s.Resolve(principalOf(nil), TenantAccess{}, "p-open", "all-model")
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, _ := s.DefaultEndpoint("p-open")
+		if ep != want {
+			t.Errorf("Resolve gave %+v, DefaultEndpoint %+v", ep, want)
+		}
+	})
+}

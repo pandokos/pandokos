@@ -33,10 +33,12 @@ Initial codes, stable once released:
 | `model_not_allowed` | 403 | The model is unknown or not available to this tenant or key |
 | `endpoint_not_supported` | 404 | The path is not on the family's allow-list |
 | `no_credential` | 409 | No usable provider credential for this tenant and provider |
+| `invalid_request` | 400 | The request body cannot be read as the endpoint requires (for the model: one JSON object with exactly one string member `model`) |
+| `request_timeout` | 408 | The request body was not received within the configured time |
 | `request_too_large` | 413 | Body over the configured limit |
 | `rate_limited` | 429 | A rate limit of Pandokos was reached |
 | `quota_exceeded` | 429 | A quota or budget of Pandokos was reached |
-| `upstream_unreachable` | 502 | The provider could not be reached |
+| `upstream_unreachable` | 502 | The provider could not be reached, the connection was refused by the egress guard, or the provider answered with a redirect |
 | `upstream_timeout` | 504 | The provider did not answer in time |
 | `unavailable` | 503 | Pandokos cannot verify the request right now |
 | `internal` | 500 | Unexpected failure |
@@ -64,3 +66,10 @@ another tenant.
 
 **Rewriting provider errors into a common format.** Loses provider detail and contradicts the
 transparency principle.
+
+## History
+
+- 2026-11: sprint 3.1 adds `invalid_request` and `request_timeout`, extends
+  `upstream_unreachable` to guard refusals and redirects, and puts `model_not_allowed` and
+  `no_credential` into use ([ADR 0037](0037-request-pipeline-and-resolution.md),
+  [ADR 0038](0038-egress-guard-upstream-tls-and-proxy.md)).
