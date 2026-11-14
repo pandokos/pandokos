@@ -552,6 +552,7 @@ sealed bytes, and `audit.marshalDetail` already refuses a member named `secret`.
 | `credential validation` | info | `request_id`, `tenant_id`, `provider`, `outcome` (`accepted`, `rejected`, `unavailable`), `upstream_status` (0 when none), `duration_ms` |
 | `credential opened` | debug | `request_id`, `tenant_id`, `principal_id`, `key_id`, `credential_id`, `provider`, `pinned`, `cache` (`hit`, `miss`) |
 | `credential cannot be opened` | error | `request_id`, `tenant_id`, `credential_id`, `data_key_version`, `kek_version`, `cause` (`kek_unavailable`, `data_key_missing`, `data_key_unwrap`, `authentication`) |
+| `credential cannot be sealed` | error | `request_id`, `operation`, `tenant_id`, `credential_id` (when known), `data_key_version` and `kek_version` (when known), `cause` (`kek_unavailable`, `data_key_unwrap`); the write-side counterpart, added at review |
 | `vault cache flushed` | debug | `reason` (`full`, `reset`, `unknown_payload`) |
 
 No field name ends in `_key`, `_secret`, `_token` or `_password`, so none is redacted by the
@@ -729,6 +730,10 @@ T-281, T-282; T-R13, T-R14, T-R15; every test that starts `serve` or builds `adm
   `credential_id` on the request log line; removes `skeleton.openai.*` and moves the validator
   onto catalogue endpoints behind the egress guard, adding validators per provider; confirms or
   changes the pin rule of D-6; decides what a key scoped to `model:invoke` alone may do (O-4).
+- **Generator**: it lacks a presence-aware optional string. `adminapi.EmptyDescription` (a `"\x00"`
+  sentinel with a hand-written `CredentialUpdate.MarshalJSON`) is a stop-gap, to be replaced by that
+  generator feature in the first sprint that needs another such field. The 1.3 principal cache now
+  also stamps its lifetimes from the start of the lookup, as the vault caches do.
 - **3.2** puts `credential_id` on the usage record (VLT-15) and adds spans: the canary suite's
   list of outputs gains traces.
 - **4.3** defines *credential manager* from the five credential permissions (AZ-10).

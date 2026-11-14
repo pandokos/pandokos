@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -220,6 +222,8 @@ func TestOpenAIValidator(t *testing.T) {
 	})
 
 	t.Run("the proxy of the environment is not used", func(t *testing.T) {
+		// Go reads the proxy environment once per process, so the proof runs in a child process
+		// where the validator call is the first HTTP activity (TestProxyChild below).
 		proxy, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			t.Fatal(err)
@@ -236,35 +240,19 @@ func TestOpenAIValidator(t *testing.T) {
 				c.Close()
 			}
 		}()
-		for _, name := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"} {
-			t.Setenv(name, "http://"+proxy.Addr().String())
+		cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestProxyChild$", "-test.count=1")
+		for _, kv := range os.Environ() {
+			name, _, _ := strings.Cut(kv, "=")
+			if !strings.HasSuffix(strings.ToLower(name), "_proxy") {
+				cmd.Env = append(cmd.Env, kv)
+			}
 		}
-		t.Setenv("NO_PROXY", "")
-		t.Setenv("no_proxy", "")
-		// A destination that is not loopback (Go never proxies loopback) and where nothing
-		// answers: with the proxy it would go to the listener above.
-		const dest = "http://192.0.2.1:9" // TEST-NET-1, reserved for documentation
-		// The control: a transport that takes the proxy of the environment does use it here. It
-		// parses the value itself: the default transport reads the environment once per process,
-		// which would make this test depend on what ran before it (and fail under -count=2).
-		proxyURL, err := url.Parse("http://" + proxy.Addr().String())
-		if err != nil {
-			t.Fatal(err)
+		cmd.Env = append(cmd.Env, proxyChildEnv+"=1", "NO_PROXY=", "no_proxy=")
+		for _, name := range []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"} {
+			cmd.Env = append(cmd.Env, name+"=http://"+proxy.Addr().String())
 		}
-		control := &http.Transport{Proxy: http.ProxyURL(proxyURL)}
-		t.Cleanup(control.CloseIdleConnections)
-		req, _ := http.NewRequestWithContext(t.Context(), "GET", dest+"/models", nil)
-		cl := &http.Client{Timeout: time.Second, Transport: control}
-		if resp, err := cl.Do(req); err == nil {
-			resp.Body.Close()
-		}
-		if contacted.Load() == 0 {
-			t.Fatal("the control failed: the control transport did not use the proxy, so this test would prove nothing")
-		}
-		contacted.Store(0)
-		got, upstream := vault.NewOpenAIValidator(baseOf(t, dest), 500*time.Millisecond).Validate(t.Context(), key)
-		if got != vault.Indeterminate || upstream != 0 {
-			t.Errorf("verdict %v, status %d", got, upstream)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("the child failed: %v\n%s", err, out)
 		}
 		if n := contacted.Load(); n != 0 {
 			t.Errorf("the validator talked to the proxy of the environment %d times", n)
@@ -303,4 +291,26 @@ func TestOpenAIValidator(t *testing.T) {
 			t.Errorf("the server wrote %d MiB before the client stopped reading", n>>20)
 		}
 	})
+}
+
+const proxyChildEnv = "PANDOKOS_TEST_PROXY_CHILD"
+
+// TestProxyChild is the child of the sub-test "the proxy of the environment is not used": it
+// does nothing in a normal run. The environment holds a proxy that counts connections; the
+// validator call is the first HTTP activity of the process.
+func TestProxyChild(t *testing.T) {
+	if os.Getenv(proxyChildEnv) == "" {
+		t.Skip("run by TestOpenAIValidator")
+	}
+	// A destination that is not loopback (Go never proxies loopback) and where nothing answers.
+	const dest = "http://192.0.2.1:9" // TEST-NET-1, reserved for documentation
+	// The control: the standard library does pick the proxy of the environment up here.
+	req, _ := http.NewRequest("GET", dest+"/models", nil)
+	if u, err := http.ProxyFromEnvironment(req); err != nil || u == nil {
+		t.Fatalf("the control failed: ProxyFromEnvironment = %v, %v; the test would prove nothing", u, err)
+	}
+	got, upstream := vault.NewOpenAIValidator(baseOf(t, dest), 500*time.Millisecond).Validate(t.Context(), secret.New(fixtures.CanaryCredential))
+	if got != vault.Indeterminate || upstream != 0 {
+		t.Errorf("verdict %v, status %d", got, upstream)
+	}
 }
