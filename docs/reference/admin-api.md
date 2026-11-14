@@ -14,10 +14,15 @@ client) is generated from it by `make generate`; never edit a generated file.
   out of responses. Bodies and queries are strict: an unknown member or parameter is an error.
 - Verb sub-resources (`suspend`, `reactivate`, `disable`, `enable`, `revoke`) take an optional
   `{"reason": "..."}`, return the resource and are idempotent.
-- `PATCH` changes the members that are present; `valid_from` and `valid_until` accept `null`;
-  `roles` replaces the set. Service accounts, keys and tenants are never deleted. A credential is
+- `PATCH` changes the members that are present (an optional member is *presence-aware*: absent leaves
+  the value alone, a value sets it, and `null` is refused as `must not be null` except where the
+  document allows it); `valid_from` and `valid_until` accept `null`; `roles` replaces the set. For a
+  description, an empty string clears it; the CLI clears with `--flag ""`. An update that changes
+  nothing returns 200 and writes no audit row. Service accounts, keys and tenants are never deleted. A credential is
   revoked and then deleted: `DELETE` on a credential removes the row and returns the deleted
   resource (its last metadata).
+- Rates and amounts of money are decimal **strings** (`"2.5"`, never a JSON number): a rate is a price
+  per million units with at most 12 fraction digits.
 - A secret is returned by the create response of a platform key or a virtual key only; no operation
   returns a hash. A provider credential's secret is write-only: it is sent by `createCredential` and
   `replaceCredentialSecret` and never returned, not even by create. A response shows its label,
@@ -48,6 +53,8 @@ Errors are RFC 9457 problems (`application/problem+json`) with a fixed sentence 
 | `unsupported_media_type` | 415 | the body is not `application/json` |
 | `credential_rejected` | 422 | the provider refused the secret when `validate` was asked; nothing was stored |
 | `validation_unavailable` | 502 | the provider could not be asked or gave no clear answer when `validate` was asked; nothing was stored |
+| `price_dataset_invalid` | 422 | `runPriceImport` with source `remote`: the downloaded price dataset could not be read; nothing was imported (fixed text, the response bytes are never quoted) |
+| `price_source_unavailable` | 502 | `runPriceImport` with source `remote`: the price dataset could not be downloaded; nothing was imported (fixed text) |
 | `internal` | 500 | an unexpected failure |
 | `unavailable` | 503 | the database cannot be reached |
 
@@ -75,6 +82,14 @@ Every operation has one CLI command that only calls the generated client. `TENAN
 | `platform-key list`, `create`, `get`, `revoke` | `listPlatformKeys`, `createPlatformKey`, `getPlatformKey`, `revokePlatformKey` |
 | `credential list`, `create`, `get`, `update`, `replace`, `disable`, `enable`, `set-default`, `revoke`, `delete` | `listCredentials`, `createCredential`, `getCredential`, `updateCredential`, `replaceCredentialSecret`, `disableCredential`, `enableCredential`, `setDefaultCredential`, `revokeCredential`, `deleteCredential` |
 | `tenant-credential list`, `get`, `disable`, `revoke` | `listTenantCredentials`, `getTenantCredential`, `disableTenantCredential`, `revokeTenantCredential` |
+| `provider list`, `create`, `get`, `update`, `delete` | `listProviders`, `createProvider`, `getProvider`, `updateProvider`, `deleteProvider` |
+| `endpoint list`, `create`, `get`, `update`, `delete` (after `PROVIDER`) | `listEndpoints`, `createEndpoint`, `getEndpoint`, `updateEndpoint`, `deleteEndpoint` |
+| `model list`, `create`, `get`, `update`, `delete`, `grants`, `grant`, `revoke-grant` | `listModels`, `createModel`, `getModel`, `updateModel`, `deleteModel`, `listModelGrants`, `grantModel`, `revokeModelGrant` |
+| `price list`, `override`, `delete`, `clear-override` (after `MODEL`) | `listPriceVersions`, `createPriceOverride`, `deletePriceVersion`, `clearPriceOverride` |
+| `price-import list`, `get`, `run` | `listPriceImports`, `getPriceImport`, `runPriceImport` |
+| `tenant-model list` | `listTenantModels` |
+| `model-restriction get`, `set`, `clear` | `getModelRestriction`, `setModelRestriction`, `clearModelRestriction` |
+| `import-prices (--file FILE \| --embedded) [--dry-run]` | none: a host command that reads a price dataset and writes through the database ([catalogue guide](../operations/catalogue.md)) |
 | `kek generate --out FILE` | none: a local command that writes a key-encryption key ([vault guide](../operations/vault.md)) |
 
 ### Credentials
@@ -111,3 +126,63 @@ else; no flag or variable holds it. `create` takes the label as an argument and 
 description (an absent `--description` leaves it alone). `key create --credential ID` pins a virtual key.
 List commands take
 `--state`, `--sort`, `--limit`, `--cursor` and `--all`.
+
+### The catalogue
+
+The operations are described in the [catalogue guide](../operations/catalogue.md). Provider and endpoint
+path parameters are names; models, price versions and imports are IDs; the CLI accepts a model
+reference `provider/name` wherever it takes a model.
+
+| Operation | Method and path | Permission |
+|---|---|---|
+| `listProviders`, `createProvider` | `GET`, `POST /v1/providers` | `catalog:read`, `catalog:write` |
+| `getProvider`, `updateProvider`, `deleteProvider` | `GET`, `PATCH`, `DELETE /v1/providers/{provider}` | `catalog:read`, `catalog:write`, `catalog:write` |
+| `listEndpoints`, `createEndpoint` | `GET`, `POST /v1/providers/{provider}/endpoints` | `catalog:read`, `catalog:write` |
+| `getEndpoint`, `updateEndpoint`, `deleteEndpoint` | `GET`, `PATCH`, `DELETE .../endpoints/{endpoint}` | `catalog:read`, `catalog:write`, `catalog:write` |
+| `listModels`, `createModel` | `GET`, `POST /v1/models` | `catalog:read`, `catalog:write` |
+| `getModel`, `updateModel`, `deleteModel` | `GET`, `PATCH`, `DELETE /v1/models/{model}` | `catalog:read`, `catalog:write`, `catalog:write` |
+| `listModelGrants` | `GET /v1/models/{model}/grants` | `catalog:read` |
+| `grantModel`, `revokeModelGrant` | `PUT`, `DELETE /v1/models/{model}/grants/{tenant}` | `catalog:write` |
+| `listPriceVersions`, `createPriceOverride` | `GET`, `POST /v1/models/{model}/prices` | `catalog:read`, `catalog:price` |
+| `deletePriceVersion` | `DELETE /v1/models/{model}/prices/{price_version}` | `catalog:price` |
+| `clearPriceOverride` | `POST /v1/models/{model}/clear-price-override` | `catalog:price` |
+| `listPriceImports`, `getPriceImport` | `GET /v1/price-imports`, `GET /v1/price-imports/{price_import}` | `catalog:read` |
+| `runPriceImport` | `POST /v1/price-imports` | `catalog:price` |
+| `listTenantModels` | `GET /v1/tenants/{tenant}/models` | `model:read` |
+| `getModelRestriction`, `setModelRestriction`, `clearModelRestriction` | `GET`, `PUT`, `DELETE /v1/tenants/{tenant}/model-restriction` | `model:read`, `model:restrict`, `model:restrict` |
+
+- Collections: `listModels` filters by `provider`, `name`, `status` and `availability`. `createModel`
+  takes `availability` `selected` unless told otherwise. `listPriceVersions` takes `at` (RFC 3339) and
+  returns the version in force then, at most one.
+- `grantModel` and `revokeModelGrant` are idempotent; an unknown tenant is `not_found`. Setting a
+  tenant's restriction needs every reference to name a model visible to the tenant; clearing a
+  restriction twice, or one that does not exist, returns 200.
+- `runPriceImport` takes `{source: embedded | remote, dry_run}`, runs synchronously and returns 201 with
+  the import and its report. `remote` while `pricing.refresh.enabled` is false is `invalid_request` on
+  `source`. The URL is operator configuration; no operation takes one. A failed remote download is
+  `price_source_unavailable` (502), an unreadable dataset `price_dataset_invalid` (422); both have a
+  fixed text and never quote the response. A failed run is audited (`price_import.run`, outcome
+  `failure`).
+- `deleteProvider` and `deleteEndpoint` are `invalid_state` while something references them (the
+  default endpoint while others exist); `deleteModel` is `invalid_state` once a price version exists:
+  retire the model instead. `clearPriceOverride` is `invalid_state` while a version of the model has not
+  started; the override version stays in force until the next import creates one.
+- `createVirtualKey` accepts `models` (1 to 64 unique references); `VirtualKey` returns it.
+- Every write of the catalogue and of a grant, restriction or price is audited in the same transaction.
+  Catalogue, grant, price and import events (`provider.*`, `endpoint.*`, `model.*`, `model_grant.*`,
+  `price.*`, `price_import.run`) are in the platform log; `model_restriction.set` and `.clear` are in the
+  tenant's log, and `virtual_key.create` records the `models` of a key.
+
+Flags of the catalogue commands: `provider create NAME --family F [--display-name --description
+--dataset-provider]`; `endpoint create PROVIDER NAME --base-url U [--region --private --default]`;
+`model create REF [--upstream-id --availability --status --capability ...  --context-window
+--max-output-tokens]`; `model grant|revoke-grant MODEL --tenant T`; `price override MODEL --currency C
+--rate category[@threshold]=amount ... [--valid-from --note]`; `price clear-override MODEL --reason R`;
+`price-import run [--source embedded|remote] [--dry-run]`; `model-restriction set --tenant T --model REF
+...` or `--none`. Update commands clear an optional text member with `--flag ""`; booleans are set with
+`--enabled=false` and `--private=false`.
+
+`pandokos import-prices` (a host command, not an API client) prints one `name: value` line for each of
+`models_seen`, `created`, `unchanged`, `overridden`, `unmatched` and `skipped`, then one line per item
+(`provider/model: outcome (dataset model X); issue detail`), and exits 0 on success, 1 when the import
+fails and 2 for wrong usage. It reads and checks the file before it opens the database.

@@ -69,3 +69,8 @@ hide.
 
 **Opaque passthrough of any path.** Maximally transparent, but unmetered endpoints defeat budgets
 and the ledger, and the attack surface is whatever the provider exposes.
+
+## History
+
+
+- 2026-11: sprint 2.2 reserves `healthz`, `readyz` and `v1` as provider names and stores the family per provider ([ADR 0035](0035-catalogue-and-model-access.md)).

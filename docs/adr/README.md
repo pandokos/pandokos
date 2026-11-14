@@ -41,6 +41,8 @@ A record is *proposed* until its pull request is merged by the maintainer, then 
 | [0032](0032-audit-log-first-version.md) | Audit log, first version | proposed |
 | [0033](0033-vault-formats-and-key-identifiers.md) | Vault: formats, derived keys, key identifiers, caches | proposed |
 | [0034](0034-credential-model-and-platform-oversight.md) | Credential model and platform oversight | proposed |
+| [0035](0035-catalogue-and-model-access.md) | Catalogue and model access | proposed |
+| [0036](0036-prices-costs-and-importer.md) | Prices, costs and the price importer | proposed |
 
 ## Questions from SOW 0.1 and where they were decided
 

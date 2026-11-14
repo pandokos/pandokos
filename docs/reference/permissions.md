@@ -28,6 +28,11 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | `virtual_key:write` | tenant | Issuing a virtual key |
 | `virtual_key:revoke` | tenant | Revoking a virtual key |
 | `model:invoke` | tenant | Calling a model through the inference listener |
+| `catalog:read` | platform | Reading providers, endpoints, models, model grants, price versions and price imports |
+| `catalog:write` | platform | Creating, changing and deleting providers, endpoints and models; granting models to tenants and revoking grants |
+| `catalog:price` | platform | Setting and removing price overrides; running a price import |
+| `model:read` | tenant | Listing the models available to the tenant, with their prices; reading the tenant's model restriction |
+| `model:restrict` | tenant | Setting and clearing the tenant's model restriction |
 
 Scope *platform*: held by platform principals only. Scope *tenant*: held by principals of that
 tenant only, and checked against the tenant of the request. Scope *self*: the caller itself.
@@ -38,8 +43,8 @@ Roles are defined in code and cannot be changed; `role_assignment.role` holds a 
 
 | Role | Held by | Permissions |
 |---|---|---|
-| `platform-admin` | platform principals | `identity:read`, `platform_key:read`, `platform_key:revoke`, `platform_key:write`, `tenant:read`, `tenant:suspend`, `tenant:write`, `tenant_credential:read`, `tenant_credential:revoke` |
-| `tenant-admin` | service accounts | `credential:delete`, `credential:read`, `credential:rotate`, `credential:use`, `credential:write`, `identity:read`, `model:invoke`, `service_account:read`, `service_account:write`, `virtual_key:read`, `virtual_key:revoke`, `virtual_key:write` |
+| `platform-admin` | platform principals | `catalog:price`, `catalog:read`, `catalog:write`, `identity:read`, `platform_key:read`, `platform_key:revoke`, `platform_key:write`, `tenant:read`, `tenant:suspend`, `tenant:write`, `tenant_credential:read`, `tenant_credential:revoke` |
+| `tenant-admin` | service accounts | `credential:delete`, `credential:read`, `credential:rotate`, `credential:use`, `credential:write`, `identity:read`, `model:invoke`, `model:read`, `model:restrict`, `service_account:read`, `service_account:write`, `virtual_key:read`, `virtual_key:revoke`, `virtual_key:write` |
 | `inference` | service accounts | `credential:use`, `model:invoke` |
 
 ## Decision
@@ -62,3 +67,7 @@ A platform administrator holds no tenant permission, `credential:*` included, an
 returns or replaces a secret: the platform credential operations name a tenant, return metadata only
 and disable or revoke with a reason. A virtual key with `scopes` needs `credential:use` next to
 `model:invoke` for the credentials of its tenant to be opened for it.
+
+Issuing a virtual key with a model list (`models`) needs only `virtual_key:write`. The catalogue is
+administered by platform principals only; a tenant sees the models available to it with `model:read`
+and narrows itself with `model:restrict`, and neither lets it read or change another tenant's grants.

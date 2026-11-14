@@ -55,6 +55,18 @@ permission for other users makes `serve` log the warning `configuration warning`
 `vault.kek.local.key_file`; it still starts. The key is never in the image and never in a
 configuration file. Keep a copy of it separately from the database backups.
 
+## Prices at start
+
+At its first start against a database, and whenever the image carries a newer price list than the one
+last imported, `serve` imports the price list embedded in the image (a snapshot of the `genai-prices`
+dataset, see the [catalogue guide](catalogue.md)) and logs `prices imported` with `source` `embedded`.
+It needs no network access and no setting. It never replaces a newer file or download, and a failure
+only logs `price import failed`; the server starts either way. Outbound access from the container is
+needed only when `pricing.refresh.enabled` is true: then `serve` downloads the dataset from
+`pricing.refresh.url` over HTTPS, without proxy. Without it the container makes no outbound request
+except to the providers and the database. Set `pricing.import_at_start` to `false` to import nothing at
+start.
+
 ## The administration API
 
 The administration API listens on port 8081. By default it listens on `127.0.0.1` **inside the
