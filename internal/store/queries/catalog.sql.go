@@ -386,6 +386,32 @@ func (q *Queries) GetProvider(ctx context.Context, name string) (PandokosProvide
 	return i, err
 }
 
+const getProviderForUpdate = `-- name: GetProviderForUpdate :one
+SELECT p.id, p.name, p.display_name, p.description, p.api_family, p.enabled, p.dataset_provider, p.created_at, p.updated_at
+  FROM pandokos.provider p
+ WHERE p.name = $1::text
+   FOR UPDATE
+`
+
+// Writes of the endpoints of a provider lock its row: they move the default endpoint and check
+// what is left, and two of them at once would collide on provider_endpoint_default_key.
+func (q *Queries) GetProviderForUpdate(ctx context.Context, name string) (PandokosProvider, error) {
+	row := q.db.QueryRow(ctx, getProviderForUpdate, name)
+	var i PandokosProvider
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.DisplayName,
+		&i.Description,
+		&i.ApiFamily,
+		&i.Enabled,
+		&i.DatasetProvider,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const grantModel = `-- name: GrantModel :execrows
 INSERT INTO pandokos.model_tenant_grant (model_id, tenant_id)
 VALUES ($1::uuid, $2::uuid)

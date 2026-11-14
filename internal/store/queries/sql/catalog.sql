@@ -16,6 +16,14 @@ SELECT p.id, p.name, p.display_name, p.description, p.api_family, p.enabled, p.d
   FROM pandokos.provider p
  WHERE p.name = sqlc.arg(name)::text;
 
+-- Writes of the endpoints of a provider lock its row: they move the default endpoint and check
+-- what is left, and two of them at once would collide on provider_endpoint_default_key.
+-- name: GetProviderForUpdate :one
+SELECT p.id, p.name, p.display_name, p.description, p.api_family, p.enabled, p.dataset_provider, p.created_at, p.updated_at
+  FROM pandokos.provider p
+ WHERE p.name = sqlc.arg(name)::text
+   FOR UPDATE;
+
 -- name: CreateProvider :one
 INSERT INTO pandokos.provider (name, display_name, description, api_family, enabled, dataset_provider)
 VALUES (sqlc.arg(name)::text, sqlc.arg(display_name)::text, sqlc.arg(description)::text, sqlc.arg(api_family)::text,

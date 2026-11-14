@@ -204,7 +204,8 @@ func mapCatalogError(err error) error {
 	switch kind {
 	case "unique":
 		switch name {
-		case "provider_name_key", "provider_endpoint_name_key", "model_name_key", "model_upstream_id_key", "price_version_valid_from_key":
+		case "provider_name_key", "provider_endpoint_name_key", "model_name_key", "model_upstream_id_key", "price_version_valid_from_key",
+			"provider_endpoint_default_key":
 			return errConflict
 		}
 	case "foreign_key", "restrict":

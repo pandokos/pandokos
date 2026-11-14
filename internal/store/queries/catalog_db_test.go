@@ -13,7 +13,7 @@ import (
 	"github.com/pandokos/pandokos/internal/tenant"
 )
 
-// catalogStatements is the part of T-393 that covers the 43 statements of sprint 2.2 and the
+// catalogStatements is the part of T-393 that covers the 45 statements of sprint 2.2 and the
 // model columns of the key statements: providers, endpoints, models, grants, restrictions, price
 // imports, versions and rates, directly and through the pooler. A value that goes in comes back
 // unchanged: nullable bigints, arrays, rates as decimal text, timestamps.
@@ -51,6 +51,10 @@ func catalogStatements(c context.Context, t *testing.T, admin, gateway *store.DB
 		got, err := q.GetProvider(c, "synthetic-393")
 		if err != nil || got != p {
 			t.Errorf("GetProvider: %+v %v", got, err)
+		}
+		mark("GetProviderForUpdate")
+		if locked, err := q.GetProviderForUpdate(c, "synthetic-393"); err != nil || locked != got {
+			t.Errorf("GetProviderForUpdate: %+v %v", locked, err)
 		}
 		if _, err := q.GetProvider(c, "no-such-provider"); !errors.Is(err, store.ErrNoRows) {
 			t.Errorf("GetProvider of a provider that does not exist: %v", err)

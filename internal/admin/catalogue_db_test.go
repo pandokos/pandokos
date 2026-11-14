@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/pandokos/pandokos/internal/adminapi"
@@ -417,4 +419,39 @@ func TestCatalogLifecycle(t *testing.T) {
 func mustJSON2(p adminapi.Problem) []byte {
 	b, _ := json.Marshal(p)
 	return b
+}
+
+// TestConcurrentDefaultEndpoints: writes that move the default endpoint of a provider serialize
+// on the provider row; none of them fails with a constraint error, and one default remains.
+func TestConcurrentDefaultEndpoints(t *testing.T) {
+	c := newCat(t)
+	p := c.createProvider(t, nil)
+	first := c.createEndpoint(t, p.Name, nil)
+	const n = 8
+	var wg sync.WaitGroup
+	status := make([]int, n)
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			status[i] = c.platform(t, "POST", "/v1/providers/"+p.Name+"/endpoints", map[string]any{
+				"name": "concurrent-" + strconv.Itoa(i), "base_url": "https://synthetic.invalid", "is_default": true}).Status
+		}()
+	}
+	wg.Wait()
+	for i, s := range status {
+		if s != 201 {
+			t.Errorf("create %d: status %d", i, s)
+		}
+	}
+	list := decode[adminapi.EndpointList](t, c.platform(t, "GET", "/v1/providers/"+p.Name+"/endpoints", nil), 200)
+	defaults := 0
+	for _, e := range list.Items {
+		if e.IsDefault {
+			defaults++
+		}
+	}
+	if len(list.Items) != n+1 || defaults != 1 {
+		t.Errorf("%d endpoints, %d defaults (the first was %s)", len(list.Items), defaults, first.Name)
+	}
 }

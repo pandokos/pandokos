@@ -46,9 +46,13 @@ func (s *server) ListEndpoints(ctx context.Context, in adminapi.ListEndpointsInp
 	return out, nil
 }
 
-// getEndpoint finds a provider and one of its endpoints.
-func getEndpoint(ctx context.Context, q *queries.Queries, provider, name string) (queries.PandokosProvider, queries.PandokosProviderEndpoint, error) {
-	p, err := q.GetProvider(ctx, provider)
+// getEndpoint finds a provider and one of its endpoints; a write locks the provider row first.
+func getEndpoint(ctx context.Context, q *queries.Queries, provider, name string, lock bool) (queries.PandokosProvider, queries.PandokosProviderEndpoint, error) {
+	get := q.GetProvider
+	if lock {
+		get = q.GetProviderForUpdate
+	}
+	p, err := get(ctx, provider)
 	if isNoRowsErr(err) {
 		return p, queries.PandokosProviderEndpoint{}, errNotFound
 	}
@@ -66,7 +70,7 @@ func getEndpoint(ctx context.Context, q *queries.Queries, provider, name string)
 func (s *server) GetEndpoint(ctx context.Context, in adminapi.GetEndpointInput) (*adminapi.Endpoint, error) {
 	var out adminapi.Endpoint
 	err := s.inPlatform(ctx, func(ctx context.Context, _ store.Tx, q *queries.Queries) error {
-		_, e, err := getEndpoint(ctx, q, in.Provider, in.Endpoint)
+		_, e, err := getEndpoint(ctx, q, in.Provider, in.Endpoint, false)
 		out = endpointOut(in.Provider, e)
 		return err
 	})
@@ -85,7 +89,7 @@ func (s *server) CreateEndpoint(ctx context.Context, in adminapi.CreateEndpointI
 	}
 	var out adminapi.Endpoint
 	err = s.inPlatform(ctx, func(ctx context.Context, tx store.Tx, q *queries.Queries) error {
-		p, err := q.GetProvider(ctx, in.Provider)
+		p, err := q.GetProviderForUpdate(ctx, in.Provider)
 		if isNoRowsErr(err) {
 			return errNotFound
 		}
@@ -119,7 +123,7 @@ func (s *server) UpdateEndpoint(ctx context.Context, in adminapi.UpdateEndpointI
 	b := in.Body
 	var out adminapi.Endpoint
 	err := s.inPlatform(ctx, func(ctx context.Context, tx store.Tx, q *queries.Queries) error {
-		p, cur, err := getEndpoint(ctx, q, in.Provider, in.Endpoint)
+		p, cur, err := getEndpoint(ctx, q, in.Provider, in.Endpoint, true)
 		if err != nil {
 			return err
 		}
@@ -198,7 +202,7 @@ func (s *server) UpdateEndpoint(ctx context.Context, in adminapi.UpdateEndpointI
 func (s *server) DeleteEndpoint(ctx context.Context, in adminapi.DeleteEndpointInput) (*adminapi.Endpoint, error) {
 	var out adminapi.Endpoint
 	err := s.inPlatform(ctx, func(ctx context.Context, tx store.Tx, q *queries.Queries) error {
-		p, cur, err := getEndpoint(ctx, q, in.Provider, in.Endpoint)
+		p, cur, err := getEndpoint(ctx, q, in.Provider, in.Endpoint, true)
 		if err != nil {
 			return err
 		}
