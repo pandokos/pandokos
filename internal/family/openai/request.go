@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+
+	"github.com/pandokos/pandokos/internal/family"
 )
 
 const includeUsage = `"include_usage":true`
@@ -107,4 +109,30 @@ func PrepareRequest(body []byte) (out []byte, stream, strip bool) {
 		return body, true, false
 	}
 	return splice(body, so.start+iu.start, so.start+iu.end, "true"), true, true
+}
+
+// Request is a chat completions request body that was read.
+type Request struct {
+	body   []byte
+	model  string
+	stream bool
+}
+
+// Parse reads a chat completions request body. Every error wraps family.ErrInvalidRequest and
+// carries a reason (family.InvalidReason).
+func Parse(body []byte) (*Request, error) {
+	_ = body
+	return nil, family.Invalid("not_implemented")
+}
+
+// Model returns the model as the caller wrote it, JSON-decoded.
+func (r *Request) Model() string { return r.model }
+
+// Stream reports whether the caller asked for a stream.
+func (r *Request) Stream() bool { return r.stream }
+
+// Prepare returns the body to forward and whether the usage option was added by Pandokos.
+func (r *Request) Prepare(upstreamModel string) (out []byte, strip bool) {
+	_ = upstreamModel
+	return r.body, false
 }

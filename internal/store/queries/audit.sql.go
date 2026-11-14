@@ -91,3 +91,18 @@ func (q *Queries) InsertPlatformAuditEvent(ctx context.Context, arg InsertPlatfo
 	)
 	return err
 }
+
+const recordAuthFailure = `-- name: RecordAuthFailure :exec
+SELECT pandokos.record_auth_failure($1::text, $2::text, $3::text)
+`
+
+type RecordAuthFailureParams struct {
+	KeyID     string
+	Reason    string
+	RequestID string
+}
+
+func (q *Queries) RecordAuthFailure(ctx context.Context, arg RecordAuthFailureParams) error {
+	_, err := q.db.Exec(ctx, recordAuthFailure, arg.KeyID, arg.Reason, arg.RequestID)
+	return err
+}

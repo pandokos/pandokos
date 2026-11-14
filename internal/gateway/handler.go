@@ -51,6 +51,14 @@ type Options struct {
 	RequestBodyReadTimeout time.Duration     // must be positive
 	MaxRequestDuration     time.Duration     // must be positive
 	Transport              http.RoundTripper // required; production value from NewTransport
+
+	// Sprint 3.1 fields; New ignores them until the gateway uses them.
+	Catalogue       Catalogue                 // required
+	Credentials     Credentials               // required
+	Failures        FailureRecorder           // optional
+	Families        map[string]family.Adapter // required: API family -> adapter
+	DefaultFamily   string                    // required, a key of Families
+	Public, Private http.RoundTripper         // required: by endpoint class
 }
 
 // Handler is the inference handler.

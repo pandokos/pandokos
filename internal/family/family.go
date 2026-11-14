@@ -27,6 +27,10 @@ const (
 	CodeForbidden            ErrorCode = "forbidden"              // 403
 	CodeTenantSuspended      ErrorCode = "tenant_suspended"       // 403
 	CodeUnavailable          ErrorCode = "unavailable"            // 503
+	CodeModelNotAllowed      ErrorCode = "model_not_allowed"      // 403
+	CodeNoCredential         ErrorCode = "no_credential"          //nolint:gosec // 409; an error code, not a credential
+	CodeInvalidRequest       ErrorCode = "invalid_request"        // 400
+	CodeRequestTimeout       ErrorCode = "request_timeout"        // 408
 )
 
 // Status returns the HTTP status of the code.
