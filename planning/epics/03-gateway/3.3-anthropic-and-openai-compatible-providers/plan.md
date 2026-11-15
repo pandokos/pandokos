@@ -163,7 +163,7 @@ table (the family is immutable and the option is inert there).
 
 -- name: ListUsageRecords :many
 SELECT u.id, u.started_at, u.request_id, u.trace_id, u.principal_kind, u.principal_id, u.key_id, u.credential_id,
-       u.funding, u.provider, u.api_family, u.operation, u.endpoint, u.model, u.model_id, u.upstream_model, u.stream,
+       u.provider, u.api_family, u.operation, u.endpoint, u.model, u.model_id, u.upstream_model, u.stream,
        u.outcome, u.error_code, u.upstream_status, u.ttfb_ms, u.duration_ms, u.request_bytes, u.response_bytes,
        u.input_source, u.output_source, u.input_tokens, u.output_tokens, u.cache_read_tokens, u.cache_write_tokens,
        u.reasoning_tokens, u.other_units, u.provider_usage, u.estimated_input_tokens, u.estimated_output_tokens,
@@ -311,7 +311,7 @@ Schemas (new):
       type: object
       additionalProperties: false
       required: [id, request_id, trace_id, started_at, duration_ms, principal_kind, principal_id, key_id, credential_id,
-                 funding, provider, api_family, operation, endpoint, model, model_id, upstream_model, stream, outcome,
+                 provider, api_family, operation, endpoint, model, model_id, upstream_model, stream, outcome,
                  error_code, upstream_status, ttfb_ms, request_bytes, response_bytes, input_source, output_source,
                  input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
                  estimated_input_tokens, estimated_output_tokens, other_units, provider_usage, cost_status, cost_reason,
@@ -326,7 +326,6 @@ Schemas (new):
         principal_id: {type: string}
         key_id: {type: string}
         credential_id: {type: string, description: Empty when no credential was opened.}
-        funding: {type: string}
         provider: {type: string}
         api_family: {type: string}
         operation: {type: string}

@@ -31,11 +31,11 @@ erDiagram
 
 | Group | Tables | Scope |
 |---|---|---|
-| Platform | `tenant`, `platform_key`, `virtual_key_directory` (no grant to any runtime role), `platform_role_assignment`, `provider`, `provider_endpoint`, `model`, `model_tenant_grant`, `price_version`, `price_rate`, `price_import`, `rating_rule`, `platform_credential`, `platform_issuer`, `kek_version` | global |
-| Identity | `app_user`, `local_account`, `console_session`, `membership`, `service_account`, `virtual_key`, `trusted_issuer`, `subject_mapping`, `role`, `role_permission`, `role_assignment` | tenant (`app_user`, `local_account` and `console_session` are global, memberships are tenant-scoped) |
+| Platform | `tenant`, `platform_key`, `virtual_key_directory` (no grant to any runtime role), `platform_role_assignment`, `provider`, `provider_endpoint`, `model`, `model_tenant_grant`, `price_version`, `price_rate`, `price_import`, `platform_issuer`, `kek_version` | global |
+| Identity | `app_user`, `local_account`, `user_session`, `membership`, `service_account`, `virtual_key`, `trusted_issuer`, `subject_mapping`, `role`, `role_permission`, `role_assignment` | tenant (`app_user`, `local_account` and `user_session` are global, memberships are tenant-scoped) |
 | Vault | `tenant_data_key`, `provider_credential` | tenant |
-| Policy | `tenant_model_restriction`, `funding_mode`, `limit_rule` | tenant |
-| Records | `usage_record`, `usage_correction`, `audit_event`, `platform_audit_event` | tenant, except the platform audit |
+| Policy | `tenant_model_restriction`, `limit_rule` | tenant |
+| Records | `usage_record`, `audit_event`, `platform_audit_event` | tenant, except the platform audit |
 | Delivery | `outbox_event`, `outbox_delivery` | tenant |
 
 ## The catalogue (sprint 2.2)
@@ -145,13 +145,13 @@ sign in is either a federated identity (issuer and subject) or a `local_account`
 password hash with its parameters, a must-change flag, failure counters. A user has one sign-in
 method.
 
-`console_session` holds one row per open session: the hash of the session token, the user, the
+`user_session` holds one row per open session: the hash of the session token, the user, the
 creation and last-use times, and the sign-in method. The token itself exists only in the browser's
 cookie.
 
 These three tables are readable and writable by the admin database role only. The gateway role
 has no grant on them: the data plane cannot see passwords or sessions, which is what makes
-"a console session never authenticates inference" a property of the database and not only of the
+"a session never authenticates inference" a property of the database and not only of the
 code.
 
 What a user may do in a tenant is still in `membership` and `role_assignment`, under row-level
@@ -177,7 +177,7 @@ stores the row once. No column holds content, and every text column is format-ch
 into five groups, with provider values and Pandokos's estimates kept apart (USE-04):
 
 - **attribution**: tenant, record ID, start and commit time, request ID, trace ID, principal kind
-  and ID, virtual key ID, credential ID, funding mode, caller metadata and the count of dropped
+  and ID, virtual key ID, credential ID, caller metadata and the count of dropped
   entries;
 - **what was called**: provider, API family, operation, endpoint, model as named in the catalogue
   (`model`), the catalogue model ID, `upstream_model` (the identifier the provider received; the
@@ -189,9 +189,8 @@ into five groups, with provider values and Pandokos's estimates kept apart (USE-
 - **estimated by Pandokos**: estimated input and output tokens; empty unless the source is
   `estimated`;
 - **cost**: status (`known`, `unknown` with a reason, `none`), the exact amount, currency, the price
-  version in force when the request started, and the categories priced by fallback. Under BYOK the
-  cost is informational. Rating rules and chargeable amounts for platform-funded calls come with that
-  funding mode.
+  version in force when the request started, and the categories priced by fallback. The cost is
+  informational: the provider's invoice is the authority.
 
 Check constraints enforce the sources: a provider column is null unless its source is `provider`, an
 estimate column unless it is `estimated`. The only foreign key is `tenant_id`; a record outlives the
@@ -200,8 +199,7 @@ key, the credential, the model and the price it names.
 Outcomes: `ok`, `upstream_error`, `cancelled`, `timeout`, `rejected_limit`, `rejected_policy`,
 `internal_error`. (`rejected_limit` is written once limits exist.)
 
-Corrections will go to `usage_correction`, which references the original record and carries the
-difference. Reports will read both. Neither exists yet, and no API reads usage yet.
+Aggregated reports over the ledger come with sprint 6.2.
 
 ## Audit log
 

@@ -10,10 +10,7 @@ Pandokos is a self-hostable proxy that lets an organization expose LLM capabilit
 
 It can run as an internal component of a SaaS platform or as a standalone service offered to multiple organizations.
 
-Tenants can use LLM models through either:
-
-- **BYOK** (bring your own key): the tenant supplies its own provider credentials and bears the cost directly;
-- **platform-funded credentials**: the platform operator pays the provider and the tenant is metered.
+Tenants use LLM models with **BYOK** (bring your own key): each tenant supplies its own provider credentials and bears the cost directly. Pandokos keeps the keys, injects them, and measures every call.
 
 ## Responsibilities
 
@@ -25,7 +22,7 @@ Tenants can use LLM models through either:
 - audit log, usage and cost ledger;
 - distributed tracing and metrics with OpenTelemetry (OTLP);
 - administration of tenants, identities, roles, providers and models;
-- consumption data prepared for external billing systems.
+- usage events for external systems, such as billing.
 
 ## What it is not
 
@@ -56,10 +53,10 @@ Pandokos is deliberately not an identity provider, an agent or workflow framewor
 | Release | Theme |
 |---|---|
 | v0.1 | Core BYOK: tenants, virtual keys, vault, OpenAI and Anthropic passthrough with streaming, usage ledger |
-| v0.2 | Governance and web console: sign-in with local accounts or OIDC, roles, rate limits and budgets, reports, tenant deletion |
-| v0.3 | Platform-funded credentials and billing events |
-| v0.4 | Scale-out: replicas, Kubernetes, dedicated cells, more providers |
-| v1.0 | Hardening: security review, measured performance, tested recovery |
+| v0.2 | Governance: rate limits and budgets, sign-in with local accounts or OIDC, roles, reports, tenant deletion |
+| v0.3 | Ready to operate: usage events, external key-encryption key, threat model review, restore drill, upgrade policy |
+| v0.4 | Scale-out and providers: replicas, Kubernetes, Gemini, Azure OpenAI |
+| v1.0 | Hardening: independent security assessment, measured performance, dedicated cells, mutual TLS |
 
 Details are in the [roadmap](planning/roadmap.md).
 

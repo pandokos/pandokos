@@ -34,7 +34,7 @@ flowchart LR
     subgraph callers[Callers]
         app[Applications and agents<br/>provider SDKs]
         ops[Back ends, automation, CLI]
-        ppl[People<br/>web console in a browser]
+        ppl[People<br/>a browser client]
     end
     subgraph pandokos[Pandokos]
         gw[Gateway<br/>data plane]
@@ -47,7 +47,7 @@ flowchart LR
     vk[(Valkey<br/>optional)]
     kms[KEK provider<br/>file or KMS]
     otel[OTLP collector]
-    bill[Billing system]
+    evt[Event receiver<br/>for example billing]
 
     app -->|native provider API| gw
     ops -->|REST, keys or tokens| adm
@@ -62,7 +62,7 @@ flowchart LR
     gw -.->|JWKS| idp
     adm -.->|JWKS| idp
     gw -.-> otel
-    wrk -->|events| bill
+    wrk -->|events| evt
 ```
 
 ## 3. One binary, three roles
@@ -73,8 +73,8 @@ run any combination of three roles ([ADR 0003](../adr/0003-single-binary-with-ro
 | Role | Plane | Does | Listens |
 |---|---|---|---|
 | `gateway` | data | Authenticates callers, authorizes, enforces limits, injects the provider credential, forwards, extracts usage | inference port |
-| `admin` | control | Administration API for tenants, identities, roles, catalogue, credentials, limits, reports. Serves the web console and handles sign-in and sessions | admin port |
-| `worker` | background | Billing delivery, retention, tenant deletion, price refresh, key re-wrapping, counter reconciliation | none |
+| `admin` | control | Administration API for tenants, identities, roles, catalogue, credentials, limits, reports. Handles sign-in and sessions | admin port |
+| `worker` | background | Event delivery, retention, tenant deletion, price refresh, key re-wrapping, counter reconciliation | none |
 
 Two more commands exist: `migrate` (schema changes, with owner credentials) and `init` (first
 platform admin credential).
@@ -194,7 +194,7 @@ sequenceDiagram
    available to the tenant and allowed by the key.
 5. **Reserve.** An estimate of the request's cost is reserved against every applicable limit. If
    any limit would be exceeded the request ends here with a 429 in the API family's error shape.
-6. **Resolve.** Funding mode, endpoint and credential come from the catalogue (limits, step 5, are
+6. **Resolve.** Endpoint and credential come from the catalogue and the vault (limits, step 5, are
    not built yet, so in the code this step follows the model check directly). The credential is
    decrypted, or taken from a short-lived in-memory cache.
 7. **Forward.** Inbound credentials are stripped, the provider credential is injected, the
@@ -203,8 +203,7 @@ sequenceDiagram
 8. **Finish** (settle). Whichever way the request ends, the outcome, the usage and its sources
    (provider figures, or a marked estimate when the provider answered 2xx without readable usage)
    and the cost are decided once; the record is handed to the ledger writer, which never blocks the
-   caller. For platform-funded calls the billable event is written in the same transaction (later
-   release).
+   caller. From v0.3 the usage event is written in the same transaction as the record.
 9. **Trace.** The server span covers the request and a child span the provider call; both are
    children of the caller's trace when it sent one, and end at step 8.
 
@@ -225,7 +224,7 @@ write happens after the response has been delivered.
 | Process memory | — | Caches of principals, catalogue, data keys, decrypted credentials | Bounded lifetime; see below |
 
 There is no message broker. Events for external systems leave through a transactional outbox in
-PostgreSQL ([ADR 0014](../adr/0014-billing-outbox.md)).
+PostgreSQL ([ADR 0014](../adr/0014-events-outbox.md)).
 
 ## 7. Caches and revocation
 
@@ -239,7 +238,7 @@ revocation takes, so these numbers are part of the product's contract (IAM-05, V
 | Catalogue (providers, endpoints, models, prices) and each tenant's model access | 30 s (`cache.catalog_ttl`, at most 5 m) | `NOTIFY` (`catalog`, `catalog:<tenant>`) |
 | Unwrapped tenant data key | 5 min | `NOTIFY` on tenant deletion or key rotation |
 | Decrypted provider credential | 60 s | `NOTIFY` on credential change |
-| Console session | 30 s | `NOTIFY` on sign-out, password change or disabling of the user |
+| Session of a signed-in user | 30 s | `NOTIFY` on sign-out, password change or disabling of the user |
 
 **Documented bound: a revocation takes effect within 60 seconds on every instance**, and in
 practice within a second when notifications are flowing. The bound is tested.
@@ -294,7 +293,7 @@ The rule: when Pandokos cannot verify that a request is allowed, it does not for
 | KEK provider | Continues while data keys are cached, then refuses | Credential writes fail |
 | Identity provider | Tokens verify while the JWKS is cached. Virtual keys unaffected | Sign-in through the IdP is unavailable. Open sessions, local accounts and keys are unaffected |
 | OTLP collector | Unaffected; spans are dropped when the export queue is full | Unaffected |
-| Billing destination | Unaffected; events wait in the outbox | Unaffected |
+| Event destination | Unaffected; events wait in the outbox | Unaffected |
 | Provider | The provider's error is returned unchanged | Credential validation fails |
 
 ## 10. Technology choices
@@ -308,11 +307,10 @@ The rule: when Pandokos cannot verify that a request is allowed, it does not for
 | Cryptography | Go standard library: AES-256-GCM, HKDF, SHA-256 | [0008](../adr/0008-vault-envelope-encryption.md) |
 | Tokens | OIDC discovery and JWKS with a small, widely used library | [0005](../adr/0005-data-plane-authentication.md), [0006](../adr/0006-human-authentication-external-oidc.md) |
 | People sign-in | External OIDC or local accounts (Argon2id), server-side sessions | [0006](../adr/0006-human-authentication-external-oidc.md), [0022](../adr/0022-local-accounts-and-sessions.md) |
-| Console | React and TypeScript single-page application, built to static files embedded in the binary; client generated from the OpenAPI document | [0021](../adr/0021-web-console.md) |
 | Admin API | OpenAPI 3.1 written first; server interfaces, validation and client generated by an in-repository generator (`internal/apigen`) | [0017](../adr/0017-admin-api-spec-first.md) |
 | Telemetry | OpenTelemetry Go SDK, OTLP, `log/slog` | [0015](../adr/0015-observability.md) |
 | Prices | Open price dataset, imported and versioned, with overrides | [0011](../adr/0011-pricing-source.md) |
-| Events | Transactional outbox, CloudEvents over signed webhooks | [0014](../adr/0014-billing-outbox.md) |
+| Events | Transactional outbox, CloudEvents over signed webhooks | [0014](../adr/0014-events-outbox.md) |
 | Packaging | Static binary in a distroless non-root image; signed, with SBOM and provenance | [0018](../adr/0018-supply-chain.md) |
 | Configuration | One YAML file plus environment variables; dynamic state in the database | [0019](../adr/0019-configuration.md) |
 | Errors | The called API family's own error shape; RFC 9457 on the admin API | [0020](../adr/0020-error-contract.md) |
@@ -339,14 +337,13 @@ internal/
   limits/                counters: memory and Valkey
   usage/  ledger/        the usage record; its writer, admission and partition keeper
   audit/                 append-only writer and reader of the audit log
-  outbox/  billing/      event relay and destinations
+  outbox/                event relay and destinations
   admin/                 administration API handlers (change and audit in one transaction)
   worker/                background jobs
   store/                 database access: pools per role, tenant transactions, migrator, embedded migrations
   telemetry/  config/    traces over OTLP (OpenTelemetry SDK); settings
 api/openapi/             administration API specification (admin.v1.yaml)
 sqlc.yaml                configuration of the SQL generator; queries in internal/store/queries/sql
-web/console/             console source; its build output is embedded in the binary
 deploy/compose/  deploy/helm/  deploy/postgres/   (postgres: the SQL that creates the privilege roles)
 docs/                    requirements, architecture, ADRs
 planning/                roadmap, epics, sprints
@@ -362,16 +359,17 @@ docs/operations/         configuration reference, running and verifying the cont
 Everything under `internal/` is private: the only public contracts are the HTTP APIs, the
 configuration file and the event format.
 
-## 12. Web console
+## 12. Interactive sign-in
 
-The console is how people administer Pandokos ([ADR 0021](../adr/0021-web-console.md)). It is a
-single-page application whose built files are embedded in the binary and served by the `admin`
-role on the administration listener, so the single container stays single.
+People administer Pandokos through the administration API: with the CLI, or with an interface
+built on the API and served on the same origin as the administration listener. Pandokos ships no
+such interface; the sign-in and session endpoints are part of the documented API so that one can
+be built without any private path (API-08).
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant B as Browser (console)
+    participant B as Browser client
     participant A as Admin API
     participant I as Identity provider
     B->>A: Sign in (username and password)
@@ -379,32 +377,22 @@ sequenceDiagram
     A-->>B: Session cookie (not readable by scripts)
     B->>A: GET /v1/me
     A-->>B: Identity, memberships, permissions per tenant, platform permissions
-    B->>B: Build navigation from the permissions
     B->>A: API calls with the cookie
     A->>A: Authorize every call
 ```
-
-**Two areas.** The *platform area* is for platform roles: tenants, catalogue and prices, users and
-platform roles, platform limits and audit. The *tenant area* is for tenant roles: members and
-roles, service accounts and keys, provider credentials, model access, limits, usage, audit. A
-user sees the areas their roles give them; someone who belongs to several tenants switches
-between them.
 
 **Sign-in.** People are the only ones who sign in. They use a local account or an external
 identity provider ([ADR 0006](../adr/0006-human-authentication-external-oidc.md),
 [ADR 0022](../adr/0022-local-accounts-and-sessions.md)); either way the result is the same
 server-side session, carried by a cookie. A session is accepted only by the administration API.
-The gateway does not know what a session is, so signing in to the console can never be used to
-call a model. Service accounts and virtual keys cannot sign in.
+The gateway does not know what a session is, so signing in can never be used to call a model.
+Service accounts and virtual keys cannot sign in.
 
-**Profiling.** After sign-in the console asks the API who the user is and which permissions they
-hold (`GET /v1/me`). Every route, page and button of the console declares the permission it
-needs, the same `resource:action` string that the corresponding API operation requires, and is
-shown only if the user holds it. This is a convenience, not the control: the API authorizes each
-call on its own, so a modified console gains nothing.
-
-**No privileges of its own.** The console calls only the documented administration API. It holds
-no key, and there is no endpoint reserved for it.
+**What a user may do.** `GET /v1/me` tells a signed-in user who they are and which permissions
+they hold, platform-wide and in each tenant, as the same `resource:action` strings the API
+operations require. A client can use the answer to offer only what is allowed. This is a
+convenience, not the control: the API authorizes each call on its own, so a modified client gains
+nothing.
 
 ## 13. Open questions
 
@@ -413,8 +401,5 @@ These do not block the first release and are tracked for the sprint that needs t
 1. **Sealing credentials on write.** Encrypting to a per-tenant public key would let the admin
    role write secrets it cannot decrypt, so only the gateway could ever read them. It is a
    hardening worth considering once the symmetric design is in place.
-2. **Durable intent for platform-funded calls.** Writing a pending ledger row before forwarding
-   would close the window in which a crash loses a billable record, at the cost of one database
-   round trip per call. To be decided with the billing epic.
-3. **Batch and file endpoints.** Asynchronous provider APIs report usage out of band and need
+2. **Batch and file endpoints.** Asynchronous provider APIs report usage out of band and need
    their own metering design.

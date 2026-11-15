@@ -2,7 +2,7 @@
 id: EPIC-6
 title: Observability, reports and lifecycle
 status: todo
-release: v0.2
+release: v0.2, v0.3 (sprint 6.4)
 depends_on: [EPIC-3]
 ---
 
@@ -10,13 +10,13 @@ depends_on: [EPIC-3]
 
 ## Outcome
 
-Operators see what the system does, tenants see what they spent and who changed what, and a tenant
-can be removed for good.
+Operators see what the system does, tenants see what they spent and who changed what, a tenant
+can be removed for good, and external systems receive what happened as events.
 
 ## Decisions it implements
 
 ADR 0013 (reading, hash chain, retention), 0015, 0019 (export and apply), 0008 (rotation and
-erasure).
+erasure), 0014.
 
 ## Sprints
 
@@ -36,8 +36,8 @@ collector stopped, inference latency is unchanged.
 
 ### 6.2 Reports and audit reading
 
-- Usage rollups maintained by the worker; report API by period, provider, model, caller, funding
-  mode; platform aggregates.
+- Usage rollups maintained by the worker; report API by period, provider, model and caller;
+  platform aggregates.
 - Usage export as newline-delimited JSON and CSV.
 - Audit reading API with filters; per-tenant hash chain; `pandokos audit verify`; audit export.
 - Retention settings for usage and audit; partition dropping through the audited function.
@@ -55,16 +55,35 @@ no-op.
 - Staged tenant deletion run by the worker: suspension, removal of access, destruction of the data
   key, removal of configuration, pseudonymized retention of records, completion record.
 - Rotation of the key-encryption key: new version, re-wrap job, retirement of the old version.
+- Tenant data export in a documented format.
 - Backup and restore guide, including the key-encryption key; dependency-failure behaviour
   reference.
 
-Requirements: TEN-11, VLT-10, VLT-11, OPS-10 (documented), OPS-11.
+Requirements: TEN-11, TEN-12, VLT-10, VLT-11, OPS-10 (documented), OPS-11.
 
 Exit: after deletion, a backup taken before it cannot yield the tenant's credentials with the
 current keys; after rotation every credential still works and no data key is wrapped by the old
-version.
+version; a tenant export can be read with the published schema.
+
+### 6.4 Events for external systems — part of v0.3
+
+- Outbox table written in the transaction that records the fact; relay in the worker with
+  claiming, backoff, dead-letter state and replay.
+- CloudEvents format and versioned event types: usage recorded, limit threshold reached, limit
+  exhausted, tenant deleted. An external reference per tenant, carried by every event.
+- Signed webhook destination; pull export of events.
+- Administration API and CLI for destinations, delivery state and replay.
+- Receiver example that shows idempotent handling.
+- Failure tests: worker crash in mid-delivery, receiver outage, duplicate delivery.
+
+Requirements: EVT-01 to EVT-04, LIM-13.
+
+Exit: across injected crashes and outages, an idempotent receiver ends with exactly one entry per
+call; a receiver that stays down loses nothing and delays no inference.
 
 ## Risks
 
 - Deletion touches every table and must be resumable. It is written as idempotent steps with
   recorded progress.
+- Usage events multiply the rows written per call. The outbox is written in the ledger writer's
+  batch, and its cost is measured before the sprint closes.

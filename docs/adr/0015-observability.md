@@ -23,7 +23,7 @@ repository, and attribute names can still change.
   follows is pinned, documented and reported in the instrumentation scope. Because the conventions
   are not stable, a change of emitted names is announced in release notes and, where practical,
   both old and new names are emitted for one minor release.
-- **Pandokos attributes** use the `pandokos.*` namespace: tenant ID, principal ID, funding mode,
+- **Pandokos attributes** use the `pandokos.*` namespace: tenant ID, principal ID,
   credential ID, estimated cost, limit outcome. Tenant and principal appear on spans, not on
   metrics.
 - **Metrics.** Request count, error count, time to first byte, total duration, tokens by category,

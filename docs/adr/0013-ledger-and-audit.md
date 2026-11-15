@@ -21,9 +21,8 @@ disposable.
   full the instance reports not ready and refuses new requests, rather than serve calls it cannot
   record. On shutdown the buffer is flushed before the process exits.
 - The window in which a crash loses records is the batching interval plus any buffered backlog.
-  It is documented. Closing it for platform-funded calls with a durable intent row is an open
-  question tied to the billing work.
-- Rows are never updated. Corrections are rows in a separate table that reference the original.
+  It is documented.
+- Rows are never updated.
 - Reports read from rollup tables maintained by the worker, not from raw rows.
 
 **Audit log.**
