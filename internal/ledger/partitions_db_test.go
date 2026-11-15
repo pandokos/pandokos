@@ -73,9 +73,9 @@ func TestPartitioner(t *testing.T) {
 
 	t.Run("a row in the default partition is warned about once", func(t *testing.T) {
 		tid := d.SeedTenant(t, "ledger-partitions")
-		_, err := d.Super(t).Exec(ctx30(t), `INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind, principal_id, funding,
+		_, err := d.Super(t).Exec(ctx30(t), `INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind, principal_id,
 			provider, api_family, operation, outcome, duration_ms, input_source, output_source, cost_status)
-			VALUES ($1::uuid, pandokos.uuid_v7(), now() + interval '5 years', md5(random()::text), 'service_account', gen_random_uuid()::text, 'byok',
+			VALUES ($1::uuid, pandokos.uuid_v7(), now() + interval '5 years', md5(random()::text), 'service_account', gen_random_uuid()::text,
 			'openai', 'openai', 'chat.completions', 'ok', 1, 'none', 'none', 'none')`, tid.String())
 		if err != nil {
 			t.Fatal(err)

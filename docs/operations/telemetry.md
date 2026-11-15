@@ -57,7 +57,7 @@ Attributes, the complete list:
 | Span | Attributes |
 |---|---|
 | server | `http.request.method`, `http.route`, `http.response.status_code`, `pandokos.request.id`, `pandokos.record.id`, `pandokos.tenant.id`, `pandokos.principal.id`, `pandokos.key.id`, `pandokos.provider`, `pandokos.operation`, `pandokos.outcome`, `pandokos.error.code` |
-| provider | `pandokos.provider`, `pandokos.endpoint`, `pandokos.model`, `pandokos.operation`, `pandokos.stream`, `pandokos.credential.id`, `pandokos.funding`, `http.response.status_code`, `pandokos.upstream.error`, `pandokos.ttfb_ms`, `pandokos.usage.source`, `pandokos.usage.output_source`, `pandokos.cost.status`, `pandokos.cost.amount`, `pandokos.cost.currency` |
+| provider | `pandokos.provider`, `pandokos.endpoint`, `pandokos.model`, `pandokos.operation`, `pandokos.stream`, `pandokos.credential.id`, `http.response.status_code`, `pandokos.upstream.error`, `pandokos.ttfb_ms`, `pandokos.usage.source`, `pandokos.usage.output_source`, `pandokos.cost.status`, `pandokos.cost.amount`, `pandokos.cost.currency` |
 
 `pandokos.error.code` and `pandokos.upstream.error` are set only when there is an error. The span
 status is `Error` for the outcomes `upstream_error`, `timeout` and `internal_error` and unset

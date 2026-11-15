@@ -27,7 +27,6 @@ const (
 	attrModel            = "pandokos.model"
 	attrStream           = "pandokos.stream"
 	attrCredentialID     = "pandokos.credential.id" //nolint:gosec // an attribute name, not a credential
-	attrFunding          = "pandokos.funding"
 	attrUpstreamError    = "pandokos.upstream.error"
 	attrTTFB             = "pandokos.ttfb_ms"
 	attrUsageSource      = "pandokos.usage.source"
@@ -42,7 +41,7 @@ const (
 var SpanAttributes = []string{
 	attrHTTPMethod, attrHTTPRoute, attrHTTPStatus, attrRequestID, attrRecordID, attrTenantID,
 	attrPrincipalID, attrKeyID, attrProvider, attrOperation, attrOutcome, attrErrorCode,
-	attrEndpoint, attrModel, attrStream, attrCredentialID, attrFunding, attrUpstreamError,
+	attrEndpoint, attrModel, attrStream, attrCredentialID, attrUpstreamError,
 	attrTTFB, attrUsageSource, attrUsageOutputSrc, attrCostStatus, attrCostAmount, attrCostCurrency,
 }
 
@@ -63,7 +62,6 @@ func (st *reqState) endClient(r *usage.Record) {
 		attribute.String(attrModel, r.Model),
 		attribute.String(attrOperation, r.Operation),
 		attribute.String(attrCredentialID, r.CredentialID),
-		attribute.String(attrFunding, r.Funding),
 		attribute.String(attrUsageSource, string(r.InputSource)),
 		attribute.String(attrUsageOutputSrc, string(r.OutputSource)),
 		attribute.String(attrCostStatus, r.CostStatus),

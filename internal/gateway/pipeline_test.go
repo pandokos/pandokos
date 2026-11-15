@@ -522,7 +522,7 @@ func TestCredentialResolution(t *testing.T) {
 			t.Errorf("Open was called with %+v, the response's request ID is %q", calls, c.header.Get("X-Pandokos-Request-Id"))
 		}
 		line := h.lastRequestLine(t)
-		if line["credential_id"] != "synthetic-credential-openai" || line["credential_pinned"] != true || line["funding"] != "byok" {
+		if line["credential_id"] != "synthetic-credential-openai" || line["credential_pinned"] != true {
 			t.Errorf("line: %v", line)
 		}
 		testutil.AssertAbsent(t, "the logs", h.logs.String(), testutil.SecretForms(fixtures.CanaryCredential)...)
@@ -552,7 +552,7 @@ func TestCredentialResolution(t *testing.T) {
 			testutil.AssertAbsent(t, name+": the response", c.dump(), testutil.SecretForms(fixtures.CanaryCredential)...)
 			testutil.AssertAbsent(t, name+": the logs", h.logs.String(), testutil.SecretForms(fixtures.CanaryCredential)...)
 			line := h.awaitOutcome(t, "pandokos_error")
-			for _, f := range []string{"credential_id", "credential_pinned", "funding"} {
+			for _, f := range []string{"credential_id", "credential_pinned"} {
 				if _, ok := line[f]; ok {
 					t.Errorf("%s: %s is logged although no credential was opened", name, f)
 				}
@@ -1140,7 +1140,7 @@ func TestRequestLogFields(t *testing.T) {
 	op := setOf("provider", "api_family", "operation")
 	who := setOf("tenant_id", "service_account_id", "key_id")
 	resolved := setOf("model", "model_id", "endpoint")
-	credential := setOf("credential_id", "credential_pinned", "funding")
+	credential := setOf("credential_id", "credential_pinned")
 	response := setOf("stream", "usage_injected", "upstream_status", "ttfb_ms", "request_bytes", "response_bytes", "usage_source", "usage", "upstream_request_id")
 	// Sprint 3.2 (section 5.5): every admitted request has a record ID, a trace ID and a cost
 	// status; a known cost has an amount and a currency; the number of metadata entries may be
@@ -1181,7 +1181,7 @@ func TestRequestLogFields(t *testing.T) {
 			t.Errorf("the line does not match the record %s: %v", rec.ID, line)
 		}
 		for k, v := range map[string]any{"api_family": "openai", "provider": "openai", "operation": "chat.completions", "model": "fake-basic",
-			"endpoint": "synthetic-endpoint", "model_id": "synthetic-model-openai-fake-basic", "funding": "byok", "credential_pinned": false,
+			"endpoint": "synthetic-endpoint", "model_id": "synthetic-model-openai-fake-basic", "credential_pinned": false,
 			"upstream_request_id": "req_fake_0001", "route": "POST /{provider}/v1/chat/completions", "outcome": "ok"} {
 			if line[k] != v {
 				t.Errorf("%s = %v, want %v", k, line[k], v)
@@ -1250,9 +1250,9 @@ func TestRequestLogFields(t *testing.T) {
 	refusal("step 6: invalid", nil, func(t *testing.T, h *harness) { h.sendAuthed(t, route, []byte(`{}`)) },
 		union(base, op, who, setOf("invalid_reason", "request_bytes")), setOf("stream", "usage_injected"), "model", "model_id", "credential_id", "upstream_status")
 	refusal("step 7: model not allowed", nil, post("nope"), union(base, op, who, setOf("request_bytes")), afterBody,
-		"model", "model_id", "endpoint", "credential_id", "credential_pinned", "funding", "upstream_status")
+		"model", "model_id", "endpoint", "credential_id", "credential_pinned", "upstream_status")
 	refusal("step 8: no credential", func(o *gateway.Options) { o.Credentials = testutil.StaticCredentials(nil) }, post("fake-basic"),
-		union(base, op, who, resolved, setOf("request_bytes")), afterBody, "credential_id", "credential_pinned", "funding", "upstream_status")
+		union(base, op, who, resolved, setOf("request_bytes")), afterBody, "credential_id", "credential_pinned", "upstream_status")
 	refusal("step 9: the provider cannot be reached", nil, func(t *testing.T, h *harness) {
 		closedPortTarget(h)
 		h.sendAuthed(t, route, chat("fake-basic", false))

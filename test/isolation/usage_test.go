@@ -19,7 +19,7 @@ import (
 func usageJSONFor(id, tenantInJSON string, started time.Time) string {
 	return `[{"id":"` + id + `","tenant_id":"` + tenantInJSON + `","started_at":"` + started.UTC().Format(time.RFC3339Nano) + `",` +
 		`"request_id":"0123456789abcdef0123456789abcdef","trace_id":"","principal_kind":"service_account","principal_id":"0192f0f0-0000-7000-8000-0000000000a2","key_id":"",` +
-		`"funding":"byok","provider":"openai","api_family":"openai","operation":"chat.completions","endpoint":"","model":"","upstream_model":"",` +
+		`"provider":"openai","api_family":"openai","operation":"chat.completions","endpoint":"","model":"","upstream_model":"",` +
 		`"outcome":"ok","error_code":"","duration_ms":1,"input_source":"none","output_source":"none","cost_status":"none","cost_reason":"",` +
 		`"other_units":{},"provider_usage":{},"metadata":{},"metadata_dropped":0}]`
 }
@@ -76,9 +76,9 @@ func TestUsageRecord(t *testing.T) {
 
 	t.Run("an insert for another tenant is refused", func(t *testing.T) {
 		err := inSession(t, gateway, tenantA, func(c context.Context, tx pgx.Tx) error {
-			_, err := tx.Exec(c, `INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind, principal_id, funding,
+			_, err := tx.Exec(c, `INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind, principal_id,
 				provider, api_family, operation, outcome, duration_ms, input_source, output_source, cost_status)
-				VALUES ($1::uuid, pandokos.uuid_v7(), now(), md5(random()::text), 'service_account', gen_random_uuid()::text, 'byok',
+				VALUES ($1::uuid, pandokos.uuid_v7(), now(), md5(random()::text), 'service_account', gen_random_uuid()::text,
 				'openai', 'openai', 'chat.completions', 'ok', 1, 'none', 'none', 'none')`, b.String())
 			return err
 		})
@@ -105,9 +105,9 @@ func TestUsageRecord(t *testing.T) {
 		}
 		// ON CONFLICT with a target would need SELECT: the statement does not use one.
 		err := inSession(t, gateway, tenantA, func(c context.Context, tx pgx.Tx) error {
-			_, err := tx.Exec(c, `INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind, principal_id, funding,
+			_, err := tx.Exec(c, `INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind, principal_id,
 				provider, api_family, operation, outcome, duration_ms, input_source, output_source, cost_status)
-				SELECT tenant_id, id, started_at, request_id, principal_kind, principal_id, funding, provider, api_family, operation, outcome, duration_ms,
+				SELECT tenant_id, id, started_at, request_id, principal_kind, principal_id, provider, api_family, operation, outcome, duration_ms,
 				input_source, output_source, cost_status FROM pandokos.usage_record ON CONFLICT (tenant_id, started_at, id) DO NOTHING`)
 			return err
 		})
@@ -164,9 +164,9 @@ func TestUsageRecord(t *testing.T) {
 				}
 			}
 			for op, sql := range map[string]string{
-				"INSERT": `INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind, principal_id, funding,
+				"INSERT": `INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind, principal_id,
 					provider, api_family, operation, outcome, duration_ms, input_source, output_source, cost_status)
-					VALUES (pandokos.current_tenant_id(), pandokos.uuid_v7(), now(), md5(random()::text), 'service_account', gen_random_uuid()::text, 'byok',
+					VALUES (pandokos.current_tenant_id(), pandokos.uuid_v7(), now(), md5(random()::text), 'service_account', gen_random_uuid()::text,
 					'openai', 'openai', 'chat.completions', 'ok', 1, 'none', 'none', 'none')`,
 				"UPDATE":   `UPDATE pandokos.usage_record SET model = 'changed'`,
 				"DELETE":   `DELETE FROM pandokos.usage_record`,
@@ -194,9 +194,9 @@ func firstOfMonth(n int) time.Time {
 	return time.Date(now.Year(), now.Month()+time.Month(n), 1, 0, 0, 0, 0, time.UTC)
 }
 
-const insertAt = `INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind, principal_id, funding,
+const insertAt = `INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind, principal_id,
 	provider, api_family, operation, outcome, duration_ms, input_source, output_source, cost_status)
-	VALUES ($1::uuid, pandokos.uuid_v7(), $2, md5(random()::text), 'service_account', gen_random_uuid()::text, 'byok',
+	VALUES ($1::uuid, pandokos.uuid_v7(), $2, md5(random()::text), 'service_account', gen_random_uuid()::text,
 	'openai', 'openai', 'chat.completions', 'ok', 1, 'none', 'none', 'none')`
 
 // TestUsagePartitions is T-481: the function that creates partitions, the protection of a
@@ -318,8 +318,8 @@ func TestUsagePartitions(t *testing.T) {
 			tenantSession := sessions(tid)[0]
 			for what, sql := range map[string]string{
 				"SELECT": `SELECT count(*) FROM ` + name,
-				"INSERT": `INSERT INTO ` + name + ` (tenant_id, id, started_at, request_id, principal_kind, principal_id, funding, provider, api_family, operation, outcome, duration_ms, input_source, output_source, cost_status)
-					VALUES (pandokos.current_tenant_id(), pandokos.uuid_v7(), now(), md5(random()::text), 'service_account', gen_random_uuid()::text, 'byok', 'openai', 'openai', 'x', 'ok', 1, 'none', 'none', 'none')`,
+				"INSERT": `INSERT INTO ` + name + ` (tenant_id, id, started_at, request_id, principal_kind, principal_id, provider, api_family, operation, outcome, duration_ms, input_source, output_source, cost_status)
+					VALUES (pandokos.current_tenant_id(), pandokos.uuid_v7(), now(), md5(random()::text), 'service_account', gen_random_uuid()::text, 'openai', 'openai', 'x', 'ok', 1, 'none', 'none', 'none')`,
 				"UPDATE":   `UPDATE ` + name + ` SET model = 'x'`,
 				"DELETE":   `DELETE FROM ` + name,
 				"TRUNCATE": `TRUNCATE ` + name,
