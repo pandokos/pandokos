@@ -100,9 +100,9 @@ ledger, the logs or the spans (T-497, T-513).
 
 | Item | Sprint |
 |---|---|
-| Any API, CLI command or console page that **reads** usage (USE-06, USE-07); `usage:read` permission; rollups; export (O-3) | 3.3 (minimal list, if O-3 is confirmed), 6.2 |
+| Any API or CLI command that **reads** usage (USE-06, USE-07); `usage:read` permission; rollups; export (O-3) | 3.3 (minimal list, if O-3 is confirmed), 6.2 |
 | Retention and the audited function that drops partitions (USE-08); pseudonymization at tenant deletion | 6.2, 6.3 |
-| `usage_correction` (USE-05, the R3 part), rating rule columns, billable events, the durable intent row for platform-funded calls | 7.x |
+| Events for external systems (EVT-01 to EVT-04) | 6.4 |
 | Outcome `rejected_limit`, reserve and settle, the request-side estimate used for reservation | 5.1 |
 | Metrics, the Prometheus endpoint, `gen_ai.*` attributes and token counts on spans (OBS-03, OBS-06; O-16) | 6.1 |
 | OTLP over gRPC (O-2); trace export of the administration API and of background jobs | when asked; 6.1 |
@@ -124,18 +124,18 @@ Wording quoted from [docs/requirements](../../../../docs/requirements/README.md)
 | GW-13 | "The caller can attach a bounded set of metadata to a request for attribution. Metadata is recorded with the usage, never used in a security decision and never forwarded to the provider" | `X-Pandokos-Metadata-<key>` headers, at most 8, bounded in size and character set, stored on the record, read after authentication, never on a forwarding list | full |
 | GW-14 | "Usage is extracted from streaming and non-streaming responses. Any change to a request needed for this is documented and invisible to the caller" | Readers for the three operations, streaming and not; the one change (ADR 0024) stays limited to chat streams | full, `openai` family |
 | GW-09 | "Each API family exposes an allow-list of endpoints that Pandokos can meter. Other paths are rejected with a clear error" | Two operations join the list with their readers | `openai`: three operations |
-| USE-01 | "Every authenticated inference request produces exactly one usage record in both funding modes, whether it succeeded, failed, was cancelled, was refused for a limit or was never forwarded" | Admission after authentication, one `Record` call in `finish` for every outcome, idempotent insert | BYOK; every outcome that exists today. One stated exception: a request refused because the ledger buffer is full has no record (ADR 0013; §5.6) |
+| USE-01 | "Every authenticated inference request produces exactly one usage record, whether it succeeded, failed, was cancelled, was refused for a limit or was never forwarded" | Admission after authentication, one `Record` call in `finish` for every outcome, idempotent insert | every outcome that exists today. One stated exception: a request refused because the ledger buffer is full has no record (ADR 0013; §5.6) |
 | USE-02 | "The ledger holds no prompt, completion or media content" | No column can hold content: every text column is format-checked, JSON columns hold numbers or bounded caller metadata; canary tests | full |
-| USE-03 | "A record holds: record ID, request ID, trace ID, tenant, caller, virtual key or token subject, credential ID, funding mode, provider, model, endpoint, streaming flag, timestamps and duration, outcome, token counts by category (input, output, cached, provider-specific), other billed units, estimated cost, currency, price version and caller metadata" | The columns of §5.5 | full (token subject: 4.1) |
-| USE-04 | "Values reported by the provider, values estimated by Pandokos and values produced by rating rules are stored separately" | Separate columns for reported and estimated counts, a source per value, check constraints that forbid both | provider and estimated (rating: 7.1) |
-| USE-05 | "The ledger is append-only. A correction is a new record that references the original" | No runtime role can update, delete or truncate; triggers stop the owner too | append-only (R1); corrections R3 |
+| USE-03 | "A record holds: record ID, request ID, trace ID, tenant, caller, virtual key or token subject, credential ID, provider, model, endpoint, streaming flag, timestamps and duration, outcome, token counts by category (input, output, cached, provider-specific), other billed units, estimated cost, currency, price version and caller metadata" | The columns of §5.5 | full (token subject: 4.1) |
+| USE-04 | "Values reported by the provider and values estimated by Pandokos are stored separately" | Separate columns for reported and estimated counts, a source per value, check constraints that forbid both | full |
+| USE-05 | "The ledger is append-only: no record is changed after it is written" | No runtime role can update, delete or truncate; triggers stop the owner too | full |
 | OBS-01 | "Pandokos is instrumented with OpenTelemetry and exports traces and metrics over OTLP. Logs are structured and written to standard output" | OpenTelemetry SDK, traces over OTLP/HTTP | traces (R1) |
 | OBS-02 | "Each provider call produces one span, attached to the caller's trace through W3C Trace Context. Trace headers are never used for authentication or authorization" | One client span per forwarded call under a server span; context read only after authentication | full |
 | OBS-04 | "Telemetry holds no content and no secrets" | A fixed attribute list; canary tests on spans and on the bytes sent to the collector | traces |
 | OBS-05 | "Endpoint, protocol, headers, sampling and resource attributes are configurable. A failing collector never blocks or slows inference" | Keys `telemetry.*`; asynchronous export with a bounded queue that drops | full for traces; `protocol` accepts `http/protobuf` only (O-2) |
-| PRV-02 | "The documentation states what data is sent to providers, telemetry collectors and billing destinations" | `docs/reference/data-flows.md` | providers and collectors (no billing destination exists) |
+| PRV-02 | "The documentation states what data is sent to providers, telemetry collectors and event destinations" | `docs/reference/data-flows.md` | providers and collectors (no event destination exists) |
 | VLT-15 | "Each use of a credential is attributable to a request, tenant and caller" | `credential_id` on the record | full (completes 2.1) |
-| FND-02 | "Under BYOK only the tenant's own credential is used. Costs are estimates, marked informational and non-billable" | Cost on the record with its price version and status; documented as informational | the cost part (completes 3.1) |
+| USE-09 | "Only the tenant's own credential is used for its requests. Costs are estimates and informational: the provider's invoice is the authority" | Cost on the record with its price version and status; documented as informational | the cost part (completes 3.1) |
 | CAT-08 | "… The cost of a request uses the price in force when it was made. When no price is known the usage is recorded with an unknown cost, …" | `cost_status` `unknown` with the reason of `pricing.CostOf` | recording (the rule: 2.2) |
 
 Touched, not claimed: **OPS-12** (claimed by 3.1; the flush is added to the sequence, §5.8),
@@ -365,7 +365,7 @@ version, the categories priced by fallback, and:
 | `none` | both sources are `none` |
 
 Amounts are exact (`numeric(38,18)`), in the currency of the price version, never converted
-(2.2 O-6). Under BYOK the cost is informational (FND-02): the guide says so.
+(2.2 O-6). The cost is informational (USE-09): the guide says so.
 
 ### 5.5 The usage record
 
@@ -386,7 +386,6 @@ type Record struct {
 
     PrincipalKind, PrincipalID, KeyID string // "service_account", its ID, the virtual key ID
     CredentialID  string // "" until step 8 passed
-    Funding       string // "byok"
 
     Provider, APIFamily, Operation string
     Endpoint, Model, ModelID, UpstreamModel string // "" until step 7 passed
@@ -419,7 +418,7 @@ Columns of `pandokos.usage_record` (full SQL: plan.md, appendix A):
 
 | Group | Columns |
 |---|---|
-| Attribution | `tenant_id`, `id`, `started_at`, `recorded_at`, `request_id`, `trace_id`, `principal_kind`, `principal_id`, `key_id`, `credential_id`, `funding`, `metadata`, `metadata_dropped` |
+| Attribution | `tenant_id`, `id`, `started_at`, `recorded_at`, `request_id`, `trace_id`, `principal_kind`, `principal_id`, `key_id`, `credential_id`, `metadata`, `metadata_dropped` |
 | What was called | `provider`, `api_family`, `operation`, `endpoint`, `model`, `model_id`, `upstream_model`, `stream`, `outcome`, `error_code`, `upstream_status`, `ttfb_ms`, `duration_ms`, `request_bytes`, `response_bytes` |
 | Measured by the provider | `input_source`, `output_source`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `reasoning_tokens`, `other_units` (`Usage.Extra`), `provider_usage` (`Usage.Reported`) |
 | Estimated by Pandokos | `estimated_input_tokens`, `estimated_output_tokens` |
@@ -630,7 +629,7 @@ guide):
 | Span | Attributes |
 |---|---|
 | server | `http.request.method`, `http.route`, `http.response.status_code`, `pandokos.request.id`, `pandokos.record.id`, `pandokos.tenant.id`, `pandokos.principal.id`, `pandokos.key.id`, `pandokos.provider`, `pandokos.operation`, `pandokos.outcome`, `pandokos.error.code` |
-| provider | `pandokos.provider`, `pandokos.endpoint`, `pandokos.model`, `pandokos.operation`, `pandokos.stream`, `pandokos.credential.id`, `pandokos.funding`, `http.response.status_code`, `pandokos.upstream.error`, `pandokos.ttfb_ms`, `pandokos.usage.source`, `pandokos.cost.status`, `pandokos.cost.amount`, `pandokos.cost.currency` |
+| provider | `pandokos.provider`, `pandokos.endpoint`, `pandokos.model`, `pandokos.operation`, `pandokos.stream`, `pandokos.credential.id`, `http.response.status_code`, `pandokos.upstream.error`, `pandokos.ttfb_ms`, `pandokos.usage.source`, `pandokos.cost.status`, `pandokos.cost.amount`, `pandokos.cost.currency` |
 
 Span status is `Error` for outcomes `upstream_error`, `timeout` and `internal_error`, unset
 otherwise; no status description, no events, no links. Token counts wait for the `gen_ai.*`
@@ -840,7 +839,7 @@ the built binary, S SDK module, C container, R repository. IDs continue after T-
 | T-482 | `isolation.TestUsageAppendOnly` | D | The owner cannot update or delete a row through the parent or a partition, nor truncate either; L-17 passes | **USE-05** |
 | T-483 | `resolver.TestTargetPrices` | D | `Resolve` returns the model's versions; a model without price returns none; versions changed in the database appear after the cache refresh | CAT-08 |
 | T-484 | `gateway.TestOneRecordPerOutcome` | I | A table with one case per row of the outcome table and per step: step 4 (suspended, each permission), 5 (too large, read timeout, caller closes), 6, 7 (three errors), 8 (three errors), cancelled while resolving, guard refusal, connection error, redirect, timeout before headers, 4xx, 5xx, success plain and stream for each operation, caller cancels mid-stream, duration limit mid-stream, provider cuts the stream, panic before and after the first write, forced shutdown: exactly one `Admit` and one `Record`, with the outcome and code of §5.5. Unrouted and unauthenticated requests: zero of both | **USE-01** |
-| T-485 | `gateway.TestRecordFields` | I | A plain and a streamed success: every field of §5.5, in particular request ID equal to the response header, credential ID, key and principal, model names and ID, bytes, duration, first-byte time, trace ID; with two price versions around the start time the earlier one prices the request; a model without price: `unknown`, `no_price`; refusals carry attribution only | **USE-03**, **VLT-15**, **FND-02**, CAT-08 |
+| T-485 | `gateway.TestRecordFields` | I | A plain and a streamed success: every field of §5.5, in particular request ID equal to the response header, credential ID, key and principal, model names and ID, bytes, duration, first-byte time, trace ID; with two price versions around the start time the earlier one prices the request; a model without price: `unknown`, `no_price`; refusals carry attribution only | **USE-03**, **VLT-15**, **USE-09**, CAT-08 |
 | T-486 | `gateway.TestUsageSources` | I | Each row of the first table of §5.4, with each cause of the last row (no usage sent, cut, cancelled, timed out, event over the bound, JSON over 4 MiB, invalid JSON): sources, provider and estimate columns never both set, estimates as §5.4, `Reported` kept, cost computed on the estimate | **USE-04**, **GW-14** |
 | T-487 | `gateway.TestAdmissionRefused` | I | `Admit` false: 503 `unavailable` with both headers; no decision, no body read, no resolve, no credential, nothing forwarded, no `Record`, no span; the log line has `ledger: full` | USE-01, OPS-11 |
 | T-488 | `gateway.TestMetadata` | I | Kept entries on the record; dropped count on the record, the response header and the log; the provider receives no `X-Pandokos-*` header, also when the caller names one in `Connection`; values absent from log and spans; a key that fails authentication or authorization is refused identically with and without metadata | **GW-13** |
@@ -909,7 +908,7 @@ the built binary, S SDK module, C container, R repository. IDs continue after T-
 | OBS-04 | T-497, T-512 |
 | OBS-05 | T-500 to T-502, T-505, T-511 |
 | PRV-02 | T-R29 |
-| VLT-15, FND-02, CAT-08 | T-485 |
+| VLT-15, USE-09, CAT-08 | T-485 |
 | OPS-12 (touched) | T-476, T-507, T-510 |
 | TEN-06, TEN-07 (touched) | T-471, T-475, T-480, T-481 |
 
@@ -989,9 +988,8 @@ the built binary, S SDK module, C container, R repository. IDs continue after T-
   retention through an audited function that drops partitions, and decides what happens to
   rows in the default partition. **6.3** pseudonymizes `principal_id` and `key_id`: that needs
   a definer function, since the table is append-only for every role.
-- **7.1** adds the funding mode `platform` (a check constraint widens), the rating columns, and
-  writes the billable event with the record: the writer's per-tenant transaction is where the
-  outbox row joins. It decides the durable intent row of ADR 0013.
+- **6.4** writes the usage event with the record: the writer's per-tenant transaction is where the
+  outbox row joins.
 - **8.x**: with several instances each has its own buffer; `service.instance.id` tells their
   spans apart. Separate worker processes run the partitioner.
 
@@ -1049,7 +1047,7 @@ are synthetic, 1.1 R-4); the Responses wire format against a live account.
 | R-1 | **A synthetic Responses fixture differs from the real stream** (event names, where usage sits) | The reader takes usage from any of three terminal events and ignores what it does not know; when it finds none the record is estimated, never lost; 3.3's SDK suite and a recording made with a key replace the fixtures |
 | R-2 | **One transaction per tenant per flush is slow with many tenants** (D-11) | Records of a tenant share a transaction; when the database is slower than the arrivals, batches grow and the cost per record falls; the buffer absorbs bursts; the alternative is recorded (O-12) and can replace the statement without touching the gateway |
 | R-3 | **`ledger.buffer_size` caps admitted requests** (D-12): an instance with more concurrent calls than slots refuses | Default 10 000; documented with the sizing rule; the refusal is 503 with a log field and, from 6.1, a counter |
-| R-4 | **Records are lost when the process is killed** or the database stays away past the flush timeout | ADR 0013's stated window; unwritten records are logged in full at an orderly shutdown; platform-funded calls get the durable intent in 7.x |
+| R-4 | **Records are lost when the process is killed** or the database stays away past the flush timeout | ADR 0013's stated window; unwritten records are logged in full at an orderly shutdown |
 | R-5 | **A caller forces sampling** by sending a sampled `traceparent` (D-17) | Only authenticated callers; the queue is bounded and drops; `sample_ratio` does not protect here and the guide says so (O-9) |
 | R-6 | **The new dependencies widen the supply chain** (twenty modules in the graph, gRPC among them without being used) | ADR 0015 and 0002 accepted the SDK; Dependabot and `govulncheck` cover them; imports are confined to one package; the alternative is O-1 |
 | R-7 | **The SDK reads `OTEL_RESOURCE_ATTRIBUTES`** and a later release may read more | Documented and warned at start; T-501 pins the behaviour and fails on a change |

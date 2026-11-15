@@ -44,7 +44,7 @@ reserved.
 - Periodic counters per day and month with a configurable time zone.
 - Monetary budgets on estimated cost; behaviour with unknown prices.
 - Per-provider and per-model rules.
-- Soft thresholds that record an event.
+- Soft thresholds that record an event (delivery to external systems comes with sprint 6.4).
 - Counters rebuilt from ledger aggregates at start; periodic reconciliation by the worker.
 - Behaviour when the counter store fails; configuration of the default.
 - Administration API and CLI for limits; documentation of what is strict and what is best effort.

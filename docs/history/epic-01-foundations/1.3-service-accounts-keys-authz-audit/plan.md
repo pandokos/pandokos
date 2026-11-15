@@ -798,8 +798,7 @@ Content (write it out in full sentences; keep each to one page):
   the date. *Decision*: `internal/apigen`; the strict subset; generated output uses only the
   standard library and is committed; CI regenerates; the conventions of D-2 and D-20;
   `x-pandokos-permission` mandatory. *Consequences*: the project owns about 800 lines; a new
-  construct is generator work; the document stays valid OpenAPI 3.1 for other generators
-  (console). *Alternatives*: `oapi-codegen` (runtime module, no validation, no permission);
+  construct is generator work; the document stays valid OpenAPI 3.1 for other generators. *Alternatives*: `oapi-codegen` (runtime module, no validation, no permission);
   `ogen`; hand-written handlers checked against the document by a test.
 - **0029. Static SQL: `sqlc`, text-mode rules, and a test against built SQL.** Refines 0004 and
   0027. *Decision*: D-3, D-4; `sqlc` pinned in the Makefile, run without cgo with the release

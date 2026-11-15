@@ -108,7 +108,6 @@ internal address through a crafted endpoint or a redirect fail (T-452, T-433, T-
 | JWT authentication on the same pipeline | 4.1 |
 | Rate limits, quotas, per-tenant concurrency (the rest of GW-16) | 5.1, 5.2 |
 | Metrics for refusals and egress blocks | 6.1 |
-| Platform-funded credentials and the funding mode as data | 7.1 |
 | Proxy authentication; per-endpoint CA; mutual TLS towards providers; tenant-supplied endpoints | not scheduled (O-1), R4 |
 | Reload of `upstream.tls.ca_file` without restart | 8.2 (with listener certificates) |
 
@@ -130,8 +129,7 @@ Wording quoted from [docs/requirements](../../../../docs/requirements/README.md)
 | GW-12 | "Every request gets a request ID, returned to the caller. W3C Trace Context from the caller is honoured" | Request ID on every response, in every log line, passed to the vault and the audit row | request ID (trace context 3.2) |
 | GW-16 | "Request size, header size, duration and per-tenant concurrency are limited" | §5.7: body and header size, body read time (now answered 408), total duration, connect time, provider header size | size and duration (R1); concurrency 5.1 |
 | OPS-12 | "On shutdown, in-flight streams are drained up to a configurable deadline" | The drain of sprint 1.1, proven on the new pipeline, including a request waiting in resolution | full (D-14); 3.2 adds the flush of the ledger buffer, which is ADR 0013's rule |
-| FND-01 | "The funding mode is explicit for each tenant and provider: BYOK or platform-funded. Resolution is deterministic and never falls back from one mode to the other" | One mode exists, BYOK; it is named on the log line; resolution is the pin or the tenant's default, else 409 | BYOK (R1) |
-| FND-02 | "Under BYOK only the tenant's own credential is used. Costs are estimates, marked informational and non-billable" | Only `vault.Opener` in the tenant's session supplies the credential | the credential part; cost 3.2 |
+| USE-09 | "Only the tenant's own credential is used for its requests. Costs are estimates and informational: the provider's invoice is the authority" | Only `vault.Opener` in the tenant's session supplies the credential; resolution is the pin or the tenant's default, else 409 | the credential part; cost 3.2 |
 | SEC-01 | "Every listener can serve TLS natively or run behind a terminating proxy. Certificates of upstream providers are always verified" | No code path disables verification; TLS 1.2 or later; `upstream.tls.ca_file` | the upstream part (listeners: 1.3) |
 | SEC-02 | "The replay exposure of each authentication mechanism is documented. Bearer credentials rely on TLS and short lifetimes; sender-constrained options are IAM-15 and IAM-16" | Section "Replay exposure" of the security model, for virtual keys | virtual keys (tokens 4.1) |
 | CAT-06 | "A request for a model that is not allowed is rejected before it is forwarded, whatever identifier the caller uses" | `Resolve` called in the path; a body with two `model` members is refused | enforcement (the rule: 2.2) |
@@ -238,12 +236,11 @@ Rules that hold across steps:
 
 ### 5.2 Permissions: `model:invoke` and `credential:use` (D-4)
 
-Under BYOK, the only funding mode of v0.1, a call needs both permissions and both are checked in
+A call needs both permissions and both are checked in
 step 4. The built-in roles `inference` and `tenant-admin` hold both. A key whose `scopes` leave
 only `model:invoke` authenticates and is refused with 403 `forbidden` before its body is read:
 it cannot call a model and cannot learn which models it would be allowed. The pair stays two
-permissions (2.1 O-4) because a platform-funded call (7.1) will need `model:invoke` without
-`credential:use`; step 4 then asks the funding mode which second permission applies.
+permissions (2.1 O-4): calling a model and using a stored credential are different grants.
 `vault.Opener.Open` keeps its own check of `credential:use` (ADR 0034, point 5).
 
 ### 5.3 Headers
@@ -589,7 +586,7 @@ One `request` line per request, at info, with the fields of 1.1 §5.5 and these 
 | `route` | always | `POST /{provider}/v1/chat/completions` when an operation matched, else `unmatched` |
 | `provider`, `api_family`, `operation` | operation matched | catalogue name, family, `chat.completions` |
 | `model`, `model_id`, `endpoint` | step 7 passed | the public name and ID from the catalogue, the endpoint's name |
-| `credential_id`, `credential_pinned`, `funding` | step 8 passed | `funding` is `byok` |
+| `credential_id`, `credential_pinned` | step 8 passed | |
 | `invalid_reason` | step 6 refused | a reason of §5.8 |
 | `upstream_error` | step 9 or 10 failed | `redirect`, `egress`, `connect`, `timeout` |
 | `egress_reason` | the guard refused | a `BlockedError.Reason` |
@@ -744,7 +741,7 @@ IDs continue after T-412 and T-R24.
 | T-426 | `gateway.TestPipelineOrder` | I | Counting fakes and a body that fails the test when read: for a refusal at each of steps 2, 3, 4 (each permission, suspended tenant), 5, 6, 7, 8, no later step ran; in particular no body read before step 5, no `Resolve` before a valid body, no `Open` before `Resolve` succeeded | **VLT-06**, **CAT-06**, GW-16 |
 | T-427 | `gateway.TestModelCheck` | I | `ErrModelNotAllowed` gives 403 `model_not_allowed`; the response is byte-identical (but for the request ID) for an unknown name, another provider's model and an upstream identifier; `ErrProviderUnavailable` 404; another error 503; the provider received nothing | **CAT-06** |
 | T-428 | `gateway.TestInvalidRequest` | I | Each refusal row of §5.8: 400 `invalid_request`, `invalid_reason` logged, nothing forwarded; a canary placed in the body is in no log line and not in the response | GW-10 |
-| T-429 | `gateway.TestCredentialResolution` | I | The provider receives the secret returned by `Credentials` and never the caller's key; `Open` got the request ID of the response header and the provider name of the path; `ErrNoCredential` 409, `ErrCredentialDenied` 403 `forbidden`, another error 503; `credential_id`, `credential_pinned`, `funding: byok` on the log line | **GW-08**, **FND-01**, **FND-02**, VLT-15 |
+| T-429 | `gateway.TestCredentialResolution` | I | The provider receives the secret returned by `Credentials` and never the caller's key; `Open` got the request ID of the response header and the provider name of the path; `ErrNoCredential` 409, `ErrCredentialDenied` 403 `forbidden`, another error 503; `credential_id`, `credential_pinned` on the log line | **GW-08**, **USE-09**, VLT-15 |
 | T-430 | `gateway.TestUpstreamModel` | I | Name differs from upstream identifier: the provider's body has the identifier and is otherwise byte-identical; streaming with the usage splice too; the response passes unchanged | GW-01 |
 | T-431 | `gateway.TestRequestHeaders` | I | The lists of §5.3: each allowed header forwarded with all its values; each named dropped header absent; `Connection: User-Agent, X-Custom` removes `User-Agent`; `Host` is the endpoint's; `Content-Length` is the prepared length | **GW-07** |
 | T-432 | `gateway.TestCredentialNeverReachesCaller` | I | With `fake-echo-auth`: the echoed headers do not reach the caller; for every Pandokos error of T-439 and for a transport error whose text quotes the URL, the credential canary, the endpoint host and the port are absent from status line, headers and body | **GW-08**, SEC-03 |
@@ -756,7 +753,7 @@ IDs continue after T-412 and T-R24.
 | T-438 | `gateway.TestRequestLogFields` | I | The exact field set of §5.9 for a success, a stream, and a refusal at each step; `model` absent until step 7 passed; no canary | GW-12 |
 | T-439 | `gateway.TestErrorContract` | I | Each code of §5.8 is produced by its condition with the stated status, both headers, the family's body and the constant message; a provider 429 and 500 pass unchanged without `X-Pandokos-Error`, also when the provider sends that header | **GW-10** |
 | T-440 | `resolver.TestCatalogue` | D | On a migrated database: `Provider` for a seeded, a disabled and an unknown name; `Resolve` returns base URL, class, endpoint name, model ID and upstream identifier; both refusals map; with the database stopped the error is neither refusal; a snapshot whose endpoint URL fails validation gives `ErrProviderUnavailable` and logs no URL | CAT-06, GW-05 |
-| T-441 | `resolver.TestCredentials` | D | No credential, disabled, revoked → `ErrNoCredential`; a principal without `credential:use` → `ErrCredentialDenied`; database stopped → another error; a pinned key gets the pin for its provider and the default for another provider; a key of tenant B pinned (by a forged principal) to a credential of A gets `ErrNoCredential` | **FND-01**, **FND-02**, VLT-06, VLT-07 |
+| T-441 | `resolver.TestCredentials` | D | No credential, disabled, revoked → `ErrNoCredential`; a principal without `credential:use` → `ErrCredentialDenied`; database stopped → another error; a pinned key gets the pin for its provider and the default for another provider; a key of tenant B pinned (by a forged principal) to a credential of A gets `ErrNoCredential` | **USE-09**, VLT-06, VLT-07 |
 | T-442 | `resolver.TestFailureAuditor` | D | One `auth.failure` row with `listener: inference` in the tenant's log; the same key and reason again within the window: no row; another reason: a row; an exhausted bucket: no row; a full map is emptied; the database stopped: false within 3 s; a failure without tenant: no row | **AUD-01** |
 | T-443 | `isolation.TestRecordAuthFailure` | D | The gateway role executes the function in a tenant session and the row is that tenant's; without a tenant session it is refused; the admin and worker roles and `PUBLIC` cannot execute it; malformed arguments are refused; the gateway role still cannot insert into or read `audit_event`; the lint has zero findings | TEN-06, AUD-01 |
 | T-444 | `vault.TestValidator` | I | Per family: method, path (also under a base URL with a path), credential header, `anthropic-version`, and nothing of the request or the tenant; verdict table of §5.6 including a 302, a stall, a refused connection, a guard refusal and an unknown family (no request sent); `Private` selects the round tripper; a 1 MiB body is not read past 64 KiB; no error text returned | **VLT-05** |
@@ -766,7 +763,7 @@ IDs continue after T-412 and T-R24.
 | T-448 | `config.TestSkeletonRemoved` | U | A file with `skeleton:` is refused with `unknown key skeleton`; each old variable gives the warning without its value; a valid *serve* configuration needs no provider key file | OPS-08 |
 | T-449 | `audit.TestRecordAuthFailure` | D | The query writes the row through the function; an argument with a sensitive-looking value is refused by the function's format check | AUD-01 |
 | T-450 | `server.TestShutdownDuringResolution` | I | A request blocked in `Catalogue.Resolve` when shutdown starts: it completes when released within the deadline; when the deadline passes it ends with outcome `shutdown_aborted` and nothing is forwarded | **OPS-12** |
-| T-451 | `e2e.TestGatewayExitScenario` | E | The built binary, PostgreSQL, a fake provider as the endpoint of `openai`: tenant A (key, credential) completes a non-streaming and a streaming call and the provider saw A's credential; tenant B with its own credential: the provider saw B's and never A's; a model with availability `selected` and no grant: 403 `model_not_allowed`; `/openai/v1/embeddings`: 404; a key scoped to `model:invoke`: 403 `forbidden`; tenant C without credential: 409; A suspended: 403 `tenant_suspended` within the bound; each response has both headers and the OpenAI shape | exits 1 and 2, **GW-02**, **FND-02** |
+| T-451 | `e2e.TestGatewayExitScenario` | E | The built binary, PostgreSQL, a fake provider as the endpoint of `openai`: tenant A (key, credential) completes a non-streaming and a streaming call and the provider saw A's credential; tenant B with its own credential: the provider saw B's and never A's; a model with availability `selected` and no grant: 403 `model_not_allowed`; `/openai/v1/embeddings`: 404; a key scoped to `model:invoke`: 403 `forbidden`; tenant C without credential: 409; A suspended: 403 `tenant_suspended` within the bound; each response has both headers and the OpenAI shape | exits 1 and 2, **GW-02**, **USE-09** |
 | T-452 | `e2e.TestEgressAttacks` | E | (a) the endpoint is changed to `https://localhost:<port>` with `private: false`: 502, the listener on that port accepted nothing; (b) the fake answers 307 to an internal listener: it receives nothing, 502; (c) an endpoint `http://169.254.169.254` with `private: true`: 502 with `egress_reason: forbidden_address`; (d) `validate: true` against (a): 502 `validation_unavailable`. `egress blocked` is logged each time | exit 3, **GW-05**, **GW-06** |
 | T-453 | `e2e.TestGatewayCanaries` | E | At `info` and `debug`, after a success, a stream, every refusal of T-451, a provider 401 whose headers echo the key, an egress block and a validation: the prompt, the completion, every form of the virtual key and of the credential secret are absent from stdout, stderr, the bodies and headers of Pandokos-raised errors, `audit_event` and `platform_audit_event` | **VLT-14**, **GW-08**, SEC-03 |
 | T-454 | `e2e.TestUpstreamCAAndProxy` | E | A TLS fake under the test CA as a private endpoint: 502 without `upstream.tls.ca_file`, success with it; with `upstream.proxy.url` on a recording CONNECT proxy and a public endpoint: the call succeeds, the proxy saw one `CONNECT` and no credential; the price refresh reaches its server through the same proxy; `HTTPS_PROXY` in the process environment is not used and gives the warning | **SEC-01**, GW-05 |
@@ -807,7 +804,7 @@ IDs continue after T-412 and T-R24.
 | GW-12 | T-438, T-55 |
 | GW-16 | T-436, T-53, T-43 |
 | OPS-12 | T-450, T-59, T-60 |
-| FND-01, FND-02 | T-429, T-441, T-451 |
+| USE-09 | T-429, T-441, T-451 |
 | SEC-01 | T-417, T-454 |
 | SEC-02 | T-R26 |
 | CAT-06 | T-421, T-423, T-426, T-427, T-451 |
@@ -889,10 +886,6 @@ IDs continue after T-412 and T-R24.
 - **6.1** counts refusals by `error_code`, egress blocks by reason and authentication failures
   (including those not audited).
 - **6.2** reads `auth.failure` rows of both listeners; `detail.listener` tells them apart.
-- **7.1** makes the funding mode data: step 4 asks it which permission pairs with
-  `model:invoke`; step 8 opens a platform credential instead; `OpenAI-Organization` and
-  `OpenAI-Project` must then **not** be forwarded for platform-funded calls (the caller would
-  choose the operator's billing organization).
 - **8.2** reloads `upstream.tls.ca_file` with the listener certificates; in separate processes
   the admin process keeps a guard of its own for validation and the worker for the download.
 - **R4** (tenant endpoints, CAT-03 S) reuses the guard: a tenant-supplied endpoint is always of
@@ -957,7 +950,7 @@ whether the proxy helper needs to speak only HTTP/1.1 to the client side).
 | O-2 | Authentication failures (D-15): audited now for attributable failures through a definer function, bounded. Alternatives: logged only, with a metric in 6.1; or through the ledger writer of 3.2 | Keep D-15: small, and it is the case a tenant must see |
 | O-3 | The route is resolved before authentication (D-1), so an unauthenticated caller can tell a served provider name (401) from an unserved one (404). Alternative: try every family's header first and answer 401 before 404 | Keep: provider names are not secrets of a tenant, and the order of the architecture overview is route, then authenticate |
 | O-4 | The pin rule (D-6): confirmed. Alternative: a pinned key may call only its credential's provider | Confirm D-6; a model list on the key restricts providers |
-| O-5 | `OpenAI-Organization`, `OpenAI-Project`, `OpenAI-Beta` are forwarded (D-13). Alternative: keep the three-header list of 1.1 | Forward: with BYOK they select within the tenant's own account; 7.1 excludes the first two for platform-funded calls |
+| O-5 | `OpenAI-Organization`, `OpenAI-Project`, `OpenAI-Beta` are forwarded (D-13). Alternative: keep the three-header list of 1.1 | Forward: they select within the tenant's own account |
 | O-6 | Only chat completions in 3.1 (D-20); `responses` and `embeddings` move to 3.2 with their usage readers. Alternative: add them here without metering | Move to 3.2 and add the line to the epic file; GW-09 ties the allow-list to metering |
 | O-7 | `no_credential` stays 409 (ADR 0020) and `request_timeout` is 408, although the OpenAI SDK retries both. Alternative: 403 for `no_credential` | Keep the ADR: the status says "the state of the resource prevents this", and the retries are harmless |
 | O-8 | Forbidden addresses (D-18) cannot be reached even by a private endpoint | Keep; nobody serves models from a metadata address |
@@ -973,7 +966,7 @@ whether the proxy helper needs to speak only HTTP/1.1 to the client side).
 | O-2 | Confirmed D-15: attributable authentication failures on the inference listener are audited now, bounded |
 | O-3 | Confirmed: the route is resolved before authentication |
 | O-4 | Confirmed: the pin rule of 2.1 D-6 stands; a model list on the key restricts providers |
-| O-5 | Confirmed: `OpenAI-Organization`, `OpenAI-Project` and `OpenAI-Beta` are forwarded; 7.1 excludes the first two for platform-funded calls |
+| O-5 | Confirmed: `OpenAI-Organization`, `OpenAI-Project` and `OpenAI-Beta` are forwarded |
 | O-6 | Confirmed: only chat completions in 3.1; `responses` and `embeddings` move to 3.2 with their usage readers, and the epic file says so |
 | O-7 | Confirmed: `no_credential` stays 409 and `request_timeout` is 408 |
 | O-8 | Confirmed: forbidden addresses are unreachable for private endpoints too |
