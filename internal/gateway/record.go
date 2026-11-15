@@ -93,7 +93,6 @@ func (h *Handler) recordOf(st *reqState, logOutcome string) usage.Record {
 		PrincipalKind: "service_account",
 		PrincipalID:   p.ID,
 		KeyID:         p.KeyID,
-		Funding:       "byok",
 		Provider:      st.provider,
 		APIFamily:     st.family,
 		Operation:     st.op.Name,
@@ -194,7 +193,7 @@ func (st *reqState) minimalRecord() usage.Record {
 	}
 	return usage.Record{
 		ID: id, TenantID: p.TenantID, StartedAt: st.start.UTC(), RequestID: st.id, TraceID: st.traceID,
-		PrincipalKind: "service_account", PrincipalID: p.ID, KeyID: p.KeyID, Funding: "byok",
+		PrincipalKind: "service_account", PrincipalID: p.ID, KeyID: p.KeyID,
 		Provider: st.provider, APIFamily: st.family, Operation: st.op.Name,
 		Outcome: usage.OutcomeInternalError, ErrorCode: string(family.CodeInternal),
 		InputSource: usage.SourceNone, OutputSource: usage.SourceNone, CostStatus: "none",

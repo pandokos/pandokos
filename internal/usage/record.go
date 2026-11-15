@@ -43,7 +43,6 @@ type Record struct {
 
 	PrincipalKind, PrincipalID, KeyID string // "service_account", its ID, the virtual key ID
 	CredentialID                      string // "" until step 8 passed
-	Funding                           string // "byok"
 
 	Provider, APIFamily, Operation          string
 	Endpoint, Model, ModelID, UpstreamModel string // "" until step 7 passed
@@ -109,7 +108,6 @@ func (r *Record) checks() []check {
 		{"principal_kind", r.PrincipalKind == "service_account"},
 		{"principal_id", len(r.PrincipalID) == 36 && allOf(r.PrincipalID, "0123456789abcdef-")},
 		{"key_id", len(r.KeyID) <= 64 && allOf(r.KeyID, alnum+"_-")},
-		{"funding", r.Funding == "byok"},
 		{"provider", inRange(r.Provider, 1, 63) && allOf(r.Provider, lowerAlnum+"-")},
 		{"api_family", inRange(r.APIFamily, 1, 63) && allOf(r.APIFamily, lowerAlnum+"-")},
 		{"operation", inRange(r.Operation, 1, 63) && allOf(r.Operation, lowerAlnum+"._-")},

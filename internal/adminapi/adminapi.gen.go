@@ -2132,7 +2132,6 @@ type UsageRecord struct {
 	KeyID         string    `json:"key_id"`
 	// Empty when no credential was opened.
 	CredentialID  string `json:"credential_id"`
-	Funding       string `json:"funding"`
 	Provider      string `json:"provider"`
 	ApiFamily     string `json:"api_family"`
 	Operation     string `json:"operation"`
@@ -2180,7 +2179,7 @@ type UsageRecord struct {
 	MetadataDropped int              `json:"metadata_dropped"`
 }
 
-var requiredUsageRecord = []string{"id", "request_id", "trace_id", "started_at", "duration_ms", "principal_kind", "principal_id", "key_id", "credential_id", "funding", "provider", "api_family", "operation", "endpoint", "model", "model_id", "upstream_model", "stream", "outcome", "error_code", "upstream_status", "ttfb_ms", "request_bytes", "response_bytes", "input_source", "output_source", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens", "estimated_input_tokens", "estimated_output_tokens", "other_units", "provider_usage", "cost_status", "cost_reason", "currency", "price_version_id", "cost_fallbacks", "metadata", "metadata_dropped"}
+var requiredUsageRecord = []string{"id", "request_id", "trace_id", "started_at", "duration_ms", "principal_kind", "principal_id", "key_id", "credential_id", "provider", "api_family", "operation", "endpoint", "model", "model_id", "upstream_model", "stream", "outcome", "error_code", "upstream_status", "ttfb_ms", "request_bytes", "response_bytes", "input_source", "output_source", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens", "estimated_input_tokens", "estimated_output_tokens", "other_units", "provider_usage", "cost_status", "cost_reason", "currency", "price_version_id", "cost_fallbacks", "metadata", "metadata_dropped"}
 
 var nestedUsageRecord = []nestedMember{{Name: "other_units", Many: true, Required: requiredUsageCounter, Nested: nestedUsageCounter}, {Name: "provider_usage", Many: true, Required: requiredUsageCounter, Nested: nestedUsageCounter}, {Name: "metadata", Many: true, Required: requiredMetadataEntry, Nested: nestedMetadataEntry}}
 

@@ -578,7 +578,7 @@ func (h *Handler) logRequest(st *reqState, outcome string) {
 		attrs = append(attrs, "model", st.target.Model, "model_id", st.target.ModelID, "endpoint", st.target.Endpoint)
 	}
 	if st.opened {
-		attrs = append(attrs, "credential_id", st.credentialID, "credential_pinned", st.pinned, "funding", "byok")
+		attrs = append(attrs, "credential_id", st.credentialID, "credential_pinned", st.pinned)
 	}
 	if st.parsed {
 		attrs = append(attrs, "stream", st.stream, "usage_injected", st.strip)
