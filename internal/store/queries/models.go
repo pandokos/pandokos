@@ -261,7 +261,6 @@ type PandokosUsageRecord struct {
 	PrincipalID           string
 	KeyID                 string
 	CredentialID          *string
-	Funding               string
 	Provider              string
 	ApiFamily             string
 	Operation             string
@@ -309,7 +308,6 @@ type PandokosUsageRecordDefault struct {
 	PrincipalID           string
 	KeyID                 string
 	CredentialID          *string
-	Funding               string
 	Provider              string
 	ApiFamily             string
 	Operation             string

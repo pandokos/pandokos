@@ -16,7 +16,6 @@ type row struct {
 	PrincipalID           string            `json:"principal_id"`
 	KeyID                 string            `json:"key_id"`
 	CredentialID          *string           `json:"credential_id"`
-	Funding               string            `json:"funding"`
 	Provider              string            `json:"provider"`
 	APIFamily             string            `json:"api_family"`
 	Operation             string            `json:"operation"`
@@ -78,8 +77,8 @@ func rowOf(r *usage.Record) row {
 		StartedAt: r.StartedAt.UTC().Format("2006-01-02T15:04:05.000000Z07:00"),
 		RequestID: r.RequestID, TraceID: r.TraceID,
 		PrincipalKind: r.PrincipalKind, PrincipalID: r.PrincipalID, KeyID: r.KeyID,
-		CredentialID: strOrNil(r.CredentialID), Funding: r.Funding,
-		Provider: r.Provider, APIFamily: r.APIFamily, Operation: r.Operation,
+		CredentialID: strOrNil(r.CredentialID),
+		Provider:     r.Provider, APIFamily: r.APIFamily, Operation: r.Operation,
 		Endpoint: r.Endpoint, Model: r.Model, ModelID: strOrNil(r.ModelID), UpstreamModel: r.UpstreamModel,
 		Stream:  r.Stream,
 		Outcome: string(r.Outcome), ErrorCode: r.ErrorCode,

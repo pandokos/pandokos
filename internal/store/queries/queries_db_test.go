@@ -424,7 +424,7 @@ func TestEveryStatement(t *testing.T) {
 		must("usage records", gateway.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
 			rec := `[{"id":"0192f0f0-0000-7000-8000-0000000000a1","started_at":"` + time.Now().UTC().Format(time.RFC3339Nano) +
 				`","request_id":"0123456789abcdef0123456789abcdef","principal_kind":"service_account","principal_id":"0192f0f0-0000-7000-8000-0000000000a2",` +
-				`"funding":"byok","provider":"openai","api_family":"openai","operation":"chat.completions","outcome":"ok","duration_ms":1,` +
+				`"provider":"openai","api_family":"openai","operation":"chat.completions","outcome":"ok","duration_ms":1,` +
 				`"input_source":"none","output_source":"none","cost_status":"none","cost_reason":"","trace_id":"","key_id":"","endpoint":"","model":"",` +
 				`"upstream_model":"","error_code":"","other_units":{},"provider_usage":{},"metadata":{},"metadata_dropped":0}]`
 			n, err := queries.New(tx).InsertUsageRecords(c, rec)
@@ -771,7 +771,7 @@ func vaultStatements(c context.Context, t *testing.T, admin, gateway *store.DB, 
 func usageJSON(id string, started time.Time, tenantInJSON, requestID string, extra string) string {
 	rec := `{"id":"` + id + `","started_at":"` + started.UTC().Format(time.RFC3339Nano) + `","request_id":"` + requestID + `",` +
 		`"trace_id":"","principal_kind":"service_account","principal_id":"0192f0f0-0000-7000-8000-0000000000a2","key_id":"",` +
-		`"funding":"byok","provider":"openai","api_family":"openai","operation":"chat.completions","endpoint":"","model":"","upstream_model":"",` +
+		`"provider":"openai","api_family":"openai","operation":"chat.completions","endpoint":"","model":"","upstream_model":"",` +
 		`"outcome":"ok","error_code":"","duration_ms":12,"input_source":"none","output_source":"none","cost_status":"none","cost_reason":"",` +
 		`"other_units":{},"provider_usage":{},"metadata":{},"metadata_dropped":0`
 	if tenantInJSON != "" {
