@@ -62,7 +62,7 @@ distinguishes them from a provider's own 429.
 - Valkey becomes a dependency of multi-instance deployments, and of their availability unless the
   operator relaxes the default.
 - Budgets are enforced on estimated cost. Where the price is unknown the budget cannot be enforced
-  and platform-funded use is blocked ([ADR 0011](0011-pricing-source.md)).
+  ([ADR 0011](0011-pricing-source.md)); what happens then is configurable and refusal is the default.
 
 ## Alternatives considered
 

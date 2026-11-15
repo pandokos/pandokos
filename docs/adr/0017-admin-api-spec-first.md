@@ -1,4 +1,4 @@
-# 0017. Administration API: specification first, CLI before console
+# 0017. Administration API: specification first, with a CLI
 
 - Status: accepted
 - Date: 2026-11-11
@@ -25,16 +25,16 @@ and never drift from its documentation (API-02).
 - The **CLI** is part of the same binary (`pandokos tenant create`, `pandokos key create`, …) and
   is a thin client of the API. Nothing is possible in the CLI that is not possible over HTTP,
   except the two local commands `migrate` and `init`.
-- The **web console** arrives with the second release and is a client of this API like any other
-  ([ADR 0021](0021-web-console.md)). To serve it, the API includes sign-in and session endpoints
-  and `GET /v1/me`, which returns the caller's identity, memberships and effective permissions.
+- **Interfaces for people** are clients of this API like any other, and Pandokos ships none. So
+  that one can be built, the API includes sign-in and session endpoints and `GET /v1/me`, which
+  returns the caller's identity, memberships and effective permissions.
 
 ## Consequences
 
 - Integrators can generate clients in any language.
 - The specification is reviewed as a design artefact before code is written.
-- The first release has no console and addresses operators and developers; people who are not
-  either are served from the second.
+- Pandokos addresses operators and developers. People who are neither are served by whatever
+  interface an integrator builds on the API.
 
 ## Alternatives considered
 
@@ -43,5 +43,5 @@ then follows the implementation instead of the other way round.
 
 **gRPC or GraphQL.** Less universal for the automation and scripting this API is for.
 
-**A console from the first release.** A large investment before the API has settled; it follows
-one release later.
+**A graphical interface in the product.** A second toolchain and a second surface for every
+feature, for integrators who already have their own interface.

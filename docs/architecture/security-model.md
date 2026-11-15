@@ -11,9 +11,8 @@
 | Asset | Why it matters |
 |---|---|
 | Provider credentials of tenants | They are spendable money and access to the tenant's provider account. They cannot be recreated by the platform |
-| Provider credentials of the platform | The operator's money |
 | Tenant separation | One tenant must not see or affect another's configuration, usage or spend |
-| Usage ledger and audit log | They are the evidence for billing and for investigations |
+| Usage ledger and audit log | They are the evidence for what was spent and for investigations |
 | Content in transit | Prompts and completions pass through memory and must leave no trace |
 | Availability and spend | A caller must not exhaust the service or a budget that is not theirs |
 
@@ -36,9 +35,9 @@ flowchart LR
 
 1. **Caller to gateway.** Untrusted. Everything the caller sends is input: path, headers, body,
    metadata, trace context. Only a verified credential establishes identity and tenant.
-2. **Administrator to admin API.** People hold a console session, obtained through the identity
+2. **Administrator to admin API.** People hold a session, obtained through the identity
    provider or a local account. Automation uses admin keys or tokens. Every operation is
-   authorized. The console runs in the user's browser and is untrusted: what it hides is not a
+   authorized. A client that runs in the user's browser is untrusted: what it hides is not a
    control. The admin port is not meant for the public internet.
 3. **Process to database.** Each role connects with its own least-privileged database role. The
    database enforces tenant isolation independently of the application.
@@ -96,11 +95,11 @@ disk the operator's database administrators can read, and by auditing every admi
 | A stolen virtual key | Keys are scoped, can expire, carry limits, are revocable within a bound, and have a detectable format so scanners find leaks (IAM-03 to 05) |
 | A stolen bearer token | Short lifetimes, audience validation. Mutual TLS for stronger binding (IAM-15, IAM-16) |
 | Password guessing against local accounts | Throttling per account and source, uniform responses, audit of failures (IAM-20). Memory-hard hashes (IAM-19). No default credentials (IAM-14). Local accounts can be switched off (IAM-18) |
-| A stolen or forged console session | Random 256-bit tokens stored as hashes; cookie not readable by scripts, sent over TLS only and never cross-site; idle and absolute lifetimes; revocation (IAM-21) |
-| Cross-site request forgery against the console | Same-site cookie, plus a required custom header and an origin check on every state-changing request (IAM-21) |
-| Script injection in the console | A strict content security policy without inline script, no third-party resources, a framework that escapes output by default, no credential in browser storage (CON-07) |
-| A console user reaches functions beyond their role | The API authorizes every call. The console's profiling is derived from the same permissions and is tested against them (AZ-11, CON-04) |
-| A console session is used to call models | Sessions are accepted only on the administration listener; the gateway's database role cannot read them (IAM-22) |
+| A stolen or forged session | Random 256-bit tokens stored as hashes; cookie not readable by scripts, sent over TLS only and never cross-site; idle and absolute lifetimes; revocation (IAM-21) |
+| Cross-site request forgery against a signed-in user | Same-site cookie, plus a required custom header and an origin check on every state-changing request (IAM-21) |
+| Script injection in a browser client | The session cookie cannot be read by scripts and no API response carries a credential a script could keep (IAM-21). The rest is the client's own duty: Pandokos serves no pages |
+| A signed-in user reaches functions beyond their role | The API authorizes every call. What `/v1/me` reports comes from the same permissions and is tested against them (AZ-11) |
+| A session is used to call models | Sessions are accepted only on the administration listener; the gateway's database role cannot read them (IAM-22) |
 | The database or a backup is copied | Credentials are ciphertext under per-tenant keys wrapped by a key that is not in the database (VLT-09, VLT-13). Virtual keys are stored as hashes |
 | The key-encryption key leaks | Rotation by re-wrapping (VLT-10). The leak alone exposes nothing without the database |
 | A ciphertext is copied onto another tenant's row | The tenant and credential IDs are bound into the ciphertext as associated data, so decryption fails (VLT-07) |

@@ -1,6 +1,6 @@
 # Pandokos — Product Requirements
 
-- Version: 0.2 (2026-11-11)
+- Version: 0.3 (2026-11-15)
 - Status: baseline for design and planning
 - Supersedes: the preliminary statement of work (SOW 0.1). Section 9 lists what changed and why.
 
@@ -14,8 +14,7 @@ When the work is planned, each sprint names the requirement IDs it delivers
 Pandokos is a self-hostable, multi-tenant LLM proxy. It sits between calling applications and
 model providers and is the single place where callers are authenticated, the tenant of a request
 is established, the provider credential is chosen and injected, limits are enforced, and usage is
-measured. Tenants either bring their own provider keys (BYOK) or use keys paid for by the platform
-operator. Success is not measured by the number of providers or features, but by whether the
+measured. Tenants bring their own provider keys (BYOK). Success is not measured by the number of providers or features, but by whether the
 product is **a secure, verifiable, multi-tenant boundary between callers and LLM infrastructure**.
 
 ## 2. Principles
@@ -29,7 +28,8 @@ These are constraints on every requirement and every design decision.
 3. **The tenant is never taken on trust.** It derives from a verified credential or a server-side
    association, never from a header or parameter the caller controls.
 4. **Not an identity provider.** Pandokos federates with external IdPs. Its own credentials are
-   virtual keys for technical identities and minimal local accounts for signing in to its console.
+   virtual keys for technical identities and minimal local accounts for signing in to its
+   administration API.
    It never authenticates people on behalf of other systems.
 5. **Secrets are write-only.** A provider credential can be written, replaced and revoked, never
    read back.
@@ -41,7 +41,8 @@ These are constraints on every requirement and every design decision.
 9. **Control plane and data plane are separate** concerns, with separate network exposure.
 10. **Operable anywhere.** A single container with PostgreSQL is a complete installation.
     Kubernetes is supported, never required.
-11. **Every call is measured and priced**, whoever pays the provider.
+11. **Every call is measured and priced.** The price is an estimate; the provider's invoice is
+    the authority.
 12. **Transparent proxy.** Provider APIs are forwarded as they are. Pandokos does not translate
     between providers, retry, fall back or balance load on the caller's behalf.
 
@@ -60,9 +61,8 @@ APIs; a billing, invoicing or payment system; a model host; a general-purpose AP
 | Tenant | A customer organization, logically isolated from the others |
 | Platform admin | Privileged identity of the platform; belongs to no tenant |
 | User | A person, authenticated by an external IdP or by a local account, with roles in one or more tenants or in the platform |
-| Local account | A username and password kept by Pandokos for one user, valid only for the console |
-| Console | The web application for administering the platform and the tenants |
-| Session | What a person obtains by signing in to the console. It is accepted only by the administration API |
+| Local account | A username and password kept by Pandokos for one user, valid only for signing in to the administration API |
+| Session | What a person obtains by signing in. It is accepted only by the administration API |
 | Service account | A non-human identity owned by one tenant |
 | Virtual key | A credential issued by Pandokos to a service account. It is not a provider key |
 | Trusted issuer | An external token issuer (IdP, workload identity) whose signed tokens Pandokos accepts |
@@ -70,15 +70,14 @@ APIs; a billing, invoicing or payment system; a model host; a general-purpose AP
 | API family | A wire protocol shared by one or more providers (for example the OpenAI API) |
 | Provider credential | The secret Pandokos uses to authenticate to a provider |
 | BYOK | The tenant supplies the provider credential and pays the provider directly |
-| Platform-funded | The operator supplies the provider credential and may charge the tenant |
 | Control plane | Administration and configuration |
 | Data plane | Receiving, authorizing, forwarding and measuring inference requests |
 | Vault | The function that stores and uses encrypted secrets |
 | Cell | A group of data-plane instances with their database. Pool cells are shared; a silo cell serves one tenant |
 
-Actors: platform admin, platform auditor, platform billing operator; tenant owner, tenant admin,
+Actors: platform admin, platform auditor, platform usage viewer; tenant owner, tenant admin,
 credential manager, usage viewer, auditor, developer; service accounts; and the external systems:
-provider, identity provider, billing system, telemetry collector.
+provider, identity provider, event receiver (for example a billing system), telemetry collector.
 
 ## 4. Releases
 
@@ -87,10 +86,10 @@ Requirements are assigned to the release that first delivers them.
 | Release | Theme | What a user can do at the end |
 |---|---|---|
 | **R1 — v0.1** | Core BYOK | Run one container with PostgreSQL, create tenants and virtual keys, store BYOK credentials, call OpenAI and Anthropic through stock SDKs with streaming, and read a usage record with cost for every call |
-| **R2 — v0.2** | Governance | Sign in to the web console with a local account or an external IdP, administer the platform and the tenants from it, manage roles, enforce rate limits and budgets, read reports, delete a tenant cleanly |
-| **R3 — v0.3** | Platform-funded and billing | Offer operator-paid models with budgets and markup, and deliver billable events to an external system |
-| **R4 — v0.4** | Scale-out | Run several replicas, deploy on Kubernetes, dedicate a cell to a tenant, add Gemini and Azure OpenAI |
-| **R5 — v1.0** | Hardening | Rely on reviewed security, measured performance, tested recovery and a stable upgrade policy |
+| **R2 — v0.2** | Governance | Enforce rate limits and budgets, sign in to the administration API with a local account or an external IdP, manage roles, read reports, delete a tenant cleanly |
+| **R3 — v0.3** | Ready to operate | Deliver usage events to an external system, keep the key-encryption key in an external service, rely on a reviewed threat model, a tested restore and a stated upgrade policy |
+| **R4 — v0.4** | Scale-out and providers | Run several replicas, deploy on Kubernetes, add Gemini and Azure OpenAI |
+| **R5 — v1.0** | Hardening | Rely on an independent security assessment and measured performance, dedicate a cell to a tenant, authenticate callers with mutual TLS |
 
 Priority: **M** must, **S** should, **C** could. The *Source* column traces each requirement to
 SOW 0.1; *new* marks requirements added in this revision.
@@ -112,7 +111,7 @@ SOW 0.1; *new* marks requirements added in this revision.
 | TEN-09 | A tenant has a lifecycle: provisioning, active, suspended, deleting, deleted. The platform admin can create, suspend and reactivate it | M | R1 | TEN-01, TEN-02, TEN-04, TEN-08 |
 | TEN-10 | Suspension blocks inference and tenant administration within a documented maximum time, and preserves data | M | R1 | TEN-03 |
 | TEN-11 | Deletion is a staged process: suspension, revocation of access credentials, cryptographic erasure of secrets, removal of tenant data according to the retention policy, and a verifiable completion record. It never touches global data or other tenants | M | R2 | TEN-05, TEN-06, TEN-09, DB-08, DB-12 |
-| TEN-12 | A tenant's data can be exported in a documented format before deletion | S | R3 | TEN-07 |
+| TEN-12 | A tenant's data can be exported in a documented format before deletion | S | R2 | TEN-07 |
 
 ### 5.2 Identity and authentication
 
@@ -126,20 +125,20 @@ SOW 0.1; *new* marks requirements added in this revision.
 | IAM-06 | Pandokos accepts signed access tokens (JWT) from registered trusted issuers and validates signature, issuer, audience, expiry and required claims | M | R1 | AUTH-S-02, AUTH-H-03, SEC-DP-02 |
 | IAM-07 | A trusted issuer is either bound to one tenant, or registered at platform level with the tenant read from a configured claim and limited to an explicit list of tenants. There is no implicit wildcard | M | R1 | AUTH-S-07 |
 | IAM-08 | Token subjects map to service accounts or users by explicit rules. An unmapped subject is rejected | M | R1 | AUTH-H-04 |
-| IAM-09 | People sign in to the console through an external OpenID Connect provider, with the authorization code flow and PKCE, or with a local account (IAM-18). Both lead to the same kind of user record, roles and session | M | R2 | AUTH-H-01, AUTH-H-02 |
+| IAM-09 | People sign in to the administration API through an external OpenID Connect provider, with the authorization code flow and PKCE, or with a local account (IAM-18). Both lead to the same kind of user record, roles and session | M | R2 | AUTH-H-01, AUTH-H-02 |
 | IAM-10 | A federated identity links to a local user record with memberships in one or more tenants. The active tenant of a request is explicit and validated against the memberships | M | R2 | AUTH-H-04, AUTH-H-05 |
 | IAM-11 | A user can be disabled locally whatever the IdP says. Their sessions end within a documented bound | M | R2 | AUTH-H-06, AUTH-H-10 |
 | IAM-12 | Groups or roles asserted by the IdP can be mapped to Pandokos roles by explicit, optional rules | S | R2 | AUTH-H-07 |
-| IAM-13 | An installation without an IdP is fully usable: automation and the CLI use admin-scoped virtual keys, people use local accounts in the console | M | R1 (keys), R2 (accounts) | AUTH-H-08 |
+| IAM-13 | An installation without an IdP is fully usable: automation and the CLI use admin-scoped virtual keys, people use local accounts | M | R1 (keys), R2 (accounts) | AUTH-H-08 |
 | IAM-14 | The first platform admin is created by an explicit initialization command: an expiring admin key and, from R2, a local account whose generated password must be changed at first sign-in. There are no default credentials. Pandokos warns while the bootstrap key is still active | M | R1 | SEC-CP-03, SEC-CP-04 |
-| IAM-15 | Callers can authenticate with mutual TLS; the certificate identity (including a SPIFFE ID) maps to a service account | S | R4 | AUTH-S-04 |
+| IAM-15 | Callers can authenticate with mutual TLS; the certificate identity (including a SPIFFE ID) maps to a service account | S | R5 | AUTH-S-04 |
 | IAM-16 | Access tokens can be bound to the client certificate (RFC 8705) | C | later | AUTH-S-03 |
 | IAM-17 | Sensitive administrative operations can require a minimum authentication strength or freshness asserted by the IdP | C | R5 | AUTH-H-09 |
-| IAM-18 | Pandokos keeps local accounts, a username and a password, so that people can sign in to the console without an IdP. Accounts are created by an administrator. The mechanism is on by default and can be switched off when an IdP is configured | M | R2 | AUTH-H-08 |
+| IAM-18 | Pandokos keeps local accounts, a username and a password, so that people can sign in without an IdP. Accounts are created by an administrator. The mechanism is on by default and can be switched off when an IdP is configured | M | R2 | AUTH-H-08 |
 | IAM-19 | Passwords are stored only as a memory-hard salted hash. A minimum length applies. A generated or reset password must be changed at the next sign-in. A password is reset by an administrator or from the host CLI; there is no self-registration and no recovery by email | M | R2 | new |
 | IAM-20 | Failed sign-ins are throttled per account and per source and are audited. The response does not reveal whether the username exists | M | R2 | AUD-01, new |
 | IAM-21 | Signing in creates a server-side session carried by a cookie that scripts cannot read. Sessions have an idle and an absolute lifetime, can be revoked, end on sign-out, password change and disabling of the user, and are protected against cross-site request forgery. Local and IdP sign-in produce the same session | M | R2 | AUTH-H-10, new |
-| IAM-22 | Only people sign in interactively, and a session is accepted only by the administration API on behalf of the console. A session or a password never authenticates an inference request, and a service account cannot sign in to the console | M | R2 | new |
+| IAM-22 | Only people sign in interactively, and a session is accepted only by the administration API. A session or a password never authenticates an inference request, and a service account cannot sign in interactively | M | R2 | new |
 
 ### 5.3 Authorization
 
@@ -150,8 +149,8 @@ SOW 0.1; *new* marks requirements added in this revision.
 | AZ-03 | Pandokos ships immutable built-in tenant roles: owner, admin, credential manager, usage viewer, auditor, developer, inference, read-only | M | R1 (admin, inference), R2 (all) | RBAC-05, RBAC-06 |
 | AZ-04 | A tenant can define custom roles from the permission catalogue. Nobody can grant a permission they do not hold | S | R2 | RBAC-02, RBAC-03, new |
 | AZ-05 | A role that is still assigned cannot be deleted; roles can be deactivated | S | R2 | RBAC-07 |
-| AZ-06 | Platform roles are separate from tenant roles and imply no tenant membership: platform admin, platform auditor, platform billing operator | M | R1 (admin), R2 (others) | SYS-01, SYS-13 |
-| AZ-07 | The platform admin manages the tenant lifecycle, the provider and model catalogue, platform credentials and platform-wide limits | M | R1 | SYS-02, SYS-04 to SYS-07 |
+| AZ-06 | Platform roles are separate from tenant roles and imply no tenant membership: platform admin, platform auditor, platform usage viewer | M | R1 (admin), R2 (others) | SYS-01, SYS-13 |
+| AZ-07 | The platform admin manages the tenant lifecycle, the provider and model catalogue and platform-wide limits | M | R1 | SYS-02, SYS-04 to SYS-07 |
 | AZ-08 | No platform role can read, export or replace a tenant's secret. A platform admin can see credential metadata and can disable or revoke a tenant credential, with a reason, on the audit record | M | R1 | SYS-08, SYS-09, SYS-10 |
 | AZ-09 | A platform admin acting inside a tenant (its users, roles or keys) performs an explicit support action that requires a reason, is audited in the tenant's log and can be disabled by configuration | S | R2 | SYS-03, SYS-11, SYS-12 |
 | AZ-10 | Managing credentials, managing identities and viewing costs can be granted separately | M | R2 | §7.2 |
@@ -162,7 +161,6 @@ SOW 0.1; *new* marks requirements added in this revision.
 | ID | Requirement | Pri | Rel | Source |
 |---|---|---|---|---|
 | VLT-01 | A tenant can register several labelled credentials per provider. Exactly one is the default for each provider; a virtual key can be pinned to a specific credential. Pandokos never chooses between credentials on its own | M | R1 | VAULT-01, new |
-| VLT-02 | Credentials owned by a tenant (BYOK) and by the platform are distinguishable in ownership, cost responsibility and policy | M | R1 (BYOK), R3 (platform) | VAULT-02 |
 | VLT-03 | A credential can be created, validated, replaced, disabled, revoked and deleted without recreating the tenant or its permissions | M | R1 | VAULT-03, VAULT-07 |
 | VLT-04 | No API returns a secret after it is written. Only metadata is readable: provider, label, fingerprint, status, owner, timestamps of creation, validation and rotation, expiry if known | M | R1 | VAULT-05, VAULT-10 |
 | VLT-05 | A credential can be checked against the provider when it is written, without being logged | S | R1 | VAULT-06 |
@@ -172,11 +170,11 @@ SOW 0.1; *new* marks requirements added in this revision.
 | VLT-09 | Secrets are encrypted at rest with authenticated encryption under a per-tenant data key, itself wrapped by a key-encryption key that is never stored in the database | M | R1 | VAULT-14, VAULT-15, VAULT-16, VAULT-19 |
 | VLT-10 | The key-encryption key can be rotated by re-wrapping data keys, with no action by tenants. Key versions are recorded | M | R2 | VAULT-17, VAULT-18 |
 | VLT-11 | Deleting a tenant destroys its data key, so residual ciphertext, including in backups, can no longer be decrypted | M | R2 | VAULT-09 |
-| VLT-12 | The key-encryption key comes from a pluggable provider: a local key file by default, an external KMS or transit service optionally | M (local) / S (external) | R1 / R4 | VAULT-20 |
+| VLT-12 | The key-encryption key comes from a pluggable provider: a local key file by default, an external KMS or transit service optionally | M (local) / S (external) | R1 / R3 | VAULT-20 |
 | VLT-13 | Database backups contain only ciphertext and wrapped keys. The key-encryption key is backed up separately, and the procedure is documented | M | R1 | VAULT-21 |
 | VLT-14 | Secrets never appear in logs, traces, metrics, error messages, events or diagnostics. Automated tests plant canary secrets and search every output for them | M | R1 | VAULT-13, SEC-SC-07 |
 | VLT-15 | Each use of a credential is attributable to a request, tenant and caller | M | R1 | VAULT-12 |
-| VLT-16 | The security limits of the vault and the recovery procedure for lost or compromised keys are documented, distinguishing recoverable secrets from those the owner must re-enter | M | R1 (draft), R5 (tested) | VAULT-22, VAULT-23 |
+| VLT-16 | The security limits of the vault and the recovery procedure for lost or compromised keys are documented, distinguishing recoverable secrets from those the owner must re-enter | M | R1 (draft), R3 (tested) | VAULT-22, VAULT-23 |
 
 ### 5.5 Provider and model catalogue
 
@@ -189,7 +187,7 @@ SOW 0.1; *new* marks requirements added in this revision.
 | CAT-05 | The platform admin makes a model available to all tenants or to selected ones. A tenant admin can restrict it further for the tenant or for individual keys | M | R1 | MODEL-03, MODEL-04, SYS-05 |
 | CAT-06 | A request for a model that is not allowed is rejected before it is forwarded, whatever identifier the caller uses | M | R1 | MODEL-05 |
 | CAT-07 | A logical alias can point to a concrete model version | S | R4 | MODEL-06 |
-| CAT-08 | Prices are versioned in time, with a currency. The cost of a request uses the price in force when it was made. When no price is known the usage is recorded with an unknown cost, and platform-funded requests are blocked unless configured otherwise | M | R1 | MODEL-07, §11.3 |
+| CAT-08 | Prices are versioned in time, with a currency. The cost of a request uses the price in force when it was made. When no price is known the usage is recorded with an unknown cost | M | R1 | MODEL-07, §11.3 |
 | CAT-09 | The price list can be loaded and refreshed from an open dataset and overridden by the operator. Every change creates a new version and an audit record | S | R1 | new |
 | CAT-10 | The catalogue can be exported and imported declaratively | S | R2 | NFR-MAINT-02 |
 
@@ -215,17 +213,7 @@ SOW 0.1; *new* marks requirements added in this revision.
 | GW-16 | Request size, header size, duration and per-tenant concurrency are limited | M | R1 (size, duration), R2 (concurrency) | SEC-DP-06, RATE-14 |
 | GW-17 | Performance targets are stated, measured and published: latency added by the proxy, concurrent streams per instance, memory. Initial targets, to be validated: added latency p50 ≤ 5 ms and p99 ≤ 20 ms; 5,000 concurrent streams per instance | S | R5 | NFR-PERF-01 to 03 |
 
-### 5.7 Funding modes
-
-| ID | Requirement | Pri | Rel | Source |
-|---|---|---|---|---|
-| FND-01 | The funding mode is explicit for each tenant and provider: BYOK or platform-funded. Resolution is deterministic and never falls back from one mode to the other | M | R1 (BYOK), R3 | BILL-01 to 03, BILL-07 to 09, new |
-| FND-02 | Under BYOK only the tenant's own credential is used. Costs are estimates, marked informational and non-billable | M | R1 | BILL-02 to 06, BILLING-12 |
-| FND-03 | The platform admin enables platform-funded access per provider, model and tenant. The tenant never obtains the upstream credential | M | R3 | BILL-07 to 10 |
-| FND-04 | A platform-funded request requires an applicable budget. Nothing is unlimited by default | M | R3 | BILL-11, new |
-| FND-05 | The amount chargeable to a tenant is the upstream cost with a versioned rating rule applied: a percentage markup or a per-model price. Upstream cost, rule version and chargeable amount stay distinct. Plans, discounts, taxes and invoices belong to the external billing system | S | R3 | BILL-12 to 14, BILLING-11 |
-
-### 5.8 Limits, quotas and budgets
+### 5.7 Limits, quotas and budgets
 
 | ID | Requirement | Pri | Rel | Source |
 |---|---|---|---|---|
@@ -241,22 +229,23 @@ SOW 0.1; *new* marks requirements added in this revision.
 | LIM-10 | Limits stay consistent when several instances serve the same tenant | M | R4 | RATE-15 |
 | LIM-11 | Behaviour when the counter store is unavailable is configurable; the default is to refuse | M | R2 | NFR-PERF-05 |
 | LIM-12 | The documentation states which limits are strict and which are best effort, and how reservations, resets and missing prices are handled | M | R2 | §11.3 |
-| LIM-13 | Threshold and exhaustion events can be delivered to external systems | S | R3 | RATE-13 |
+| LIM-13 | Threshold and exhaustion events can be delivered to external systems (EVT-03, EVT-04) | S | R3 | RATE-13 |
 
-### 5.9 Usage ledger
+### 5.8 Usage ledger
 
 | ID | Requirement | Pri | Rel | Source |
 |---|---|---|---|---|
-| USE-01 | Every authenticated inference request produces exactly one usage record in both funding modes, whether it succeeded, failed, was cancelled, was refused for a limit or was never forwarded | M | R1 | USAGE-01, USAGE-05, BILL-04 |
+| USE-01 | Every authenticated inference request produces exactly one usage record, whether it succeeded, failed, was cancelled, was refused for a limit or was never forwarded | M | R1 | USAGE-01, USAGE-05, BILL-04 |
 | USE-02 | The ledger holds no prompt, completion or media content | M | R1 | USAGE-02, NFR-PRIV-02 |
-| USE-03 | A record holds: record ID, request ID, trace ID, tenant, caller, virtual key or token subject, credential ID, funding mode, provider, model, endpoint, streaming flag, timestamps and duration, outcome, token counts by category (input, output, cached, provider-specific), other billed units, estimated cost, currency, price version and caller metadata | M | R1 | USAGE-03, USAGE-04, §10.3 |
-| USE-04 | Values reported by the provider, values estimated by Pandokos and values produced by rating rules are stored separately | M | R1 | §10.3, BILL-05 |
-| USE-05 | The ledger is append-only. A correction is a new record that references the original | M / S | R1 / R3 | USAGE-08, BILLING-09 |
-| USE-06 | Aggregated reports are available by tenant, period, provider, model, caller and funding mode | M | R2 | USAGE-07 |
+| USE-03 | A record holds: record ID, request ID, trace ID, tenant, caller, virtual key or token subject, credential ID, provider, model, endpoint, streaming flag, timestamps and duration, outcome, token counts by category (input, output, cached, provider-specific), other billed units, estimated cost, currency, price version and caller metadata | M | R1 | USAGE-03, USAGE-04, §10.3 |
+| USE-04 | Values reported by the provider and values estimated by Pandokos are stored separately | M | R1 | §10.3, BILL-05 |
+| USE-05 | The ledger is append-only: no record is changed after it is written | M | R1 | USAGE-08 |
+| USE-06 | Aggregated reports are available by tenant, period, provider, model and caller | M | R2 | USAGE-07 |
 | USE-07 | Tenant roles read their tenant's usage. Platform roles read the aggregates they are allowed to see | M | R2 | USAGE-09 |
 | USE-08 | Retention is configurable and usage can be exported in an open format | S | R2 | NFR-PRIV-03, BILLING-06 |
+| USE-09 | Only the tenant's own credential is used for its requests. Costs are estimates and informational: the provider's invoice is the authority | M | R1 | BILL-02 to 06 |
 
-### 5.10 Audit
+### 5.9 Audit
 
 | ID | Requirement | Pri | Rel | Source |
 |---|---|---|---|---|
@@ -268,19 +257,16 @@ SOW 0.1; *new* marks requirements added in this revision.
 | AUD-06 | Audit retention is configurable, and the log can be exported or forwarded to an external system | S | R2 | AUD-07 |
 | AUD-07 | Audit log, usage ledger and telemetry are three separate records with shared correlation IDs. Telemetry is never the source of accounting | M | R1 | §12.3 |
 
-### 5.11 Billing export
+### 5.10 Events for external systems
 
 | ID | Requirement | Pri | Rel | Source |
 |---|---|---|---|---|
-| BIL-01 | Platform-funded usage is published as billable events for external systems. BYOK usage is never published as billable | M | R3 | BILLING-01, BILLING-12, BILL-15 |
-| BIL-02 | An event has a stable unique ID usable as idempotency key, the tenant, the external customer reference, quantities, prices, currency and the originating request | M | R3 | BILLING-02, BILLING-10 |
-| BIL-03 | Delivery is asynchronous and at least once, with retries, a dead-letter state and replay. No event is lost when Pandokos or the destination fails | M | R3 | BILLING-03 to 05, DB-09 |
-| BIL-04 | Generic destinations come first: a signed webhook and a file export, both in a documented open format | M | R3 | BILLING-06 |
-| BIL-05 | Adapters for specific billing vendors are optional modules outside the core | C | later | BILLING-07 |
-| BIL-06 | Corrections and voids are published as events that reference the original | S | R3 | BILLING-09 |
-| BIL-07 | Metering and rating are separate. Rating never rewrites usage | M | R3 | BILLING-08, BILLING-11 |
+| EVT-01 | Usage is published as events for external systems, one per usage record, with no content | M | R3 | BILLING-01, BILL-15 |
+| EVT-02 | An event has a stable unique ID usable as idempotency key, the tenant and its external reference, quantities, estimated cost, currency, price version and the originating request | M | R3 | BILLING-02, BILLING-10 |
+| EVT-03 | Delivery is asynchronous and at least once, with retries, a dead-letter state and replay. No event is lost when Pandokos or the destination fails, and a failing destination never delays inference | M | R3 | BILLING-03 to 05, DB-09 |
+| EVT-04 | Destinations are generic: a signed webhook and a file export, both in a documented open format | M | R3 | BILLING-06 |
 
-### 5.12 Observability
+### 5.11 Observability
 
 | ID | Requirement | Pri | Rel | Source |
 |---|---|---|---|---|
@@ -293,20 +279,20 @@ SOW 0.1; *new* marks requirements added in this revision.
 | OBS-07 | Tenant and request identifiers are not metric labels by default. Tenant labels are an opt-in for small installations | M | R2 | OTEL-11 |
 | OBS-08 | Liveness and readiness endpoints reflect the state of critical dependencies | M | R1 | NFR-MAINT-04 |
 
-### 5.13 Administration API
+### 5.12 Administration API
 
 | ID | Requirement | Pri | Rel | Source |
 |---|---|---|---|---|
 | API-01 | The administration API listens separately from the inference API and can be bound to a private network | M | R1 | API-08, SEC-CP-01, SEC-CP-05 |
 | API-02 | The administration API is versioned, and its OpenAPI specification is the source of truth, published with every release | M | R1 | API-13, NFR-MAINT-01 |
-| API-03 | Everything is achievable through the API. A CLI wraps the API; no web console is required | M | R1 | API-09, API-10 |
+| API-03 | Everything is achievable through the API. A CLI wraps the API; nothing else is required | M | R1 | API-09, API-10 |
 | API-04 | Collections support pagination, filtering and sorting. Errors share one documented format | M | R1 | API-11 |
 | API-05 | Create operations accept an idempotency key | S | R2 | API-12 |
 | API-06 | A tenant can be administered by an external system through a tenant-scoped service account that holds no platform privilege | M | R1 | API-14, API-15 |
 | API-07 | An integrator can ask whether a tenant is currently able to call a given provider and model (credential present and valid, model allowed, tenant active, budget available) | S | R1 | new |
-| API-08 | The web console uses only the documented administration API, which includes the sign-in and session endpoints. It has no private or privileged path | M | R2 | §22 |
+| API-08 | The sign-in and session endpoints are part of the documented administration API, so that an interface for people can be built on it, served on the same origin, with no private or privileged path | M | R2 | §22 |
 
-### 5.14 Security
+### 5.13 Security
 
 | ID | Requirement | Pri | Rel | Source |
 |---|---|---|---|---|
@@ -314,13 +300,13 @@ SOW 0.1; *new* marks requirements added in this revision.
 | SEC-02 | The replay exposure of each authentication mechanism is documented. Bearer credentials rely on TLS and short lifetimes; sender-constrained options are IAM-15 and IAM-16 | M | R1 | SEC-DP-03 |
 | SEC-03 | Error messages reveal no secrets, internal configuration or data of other tenants | M | R1 | SEC-DP-08 |
 | SEC-04 | Defaults are secure. At start-up Pandokos validates its configuration and refuses or warns about weak settings | M | R1 | SEC-SC-08 |
-| SEC-05 | A threat model is maintained with the architecture and states the trust boundaries, including what an infrastructure operator with access to hosts, database, backups and keys can do | M | R1 (initial), R5 (reviewed) | SEC-SC-01, §7.4 |
+| SEC-05 | A threat model is maintained with the architecture and states the trust boundaries, including what an infrastructure operator with access to hosts, database, backups and keys can do | M | R1 (initial), R3 (reviewed) | SEC-SC-01, §7.4 |
 | SEC-06 | The build produces a minimal, non-root image, with pinned dependencies, vulnerability scanning, an SBOM, and signed artefacts with verifiable provenance | M | R1 | SEC-SC-02 to 05 |
 | SEC-07 | A vulnerability disclosure policy and a response process exist | M | R1 | SEC-SC-06 |
 | SEC-08 | High-impact administrative operations require a reason | S | R2 | SEC-CP-02 |
 | SEC-09 | An independent security review takes place before 1.0 | S | R5 | §22 |
 
-### 5.15 Deployment and operations
+### 5.14 Deployment and operations
 
 | ID | Requirement | Pri | Rel | Source |
 |---|---|---|---|---|
@@ -329,37 +315,23 @@ SOW 0.1; *new* marks requirements added in this revision.
 | OPS-03 | A supported Docker Compose setup runs several replicas behind a load balancer | S | R4 | DEP-01 |
 | OPS-04 | A supported Kubernetes deployment covers configuration, secrets, probes and rolling updates | S | R4 | DEP-02 |
 | OPS-05 | Gateway, administration and background work can run in one process or separately. The API contract does not depend on the topology | M | R1 (one process), R4 (separate) | DEP-05 |
-| OPS-06 | Isolation tiers: *pool* (shared cell, the default), *silo* (a cell that serves exactly one tenant and refuses any other), *bridge* (a platform with both). The API contract is the same in every tier | S | R4 | §5.3 |
-| OPS-07 | Moving a tenant between pool and silo is a documented operator procedure | C | R4 | §5.3 |
+| OPS-06 | Isolation tiers: *pool* (shared cell, the default), *silo* (a cell that serves exactly one tenant and refuses any other), *bridge* (a platform with both). The API contract is the same in every tier | S | R5 | §5.3 |
+| OPS-07 | Moving a tenant between pool and silo is a documented operator procedure | C | R5 | §5.3 |
 | OPS-08 | Static settings come from a file and environment variables; secrets are referenced as files. Dynamic settings live in the database and are managed through the API | M | R1 | NFR-MAINT-02 |
 | OPS-09 | Schema migrations are versioned and run by an explicit command. An instance refuses to start against a schema it does not match | M | R1 | DB-03, NFR-MAINT-05 |
-| OPS-10 | Backup and restore, including keys, are documented, and a restore is tested | M | R2 (documented), R5 (tested) | NFR-AV-05 |
+| OPS-10 | Backup and restore, including keys, are documented, and a restore is tested | M | R2 (documented), R3 (tested) | NFR-AV-05 |
 | OPS-11 | Behaviour on failure of each dependency is defined. If authorization or the credential cannot be verified the request is not forwarded | M | R2 | NFR-PERF-05, NFR-AV-01, NFR-AV-02 |
 | OPS-12 | On shutdown, in-flight streams are drained up to a configurable deadline | M | R1 | new |
-| OPS-13 | Releases follow semantic versioning with upgrade notes, and upgrading from the previous minor version is supported | S | R5 | NFR-MAINT-05 |
+| OPS-13 | Releases follow semantic versioning with upgrade notes, and upgrading from the previous minor version is supported | S | R3 | NFR-MAINT-05 |
 | OPS-14 | Several instances scale horizontally with consistent authentication, limits, usage and revocation | M | R4 | NFR-PERF-04 |
 
-### 5.16 Privacy
+### 5.15 Privacy
 
 | ID | Requirement | Pri | Rel | Source |
 |---|---|---|---|---|
 | PRV-01 | Personal data is minimal: a user record holds the IdP subject and the display attributes the IdP supplies | M | R2 | NFR-PRIV-01 |
-| PRV-02 | The documentation states what data is sent to providers, telemetry collectors and billing destinations | M | R1 | NFR-PRIV-05 |
+| PRV-02 | The documentation states what data is sent to providers, telemetry collectors and event destinations | M | R1 | NFR-PRIV-05 |
 | PRV-03 | Caller metadata is bounded in number and size, and a tenant can restrict the accepted keys | S | R2 | NFR-PRIV-04 |
-
-### 5.17 Console
-
-| ID | Requirement | Pri | Rel | Source |
-|---|---|---|---|---|
-| CON-01 | Pandokos ships a web console, embedded in the product and served on the administration listener. It can be switched off | M | R2 | §22 |
-| CON-02 | Tenant area, for tenant roles: members and roles, service accounts and virtual keys, provider credentials, model access, limits, usage and cost, audit log | M | R2 | new |
-| CON-03 | Platform area, for platform roles: tenants and their lifecycle, providers, models and prices, users and platform roles, platform limits, platform audit log; platform credentials and funding modes when they exist | M | R2, R3 (funding) | new |
-| CON-04 | Every function of the console is profiled by roles and permissions: an area, a page or an action appears only when the user's effective permissions (AZ-11) include the permission that the underlying API call requires. The map from console functions to permissions is documented and tested | M | R2 | new |
-| CON-05 | A user who belongs to several tenants chooses the tenant to work in. A user with a platform role reaches the platform area. Each area shows only its own scope, and a platform role alone gives no view into a tenant's data | M | R2 | AUTH-H-05 |
-| CON-06 | The console never displays a stored secret. A new virtual key is shown once; a provider credential is a write-only field | M | R2 | VAULT-05 |
-| CON-07 | The console is served with a strict content security policy, loads nothing from third parties and keeps no credential in browser storage | M | R2 | new |
-| CON-08 | From R3 on, a feature with an administrative surface ships its console page in the same release | S | R3 | new |
-| CON-09 | Interface text is kept apart from code so it can be translated; English comes first. The console is usable from the keyboard | C | R2 | new |
 
 ## 6. Use cases
 
@@ -372,15 +344,14 @@ SOW 0.1; *new* marks requirements added in this revision.
 | UC-05 | A workload calls with a token from a trusted issuer that carries the tenant | R1 | IAM-06 to 08, TEN-02 |
 | UC-06 | A tenant rotates a provider credential or a virtual key without downtime | R1 | VLT-03, IAM-05 |
 | UC-07 | A caller of tenant A tries to reach a resource of tenant B | R1 | TEN-02 to 08 |
-| UC-08 | A user signs in to the console through the IdP and administers a tenant with the functions their role allows | R2 | IAM-09 to 12, AZ-03, CON-02, CON-04 |
+| UC-08 | A user signs in through the IdP and administers a tenant over the API with the operations their role allows | R2 | IAM-09 to 12, AZ-03, AZ-11 |
 | UC-09 | A request exceeds a rate limit or a budget | R2 | LIM-01 to 09 |
 | UC-10 | A platform admin inspects the credential metadata of a tenant | R1 | AZ-08, VLT-04 |
 | UC-11 | A platform admin deletes a tenant | R2 | TEN-11, VLT-11 |
-| UC-12 | A tenant calls a platform-funded model | R3 | FND-03 to 05, LIM-03 |
-| UC-13 | Usage is delivered to an external billing system | R3 | BIL-01 to 04 |
-| UC-14 | An operator dedicates a cell to a tenant | R4 | OPS-06, OPS-07 |
-| UC-15 | With no IdP, a platform admin signs in with a local account, creates a tenant and a local account for its administrator | R2 | IAM-18 to 22, CON-03 |
-| UC-16 | A user with a limited role (for example usage viewer) signs in and finds only the pages of that role | R2 | AZ-11, CON-04 |
+| UC-13 | Usage is delivered to an external system, for example a billing system | R3 | EVT-01 to 04 |
+| UC-14 | An operator dedicates a cell to a tenant | R5 | OPS-06, OPS-07 |
+| UC-15 | With no IdP, a platform admin signs in with a local account, creates a tenant and a local account for its administrator | R2 | IAM-18 to 22 |
+| UC-16 | A user with a limited role (for example usage viewer) signs in and is told exactly the permissions of that role | R2 | AZ-11 |
 
 ## 7. Acceptance per release
 
@@ -396,23 +367,26 @@ OTLP collector. (9) Revocation times of keys and credentials are documented and 
 image is minimal, scanned, signed and ships an SBOM. (11) The threat model states the limits of
 protection against whoever controls host, database and keys.
 
-**R2 — v0.2.** A person signs in to the console with a local account and, where one is configured,
-through an external OIDC provider; the console offers each user only the functions of their roles,
-and the API refuses the others whatever the client sends; roles gate every administrative route; rate limits and budgets hold under concurrent load within the documented bound; reports
-answer who spent what; a tenant is deleted with cryptographic erasure and a completion record; the
-key-encryption key is rotated without tenant action; backup and restore are documented.
+**R2 — v0.2.** Rate limits and budgets hold under concurrent load within the documented bound; a
+person signs in to the administration API with a local account and, where one is configured,
+through an external OIDC provider; the API tells each user the permissions of their roles and
+refuses everything else whatever the client sends; roles gate every administrative route; reports
+answer who spent what; a tenant is exported, then deleted with cryptographic erasure and a
+completion record; the key-encryption key is rotated without tenant action; backup and restore are
+documented.
 
-**R3 — v0.3.** A tenant uses a platform-funded model without ever seeing the credential; every
-such call yields a rated, billable event that reaches a webhook exactly once from the receiver's
-point of view, including across restarts and receiver outages.
+**R3 — v0.3.** Every call yields a usage event that reaches a webhook exactly once from the
+receiver's point of view, including across restarts and receiver outages; with an external
+key-encryption key provider no such key exists on the Pandokos hosts; the threat model has been
+reviewed against the code; a restore drill succeeds; the upgrade policy is in force and the
+upgrade from v0.2 is tested.
 
 **R4 — v0.4.** Three replicas enforce one tenant's limits consistently; the Helm chart installs a
-working system; a silo cell refuses every tenant but its own; Gemini and Azure OpenAI pass the
-compatibility suite.
+working system; Gemini and Azure OpenAI pass the compatibility suite.
 
-**R5 — v1.0.** Published performance figures meet the targets or the targets are revised; a
-restore drill succeeds; the security review has no open high-severity finding; the upgrade policy
-is in force.
+**R5 — v1.0.** Published performance figures meet the targets or the targets are revised; the
+independent security assessment has no open high-severity finding; a silo cell refuses every
+tenant but its own; a caller authenticates with a client certificate.
 
 ## 8. Reference integration scenario
 
@@ -435,7 +409,7 @@ requirements above must let that platform:
 
 ## 9. What changed from SOW 0.1
 
-SOW 0.1 listed 267 requirements in a flat list with no priorities. This revision has 179, each with a priority and a release, and 16 use cases: it merges
+SOW 0.1 listed 267 requirements in a flat list with no priorities. This revision has 162, each with a priority and a release, and 15 use cases: it merges
 duplicates, assigns every requirement a priority and a release, and aligns the scope with what
 products of this class deliver.
 
@@ -447,25 +421,23 @@ privacy; SSRF protections under proxy and security. Each is now stated once.
 
 | SOW 0.1 | Now | Why |
 |---|---|---|
-| Optional local authentication for users (AUTH-H-08) | Kept and made precise: minimal local accounts, valid for the console only (IAM-18 to IAM-22), with no self-registration, recovery by email or MFA | Without an IdP people still need a way to sign in. The stated limits keep the feature short of an identity provider |
+| Optional local authentication for users (AUTH-H-08) | Kept and made precise: minimal local accounts, valid for the administration API only (IAM-18 to IAM-22), with no self-registration, recovery by email or MFA | Without an IdP people still need a way to sign in. The stated limits keep the feature short of an identity provider |
 | DPoP, HTTP message signatures, token exchange inside the proxy (§6.4) | Not implemented. Token exchange happens at the IdP and Pandokos validates the resulting token | Sender-constrained tokens are covered by mutual TLS (IAM-15, IAM-16); the others add protocol surface with no caller that needs them |
 | SCIM provisioning | Out of scope | Users are provisioned on first mapped sign-in or through the API |
 | Rate limits per role (§11.1) | Removed | Limits attach to tenant, key, provider and model; roles are an authorization concept |
 | Telemetry failure may block inference (NFR-AV-03) | Removed: it never blocks (OBS-05) | Telemetry is not an accounting source, so nothing is lost that justifies an outage |
 | Automatic provisioning and autoscaling of silos (§5.4) | Out of scope. A silo is a pinned cell deployed by the operator (OPS-06) | It requires an orchestrator-specific controller; the product must not require Kubernetes |
-| Pricing plans, discounts and a vendor billing adapter in the core (BILL-13, BILLING-07) | One rating rule (FND-05); vendor adapters outside the core (BIL-05) | Anything more is a billing system |
+| Pricing plans, discounts and a vendor billing adapter in the core (BILL-13, BILLING-07) | Out of scope. Pandokos meters every call and publishes usage events (EVT-01 to EVT-04) | Anything more is a billing system |
 | Opt-in storage of content (implied by "by default" in USAGE-02, OTEL-07) | No such option (principle 8) | An archive of conversations changes the product's risk class |
 | Step-up authentication as a general requirement (AUTH-H-09) | Could-have, limited to checking IdP claims (IAM-17) | Step-up is performed by the IdP |
 
 **Added.** Compatibility with stock SDKs through native authentication headers (GW-02); an
 allow-list of metered endpoints (GW-09); errors in the shape of the called API (GW-10); an
-explicit rule against silent fallback between funding modes (FND-01) and between credentials
-(VLT-01); mandatory budgets for platform-funded use (FND-04); limit headers (LIM-09); an
+explicit rule against silent fallback between credentials (VLT-01); limit headers (LIM-09); an
 anti-escalation rule for role grants (AZ-04); detectable key format (IAM-03); canary-secret tests
 (VLT-14); egress address checks (GW-06); atomic audit (AUD-03); a tenant capability check for
-integrators (API-07); graceful draining (OPS-12); refreshing prices from an open dataset (CAT-09). A web console with a platform area and a tenant
-area, profiled by permissions (5.17, AZ-11), and the sessions behind it (IAM-21, IAM-22): SOW 0.1
-mentioned a dashboard only in passing.
+integrators (API-07); graceful draining (OPS-12); refreshing prices from an open dataset (CAT-09). Sessions for people (IAM-21, IAM-22) and an
+answer to "what may this user do" (AZ-11), so that an interface can be built on the API.
 
 **Rescoped.** The fifteen named providers became three tiers by API family (CAT-02): supporting
 the OpenAI wire protocol covers most of the list with one adapter. The unified OpenAI-compatible

@@ -1,11 +1,11 @@
-# 0022. Local accounts and console sessions
+# 0022. Local accounts and sessions
 
 - Status: accepted
 - Date: 2026-11-11
 
 ## Context
 
-An installation without an identity provider needs a way for people to sign in to the console
+An installation without an identity provider needs a way for people to sign in
 (IAM-13, IAM-18). The common answer among self-hosted products is a small built-in user store
 next to optional single sign-on: RabbitMQ, Grafana, MinIO, Gitea and Argo CD all work this way.
 The risk is scope: password handling tends to grow into an identity product. This record fixes
@@ -25,9 +25,9 @@ what is built and what is not.
   parameters change. Policy: a minimum length (12 by default), a generous maximum, no composition
   rules.
 - **Initial and reset passwords are generated**, shown once to the administrator, and must be
-  changed at the next sign-in. A user changes their own password in the console by giving the
+  changed at the next sign-in. A user changes their own password by giving the
   current one.
-- **Reset** is done by an administrator in the console, or from the host with
+- **Reset** is done by an administrator through the API, or from the host with
   `pandokos user reset-password`, which is also the way back in when the last platform admin is
   locked out. Both are audited. There is no email and therefore no recovery by email.
 - **Throttling.** Failed attempts add a growing delay per account and per source address, and a
@@ -55,7 +55,7 @@ Local and identity-provider sign-in end the same way.
 - **End of session**: sign-out, expiry, password change (all other sessions of the user),
   disabling of the user, or revocation by an administrator.
 - **Cross-site request forgery**: besides the same-site cookie, every state-changing request must
-  carry a custom header and an `Origin` that matches the console.
+  carry a custom header and an `Origin` that matches the administration listener's own origin.
 - **Scope**: sessions are accepted only by the administration listener. The gateway has no code
   that reads the cookie and no database grant on the session or account tables.
 - **Transport**: sign-in is refused over plain HTTP, except on the loopback address for local
@@ -88,7 +88,7 @@ out of Pandokos, and makes the smallest installation two products.
 **Authentication delegated to a reverse proxy** (trusted headers). Common and easy to
 misconfigure into a full bypass; it can be offered later as an explicit, opt-in mode.
 
-**HTTP basic authentication**, as older management consoles do. Sends the password with every
+**HTTP basic authentication**, as older management interfaces do. Sends the password with every
 request and has no sign-out.
 
 **Stateless signed tokens as sessions.** No table, but no real revocation either, which IAM-21
