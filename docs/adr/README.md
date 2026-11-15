@@ -12,7 +12,7 @@ A record is *proposed* until its pull request is merged by the maintainer, then 
 | [0003](0003-single-binary-with-roles.md) | One binary with three roles; separate planes | accepted |
 | [0004](0004-postgresql-and-rls.md) | PostgreSQL as system of record, with forced row-level security | accepted |
 | [0005](0005-data-plane-authentication.md) | Data-plane authentication: virtual keys and trusted token issuers | accepted |
-| [0006](0006-human-authentication-external-oidc.md) | People sign in to the console only, through an external OIDC provider or a local account | accepted |
+| [0006](0006-human-authentication-external-oidc.md) | People sign in to the administration API only, through an external OIDC provider or a local account | accepted |
 | [0007](0007-authorization-rbac.md) | Authorization: role-based, with a permission catalogue defined in code | accepted |
 | [0008](0008-vault-envelope-encryption.md) | Vault: built-in envelope encryption with a pluggable key-encryption key | accepted |
 | [0009](0009-native-passthrough-by-api-family.md) | Native passthrough organized by API family; no translation | accepted |
@@ -20,15 +20,14 @@ A record is *proposed* until its pull request is merged by the maintainer, then 
 | [0011](0011-pricing-source.md) | Prices: versioned in the database, seeded from an open dataset | accepted |
 | [0012](0012-limits-and-budget-reservation.md) | Limits: reserve and settle, with in-process or Valkey counters | accepted |
 | [0013](0013-ledger-and-audit.md) | Usage ledger and audit log: append-only tables in PostgreSQL | accepted |
-| [0014](0014-billing-outbox.md) | Events for external systems: transactional outbox and CloudEvents webhooks | accepted |
+| [0014](0014-events-outbox.md) | Events for external systems: transactional outbox and CloudEvents webhooks | accepted |
 | [0015](0015-observability.md) | Observability: OpenTelemetry, pinned GenAI conventions, no content | accepted |
 | [0016](0016-cells-pool-silo-bridge.md) | Pool, silo and bridge as deployments of cells | accepted |
-| [0017](0017-admin-api-spec-first.md) | Administration API: specification first, CLI before console | accepted |
+| [0017](0017-admin-api-spec-first.md) | Administration API: specification first, with a CLI | accepted |
 | [0018](0018-supply-chain.md) | Supply chain: few dependencies, minimal image, signed releases | accepted |
 | [0019](0019-configuration.md) | Configuration: static settings in a file, dynamic state in the database | accepted |
 | [0020](0020-error-contract.md) | Error contract: the shape of the API being called | accepted |
-| [0021](0021-web-console.md) | Web console: embedded single-page application, profiled by permissions | accepted |
-| [0022](0022-local-accounts-and-sessions.md) | Local accounts and console sessions | accepted |
+| [0022](0022-local-accounts-and-sessions.md) | Local accounts and sessions | accepted |
 | [0023](0023-test-dependencies-in-nested-modules.md) | Test-only dependencies live in nested modules | proposed |
 | [0024](0024-openai-stream-usage-option.md) | OpenAI chat streams: how usage is requested and what is removed | proposed |
 | [0025](0025-go-toolchain.md) | Go toolchain: language floor and release toolchain | proposed |
@@ -70,7 +69,7 @@ A record is *proposed* until its pull request is merged by the maintainer, then 
 | 14. Price list source and versioning | 0011 |
 | 15. Budget reservation under concurrency | 0012 |
 | 16. Audit retention and immutability | 0013 |
-| 17, 18. Billing events and vendor integration | 0014 |
+| 17, 18. Events for external systems | 0014 |
 | 19. Kubernetes topologies and silos | 0016 |
 | 20. Service-level objectives | Targets in requirement GW-17; validated in epic 10 |
 | 21. Backup, recovery, cryptographic erasure | 0008, data model; procedures in epics 6 and 10 |

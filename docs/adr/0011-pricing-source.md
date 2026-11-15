@@ -23,16 +23,14 @@ would be a permanent chore.
   import time, with an audit record.
 - **Operator overrides** are price versions marked as such; imports do not replace them. Private
   and self-hosted models get their prices this way, including zero.
-- A model without a price is usable under BYOK, with cost recorded as unknown, and blocked for
-  platform-funded use unless the operator allows it.
+- A model without a price is usable, with cost recorded as unknown.
 - All amounts use decimal arithmetic. Costs are stored with enough precision for per-token prices
   and are rounded only for display.
 
 ## Consequences
 
-- Costs are estimates. Under BYOK they are informational; under platform-funded use they are the
-  operator's stated basis for charging, not the provider's invoice. The documentation is explicit
-  about the difference.
+- Costs are estimates and informational: the provider's invoice is the authority. The
+  documentation is explicit about the difference.
 - Pandokos depends on the format of an external dataset. The importer is small and versioned; a
   format change breaks imports, not running installations.
 - Reconstructing a past cost is always possible, because versions are immutable.

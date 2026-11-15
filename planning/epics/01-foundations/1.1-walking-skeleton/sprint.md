@@ -1102,7 +1102,6 @@ Derived item by item from [planning/README.md](../../../README.md).
 - [ ] The image scan reports no fixable high or critical vulnerability.
 - [ ] Locally, the commands of plan.md part F all succeed.
 
-**Console** — not applicable before v0.3 and the sprint has no administrative surface.
 
 **Documentation, OpenAPI, ADRs**
 

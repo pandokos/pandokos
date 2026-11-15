@@ -1,19 +1,19 @@
-# 0006. People sign in to the console only, through an external OIDC provider or a local account
+# 0006. People sign in to the administration API only, through an external OIDC provider or a local account
 
 - Status: accepted
 - Date: 2026-11-11
 
 ## Context
 
-People administer Pandokos through its web console ([ADR 0021](0021-web-console.md)). Pandokos
-must not become an identity provider (principle 4), yet it has to be usable where no identity
-provider exists. The maintainer's rule frames the decision: people are the only ones who sign in
-interactively, and signing in enables the console's functions and nothing else.
+People administer Pandokos through its administration API, with the CLI or with an interface built
+on the API. Pandokos must not become an identity provider (principle 4), yet it has to be usable
+where no identity provider exists. The maintainer's rule frames the decision: people are the only
+ones who sign in interactively, and signing in enables administration and nothing else.
 
 ## Decision
 
-- **Interactive sign-in exists for people and for the console only.** Its result is a session
-  that the administration API accepts on the console's behalf. A session never authenticates an
+- **Interactive sign-in exists for people and for administration only.** Its result is a session
+  that the administration API accepts. A session never authenticates an
   inference request, and a service account or virtual key cannot sign in.
 - **Two ways to sign in**, leading to the same user record, roles and session:
   1. *An external OpenID Connect provider.* Pandokos acts as relying party: it redirects the
@@ -38,23 +38,23 @@ interactively, and signing in enables the console's functions and nothing else.
 
 ## Consequences
 
-- One session mechanism serves both sign-in methods, and the console never handles tokens.
+- One session mechanism serves both sign-in methods, and a browser client never handles tokens.
 - Because provider tokens are discarded after sign-in, a user removed at the identity provider
   keeps an open session until it expires or is revoked in Pandokos. The absolute session lifetime
   bounds this. Provider-initiated logout can be added later.
 - Step-up authentication reduces to checking claims of the ID token at sign-in (IAM-17).
-- Pandokos now serves a sign-in page and keeps sessions, which it did not in the first draft of
+- Pandokos now has sign-in endpoints and keeps sessions, which it did not in the first draft of
   this record. The scope of that responsibility is fixed in ADR 0022.
 
 ## Alternatives considered
 
-**The console as a public OIDC client holding tokens in the browser.** No server-side session to
+**A browser client as a public OIDC client holding tokens in the browser.** No server-side session to
 build, but tokens in the browser are exposed to script injection, and local accounts would need a
 second mechanism anyway.
 
 **Bearer tokens of people accepted directly by the administration API.** It would let people
 drive the API from scripts with their own identity, which contradicts the rule that sign-in
-enables only the console. Automation has keys for that.
+enables only interactive administration. Automation has keys for that.
 
 **An external identity provider as the only way in**, with one bundled in the reference
 deployment. It keeps Pandokos free of passwords, at the price of a second product to run and

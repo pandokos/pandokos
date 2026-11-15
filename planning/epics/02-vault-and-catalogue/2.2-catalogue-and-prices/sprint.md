@@ -86,14 +86,12 @@ T-410). The inference route still uses `skeleton.openai.*` (section 2).
 | Recording cost and price version on the usage record; reading non-token units | 3.2 |
 | The unified `/v1/…` endpoint choosing a provider from the model name (and its ambiguity rule) | 3.1 / 3.3 |
 | The tenant capability endpoint ("can this tenant call this model now") on the inference side | 3.3 |
-| Blocking platform-funded requests without a price, and its override (the second half of CAT-08) | 7.1 |
 | Request-side cost estimation for limits; monetary budgets with unknown prices | 5.x |
 | Tenant-supplied endpoints with allowed host patterns (CAT-03, S) | R4 |
 | Aliases (CAT-07), declarative export and import of the catalogue (CAT-10) | R4, R2 |
 | Tier 2 and tier 3 families (`gemini`, `azure-openai`, Bedrock) | epic 9 |
 | Removing a tenant's grant rows when it is deleted | 6.3 |
 | `serve --role`: the refresh job in its own worker process | 8.2 |
-| Console pages for catalogue, model access and prices | 11.2, 11.3 |
 
 ## 3. Requirements claimed
 
@@ -107,7 +105,7 @@ Wording quoted from [docs/requirements](../../../../docs/requirements/README.md)
 | CAT-04 | "The model catalogue records, when known: public name, upstream identifier, provider, API family, capabilities, status, context window and limits" | `model.name`, `upstream_id`, provider, family (of the provider), `capabilities` from a fixed vocabulary, `status` (`active`, `deprecated`, `retired`), `context_window`, `max_output_tokens` | full |
 | CAT-05 | "The platform admin makes a model available to all tenants or to selected ones. A tenant admin can restrict it further for the tenant or for individual keys" | `model.availability` (`all`, `selected`) and `model_tenant_grant`; `tenant_model_restriction`; `virtual_key.models` | full |
 | CAT-06 | "A request for a model that is not allowed is rejected before it is forwarded, whatever identifier the caller uses" | The decision: `catalog.Snapshot.Resolve` with one refusal for unknown, retired, not granted, outside the tenant restriction and outside the key's list (section 5.6); the gateway cache that serves it; tested on the database and in the cache | the decision and its data; enforcement in the inference path 3.1 |
-| CAT-08 | "Prices are versioned in time, with a currency. The cost of a request uses the price in force when it was made. When no price is known the usage is recorded with an unknown cost, and platform-funded requests are blocked unless configured otherwise" | Immutable price versions with `valid_from` and `currency`; `PriceAt` and `pricing.VersionAt`; `pricing.Cost` with exact decimals and an explicit unknown result | versions, currency, cost at a time, unknown cost; recording 3.2; the platform-funded block 7.1 |
+| CAT-08 | "Prices are versioned in time, with a currency. The cost of a request uses the price in force when it was made. When no price is known the usage is recorded with an unknown cost" | Immutable price versions with `valid_from` and `currency`; `PriceAt` and `pricing.VersionAt`; `pricing.Cost` with exact decimals and an explicit unknown result | versions, currency, cost at a time, unknown cost; recording 3.2 |
 | CAT-09 | "The price list can be loaded and refreshed from an open dataset and overridden by the operator. Every change creates a new version and an audit record" | Importer of the `genai-prices` v2 format: embedded snapshot imported at start, `import-prices --file`, `runPriceImport`, optional periodic refresh; overrides; one platform audit row per new version and one per run that changed something | full |
 | IAM-04 | "A virtual key always belongs to exactly one tenant and can be restricted by scope, model allow-list, expiry and limits" | The model allow-list: `VirtualKeyCreate.models`, immutable, on the principal | model allow-list (limits 5.1) |
 
@@ -723,7 +721,7 @@ optional members that must be clearable (`description: ""`, `context_window: 0`,
 | D-7 | **Tenant restriction: one row of references, absent = unrestricted; key list: an immutable column on the key; both by reference, checked against visibility when written** | Mirrors scopes (immutable, in the principal, invalidated by existing payloads). An explicit row distinguishes "no restriction" from "nothing allowed". References survive a model being deleted and recreated; a reference that later becomes invisible simply stops matching |
 | D-8 | **Price versions are immutable, start now or later, never in the past; future versions can be deleted** | ADR 0011 "versions are immutable" and the exit condition: a past instant must keep resolving to the same version. Allowing deletion before the start fixes mistakes in scheduled overrides without rewriting history |
 | D-9 | **Own `Decimal` on `math/big`; `numeric(24,12)` storage; decimal text across SQL and JSON; no floating point in the package; costs exact, rounded only for display (half away from zero)** | ADR 0011 and data model rule 6; no dependency (ADR 0018). The dataset's tier-1 values have at most 6 fraction digits (verified); 12 leave room for per-token prices. JSON numbers are never used for money because clients parse them as floats |
-| D-10 | **Currency per version; no conversion; imports are USD** | ADR 0011 says "with a currency". Overrides for private models may be in the operator's currency; adding currencies is 5.x and 7.x's problem, made explicit by `Cost.Currency` |
+| D-10 | **Currency per version; no conversion; imports are USD** | ADR 0011 says "with a currency". Overrides for private models may be in the operator's currency; adding currencies is 5.x's problem, made explicit by `Cost.Currency` |
 | D-11 | **Cost formula over `family.Usage` with fixed categories, cliff tiers on total input, documented fallbacks, explicit unknown reasons** | The normalization of ADR 0010 counts cache tokens inside input; the dataset's tiers are cliffs on input tokens; falling back to the input rate for an unpriced cache category is what providers bill when they do not distinguish it, and is reported |
 | D-12 | **Overrides are versions; a flag on the model stops imports until cleared** | ADR 0011: "imports do not replace them". A flag is simpler and more honest than ending an override with a synthetic version; clearing does not invent a price, the next import does |
 | D-13 | **The importer reads the v2 format and embeds the full v2 file at a pinned commit, with its MIT licence** | v1 is frozen upstream (README, verified). MIT is compatible with Apache-2.0 if the notice travels with the file. Embedding the whole file (820 KB) keeps operators' OpenAI-compatible providers priceable without a new release; it was scanned clean by the repository's secret scanner |
@@ -867,10 +865,7 @@ is true by default: tests that count audit rows set it to false or account for t
 - **5.x** estimates request cost with the same function and decides budgets in one currency.
 - **6.3** removes a deleted tenant's `model_tenant_grant` rows (global table; the worker needs a
   grant) and its restriction row.
-- **7.1** blocks platform-funded calls when `Known` is false unless configured; decides whether
-  rating rules reference price versions.
 - **8.2** runs the refresh job in the worker process; nothing else changes (D-17).
-- **11.2, 11.3** build the pages on these operations; rates are decimal strings in the console.
 - **R4 (CAT-07, CAT-03 S)**: aliases relax the uniqueness of `upstream_id`; tenant endpoints add
   an allowed host pattern to `provider`.
 
@@ -934,7 +929,7 @@ is true by default: tests that count audit rows set it to false or account for t
 | O-3 | Embedded file: full v2 (820 KB) or `data_slim.json` (565 KB, long fields and free models removed) | Full file: free models matter for self-hosted endpoints, and descriptions are not imported anyway |
 | O-4 | Scheduled prices (`start_date` in the future) are not imported as future versions; a later import picks them up, so a price change takes effect at the first import after its date | Keep: upstream withdrew such a scheduled increase once (the dataset says so for one Anthropic model); a future version would need retraction logic |
 | O-5 | Remote refresh does not honour `HTTPS_PROXY` until 3.1 | Keep (consistent with 1.1 O-2); document `import-prices --file` for proxied installations; 3.1 decides both together |
-| O-6 | Currency per version without conversion (D-10). Alternative: one installation currency (`pricing.currency`) that overrides must use | Keep per-version currency; 5.x and 7.1 decide how budgets and rating handle several |
+| O-6 | Currency per version without conversion (D-10). Alternative: one installation currency (`pricing.currency`) that overrides must use | Keep per-version currency; 5.x decides how budgets handle several |
 | O-7 | Grants live in the platform log only; the tenant's audit log does not show that a model was granted or revoked | Keep; the tenant sees the effect in `listTenantModels`; the audit read API (6.2) can join both logs |
 | O-8 | A tenant restriction and key lists name models by reference, so a model deleted and recreated under the same name is allowed again | Keep: models are retired, not deleted, once priced; deletion is for mistakes |
 

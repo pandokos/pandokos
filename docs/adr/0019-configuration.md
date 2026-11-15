@@ -26,7 +26,7 @@ the process knows how to reach it (OPS-08).
   `pandokos config check` runs the same validation without starting.
 
 **Dynamic state** lives in the database and is changed only through the administration API:
-tenants, identities, roles, issuers, catalogue, prices, credentials, limits, funding modes, event
+tenants, identities, roles, issuers, catalogue, prices, credentials, limits, event
 destinations.
 
 **Declarative management.** `pandokos export` writes the dynamic state of the platform or of one
