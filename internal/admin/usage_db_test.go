@@ -187,7 +187,7 @@ func expectedItem(r usage.Record) adminapi.UsageRecord {
 	}
 	return adminapi.UsageRecord{
 		ID: r.ID, RequestID: r.RequestID, TraceID: r.TraceID, StartedAt: r.StartedAt, DurationMs: int(r.Duration.Milliseconds()),
-		PrincipalKind: r.PrincipalKind, PrincipalID: r.PrincipalID, KeyID: r.KeyID, CredentialID: r.CredentialID, Funding: r.Funding,
+		PrincipalKind: r.PrincipalKind, PrincipalID: r.PrincipalID, KeyID: r.KeyID, CredentialID: r.CredentialID,
 		Provider: r.Provider, ApiFamily: r.APIFamily, Operation: r.Operation, Endpoint: r.Endpoint, Model: r.Model, ModelID: r.ModelID, UpstreamModel: r.UpstreamModel,
 		Stream: r.Stream != nil && *r.Stream, Outcome: string(r.Outcome), ErrorCode: r.ErrorCode, UpstreamStatus: status, TtfbMs: ttfb,
 		RequestBytes: reqBytes, ResponseBytes: respBytes, InputSource: string(r.InputSource), OutputSource: string(r.OutputSource),

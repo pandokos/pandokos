@@ -30,7 +30,7 @@ func (q *Queries) EnsureUsagePartitions(ctx context.Context, ahead int32) (Ensur
 const insertUsageRecords = `-- name: InsertUsageRecords :execrows
 
 INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, trace_id, principal_kind, principal_id, key_id,
-                                   credential_id, funding, provider, api_family, operation, endpoint, model, model_id,
+                                   credential_id, provider, api_family, operation, endpoint, model, model_id,
                                    upstream_model, stream, outcome, error_code, upstream_status, ttfb_ms, duration_ms,
                                    request_bytes, response_bytes, input_source, output_source, input_tokens,
                                    output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, other_units,
@@ -38,7 +38,7 @@ INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, trace_
                                    cost_reason, cost, currency, price_version_id, cost_fallbacks, metadata,
                                    metadata_dropped)
 SELECT pandokos.current_tenant_id(), r.id, r.started_at, r.request_id, r.trace_id, r.principal_kind, r.principal_id,
-       r.key_id, r.credential_id, r.funding, r.provider, r.api_family, r.operation, r.endpoint, r.model, r.model_id,
+       r.key_id, r.credential_id, r.provider, r.api_family, r.operation, r.endpoint, r.model, r.model_id,
        r.upstream_model, r.stream, r.outcome, r.error_code, r.upstream_status, r.ttfb_ms, r.duration_ms,
        r.request_bytes, r.response_bytes, r.input_source, r.output_source, r.input_tokens, r.output_tokens,
        r.cache_read_tokens, r.cache_write_tokens, r.reasoning_tokens, r.other_units, r.provider_usage,
@@ -46,7 +46,7 @@ SELECT pandokos.current_tenant_id(), r.id, r.started_at, r.request_id, r.trace_i
        r.price_version_id, COALESCE(r.cost_fallbacks, '{}'::text[]), r.metadata, r.metadata_dropped
   FROM jsonb_to_recordset($1::text::jsonb) AS r(
        id uuid, started_at timestamptz, request_id text, trace_id text, principal_kind text, principal_id text,
-       key_id text, credential_id uuid, funding text, provider text, api_family text, operation text, endpoint text,
+       key_id text, credential_id uuid, provider text, api_family text, operation text, endpoint text,
        model text, model_id uuid, upstream_model text, stream boolean, outcome text, error_code text,
        upstream_status integer, ttfb_ms bigint, duration_ms bigint, request_bytes bigint, response_bytes bigint,
        input_source text, output_source text, input_tokens bigint, output_tokens bigint, cache_read_tokens bigint,
@@ -70,7 +70,7 @@ func (q *Queries) InsertUsageRecords(ctx context.Context, records string) (int64
 
 const listUsageRecords = `-- name: ListUsageRecords :many
 SELECT u.id, u.started_at, u.request_id, u.trace_id, u.principal_kind, u.principal_id, u.key_id, u.credential_id,
-       u.funding, u.provider, u.api_family, u.operation, u.endpoint, u.model, u.model_id, u.upstream_model, u.stream,
+       u.provider, u.api_family, u.operation, u.endpoint, u.model, u.model_id, u.upstream_model, u.stream,
        u.outcome, u.error_code, u.upstream_status, u.ttfb_ms, u.duration_ms, u.request_bytes, u.response_bytes,
        u.input_source, u.output_source, u.input_tokens, u.output_tokens, u.cache_read_tokens, u.cache_write_tokens,
        u.reasoning_tokens, u.other_units, u.provider_usage, u.estimated_input_tokens, u.estimated_output_tokens,
@@ -105,7 +105,6 @@ type ListUsageRecordsRow struct {
 	PrincipalID           string
 	KeyID                 string
 	CredentialID          *string
-	Funding               string
 	Provider              string
 	ApiFamily             string
 	Operation             string
@@ -168,7 +167,6 @@ func (q *Queries) ListUsageRecords(ctx context.Context, arg ListUsageRecordsPara
 			&i.PrincipalID,
 			&i.KeyID,
 			&i.CredentialID,
-			&i.Funding,
 			&i.Provider,
 			&i.ApiFamily,
 			&i.Operation,

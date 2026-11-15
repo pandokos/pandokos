@@ -163,7 +163,7 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 				"pandokos_worker":  {"INSERT(currency,import_id,model_id,note,source,valid_from)", "SELECT"},
 			},
 			"usage_record": {
-				"pandokos_gateway": {"INSERT(api_family,cache_read_tokens,cache_write_tokens,cost,cost_fallbacks,cost_reason,cost_status,credential_id,currency,duration_ms,endpoint,error_code,estimated_input_tokens,estimated_output_tokens,funding,id,input_source,input_tokens,key_id,metadata,metadata_dropped,model,model_id,operation,other_units,outcome,output_source,output_tokens,price_version_id,principal_id,principal_kind,provider,provider_usage,reasoning_tokens,request_bytes,request_id,response_bytes,started_at,stream,tenant_id,trace_id,ttfb_ms,upstream_model,upstream_status)"},
+				"pandokos_gateway": {"INSERT(api_family,cache_read_tokens,cache_write_tokens,cost,cost_fallbacks,cost_reason,cost_status,credential_id,currency,duration_ms,endpoint,error_code,estimated_input_tokens,estimated_output_tokens,id,input_source,input_tokens,key_id,metadata,metadata_dropped,model,model_id,operation,other_units,outcome,output_source,output_tokens,price_version_id,principal_id,principal_kind,provider,provider_usage,reasoning_tokens,request_bytes,request_id,response_bytes,started_at,stream,tenant_id,trace_id,ttfb_ms,upstream_model,upstream_status)"},
 				"pandokos_admin":   {"SELECT"},
 				"pandokos_worker":  {"SELECT"},
 			},
@@ -210,10 +210,10 @@ VALUES ($1::uuid, 'platform', 'test.fixture', 'test', 'success') RETURNING id::t
 				Update: `reason = 'changed'`,
 			},
 			"usage_record": {
-				Insert: `INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind, principal_id, funding,
+				Insert: `INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind, principal_id,
                                    provider, api_family, operation, outcome, duration_ms, input_source,
                                    output_source, cost_status)
-VALUES ($1, pandokos.uuid_v7(), now(), md5(random()::text), 'service_account', gen_random_uuid()::text, 'byok',
+VALUES ($1, pandokos.uuid_v7(), now(), md5(random()::text), 'service_account', gen_random_uuid()::text,
         'openai', 'openai', 'chat.completions', 'ok', 1, 'none', 'none', 'none') RETURNING id::text`,
 				Update: `model = 'changed'`,
 			},

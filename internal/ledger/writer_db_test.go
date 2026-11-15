@@ -100,7 +100,7 @@ func expectedRow(r usage.Record) map[string]any {
 	return map[string]any{
 		"tenant_id": r.TenantID.String(), "id": r.ID, "request_id": r.RequestID, "trace_id": r.TraceID,
 		"principal_kind": r.PrincipalKind, "principal_id": r.PrincipalID, "key_id": r.KeyID, "credential_id": nilIf(r.CredentialID),
-		"funding": r.Funding, "provider": r.Provider, "api_family": r.APIFamily, "operation": r.Operation,
+		"provider": r.Provider, "api_family": r.APIFamily, "operation": r.Operation,
 		"endpoint": r.Endpoint, "model": r.Model, "model_id": nilIf(r.ModelID), "upstream_model": r.UpstreamModel,
 		"stream": stream, "outcome": string(r.Outcome), "error_code": r.ErrorCode, "upstream_status": status,
 		"ttfb_ms": msOrNil(r.TTFB), "duration_ms": float64(r.Duration.Milliseconds()),

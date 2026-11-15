@@ -41,7 +41,7 @@ func ValidRecord(t tenant.ID) usage.Record {
 		RequestID: randomHex(16), TraceID: "",
 
 		PrincipalKind: "service_account", PrincipalID: RandomUUID(), KeyID: "synthetic-key",
-		CredentialID: RandomUUID(), Funding: "byok",
+		CredentialID: RandomUUID(),
 
 		Provider: "openai", APIFamily: "openai", Operation: "chat.completions",
 		Endpoint: "synthetic-endpoint", Model: "synthetic-model", ModelID: RandomUUID(), UpstreamModel: "synthetic-upstream",

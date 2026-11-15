@@ -1821,7 +1821,7 @@ components:
       type: object
       additionalProperties: false
       required: [id, request_id, trace_id, started_at, duration_ms, principal_kind, principal_id, key_id, credential_id,
-                 funding, provider, api_family, operation, endpoint, model, model_id, upstream_model, stream, outcome,
+                 provider, api_family, operation, endpoint, model, model_id, upstream_model, stream, outcome,
                  error_code, upstream_status, ttfb_ms, request_bytes, response_bytes, input_source, output_source,
                  input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
                  estimated_input_tokens, estimated_output_tokens, other_units, provider_usage, cost_status, cost_reason,
@@ -1836,7 +1836,6 @@ components:
         principal_id: {type: string}
         key_id: {type: string}
         credential_id: {type: string, description: Empty when no credential was opened.}
-        funding: {type: string}
         provider: {type: string}
         api_family: {type: string}
         operation: {type: string}

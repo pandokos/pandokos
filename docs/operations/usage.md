@@ -42,7 +42,6 @@ group; the table is `pandokos.usage_record`.
 | `principal_kind`, `principal_id` | who called: `service_account` and its ID |
 | `key_id` | the ID of the virtual key |
 | `credential_id` | the provider credential used; empty until a credential was chosen |
-| `funding` | `byok` (the tenant's own credential) |
 | `metadata` | the caller's metadata entries, section 5 |
 | `metadata_dropped` | how many metadata entries were dropped |
 
@@ -73,7 +72,7 @@ The caller's own `model` string is stored only once it has resolved to a catalog
 | `input_source`, `output_source` | where each total comes from, section 4 |
 | `input_tokens`, `output_tokens` | the provider's totals; input includes cached tokens and output includes reasoning tokens |
 | `cache_read_tokens`, `cache_write_tokens`, `reasoning_tokens` | the provider's detail counts, when reported |
-| `other_units` | other billable units the family reports (a flat map of numbers) |
+| `other_units` | other units the provider bills, as the family reports them (a flat map of numbers) |
 | `provider_usage` | the integer members of the provider's `usage` object keyed by their path (`prompt_tokens`, `prompt_tokens_details.cached_tokens`): at most 32 entries, nothing but non-negative integers, so the provider cannot put text into the ledger |
 
 **Estimated by Pandokos** (empty unless the source is `estimated`)

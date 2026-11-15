@@ -306,8 +306,8 @@ func TestRecordFields(t *testing.T) {
 		if r.TenantID != testPrincipal.TenantID || r.RequestID != c.header.Get("X-Pandokos-Request-Id") || !reTrace.MatchString(r.TraceID) {
 			t.Errorf("tenant %s, request ID %q (header %q), trace %q", r.TenantID, r.RequestID, c.header.Get("X-Pandokos-Request-Id"), r.TraceID)
 		}
-		if r.PrincipalKind != "service_account" || r.PrincipalID != testPrincipal.ID || r.KeyID != testPrincipal.KeyID || r.Funding != "byok" {
-			t.Errorf("principal %q %q %q funding %q", r.PrincipalKind, r.PrincipalID, r.KeyID, r.Funding)
+		if r.PrincipalKind != "service_account" || r.PrincipalID != testPrincipal.ID || r.KeyID != testPrincipal.KeyID {
+			t.Errorf("principal %q %q %q", r.PrincipalKind, r.PrincipalID, r.KeyID)
 		}
 		if r.CredentialID != "synthetic-credential-openai" {
 			t.Errorf("credential %q", r.CredentialID)
@@ -432,7 +432,7 @@ func TestRecordFields(t *testing.T) {
 			if r.TenantID != testPrincipal.TenantID || r.RequestID != resp.header.Get("X-Pandokos-Request-Id") || r.PrincipalID != testPrincipal.ID || r.KeyID != testPrincipal.KeyID {
 				t.Errorf("%s: attribution %+v", c.name, r)
 			}
-			if r.Provider != "openai" || r.APIFamily != "openai" || r.Operation != "chat.completions" || r.Funding != "byok" || !reTrace.MatchString(r.TraceID) || !reUUIDv7.MatchString(r.ID) {
+			if r.Provider != "openai" || r.APIFamily != "openai" || r.Operation != "chat.completions" || !reTrace.MatchString(r.TraceID) || !reUUIDv7.MatchString(r.ID) {
 				t.Errorf("%s: what was called: %+v", c.name, r)
 			}
 			if (r.Stream != nil) != c.stream || (r.RequestBytes != nil) != c.bytes {

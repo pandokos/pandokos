@@ -144,7 +144,7 @@ func TestLedgerExitScenario(t *testing.T) {
 		if id, _ := r["credential_id"].(string); !reUUID.MatchString(id) {
 			t.Errorf("credential_id %v", r["credential_id"])
 		}
-		if r["key_id"] != a.keyID || r["model"] != "fake-basic" || r["operation"] != "chat.completions" || r["provider"] != "openai" || r["funding"] != "byok" {
+		if r["key_id"] != a.keyID || r["model"] != "fake-basic" || r["operation"] != "chat.completions" || r["provider"] != "openai" {
 			t.Errorf("the row: %v", r)
 		}
 		if id, _ := r["trace_id"].(string); len(id) != 32 {
