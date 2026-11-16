@@ -359,6 +359,8 @@ func TestQuickStart(t *testing.T) {
 		}
 	})
 
+	// The usage records read while the stack runs, for the persistence check after the stop.
+	usageBefore := map[string]bool{}
 	t.Run("usage list shows both records with provider sources", func(t *testing.T) {
 		var items []adminapi.UsageRecord
 		testutil.Eventually(t, 30*time.Second, "both records", func() bool {
@@ -374,6 +376,7 @@ func TestQuickStart(t *testing.T) {
 		})
 		providers := map[string]bool{}
 		for _, it := range items {
+			usageBefore[it.ID] = true
 			providers[it.Provider] = true
 			if it.InputSource != "provider" || it.OutputSource != "provider" || it.InputTokens == 0 || !it.Stream {
 				t.Errorf("record %+v", it)
@@ -420,7 +423,7 @@ func TestQuickStart(t *testing.T) {
 	})
 
 	// R1 criterion 1: the data lives in the named volumes, so it survives docker compose down
-	// (without -v) and up. The bootstrap and demo keys are in the cli volume and stay valid.
+	// (without -v) and up, after the stop above; the usage records were read while the stack ran. The bootstrap and demo keys are in the cli volume and stay valid.
 	t.Run("data survives docker compose down and up", func(t *testing.T) {
 		usageIDs := func() map[string]bool {
 			out := s.pdk(demo, "", "usage", "list", "--all", "-o", "json")
@@ -436,7 +439,7 @@ func TestQuickStart(t *testing.T) {
 			}
 			return ids
 		}
-		before := usageIDs()
+		before := usageBefore
 		if len(before) < 2 {
 			t.Fatalf("%d usage records before down, want at least 2", len(before))
 		}
