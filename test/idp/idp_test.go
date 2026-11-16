@@ -187,10 +187,19 @@ func hydraToken(t *testing.T, client, secret, audience string) string {
 // pandokos asks for the claim pandokos_org (a scope mapping applies only to a requested scope).
 func authentikToken(t *testing.T, user, password string) string {
 	t.Helper()
+	return authentikTokenScope(t, user, password, "pandokos")
+}
+
+// authentikTokenScope is authentikToken with the given scope ("" asks for none).
+func authentikTokenScope(t *testing.T, user, password, scope string) string {
+	t.Helper()
 	form := url.Values{
 		"grant_type": {"client_credentials"}, "client_id": {env["PANDOKOS_TEST_IDP_AUTHENTIK_CLIENT_ID"]},
 		"client_secret": {env["PANDOKOS_TEST_IDP_AUTHENTIK_CLIENT_SECRET"]},
-		"username":      {env[user]}, "password": {env[password]}, "scope": {"pandokos"},
+		"username":      {env[user]}, "password": {env[password]},
+	}
+	if scope != "" {
+		form.Set("scope", scope)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -505,6 +514,14 @@ func TestKeycloakPlatformIssuer(t *testing.T) {
 	if s := g.call(tokOther); s != 401 {
 		t.Errorf("another audience: %d, want 401", s)
 	}
+	// The token of A without the scope that carries the claim: no tenant, refused.
+	noScope := authentikTokenScope(t, "PANDOKOS_TEST_IDP_AUTHENTIK_USER_A", "PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_A", "")
+	if _, pl := segments(t, noScope); pl["pandokos_org"] != nil {
+		t.Fatalf("a token without the scope carries the claim: %v", pl)
+	}
+	if s := g.call(noScope); s != 401 {
+		t.Errorf("a token without the claim: %d, want 401", s)
+	}
 	if n := len(g.usage(c.id)); n != 0 {
 		t.Errorf("tenant C has %d usage rows", n)
 	}
@@ -664,6 +681,14 @@ func TestAuthentikPlatformIssuer(t *testing.T) {
 	// The unmapped account carries the claim of A, but no mapping: the claim alone acts for nobody.
 	if s := g.call(authentikToken(t, "PANDOKOS_TEST_IDP_AUTHENTIK_USER_UNMAPPED", "PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_UNMAPPED")); s != 401 {
 		t.Errorf("an unmapped subject with the claim of A: %d, want 401", s)
+	}
+	// The token of A without the scope that carries the claim: no tenant, refused.
+	noScope := authentikTokenScope(t, "PANDOKOS_TEST_IDP_AUTHENTIK_USER_A", "PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_A", "")
+	if _, pl := segments(t, noScope); pl["pandokos_org"] != nil {
+		t.Fatalf("a token without the scope carries the claim: %v", pl)
+	}
+	if s := g.call(noScope); s != 401 {
+		t.Errorf("a token without the claim: %d, want 401", s)
 	}
 	if n := len(g.usage(c.id)); n != 0 {
 		t.Errorf("tenant C has %d usage rows", n)

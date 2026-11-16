@@ -5,6 +5,15 @@ version: 1
 metadata:
   name: pandokos-idp-tests
 entries:
+  # Blueprints apply in no fixed order: what this one finds or changes (the default brand, the flows)
+  # must exist first, or the brand would be created here and again, without the certificate, by
+  # "Default - Brand".
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs: {identifiers: {name: Default - Brand}, required: true}
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs: {identifiers: {name: Default - Provider authorization flow (implicit consent)}, required: true}
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs: {identifiers: {name: Default - Provider invalidation flow}, required: true}
   # The certificate of up.sh as the web certificate: the issuer URL must be https on localhost.
   - model: authentik_crypto.certificatekeypair
     id: web-certificate
@@ -15,7 +24,7 @@ entries:
       key_data: !File /tls/server.key
   - model: authentik_brands.brand
     identifiers:
-      domain: authentik-default
+      default: true
     attrs:
       web_certificate: !KeyOf web-certificate
 

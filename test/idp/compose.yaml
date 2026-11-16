@@ -58,6 +58,13 @@ services:
   authentik-server:
     image: ghcr.io/goauthentik/server:2026.8.5@sha256:602227a86455d6772e3d16b7d852713c4f864f40df5df894abd1285bb53979a5
     command: server
+    healthcheck: &authentik-health
+      # The image's own check gives up after about 210 s, before up.sh's waits (and its log dump) do.
+      test: ["CMD", "ak", "healthcheck"]
+      interval: 10s
+      timeout: 30s
+      start_period: 400s
+      retries: 3
     environment: &authentik-env
       AUTHENTIK_SECRET_KEY: ${PANDOKOS_IDP_AUTHENTIK_SECRET_KEY:?run test/idp/up.sh}
       AUTHENTIK_POSTGRESQL__HOST: authentik-db
@@ -90,6 +97,7 @@ services:
   authentik-worker:
     image: ghcr.io/goauthentik/server:2026.8.5@sha256:602227a86455d6772e3d16b7d852713c4f864f40df5df894abd1285bb53979a5
     command: worker
+    healthcheck: *authentik-health
     environment: *authentik-env
     depends_on:
       authentik-db:

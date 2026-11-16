@@ -94,11 +94,12 @@ wait_for "$kc_issuer/.well-known/openid-configuration"
 wait_for "${hy_issuer}health/ready"
 # Authentik migrates its database first (a minute or two), then the worker applies the blueprint
 # (test/idp/authentik-blueprint.yaml) in one transaction: the web certificate of the brand is its last
-# visible effect. The server reads that certificate when it starts (its watcher notices a later change
-# only after minutes), so it is restarted once the blueprint is in.
+# visible effect: the certificate is on the default brand and the provider has its signing key
+# (without one the tokens are HS256). The server reads that certificate when it starts (its watcher
+# notices a later change only after minutes), so it is restarted once the blueprint is in.
 n=0
 until [ "$(docker compose -f test/idp/compose.yaml exec -T authentik-db psql -U authentik -d authentik -Atc \
-    'SELECT count(*) FROM authentik_brands_brand WHERE web_certificate_id IS NOT NULL' 2>/dev/null)" = 1 ]; do
+    "SELECT (SELECT count(*) FROM authentik_brands_brand b JOIN authentik_crypto_certificatekeypair c ON c.kp_uuid = b.web_certificate_id WHERE b.\"default\" AND c.name = 'pandokos-web')::text || (SELECT count(*) FROM authentik_providers_oauth2_oauth2provider WHERE signing_key_id IS NOT NULL)" 2>/dev/null)" = 11 ]; do
     n=$((n + 1))
     if [ "$n" -ge 300 ]; then
         echo "idp: Authentik did not apply the blueprint in 300 s" >&2
@@ -112,10 +113,15 @@ docker compose -f test/idp/compose.yaml restart authentik-server >/dev/null
 # workload then gets a token (the secrets are those of the blueprint).
 wait_for "${ak_issuer}.well-known/openid-configuration" 300
 n=0
-until curl -fsS --cacert "$ca" -o /dev/null "$ak_token_url" \
+until curl -fsS --cacert "$ca" "$ak_token_url" \
     -d grant_type=client_credentials -d client_id=pandokos-tests \
     -d "client_secret=$PANDOKOS_TEST_IDP_AUTHENTIK_CLIENT_SECRET" \
-    -d username=workload-a -d "password=$PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_A" 2>/dev/null; do
+    -d username=workload-a -d "password=$PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_A" 2>/dev/null \
+    | python3 -c '
+import base64, json, sys
+t = json.load(sys.stdin)["access_token"].split(".")[0]
+sys.exit(0 if json.loads(base64.urlsafe_b64decode(t + "=" * (-len(t) % 4)))["alg"] == "RS256" else 1)
+' 2>/dev/null; do
     n=$((n + 1))
     if [ "$n" -ge 120 ]; then
         echo "idp: Authentik did not issue a token in 120 s" >&2
