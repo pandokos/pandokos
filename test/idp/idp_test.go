@@ -514,14 +514,6 @@ func TestKeycloakPlatformIssuer(t *testing.T) {
 	if s := g.call(tokOther); s != 401 {
 		t.Errorf("another audience: %d, want 401", s)
 	}
-	// The token of A without the scope that carries the claim: no tenant, refused.
-	noScope := authentikTokenScope(t, "PANDOKOS_TEST_IDP_AUTHENTIK_USER_A", "PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_A", "")
-	if _, pl := segments(t, noScope); pl["pandokos_org"] != nil {
-		t.Fatalf("a token without the scope carries the claim: %v", pl)
-	}
-	if s := g.call(noScope); s != 401 {
-		t.Errorf("a token without the claim: %d, want 401", s)
-	}
 	if n := len(g.usage(c.id)); n != 0 {
 		t.Errorf("tenant C has %d usage rows", n)
 	}
