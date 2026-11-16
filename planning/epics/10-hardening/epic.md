@@ -25,27 +25,24 @@ Version 1.0: measured, reviewed, recoverable, with a stable upgrade policy.
 
 Requirements: GW-17, OPS-11 (tested).
 
-### 10.2 Security review
+### 10.2 Independent security assessment
 
-- Review of the threat model against the code as built.
-- Independent security assessment; fixes for its findings.
-- Continuous fuzzing of the parsers that read from the network.
+- Independent security assessment, on top of the review of sprint 12.2; fixes for its findings.
 - Optional check of authentication-strength claims on sensitive operations.
 
-Requirements: SEC-05 (reviewed), SEC-09, IAM-17.
+Requirements: SEC-09, IAM-17.
 
-### 10.3 Operations and 1.0
+### 10.3 Documentation and 1.0
 
-- Restore drill from backups, including loss of the key-encryption key.
-- Upgrade policy and tested upgrade from the previous minor release.
+- The restore drill and the upgrade test of sprint 12.3, repeated on the release candidate.
 - Complete documentation: installation, operations, security, API reference, integration guide.
 - Release 1.0.
 
-Requirements: OPS-10 (tested), OPS-13, VLT-16 (tested).
+Requirements: OPS-10 (tested, repeated), OPS-13 (in force).
 
 Exit for the epic: the acceptance criteria of R5 in the requirements.
 
 ## Risks
 
-- An independent assessment depends on funding or volunteers. If neither is available, the
+- An independent assessment depends on money or volunteers. If neither is available, the
   release is made with the limitation stated prominently.

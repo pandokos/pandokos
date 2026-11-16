@@ -18,6 +18,7 @@ Significant design choices are recorded as short Architecture Decision Records i
 - Never include secrets, credentials, prompts or completions in code, tests, logs or fixtures.
 - `make secrets` scans the repository and its whole history with gitleaks (default rules plus the Pandokos key format, `.gitleaks.toml`); CI runs it on every pull request. To run it before every push, add `make secrets` to a local `pre-push` hook.
 - Tests that need PostgreSQL fail when it is missing. `make db-up` starts a throwaway PostgreSQL and PgBouncer in Docker; `make test` uses them; `make test-nodb` runs the rest.
+- `make test-idp` runs the trusted issuer tests against Keycloak, Ory Hydra and Authentik in Docker (`make db-up` and `make idp-up` first, `make idp-down` after). It needs several more containers (Authentik takes a few minutes to start), so `make check` does not run it; CI has its own job, `idp`.
 - `internal/adminapi/adminapi.gen.go` and `internal/store/queries/*.go` are generated (`make generate`: the API generator and `sqlc`). Never edit a generated file; change `api/openapi/admin.v1.yaml` or a query file under `internal/store/queries/sql/` and run `make generate`. CI fails when the committed code is not current.
 - Describe what changed and why.
 

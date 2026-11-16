@@ -18,8 +18,10 @@ The files are in `deploy/compose/`:
 ## Prerequisites
 
 - Docker with Compose v2, and `openssl` on the host.
-- The Pandokos image. Until a release is published, build it: `make image` in the repository, then use
-  it with `PANDOKOS_IMAGE=pandokos:dev` (the default `ghcr.io/pandokos/pandokos:0.1` does not exist yet).
+- The Pandokos image. The default `ghcr.io/pandokos/pandokos:0.1` is published with the tag `v0.1.0`
+  (the release workflow pushes `0.1` for every release that is not a pre-release). Before that, or to
+  run your own build, build it with `make image` in the repository and use it with
+  `PANDOKOS_IMAGE=pandokos:dev`.
 - A provider key for each provider you want to call (OpenAI, Anthropic).
 
 ## Quick start

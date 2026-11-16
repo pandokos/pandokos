@@ -5,7 +5,7 @@
 
 ## Context
 
-Limits, the ledger and billing all depend on token counts that only the provider knows exactly.
+Limits, the ledger and usage events all depend on token counts that only the provider knows exactly.
 Each API family reports them differently: in different fields, with cached tokens counted inside
 or outside the input total, and, when streaming, in different events. One family reports usage in
 a stream only when the request asks for it. The forwarder must not delay or alter the stream
@@ -43,8 +43,8 @@ network.
 
 - Knowledge of provider response formats lives in this project and must follow provider changes.
   It is a few fields per family and is isolated behind one interface.
-- Estimates are approximate by nature. They are flagged, and platform-funded billing can be
-  configured to treat estimated records separately.
+- Estimates are approximate by nature. They are flagged, so that whoever consumes the records can
+  treat them separately.
 - No tokenizer is embedded: exact pre-counting would add large dependencies per model family for
   a number the provider returns anyway.
 

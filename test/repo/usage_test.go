@@ -189,8 +189,8 @@ func TestUsageAndTelemetryGuides(t *testing.T) {
 				t.Errorf("usage.md does not name the column %s", m[1])
 			}
 		}
-		if cols != 45 {
-			t.Errorf("read %d columns from the migration, want 45", cols)
+		if cols != 44 {
+			t.Errorf("read %d columns from the migration, want 44", cols)
 		}
 		for _, o := range []usage.Outcome{usage.OutcomeOK, usage.OutcomeUpstreamError, usage.OutcomeCancelled, usage.OutcomeTimeout, usage.OutcomeRejectedLimit, usage.OutcomeRejectedPolicy, usage.OutcomeInternalError} {
 			if !strings.Contains(doc, "`"+string(o)+"`") {

@@ -2,6 +2,7 @@ package repo
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"io/fs"
 	"os"
@@ -121,6 +122,111 @@ func TestFixturesHoldNoKeys(t *testing.T) {
 					walk(t, where, "", doc)
 				}
 			}
+		}
+	}
+}
+
+// TestNoKeyMaterial is T-R37: no file of the repository holds a PEM block, a JWK with private
+// members or a string of JWT shape, except the files that have to name the patterns. Keys and
+// tokens of the tests are made when the tests run, and what is made lives under local/ or in a
+// temporary directory, neither of which is scanned (local/ is not versioned).
+func TestNoKeyMaterial(t *testing.T) {
+	pem := regexp.MustCompile(strings.Repeat("-", 5) + "BEGIN") // not written out: this file must not match itself
+	jwt := regexp.MustCompile(`eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]*`)
+	kty := regexp.MustCompile(`"kty"`)
+	private := regexp.MustCompile(`"d"\s*:`)
+
+	// The files that name a pattern without holding the thing, and why. A prefix ending in / is a directory.
+	named := map[string]string{
+		"test/repo/fixtures_test.go":       "T-R34, in this file, names the PEM armour it looks for in the fixtures",
+		"planning/":                        "the design documents describe these patterns and their tests",
+		"docs/history/":                    "the record of the design documents",
+		"internal/config/upstream_test.go": "a synthetic block of another type than a key (a CRL around marker bytes), made to test the refusal of a file that holds no certificate",
+	}
+	exempt := func(rel string) bool {
+		for p := range named {
+			if rel == p || (strings.HasSuffix(p, "/") && strings.HasPrefix(rel, p)) {
+				return true
+			}
+		}
+		return false
+	}
+	scanned := 0
+	err := filepath.WalkDir(root(t), func(path string, e fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(root(t), path)
+		rel = filepath.ToSlash(rel)
+		if e.IsDir() {
+			switch rel {
+			case ".git", "local", "bin":
+				return fs.SkipDir
+			}
+			switch filepath.Base(rel) {
+			case "node_modules", "vendor", ".venv", "__pycache__":
+				return fs.SkipDir
+			}
+			return nil
+		}
+		info, err := e.Info()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() || info.Size() > 8<<20 {
+			return nil
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if bytes.IndexByte(b, 0) >= 0 { // a binary file
+			return nil
+		}
+		scanned++
+		if exempt(rel) {
+			return nil
+		}
+		if pem.Match(b) {
+			t.Errorf("%s holds a PEM block", rel)
+		}
+		if jwt.Match(b) {
+			t.Errorf("%s holds a string of JWT shape: %q", rel, jwt.Find(b))
+		}
+		if kty.Match(b) && private.Match(b) {
+			t.Errorf("%s holds a JWK with a private member", rel)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scanned < 300 {
+		t.Errorf("only %d files were scanned", scanned)
+	}
+	// What is exempt exists: a stale entry hides a file that moved.
+	for p := range named {
+		if _, err := os.Stat(filepath.Join(root(t), filepath.FromSlash(p))); err != nil {
+			t.Errorf("the exemption %s does not name a file or a directory: %v", p, err)
+		}
+	}
+	// The patterns catch what they are for; the samples are made here, not written out, so that this
+	// file holds none of them.
+	enc := func(s string) string { return base64.RawURLEncoding.EncodeToString([]byte(s)) }
+	q := func(name string) string { return `"` + name + `"` }
+	for name, c := range map[string]struct {
+		re   *regexp.Regexp
+		text string
+	}{
+		"a PEM block":   {pem, strings.Repeat("-", 5) + "BEGIN PRIVATE KEY" + strings.Repeat("-", 5)},
+		"a JWT":         {jwt, enc(`{"alg":"ES256"}`) + "." + enc(`{"sub":"workload"}`) + "." + enc("signature-bytes")},
+		"a JWT, no sig": {jwt, enc(`{"alg":"none"}`) + "." + enc(`{"sub":"workload"}`) + "."},
+		"a private JWK": {private, "{" + q("kty") + `:"EC",` + q("d") + `:"c"}`},
+		"a JWK, spaced": {private, "{" + q("kty") + `: "EC", ` + q("d") + ` : "c"}`},
+		"a key type":    {kty, "{" + q("kty") + `:"oct"}`},
+	} {
+		if !c.re.MatchString(c.text) {
+			t.Errorf("the pattern for %s does not match %q", name, c.text)
 		}
 	}
 }

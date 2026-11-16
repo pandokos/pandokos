@@ -25,6 +25,14 @@ type PandokosAuditEvent struct {
 	Detail       string
 }
 
+type PandokosIssuerDirectory struct {
+	Issuer   string
+	Audience string
+	Scope    string
+	TenantID *string
+	IssuerID string
+}
+
 type PandokosKekVersion struct {
 	ID        string
 	Provider  string
@@ -68,6 +76,29 @@ type PandokosPlatformAuditEvent struct {
 	RequestID    string
 	Reason       string
 	Detail       string
+}
+
+type PandokosPlatformIssuer struct {
+	ID             string
+	Name           string
+	Description    string
+	Issuer         string
+	Audience       string
+	JwksUri        string
+	Algorithms     []string
+	SubjectClaim   string
+	TenantClaim    string
+	RequiredClaims string
+	Enabled        bool
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+type PandokosPlatformIssuerTenant struct {
+	IssuerID   string
+	TenantID   string
+	ClaimValue string
+	CreatedAt  time.Time
 }
 
 type PandokosPlatformKey struct {
@@ -222,6 +253,18 @@ type PandokosServiceAccount struct {
 	UpdatedAt   time.Time
 }
 
+type PandokosSubjectMapping struct {
+	TenantID         string
+	ID               string
+	TrustedIssuerID  *string
+	PlatformIssuerID *string
+	Subject          string
+	ServiceAccountID string
+	Description      string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
 type PandokosTenant struct {
 	ID             string
 	Name           string
@@ -250,6 +293,22 @@ type PandokosTenantModelRestriction struct {
 	UpdatedAt time.Time
 }
 
+type PandokosTrustedIssuer struct {
+	TenantID       string
+	ID             string
+	Name           string
+	Description    string
+	Issuer         string
+	Audience       string
+	JwksUri        string
+	Algorithms     []string
+	SubjectClaim   string
+	RequiredClaims string
+	Enabled        bool
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
 type PandokosUsageRecord struct {
 	TenantID              string
 	ID                    string
@@ -261,7 +320,6 @@ type PandokosUsageRecord struct {
 	PrincipalID           string
 	KeyID                 string
 	CredentialID          *string
-	Funding               string
 	Provider              string
 	ApiFamily             string
 	Operation             string
@@ -309,7 +367,6 @@ type PandokosUsageRecordDefault struct {
 	PrincipalID           string
 	KeyID                 string
 	CredentialID          *string
-	Funding               string
 	Provider              string
 	ApiFamily             string
 	Operation             string

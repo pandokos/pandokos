@@ -2,20 +2,20 @@
 id: EPIC-8
 title: Scale-out and deployment
 status: todo
-release: v0.4
-depends_on: [EPIC-7]
+release: v0.4, v1.0 (sprint 8.3)
+depends_on: [EPIC-12]
 ---
 
 # Epic 8 — Scale-out and deployment
 
 ## Outcome
 
-Pandokos runs as several replicas with consistent limits, installs on Kubernetes, keeps its
-key-encryption key in an external service, and can dedicate a cell to a tenant.
+Pandokos runs as several replicas with consistent limits, installs on Kubernetes, and can dedicate
+a cell to a tenant.
 
 ## Decisions it implements
 
-ADR 0012 (Valkey store), 0003 (separate roles), 0008 (external provider), 0016, 0005 (mutual TLS).
+ADR 0012 (Valkey store), 0003 (separate roles), 0016, 0005 (mutual TLS).
 
 ## Sprints
 
@@ -35,16 +35,14 @@ reaches all replicas within the bound.
 
 - Gateway, admin and worker as separate processes with their own database credentials.
 - Helm chart: configuration, secrets, probes, rolling updates, migration job, network policies.
-- External key-encryption key provider over a transit API.
 - Upgrade test: rolling from the previous release with traffic.
 
-Requirements: OPS-04, OPS-05 (separate), VLT-12 (external).
+Requirements: OPS-04, OPS-05 (separate).
 
 Exit: the chart installs a working system on a test cluster; a rolling upgrade drops no stream
-that ends within the drain deadline; with the transit provider, no key-encryption key exists on
-the Pandokos hosts.
+that ends within the drain deadline.
 
-### 8.3 Cells and mutual TLS
+### 8.3 Cells and mutual TLS — part of v1.0
 
 - Pinned cell: refuses any tenant but its own at start-up and on every request.
 - Bridge guide: routing tenants to cells at the edge.

@@ -71,7 +71,6 @@ var violations = map[string]violation{
 	"usage_record_principal_kind_valid": {func(r *usage.Record) { r.PrincipalKind = badText }, []string{"principal_kind"}, badText},
 	"usage_record_principal_id_format":  {func(r *usage.Record) { r.PrincipalID = badText }, []string{"principal_id"}, badText},
 	"usage_record_key_id_format":        {func(r *usage.Record) { r.KeyID = badText + " !" }, []string{"key_id"}, badText},
-	"usage_record_funding_valid":        {func(r *usage.Record) { r.Funding = badText }, []string{"funding"}, badText},
 	"usage_record_provider_format":      {func(r *usage.Record) { r.Provider = badText }, []string{"provider"}, badText},
 	"usage_record_api_family_format":    {func(r *usage.Record) { r.APIFamily = badText }, []string{"api_family"}, badText},
 	"usage_record_operation_format":     {func(r *usage.Record) { r.Operation = badText }, []string{"operation"}, badText},
@@ -172,6 +171,29 @@ func TestValidate(t *testing.T) {
 		}
 	}
 
+	// Sprint 4.1: a request authenticated by a token is recorded with principal_kind token, the
+	// service account as principal_id and the ID of the subject mapping as key_id.
+	t.Run("principal_kind token is valid, another kind is not", func(t *testing.T) {
+		r := testutil.ValidRecord(tid())
+		r.PrincipalKind, r.KeyID = "token", testutil.RandomUUID()
+		if err := r.Validate(); err != nil {
+			t.Errorf("a token record: %v", err)
+		}
+		for _, kind := range []string{"Token", "jwt", "platform", "user", "", "token ", "service_account "} {
+			r := testutil.ValidRecord(tid())
+			r.PrincipalKind = kind
+			if err := r.Validate(); err == nil || !strings.Contains(err.Error(), "principal_kind") {
+				t.Errorf("principal_kind %q: %v", kind, err)
+			}
+		}
+		// A key record still says service_account.
+		r = testutil.ValidRecord(tid())
+		r.PrincipalKind = "service_account"
+		if err := r.Validate(); err != nil {
+			t.Errorf("a key record: %v", err)
+		}
+	})
+
 	t.Run("a cost the column cannot hold", func(t *testing.T) {
 		r := testutil.ValidRecord(tid())
 		big, err := pricing.ParseDecimal("100000000000000000000") // 1e20; numeric(38,18) holds less
@@ -191,7 +213,7 @@ func TestValidate(t *testing.T) {
 		for name, mutate := range map[string]func(*usage.Record){
 			"a refusal": func(r *usage.Record) {
 				*r = usage.Record{ID: r.ID, TenantID: r.TenantID, StartedAt: r.StartedAt, RequestID: r.RequestID,
-					PrincipalKind: r.PrincipalKind, PrincipalID: r.PrincipalID, KeyID: r.KeyID, Funding: "byok",
+					PrincipalKind: r.PrincipalKind, PrincipalID: r.PrincipalID, KeyID: r.KeyID,
 					Provider: "openai", APIFamily: "openai", Operation: "chat.completions",
 					Outcome: usage.OutcomeRejectedPolicy, ErrorCode: "forbidden", Duration: time.Millisecond,
 					InputSource: usage.SourceNone, OutputSource: usage.SourceNone, CostStatus: "none"}

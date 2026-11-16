@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/pandokos/pandokos/internal/adminapi"
@@ -109,4 +110,73 @@ func credentialOut(r credRow) adminapi.Credential {
 		StateChangedAt: r.StateChangedAt.UTC(), StateChangedBy: adminapi.CredentialActor(r.StateChangedBy), StateReason: r.StateReason,
 		CreatedAt: r.CreatedAt.UTC(),
 	}
+}
+
+// tiRow is a tenant-bound registration as the statements of issuers.sql return it: each of them
+// has these members and no other, so each converts to it directly.
+type tiRow queries.GetTrustedIssuerRow
+
+// claimsOut reads the required claims the database holds (a JSON object of strings).
+func claimsOut(raw string) map[string]string {
+	out := map[string]string{}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil || out == nil {
+		return map[string]string{}
+	}
+	return out
+}
+
+func (r tiRow) out() adminapi.TokenIssuer {
+	return adminapi.TokenIssuer{
+		ID: r.ID, TenantID: r.TenantID, Name: r.Name, Description: r.Description, Issuer: r.Issuer, Audience: r.Audience,
+		JwksUri: r.JwksUri, Algorithms: nonNil(r.Algorithms), SubjectClaim: r.SubjectClaim, RequiredClaims: claimsOut(r.RequiredClaims),
+		Enabled: r.Enabled, CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(),
+	}
+}
+
+func (r tiRow) values() issuerValues {
+	return issuerValues{Name: r.Name, Description: r.Description, Issuer: r.Issuer, Audience: r.Audience, JwksURI: r.JwksUri,
+		Algorithms: nonNil(r.Algorithms), SubjectClaim: r.SubjectClaim, RequiredClaims: claimsOut(r.RequiredClaims), Enabled: r.Enabled}
+}
+
+// piRow is a platform-level registration as the statements of issuers.sql return it.
+type piRow queries.GetPlatformIssuerRow
+
+func (r piRow) out() adminapi.PlatformIssuer {
+	return adminapi.PlatformIssuer{
+		ID: r.ID, Name: r.Name, Description: r.Description, Issuer: r.Issuer, Audience: r.Audience, JwksUri: r.JwksUri,
+		Algorithms: nonNil(r.Algorithms), SubjectClaim: r.SubjectClaim, TenantClaim: r.TenantClaim, RequiredClaims: claimsOut(r.RequiredClaims),
+		TenantCount: int(r.TenantCount), Enabled: r.Enabled, CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(),
+	}
+}
+
+func (r piRow) values() issuerValues {
+	return issuerValues{Name: r.Name, Description: r.Description, Issuer: r.Issuer, Audience: r.Audience, JwksURI: r.JwksUri,
+		Algorithms: nonNil(r.Algorithms), SubjectClaim: r.SubjectClaim, TenantClaim: r.TenantClaim, RequiredClaims: claimsOut(r.RequiredClaims), Enabled: r.Enabled}
+}
+
+// mappingRow is a subject mapping with the scope, ID and name of its registration.
+type mappingRow queries.GetSubjectMappingRow
+
+func (r mappingRow) out() adminapi.SubjectMapping {
+	return adminapi.SubjectMapping{
+		ID: r.ID, TenantID: r.TenantID, Issuer: adminapi.IssuerRef{Scope: adminapi.IssuerScope(r.IssuerScope), ID: r.IssuerID, Name: r.IssuerName},
+		Subject: r.Subject, ServiceAccountID: r.ServiceAccountID, ServiceAccountName: r.ServiceAccountName, Description: r.Description,
+		CreatedAt: r.CreatedAt.UTC(),
+	}
+}
+
+// detail is what an audit row holds of a mapping: identifiers, names and the subject, which is a
+// public identifier of a workload, never a credential.
+func (r mappingRow) detail() map[string]any {
+	return map[string]any{"issuer_scope": r.IssuerScope, "issuer_id": r.IssuerID, "issuer_name": r.IssuerName, "subject": r.Subject,
+		"service_account_id": r.ServiceAccountID, "service_account_name": r.ServiceAccountName, "description": r.Description}
+}
+
+func tenantPlatformIssuerOut(r queries.GetTenantPlatformIssuerRow) adminapi.TenantPlatformIssuer {
+	return adminapi.TenantPlatformIssuer{ID: r.ID, Name: r.Name, Description: r.Description, Issuer: r.Issuer, Audience: r.Audience,
+		SubjectClaim: r.SubjectClaim, TenantClaim: r.TenantClaim, ClaimValue: r.ClaimValue, Enabled: r.Enabled}
+}
+
+func issuerTenantOut(r queries.ListPlatformIssuerTenantsRow) adminapi.PlatformIssuerTenant {
+	return adminapi.PlatformIssuerTenant{IssuerID: r.IssuerID, TenantID: r.TenantID, TenantName: r.TenantName, ClaimValue: r.ClaimValue, CreatedAt: r.CreatedAt.UTC()}
 }

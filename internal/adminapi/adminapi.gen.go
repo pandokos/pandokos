@@ -28,13 +28,16 @@ var (
 	re7  = regexp.MustCompile("^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$")
 	re8  = regexp.MustCompile("^[!-~]+$")
 	re9  = regexp.MustCompile("^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$")
-	re10 = regexp.MustCompile("^p[a-z2-7]{16}$")
-	re11 = regexp.MustCompile("^[A-Z]{3}$")
-	re12 = regexp.MustCompile("^(0|[1-9][0-9]{0,6})(\\.[0-9]{1,12})?$")
-	re13 = regexp.MustCompile("^[a-z0-9][a-z0-9_.-]{0,62}$")
-	re14 = regexp.MustCompile("^([a-z0-9][a-z0-9_.-]{0,62})?$")
-	re15 = regexp.MustCompile("^t[a-z2-7]{16}$")
-	re16 = regexp.MustCompile("^[a-z_]+:[a-z_]+$")
+	re10 = regexp.MustCompile("^https://[^\\s?#@]+$")
+	re11 = regexp.MustCompile("^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$")
+	re12 = regexp.MustCompile("^[A-Za-z0-9_.:/-]{1,64}$")
+	re13 = regexp.MustCompile("^p[a-z2-7]{16}$")
+	re14 = regexp.MustCompile("^[A-Z]{3}$")
+	re15 = regexp.MustCompile("^(0|[1-9][0-9]{0,6})(\\.[0-9]{1,12})?$")
+	re16 = regexp.MustCompile("^[a-z0-9][a-z0-9_.-]{0,62}$")
+	re17 = regexp.MustCompile("^([a-z0-9][a-z0-9_.-]{0,62})?$")
+	re18 = regexp.MustCompile("^t[a-z2-7]{16}$")
+	re19 = regexp.MustCompile("^[a-z_]+:[a-z_]+$")
 )
 
 // ApiFamily: The wire protocol of a provider.
@@ -374,6 +377,24 @@ func (v *CredentialUpdate) Validate() []FieldError {
 	return errs
 }
 
+// EnabledFilter: A filter on the enabled flag.
+type EnabledFilter string
+
+// Values of EnabledFilter.
+const (
+	EnabledFilterTrue  EnabledFilter = "true"
+	EnabledFilterFalse EnabledFilter = "false"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v EnabledFilter) Valid() bool {
+	switch v {
+	case EnabledFilterTrue, EnabledFilterFalse:
+		return true
+	}
+	return false
+}
+
 // Endpoint is a schema of the administration API.
 type Endpoint struct {
 	ID       string `json:"id"`
@@ -535,6 +556,51 @@ var nestedFieldError []nestedMember
 func (v *FieldError) Validate() []FieldError {
 	var errs []FieldError
 	return errs
+}
+
+// IssuerRef is a schema of the administration API.
+type IssuerRef struct {
+	Scope IssuerScope `json:"scope"`
+	ID    string      `json:"id"`
+	// In responses only; ignored in requests.
+	Name string `json:"name,omitempty"`
+}
+
+var requiredIssuerRef = []string{"scope", "id"}
+
+var nestedIssuerRef []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *IssuerRef) Validate() []FieldError {
+	var errs []FieldError
+	if !v.Scope.Valid() {
+		errs = append(errs, FieldError{Field: "scope", Message: "must be one of tenant, platform"})
+	}
+	if !re2.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if v.Name != "" && !re3.MatchString(v.Name) {
+		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+	}
+	return errs
+}
+
+// IssuerScope: tenant for a registration of the tenant, platform for a platform-level one.
+type IssuerScope string
+
+// Values of IssuerScope.
+const (
+	IssuerScopeTenant   IssuerScope = "tenant"
+	IssuerScopePlatform IssuerScope = "platform"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v IssuerScope) Valid() bool {
+	switch v {
+	case IssuerScopeTenant, IssuerScopePlatform:
+		return true
+	}
+	return false
 }
 
 // KeyState: active, expired (expires_at has passed) or revoked. A revoked key is revoked whatever its expiry.
@@ -990,6 +1056,375 @@ func (v NamedSort) Valid() bool {
 	return false
 }
 
+// PlatformIssuer is a schema of the administration API.
+type PlatformIssuer struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Issuer      string `json:"issuer"`
+	// The value that must be among the token's aud entries. The pair of issuer and audience is unique in the installation.
+	Audience string `json:"audience"`
+	// Empty for OpenID Connect discovery under the issuer; otherwise an https URL.
+	JwksUri      string   `json:"jwks_uri"`
+	Algorithms   []string `json:"algorithms"`
+	SubjectClaim string   `json:"subject_claim"`
+	TenantClaim  string   `json:"tenant_claim"`
+	// Claim name to the string the claim must equal, or contain when it is an array of strings.
+	RequiredClaims map[string]string `json:"required_claims"`
+	// Number of tenants in the list.
+	TenantCount int       `json:"tenant_count"`
+	Enabled     bool      `json:"enabled"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+var requiredPlatformIssuer = []string{"id", "name", "description", "issuer", "audience", "jwks_uri", "algorithms", "subject_claim", "tenant_claim", "required_claims", "tenant_count", "enabled", "created_at", "updated_at"}
+
+var nestedPlatformIssuer []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *PlatformIssuer) Validate() []FieldError {
+	var errs []FieldError
+	if !re2.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !re3.MatchString(v.Name) {
+		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+	}
+	if runeCount(v.Description) > 200 {
+		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
+	}
+	if !re10.MatchString(v.Issuer) {
+		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
+	}
+	if runeCount(v.Issuer) > 255 {
+		errs = append(errs, FieldError{Field: "issuer", Message: "length must be at most 255"})
+	}
+	if runeCount(v.Audience) < 1 {
+		errs = append(errs, FieldError{Field: "audience", Message: "length must be at least 1"})
+	}
+	if runeCount(v.Audience) > 255 {
+		errs = append(errs, FieldError{Field: "audience", Message: "length must be at most 255"})
+	}
+	if runeCount(v.JwksUri) > 2048 {
+		errs = append(errs, FieldError{Field: "jwks_uri", Message: "length must be at most 2048"})
+	}
+	if v.Algorithms != nil && len(v.Algorithms) < 1 {
+		errs = append(errs, FieldError{Field: "algorithms", Message: "must have at least 1 items"})
+	}
+	if len(v.Algorithms) > 10 {
+		errs = append(errs, FieldError{Field: "algorithms", Message: "must have at most 10 items"})
+	}
+	if !unique(v.Algorithms) {
+		errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
+	}
+	for _, item := range v.Algorithms {
+		if !re11.MatchString(item) {
+			errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
+		}
+	}
+	if !re12.MatchString(v.SubjectClaim) {
+		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
+	}
+	if !re12.MatchString(v.TenantClaim) {
+		errs = append(errs, FieldError{Field: "tenant_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
+	}
+	if len(v.RequiredClaims) > 16 {
+		errs = append(errs, FieldError{Field: "required_claims", Message: "must have at most 16 members"})
+	}
+	for _, item := range v.RequiredClaims {
+		if runeCount(item) < 1 {
+			errs = append(errs, FieldError{Field: "required_claims", Message: "length must be at least 1"})
+		}
+		if runeCount(item) > 255 {
+			errs = append(errs, FieldError{Field: "required_claims", Message: "length must be at most 255"})
+		}
+	}
+	if v.TenantCount < 0 {
+		errs = append(errs, FieldError{Field: "tenant_count", Message: "must be at least 0"})
+	}
+	return errs
+}
+
+// PlatformIssuerCreate is a schema of the administration API.
+type PlatformIssuerCreate struct {
+	Name           string            `json:"name"`
+	Description    string            `json:"description,omitempty"`
+	Issuer         string            `json:"issuer"`
+	Audience       string            `json:"audience"`
+	JwksUri        string            `json:"jwks_uri,omitempty"`
+	Algorithms     []string          `json:"algorithms,omitempty"`
+	SubjectClaim   string            `json:"subject_claim,omitempty"`
+	TenantClaim    string            `json:"tenant_claim"`
+	RequiredClaims map[string]string `json:"required_claims,omitempty"`
+	// A disabled registration refuses every token. Omitted means true.
+	Enabled bool `json:"enabled"`
+}
+
+var requiredPlatformIssuerCreate = []string{"name", "issuer", "audience", "tenant_claim"}
+
+var nestedPlatformIssuerCreate []nestedMember
+
+// sentEmpty names the optional members that the document does not allow to be empty.
+func (*PlatformIssuerCreate) sentEmpty() []string { return []string{"subject_claim"} }
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *PlatformIssuerCreate) Validate() []FieldError {
+	var errs []FieldError
+	if !re3.MatchString(v.Name) {
+		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+	}
+	if runeCount(v.Description) > 200 {
+		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
+	}
+	if !re10.MatchString(v.Issuer) {
+		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
+	}
+	if runeCount(v.Issuer) > 255 {
+		errs = append(errs, FieldError{Field: "issuer", Message: "length must be at most 255"})
+	}
+	if runeCount(v.Audience) < 1 {
+		errs = append(errs, FieldError{Field: "audience", Message: "length must be at least 1"})
+	}
+	if runeCount(v.Audience) > 255 {
+		errs = append(errs, FieldError{Field: "audience", Message: "length must be at most 255"})
+	}
+	if runeCount(v.JwksUri) > 2048 {
+		errs = append(errs, FieldError{Field: "jwks_uri", Message: "length must be at most 2048"})
+	}
+	if v.Algorithms != nil && len(v.Algorithms) < 1 {
+		errs = append(errs, FieldError{Field: "algorithms", Message: "must have at least 1 items"})
+	}
+	if len(v.Algorithms) > 10 {
+		errs = append(errs, FieldError{Field: "algorithms", Message: "must have at most 10 items"})
+	}
+	if !unique(v.Algorithms) {
+		errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
+	}
+	for _, item := range v.Algorithms {
+		if !re11.MatchString(item) {
+			errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
+		}
+	}
+	if v.SubjectClaim != "" && !re12.MatchString(v.SubjectClaim) {
+		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
+	}
+	if !re12.MatchString(v.TenantClaim) {
+		errs = append(errs, FieldError{Field: "tenant_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
+	}
+	if len(v.RequiredClaims) > 16 {
+		errs = append(errs, FieldError{Field: "required_claims", Message: "must have at most 16 members"})
+	}
+	for _, item := range v.RequiredClaims {
+		if runeCount(item) < 1 {
+			errs = append(errs, FieldError{Field: "required_claims", Message: "length must be at least 1"})
+		}
+		if runeCount(item) > 255 {
+			errs = append(errs, FieldError{Field: "required_claims", Message: "length must be at most 255"})
+		}
+	}
+	return errs
+}
+
+// PlatformIssuerList is a schema of the administration API.
+type PlatformIssuerList struct {
+	Items []PlatformIssuer `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredPlatformIssuerList = []string{"items"}
+
+var nestedPlatformIssuerList = []nestedMember{{Name: "items", Many: true, Required: requiredPlatformIssuer, Nested: nestedPlatformIssuer}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *PlatformIssuerList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// PlatformIssuerTenant is a schema of the administration API.
+type PlatformIssuerTenant struct {
+	IssuerID   string    `json:"issuer_id"`
+	TenantID   string    `json:"tenant_id"`
+	TenantName string    `json:"tenant_name"`
+	ClaimValue string    `json:"claim_value"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+var requiredPlatformIssuerTenant = []string{"issuer_id", "tenant_id", "tenant_name", "claim_value", "created_at"}
+
+var nestedPlatformIssuerTenant []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *PlatformIssuerTenant) Validate() []FieldError {
+	var errs []FieldError
+	if !re2.MatchString(v.IssuerID) {
+		errs = append(errs, FieldError{Field: "issuer_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !re2.MatchString(v.TenantID) {
+		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !re3.MatchString(v.TenantName) {
+		errs = append(errs, FieldError{Field: "tenant_name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+	}
+	if runeCount(v.ClaimValue) < 1 {
+		errs = append(errs, FieldError{Field: "claim_value", Message: "length must be at least 1"})
+	}
+	if runeCount(v.ClaimValue) > 255 {
+		errs = append(errs, FieldError{Field: "claim_value", Message: "length must be at most 255"})
+	}
+	return errs
+}
+
+// PlatformIssuerTenantList is a schema of the administration API.
+type PlatformIssuerTenantList struct {
+	Items []PlatformIssuerTenant `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredPlatformIssuerTenantList = []string{"items"}
+
+var nestedPlatformIssuerTenantList = []nestedMember{{Name: "items", Many: true, Required: requiredPlatformIssuerTenant, Nested: nestedPlatformIssuerTenant}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *PlatformIssuerTenantList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// PlatformIssuerTenantPut is a schema of the administration API.
+type PlatformIssuerTenantPut struct {
+	// The value of the tenant claim that designates this tenant. Default, the tenant ID.
+	ClaimValue string `json:"claim_value,omitempty"`
+}
+
+var requiredPlatformIssuerTenantPut = []string{}
+
+var nestedPlatformIssuerTenantPut []nestedMember
+
+// sentEmpty names the optional members that the document does not allow to be empty.
+func (*PlatformIssuerTenantPut) sentEmpty() []string { return []string{"claim_value"} }
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *PlatformIssuerTenantPut) Validate() []FieldError {
+	var errs []FieldError
+	if v.ClaimValue != "" && runeCount(v.ClaimValue) < 1 {
+		errs = append(errs, FieldError{Field: "claim_value", Message: "length must be at least 1"})
+	}
+	if runeCount(v.ClaimValue) > 255 {
+		errs = append(errs, FieldError{Field: "claim_value", Message: "length must be at most 255"})
+	}
+	return errs
+}
+
+// PlatformIssuerUpdate is a schema of the administration API.
+type PlatformIssuerUpdate struct {
+	Name           Optional[string]            `json:"name,omitzero"`
+	Description    Optional[string]            `json:"description,omitzero"`
+	Issuer         Optional[string]            `json:"issuer,omitzero"`
+	Audience       Optional[string]            `json:"audience,omitzero"`
+	JwksUri        Optional[string]            `json:"jwks_uri,omitzero"`
+	Algorithms     Optional[[]string]          `json:"algorithms,omitzero"`
+	SubjectClaim   Optional[string]            `json:"subject_claim,omitzero"`
+	TenantClaim    Optional[string]            `json:"tenant_claim,omitzero"`
+	RequiredClaims Optional[map[string]string] `json:"required_claims,omitzero"`
+	Enabled        Optional[bool]              `json:"enabled,omitzero"`
+}
+
+var requiredPlatformIssuerUpdate = []string{}
+
+var nestedPlatformIssuerUpdate []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *PlatformIssuerUpdate) Validate() []FieldError {
+	var errs []FieldError
+	if v.Name.Set {
+		if !re3.MatchString(v.Name.Value) {
+			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+		}
+	}
+	if v.Description.Set {
+		if runeCount(v.Description.Value) > 200 {
+			errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
+		}
+	}
+	if v.Issuer.Set {
+		if !re10.MatchString(v.Issuer.Value) {
+			errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
+		}
+		if runeCount(v.Issuer.Value) > 255 {
+			errs = append(errs, FieldError{Field: "issuer", Message: "length must be at most 255"})
+		}
+	}
+	if v.Audience.Set {
+		if runeCount(v.Audience.Value) < 1 {
+			errs = append(errs, FieldError{Field: "audience", Message: "length must be at least 1"})
+		}
+		if runeCount(v.Audience.Value) > 255 {
+			errs = append(errs, FieldError{Field: "audience", Message: "length must be at most 255"})
+		}
+	}
+	if v.JwksUri.Set {
+		if runeCount(v.JwksUri.Value) > 2048 {
+			errs = append(errs, FieldError{Field: "jwks_uri", Message: "length must be at most 2048"})
+		}
+	}
+	if v.Algorithms.Set {
+		if v.Algorithms.Value != nil && len(v.Algorithms.Value) < 1 {
+			errs = append(errs, FieldError{Field: "algorithms", Message: "must have at least 1 items"})
+		}
+		if len(v.Algorithms.Value) > 10 {
+			errs = append(errs, FieldError{Field: "algorithms", Message: "must have at most 10 items"})
+		}
+		if !unique(v.Algorithms.Value) {
+			errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
+		}
+		for _, item := range v.Algorithms.Value {
+			if !re11.MatchString(item) {
+				errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
+			}
+		}
+	}
+	if v.SubjectClaim.Set {
+		if !re12.MatchString(v.SubjectClaim.Value) {
+			errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
+		}
+	}
+	if v.TenantClaim.Set {
+		if !re12.MatchString(v.TenantClaim.Value) {
+			errs = append(errs, FieldError{Field: "tenant_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
+		}
+	}
+	if v.RequiredClaims.Set {
+		if len(v.RequiredClaims.Value) > 16 {
+			errs = append(errs, FieldError{Field: "required_claims", Message: "must have at most 16 members"})
+		}
+		for _, item := range v.RequiredClaims.Value {
+			if runeCount(item) < 1 {
+				errs = append(errs, FieldError{Field: "required_claims", Message: "length must be at least 1"})
+			}
+			if runeCount(item) > 255 {
+				errs = append(errs, FieldError{Field: "required_claims", Message: "length must be at most 255"})
+			}
+		}
+	}
+	if v.Enabled.Set {
+	}
+	return errs
+}
+
 // PlatformKey is a schema of the administration API.
 type PlatformKey struct {
 	ID          string     `json:"id"`
@@ -1009,7 +1444,7 @@ var nestedPlatformKey []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformKey) Validate() []FieldError {
 	var errs []FieldError
-	if !re10.MatchString(v.ID) {
+	if !re13.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^p[a-z2-7]{16}$"})
 	}
 	if !v.State.Valid() {
@@ -1291,7 +1726,7 @@ var nestedPriceOverride = []nestedMember{{Name: "rates", Many: true, Required: r
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceOverride) Validate() []FieldError {
 	var errs []FieldError
-	if !re11.MatchString(v.Currency) {
+	if !re14.MatchString(v.Currency) {
 		errs = append(errs, FieldError{Field: "currency", Message: "must match ^[A-Z]{3}$"})
 	}
 	if runeCount(v.Note) > 500 {
@@ -1336,7 +1771,7 @@ func (v *PriceRate) Validate() []FieldError {
 	if v.Threshold > 100000000 {
 		errs = append(errs, FieldError{Field: "threshold", Message: "must be at most 100000000"})
 	}
-	if !re12.MatchString(v.Rate) {
+	if !re15.MatchString(v.Rate) {
 		errs = append(errs, FieldError{Field: "rate", Message: "must match ^(0|[1-9][0-9]{0,6})(\\.[0-9]{1,12})?$"})
 	}
 	return errs
@@ -1570,7 +2005,7 @@ func (v *ProviderCreate) Validate() []FieldError {
 	if runeCount(v.Description) > 500 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 500"})
 	}
-	if v.DatasetProvider != "" && !re13.MatchString(v.DatasetProvider) {
+	if v.DatasetProvider != "" && !re16.MatchString(v.DatasetProvider) {
 		errs = append(errs, FieldError{Field: "dataset_provider", Message: "must match ^[a-z0-9][a-z0-9_.-]{0,62}$"})
 	}
 	if v.StreamUsageOption != "" && !v.StreamUsageOption.Valid() {
@@ -1631,7 +2066,7 @@ func (v *ProviderUpdate) Validate() []FieldError {
 	if v.Enabled.Set {
 	}
 	if v.DatasetProvider.Set {
-		if !re14.MatchString(v.DatasetProvider.Value) {
+		if !re17.MatchString(v.DatasetProvider.Value) {
 			errs = append(errs, FieldError{Field: "dataset_provider", Message: "must match ^([a-z0-9][a-z0-9_.-]{0,62})?$"})
 		}
 	}
@@ -1875,6 +2310,107 @@ func (v StreamUsageOption) Valid() bool {
 	return false
 }
 
+// SubjectMapping is a schema of the administration API.
+type SubjectMapping struct {
+	ID                 string    `json:"id"`
+	TenantID           string    `json:"tenant_id"`
+	Issuer             IssuerRef `json:"issuer"`
+	Subject            string    `json:"subject"`
+	ServiceAccountID   string    `json:"service_account_id"`
+	ServiceAccountName string    `json:"service_account_name"`
+	Description        string    `json:"description"`
+	CreatedAt          time.Time `json:"created_at"`
+}
+
+var requiredSubjectMapping = []string{"id", "tenant_id", "issuer", "subject", "service_account_id", "service_account_name", "description", "created_at"}
+
+var nestedSubjectMapping = []nestedMember{{Name: "issuer", Required: requiredIssuerRef, Nested: nestedIssuerRef}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *SubjectMapping) Validate() []FieldError {
+	var errs []FieldError
+	if !re2.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !re2.MatchString(v.TenantID) {
+		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	for _, e := range v.Issuer.Validate() {
+		errs = append(errs, FieldError{Field: "issuer." + e.Field, Message: e.Message})
+	}
+	if runeCount(v.Subject) < 1 {
+		errs = append(errs, FieldError{Field: "subject", Message: "length must be at least 1"})
+	}
+	if runeCount(v.Subject) > 255 {
+		errs = append(errs, FieldError{Field: "subject", Message: "length must be at most 255"})
+	}
+	if !re2.MatchString(v.ServiceAccountID) {
+		errs = append(errs, FieldError{Field: "service_account_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !re3.MatchString(v.ServiceAccountName) {
+		errs = append(errs, FieldError{Field: "service_account_name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+	}
+	if runeCount(v.Description) > 200 {
+		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
+	}
+	return errs
+}
+
+// SubjectMappingCreate is a schema of the administration API.
+type SubjectMappingCreate struct {
+	Issuer           IssuerRef `json:"issuer"`
+	Subject          string    `json:"subject"`
+	ServiceAccountID string    `json:"service_account_id"`
+	Description      string    `json:"description,omitempty"`
+}
+
+var requiredSubjectMappingCreate = []string{"issuer", "subject", "service_account_id"}
+
+var nestedSubjectMappingCreate = []nestedMember{{Name: "issuer", Required: requiredIssuerRef, Nested: nestedIssuerRef}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *SubjectMappingCreate) Validate() []FieldError {
+	var errs []FieldError
+	for _, e := range v.Issuer.Validate() {
+		errs = append(errs, FieldError{Field: "issuer." + e.Field, Message: e.Message})
+	}
+	if runeCount(v.Subject) < 1 {
+		errs = append(errs, FieldError{Field: "subject", Message: "length must be at least 1"})
+	}
+	if runeCount(v.Subject) > 255 {
+		errs = append(errs, FieldError{Field: "subject", Message: "length must be at most 255"})
+	}
+	if !re2.MatchString(v.ServiceAccountID) {
+		errs = append(errs, FieldError{Field: "service_account_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if runeCount(v.Description) > 200 {
+		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
+	}
+	return errs
+}
+
+// SubjectMappingList is a schema of the administration API.
+type SubjectMappingList struct {
+	Items []SubjectMapping `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredSubjectMappingList = []string{"items"}
+
+var nestedSubjectMappingList = []nestedMember{{Name: "items", Many: true, Required: requiredSubjectMapping, Nested: nestedSubjectMapping}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *SubjectMappingList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
 // Tenant is a schema of the administration API.
 type Tenant struct {
 	ID             string      `json:"id"`
@@ -2030,6 +2566,70 @@ func (v *TenantModelList) Validate() []FieldError {
 	return errs
 }
 
+// TenantPlatformIssuer: What a tenant sees of a platform-level registration that lists it.
+type TenantPlatformIssuer struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	Issuer       string `json:"issuer"`
+	Audience     string `json:"audience"`
+	SubjectClaim string `json:"subject_claim"`
+	TenantClaim  string `json:"tenant_claim"`
+	// The claim value that designates this tenant.
+	ClaimValue string `json:"claim_value"`
+	Enabled    bool   `json:"enabled"`
+}
+
+var requiredTenantPlatformIssuer = []string{"id", "name", "description", "issuer", "audience", "subject_claim", "tenant_claim", "claim_value", "enabled"}
+
+var nestedTenantPlatformIssuer []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TenantPlatformIssuer) Validate() []FieldError {
+	var errs []FieldError
+	if !re2.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !re3.MatchString(v.Name) {
+		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+	}
+	if !re10.MatchString(v.Issuer) {
+		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
+	}
+	if runeCount(v.Issuer) > 255 {
+		errs = append(errs, FieldError{Field: "issuer", Message: "length must be at most 255"})
+	}
+	if !re12.MatchString(v.SubjectClaim) {
+		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
+	}
+	if !re12.MatchString(v.TenantClaim) {
+		errs = append(errs, FieldError{Field: "tenant_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
+	}
+	return errs
+}
+
+// TenantPlatformIssuerList is a schema of the administration API.
+type TenantPlatformIssuerList struct {
+	Items []TenantPlatformIssuer `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredTenantPlatformIssuerList = []string{"items"}
+
+var nestedTenantPlatformIssuerList = []nestedMember{{Name: "items", Many: true, Required: requiredTenantPlatformIssuer, Nested: nestedTenantPlatformIssuer}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TenantPlatformIssuerList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
 // TenantRef is a schema of the administration API.
 type TenantRef struct {
 	ID    string      `json:"id"`
@@ -2103,6 +2703,279 @@ func (v *TenantUpdate) Validate() []FieldError {
 	return errs
 }
 
+// TokenIssuer is a schema of the administration API.
+type TokenIssuer struct {
+	ID          string `json:"id"`
+	TenantID    string `json:"tenant_id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Issuer      string `json:"issuer"`
+	// The value that must be among the token's aud entries. The pair of issuer and audience is unique in the installation.
+	Audience string `json:"audience"`
+	// Empty for OpenID Connect discovery under the issuer; otherwise an https URL.
+	JwksUri      string   `json:"jwks_uri"`
+	Algorithms   []string `json:"algorithms"`
+	SubjectClaim string   `json:"subject_claim"`
+	// Claim name to the string the claim must equal, or contain when it is an array of strings.
+	RequiredClaims map[string]string `json:"required_claims"`
+	Enabled        bool              `json:"enabled"`
+	CreatedAt      time.Time         `json:"created_at"`
+	UpdatedAt      time.Time         `json:"updated_at"`
+}
+
+var requiredTokenIssuer = []string{"id", "tenant_id", "name", "description", "issuer", "audience", "jwks_uri", "algorithms", "subject_claim", "required_claims", "enabled", "created_at", "updated_at"}
+
+var nestedTokenIssuer []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TokenIssuer) Validate() []FieldError {
+	var errs []FieldError
+	if !re2.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !re2.MatchString(v.TenantID) {
+		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !re3.MatchString(v.Name) {
+		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+	}
+	if runeCount(v.Description) > 200 {
+		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
+	}
+	if !re10.MatchString(v.Issuer) {
+		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
+	}
+	if runeCount(v.Issuer) > 255 {
+		errs = append(errs, FieldError{Field: "issuer", Message: "length must be at most 255"})
+	}
+	if runeCount(v.Audience) < 1 {
+		errs = append(errs, FieldError{Field: "audience", Message: "length must be at least 1"})
+	}
+	if runeCount(v.Audience) > 255 {
+		errs = append(errs, FieldError{Field: "audience", Message: "length must be at most 255"})
+	}
+	if runeCount(v.JwksUri) > 2048 {
+		errs = append(errs, FieldError{Field: "jwks_uri", Message: "length must be at most 2048"})
+	}
+	if v.Algorithms != nil && len(v.Algorithms) < 1 {
+		errs = append(errs, FieldError{Field: "algorithms", Message: "must have at least 1 items"})
+	}
+	if len(v.Algorithms) > 10 {
+		errs = append(errs, FieldError{Field: "algorithms", Message: "must have at most 10 items"})
+	}
+	if !unique(v.Algorithms) {
+		errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
+	}
+	for _, item := range v.Algorithms {
+		if !re11.MatchString(item) {
+			errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
+		}
+	}
+	if !re12.MatchString(v.SubjectClaim) {
+		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
+	}
+	if len(v.RequiredClaims) > 16 {
+		errs = append(errs, FieldError{Field: "required_claims", Message: "must have at most 16 members"})
+	}
+	for _, item := range v.RequiredClaims {
+		if runeCount(item) < 1 {
+			errs = append(errs, FieldError{Field: "required_claims", Message: "length must be at least 1"})
+		}
+		if runeCount(item) > 255 {
+			errs = append(errs, FieldError{Field: "required_claims", Message: "length must be at most 255"})
+		}
+	}
+	return errs
+}
+
+// TokenIssuerCreate is a schema of the administration API.
+type TokenIssuerCreate struct {
+	Name           string            `json:"name"`
+	Description    string            `json:"description,omitempty"`
+	Issuer         string            `json:"issuer"`
+	Audience       string            `json:"audience"`
+	JwksUri        string            `json:"jwks_uri,omitempty"`
+	Algorithms     []string          `json:"algorithms,omitempty"`
+	SubjectClaim   string            `json:"subject_claim,omitempty"`
+	RequiredClaims map[string]string `json:"required_claims,omitempty"`
+	// A disabled registration refuses every token. Omitted means true.
+	Enabled bool `json:"enabled"`
+}
+
+var requiredTokenIssuerCreate = []string{"name", "issuer", "audience"}
+
+var nestedTokenIssuerCreate []nestedMember
+
+// sentEmpty names the optional members that the document does not allow to be empty.
+func (*TokenIssuerCreate) sentEmpty() []string { return []string{"subject_claim"} }
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TokenIssuerCreate) Validate() []FieldError {
+	var errs []FieldError
+	if !re3.MatchString(v.Name) {
+		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+	}
+	if runeCount(v.Description) > 200 {
+		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
+	}
+	if !re10.MatchString(v.Issuer) {
+		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
+	}
+	if runeCount(v.Issuer) > 255 {
+		errs = append(errs, FieldError{Field: "issuer", Message: "length must be at most 255"})
+	}
+	if runeCount(v.Audience) < 1 {
+		errs = append(errs, FieldError{Field: "audience", Message: "length must be at least 1"})
+	}
+	if runeCount(v.Audience) > 255 {
+		errs = append(errs, FieldError{Field: "audience", Message: "length must be at most 255"})
+	}
+	if runeCount(v.JwksUri) > 2048 {
+		errs = append(errs, FieldError{Field: "jwks_uri", Message: "length must be at most 2048"})
+	}
+	if v.Algorithms != nil && len(v.Algorithms) < 1 {
+		errs = append(errs, FieldError{Field: "algorithms", Message: "must have at least 1 items"})
+	}
+	if len(v.Algorithms) > 10 {
+		errs = append(errs, FieldError{Field: "algorithms", Message: "must have at most 10 items"})
+	}
+	if !unique(v.Algorithms) {
+		errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
+	}
+	for _, item := range v.Algorithms {
+		if !re11.MatchString(item) {
+			errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
+		}
+	}
+	if v.SubjectClaim != "" && !re12.MatchString(v.SubjectClaim) {
+		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
+	}
+	if len(v.RequiredClaims) > 16 {
+		errs = append(errs, FieldError{Field: "required_claims", Message: "must have at most 16 members"})
+	}
+	for _, item := range v.RequiredClaims {
+		if runeCount(item) < 1 {
+			errs = append(errs, FieldError{Field: "required_claims", Message: "length must be at least 1"})
+		}
+		if runeCount(item) > 255 {
+			errs = append(errs, FieldError{Field: "required_claims", Message: "length must be at most 255"})
+		}
+	}
+	return errs
+}
+
+// TokenIssuerList is a schema of the administration API.
+type TokenIssuerList struct {
+	Items []TokenIssuer `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredTokenIssuerList = []string{"items"}
+
+var nestedTokenIssuerList = []nestedMember{{Name: "items", Many: true, Required: requiredTokenIssuer, Nested: nestedTokenIssuer}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TokenIssuerList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// TokenIssuerUpdate is a schema of the administration API.
+type TokenIssuerUpdate struct {
+	Name           Optional[string]            `json:"name,omitzero"`
+	Description    Optional[string]            `json:"description,omitzero"`
+	Issuer         Optional[string]            `json:"issuer,omitzero"`
+	Audience       Optional[string]            `json:"audience,omitzero"`
+	JwksUri        Optional[string]            `json:"jwks_uri,omitzero"`
+	Algorithms     Optional[[]string]          `json:"algorithms,omitzero"`
+	SubjectClaim   Optional[string]            `json:"subject_claim,omitzero"`
+	RequiredClaims Optional[map[string]string] `json:"required_claims,omitzero"`
+	Enabled        Optional[bool]              `json:"enabled,omitzero"`
+}
+
+var requiredTokenIssuerUpdate = []string{}
+
+var nestedTokenIssuerUpdate []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TokenIssuerUpdate) Validate() []FieldError {
+	var errs []FieldError
+	if v.Name.Set {
+		if !re3.MatchString(v.Name.Value) {
+			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+		}
+	}
+	if v.Description.Set {
+		if runeCount(v.Description.Value) > 200 {
+			errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
+		}
+	}
+	if v.Issuer.Set {
+		if !re10.MatchString(v.Issuer.Value) {
+			errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
+		}
+		if runeCount(v.Issuer.Value) > 255 {
+			errs = append(errs, FieldError{Field: "issuer", Message: "length must be at most 255"})
+		}
+	}
+	if v.Audience.Set {
+		if runeCount(v.Audience.Value) < 1 {
+			errs = append(errs, FieldError{Field: "audience", Message: "length must be at least 1"})
+		}
+		if runeCount(v.Audience.Value) > 255 {
+			errs = append(errs, FieldError{Field: "audience", Message: "length must be at most 255"})
+		}
+	}
+	if v.JwksUri.Set {
+		if runeCount(v.JwksUri.Value) > 2048 {
+			errs = append(errs, FieldError{Field: "jwks_uri", Message: "length must be at most 2048"})
+		}
+	}
+	if v.Algorithms.Set {
+		if v.Algorithms.Value != nil && len(v.Algorithms.Value) < 1 {
+			errs = append(errs, FieldError{Field: "algorithms", Message: "must have at least 1 items"})
+		}
+		if len(v.Algorithms.Value) > 10 {
+			errs = append(errs, FieldError{Field: "algorithms", Message: "must have at most 10 items"})
+		}
+		if !unique(v.Algorithms.Value) {
+			errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
+		}
+		for _, item := range v.Algorithms.Value {
+			if !re11.MatchString(item) {
+				errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
+			}
+		}
+	}
+	if v.SubjectClaim.Set {
+		if !re12.MatchString(v.SubjectClaim.Value) {
+			errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
+		}
+	}
+	if v.RequiredClaims.Set {
+		if len(v.RequiredClaims.Value) > 16 {
+			errs = append(errs, FieldError{Field: "required_claims", Message: "must have at most 16 members"})
+		}
+		for _, item := range v.RequiredClaims.Value {
+			if runeCount(item) < 1 {
+				errs = append(errs, FieldError{Field: "required_claims", Message: "length must be at least 1"})
+			}
+			if runeCount(item) > 255 {
+				errs = append(errs, FieldError{Field: "required_claims", Message: "length must be at most 255"})
+			}
+		}
+	}
+	if v.Enabled.Set {
+	}
+	return errs
+}
+
 // UsageCounter is a schema of the administration API.
 type UsageCounter struct {
 	Name  string `json:"name"`
@@ -2132,7 +3005,6 @@ type UsageRecord struct {
 	KeyID         string    `json:"key_id"`
 	// Empty when no credential was opened.
 	CredentialID  string `json:"credential_id"`
-	Funding       string `json:"funding"`
 	Provider      string `json:"provider"`
 	ApiFamily     string `json:"api_family"`
 	Operation     string `json:"operation"`
@@ -2180,7 +3052,7 @@ type UsageRecord struct {
 	MetadataDropped int              `json:"metadata_dropped"`
 }
 
-var requiredUsageRecord = []string{"id", "request_id", "trace_id", "started_at", "duration_ms", "principal_kind", "principal_id", "key_id", "credential_id", "funding", "provider", "api_family", "operation", "endpoint", "model", "model_id", "upstream_model", "stream", "outcome", "error_code", "upstream_status", "ttfb_ms", "request_bytes", "response_bytes", "input_source", "output_source", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens", "estimated_input_tokens", "estimated_output_tokens", "other_units", "provider_usage", "cost_status", "cost_reason", "currency", "price_version_id", "cost_fallbacks", "metadata", "metadata_dropped"}
+var requiredUsageRecord = []string{"id", "request_id", "trace_id", "started_at", "duration_ms", "principal_kind", "principal_id", "key_id", "credential_id", "provider", "api_family", "operation", "endpoint", "model", "model_id", "upstream_model", "stream", "outcome", "error_code", "upstream_status", "ttfb_ms", "request_bytes", "response_bytes", "input_source", "output_source", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens", "estimated_input_tokens", "estimated_output_tokens", "other_units", "provider_usage", "cost_status", "cost_reason", "currency", "price_version_id", "cost_fallbacks", "metadata", "metadata_dropped"}
 
 var nestedUsageRecord = []nestedMember{{Name: "other_units", Many: true, Required: requiredUsageCounter, Nested: nestedUsageCounter}, {Name: "provider_usage", Many: true, Required: requiredUsageCounter, Nested: nestedUsageCounter}, {Name: "metadata", Many: true, Required: requiredMetadataEntry, Nested: nestedMetadataEntry}}
 
@@ -2254,7 +3126,7 @@ var nestedVirtualKey []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *VirtualKey) Validate() []FieldError {
 	var errs []FieldError
-	if !re15.MatchString(v.ID) {
+	if !re18.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^t[a-z2-7]{16}$"})
 	}
 	if !re2.MatchString(v.TenantID) {
@@ -2327,7 +3199,7 @@ func (v *VirtualKeyCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "scopes", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Scopes {
-		if !re16.MatchString(item) {
+		if !re19.MatchString(item) {
 			errs = append(errs, FieldError{Field: "scopes", Message: "must match ^[a-z_]+:[a-z_]+$"})
 		}
 	}
@@ -2391,10 +3263,18 @@ var Operations = []Operation{
 	{ID: "listPriceVersions", Method: "GET", Path: "/v1/models/{model}/prices", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re2}}},
 	{ID: "createPriceOverride", Method: "POST", Path: "/v1/models/{model}/prices", Permission: "catalog:price", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re2}}},
 	{ID: "deletePriceVersion", Method: "DELETE", Path: "/v1/models/{model}/prices/{price_version}", Permission: "catalog:price", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re2}, {Name: "price_version", Pattern: re2}}},
+	{ID: "listPlatformIssuers", Method: "GET", Path: "/v1/platform-issuers", Permission: "platform_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
+	{ID: "createPlatformIssuer", Method: "POST", Path: "/v1/platform-issuers", Permission: "platform_issuer:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
+	{ID: "getPlatformIssuer", Method: "GET", Path: "/v1/platform-issuers/{issuer}", Permission: "platform_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re2}}},
+	{ID: "updatePlatformIssuer", Method: "PATCH", Path: "/v1/platform-issuers/{issuer}", Permission: "platform_issuer:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "issuer", Pattern: re2}}},
+	{ID: "deletePlatformIssuer", Method: "DELETE", Path: "/v1/platform-issuers/{issuer}", Permission: "platform_issuer:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re2}}},
+	{ID: "listPlatformIssuerTenants", Method: "GET", Path: "/v1/platform-issuers/{issuer}/tenants", Permission: "platform_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re2}}},
+	{ID: "putPlatformIssuerTenant", Method: "PUT", Path: "/v1/platform-issuers/{issuer}/tenants/{tenant}", Permission: "platform_issuer:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "issuer", Pattern: re2}, {Name: "tenant", Pattern: re2}}},
+	{ID: "deletePlatformIssuerTenant", Method: "DELETE", Path: "/v1/platform-issuers/{issuer}/tenants/{tenant}", Permission: "platform_issuer:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re2}, {Name: "tenant", Pattern: re2}}},
 	{ID: "listPlatformKeys", Method: "GET", Path: "/v1/platform-keys", Permission: "platform_key:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "createPlatformKey", Method: "POST", Path: "/v1/platform-keys", Permission: "platform_key:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getPlatformKey", Method: "GET", Path: "/v1/platform-keys/{key}", Permission: "platform_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "key", Pattern: re10}}},
-	{ID: "revokePlatformKey", Method: "POST", Path: "/v1/platform-keys/{key}/revoke", Permission: "platform_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "key", Pattern: re10}}},
+	{ID: "getPlatformKey", Method: "GET", Path: "/v1/platform-keys/{key}", Permission: "platform_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "key", Pattern: re13}}},
+	{ID: "revokePlatformKey", Method: "POST", Path: "/v1/platform-keys/{key}/revoke", Permission: "platform_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "key", Pattern: re13}}},
 	{ID: "listPriceImports", Method: "GET", Path: "/v1/price-imports", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "runPriceImport", Method: "POST", Path: "/v1/price-imports", Permission: "catalog:price", Status: 201, HasBody: true, PathParams: []PathParam{}},
 	{ID: "getPriceImport", Method: "GET", Path: "/v1/price-imports/{price_import}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "price_import", Pattern: re2}}},
@@ -2431,6 +3311,7 @@ var Operations = []Operation{
 	{ID: "setModelRestriction", Method: "PUT", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:restrict", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "clearModelRestriction", Method: "DELETE", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:restrict", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "listTenantModels", Method: "GET", Path: "/v1/tenants/{tenant}/models", Permission: "model:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "listTenantPlatformIssuers", Method: "GET", Path: "/v1/tenants/{tenant}/platform-issuers", Permission: "token_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "reactivateTenant", Method: "POST", Path: "/v1/tenants/{tenant}/reactivate", Permission: "tenant:suspend", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "listServiceAccounts", Method: "GET", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "createServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
@@ -2438,12 +3319,21 @@ var Operations = []Operation{
 	{ID: "updateServiceAccount", Method: "PATCH", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "service_account", Pattern: re2}}},
 	{ID: "disableServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}/disable", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "service_account", Pattern: re2}}},
 	{ID: "enableServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}/enable", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "service_account", Pattern: re2}}},
+	{ID: "listSubjectMappings", Method: "GET", Path: "/v1/tenants/{tenant}/subject-mappings", Permission: "subject_mapping:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "createSubjectMapping", Method: "POST", Path: "/v1/tenants/{tenant}/subject-mappings", Permission: "subject_mapping:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "getSubjectMapping", Method: "GET", Path: "/v1/tenants/{tenant}/subject-mappings/{mapping}", Permission: "subject_mapping:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "mapping", Pattern: re2}}},
+	{ID: "deleteSubjectMapping", Method: "DELETE", Path: "/v1/tenants/{tenant}/subject-mappings/{mapping}", Permission: "subject_mapping:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "mapping", Pattern: re2}}},
 	{ID: "suspendTenant", Method: "POST", Path: "/v1/tenants/{tenant}/suspend", Permission: "tenant:suspend", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "listTokenIssuers", Method: "GET", Path: "/v1/tenants/{tenant}/token-issuers", Permission: "token_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "createTokenIssuer", Method: "POST", Path: "/v1/tenants/{tenant}/token-issuers", Permission: "token_issuer:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "getTokenIssuer", Method: "GET", Path: "/v1/tenants/{tenant}/token-issuers/{issuer}", Permission: "token_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "issuer", Pattern: re2}}},
+	{ID: "updateTokenIssuer", Method: "PATCH", Path: "/v1/tenants/{tenant}/token-issuers/{issuer}", Permission: "token_issuer:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "issuer", Pattern: re2}}},
+	{ID: "deleteTokenIssuer", Method: "DELETE", Path: "/v1/tenants/{tenant}/token-issuers/{issuer}", Permission: "token_issuer:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "issuer", Pattern: re2}}},
 	{ID: "listUsageRecords", Method: "GET", Path: "/v1/tenants/{tenant}/usage-records", Permission: "usage:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "listVirtualKeys", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "createVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "getVirtualKey", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys/{key}", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "key", Pattern: re15}}},
-	{ID: "revokeVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys/{key}/revoke", Permission: "virtual_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "key", Pattern: re15}}},
+	{ID: "getVirtualKey", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys/{key}", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "key", Pattern: re18}}},
+	{ID: "revokeVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys/{key}/revoke", Permission: "virtual_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "key", Pattern: re18}}},
 }
 
 // GetMeInput is the input of getMe.
@@ -2525,6 +3415,57 @@ type CreatePriceOverrideInput struct {
 type DeletePriceVersionInput struct {
 	Model        string // path
 	PriceVersion string // path
+}
+
+// ListPlatformIssuersInput is the input of listPlatformIssuers.
+type ListPlatformIssuersInput struct {
+	Limit   int           // query; the zero value means absent
+	Cursor  string        // query; the zero value means absent
+	Sort    NamedSort     // query; the zero value means absent
+	Name    string        // query; the zero value means absent
+	Enabled EnabledFilter // query; the zero value means absent
+}
+
+// CreatePlatformIssuerInput is the input of createPlatformIssuer.
+type CreatePlatformIssuerInput struct {
+	Body PlatformIssuerCreate
+}
+
+// GetPlatformIssuerInput is the input of getPlatformIssuer.
+type GetPlatformIssuerInput struct {
+	Issuer string // path
+}
+
+// UpdatePlatformIssuerInput is the input of updatePlatformIssuer.
+type UpdatePlatformIssuerInput struct {
+	Issuer string // path
+	Body   PlatformIssuerUpdate
+}
+
+// DeletePlatformIssuerInput is the input of deletePlatformIssuer.
+type DeletePlatformIssuerInput struct {
+	Issuer string // path
+}
+
+// ListPlatformIssuerTenantsInput is the input of listPlatformIssuerTenants.
+type ListPlatformIssuerTenantsInput struct {
+	Issuer string // path
+	Limit  int    // query; the zero value means absent
+	Cursor string // query; the zero value means absent
+	Sort   Sort   // query; the zero value means absent
+}
+
+// PutPlatformIssuerTenantInput is the input of putPlatformIssuerTenant.
+type PutPlatformIssuerTenantInput struct {
+	Issuer string // path
+	Tenant string // path
+	Body   PlatformIssuerTenantPut
+}
+
+// DeletePlatformIssuerTenantInput is the input of deletePlatformIssuerTenant.
+type DeletePlatformIssuerTenantInput struct {
+	Issuer string // path
+	Tenant string // path
 }
 
 // ListPlatformKeysInput is the input of listPlatformKeys.
@@ -2782,6 +3723,14 @@ type ListTenantModelsInput struct {
 	Provider string // query; the zero value means absent
 }
 
+// ListTenantPlatformIssuersInput is the input of listTenantPlatformIssuers.
+type ListTenantPlatformIssuersInput struct {
+	Tenant string // path
+	Limit  int    // query; the zero value means absent
+	Cursor string // query; the zero value means absent
+	Sort   Sort   // query; the zero value means absent
+}
+
 // ReactivateTenantInput is the input of reactivateTenant.
 type ReactivateTenantInput struct {
 	Tenant string // path
@@ -2831,10 +3780,74 @@ type EnableServiceAccountInput struct {
 	Body           Reason
 }
 
+// ListSubjectMappingsInput is the input of listSubjectMappings.
+type ListSubjectMappingsInput struct {
+	Tenant         string // path
+	Limit          int    // query; the zero value means absent
+	Cursor         string // query; the zero value means absent
+	Sort           Sort   // query; the zero value means absent
+	Issuer         string // query; the zero value means absent
+	ServiceAccount string // query; the zero value means absent
+	Subject        string // query; the zero value means absent
+}
+
+// CreateSubjectMappingInput is the input of createSubjectMapping.
+type CreateSubjectMappingInput struct {
+	Tenant string // path
+	Body   SubjectMappingCreate
+}
+
+// GetSubjectMappingInput is the input of getSubjectMapping.
+type GetSubjectMappingInput struct {
+	Tenant  string // path
+	Mapping string // path
+}
+
+// DeleteSubjectMappingInput is the input of deleteSubjectMapping.
+type DeleteSubjectMappingInput struct {
+	Tenant  string // path
+	Mapping string // path
+}
+
 // SuspendTenantInput is the input of suspendTenant.
 type SuspendTenantInput struct {
 	Tenant string // path
 	Body   Reason
+}
+
+// ListTokenIssuersInput is the input of listTokenIssuers.
+type ListTokenIssuersInput struct {
+	Tenant  string        // path
+	Limit   int           // query; the zero value means absent
+	Cursor  string        // query; the zero value means absent
+	Sort    NamedSort     // query; the zero value means absent
+	Name    string        // query; the zero value means absent
+	Enabled EnabledFilter // query; the zero value means absent
+}
+
+// CreateTokenIssuerInput is the input of createTokenIssuer.
+type CreateTokenIssuerInput struct {
+	Tenant string // path
+	Body   TokenIssuerCreate
+}
+
+// GetTokenIssuerInput is the input of getTokenIssuer.
+type GetTokenIssuerInput struct {
+	Tenant string // path
+	Issuer string // path
+}
+
+// UpdateTokenIssuerInput is the input of updateTokenIssuer.
+type UpdateTokenIssuerInput struct {
+	Tenant string // path
+	Issuer string // path
+	Body   TokenIssuerUpdate
+}
+
+// DeleteTokenIssuerInput is the input of deleteTokenIssuer.
+type DeleteTokenIssuerInput struct {
+	Tenant string // path
+	Issuer string // path
 }
 
 // ListUsageRecordsInput is the input of listUsageRecords.
@@ -2904,6 +3917,22 @@ type Server interface {
 	CreatePriceOverride(ctx context.Context, in CreatePriceOverrideInput) (*PriceVersion, error)
 	// DeletePriceVersion: DELETE /v1/models/{model}/prices/{price_version}. Remove a price version that has not started
 	DeletePriceVersion(ctx context.Context, in DeletePriceVersionInput) (*PriceVersion, error)
+	// ListPlatformIssuers: GET /v1/platform-issuers. List the platform-level token issuers
+	ListPlatformIssuers(ctx context.Context, in ListPlatformIssuersInput) (*PlatformIssuerList, error)
+	// CreatePlatformIssuer: POST /v1/platform-issuers. Register a platform-level token issuer
+	CreatePlatformIssuer(ctx context.Context, in CreatePlatformIssuerInput) (*PlatformIssuer, error)
+	// GetPlatformIssuer: GET /v1/platform-issuers/{issuer}. Read a platform-level token issuer
+	GetPlatformIssuer(ctx context.Context, in GetPlatformIssuerInput) (*PlatformIssuer, error)
+	// UpdatePlatformIssuer: PATCH /v1/platform-issuers/{issuer}. Change, disable or enable a platform-level token issuer
+	UpdatePlatformIssuer(ctx context.Context, in UpdatePlatformIssuerInput) (*PlatformIssuer, error)
+	// DeletePlatformIssuer: DELETE /v1/platform-issuers/{issuer}. Delete a platform-level token issuer with its tenant list and subject mappings
+	DeletePlatformIssuer(ctx context.Context, in DeletePlatformIssuerInput) (*PlatformIssuer, error)
+	// ListPlatformIssuerTenants: GET /v1/platform-issuers/{issuer}/tenants. List the tenants of a platform-level token issuer
+	ListPlatformIssuerTenants(ctx context.Context, in ListPlatformIssuerTenantsInput) (*PlatformIssuerTenantList, error)
+	// PutPlatformIssuerTenant: PUT /v1/platform-issuers/{issuer}/tenants/{tenant}. Add a tenant to a platform-level token issuer, or change its claim value
+	PutPlatformIssuerTenant(ctx context.Context, in PutPlatformIssuerTenantInput) (*PlatformIssuerTenant, error)
+	// DeletePlatformIssuerTenant: DELETE /v1/platform-issuers/{issuer}/tenants/{tenant}. Remove a tenant from a platform-level token issuer
+	DeletePlatformIssuerTenant(ctx context.Context, in DeletePlatformIssuerTenantInput) (*PlatformIssuerTenant, error)
 	// ListPlatformKeys: GET /v1/platform-keys. List platform keys
 	ListPlatformKeys(ctx context.Context, in ListPlatformKeysInput) (*PlatformKeyList, error)
 	// CreatePlatformKey: POST /v1/platform-keys. Issue a platform key with the role platform-admin
@@ -2984,6 +4013,8 @@ type Server interface {
 	ClearModelRestriction(ctx context.Context, in ClearModelRestrictionInput) (*ModelRestriction, error)
 	// ListTenantModels: GET /v1/tenants/{tenant}/models. List the models available to the tenant
 	ListTenantModels(ctx context.Context, in ListTenantModelsInput) (*TenantModelList, error)
+	// ListTenantPlatformIssuers: GET /v1/tenants/{tenant}/platform-issuers. List the platform-level token issuers that list the tenant
+	ListTenantPlatformIssuers(ctx context.Context, in ListTenantPlatformIssuersInput) (*TenantPlatformIssuerList, error)
 	// ReactivateTenant: POST /v1/tenants/{tenant}/reactivate. Reactivate a suspended tenant
 	ReactivateTenant(ctx context.Context, in ReactivateTenantInput) (*Tenant, error)
 	// ListServiceAccounts: GET /v1/tenants/{tenant}/service-accounts. List the service accounts of a tenant
@@ -2998,8 +4029,26 @@ type Server interface {
 	DisableServiceAccount(ctx context.Context, in DisableServiceAccountInput) (*ServiceAccount, error)
 	// EnableServiceAccount: POST /v1/tenants/{tenant}/service-accounts/{service_account}/enable. Enable a disabled service account
 	EnableServiceAccount(ctx context.Context, in EnableServiceAccountInput) (*ServiceAccount, error)
+	// ListSubjectMappings: GET /v1/tenants/{tenant}/subject-mappings. List the subject mappings of a tenant
+	ListSubjectMappings(ctx context.Context, in ListSubjectMappingsInput) (*SubjectMappingList, error)
+	// CreateSubjectMapping: POST /v1/tenants/{tenant}/subject-mappings. Let a token subject act as a service account
+	CreateSubjectMapping(ctx context.Context, in CreateSubjectMappingInput) (*SubjectMapping, error)
+	// GetSubjectMapping: GET /v1/tenants/{tenant}/subject-mappings/{mapping}. Read a subject mapping
+	GetSubjectMapping(ctx context.Context, in GetSubjectMappingInput) (*SubjectMapping, error)
+	// DeleteSubjectMapping: DELETE /v1/tenants/{tenant}/subject-mappings/{mapping}. Delete a subject mapping
+	DeleteSubjectMapping(ctx context.Context, in DeleteSubjectMappingInput) (*SubjectMapping, error)
 	// SuspendTenant: POST /v1/tenants/{tenant}/suspend. Suspend a tenant
 	SuspendTenant(ctx context.Context, in SuspendTenantInput) (*Tenant, error)
+	// ListTokenIssuers: GET /v1/tenants/{tenant}/token-issuers. List the trusted token issuers of a tenant
+	ListTokenIssuers(ctx context.Context, in ListTokenIssuersInput) (*TokenIssuerList, error)
+	// CreateTokenIssuer: POST /v1/tenants/{tenant}/token-issuers. Register a trusted token issuer
+	CreateTokenIssuer(ctx context.Context, in CreateTokenIssuerInput) (*TokenIssuer, error)
+	// GetTokenIssuer: GET /v1/tenants/{tenant}/token-issuers/{issuer}. Read a trusted token issuer
+	GetTokenIssuer(ctx context.Context, in GetTokenIssuerInput) (*TokenIssuer, error)
+	// UpdateTokenIssuer: PATCH /v1/tenants/{tenant}/token-issuers/{issuer}. Change, disable or enable a trusted token issuer
+	UpdateTokenIssuer(ctx context.Context, in UpdateTokenIssuerInput) (*TokenIssuer, error)
+	// DeleteTokenIssuer: DELETE /v1/tenants/{tenant}/token-issuers/{issuer}. Delete a trusted token issuer with its subject mappings
+	DeleteTokenIssuer(ctx context.Context, in DeleteTokenIssuerInput) (*TokenIssuer, error)
 	// ListUsageRecords: GET /v1/tenants/{tenant}/usage-records. List the tenant's usage records, newest first
 	ListUsageRecords(ctx context.Context, in ListUsageRecordsInput) (*UsageRecordList, error)
 	// ListVirtualKeys: GET /v1/tenants/{tenant}/virtual-keys. List the virtual keys of a tenant
@@ -3358,6 +4407,230 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		out, err := h.server.DeletePriceVersion(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "listPlatformIssuers":
+		var in ListPlatformIssuersInput
+		q, err := parseQuery(r, "limit", "cursor", "sort", "name", "enabled")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		in.Sort = NamedSort("created_at")
+		if v, ok := q["sort"]; ok {
+			in.Sort = NamedSort(v)
+		}
+		if in.Sort != "" && !in.Sort.Valid() {
+			errs = append(errs, FieldError{Field: "sort", Message: "must be one of created_at, -created_at, name, -name"})
+		}
+		if v, ok := q["name"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "name", Message: "must not be empty"})
+			}
+			in.Name = v
+		}
+		if in.Name != "" && !re3.MatchString(in.Name) {
+			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+		}
+		if v, ok := q["enabled"]; ok {
+			in.Enabled = EnabledFilter(v)
+		}
+		if in.Enabled != "" && !in.Enabled.Valid() {
+			errs = append(errs, FieldError{Field: "enabled", Message: "must be one of true, false"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListPlatformIssuers(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "createPlatformIssuer":
+		var in CreatePlatformIssuerInput
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		in.Body.Enabled = true
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredPlatformIssuerCreate, nestedPlatformIssuerCreate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.CreatePlatformIssuer(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 201, out)
+	case "getPlatformIssuer":
+		var in GetPlatformIssuerInput
+		in.Issuer = params["issuer"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GetPlatformIssuer(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "updatePlatformIssuer":
+		var in UpdatePlatformIssuerInput
+		in.Issuer = params["issuer"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredPlatformIssuerUpdate, nestedPlatformIssuerUpdate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.UpdatePlatformIssuer(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "deletePlatformIssuer":
+		var in DeletePlatformIssuerInput
+		in.Issuer = params["issuer"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.DeletePlatformIssuer(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "listPlatformIssuerTenants":
+		var in ListPlatformIssuerTenantsInput
+		in.Issuer = params["issuer"]
+		q, err := parseQuery(r, "limit", "cursor", "sort")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		in.Sort = Sort("created_at")
+		if v, ok := q["sort"]; ok {
+			in.Sort = Sort(v)
+		}
+		if in.Sort != "" && !in.Sort.Valid() {
+			errs = append(errs, FieldError{Field: "sort", Message: "must be one of created_at, -created_at"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListPlatformIssuerTenants(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "putPlatformIssuerTenant":
+		var in PutPlatformIssuerTenantInput
+		in.Issuer = params["issuer"]
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredPlatformIssuerTenantPut, nestedPlatformIssuerTenantPut, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.PutPlatformIssuerTenant(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "deletePlatformIssuerTenant":
+		var in DeletePlatformIssuerTenantInput
+		in.Issuer = params["issuer"]
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.DeletePlatformIssuerTenant(r.Context(), in)
 		if err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -4417,6 +5690,59 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		writeJSON(w, 200, out)
+	case "listTenantPlatformIssuers":
+		var in ListTenantPlatformIssuersInput
+		in.Tenant = params["tenant"]
+		q, err := parseQuery(r, "limit", "cursor", "sort")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		in.Sort = Sort("created_at")
+		if v, ok := q["sort"]; ok {
+			in.Sort = Sort(v)
+		}
+		if in.Sort != "" && !in.Sort.Valid() {
+			errs = append(errs, FieldError{Field: "sort", Message: "must be one of created_at, -created_at"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListTenantPlatformIssuers(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
 	case "reactivateTenant":
 		var in ReactivateTenantInput
 		in.Tenant = params["tenant"]
@@ -4607,6 +5933,138 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		writeJSON(w, 200, out)
+	case "listSubjectMappings":
+		var in ListSubjectMappingsInput
+		in.Tenant = params["tenant"]
+		q, err := parseQuery(r, "limit", "cursor", "sort", "issuer", "service_account", "subject")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		in.Sort = Sort("created_at")
+		if v, ok := q["sort"]; ok {
+			in.Sort = Sort(v)
+		}
+		if in.Sort != "" && !in.Sort.Valid() {
+			errs = append(errs, FieldError{Field: "sort", Message: "must be one of created_at, -created_at"})
+		}
+		if v, ok := q["issuer"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "issuer", Message: "must not be empty"})
+			}
+			in.Issuer = v
+		}
+		if in.Issuer != "" && !re2.MatchString(in.Issuer) {
+			errs = append(errs, FieldError{Field: "issuer", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+		}
+		if v, ok := q["service_account"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "service_account", Message: "must not be empty"})
+			}
+			in.ServiceAccount = v
+		}
+		if in.ServiceAccount != "" && !re2.MatchString(in.ServiceAccount) {
+			errs = append(errs, FieldError{Field: "service_account", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+		}
+		if v, ok := q["subject"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "subject", Message: "must not be empty"})
+			}
+			in.Subject = v
+		}
+		if in.Subject != "" && runeCount(in.Subject) < 1 {
+			errs = append(errs, FieldError{Field: "subject", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Subject) > 255 {
+			errs = append(errs, FieldError{Field: "subject", Message: "length must be at most 255"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListSubjectMappings(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "createSubjectMapping":
+		var in CreateSubjectMappingInput
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredSubjectMappingCreate, nestedSubjectMappingCreate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.CreateSubjectMapping(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 201, out)
+	case "getSubjectMapping":
+		var in GetSubjectMappingInput
+		in.Tenant = params["tenant"]
+		in.Mapping = params["mapping"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GetSubjectMapping(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "deleteSubjectMapping":
+		var in DeleteSubjectMappingInput
+		in.Tenant = params["tenant"]
+		in.Mapping = params["mapping"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.DeleteSubjectMapping(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
 	case "suspendTenant":
 		var in SuspendTenantInput
 		in.Tenant = params["tenant"]
@@ -4623,6 +6081,146 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		out, err := h.server.SuspendTenant(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "listTokenIssuers":
+		var in ListTokenIssuersInput
+		in.Tenant = params["tenant"]
+		q, err := parseQuery(r, "limit", "cursor", "sort", "name", "enabled")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		in.Sort = NamedSort("created_at")
+		if v, ok := q["sort"]; ok {
+			in.Sort = NamedSort(v)
+		}
+		if in.Sort != "" && !in.Sort.Valid() {
+			errs = append(errs, FieldError{Field: "sort", Message: "must be one of created_at, -created_at, name, -name"})
+		}
+		if v, ok := q["name"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "name", Message: "must not be empty"})
+			}
+			in.Name = v
+		}
+		if in.Name != "" && !re3.MatchString(in.Name) {
+			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+		}
+		if v, ok := q["enabled"]; ok {
+			in.Enabled = EnabledFilter(v)
+		}
+		if in.Enabled != "" && !in.Enabled.Valid() {
+			errs = append(errs, FieldError{Field: "enabled", Message: "must be one of true, false"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListTokenIssuers(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "createTokenIssuer":
+		var in CreateTokenIssuerInput
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		in.Body.Enabled = true
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredTokenIssuerCreate, nestedTokenIssuerCreate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.CreateTokenIssuer(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 201, out)
+	case "getTokenIssuer":
+		var in GetTokenIssuerInput
+		in.Tenant = params["tenant"]
+		in.Issuer = params["issuer"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GetTokenIssuer(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "updateTokenIssuer":
+		var in UpdateTokenIssuerInput
+		in.Tenant = params["tenant"]
+		in.Issuer = params["issuer"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredTokenIssuerUpdate, nestedTokenIssuerUpdate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.UpdateTokenIssuer(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "deleteTokenIssuer":
+		var in DeleteTokenIssuerInput
+		in.Tenant = params["tenant"]
+		in.Issuer = params["issuer"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.DeleteTokenIssuer(r.Context(), in)
 		if err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -4990,6 +6588,110 @@ func (c *Client) DeletePriceVersion(ctx context.Context, in DeletePriceVersionIn
 	q := url.Values{}
 	var out PriceVersion
 	if err := c.do(ctx, "DELETE", "/v1/models/"+url.PathEscape(in.Model)+"/prices/"+url.PathEscape(in.PriceVersion)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListPlatformIssuers calls GET /v1/platform-issuers. List the platform-level token issuers
+func (c *Client) ListPlatformIssuers(ctx context.Context, in ListPlatformIssuersInput) (*PlatformIssuerList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	if in.Sort != "" {
+		q.Set("sort", string(in.Sort))
+	}
+	if in.Name != "" {
+		q.Set("name", string(in.Name))
+	}
+	if in.Enabled != "" {
+		q.Set("enabled", string(in.Enabled))
+	}
+	var out PlatformIssuerList
+	if err := c.do(ctx, "GET", "/v1/platform-issuers", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreatePlatformIssuer calls POST /v1/platform-issuers. Register a platform-level token issuer
+func (c *Client) CreatePlatformIssuer(ctx context.Context, in CreatePlatformIssuerInput) (*PlatformIssuer, error) {
+	q := url.Values{}
+	var out PlatformIssuer
+	if err := c.do(ctx, "POST", "/v1/platform-issuers", q, &in.Body, 201, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetPlatformIssuer calls GET /v1/platform-issuers/{issuer}. Read a platform-level token issuer
+func (c *Client) GetPlatformIssuer(ctx context.Context, in GetPlatformIssuerInput) (*PlatformIssuer, error) {
+	q := url.Values{}
+	var out PlatformIssuer
+	if err := c.do(ctx, "GET", "/v1/platform-issuers/"+url.PathEscape(in.Issuer)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdatePlatformIssuer calls PATCH /v1/platform-issuers/{issuer}. Change, disable or enable a platform-level token issuer
+func (c *Client) UpdatePlatformIssuer(ctx context.Context, in UpdatePlatformIssuerInput) (*PlatformIssuer, error) {
+	q := url.Values{}
+	var out PlatformIssuer
+	if err := c.do(ctx, "PATCH", "/v1/platform-issuers/"+url.PathEscape(in.Issuer)+"", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeletePlatformIssuer calls DELETE /v1/platform-issuers/{issuer}. Delete a platform-level token issuer with its tenant list and subject mappings
+func (c *Client) DeletePlatformIssuer(ctx context.Context, in DeletePlatformIssuerInput) (*PlatformIssuer, error) {
+	q := url.Values{}
+	var out PlatformIssuer
+	if err := c.do(ctx, "DELETE", "/v1/platform-issuers/"+url.PathEscape(in.Issuer)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListPlatformIssuerTenants calls GET /v1/platform-issuers/{issuer}/tenants. List the tenants of a platform-level token issuer
+func (c *Client) ListPlatformIssuerTenants(ctx context.Context, in ListPlatformIssuerTenantsInput) (*PlatformIssuerTenantList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	if in.Sort != "" {
+		q.Set("sort", string(in.Sort))
+	}
+	var out PlatformIssuerTenantList
+	if err := c.do(ctx, "GET", "/v1/platform-issuers/"+url.PathEscape(in.Issuer)+"/tenants", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// PutPlatformIssuerTenant calls PUT /v1/platform-issuers/{issuer}/tenants/{tenant}. Add a tenant to a platform-level token issuer, or change its claim value
+func (c *Client) PutPlatformIssuerTenant(ctx context.Context, in PutPlatformIssuerTenantInput) (*PlatformIssuerTenant, error) {
+	q := url.Values{}
+	var out PlatformIssuerTenant
+	if err := c.do(ctx, "PUT", "/v1/platform-issuers/"+url.PathEscape(in.Issuer)+"/tenants/"+url.PathEscape(in.Tenant)+"", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeletePlatformIssuerTenant calls DELETE /v1/platform-issuers/{issuer}/tenants/{tenant}. Remove a tenant from a platform-level token issuer
+func (c *Client) DeletePlatformIssuerTenant(ctx context.Context, in DeletePlatformIssuerTenantInput) (*PlatformIssuerTenant, error) {
+	q := url.Values{}
+	var out PlatformIssuerTenant
+	if err := c.do(ctx, "DELETE", "/v1/platform-issuers/"+url.PathEscape(in.Issuer)+"/tenants/"+url.PathEscape(in.Tenant)+"", q, nil, 200, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -5485,6 +7187,25 @@ func (c *Client) ListTenantModels(ctx context.Context, in ListTenantModelsInput)
 	return &out, nil
 }
 
+// ListTenantPlatformIssuers calls GET /v1/tenants/{tenant}/platform-issuers. List the platform-level token issuers that list the tenant
+func (c *Client) ListTenantPlatformIssuers(ctx context.Context, in ListTenantPlatformIssuersInput) (*TenantPlatformIssuerList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	if in.Sort != "" {
+		q.Set("sort", string(in.Sort))
+	}
+	var out TenantPlatformIssuerList
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/platform-issuers", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // ReactivateTenant calls POST /v1/tenants/{tenant}/reactivate. Reactivate a suspended tenant
 func (c *Client) ReactivateTenant(ctx context.Context, in ReactivateTenantInput) (*Tenant, error) {
 	q := url.Values{}
@@ -5570,11 +7291,134 @@ func (c *Client) EnableServiceAccount(ctx context.Context, in EnableServiceAccou
 	return &out, nil
 }
 
+// ListSubjectMappings calls GET /v1/tenants/{tenant}/subject-mappings. List the subject mappings of a tenant
+func (c *Client) ListSubjectMappings(ctx context.Context, in ListSubjectMappingsInput) (*SubjectMappingList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	if in.Sort != "" {
+		q.Set("sort", string(in.Sort))
+	}
+	if in.Issuer != "" {
+		q.Set("issuer", string(in.Issuer))
+	}
+	if in.ServiceAccount != "" {
+		q.Set("service_account", string(in.ServiceAccount))
+	}
+	if in.Subject != "" {
+		q.Set("subject", string(in.Subject))
+	}
+	var out SubjectMappingList
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/subject-mappings", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreateSubjectMapping calls POST /v1/tenants/{tenant}/subject-mappings. Let a token subject act as a service account
+func (c *Client) CreateSubjectMapping(ctx context.Context, in CreateSubjectMappingInput) (*SubjectMapping, error) {
+	q := url.Values{}
+	var out SubjectMapping
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/subject-mappings", q, &in.Body, 201, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetSubjectMapping calls GET /v1/tenants/{tenant}/subject-mappings/{mapping}. Read a subject mapping
+func (c *Client) GetSubjectMapping(ctx context.Context, in GetSubjectMappingInput) (*SubjectMapping, error) {
+	q := url.Values{}
+	var out SubjectMapping
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/subject-mappings/"+url.PathEscape(in.Mapping)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeleteSubjectMapping calls DELETE /v1/tenants/{tenant}/subject-mappings/{mapping}. Delete a subject mapping
+func (c *Client) DeleteSubjectMapping(ctx context.Context, in DeleteSubjectMappingInput) (*SubjectMapping, error) {
+	q := url.Values{}
+	var out SubjectMapping
+	if err := c.do(ctx, "DELETE", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/subject-mappings/"+url.PathEscape(in.Mapping)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // SuspendTenant calls POST /v1/tenants/{tenant}/suspend. Suspend a tenant
 func (c *Client) SuspendTenant(ctx context.Context, in SuspendTenantInput) (*Tenant, error) {
 	q := url.Values{}
 	var out Tenant
 	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/suspend", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListTokenIssuers calls GET /v1/tenants/{tenant}/token-issuers. List the trusted token issuers of a tenant
+func (c *Client) ListTokenIssuers(ctx context.Context, in ListTokenIssuersInput) (*TokenIssuerList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	if in.Sort != "" {
+		q.Set("sort", string(in.Sort))
+	}
+	if in.Name != "" {
+		q.Set("name", string(in.Name))
+	}
+	if in.Enabled != "" {
+		q.Set("enabled", string(in.Enabled))
+	}
+	var out TokenIssuerList
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/token-issuers", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreateTokenIssuer calls POST /v1/tenants/{tenant}/token-issuers. Register a trusted token issuer
+func (c *Client) CreateTokenIssuer(ctx context.Context, in CreateTokenIssuerInput) (*TokenIssuer, error) {
+	q := url.Values{}
+	var out TokenIssuer
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/token-issuers", q, &in.Body, 201, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetTokenIssuer calls GET /v1/tenants/{tenant}/token-issuers/{issuer}. Read a trusted token issuer
+func (c *Client) GetTokenIssuer(ctx context.Context, in GetTokenIssuerInput) (*TokenIssuer, error) {
+	q := url.Values{}
+	var out TokenIssuer
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/token-issuers/"+url.PathEscape(in.Issuer)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateTokenIssuer calls PATCH /v1/tenants/{tenant}/token-issuers/{issuer}. Change, disable or enable a trusted token issuer
+func (c *Client) UpdateTokenIssuer(ctx context.Context, in UpdateTokenIssuerInput) (*TokenIssuer, error) {
+	q := url.Values{}
+	var out TokenIssuer
+	if err := c.do(ctx, "PATCH", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/token-issuers/"+url.PathEscape(in.Issuer)+"", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeleteTokenIssuer calls DELETE /v1/tenants/{tenant}/token-issuers/{issuer}. Delete a trusted token issuer with its subject mappings
+func (c *Client) DeleteTokenIssuer(ctx context.Context, in DeleteTokenIssuerInput) (*TokenIssuer, error) {
+	q := url.Values{}
+	var out TokenIssuer
+	if err := c.do(ctx, "DELETE", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/token-issuers/"+url.PathEscape(in.Issuer)+"", q, nil, 200, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

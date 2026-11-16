@@ -42,8 +42,8 @@ func equalTime(t *testing.T, what string, got *time.Time, want *time.Time) {
 	}
 }
 
-// TestEveryStatement is T-230, extended by T-323 and by T-393: each of the 92 generated methods
-// (28 of epic 1, the 19 of sprint 2.1 and the 45 of sprint 2.2) is called through a store helper,
+// TestEveryStatement is T-230, extended by T-323 and by T-393: each of the 124 generated methods
+// (28 of epic 1, the 19 of sprint 2.1, the 45 of sprint 2.2 and the 28 of sprint 4.1) is called through a store helper,
 // directly and through the pooler.
 // Identifiers, times, null times, arrays, null arrays, hashes, sealed bytes and JSON go in and
 // come back unchanged.
@@ -424,7 +424,7 @@ func TestEveryStatement(t *testing.T) {
 		must("usage records", gateway.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
 			rec := `[{"id":"0192f0f0-0000-7000-8000-0000000000a1","started_at":"` + time.Now().UTC().Format(time.RFC3339Nano) +
 				`","request_id":"0123456789abcdef0123456789abcdef","principal_kind":"service_account","principal_id":"0192f0f0-0000-7000-8000-0000000000a2",` +
-				`"funding":"byok","provider":"openai","api_family":"openai","operation":"chat.completions","outcome":"ok","duration_ms":1,` +
+				`"provider":"openai","api_family":"openai","operation":"chat.completions","outcome":"ok","duration_ms":1,` +
 				`"input_source":"none","output_source":"none","cost_status":"none","cost_reason":"","trace_id":"","key_id":"","endpoint":"","model":"",` +
 				`"upstream_model":"","error_code":"","other_units":{},"provider_usage":{},"metadata":{},"metadata_dropped":0}]`
 			n, err := queries.New(tx).InsertUsageRecords(c, rec)
@@ -470,7 +470,10 @@ func TestEveryStatement(t *testing.T) {
 		// Sprint 2.2: the catalogue, the model access and the prices.
 		catalogStatements(c, t, admin, gateway, tid, ten.ID, sa.ID, hash, called)
 
-		// The 96 statements, and nothing was prepared on the server.
+		// Sprint 4.1: the registrations of trusted issuers, the mappings and the authentication statements.
+		issuerStatements(c, t, admin, gateway, tid, ten.ID, sa.ID, called)
+
+		// The 125 statements, and nothing was prepared on the server.
 		var names []string
 		typ := reflect.TypeOf(&queries.Queries{})
 		for i := 0; i < typ.NumMethod(); i++ {
@@ -479,8 +482,8 @@ func TestEveryStatement(t *testing.T) {
 			}
 		}
 		sort.Strings(names)
-		if len(names) != 96 {
-			t.Errorf("the generated package has %d statements, want 96: %v", len(names), names)
+		if len(names) != 125 {
+			t.Errorf("the generated package has %d statements, want 125: %v", len(names), names)
 		}
 		for _, name := range names {
 			if !called[name] {
@@ -771,7 +774,7 @@ func vaultStatements(c context.Context, t *testing.T, admin, gateway *store.DB, 
 func usageJSON(id string, started time.Time, tenantInJSON, requestID string, extra string) string {
 	rec := `{"id":"` + id + `","started_at":"` + started.UTC().Format(time.RFC3339Nano) + `","request_id":"` + requestID + `",` +
 		`"trace_id":"","principal_kind":"service_account","principal_id":"0192f0f0-0000-7000-8000-0000000000a2","key_id":"",` +
-		`"funding":"byok","provider":"openai","api_family":"openai","operation":"chat.completions","endpoint":"","model":"","upstream_model":"",` +
+		`"provider":"openai","api_family":"openai","operation":"chat.completions","endpoint":"","model":"","upstream_model":"",` +
 		`"outcome":"ok","error_code":"","duration_ms":12,"input_source":"none","output_source":"none","cost_status":"none","cost_reason":"",` +
 		`"other_units":{},"provider_usage":{},"metadata":{},"metadata_dropped":0`
 	if tenantInJSON != "" {

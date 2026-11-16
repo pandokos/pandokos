@@ -30,10 +30,6 @@ needs rules of its own (SEC-06).
 - Multi-architecture images (amd64, arm64).
 - The image is scanned in CI.
 
-**Console.** The front-end toolchain and its packages are needed only at build time. They are
-locked, audited in CI and built in the pipeline; what ships is static files embedded in the binary.
-No JavaScript runtime runs on the server.
-
 **Release.**
 
 - Releases are built only by the CI pipeline from a tagged commit.
@@ -64,3 +60,4 @@ less noise in reviews.
 
 - 2026-11: sprint 3.2 adds the OpenTelemetry SDK, the OTLP/HTTP exporter and logr as direct dependencies ([ADR 0040](0040-traces.md)).
 - 2026-11: sprint 3.3 adds hash-locked Python and npm packages for the SDK suite, CI only ([ADR 0044](0044-sdk-compatibility-suite-python-typescript.md)).
+- 2026-11: sprint 4.1 adds `github.com/go-jose/go-jose/v4` as the one new direct dependency, for compact JWS and JWK, imported by `internal/authn`, `internal/jwks` and `test/fakeidp` only and only its root package ([ADR 0046](0046-issuer-key-retrieval-and-caching.md)); the identity-provider images of the tests are pinned by digest ([ADR 0047](0047-identity-providers-in-the-test-suite.md)).

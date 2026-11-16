@@ -15,7 +15,6 @@ CREATE TABLE pandokos.usage_record (
     principal_id            text        NOT NULL,
     key_id                  text        NOT NULL DEFAULT '',
     credential_id           uuid,
-    funding                 text        NOT NULL,
     provider                text        NOT NULL,
     api_family              text        NOT NULL,
     operation               text        NOT NULL,
@@ -57,7 +56,6 @@ CREATE TABLE pandokos.usage_record (
     CONSTRAINT usage_record_principal_kind_valid CHECK (principal_kind IN ('service_account')),
     CONSTRAINT usage_record_principal_id_format CHECK (principal_id ~ '^[0-9a-f-]{36}$'),
     CONSTRAINT usage_record_key_id_format CHECK (key_id ~ '^[A-Za-z0-9_-]{0,64}$'),
-    CONSTRAINT usage_record_funding_valid CHECK (funding IN ('byok')),
     CONSTRAINT usage_record_provider_format CHECK (provider ~ '^[a-z0-9-]{1,63}$'),
     CONSTRAINT usage_record_api_family_format CHECK (api_family ~ '^[a-z0-9-]{1,63}$'),
     CONSTRAINT usage_record_operation_format CHECK (operation ~ '^[a-z0-9._-]{1,63}$'),
@@ -122,7 +120,7 @@ CREATE POLICY tenant_isolation ON pandokos.usage_record
 
 -- The gateway appends and reads nothing. The admin and worker roles read; nobody changes a row.
 GRANT INSERT (tenant_id, id, started_at, request_id, trace_id, principal_kind, principal_id, key_id, credential_id,
-              funding, provider, api_family, operation, endpoint, model, model_id, upstream_model, stream, outcome,
+              provider, api_family, operation, endpoint, model, model_id, upstream_model, stream, outcome,
               error_code, upstream_status, ttfb_ms, duration_ms, request_bytes, response_bytes, input_source,
               output_source, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
               other_units, provider_usage, estimated_input_tokens, estimated_output_tokens, cost_status, cost_reason,

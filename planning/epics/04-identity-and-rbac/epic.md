@@ -1,7 +1,7 @@
 ---
 id: EPIC-4
 title: Identity federation and RBAC
-status: todo
+status: in-progress
 release: v0.1 (sprint 4.1), v0.2
 depends_on: [EPIC-1]
 ---
@@ -12,7 +12,8 @@ depends_on: [EPIC-1]
 
 Workloads call with tokens from their own identity provider; people sign in with a local account
 or through an external OIDC provider and obtain a session; the full role model is in place and
-the API can tell a user what they are allowed to do. The console that uses all this is epic 11.
+the API can tell a user what they are allowed to do, so that an interface built on it can offer
+only that.
 
 ## Decisions it implements
 
@@ -31,6 +32,13 @@ ADR 0005 (trusted issuers), 0006, 0007, 0022.
 - Tests with two different open-source identity providers.
 
 Requirements: IAM-06, IAM-07, IAM-08.
+
+Decided at design (2026-11-16): tokens are accepted on the inference listener only; tokens on the
+administration listener, and mapping a subject to a user (the "or users" of IAM-08), moved to 4.2 with
+users and sessions. Delivered: records [ADR 0045](../../../docs/adr/0045-trusted-token-issuers.md),
+[0046](../../../docs/adr/0046-issuer-key-retrieval-and-caching.md) and
+[0047](../../../docs/adr/0047-identity-providers-in-the-test-suite.md); the
+[tokens guide](../../../docs/operations/tokens.md).
 
 Exit: a token from a platform-level issuer with tenant A in its claim acts for tenant A and cannot
 act for a tenant outside the registration's list; a token with the wrong audience is refused; the
@@ -54,6 +62,9 @@ The security-sensitive part first: passwords and sessions.
   nonce, ID token validation, same session; optional mapping of provider groups to roles.
 - Switch to disable local accounts; refusal of sign-in over plain HTTP outside loopback.
 - Idempotency keys on create operations.
+- Tokens of trusted issuers on the administration listener, and subject mappings to users (moved from 4.1).
+- A browser client served on the same origin as the administration listener, by the binary or by
+  a reverse proxy in front of it, can sign in and call the API: tested with a minimal page.
 
 Requirements: IAM-09 to IAM-12, IAM-13 (accounts), IAM-14 (account), IAM-18 to IAM-22, API-05,
 PRV-01.
@@ -66,7 +77,7 @@ their sessions within the bound.
 
 ### 4.3 Roles
 
-- All built-in tenant roles; platform auditor and platform billing operator.
+- All built-in tenant roles; platform auditor and platform usage viewer.
 - Custom roles from the permission catalogue; no-escalation rule; deactivation; deletion guard.
 - `GET /v1/me`: identity, platform permissions, memberships and effective permissions per tenant.
 - Platform support action inside a tenant: explicit permission, mandatory reason, tenant audit

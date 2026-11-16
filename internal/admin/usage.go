@@ -140,7 +140,7 @@ func usageRecordOut(r queries.ListUsageRecordsRow) adminapi.UsageRecord {
 	}
 	o := adminapi.UsageRecord{
 		ID: r.ID, RequestID: r.RequestID, TraceID: r.TraceID, StartedAt: r.StartedAt.UTC(), DurationMs: int(r.DurationMs),
-		PrincipalKind: r.PrincipalKind, PrincipalID: r.PrincipalID, KeyID: r.KeyID, CredentialID: str(r.CredentialID), Funding: r.Funding,
+		PrincipalKind: r.PrincipalKind, PrincipalID: r.PrincipalID, KeyID: r.KeyID, CredentialID: str(r.CredentialID),
 		Provider: r.Provider, ApiFamily: r.ApiFamily, Operation: r.Operation, Endpoint: r.Endpoint, Model: r.Model, ModelID: str(r.ModelID),
 		UpstreamModel: r.UpstreamModel, Stream: r.Stream != nil && *r.Stream, Outcome: r.Outcome, ErrorCode: r.ErrorCode,
 		TtfbMs: i64(r.TtfbMs), RequestBytes: i64(r.RequestBytes), ResponseBytes: i64(r.ResponseBytes),

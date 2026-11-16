@@ -935,10 +935,7 @@ R tests:
   nothing). Settling uses the mixed sources of D-8 like any other record.
 - **6.1**: metrics by family and by source mix (`provider`/`estimated` pairs).
 - **6.2**: reports and rollups supersede neither the list nor its window; platform roles read
-  aggregates; the console's usage page calls `listUsageRecords`.
-- **7.1** (platform funding): `Anthropic-*` response headers include the provider's organization
-  identifier: for platform-funded calls the allow-list must exclude it (as 3.1 noted for
-  `OpenAI-Organization`); the capability answer gains the funding mode.
+  aggregates.
 - **R4**: the unified `/v1/…` endpoint routes by model to providers of family `openai`, compatible ones
   included; the stream usage option applies per resolved provider. Gemini and Azure OpenAI are new
   adapters registered in `gateway.Families()`.
@@ -1015,8 +1012,8 @@ environment; T-567 runs in CI); `docker compose` on macOS and Windows hosts.
 | O-8 | Compose TLS from a self-signed certificate made by `openssl` in `setup.sh`. Alternatives: plain HTTP published on loopback with a warning; a `pandokos tls generate` command so that only Docker is needed | TLS with `openssl`: the safe default asked for in 1.3 O-6, without new product code |
 | O-9 | Usage list: default window 24 hours, maximum 31 days; metadata values returned | Confirm; reports (6.2) cover longer periods |
 | O-10 | TypeScript SDK tests are plain ES modules run by `node --test`. Alternative: TypeScript with `tsc` or type stripping | Plain modules: no compiler in the dependency graph; the SDKs' types are not what is under test |
-| O-11 | Every `Anthropic-*` response header is passed, the organization identifier included | Pass under BYOK (it is the tenant's own organization); 7.1 narrows it for platform funding |
-| O-12 | Server tool requests (`web_search_requests`) are stored in `other_units` and not priced | Confirm; pricing per request is a rating rule (7.x) |
+| O-11 | Every `Anthropic-*` response header is passed, the organization identifier included | Pass (it is the tenant's own organization) |
+| O-12 | Server tool requests (`web_search_requests`) are stored in `other_units` and not priced | Confirm; pricing per request is out of scope |
 | O-13 | No Go Anthropic SDK in the Go suite | Confirm; the Python and TypeScript SDKs cover the family |
 | O-14 | Error types of §5.2: 409 maps to `invalid_request_error`, 502 and 503 to `api_error`, 408 to `timeout_error` (the provider has no type for these statuses) | Confirm; SDKs branch on the status, not the type |
 
@@ -1034,7 +1031,7 @@ environment; T-567 runs in CI); `docker compose` on macOS and Windows hosts.
 | O-8 | Confirmed: TLS in Compose from a self-signed certificate made by `openssl` in `setup.sh` |
 | O-9 | Confirmed: default window 24 hours, maximum 31 days; metadata values returned |
 | O-10 | Confirmed: plain ES modules run by `node --test` |
-| O-11 | Confirmed: every `Anthropic-*` response header is passed under BYOK; 7.1 narrows it |
+| O-11 | Confirmed: every `Anthropic-*` response header is passed |
 | O-12 | Confirmed: server tool requests stored in `other_units`, not priced |
 | O-13 | Confirmed: no Go Anthropic SDK |
 | O-14 | Confirmed: the error type mapping of §5.2 |

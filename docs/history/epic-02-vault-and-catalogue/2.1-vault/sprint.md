@@ -80,11 +80,9 @@ The inference route still uses `skeleton.openai.*` (section 2).
 | Key-encryption key rotation and the re-wrap job (VLT-10); more than one configured key file | 6.x (R2) |
 | Cryptographic erasure on tenant deletion (VLT-11); removal of data keys | 6.3 |
 | External KMS or transit provider (the S half of VLT-12) | 8.x (R4) |
-| Platform-owned credentials (the R3 half of VLT-02) | 7.1 |
 | Audit read API (a tenant reads the reason of a platform action on the credential itself until then) | 6.2 |
 | Roles *credential manager* and the other built-in roles (AZ-03, AZ-10) | 4.3 |
 | `serve --role`: admin and gateway in separate processes | 8.2 |
-| Console pages | 11.x |
 
 ## 3. Requirements claimed
 
@@ -745,12 +743,9 @@ T-281, T-282; T-R13, T-R14, T-R15; every test that starts `serve` or builds `adm
   (the tenant is `deleting`, and principals of such a tenant are already refused); decide the
   order with credential rows (D-16); and state honestly what erasure means for old backups
   (open point O-8).
-- **7.1** adds platform-owned credentials in their own global table and `owner: platform`.
 - **8.2** separates the processes: only then is "the admin plane cannot decrypt" a property of
   the deployment and not only of database grants (R-5). External key providers implement
   `KeyProvider`; `Available` and `Check` are their start-up hook.
-- **11.x** builds the credential pages on the fourteen operations; the secret field is
-  write-only in the console as in the API.
 
 ## 12. Risks and open points
 
@@ -798,7 +793,7 @@ secret mounts on Kubernetes and Docker (taken from their documentation, R-8).
 | O-1 | D-7 departs from the data model page, which describes platform reads in a tenant-less session through a view. The design keeps vault tables invisible in platform scope and makes the admin role unable to read sealed secrets in any session; a platform administrator therefore always names a tenant and cannot search all tenants for a fingerprint or hint | Accept D-7 and amend the page. If cross-tenant search is wanted for incident response, add it later as one `SECURITY DEFINER` function that returns tenant and credential IDs for a hint, audited in the platform log |
 | O-2 | Key file readable by others: warn or refuse | Warn in v0.1; revisit in epic 10 with a strict switch |
 | O-3 | `serve` refuses to start when the database registers a key version that is not configured | Refuse (D-5) |
-| O-4 | `credential:use` is separate from `model:invoke`, so a key restricted by `scopes` needs both from 3.1 on | Keep it separate (AZ-02; platform-funded calls in R3 will not need it); 3.1 documents the pair |
+| O-4 | `credential:use` is separate from `model:invoke`, so a key restricted by `scopes` needs both from 3.1 on | Keep it separate (AZ-02); 3.1 documents the pair |
 | O-5 | A tenant can enable a credential that a platform administrator disabled | Allow it: the platform's hard stops are revocation and tenant suspension. A lock would need a new state and AZ-08 does not ask for one |
 | O-6 | One pin per key; other providers use the tenant's default (D-6). The alternative is that a pinned key may call only its credential's provider | Keep D-6 for 2.1; 3.1 confirms when the model check exists |
 | O-7 | Validation exists for `openai` only and dials from the admin plane (D-10). The alternative is to ship the contract now and no call until 3.1 | Ship D-10: VLT-05 is claimed for R1 and the mechanism is the hard part |

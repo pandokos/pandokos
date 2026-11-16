@@ -5,15 +5,14 @@
 
 ## Context
 
-Billable usage and limit notifications must reach external systems reliably (BIL-01 to BIL-07,
-LIM-13) without Pandokos becoming a billing system and without adding a message broker to every
+Usage and limit notifications must reach external systems reliably (EVT-01 to EVT-04, LIM-13)
+without Pandokos becoming a billing system and without adding a message broker to every
 installation.
 
 ## Decision
 
 - **Outbox.** The transaction that records a fact also inserts the event that announces it into
-  an outbox table. For platform-funded usage, the ledger writer inserts the usage row and its
-  event together.
+  an outbox table. The ledger writer inserts the usage row and its event together.
 - **Relay.** The worker claims pending events with `FOR UPDATE SKIP LOCKED`, delivers them, and
   marks them delivered only on a successful response. Failures retry with exponential backoff;
   after a configured number of attempts an event is parked as dead and can be replayed through the
@@ -22,14 +21,12 @@ installation.
   idempotency key. Order is not guaranteed; events carry their own timestamps and sequence within
   a tenant.
 - **Format.** CloudEvents 1.0 in JSON. Event types are versioned: `usage.recorded`,
-  `usage.corrected`, `limit.threshold_reached`, `limit.exhausted`, `tenant.deleted`.
+  `limit.threshold_reached`, `limit.exhausted`, `tenant.deleted`.
 - **Destinations.** First: an HTTPS webhook signed with an HMAC over body and timestamp, and a
-  newline-delimited JSON export over the API for systems that prefer to pull. Vendor-specific
-  adapters are separate, optional modules that consume the same events.
-- **Content of a billable event.** Quantities by token category, the price version, upstream
-  cost, the rating rule version and the chargeable amount, the tenant and its external customer
-  reference. BYOK usage is not emitted as billable; it can be emitted on a separate, informational
-  event type if the operator enables it.
+  newline-delimited JSON export over the API for systems that prefer to pull.
+- **Content of a usage event.** Quantities by token category, the price version, the estimated
+  cost and its status, the tenant and its external reference, the originating request. No content.
+  The cost is the estimate of the ledger, not an amount to charge.
 
 ## Consequences
 
@@ -45,7 +42,7 @@ installation.
 mandatory extra dependency otherwise. A broker destination can be added later without changing the
 outbox.
 
-**Calling the billing system synchronously on the request path.** Couples inference availability
+**Calling the receiving system synchronously on the request path.** Couples inference availability
 to a third party.
 
-**A vendor adapter as the only output.** Locks the product to one billing vendor.
+**A vendor adapter as the only output.** Locks the product to one receiving system.

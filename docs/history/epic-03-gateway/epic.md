@@ -34,8 +34,8 @@ ADR 0009, 0010, 0013 (ledger), 0015 (traces), 0020, 0024, 0039, 0040, 0041, 0042
 - Replaces the hard-wired route of sprint 1.1.
 - Only chat completions on the allow-list; the shutdown sequence and its bounds (OPS-12).
 
-Requirements: GW-01, GW-02, GW-05 to GW-12, GW-16 (size, duration), FND-01 and FND-02 (BYOK),
-SEC-01, SEC-02, OPS-12.
+Requirements: GW-01, GW-02, GW-05 to GW-12, GW-16 (size, duration), USE-09 (the tenant's own
+credential), SEC-01, SEC-02, OPS-12.
 
 Exit: a non-streaming call succeeds with a tenant's key and credential; a call for a model not
 granted, to an unsupported path, or from a suspended tenant is refused with the documented code;

@@ -24,6 +24,9 @@ Commands:
   model-restriction get|set|clear
   capability check --provider P --model M
   usage list [--from T] [--to T] [--provider P]
+  token-issuer list|create|get|update|delete|platform
+  subject-mapping list|create|get|delete
+  platform-issuer list|create|get|update|delete|tenants|add-tenant|remove-tenant
                                    Administer through the administration API;
                                    "pandokos <command> --help" lists the flags
   import-prices [--config FILE] (--file FILE | --embedded) [--dry-run]
