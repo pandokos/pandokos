@@ -14,7 +14,7 @@ FUZZTIME ?= 30s
 # Loads local/testdb/env (written by make db-up) unless the variable is already set.
 DBENV = set -a; if [ -z "$$PANDOKOS_TEST_DATABASE_URL" ] && [ -f local/testdb/env ]; then . ./local/testdb/env; fi; set +a;
 
-.PHONY: help build test test-sdk test-sdk-python sdk-python-env test-sdk-ts test-compose test-container fuzz bench fmt fmt-check vet lint tidy vuln image check clean db-up db-down test-nodb migrations-sum generate generate-check secrets
+.PHONY: help build test test-sdk test-sdk-python sdk-python-env test-sdk-ts test-compose test-container fuzz bench fmt fmt-check vet lint tidy vuln image check clean db-up db-down idp-up idp-down test-idp test-nodb migrations-sum generate generate-check secrets
 
 help: ## Show the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -56,6 +56,15 @@ db-up: ## Start the test PostgreSQL and PgBouncer (Docker)
 db-down: ## Stop them and discard the data
 	docker compose -f test/db/compose.yaml down -v
 
+idp-up: ## Start Keycloak, Ory Hydra and Authentik for the issuer tests (Docker)
+	sh test/idp/up.sh
+
+idp-down: ## Stop them and discard their data
+	sh test/idp/down.sh
+
+test-idp: ## Trusted issuer tests against Keycloak, Hydra and Authentik (needs make db-up and make idp-up)
+	@$(DBENV) set -a; . ./local/idp/env; set +a; GOTOOLCHAIN=go$(RELEASE_GO) go test -tags idp -count=1 ./test/idp/...
+
 migrations-sum: ## Rewrite the checksum file of the migrations
 	@cd internal/store/migrations/sql && for f in *.sql; do printf '%s %s\n' "$$f" "$$(sha256sum "$$f" | cut -d' ' -f1)"; done > ../migrations.sum
 
@@ -76,6 +85,7 @@ fuzz: ## Run each fuzz target for FUZZTIME
 	go test ./internal/usage/ -run '^$$' -fuzz '^FuzzParseMetadata$$' -fuzztime $(FUZZTIME)
 	go test ./internal/pricing/ -run '^$$' -fuzz '^FuzzParseDecimal$$' -fuzztime $(FUZZTIME)
 	go test ./internal/authn/ -run '^$$' -fuzz '^FuzzParse$$' -fuzztime $(FUZZTIME)
+	go test ./internal/authn/ -run '^$$' -fuzz '^FuzzParseToken$$' -fuzztime $(FUZZTIME)
 	go test ./internal/family/anthropic/ -run '^$$' -fuzz '^FuzzAnthropicStreamReader$$' -fuzztime $(FUZZTIME)
 	go test ./internal/family/anthropic/ -run '^$$' -fuzz '^FuzzAnthropicReadUsage$$' -fuzztime $(FUZZTIME)
 	go test ./internal/family/anthropic/ -run '^$$' -fuzz '^FuzzAnthropicParseRequest$$' -fuzztime $(FUZZTIME)

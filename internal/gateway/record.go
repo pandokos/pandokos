@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/family"
 	"github.com/pandokos/pandokos/internal/pricing"
 	"github.com/pandokos/pandokos/internal/usage"
@@ -81,6 +82,15 @@ func providerSide(u family.Usage, parts family.Parts) family.Usage {
 	return u
 }
 
+// principalKind is the principal_kind of the usage record: "token" when a trusted issuer's token
+// authenticated the call, "service_account" for a virtual key.
+func principalKind(p *authz.Principal) string {
+	if p.IssuerID != "" {
+		return "token"
+	}
+	return "service_account"
+}
+
 // recordOf builds the usage record of an admitted request: what was measured, never content.
 func (h *Handler) recordOf(st *reqState, logOutcome string) usage.Record {
 	p := st.principal
@@ -90,10 +100,9 @@ func (h *Handler) recordOf(st *reqState, logOutcome string) usage.Record {
 		StartedAt:     st.start.UTC(),
 		RequestID:     st.id,
 		TraceID:       st.traceID,
-		PrincipalKind: "service_account",
+		PrincipalKind: principalKind(p),
 		PrincipalID:   p.ID,
 		KeyID:         p.KeyID,
-		Funding:       "byok",
 		Provider:      st.provider,
 		APIFamily:     st.family,
 		Operation:     st.op.Name,
@@ -194,7 +203,7 @@ func (st *reqState) minimalRecord() usage.Record {
 	}
 	return usage.Record{
 		ID: id, TenantID: p.TenantID, StartedAt: st.start.UTC(), RequestID: st.id, TraceID: st.traceID,
-		PrincipalKind: "service_account", PrincipalID: p.ID, KeyID: p.KeyID, Funding: "byok",
+		PrincipalKind: principalKind(p), PrincipalID: p.ID, KeyID: p.KeyID,
 		Provider: st.provider, APIFamily: st.family, Operation: st.op.Name,
 		Outcome: usage.OutcomeInternalError, ErrorCode: string(family.CodeInternal),
 		InputSource: usage.SourceNone, OutputSource: usage.SourceNone, CostStatus: "none",

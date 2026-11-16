@@ -576,6 +576,7 @@ func TestOpenerCache(t *testing.T) {
 			{payload: "vault:" + b.String(), dropB: true},
 			{payload: "tenant:" + b.String(), dropB: true},
 			{payload: "platform"},
+			{payload: "issuers"}, // sprint 4.1: about platform-level token issuers, not about credentials
 			{payload: "catalog"},
 			{payload: "catalog:" + a.String()},
 			{payload: "catalog:" + b.String()},

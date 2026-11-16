@@ -82,6 +82,7 @@ func warnings(cfg *Config, env map[string]string, known map[string]bool, src Sou
 	if src.Purpose == PurposeServe {
 		ws = append(ws, proxyEnvironmentWarnings(cfg, src.Environ)...)
 		ws = append(ws, otelEnvironmentWarnings(cfg, src.Environ)...)
+		ws = append(ws, tokenWarnings(cfg)...)
 	}
 	var unknown []string
 	for name := range env {

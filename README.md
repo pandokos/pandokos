@@ -2,7 +2,7 @@
 
 Open-source multi-tenant LLM proxy: governed access to AI providers with BYOK, secrets vault, quotas, audit and OpenTelemetry.
 
-> **Status: gateway complete, v0.1 not yet released.** Unmodified OpenAI and Anthropic SDKs call models through Pandokos with a virtual key, streaming included, using the calling tenant's own stored credential (BYOK). Each authenticated request leaves one usage record with tokens and estimated cost ([docs/operations/usage.md](docs/operations/usage.md)) and two OpenTelemetry spans ([docs/operations/telemetry.md](docs/operations/telemetry.md)); every outbound connection passes an address-checking egress guard, and OpenAI-compatible providers are added by configuration ([docs/operations/providers.md](docs/operations/providers.md)). Callers authenticate with virtual keys; `pandokos init` issues the first platform key, and the CLI (a client of the administration API) creates tenants, service accounts and keys (first run: [docs/operations/keys.md](docs/operations/keys.md)). Tenants store provider credentials in a vault that nobody can read back ([docs/operations/vault.md](docs/operations/vault.md)), and the platform admin maintains a catalogue of providers, endpoints and models with grants and versioned prices ([docs/operations/catalogue.md](docs/operations/catalogue.md)). A Docker Compose reference takes you from nothing to a first call ([docs/operations/compose.md](docs/operations/compose.md)). Trusted token issuers (sprint 4.1) complete v0.1; rate limits and budgets (epic 5) and reports come later: **not for production**. Requirements, architecture and plan are written and open for review; see [Documentation](#documentation) and [Roadmap](#roadmap).
+> **Status: v0.1.0 (Core BYOK) is complete and tagged from this commit onwards ([release page](docs/releases/v0.1.0.md)).** Unmodified OpenAI and Anthropic SDKs call models through Pandokos with a virtual key, streaming included, using the calling tenant's own stored credential (BYOK). Each authenticated request leaves one usage record with tokens and estimated cost ([docs/operations/usage.md](docs/operations/usage.md)) and two OpenTelemetry spans ([docs/operations/telemetry.md](docs/operations/telemetry.md)); every outbound connection passes an address-checking egress guard, and OpenAI-compatible providers are added by configuration ([docs/operations/providers.md](docs/operations/providers.md)). Callers authenticate with virtual keys; `pandokos init` issues the first platform key, and the CLI (a client of the administration API) creates tenants, service accounts and keys (first run: [docs/operations/keys.md](docs/operations/keys.md)). Tenants store provider credentials in a vault that nobody can read back ([docs/operations/vault.md](docs/operations/vault.md)), and the platform admin maintains a catalogue of providers, endpoints and models with grants and versioned prices ([docs/operations/catalogue.md](docs/operations/catalogue.md)). A Docker Compose reference takes you from nothing to a first call ([docs/operations/compose.md](docs/operations/compose.md)). Callers can also authenticate with a token from a registered trusted issuer, with the tenant taken from the registration or a claim ([docs/operations/tokens.md](docs/operations/tokens.md)). Rate limits and budgets (epic 5), sign-in for people and reports come later: **not for production**. Requirements, architecture and plan are written and open for review; see [Documentation](#documentation) and [Roadmap](#roadmap).
 
 ## What it is
 
@@ -10,10 +10,7 @@ Pandokos is a self-hostable proxy that lets an organization expose LLM capabilit
 
 It can run as an internal component of a SaaS platform or as a standalone service offered to multiple organizations.
 
-Tenants can use LLM models through either:
-
-- **BYOK** (bring your own key): the tenant supplies its own provider credentials and bears the cost directly;
-- **platform-funded credentials**: the platform operator pays the provider and the tenant is metered.
+Tenants use LLM models with **BYOK** (bring your own key): each tenant supplies its own provider credentials and bears the cost directly. Pandokos keeps the keys, injects them, and measures every call.
 
 ## Responsibilities
 
@@ -25,7 +22,7 @@ Tenants can use LLM models through either:
 - audit log, usage and cost ledger;
 - distributed tracing and metrics with OpenTelemetry (OTLP);
 - administration of tenants, identities, roles, providers and models;
-- consumption data prepared for external billing systems.
+- usage events for external systems, such as billing.
 
 ## What it is not
 
@@ -56,10 +53,10 @@ Pandokos is deliberately not an identity provider, an agent or workflow framewor
 | Release | Theme |
 |---|---|
 | v0.1 | Core BYOK: tenants, virtual keys, vault, OpenAI and Anthropic passthrough with streaming, usage ledger |
-| v0.2 | Governance and web console: sign-in with local accounts or OIDC, roles, rate limits and budgets, reports, tenant deletion |
-| v0.3 | Platform-funded credentials and billing events |
-| v0.4 | Scale-out: replicas, Kubernetes, dedicated cells, more providers |
-| v1.0 | Hardening: security review, measured performance, tested recovery |
+| v0.2 | Governance: rate limits and budgets, sign-in with local accounts or OIDC, roles, reports, tenant deletion |
+| v0.3 | Ready to operate: usage events, external key-encryption key, threat model review, restore drill, upgrade policy |
+| v0.4 | Scale-out and providers: replicas, Kubernetes, Gemini, Azure OpenAI |
+| v1.0 | Hardening: independent security assessment, measured performance, dedicated cells, mutual TLS |
 
 Details are in the [roadmap](planning/roadmap.md).
 

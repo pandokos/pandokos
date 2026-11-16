@@ -109,6 +109,11 @@ the first. Nothing needs a restart.
 | A virtual key is revoked or expires; a service account is disabled or leaves its validity; a role is removed | the next request | at most `cache.principal_ttl` after the commit (default 30 s; at most 60 s); normally under one second when notifications arrive. Expiry and validity are checked at every request and are exact |
 | A tenant is suspended | the next request | the same |
 | A platform key is revoked | the next request | not accepted there at all |
+| A subject mapping is deleted; a trusted issuer is disabled, changed or deleted; a tenant leaves a platform-level issuer's list (tokens, [guide](tokens.md)) | not applicable: tokens are not accepted there | at once where notifications arrive, at most `cache.principal_ttl` otherwise |
+| A token expires | not applicable | at `exp` plus `tokens.clock_skew`; one token cannot be revoked earlier |
+| The identity provider withdraws a signing key | not applicable | at most `tokens.jwks.refresh_interval` (15 min); at most `tokens.jwks.max_stale` (6 h) while its key endpoint cannot be reached |
+
+A token of a trusted issuer maps to a service account, so disabling the account or removing its role stops tokens as it stops keys. See the [tokens guide](tokens.md) for registrations and mappings.
 
 The inference listener keeps the principal of a key for `cache.principal_ttl`. PostgreSQL
 notifications shorten that: the gateway holds one connection that listens for them. A notification

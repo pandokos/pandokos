@@ -56,6 +56,15 @@ replaced by `_`.
 | `cache.credential_ttl` | `PANDOKOS_CACHE_CREDENTIAL_TTL` | duration | `30s` | Lifetime of a cached provider credential in the gateway: the upper bound on the time a disable, revocation or replacement takes to reach the inference listener when notifications are not delivered (1s to 60s) |
 | `cache.data_key_ttl` | `PANDOKOS_CACHE_DATA_KEY_TTL` | duration | `5m` | Lifetime of an unwrapped data key in the gateway (1s to 15m) |
 | `cache.catalog_ttl` | `PANDOKOS_CACHE_CATALOG_TTL` | duration | `30s` | Lifetime of the cached catalogue and of a tenant's model access in the gateway: the upper bound on the time a catalogue, price or model-access change takes to reach the inference listener when notifications are not delivered (1s to 5m); see the [catalogue guide](catalogue.md) |
+| `tokens.enabled` | `PANDOKOS_TOKENS_ENABLED` | boolean | `true` | Accept tokens of trusted issuers on the inference listener. `false`: every credential that is not a virtual key is malformed and no key of an issuer is ever fetched; read by `serve` only. See the [tokens guide](tokens.md) |
+| `tokens.max_token_bytes` | `PANDOKOS_TOKENS_MAX_TOKEN_BYTES` | integer | `8192` | Largest token accepted (1024 to 16384, and at most half of `listeners.inference.max_header_bytes`) |
+| `tokens.clock_skew` | `PANDOKOS_TOKENS_CLOCK_SKEW` | duration | `60s` | Tolerance on `exp`, `nbf` and `iat` of a token (0 to 5m) |
+| `tokens.max_lifetime` | `PANDOKOS_TOKENS_MAX_LIFETIME` | duration | `24h` | Longest lifetime (`exp` minus `iat`) a token may have (1m to 720h) |
+| `tokens.private_hosts` | `PANDOKOS_TOKENS_PRIVATE_HOSTS` | list | none | Host names, separated by commas in the environment, whose issuer and key URLs may resolve to private addresses (at most 32 lower-case DNS names, no address literal, no wildcard) |
+| `tokens.jwks.fetch_timeout` | `PANDOKOS_TOKENS_JWKS_FETCH_TIMEOUT` | duration | `5s` | Time allowed to fetch one document of an issuer (1s to 30s) |
+| `tokens.jwks.refresh_interval` | `PANDOKOS_TOKENS_JWKS_REFRESH_INTERVAL` | duration | `15m` | Time between background refreshes of the key set of an issuer (1m to 1h) |
+| `tokens.jwks.min_refetch_interval` | `PANDOKOS_TOKENS_JWKS_MIN_REFETCH_INTERVAL` | duration | `10s` | Shortest time between two fetches of a key set caused by an unknown key ID (1s to 5m) |
+| `tokens.jwks.max_stale` | `PANDOKOS_TOKENS_JWKS_MAX_STALE` | duration | `6h` | Time a key set is used after its last successful fetch, then calls are answered 503 (at least twice `tokens.jwks.refresh_interval`, at most 72h) |
 | `database.address` | `PANDOKOS_DATABASE_ADDRESS` | `host:port` | none, required | Address of PostgreSQL, or of the connection pooler in front of it |
 | `database.direct_address` | `PANDOKOS_DATABASE_DIRECT_ADDRESS` | `host:port` | none | Address of PostgreSQL itself, used only by the notification listener. Set it when `database.address` is a pooler in transaction mode |
 | `database.name` | `PANDOKOS_DATABASE_NAME` | name | `pandokos` | Database name |
@@ -177,6 +186,12 @@ All problems are reported together, not only the first. Each is attached to a ke
 | `telemetry.otlp.timeout` | 1s to 60s |
 | `telemetry.traces.sample_ratio` | 0 to 1 |
 | `telemetry.resource.attributes` | at most 32 `key=value` pairs; keys `[a-z][a-z0-9._-]{0,62}`, values 1 to 256 printable ASCII bytes without `,` and `=` |
+| `tokens.max_token_bytes` | 1024 to 16384, and at most half of `listeners.inference.max_header_bytes`; `serve` refuses to start otherwise (all `tokens.*` rules are checked for `serve` and `config check --for serve`) |
+| `tokens.clock_skew` | 0 to 5m (zero allowed) |
+| `tokens.max_lifetime` | 1m to 720h |
+| `tokens.private_hosts` | at most 32 entries, each a lower-case DNS name (letters, digits, hyphens, dots; at least one letter): no address literal, no wildcard, no port; no message quotes a host name |
+| `tokens.jwks.fetch_timeout`, `tokens.jwks.refresh_interval`, `tokens.jwks.min_refetch_interval` | 1s to 30s; 1m to 1h; 1s to 5m |
+| `tokens.jwks.max_stale` | at least twice `tokens.jwks.refresh_interval`, at most 72h |
 
 ## Warnings
 
@@ -194,6 +209,8 @@ they do not prevent start.
 | `listeners.<l>.tls.cert_file` | the certificate expires in less than 14 days | the certificate expires on `<date>` |
 | `database.tls.mode` | the mode is `disable` and the host of `database.address` is not a loopback address or `localhost` | the database connection is not encrypted |
 | `vault.kek.local.key_file` | the file grants any permission to other users (mode `& 0007`) | the file can be accessed by other users; restrict it to the service user (chmod 600) |
+| `tokens.private_hosts` | the list is not empty (`serve` only) | issuer and key URLs of these hosts may resolve to private addresses: `<hosts>` |
+| `tokens.jwks.max_stale` | more than 24h | keys of an issuer are used for more than 24h after the last successful fetch: a key withdrawn by the issuer stays trusted that long while it is unreachable |
 | `environment` | an unknown `PANDOKOS_` variable | unknown variable `<NAME>` ignored (the value is never printed) |
 
 Variables starting with `PANDOKOS_SERVICE_` or `PANDOKOS_PORT` are ignored silently: Kubernetes

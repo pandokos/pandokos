@@ -832,9 +832,11 @@ func (f fixedAuth) Authenticate(context.Context, string) (authz.Principal, error
 // reasoned is an authentication failure that says why, as authn.Failure does.
 type reasoned struct{ reason, keyID, tenantID string }
 
-func (r reasoned) Error() string                    { return "failure: " + r.reason }
-func (r reasoned) Unwrap() error                    { return authz.ErrUnauthenticated }
-func (r reasoned) Detail() (string, string, string) { return r.reason, r.keyID, r.tenantID }
+func (r reasoned) Error() string { return "failure: " + r.reason }
+func (r reasoned) Unwrap() error { return authz.ErrUnauthenticated }
+func (r reasoned) Detail() struct{ Reason, KeyID, TenantID, IssuerID, IssuerScope, Subject string } {
+	return struct{ Reason, KeyID, TenantID, IssuerID, IssuerScope, Subject string }{Reason: r.reason, KeyID: r.keyID, TenantID: r.tenantID}
+}
 
 // TestAuthorization is T-267.
 func TestAuthorization(t *testing.T) {

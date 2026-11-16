@@ -64,15 +64,10 @@ with ADR 0020 amended and history lines on several earlier ADRs. See the
   records), the `gen_ai.*` attributes and token counts on spans (3.2 O-16). Sprint 6.2 builds reports
   and rollups on `usage_record`, retention by dropping partitions through an audited function,
   the decision on rows in the default partition, and reading `auth.failure` rows of both listeners
-  (`detail.listener`); the console's usage page calls `listUsageRecords`. Sprint 6.3 pseudonymizes
+  (`detail.listener`). Sprint 6.3 pseudonymizes
   `principal_id` and `key_id` through a definer function, since the table is append-only for every
   role.
-- Sprint 7.1 (platform funding): the funding mode becomes data (a check constraint widens, rating
-  columns, the billable event written with the record in the writer's transaction, the durable
-  intent row of ADR 0013); `OpenAI-Organization`, `OpenAI-Project` and the `Anthropic-*` response
-  headers that carry an organization identifier must not be passed for platform-funded calls; the
-  capability answer gains the funding mode. Rating of server tool requests (`other_units`, 3.3
-  O-12) is a rating rule of epic 7.
+- Sprint 6.4: the usage event is written with the record in the writer's transaction.
 - Epic 8: each instance has its own ledger buffer (`service.instance.id` tells spans apart); separate
   processes reload `upstream.tls.ca_file` with the listener certificates and run the partitioner;
   in sprint 8.2 the admin process keeps a guard of its own for validation and the worker for the

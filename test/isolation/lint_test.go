@@ -36,19 +36,22 @@ func TestSchemaLint(t *testing.T) {
 func TestDefaultSpecMatchesDesign(t *testing.T) {
 	want := Spec{
 		Global: map[string]GlobalTable{
-			"schema_migration":      {Reason: "describes the installation, holds no tenant information"},
-			"tenant":                {Reason: "the list of tenants; protected by its own policies", Restricted: true},
-			"virtual_key_directory": {Reason: "Key ID to tenant, for the lookup function; no runtime role has any privilege on it"},
-			"platform_key":          {Reason: "Credentials of the platform; protected by its own policies", Restricted: true},
-			"platform_audit_event":  {Reason: "Audit log of the platform; protected by its own policies", Restricted: true},
-			"kek_version":           {Reason: "identifiers of key-encryption key versions; describes the installation, holds no key and no tenant information"},
-			"provider":              {Reason: "providers of the catalogue; read by every runtime role, written in platform scope", Restricted: true},
-			"provider_endpoint":     {Reason: "endpoints of providers; read by the gateway and the admin role, written in platform scope", Restricted: true},
-			"model":                 {Reason: "models of the catalogue; read by every runtime role, written in platform scope", Restricted: true},
-			"model_tenant_grant":    {Reason: "which tenants a model is granted to; a tenant's session sees its own rows; protected by its own policies", Restricted: true},
-			"price_import":          {Reason: "runs of the price importer; platform scope only", Restricted: true},
-			"price_version":         {Reason: "price versions; read by every runtime role, inserted in platform scope", Restricted: true},
-			"price_rate":            {Reason: "rates of price versions; read by every runtime role, inserted in platform scope", Restricted: true},
+			"schema_migration":       {Reason: "describes the installation, holds no tenant information"},
+			"tenant":                 {Reason: "the list of tenants; protected by its own policies", Restricted: true},
+			"virtual_key_directory":  {Reason: "Key ID to tenant, for the lookup function; no runtime role has any privilege on it"},
+			"platform_key":           {Reason: "Credentials of the platform; protected by its own policies", Restricted: true},
+			"platform_audit_event":   {Reason: "Audit log of the platform; protected by its own policies", Restricted: true},
+			"kek_version":            {Reason: "identifiers of key-encryption key versions; describes the installation, holds no key and no tenant information"},
+			"provider":               {Reason: "providers of the catalogue; read by every runtime role, written in platform scope", Restricted: true},
+			"provider_endpoint":      {Reason: "endpoints of providers; read by the gateway and the admin role, written in platform scope", Restricted: true},
+			"model":                  {Reason: "models of the catalogue; read by every runtime role, written in platform scope", Restricted: true},
+			"model_tenant_grant":     {Reason: "which tenants a model is granted to; a tenant's session sees its own rows; protected by its own policies", Restricted: true},
+			"price_import":           {Reason: "runs of the price importer; platform scope only", Restricted: true},
+			"price_version":          {Reason: "price versions; read by every runtime role, inserted in platform scope", Restricted: true},
+			"price_rate":             {Reason: "rates of price versions; read by every runtime role, inserted in platform scope", Restricted: true},
+			"platform_issuer":        {Reason: "platform-level token issuers; read by the gateway and the admin role, written in platform scope", Restricted: true},
+			"platform_issuer_tenant": {Reason: "the tenants a platform-level token issuer may act for; a tenant's session sees its own rows, the platform scope all of them; protected by its own policies", Restricted: true},
+			"issuer_directory":       {Reason: "which registration an issuer and audience select, for the lookup function; no runtime role has any privilege on it"},
 		},
 		Grants: map[string]map[string][]string{
 			"schema_migration": {
@@ -163,7 +166,7 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 				"pandokos_worker":  {"INSERT(currency,import_id,model_id,note,source,valid_from)", "SELECT"},
 			},
 			"usage_record": {
-				"pandokos_gateway": {"INSERT(api_family,cache_read_tokens,cache_write_tokens,cost,cost_fallbacks,cost_reason,cost_status,credential_id,currency,duration_ms,endpoint,error_code,estimated_input_tokens,estimated_output_tokens,funding,id,input_source,input_tokens,key_id,metadata,metadata_dropped,model,model_id,operation,other_units,outcome,output_source,output_tokens,price_version_id,principal_id,principal_kind,provider,provider_usage,reasoning_tokens,request_bytes,request_id,response_bytes,started_at,stream,tenant_id,trace_id,ttfb_ms,upstream_model,upstream_status)"},
+				"pandokos_gateway": {"INSERT(api_family,cache_read_tokens,cache_write_tokens,cost,cost_fallbacks,cost_reason,cost_status,credential_id,currency,duration_ms,endpoint,error_code,estimated_input_tokens,estimated_output_tokens,id,input_source,input_tokens,key_id,metadata,metadata_dropped,model,model_id,operation,other_units,outcome,output_source,output_tokens,price_version_id,principal_id,principal_kind,provider,provider_usage,reasoning_tokens,request_bytes,request_id,response_bytes,started_at,stream,tenant_id,trace_id,ttfb_ms,upstream_model,upstream_status)"},
 				"pandokos_admin":   {"SELECT"},
 				"pandokos_worker":  {"SELECT"},
 			},
@@ -171,6 +174,32 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 				"pandokos_gateway": {"SELECT"},
 				"pandokos_admin":   {"INSERT(category,price_version_id,rate,threshold)", "SELECT"},
 				"pandokos_worker":  {"INSERT(category,price_version_id,rate,threshold)", "SELECT"},
+			},
+			"trusted_issuer": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin": {
+					"DELETE",
+					"INSERT(algorithms,audience,description,enabled,issuer,jwks_uri,name,required_claims,subject_claim,tenant_id)",
+					"SELECT",
+					"UPDATE(algorithms,audience,description,enabled,issuer,jwks_uri,name,required_claims,subject_claim)",
+				},
+			},
+			"platform_issuer": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin": {
+					"DELETE",
+					"INSERT(algorithms,audience,description,enabled,issuer,jwks_uri,name,required_claims,subject_claim,tenant_claim)",
+					"SELECT",
+					"UPDATE(algorithms,audience,description,enabled,issuer,jwks_uri,name,required_claims,subject_claim,tenant_claim)",
+				},
+			},
+			"platform_issuer_tenant": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin":   {"DELETE", "INSERT(claim_value,issuer_id,tenant_id)", "SELECT", "UPDATE(claim_value)"},
+			},
+			"subject_mapping": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin":   {"DELETE", "INSERT(description,platform_issuer_id,service_account_id,subject,tenant_id,trusted_issuer_id)", "SELECT"},
 			},
 		},
 		Fixtures: map[string]Fixture{
@@ -210,21 +239,38 @@ VALUES ($1::uuid, 'platform', 'test.fixture', 'test', 'success') RETURNING id::t
 				Update: `reason = 'changed'`,
 			},
 			"usage_record": {
-				Insert: `INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind, principal_id, funding,
+				Insert: `INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind, principal_id,
                                    provider, api_family, operation, outcome, duration_ms, input_source,
                                    output_source, cost_status)
-VALUES ($1, pandokos.uuid_v7(), now(), md5(random()::text), 'service_account', gen_random_uuid()::text, 'byok',
+VALUES ($1, pandokos.uuid_v7(), now(), md5(random()::text), 'service_account', gen_random_uuid()::text,
         'openai', 'openai', 'chat.completions', 'ok', 1, 'none', 'none', 'none') RETURNING id::text`,
 				Update: `model = 'changed'`,
+			},
+			"trusted_issuer": {
+				Insert: `INSERT INTO pandokos.trusted_issuer (tenant_id, name, issuer, audience)
+VALUES ($1::uuid, 'ti-' || substr(md5(random()::text), 1, 12),
+        'https://' || substr(md5(random()::text), 1, 16) || '.example.test', 'aud-' || $1::uuid::text) RETURNING id::text`,
+				Update: `description = 'changed'`,
+			},
+			"subject_mapping": {
+				Insert: `WITH sa AS (INSERT INTO pandokos.service_account (tenant_id, name)
+            VALUES ($1::uuid, 'sa-' || substr(md5(random()::text), 1, 12)) RETURNING id),
+     ti AS (INSERT INTO pandokos.trusted_issuer (tenant_id, name, issuer, audience)
+            VALUES ($1::uuid, 'ti-' || substr(md5(random()::text), 1, 12),
+                    'https://' || substr(md5(random()::text), 1, 16) || '.example.test', 'aud-' || $1::uuid::text) RETURNING id)
+INSERT INTO pandokos.subject_mapping (tenant_id, trusted_issuer_id, subject, service_account_id)
+SELECT $1::uuid, ti.id, 'sub-' || substr(md5(random()::text), 1, 12), sa.id FROM sa, ti RETURNING id::text`,
+				Update: `subject = 'changed'`,
 			},
 			"tenant_model_restriction": {
 				Insert: `INSERT INTO pandokos.tenant_model_restriction (tenant_id, models) VALUES ($1::uuid, ARRAY['openai/gpt-4o']) RETURNING id::text`,
 				Update: `models = ARRAY['openai/gpt-4o-mini']`,
 			},
 		},
-		SecurityDefiner: []string{"virtual_key_lookup", "virtual_key_directory_add", "record_auth_failure", "ensure_usage_partitions"},
-		Views:           []string{"provider_credential_metadata"},
-		AppendOnly:      []string{"audit_event", "platform_audit_event", "price_import", "usage_record"},
+		SecurityDefiner: []string{"virtual_key_lookup", "virtual_key_directory_add", "record_auth_failure", "ensure_usage_partitions",
+			"issuer_lookup", "platform_issuer_tenant_lookup", "record_token_auth_failure", "issuer_directory_sync", "platform_issuer_mapping_count"},
+		Views:      []string{"provider_credential_metadata"},
+		AppendOnly: []string{"audit_event", "platform_audit_event", "price_import", "usage_record"},
 	}
 	got := DefaultSpec()
 	if !reflect.DeepEqual(got, want) {

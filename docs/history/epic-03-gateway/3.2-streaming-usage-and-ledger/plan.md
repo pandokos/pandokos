@@ -161,14 +161,14 @@ event *n+1* until the test has read event *n*).
 
 ### B2. Isolation
 
-`test/isolation/spec.go`: `Grants["usage_record"]` = gateway `INSERT(<the 44 columns of the
+`test/isolation/spec.go`: `Grants["usage_record"]` = gateway `INSERT(<the 43 columns of the
 grant of appendix A, sorted>)`, admin `SELECT`, worker `SELECT`; `Fixtures["usage_record"]` =
 
 ```sql
-INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind, principal_id, funding,
+INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind, principal_id,
                                    provider, api_family, operation, outcome, duration_ms, input_source,
                                    output_source, cost_status)
-VALUES ($1, pandokos.uuid_v7(), now(), md5(random()::text), 'service_account', gen_random_uuid()::text, 'byok',
+VALUES ($1, pandokos.uuid_v7(), now(), md5(random()::text), 'service_account', gen_random_uuid()::text,
         'openai', 'openai', 'chat.completions', 'ok', 1, 'none', 'none', 'none') RETURNING id::text
 ```
 
@@ -602,8 +602,8 @@ the test names that ran.
 
 ## What the implementer does not do
 
-- No route, CLI command or console page that reads usage; no `usage:read` permission.
-- No retention, no function that drops or detaches partitions, no `usage_correction`.
+- No route or CLI command that reads usage; no `usage:read` permission.
+- No retention, no function that drops or detaches partitions.
 - No metric, no `gen_ai.*` attribute, no token count on a span, no gRPC exporter, no global
   tracer provider.
 - No tokenizer, no parsing of prompt or completion text, no change to the chat reader's
@@ -635,7 +635,6 @@ CREATE TABLE pandokos.usage_record (
     principal_id            text        NOT NULL,
     key_id                  text        NOT NULL DEFAULT '',
     credential_id           uuid,
-    funding                 text        NOT NULL,
     provider                text        NOT NULL,
     api_family              text        NOT NULL,
     operation               text        NOT NULL,
@@ -677,7 +676,6 @@ CREATE TABLE pandokos.usage_record (
     CONSTRAINT usage_record_principal_kind_valid CHECK (principal_kind IN ('service_account')),
     CONSTRAINT usage_record_principal_id_format CHECK (principal_id ~ '^[0-9a-f-]{36}$'),
     CONSTRAINT usage_record_key_id_format CHECK (key_id ~ '^[A-Za-z0-9_-]{0,64}$'),
-    CONSTRAINT usage_record_funding_valid CHECK (funding IN ('byok')),
     CONSTRAINT usage_record_provider_format CHECK (provider ~ '^[a-z0-9-]{1,63}$'),
     CONSTRAINT usage_record_api_family_format CHECK (api_family ~ '^[a-z0-9-]{1,63}$'),
     CONSTRAINT usage_record_operation_format CHECK (operation ~ '^[a-z0-9._-]{1,63}$'),
@@ -742,7 +740,7 @@ CREATE POLICY tenant_isolation ON pandokos.usage_record
 
 -- The gateway appends and reads nothing. The admin and worker roles read; nobody changes a row.
 GRANT INSERT (tenant_id, id, started_at, request_id, trace_id, principal_kind, principal_id, key_id, credential_id,
-              funding, provider, api_family, operation, endpoint, model, model_id, upstream_model, stream, outcome,
+              provider, api_family, operation, endpoint, model, model_id, upstream_model, stream, outcome,
               error_code, upstream_status, ttfb_ms, duration_ms, request_bytes, response_bytes, input_source,
               output_source, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
               other_units, provider_usage, estimated_input_tokens, estimated_output_tokens, cost_status, cost_reason,
@@ -834,7 +832,7 @@ SELECT pandokos.ensure_usage_partitions(3);
 
 -- name: InsertUsageRecords :execrows
 INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, trace_id, principal_kind, principal_id, key_id,
-                                   credential_id, funding, provider, api_family, operation, endpoint, model, model_id,
+                                   credential_id, provider, api_family, operation, endpoint, model, model_id,
                                    upstream_model, stream, outcome, error_code, upstream_status, ttfb_ms, duration_ms,
                                    request_bytes, response_bytes, input_source, output_source, input_tokens,
                                    output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, other_units,
@@ -842,7 +840,7 @@ INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, trace_
                                    cost_reason, cost, currency, price_version_id, cost_fallbacks, metadata,
                                    metadata_dropped)
 SELECT pandokos.current_tenant_id(), r.id, r.started_at, r.request_id, r.trace_id, r.principal_kind, r.principal_id,
-       r.key_id, r.credential_id, r.funding, r.provider, r.api_family, r.operation, r.endpoint, r.model, r.model_id,
+       r.key_id, r.credential_id, r.provider, r.api_family, r.operation, r.endpoint, r.model, r.model_id,
        r.upstream_model, r.stream, r.outcome, r.error_code, r.upstream_status, r.ttfb_ms, r.duration_ms,
        r.request_bytes, r.response_bytes, r.input_source, r.output_source, r.input_tokens, r.output_tokens,
        r.cache_read_tokens, r.cache_write_tokens, r.reasoning_tokens, r.other_units, r.provider_usage,
@@ -850,7 +848,7 @@ SELECT pandokos.current_tenant_id(), r.id, r.started_at, r.request_id, r.trace_i
        r.price_version_id, COALESCE(r.cost_fallbacks, '{}'::text[]), r.metadata, r.metadata_dropped
   FROM jsonb_to_recordset(sqlc.arg(records)::text::jsonb) AS r(
        id uuid, started_at timestamptz, request_id text, trace_id text, principal_kind text, principal_id text,
-       key_id text, credential_id uuid, funding text, provider text, api_family text, operation text, endpoint text,
+       key_id text, credential_id uuid, provider text, api_family text, operation text, endpoint text,
        model text, model_id uuid, upstream_model text, stream boolean, outcome text, error_code text,
        upstream_status integer, ttfb_ms bigint, duration_ms bigint, request_bytes bigint, response_bytes bigint,
        input_source text, output_source text, input_tokens bigint, output_tokens bigint, cache_read_tokens bigint,

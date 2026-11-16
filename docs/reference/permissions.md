@@ -34,6 +34,15 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | `model:read` | tenant | Listing the models available to the tenant, with their prices; reading the tenant's model restriction; the capability check |
 | `model:restrict` | tenant | Setting and clearing the tenant's model restriction |
 | `usage:read` | tenant | Listing the tenant's usage records |
+| `token_issuer:read` | tenant | Reading and listing the tenant's trusted token issuers, and the platform-level issuers that list the tenant |
+| `token_issuer:write` | tenant | Registering a trusted token issuer; changing, disabling and enabling it |
+| `token_issuer:delete` | tenant | Deleting a trusted token issuer together with its subject mappings |
+| `subject_mapping:read` | tenant | Reading and listing the tenant's subject mappings |
+| `subject_mapping:write` | tenant | Mapping a subject of a token issuer to a service account of the tenant. This is as sensitive as `virtual_key:write`: the mapping gives an external identity the roles of the service account |
+| `subject_mapping:delete` | tenant | Deleting a subject mapping |
+| `platform_issuer:read` | platform | Reading and listing platform-level token issuers and their tenant lists |
+| `platform_issuer:write` | platform | Registering, changing, disabling and enabling a platform-level token issuer; adding and removing the tenants it may act for |
+| `platform_issuer:delete` | platform | Deleting a platform-level token issuer with its tenant list and the subject mappings that name it |
 
 Scope *platform*: held by platform principals only. Scope *tenant*: held by principals of that
 tenant only, and checked against the tenant of the request. Scope *self*: the caller itself.
@@ -44,8 +53,8 @@ Roles are defined in code and cannot be changed; `role_assignment.role` holds a 
 
 | Role | Held by | Permissions |
 |---|---|---|
-| `platform-admin` | platform principals | `catalog:price`, `catalog:read`, `catalog:write`, `identity:read`, `platform_key:read`, `platform_key:revoke`, `platform_key:write`, `tenant:read`, `tenant:suspend`, `tenant:write`, `tenant_credential:read`, `tenant_credential:revoke` |
-| `tenant-admin` | service accounts | `credential:delete`, `credential:read`, `credential:rotate`, `credential:use`, `credential:write`, `identity:read`, `model:invoke`, `model:read`, `model:restrict`, `service_account:read`, `service_account:write`, `usage:read`, `virtual_key:read`, `virtual_key:revoke`, `virtual_key:write` |
+| `platform-admin` | platform principals | `catalog:price`, `catalog:read`, `catalog:write`, `identity:read`, `platform_issuer:delete`, `platform_issuer:read`, `platform_issuer:write`, `platform_key:read`, `platform_key:revoke`, `platform_key:write`, `tenant:read`, `tenant:suspend`, `tenant:write`, `tenant_credential:read`, `tenant_credential:revoke` |
+| `tenant-admin` | service accounts | `credential:delete`, `credential:read`, `credential:rotate`, `credential:use`, `credential:write`, `identity:read`, `model:invoke`, `model:read`, `model:restrict`, `service_account:read`, `service_account:write`, `subject_mapping:delete`, `subject_mapping:read`, `subject_mapping:write`, `token_issuer:delete`, `token_issuer:read`, `token_issuer:write`, `usage:read`, `virtual_key:read`, `virtual_key:revoke`, `virtual_key:write` |
 | `inference` | service accounts | `credential:use`, `model:invoke` |
 
 ## Decision
@@ -73,3 +82,11 @@ is refused with `forbidden` (see the [gateway guide](../operations/gateway.md)).
 Issuing a virtual key with a model list (`models`) needs only `virtual_key:write`. The catalogue is
 administered by platform principals only; a tenant sees the models available to it with `model:read`
 and narrows itself with `model:restrict`, and neither lets it read or change another tenant's grants.
+
+Token issuers follow the same split. A tenant administrator registers issuers for its own tenant and
+maps their subjects to its own service accounts, and nothing else: an issuer, a mapping or a service
+account of another tenant, and a platform-level issuer that does not list the tenant, are
+indistinguishable from one that does not exist. Platform-level issuers, which let one issuer act for
+several tenants, are administered by platform principals only, and a platform principal holds no
+`subject_mapping:*` permission: the tenant decides which of its service accounts a token subject may
+act as.

@@ -25,6 +25,9 @@ tags:
   - name: model-access
   - name: platform-keys
   - name: usage
+  - name: token-issuers
+  - name: subject-mappings
+  - name: platform-issuers
 paths:
   /v1/me:
     get:
@@ -1394,6 +1397,358 @@ paths:
         "404": {$ref: '#/components/responses/NotFound'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/token-issuers:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: listTokenIssuers
+      tags: [token-issuers]
+      summary: List the trusted token issuers of a tenant
+      x-pandokos-permission: token_issuer:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/NamedSort'}
+        - {name: name, in: query, description: Only the registration with exactly this name., schema: {$ref: '#/components/schemas/Name'}}
+        - {name: enabled, in: query, description: Only registrations that are enabled (true) or disabled (false)., schema: {$ref: '#/components/schemas/EnabledFilter'}}
+      responses:
+        "200": {$ref: '#/components/responses/TokenIssuerList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: createTokenIssuer
+      tags: [token-issuers]
+      summary: Register a trusted token issuer
+      description: >-
+        Tokens of the issuer that carry the audience are accepted for this tenant. The pair of issuer and audience
+        is unique in the installation; a pair already taken is a conflict.
+      x-pandokos-permission: token_issuer:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TokenIssuerCreate'}
+      responses:
+        "201": {$ref: '#/components/responses/TokenIssuerCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/token-issuers/{issuer}:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/TokenIssuer'}
+    get:
+      operationId: getTokenIssuer
+      tags: [token-issuers]
+      summary: Read a trusted token issuer
+      x-pandokos-permission: token_issuer:read
+      responses:
+        "200": {$ref: '#/components/responses/TokenIssuer'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    patch:
+      operationId: updateTokenIssuer
+      tags: [token-issuers]
+      summary: Change, disable or enable a trusted token issuer
+      description: >-
+        Members that are absent are left as they are. required_claims and algorithms replace the whole value.
+      x-pandokos-permission: token_issuer:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TokenIssuerUpdate'}
+      responses:
+        "200": {$ref: '#/components/responses/TokenIssuer'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    delete:
+      operationId: deleteTokenIssuer
+      tags: [token-issuers]
+      summary: Delete a trusted token issuer with its subject mappings
+      description: >-
+        The response is the registration as it was.
+      x-pandokos-permission: token_issuer:delete
+      responses:
+        "200": {$ref: '#/components/responses/TokenIssuer'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/platform-issuers:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: listTenantPlatformIssuers
+      tags: [token-issuers]
+      summary: List the platform-level token issuers that list the tenant
+      x-pandokos-permission: token_issuer:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/Sort'}
+      responses:
+        "200": {$ref: '#/components/responses/TenantPlatformIssuerList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/subject-mappings:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: listSubjectMappings
+      tags: [subject-mappings]
+      summary: List the subject mappings of a tenant
+      x-pandokos-permission: subject_mapping:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/Sort'}
+        - {name: issuer, in: query, description: Only the mappings of the registration with this ID., schema: {$ref: '#/components/schemas/ID'}}
+        - {name: service_account, in: query, description: Only the mappings to the service account with this ID., schema: {$ref: '#/components/schemas/ID'}}
+        - {name: subject, in: query, description: Only the mappings of exactly this subject., schema: {type: string, minLength: 1, maxLength: 255}}
+      responses:
+        "200": {$ref: '#/components/responses/SubjectMappingList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: createSubjectMapping
+      tags: [subject-mappings]
+      summary: Let a token subject act as a service account
+      description: >-
+        The subject acts with all the roles of the service account. A platform-level registration that does not list the tenant is not found.
+      x-pandokos-permission: subject_mapping:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SubjectMappingCreate'}
+      responses:
+        "201": {$ref: '#/components/responses/SubjectMappingCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/subject-mappings/{mapping}:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/SubjectMapping'}
+    get:
+      operationId: getSubjectMapping
+      tags: [subject-mappings]
+      summary: Read a subject mapping
+      x-pandokos-permission: subject_mapping:read
+      responses:
+        "200": {$ref: '#/components/responses/SubjectMapping'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    delete:
+      operationId: deleteSubjectMapping
+      tags: [subject-mappings]
+      summary: Delete a subject mapping
+      description: >-
+        The response is the mapping as it was.
+      x-pandokos-permission: subject_mapping:delete
+      responses:
+        "200": {$ref: '#/components/responses/SubjectMapping'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/platform-issuers:
+    parameters:
+    get:
+      operationId: listPlatformIssuers
+      tags: [platform-issuers]
+      summary: List the platform-level token issuers
+      x-pandokos-permission: platform_issuer:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/NamedSort'}
+        - {name: name, in: query, description: Only the registration with exactly this name., schema: {$ref: '#/components/schemas/Name'}}
+        - {name: enabled, in: query, description: Only registrations that are enabled (true) or disabled (false)., schema: {$ref: '#/components/schemas/EnabledFilter'}}
+      responses:
+        "200": {$ref: '#/components/responses/PlatformIssuerList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: createPlatformIssuer
+      tags: [platform-issuers]
+      summary: Register a platform-level token issuer
+      description: >-
+        The tenant of a token is read from the claim named by tenant_claim and must be in the tenant list of the registration.
+      x-pandokos-permission: platform_issuer:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PlatformIssuerCreate'}
+      responses:
+        "201": {$ref: '#/components/responses/PlatformIssuerCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/platform-issuers/{issuer}:
+    parameters:
+      - {$ref: '#/components/parameters/PlatformIssuer'}
+    get:
+      operationId: getPlatformIssuer
+      tags: [platform-issuers]
+      summary: Read a platform-level token issuer
+      x-pandokos-permission: platform_issuer:read
+      responses:
+        "200": {$ref: '#/components/responses/PlatformIssuer'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    patch:
+      operationId: updatePlatformIssuer
+      tags: [platform-issuers]
+      summary: Change, disable or enable a platform-level token issuer
+      description: >-
+        Members that are absent are left as they are. required_claims and algorithms replace the whole value.
+      x-pandokos-permission: platform_issuer:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PlatformIssuerUpdate'}
+      responses:
+        "200": {$ref: '#/components/responses/PlatformIssuer'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    delete:
+      operationId: deletePlatformIssuer
+      tags: [platform-issuers]
+      summary: Delete a platform-level token issuer with its tenant list and subject mappings
+      description: >-
+        The response is the registration as it was.
+      x-pandokos-permission: platform_issuer:delete
+      responses:
+        "200": {$ref: '#/components/responses/PlatformIssuer'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/platform-issuers/{issuer}/tenants:
+    parameters:
+      - {$ref: '#/components/parameters/PlatformIssuer'}
+    get:
+      operationId: listPlatformIssuerTenants
+      tags: [platform-issuers]
+      summary: List the tenants of a platform-level token issuer
+      x-pandokos-permission: platform_issuer:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/Sort'}
+      responses:
+        "200": {$ref: '#/components/responses/PlatformIssuerTenantList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/platform-issuers/{issuer}/tenants/{tenant}:
+    parameters:
+      - {$ref: '#/components/parameters/PlatformIssuer'}
+      - {$ref: '#/components/parameters/Tenant'}
+    put:
+      operationId: putPlatformIssuerTenant
+      tags: [platform-issuers]
+      summary: Add a tenant to a platform-level token issuer, or change its claim value
+      description: >-
+        Idempotent. The claim value defaults to the tenant ID.
+      x-pandokos-permission: platform_issuer:write
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PlatformIssuerTenantPut'}
+      responses:
+        "200": {$ref: '#/components/responses/PlatformIssuerTenant'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    delete:
+      operationId: deletePlatformIssuerTenant
+      tags: [platform-issuers]
+      summary: Remove a tenant from a platform-level token issuer
+      description: >-
+        The response is the entry as it was.
+      x-pandokos-permission: platform_issuer:write
+      responses:
+        "200": {$ref: '#/components/responses/PlatformIssuerTenant'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
 components:
   securitySchemes:
     key:
@@ -1460,6 +1815,24 @@ components:
       in: path
       required: true
       description: Price import ID.
+      schema: {$ref: '#/components/schemas/ID'}
+    TokenIssuer:
+      name: issuer
+      in: path
+      required: true
+      description: ID of a trusted token issuer.
+      schema: {$ref: '#/components/schemas/ID'}
+    SubjectMapping:
+      name: mapping
+      in: path
+      required: true
+      description: ID of a subject mapping.
+      schema: {$ref: '#/components/schemas/ID'}
+    PlatformIssuer:
+      name: issuer
+      in: path
+      required: true
+      description: ID of a platform-level token issuer.
       schema: {$ref: '#/components/schemas/ID'}
     Limit:
       name: limit
@@ -1733,6 +2106,66 @@ components:
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
+    TokenIssuer:
+      description: The trusted token issuer.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/TokenIssuer'}
+    TokenIssuerCreated:
+      description: The new trusted token issuer.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/TokenIssuer'}
+    TokenIssuerList:
+      description: One page of trusted token issuers.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/TokenIssuerList'}
+    TenantPlatformIssuerList:
+      description: One page of platform-level token issuers that list the tenant.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/TenantPlatformIssuerList'}
+    SubjectMapping:
+      description: The subject mapping.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SubjectMapping'}
+    SubjectMappingCreated:
+      description: The new subject mapping.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SubjectMapping'}
+    SubjectMappingList:
+      description: One page of subject mappings.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SubjectMappingList'}
+    PlatformIssuer:
+      description: The platform-level token issuer.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PlatformIssuer'}
+    PlatformIssuerCreated:
+      description: The new platform-level token issuer.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PlatformIssuer'}
+    PlatformIssuerList:
+      description: One page of platform-level token issuers.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PlatformIssuerList'}
+    PlatformIssuerTenant:
+      description: The entry of the tenant list.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PlatformIssuerTenant'}
+    PlatformIssuerTenantList:
+      description: One page of the tenant list.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PlatformIssuerTenantList'}
   schemas:
     ApiFamily:
       type: string
@@ -1821,7 +2254,7 @@ components:
       type: object
       additionalProperties: false
       required: [id, request_id, trace_id, started_at, duration_ms, principal_kind, principal_id, key_id, credential_id,
-                 funding, provider, api_family, operation, endpoint, model, model_id, upstream_model, stream, outcome,
+                 provider, api_family, operation, endpoint, model, model_id, upstream_model, stream, outcome,
                  error_code, upstream_status, ttfb_ms, request_bytes, response_bytes, input_source, output_source,
                  input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
                  estimated_input_tokens, estimated_output_tokens, other_units, provider_usage, cost_status, cost_reason,
@@ -1836,7 +2269,6 @@ components:
         principal_id: {type: string}
         key_id: {type: string}
         credential_id: {type: string, description: Empty when no credential was opened.}
-        funding: {type: string}
         provider: {type: string}
         api_family: {type: string}
         operation: {type: string}
@@ -2591,4 +3023,268 @@ components:
         items:
           type: array
           items: {$ref: '#/components/schemas/PlatformKey'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    TokenAlgorithm:
+      type: string
+      description: One of RS256, RS384, RS512, PS256, PS384, PS512, ES256, ES384, ES512, EdDSA.
+      pattern: '^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$'
+    ClaimName:
+      type: string
+      description: A top-level member of the token's payload.
+      pattern: '^[A-Za-z0-9_.:/-]{1,64}$'
+    IssuerURL:
+      type: string
+      description: >-
+        An https URL without query, fragment or user information, at most 255 bytes. Compared byte
+        for byte with the iss claim.
+      maxLength: 255
+      pattern: '^https://[^\s?#@]+$'
+    EnabledFilter:
+      type: string
+      description: A filter on the enabled flag.
+      enum: [true, false]
+    IssuerScope:
+      type: string
+      description: tenant for a registration of the tenant, platform for a platform-level one.
+      enum: [tenant, platform]
+    TokenIssuer:
+      type: object
+      additionalProperties: false
+      required: [id, tenant_id, name, description, issuer, audience, jwks_uri, algorithms, subject_claim,
+                 required_claims, enabled, created_at, updated_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        tenant_id: {$ref: '#/components/schemas/ID'}
+        name: {$ref: '#/components/schemas/Name'}
+        description: {type: string, maxLength: 200}
+        issuer: {$ref: '#/components/schemas/IssuerURL'}
+        audience:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: >-
+            The value that must be among the token's aud entries. The pair of issuer and audience
+            is unique in the installation.
+        jwks_uri:
+          type: string
+          maxLength: 2048
+          description: Empty for OpenID Connect discovery under the issuer; otherwise an https URL.
+        algorithms:
+          type: array
+          minItems: 1
+          maxItems: 10
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/TokenAlgorithm'}
+        subject_claim: {$ref: '#/components/schemas/ClaimName'}
+        required_claims:
+          type: object
+          maxProperties: 16
+          description: Claim name to the string the claim must equal, or contain when it is an array of strings.
+          additionalProperties: {type: string, minLength: 1, maxLength: 255}
+        enabled: {type: boolean}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    TokenIssuerCreate:
+      type: object
+      additionalProperties: false
+      required: [name, issuer, audience]
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        description: {type: string, maxLength: 200}
+        issuer: {$ref: '#/components/schemas/IssuerURL'}
+        audience: {type: string, minLength: 1, maxLength: 255}
+        jwks_uri: {type: string, maxLength: 2048}
+        algorithms: {type: array, minItems: 1, maxItems: 10, uniqueItems: true, items: {$ref: '#/components/schemas/TokenAlgorithm'}}
+        subject_claim: {$ref: '#/components/schemas/ClaimName', x-pandokos-not-empty: true}
+        required_claims: {type: object, maxProperties: 16, additionalProperties: {type: string, minLength: 1, maxLength: 255}}
+        enabled: {type: boolean, default: true, description: A disabled registration refuses every token. Omitted means true.}
+    TokenIssuerUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        description: {type: string, maxLength: 200}
+        issuer: {$ref: '#/components/schemas/IssuerURL'}
+        audience: {type: string, minLength: 1, maxLength: 255}
+        jwks_uri: {type: string, maxLength: 2048}
+        algorithms: {type: array, minItems: 1, maxItems: 10, uniqueItems: true, items: {$ref: '#/components/schemas/TokenAlgorithm'}}
+        subject_claim: {$ref: '#/components/schemas/ClaimName'}
+        required_claims: {type: object, maxProperties: 16, additionalProperties: {type: string, minLength: 1, maxLength: 255}}
+        enabled: {type: boolean}
+    PlatformIssuer:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, issuer, audience, jwks_uri, algorithms, subject_claim, tenant_claim,
+                 required_claims, tenant_count, enabled, created_at, updated_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        name: {$ref: '#/components/schemas/Name'}
+        description: {type: string, maxLength: 200}
+        issuer: {$ref: '#/components/schemas/IssuerURL'}
+        audience:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: >-
+            The value that must be among the token's aud entries. The pair of issuer and audience
+            is unique in the installation.
+        jwks_uri:
+          type: string
+          maxLength: 2048
+          description: Empty for OpenID Connect discovery under the issuer; otherwise an https URL.
+        algorithms:
+          type: array
+          minItems: 1
+          maxItems: 10
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/TokenAlgorithm'}
+        subject_claim: {$ref: '#/components/schemas/ClaimName'}
+        tenant_claim: {$ref: '#/components/schemas/ClaimName'}
+        required_claims:
+          type: object
+          maxProperties: 16
+          description: Claim name to the string the claim must equal, or contain when it is an array of strings.
+          additionalProperties: {type: string, minLength: 1, maxLength: 255}
+        tenant_count: {type: integer, minimum: 0, description: Number of tenants in the list.}
+        enabled: {type: boolean}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    PlatformIssuerCreate:
+      type: object
+      additionalProperties: false
+      required: [name, issuer, audience, tenant_claim]
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        description: {type: string, maxLength: 200}
+        issuer: {$ref: '#/components/schemas/IssuerURL'}
+        audience: {type: string, minLength: 1, maxLength: 255}
+        jwks_uri: {type: string, maxLength: 2048}
+        algorithms: {type: array, minItems: 1, maxItems: 10, uniqueItems: true, items: {$ref: '#/components/schemas/TokenAlgorithm'}}
+        subject_claim: {$ref: '#/components/schemas/ClaimName', x-pandokos-not-empty: true}
+        tenant_claim: {$ref: '#/components/schemas/ClaimName'}
+        required_claims: {type: object, maxProperties: 16, additionalProperties: {type: string, minLength: 1, maxLength: 255}}
+        enabled: {type: boolean, default: true, description: A disabled registration refuses every token. Omitted means true.}
+    PlatformIssuerUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        description: {type: string, maxLength: 200}
+        issuer: {$ref: '#/components/schemas/IssuerURL'}
+        audience: {type: string, minLength: 1, maxLength: 255}
+        jwks_uri: {type: string, maxLength: 2048}
+        algorithms: {type: array, minItems: 1, maxItems: 10, uniqueItems: true, items: {$ref: '#/components/schemas/TokenAlgorithm'}}
+        subject_claim: {$ref: '#/components/schemas/ClaimName'}
+        tenant_claim: {$ref: '#/components/schemas/ClaimName'}
+        required_claims: {type: object, maxProperties: 16, additionalProperties: {type: string, minLength: 1, maxLength: 255}}
+        enabled: {type: boolean}
+    PlatformIssuerTenant:
+      type: object
+      additionalProperties: false
+      required: [issuer_id, tenant_id, tenant_name, claim_value, created_at]
+      properties:
+        issuer_id: {$ref: '#/components/schemas/ID'}
+        tenant_id: {$ref: '#/components/schemas/ID'}
+        tenant_name: {$ref: '#/components/schemas/Name'}
+        claim_value: {type: string, minLength: 1, maxLength: 255}
+        created_at: {type: string, format: date-time}
+    PlatformIssuerTenantPut:
+      type: object
+      additionalProperties: false
+      properties:
+        claim_value:
+          type: string
+          minLength: 1
+          maxLength: 255
+          x-pandokos-not-empty: true
+          description: The value of the tenant claim that designates this tenant. Default, the tenant ID.
+    TenantPlatformIssuer:
+      type: object
+      additionalProperties: false
+      description: What a tenant sees of a platform-level registration that lists it.
+      required: [id, name, description, issuer, audience, subject_claim, tenant_claim, claim_value, enabled]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        name: {$ref: '#/components/schemas/Name'}
+        description: {type: string}
+        issuer: {$ref: '#/components/schemas/IssuerURL'}
+        audience: {type: string}
+        subject_claim: {$ref: '#/components/schemas/ClaimName'}
+        tenant_claim: {$ref: '#/components/schemas/ClaimName'}
+        claim_value: {type: string, description: The claim value that designates this tenant.}
+        enabled: {type: boolean}
+    IssuerRef:
+      type: object
+      additionalProperties: false
+      required: [scope, id]
+      properties:
+        scope: {$ref: '#/components/schemas/IssuerScope'}
+        id: {$ref: '#/components/schemas/ID'}
+        name: {$ref: '#/components/schemas/Name', description: In responses only; ignored in requests.}
+    SubjectMapping:
+      type: object
+      additionalProperties: false
+      required: [id, tenant_id, issuer, subject, service_account_id, service_account_name, description, created_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        tenant_id: {$ref: '#/components/schemas/ID'}
+        issuer: {$ref: '#/components/schemas/IssuerRef'}
+        subject: {type: string, minLength: 1, maxLength: 255}
+        service_account_id: {$ref: '#/components/schemas/ID'}
+        service_account_name: {$ref: '#/components/schemas/Name'}
+        description: {type: string, maxLength: 200}
+        created_at: {type: string, format: date-time}
+    SubjectMappingCreate:
+      type: object
+      additionalProperties: false
+      required: [issuer, subject, service_account_id]
+      properties:
+        issuer: {$ref: '#/components/schemas/IssuerRef'}
+        subject: {type: string, minLength: 1, maxLength: 255}
+        service_account_id: {$ref: '#/components/schemas/ID'}
+        description: {type: string, maxLength: 200}
+    TokenIssuerList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/TokenIssuer'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    TenantPlatformIssuerList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/TenantPlatformIssuer'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    SubjectMappingList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/SubjectMapping'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    PlatformIssuerList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/PlatformIssuer'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    PlatformIssuerTenantList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/PlatformIssuerTenant'}
         next_cursor: {type: string, description: Absent on the last page.}

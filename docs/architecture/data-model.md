@@ -27,15 +27,17 @@ erDiagram
     TENANT ||--o{ USAGE_RECORD : produces
     TENANT ||--o{ AUDIT_EVENT : records
     TENANT ||--o{ TRUSTED_ISSUER : registers
+    TRUSTED_ISSUER ||--o{ SUBJECT_MAPPING : maps
+    SERVICE_ACCOUNT ||--o{ SUBJECT_MAPPING : acts_as
 ```
 
 | Group | Tables | Scope |
 |---|---|---|
-| Platform | `tenant`, `platform_key`, `virtual_key_directory` (no grant to any runtime role), `platform_role_assignment`, `provider`, `provider_endpoint`, `model`, `model_tenant_grant`, `price_version`, `price_rate`, `price_import`, `rating_rule`, `platform_credential`, `platform_issuer`, `kek_version` | global |
-| Identity | `app_user`, `local_account`, `console_session`, `membership`, `service_account`, `virtual_key`, `trusted_issuer`, `subject_mapping`, `role`, `role_permission`, `role_assignment` | tenant (`app_user`, `local_account` and `console_session` are global, memberships are tenant-scoped) |
+| Platform | `tenant`, `platform_key`, `virtual_key_directory` (no grant to any runtime role), `platform_role_assignment`, `provider`, `provider_endpoint`, `model`, `model_tenant_grant`, `price_version`, `price_rate`, `price_import`, `platform_issuer`, `platform_issuer_tenant` (a tenant's session sees its own rows), `issuer_directory` (no grant to any runtime role), `kek_version` | global |
+| Identity | `app_user`, `local_account`, `user_session`, `membership`, `service_account`, `virtual_key`, `trusted_issuer`, `subject_mapping`, `role`, `role_permission`, `role_assignment` | tenant (`app_user`, `local_account` and `user_session` are global, memberships are tenant-scoped) |
 | Vault | `tenant_data_key`, `provider_credential` | tenant |
-| Policy | `tenant_model_restriction`, `funding_mode`, `limit_rule` | tenant |
-| Records | `usage_record`, `usage_correction`, `audit_event`, `platform_audit_event` | tenant, except the platform audit |
+| Policy | `tenant_model_restriction`, `limit_rule` | tenant |
+| Records | `usage_record`, `audit_event`, `platform_audit_event` | tenant, except the platform audit |
 | Delivery | `outbox_event`, `outbox_delivery` | tenant |
 
 ## The catalogue (sprint 2.2)
@@ -145,17 +147,47 @@ sign in is either a federated identity (issuer and subject) or a `local_account`
 password hash with its parameters, a must-change flag, failure counters. A user has one sign-in
 method.
 
-`console_session` holds one row per open session: the hash of the session token, the user, the
+`user_session` holds one row per open session: the hash of the session token, the user, the
 creation and last-use times, and the sign-in method. The token itself exists only in the browser's
 cookie.
 
 These three tables are readable and writable by the admin database role only. The gateway role
 has no grant on them: the data plane cannot see passwords or sessions, which is what makes
-"a console session never authenticates inference" a property of the database and not only of the
+"a session never authenticates inference" a property of the database and not only of the
 code.
 
 What a user may do in a tenant is still in `membership` and `role_assignment`, under row-level
 security like every other tenant table.
+
+## Trusted issuers, the directory and subject mappings (sprint 4.1)
+
+A registration of a token issuer is a row of `trusted_issuer` (tenant-scoped, canonical policy) or of
+`platform_issuer` (global, with a list of tenants in `platform_issuer_tenant`). A **subject mapping**
+(`subject_mapping`, tenant-scoped) names one registration of either kind, one subject and one service
+account of the tenant; it never changes and is deleted with its registration (cascade).
+[ADR 0045](../adr/0045-trusted-token-issuers.md) gives the reasons.
+
+- **Why two tables.** A tenant's registration is tenant data; a platform-level one describes tenants and
+  belongs to no one. Keeping them apart lets forced row-level security hold for the first without an
+  exception, and keeps the second writable in platform scope only. `platform_issuer_tenant` maps the
+  claim value that designates a tenant to that tenant; the value defaults to the tenant's ID and is
+  unique in the registration; there is no wildcard row.
+- **The directory.** `issuer_directory` has one row per registration, kept by triggers, with the
+  primary key (`issuer`, `audience`): the pair is unique in the whole installation, over both kinds, and
+  a token selects its registration by that pair. No runtime role can read or write it; the gateway
+  reaches it only through `issuer_lookup`, a definer function that takes an issuer and up to 16 exact
+  audiences and returns the matching rows. This is the one path from a token to a tenant-bound
+  registration that crosses the tenant policy, and it returns only what the pair names.
+- **After the lookup** every read of a tenant's registration, mapping and service account happens in
+  that tenant's session. The tenant of a platform-level token is found with
+  `platform_issuer_tenant_lookup`, which takes one registration and one claim value and returns one
+  tenant ID or nothing.
+- **The usage ledger** accepts `principal_kind` `token`: `principal_id` is the service account and
+  `key_id` the mapping.
+- **Mappings count of a platform-level deletion.** The platform session cannot see mappings, so the
+  admin role executes the definer function `platform_issuer_mapping_count`, which returns only the
+  number of mappings of the registration across the tenants named by the caller; the audit row of
+  the deletion records it as `mappings_deleted`.
 
 ## Provider stream usage option (sprint 3.3)
 
@@ -177,7 +209,7 @@ stores the row once. No column holds content, and every text column is format-ch
 into five groups, with provider values and Pandokos's estimates kept apart (USE-04):
 
 - **attribution**: tenant, record ID, start and commit time, request ID, trace ID, principal kind
-  and ID, virtual key ID, credential ID, funding mode, caller metadata and the count of dropped
+  and ID, virtual key ID, credential ID, caller metadata and the count of dropped
   entries;
 - **what was called**: provider, API family, operation, endpoint, model as named in the catalogue
   (`model`), the catalogue model ID, `upstream_model` (the identifier the provider received; the
@@ -189,9 +221,8 @@ into five groups, with provider values and Pandokos's estimates kept apart (USE-
 - **estimated by Pandokos**: estimated input and output tokens; empty unless the source is
   `estimated`;
 - **cost**: status (`known`, `unknown` with a reason, `none`), the exact amount, currency, the price
-  version in force when the request started, and the categories priced by fallback. Under BYOK the
-  cost is informational. Rating rules and chargeable amounts for platform-funded calls come with that
-  funding mode.
+  version in force when the request started, and the categories priced by fallback. The cost is
+  informational: the provider's invoice is the authority.
 
 Check constraints enforce the sources: a provider column is null unless its source is `provider`, an
 estimate column unless it is `estimated`. The only foreign key is `tenant_id`; a record outlives the
@@ -200,8 +231,7 @@ key, the credential, the model and the price it names.
 Outcomes: `ok`, `upstream_error`, `cancelled`, `timeout`, `rejected_limit`, `rejected_policy`,
 `internal_error`. (`rejected_limit` is written once limits exist.)
 
-Corrections will go to `usage_correction`, which references the original record and carries the
-difference. Reports will read both. Neither exists yet, and no API reads usage yet.
+Aggregated reports over the ledger come with sprint 6.2.
 
 ## Audit log
 

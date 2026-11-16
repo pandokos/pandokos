@@ -57,13 +57,15 @@ Attributes, the complete list:
 | Span | Attributes |
 |---|---|
 | server | `http.request.method`, `http.route`, `http.response.status_code`, `pandokos.request.id`, `pandokos.record.id`, `pandokos.tenant.id`, `pandokos.principal.id`, `pandokos.key.id`, `pandokos.provider`, `pandokos.operation`, `pandokos.outcome`, `pandokos.error.code` |
-| provider | `pandokos.provider`, `pandokos.endpoint`, `pandokos.model`, `pandokos.operation`, `pandokos.stream`, `pandokos.credential.id`, `pandokos.funding`, `http.response.status_code`, `pandokos.upstream.error`, `pandokos.ttfb_ms`, `pandokos.usage.source`, `pandokos.usage.output_source`, `pandokos.cost.status`, `pandokos.cost.amount`, `pandokos.cost.currency` |
+| provider | `pandokos.provider`, `pandokos.endpoint`, `pandokos.model`, `pandokos.operation`, `pandokos.stream`, `pandokos.credential.id`, `http.response.status_code`, `pandokos.upstream.error`, `pandokos.ttfb_ms`, `pandokos.usage.source`, `pandokos.usage.output_source`, `pandokos.cost.status`, `pandokos.cost.amount`, `pandokos.cost.currency` |
 
 `pandokos.error.code` and `pandokos.upstream.error` are set only when there is an error. The span
 status is `Error` for the outcomes `upstream_error`, `timeout` and `internal_error` and unset
 otherwise; there is no status description, no event and no link. `pandokos.record.id` and
 `pandokos.request.id` join a span to its row in the [usage ledger](usage.md) and to the request log
 line.
+
+For a call authenticated by a token of a trusted issuer ([tokens guide](tokens.md)) `pandokos.principal.id` is the ID of the service account, as for a key, and `pandokos.key.id` is the ID of the subject mapping. No span attribute holds the token, the subject or the issuer.
 
 **Never on a span:** a request or response body, any header value, a secret, a URL or host, the
 caller's metadata, a model string that did not resolve, token counts (they wait for the `gen_ai.*`

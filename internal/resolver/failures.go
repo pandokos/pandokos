@@ -86,12 +86,18 @@ func (a *FailureAuditor) Record(ctx context.Context, f gateway.AuthFailure) bool
 		return false
 	}
 	key := f.KeyID + "\x00" + f.Reason
+	if f.IssuerID != "" {
+		key = "token\x00" + f.IssuerID + "\x00" + f.Subject + "\x00" + f.Reason
+	}
 	if !a.allow(key) {
 		return false
 	}
 	wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
 	defer cancel()
 	err = a.db.WithTenant(wctx, tid, func(ctx context.Context, tx store.Tx) error {
+		if f.IssuerID != "" {
+			return audit.RecordTokenAuthFailure(ctx, tx, f.IssuerScope, f.IssuerID, f.Reason, f.Subject, f.RequestID)
+		}
 		return audit.RecordAuthFailure(ctx, tx, f.KeyID, f.Reason, f.RequestID)
 	})
 	if err != nil {

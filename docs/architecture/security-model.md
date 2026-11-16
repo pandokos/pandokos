@@ -11,9 +11,8 @@
 | Asset | Why it matters |
 |---|---|
 | Provider credentials of tenants | They are spendable money and access to the tenant's provider account. They cannot be recreated by the platform |
-| Provider credentials of the platform | The operator's money |
 | Tenant separation | One tenant must not see or affect another's configuration, usage or spend |
-| Usage ledger and audit log | They are the evidence for billing and for investigations |
+| Usage ledger and audit log | They are the evidence for what was spent and for investigations |
 | Content in transit | Prompts and completions pass through memory and must leave no trace |
 | Availability and spend | A caller must not exhaust the service or a budget that is not theirs |
 
@@ -36,9 +35,9 @@ flowchart LR
 
 1. **Caller to gateway.** Untrusted. Everything the caller sends is input: path, headers, body,
    metadata, trace context. Only a verified credential establishes identity and tenant.
-2. **Administrator to admin API.** People hold a console session, obtained through the identity
-   provider or a local account. Automation uses admin keys or tokens. Every operation is
-   authorized. The console runs in the user's browser and is untrusted: what it hides is not a
+2. **Administrator to admin API.** People hold a session, obtained through the identity
+   provider or a local account. Automation uses administrator keys (tokens of trusted issuers are accepted on the inference listener only). Every operation is
+   authorized. A client that runs in the user's browser is untrusted: what it hides is not a
    control. The admin port is not meant for the public internet.
 3. **Process to database.** Each role connects with its own least-privileged database role. The
    database enforces tenant isolation independently of the application.
@@ -48,7 +47,19 @@ flowchart LR
    verification.
 6. **Identity provider.** Trusted to assert identities, and, for platform-level issuers, tenants.
    A compromised identity provider can impersonate what it is trusted to assert, which is why
-   issuers are scoped (IAM-07).
+   issuers are scoped (IAM-07). A tenant-bound issuer is trusted for one tenant only. A platform-level
+   issuer is trusted for the tenants of its explicit list, by the claim value listed for each, and for
+   nothing else; only a platform administrator edits the list, and every edit is audited. A token is
+   verified offline with keys that the gateway fetches from an address an administrator registered:
+   `https` only, through the egress guard, public addresses unless the operator lists the host in
+   `tokens.private_hosts`, with size, time and rate limits, and nothing of the answer returned or
+   logged. The two things a registration cannot protect are named here. First, a shared issuer is
+   separated between tenants by the audience alone: the pair (issuer, audience) is unique in the
+   installation, so a tenant cannot register a pair another tenant uses, but if the workloads of
+   tenant A present an audience that A has not registered or no longer registers, another tenant can
+   register that pair and its mapping would then receive those calls (the residual case of the
+   [tokens guide](../operations/tokens.md), section 5; the guide requires an audience naming the
+   installation and the tenant). Second, a token cannot be revoked before it expires.
 7. **Infrastructure operator.** See the next section.
 8. **Gateway to trace collector.** Outbound only, to the one URL the operator configured, through
    the same guard as provider calls (certificates verified, no proxy, no redirect, forbidden
@@ -94,13 +105,17 @@ disk the operator's database administrators can read, and by auditing every admi
 | A caller claims another tenant | The tenant derives only from the credential (TEN-02). Tenant headers and parameters are ignored |
 | A bug omits a tenant filter | Forced row-level security under non-owner roles (TEN-04, TEN-05). The isolation suite (TEN-07) |
 | A stolen virtual key | Keys are scoped, can expire, carry limits, are revocable within a bound, and have a detectable format so scanners find leaks (IAM-03 to 05) |
-| A stolen bearer token | Short lifetimes, audience validation. Mutual TLS for stronger binding (IAM-15, IAM-16) |
+| A stolen bearer token | The token is accepted only if it verifies against the registration's keys with an allowed asymmetric algorithm, its exact issuer and audience, a lifetime of at most `tokens.max_lifetime` (24 h by default) and a mapped subject; `exp` is required and the signature is checked on every request. It can be replayed until `exp`, and one token cannot be revoked: delete the mapping. Mutual TLS for stronger binding (IAM-15, IAM-16) |
+| A tenant registers the issuer another tenant uses | The pair (issuer, audience) is unique in the installation; a token selects its registration by that pair, so another tenant's registration with another audience never receives it. The tenant is never chosen among candidates: a token that matches two registrations is refused. The guide requires an audience that names the installation and the tenant whenever an issuer is shared, and to stop workloads before deleting a registration; the residual case is in boundary 6 |
+| A token of another relying party, or a forged algorithm or key (`none`, HMAC keyed with the public key, `jwk`, `jku`, a `kid` of another source) | The audience is mandatory and compared exactly; the algorithm is on an allow-list of ten asymmetric algorithms before any key is looked up, and the library is given exactly that one; keys come only from the registration's source, and a key is used only if its type and size fit the algorithm |
+| A tenant administrator makes the gateway fetch an internal address through `issuer` or `jwks_uri` | `https` only through the egress guard; internal addresses unreachable unless the operator lists the host; a fixed method, no redirect, 5 s, 64 KiB and 256 KiB limits, at most one fetch per source per 10 s; nothing of the answer observable except whether tokens verify |
+| Forged tokens flood the log, the audit log or the identity provider | Failures before the registration is known are logged only; audited failures are bounded (one row per registration, reason and subject in ten minutes, 60 a minute per instance); one fetch per source per 10 s |
 | Password guessing against local accounts | Throttling per account and source, uniform responses, audit of failures (IAM-20). Memory-hard hashes (IAM-19). No default credentials (IAM-14). Local accounts can be switched off (IAM-18) |
-| A stolen or forged console session | Random 256-bit tokens stored as hashes; cookie not readable by scripts, sent over TLS only and never cross-site; idle and absolute lifetimes; revocation (IAM-21) |
-| Cross-site request forgery against the console | Same-site cookie, plus a required custom header and an origin check on every state-changing request (IAM-21) |
-| Script injection in the console | A strict content security policy without inline script, no third-party resources, a framework that escapes output by default, no credential in browser storage (CON-07) |
-| A console user reaches functions beyond their role | The API authorizes every call. The console's profiling is derived from the same permissions and is tested against them (AZ-11, CON-04) |
-| A console session is used to call models | Sessions are accepted only on the administration listener; the gateway's database role cannot read them (IAM-22) |
+| A stolen or forged session | Random 256-bit tokens stored as hashes; cookie not readable by scripts, sent over TLS only and never cross-site; idle and absolute lifetimes; revocation (IAM-21) |
+| Cross-site request forgery against a signed-in user | Same-site cookie, plus a required custom header and an origin check on every state-changing request (IAM-21) |
+| Script injection in a browser client | The session cookie cannot be read by scripts and no API response carries a credential a script could keep (IAM-21). The rest is the client's own duty: Pandokos serves no pages |
+| A signed-in user reaches functions beyond their role | The API authorizes every call. What `/v1/me` reports comes from the same permissions and is tested against them (AZ-11) |
+| A session is used to call models | Sessions are accepted only on the administration listener; the gateway's database role cannot read them (IAM-22) |
 | The database or a backup is copied | Credentials are ciphertext under per-tenant keys wrapped by a key that is not in the database (VLT-09, VLT-13). Virtual keys are stored as hashes |
 | The key-encryption key leaks | Rotation by re-wrapping (VLT-10). The leak alone exposes nothing without the database |
 | A ciphertext is copied onto another tenant's row | The tenant and credential IDs are bound into the ciphertext as associated data, so decryption fails (VLT-07) |
@@ -131,6 +146,8 @@ revoked, within the bound of the principal cache ([ADR 0030](../adr/0030-keys-fo
 There is no nonce and no request signature. Scopes, the tenant's model list and limits bound what a
 replay can do. Sender-constrained mechanisms, which would make a captured key useless to anyone else,
 are IAM-15 and IAM-16 and are not built yet.
+
+A token of a trusted issuer is a bearer credential too, valid until its `exp`. TLS on the listener, the short lifetimes the identity provider issues, and `tokens.max_lifetime` (24 hours by default, any longer token is refused) bound the exposure; the signature is checked on every request, so there is no cache of tokens to outlive one. A single token cannot be revoked; deleting its subject mapping or disabling its registration stops the subject within `cache.principal_ttl`. A refusal before the signature check is slightly faster than one after it; this reveals at most that an issuer and audience pair is registered, which a tenant administrator already learns from a conflict.
 
 ## Key hierarchy
 

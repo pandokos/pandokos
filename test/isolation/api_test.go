@@ -38,6 +38,10 @@ type side struct {
 	// The catalogue resources every side's params name (platform operations are called with a
 	// tenant key in these tests; the identifiers only have to exist).
 	provider, endpoint, model, priceVersion, priceImport string
+
+	// The token issuers of sprint 4.1, seeded as superuser: a tenant-bound issuer of the side with
+	// one mapping, and a platform-level issuer (the same for both sides) that lists the side.
+	tokenIssuer, mapping, platformIssuer string
 }
 
 type apiWorld struct {
@@ -74,6 +78,8 @@ func newSide(t *testing.T, api *apitest.API, name string) side {
 	}
 	s.inference = *ik
 	s.cred = api.Credential(t, s.tenant.ID, s.adminKey, "openai", "main")
+	s.tokenIssuer = api.SeedTokenIssuer(t, s.tenant.ID)
+	s.mapping = api.SeedSubjectMapping(t, s.tenant.ID, s.tokenIssuer, s.sa.ID)
 	return s
 }
 
@@ -105,7 +111,10 @@ func newAPIWorld(t *testing.T) *apiWorld {
 	if err != nil {
 		t.Fatal(err)
 	}
+	platformIssuer := w.api.SeedPlatformIssuer(t)
 	for _, s := range []*side{&w.a, &w.b} {
+		w.api.SeedPlatformIssuerTenant(t, platformIssuer, s.tenant.ID)
+		s.platformIssuer = platformIssuer
 		s.provider, s.endpoint, s.model, s.priceVersion, s.priceImport = w.cat.Provider.Name, w.cat.Endpoint.Name, w.cat.All.ID, pv.ID, imp.ID
 	}
 	return w
@@ -113,7 +122,8 @@ func newAPIWorld(t *testing.T) *apiWorld {
 
 func (s side) params() apitest.Params {
 	return apitest.Params{Tenant: s.tenant.ID, ServiceAccount: s.sa.ID, VirtualKey: s.key.Key.ID, PlatformKey: "pabcdefghijklmnop", Credential: s.cred.ID,
-		Provider: s.provider, Endpoint: s.endpoint, Model: s.model, PriceVersion: s.priceVersion, PriceImport: s.priceImport}
+		Provider: s.provider, Endpoint: s.endpoint, Model: s.model, PriceVersion: s.priceVersion, PriceImport: s.priceImport,
+		TokenIssuer: s.tokenIssuer, SubjectMapping: s.mapping, PlatformIssuer: s.platformIssuer}
 }
 
 // fresh is params with a credential, and a model, of its own when the operation names one: the
@@ -133,6 +143,18 @@ func (w *apiWorld) fresh(t *testing.T, s side, op adminapi.Operation) apitest.Pa
 			t.Fatal(err)
 		}
 		p.Model = m.ID
+	}
+	// The operations of sprint 4.1 that delete a registration or a mapping get one of their own, so
+	// that the ones the other operations name are still there.
+	if !strings.HasPrefix(op.Path, "/v1/platform-issuers") && (strings.Contains(op.Path, "{issuer}") || strings.Contains(op.Path, "{mapping}")) {
+		p.TokenIssuer = w.api.SeedTokenIssuer(t, s.tenant.ID)
+		if strings.Contains(op.Path, "{mapping}") {
+			p.SubjectMapping = w.api.SeedSubjectMapping(t, s.tenant.ID, p.TokenIssuer, s.sa.ID)
+		}
+	}
+	if strings.HasPrefix(op.Path, "/v1/platform-issuers") && strings.Contains(op.Path, "{issuer}") {
+		p.PlatformIssuer = w.api.SeedPlatformIssuer(t)
+		w.api.SeedPlatformIssuerTenant(t, p.PlatformIssuer, s.tenant.ID)
 	}
 	return p
 }
@@ -226,6 +248,16 @@ var platformAndSelf = map[string]string{
 	"listPriceImports":    "platform",
 	"getPriceImport":      "platform",
 	"runPriceImport":      "platform",
+
+	// Sprint 4.1: the eight platform operations of the platform-level token issuers.
+	"listPlatformIssuers":        "platform",
+	"createPlatformIssuer":       "platform",
+	"getPlatformIssuer":          "platform",
+	"updatePlatformIssuer":       "platform",
+	"deletePlatformIssuer":       "platform",
+	"listPlatformIssuerTenants":  "platform",
+	"putPlatformIssuerTenant":    "platform",
+	"deletePlatformIssuerTenant": "platform",
 }
 
 func scopeOf(t *testing.T, op adminapi.Operation) authz.Scope {
@@ -259,7 +291,8 @@ func TestCrossTenantIndistinguishable(t *testing.T) {
 			real := w.b.params()
 			real.PlatformKey = "pabcdefghijklmnop"
 			missing := apitest.Params{Tenant: randomUUID(t, w), ServiceAccount: randomUUID(t, w), VirtualKey: randomKeyID(t), PlatformKey: "pabcdefghijklmnoq", Credential: randomUUID(t, w),
-				Provider: "synthetic-missing", Endpoint: "ep-missing", Model: randomUUID(t, w), PriceVersion: randomUUID(t, w), PriceImport: randomUUID(t, w)}
+				Provider: "synthetic-missing", Endpoint: "ep-missing", Model: randomUUID(t, w), PriceVersion: randomUUID(t, w), PriceImport: randomUUID(t, w),
+				TokenIssuer: randomUUID(t, w), SubjectMapping: randomUUID(t, w), PlatformIssuer: randomUUID(t, w)}
 			cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
 			if op.ID == "createTenant" {
 				cm.Body = cr.Body
@@ -285,7 +318,9 @@ func TestCrossTenantIndistinguishable(t *testing.T) {
 			real, missing := w.a.params(), w.a.params()
 			real.Tenant, missing.Tenant = w.b.tenant.ID, randomUUID(t, w)
 			real.ServiceAccount, real.VirtualKey, real.Credential = w.b.sa.ID, w.b.key.Key.ID, w.b.cred.ID
+			real.TokenIssuer, real.SubjectMapping = w.b.tokenIssuer, w.b.mapping
 			missing.ServiceAccount, missing.VirtualKey, missing.Credential = randomUUID(t, w), randomKeyID(t), randomUUID(t, w)
+			missing.TokenIssuer, missing.SubjectMapping = randomUUID(t, w), randomUUID(t, w)
 			cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
 			r1 := w.api.Do(t, cr.Method, cr.Path, w.a.adminKey, cr.Body, nil)
 			r2 := w.api.Do(t, cm.Method, cm.Path, w.a.adminKey, cm.Body, nil)
@@ -302,10 +337,13 @@ func TestCrossTenantIndistinguishable(t *testing.T) {
 		}
 
 		// A second parameter: in A's own tenant, B's resource against a missing one.
-		if strings.Contains(op.Path, "{service_account}") || strings.Contains(op.Path, "{credential}") || (strings.Contains(op.Path, "{key}") && !strings.HasPrefix(op.Path, "/v1/platform-keys")) {
+		if strings.Contains(op.Path, "{service_account}") || strings.Contains(op.Path, "{credential}") || (strings.Contains(op.Path, "{key}") && !strings.HasPrefix(op.Path, "/v1/platform-keys")) ||
+			strings.Contains(op.Path, "{mapping}") || (strings.Contains(op.Path, "{issuer}") && strings.HasPrefix(op.Path, "/v1/tenants/")) {
 			real, missing := w.a.params(), w.a.params()
 			real.ServiceAccount, real.VirtualKey, real.Credential = w.b.sa.ID, w.b.key.Key.ID, w.b.cred.ID
+			real.TokenIssuer, real.SubjectMapping = w.b.tokenIssuer, w.b.mapping
 			missing.ServiceAccount, missing.VirtualKey, missing.Credential = randomUUID(t, w), randomKeyID(t), randomUUID(t, w)
+			missing.TokenIssuer, missing.SubjectMapping = randomUUID(t, w), randomUUID(t, w)
 			cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
 			r1 := w.api.Do(t, cr.Method, cr.Path, w.a.adminKey, cr.Body, nil)
 			r2 := w.api.Do(t, cm.Method, cm.Path, w.a.adminKey, cm.Body, nil)
@@ -484,14 +522,15 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 		// And none in B.
 		p := w.a.params()
 		p.Tenant, p.ServiceAccount, p.VirtualKey, p.Credential = w.b.tenant.ID, w.b.sa.ID, w.b.key.Key.ID, w.b.cred.ID
+		p.TokenIssuer, p.SubjectMapping = w.b.tokenIssuer, w.b.mapping
 		other := apitest.CallFor(t, op, p)
 		if r := w.api.Do(t, other.Method, other.Path, w.a.adminKey, other.Body, nil); r.Status != 404 {
 			t.Errorf("%s in B: status %d\n%s", op.ID, r.Status, r.Body)
 		}
 		n++
 	}
-	if n != 26 {
-		t.Errorf("%d tenant operations, want 26 (24 and the two of sprint 3.3)", n)
+	if n != 36 {
+		t.Errorf("%d tenant operations, want 36 (24, the two of sprint 3.3 and the ten of sprint 4.1)", n)
 	}
 	if _, err := c.GetTenant(ctx(t), adminapi.GetTenantInput{Tenant: w.b.tenant.ID}); err == nil {
 		t.Error("a tenant key read a tenant")
@@ -524,6 +563,7 @@ func TestPlatformKeyHasNoTenantPermission(t *testing.T) {
 		}
 		real, missing := w.a.params(), w.a.params()
 		missing.Tenant, missing.ServiceAccount, missing.VirtualKey, missing.Credential = randomUUID(t, w), randomUUID(t, w), randomKeyID(t), randomUUID(t, w)
+		missing.TokenIssuer, missing.SubjectMapping = randomUUID(t, w), randomUUID(t, w)
 		cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
 		r1 := w.api.Do(t, cr.Method, cr.Path, w.api.PlatformKey(), cr.Body, nil)
 		r2 := w.api.Do(t, cm.Method, cm.Path, w.api.PlatformKey(), cm.Body, nil)

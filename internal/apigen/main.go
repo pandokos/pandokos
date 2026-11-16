@@ -138,14 +138,40 @@ type schema struct {
 	Items                *schema    `yaml:"items"`
 	Properties           properties `yaml:"properties"`
 	Required             []string   `yaml:"required"`
-	AdditionalProperties *bool      `yaml:"additionalProperties"`
+	AdditionalProperties additional `yaml:"additionalProperties"`
+	MaxProperties        *int       `yaml:"maxProperties"`
+	// NotEmpty marks an optional string member of a request body whose empty value is a value that
+	// breaks the schema, not an absence: decodeBody refuses it when the body sends it.
+	NotEmpty bool `yaml:"x-pandokos-not-empty"`
+}
+
+// additional is the additionalProperties member: false closes an object; a schema makes it a map
+// from any name to a value of that schema.
+type additional struct {
+	Closed *bool   // set when the member is a boolean
+	Values *schema // set when the member is a schema
+}
+
+// UnmarshalYAML reads a boolean or a schema.
+func (a *additional) UnmarshalYAML(n *yaml.Node) error {
+	if n.Kind == yaml.MappingNode {
+		a.Values = new(schema)
+		return n.Decode(a.Values)
+	}
+	a.Closed = new(bool)
+	return n.Decode(a.Closed)
 }
 
 type generator struct {
-	doc      document
-	buf      bytes.Buffer
-	update   map[string]bool // update schemas: component objects used as the body of a PATCH operation
-	patterns []string        // regular expressions, in order of first use
+	doc    document
+	buf    bytes.Buffer
+	update map[string]bool // update schemas: component objects used as the body of a PATCH operation
+	// trueByDefault lists, per component object, the optional boolean members whose document says
+	// default: true. Such a member is always written (an absent member would read as false) and a
+	// request body starts with it set, so that a body that omits it means true and false stays
+	// expressible.
+	trueByDefault map[string][]string
+	patterns      []string // regular expressions, in order of first use
 }
 
 func main() {
@@ -290,6 +316,15 @@ func (g *generator) fieldOf(s *schema, required bool) (field, error) {
 		return f, errors.New(`only an inline string can be nullable`)
 	}
 	switch {
+	case t.Type.Name == "object" && name == "" && t.AdditionalProperties.Values != nil:
+		v, _, err := g.resolve(t.AdditionalProperties.Values)
+		if err != nil {
+			return f, fmt.Errorf("additionalProperties: %w", err)
+		}
+		if v.Type.Name != "string" || len(v.Enum) > 0 || v.Format != "" {
+			return f, errors.New("the values of a map must be plain strings")
+		}
+		f.kind, f.goType, f.item = "stringmap", "map[string]string", v
 	case t.Type.Name == "object":
 		if name == "" {
 			return f, errors.New("an object must be a component schema")
@@ -487,7 +522,7 @@ func (g *generator) enum(name string, s *schema) {
 }
 
 func (g *generator) object(name string, s *schema) error {
-	if s.AdditionalProperties == nil || *s.AdditionalProperties {
+	if s.AdditionalProperties.Closed == nil || *s.AdditionalProperties.Closed {
 		return errors.New("an object must say additionalProperties: false")
 	}
 	required := map[string]bool{}
@@ -504,7 +539,8 @@ func (g *generator) object(name string, s *schema) error {
 	}
 	g.p("type %s struct {", name)
 	var checks bytes.Buffer
-	var nested []string // the members that are objects, or arrays of objects, for the presence check
+	var nested []string   // the members that are objects, or arrays of objects, for the presence check
+	var notEmpty []string // optional strings that the document does not allow to be empty
 	for _, pn := range s.Properties.Names {
 		ps := s.Properties.By[pn]
 		f, err := g.fieldOf(ps, required[pn])
@@ -516,9 +552,9 @@ func (g *generator) object(name string, s *schema) error {
 		switch {
 		case optional:
 			switch f.kind {
-			case "string", "enum", "int", "bool", "strings":
+			case "string", "enum", "int", "bool", "strings", "stringmap":
 			default:
-				return fmt.Errorf("property %s: an optional member of an update schema must be a string, enum, integer, boolean or array of strings", pn)
+				return fmt.Errorf("property %s: an optional member of an update schema must be a string, enum, integer, boolean, array of strings or map of strings", pn)
 			}
 			f.goType = "Optional[" + f.goType + "]"
 			tag += ",omitzero"
@@ -527,6 +563,11 @@ func (g *generator) object(name string, s *schema) error {
 				return fmt.Errorf("property %s: a nullable property cannot be required", pn)
 			}
 			tag += ",omitzero"
+		case f.kind == "bool" && !required[pn] && ps.Default != nil && *ps.Default == "true":
+			if g.trueByDefault == nil {
+				g.trueByDefault = map[string][]string{}
+			}
+			g.trueByDefault[name] = append(g.trueByDefault[name], fieldName(pn))
 		case !required[pn]:
 			tag += ",omitempty"
 		}
@@ -541,6 +582,9 @@ func (g *generator) object(name string, s *schema) error {
 				many = "Many: true, "
 			}
 			nested = append(nested, fmt.Sprintf("{Name: %q, %sRequired: required%s, Nested: nested%s}", pn, many, target, target))
+		}
+		if !optional && !required[pn] && f.kind == "string" && !f.nullable && !g.update[name] && ps.NotEmpty {
+			notEmpty = append(notEmpty, pn)
 		}
 		if optional {
 			// Validation runs only when the member is present.
@@ -557,6 +601,12 @@ func (g *generator) object(name string, s *schema) error {
 		g.p("var nested%s []nestedMember\n", name)
 	} else {
 		g.p("var nested%s = []nestedMember{%s}\n", name, strings.Join(nested, ", "))
+	}
+	if len(notEmpty) > 0 {
+		// An optional string is "" when absent, so a body that sends "" for a member whose
+		// schema does not admit it is found by decodeBody from the document's members.
+		g.p("// sentEmpty names the optional members that the document does not allow to be empty.")
+		g.p("func (*%s) sentEmpty() []string { return []string{%s} }\n", name, quoteList(notEmpty))
 	}
 	g.p("// Validate returns the rules of the document that v breaks. A message never repeats a value.")
 	g.p("func (v *%s) Validate() []FieldError {", name)
@@ -632,6 +682,15 @@ func (g *generator) check(w *bytes.Buffer, expr, name string, f field, required 
 		}
 		if f.s.Maximum != nil {
 			add(expr+" > "+strconv.Itoa(*f.s.Maximum), "must be at most "+strconv.Itoa(*f.s.Maximum))
+		}
+	case "stringmap":
+		if f.s.MaxProperties != nil {
+			add("len("+expr+") > "+strconv.Itoa(*f.s.MaxProperties), "must have at most "+strconv.Itoa(*f.s.MaxProperties)+" members")
+		}
+		if f.item.Pattern != "" || f.item.MinLength != nil || f.item.MaxLength != nil {
+			fmt.Fprintf(w, "for _, item := range %s {\n", expr)
+			str("item", f.item, "")
+			fmt.Fprintf(w, "}\n")
 		}
 	case "strings":
 		if f.s.MinItems != nil {
@@ -875,6 +934,9 @@ func (g *generator) operations() error {
 			g.p("if len(errs) > 0 { h.fail(w, r, op, invalid(errs)); return }")
 		}
 		if o.body != "" {
+			for _, fn := range g.trueByDefault[o.body] {
+				g.p("in.Body.%s = true", fn)
+			}
 			g.p("if err := decodeBody(r, h.hooks.MaxBodyBytes, %t, required%s, nested%s, &in.Body); err != nil { h.fail(w, r, op, err); return }", o.bodyRequired, o.body, o.body)
 			g.p("if errs := in.Body.Validate(); len(errs) > 0 { h.fail(w, r, op, invalid(errs)); return }")
 		}

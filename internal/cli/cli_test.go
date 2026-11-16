@@ -45,6 +45,9 @@ type fakeAPI struct {
 	// patchBody is the raw body of the last PATCH: the generated types cannot tell an absent
 	// member from an empty one, the wire can.
 	patchBody string
+	// postBody is the raw body of the last POST or PUT: the creations of sprint 4.1 default a
+	// boolean to true, so a false that is omitted from the wire is a different request.
+	postBody string
 }
 
 func newFake() *fakeAPI {
@@ -234,10 +237,14 @@ func handler(f *fakeAPI, header http.Header, auth *[]string) http.Handler {
 		for k, v := range header {
 			w.Header()[k] = v
 		}
-		if r.Method == http.MethodPatch {
+		if r.Method == http.MethodPatch || r.Method == http.MethodPost || r.Method == http.MethodPut {
 			b, _ := io.ReadAll(r.Body)
 			f.mu.Lock()
-			f.patchBody = string(b)
+			if r.Method == http.MethodPatch {
+				f.patchBody = string(b)
+			} else {
+				f.postBody = string(b)
+			}
 			f.mu.Unlock()
 			r.Body = io.NopCloser(bytes.NewReader(b))
 		}

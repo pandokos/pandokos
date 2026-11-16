@@ -3,7 +3,7 @@
 The inference listener forwards requests of a provider's own API to that provider, on behalf of a
 tenant, with the tenant's stored credential. This page says what a caller sends, what a call needs,
 what Pandokos changes in a request, which errors it answers with, and how outbound connections are
-controlled. It applies from sprint 3.1; sprint 3.2 adds two operations, streaming details, caller metadata and the usage record; sprint 3.3 adds the `anthropic` family and OpenAI-compatible providers.
+controlled. It applies from sprint 3.1; sprint 3.2 adds two operations, streaming details, caller metadata and the usage record; sprint 3.3 adds the `anthropic` family and OpenAI-compatible providers; sprint 4.1 adds tokens of trusted issuers as a second credential.
 
 ## 1. Base URLs
 
@@ -24,6 +24,11 @@ Pandokos virtual key, sent in the header the SDK uses for the provider's own key
 `Authorization: Bearer <key>` (what the current Anthropic SDKs send) or `X-Api-Key: <key>` (`curl`
 examples and older SDKs). When both are present they must carry the same value, otherwise the answer
 is `unauthenticated`. Spaces around the value are ignored.
+
+The credential is a virtual key, or a signed token of a trusted issuer ([tokens guide](tokens.md)):
+a value that starts with `pdk_` is a key, any other value of the shape of a JWT is a token, and the
+two are accepted in whichever of these headers the family reads. An Anthropic SDK that sends its
+`api_key` as `X-Api-Key` or its `auth_token` as a bearer works with either.
 
 A provider that speaks the `openai` wire needs no code: see the [providers guide](providers.md).
 
@@ -55,8 +60,9 @@ indistinguishable on purpose. Which provider names are served can be learned wit
 
 ## 2. What a call needs
 
-- A virtual key in the native header of the family. Without one, or with a key that cannot be
-  verified, the answer is `unauthenticated`, the same for every cause.
+- A virtual key, or a token of a trusted issuer, in the native header of the family. Without one, or
+  with a credential that cannot be verified, the answer is `unauthenticated`, the same for every
+  cause (and for a token, the same as for an unknown key).
 - Both permissions, `model:invoke` and `credential:use`, on the key's own tenant. Both are decided
   before the body is read. A key whose scopes leave only `model:invoke` authenticates and is refused
   with `forbidden`: it cannot call a model and cannot learn which models it would be allowed.
@@ -122,7 +128,7 @@ The provider's request ID (`X-Request-Id` for `openai`, `Request-Id` for `anthro
 
 | Code | Status | Raised when |
 |---|---|---|
-| `unauthenticated` | 401 | the key is missing, malformed, unknown, expired, revoked or wrong |
+| `unauthenticated` | 401 | the key or token is missing, malformed, unknown, expired, revoked, wrong, or refused by one of the checks of the [tokens guide](tokens.md) |
 | `tenant_suspended` | 403 | the tenant is not active |
 | `forbidden` | 403 | the key lacks `model:invoke` or `credential:use`, or the credential cannot be used |
 | `model_not_allowed` | 403 | the model is not available to this tenant |
@@ -133,7 +139,7 @@ The provider's request ID (`X-Request-Id` for `openai`, `Request-Id` for `anthro
 | `request_too_large` | 413 | the body is over `limits.max_request_body_bytes` |
 | `upstream_unreachable` | 502 | the provider could not be reached, the egress guard refused the connection, or the provider answered with a redirect |
 | `upstream_timeout` | 504 | the provider did not answer headers within `limits.max_request_duration` |
-| `unavailable` | 503 | the catalogue, the key or the credential could not be verified, or the usage ledger buffer is full (the log line has `ledger: full`; no usage record is written for that request) |
+| `unavailable` | 503 | the catalogue, the key or the credential could not be verified, the keys of a token's issuer could not be obtained (the answer carries `Retry-After: 5`, as it does whenever authentication is unavailable, the database included), or the usage ledger buffer is full (the log line has `ledger: full`; no usage record is written for that request) |
 | `internal` | 500 | an unexpected failure |
 
 Anthropic error types. On an `anthropic` route the body is `{"type":"error","error":{"type":<type>,"message":"Pandokos: ..."}}`
@@ -284,6 +290,14 @@ record is bounded: at most one per key and reason in ten minutes and 60 a minute
 Failures that name no tenant (malformed, unknown key, kind not accepted) are logged only. The answer
 to the caller is the same whether or not a row was written.
 
+A refused token is logged the same way, with `issuer_id` and `issuer_scope` when a registration was
+selected and `subject` only once the signature verified; it never holds the token, a segment of it or
+a claim that was not verified. When it names a tenant (a tenant-bound registration, or a subject
+that is not mapped or whose account is disabled) it is audited as `auth.failure` with `resource_type`
+`token_issuer` and the registration's ID as `resource_id`, at most one row per registration, reason and
+subject in ten minutes. The reasons are in the [tokens guide](tokens.md), section 4. Keys that cannot
+be obtained are a 503, not an authentication failure: the log line is `issuer keys not fetched`.
+
 ## 9. Upgrading from the `skeleton` configuration
 
 The single provider key of the `skeleton` section no longer exists. Before upgrading, remove
@@ -308,6 +322,7 @@ The `request` line of the [container guide](container.md) gains these fields fro
 | `upstream_request_id` | the provider sent one | its `X-Request-Id` (`openai`) or `Request-Id` (`anthropic`), bounded |
 | `metadata_count`, `metadata_dropped` | metadata was sent / entries were dropped | counts, never values |
 | `usage_reader` | the reader gave up | `failed` |
+| `issuer_id` | the credential was a token | the ID of the registration that accepted it; `key_id` is then the ID of the subject mapping |
 | `ledger` | step 3a refused the request | `full` (written `ledger: full` in this guide) |
 
 `ttfb_ms` now means the first body byte (section 4a).

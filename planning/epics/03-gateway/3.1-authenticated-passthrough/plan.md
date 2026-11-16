@@ -733,8 +733,8 @@ without a validated key); a per-endpoint CA (a schema change nobody asked for).
 ### E4. Planning files
 
 - `planning/epics/03-gateway/epic.md`: `status: in-progress`; under 3.1, requirements line
-  becomes `GW-01, GW-02, GW-05 to GW-12, GW-16 (size, duration), OPS-12, FND-01 and FND-02
-  (BYOK), SEC-01, SEC-02`; under 3.2, remove `OPS-12` from the requirements line and add the
+  becomes `GW-01, GW-02, GW-05 to GW-12, GW-16 (size, duration), OPS-12, USE-09 (the tenant's
+  own credential), SEC-01, SEC-02`; under 3.2, remove `OPS-12` from the requirements line and add the
   bullet `The operations responses and embeddings of the openai family, with their usage
   readers.` (only if the maintainer confirmed O-6 and O-9; otherwise leave the epic file and
   note it in the pull request).

@@ -81,7 +81,7 @@ Both are automated: criterion 1 by T-140 and T-141, criterion 2 by T-143 (sectio
 | `sqlc` and generated query code (this sprint has no domain query in product code, see D-13) | 1.3 |
 | `LISTEN`/`NOTIFY` cache invalidation | 1.3 |
 | API-level isolation tests (third layer of the isolation suite) | 1.3 |
-| Vault tables, catalogue tables, usage ledger, outbox | 2.1, 2.2, 3.2, 7.x |
+| Vault tables, catalogue tables, usage ledger, outbox | 2.1, 2.2, 3.2, 6.4 |
 | Tenant deletion job, retention, partitions | 6.3 |
 | Compose reference for users (the Compose file of this sprint is for tests only) | 3.3 |
 | Rolling upgrades with two schema versions live (OPS-13) | epic 10 |
@@ -1529,7 +1529,6 @@ Derived item by item from [planning/README.md](../../../README.md).
       `pgx`.
 - [ ] Locally, the commands of plan.md part F all succeed.
 
-**Console** — not applicable before v0.3; the sprint has no administrative surface.
 
 **Documentation, OpenAPI, ADRs**
 

@@ -97,7 +97,7 @@ var serverAttrs = []string{
 
 var clientAttrs = []string{
 	"pandokos.provider", "pandokos.endpoint", "pandokos.model", "pandokos.operation", "pandokos.stream", "pandokos.credential.id",
-	"pandokos.funding", "http.response.status_code", "pandokos.ttfb_ms", "pandokos.usage.source", "pandokos.cost.status",
+	"http.response.status_code", "pandokos.ttfb_ms", "pandokos.usage.source", "pandokos.cost.status",
 	"pandokos.cost.amount", "pandokos.cost.currency", "pandokos.usage.output_source",
 }
 
@@ -165,7 +165,7 @@ func TestSpans(t *testing.T) {
 		}
 		for k, want := range map[string]string{
 			"pandokos.provider": "openai", "pandokos.endpoint": "synthetic-endpoint", "pandokos.model": "fake-basic", "pandokos.operation": "chat.completions",
-			"pandokos.credential.id": "synthetic-credential-openai", "pandokos.funding": "byok", "pandokos.usage.source": "provider",
+			"pandokos.credential.id": "synthetic-credential-openai", "pandokos.usage.source": "provider",
 			"pandokos.usage.output_source": "provider",
 			"pandokos.cost.status":         "known", "pandokos.cost.amount": rec.Cost.Amount.String(), "pandokos.cost.currency": "USD",
 		} {

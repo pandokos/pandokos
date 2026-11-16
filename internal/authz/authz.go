@@ -58,6 +58,16 @@ const (
 	ModelRead     = "model:read"
 	ModelRestrict = "model:restrict"
 	UsageRead     = "usage:read"
+
+	TokenIssuerRead      = "token_issuer:read"   //nolint:gosec // a permission name, not a credential
+	TokenIssuerWrite     = "token_issuer:write"  //nolint:gosec // a permission name, not a credential
+	TokenIssuerDelete    = "token_issuer:delete" //nolint:gosec // a permission name, not a credential
+	SubjectMappingRead   = "subject_mapping:read"
+	SubjectMappingWrite  = "subject_mapping:write"
+	SubjectMappingDelete = "subject_mapping:delete"
+	PlatformIssuerRead   = "platform_issuer:read"
+	PlatformIssuerWrite  = "platform_issuer:write"
+	PlatformIssuerDelete = "platform_issuer:delete"
 )
 
 var catalogue = []Permission{
@@ -87,6 +97,15 @@ var catalogue = []Permission{
 	{ModelRead, ScopeTenant, "Listing the models available to the tenant, with their prices; reading the tenant's model restriction"},
 	{ModelRestrict, ScopeTenant, "Setting and clearing the tenant's model restriction"},
 	{UsageRead, ScopeTenant, "Listing the tenant's usage records"},
+	{TokenIssuerRead, ScopeTenant, "Reading and listing the tenant's trusted token issuers and the platform-level issuers that list the tenant"},
+	{TokenIssuerWrite, ScopeTenant, "Registering a trusted token issuer; changing, disabling and enabling it"},
+	{TokenIssuerDelete, ScopeTenant, "Deleting a trusted token issuer with its subject mappings"},
+	{SubjectMappingRead, ScopeTenant, "Reading and listing subject mappings"},
+	{SubjectMappingWrite, ScopeTenant, "Letting a token subject act as a service account, with all its roles"},
+	{SubjectMappingDelete, ScopeTenant, "Deleting a subject mapping"},
+	{PlatformIssuerRead, ScopePlatform, "Reading and listing platform-level token issuers and their tenant lists"},
+	{PlatformIssuerWrite, ScopePlatform, "Registering and changing a platform-level token issuer; adding and removing tenants of its list"},
+	{PlatformIssuerDelete, ScopePlatform, "Deleting a platform-level token issuer with its tenant list and subject mappings"},
 }
 
 // Catalogue returns the permissions, in a fixed order.
@@ -135,10 +154,12 @@ func sorted(names ...string) []string {
 // Roles returns the three built-in roles, in a fixed order; the slices are copies.
 func Roles() []Role {
 	return []Role{
-		{RolePlatformAdmin, KindPlatform, sorted(IdentityRead, TenantRead, TenantWrite, TenantSuspend, PlatformKeyRead, PlatformKeyWrite, PlatformKeyRevoke, TenantCredentialRead, TenantCredentialRevoke, CatalogRead, CatalogWrite, CatalogPrice),
+		{RolePlatformAdmin, KindPlatform, sorted(IdentityRead, TenantRead, TenantWrite, TenantSuspend, PlatformKeyRead, PlatformKeyWrite, PlatformKeyRevoke, TenantCredentialRead, TenantCredentialRevoke, CatalogRead, CatalogWrite, CatalogPrice,
+			PlatformIssuerRead, PlatformIssuerWrite, PlatformIssuerDelete),
 			"Administers the installation: tenants and platform keys"},
 		{RoleTenantAdmin, KindServiceAccount, sorted(IdentityRead, ServiceAccountRead, ServiceAccountWrite, VirtualKeyRead, VirtualKeyWrite, VirtualKeyRevoke, ModelInvoke,
-			CredentialRead, CredentialWrite, CredentialRotate, CredentialDelete, CredentialUse, ModelRead, ModelRestrict, UsageRead),
+			CredentialRead, CredentialWrite, CredentialRotate, CredentialDelete, CredentialUse, ModelRead, ModelRestrict, UsageRead,
+			TokenIssuerRead, TokenIssuerWrite, TokenIssuerDelete, SubjectMappingRead, SubjectMappingWrite, SubjectMappingDelete),
 			"Administers one tenant: service accounts and virtual keys; may call models"},
 		{RoleInference, KindServiceAccount, sorted(ModelInvoke, CredentialUse), "Calls models through the inference listener"},
 	}
@@ -156,11 +177,16 @@ func RoleByName(name string) (Role, bool) {
 
 // Principal is who a request acts as. Every authentication mechanism produces one (ADR 0005).
 type Principal struct {
-	Kind        Kind
-	ID          string // service account ID, or the key ID of the platform key
-	Name        string // service account name, or the description of the platform key
-	KeyID       string // key ID of the credential in use
-	Bootstrap   bool   // the credential is the bootstrap key
+	Kind      Kind
+	ID        string // service account ID, or the key ID of the platform key
+	Name      string // service account name, or the description of the platform key
+	KeyID     string // key ID of the virtual or platform key in use; for a token, the ID of the subject mapping
+	Bootstrap bool   // the credential is the bootstrap key
+	// IssuerID is the ID of the registration (trusted or platform-level token issuer) that
+	// accepted the token the request carried; empty for a key.
+	IssuerID string
+	// Subject is the verified subject of that token; empty for a key.
+	Subject     string
 	TenantID    tenant.ID
 	TenantName  string
 	TenantState tenant.State

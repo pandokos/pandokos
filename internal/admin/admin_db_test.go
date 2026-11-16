@@ -96,6 +96,10 @@ type world struct {
 	cat apitest.Catalogue
 	pv  adminapi.PriceVersion
 	imp string
+
+	// The token issuers of sprint 4.1, seeded as superuser: a tenant-bound issuer of the tenant
+	// with one mapping, and a platform-level issuer that lists the tenant.
+	tokenIssuer, mapping, platformIssuer string
 }
 
 func newWorld(t *testing.T, name string) *world {
@@ -139,11 +143,16 @@ func (w *world) fill(t *testing.T, name string) {
 		VALUES (now(), 'file', 'genai-prices-v2', 'success', 'host') RETURNING id::text`).Scan(&w.imp); err != nil {
 		t.Fatal(err)
 	}
+	w.tokenIssuer = w.api.SeedTokenIssuer(t, w.tenant.ID)
+	w.mapping = w.api.SeedSubjectMapping(t, w.tenant.ID, w.tokenIssuer, w.sa.ID)
+	w.platformIssuer = w.api.SeedPlatformIssuer(t)
+	w.api.SeedPlatformIssuerTenant(t, w.platformIssuer, w.tenant.ID)
 }
 
 func (w *world) params() apitest.Params {
 	return apitest.Params{Tenant: w.tenant.ID, ServiceAccount: w.sa.ID, VirtualKey: w.key.Key.ID, PlatformKey: w.platformK.Key.ID, Credential: w.cred.ID,
-		Provider: w.cat.Provider.Name, Endpoint: w.cat.Endpoint.Name, Model: w.cat.All.ID, PriceVersion: w.pv.ID, PriceImport: w.imp}
+		Provider: w.cat.Provider.Name, Endpoint: w.cat.Endpoint.Name, Model: w.cat.All.ID, PriceVersion: w.pv.ID, PriceImport: w.imp,
+		TokenIssuer: w.tokenIssuer, SubjectMapping: w.mapping, PlatformIssuer: w.platformIssuer}
 }
 
 // call makes the valid call of op with the key.
