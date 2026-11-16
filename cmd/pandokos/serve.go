@@ -21,6 +21,7 @@ import (
 	"github.com/pandokos/pandokos/internal/catalog"
 	"github.com/pandokos/pandokos/internal/config"
 	"github.com/pandokos/pandokos/internal/egress"
+	"github.com/pandokos/pandokos/internal/jwks"
 	"github.com/pandokos/pandokos/internal/ledger"
 	"github.com/pandokos/pandokos/internal/pricing/genaiprices"
 	"github.com/pandokos/pandokos/internal/resolver"
@@ -157,7 +158,39 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	gatewayAuth, err := authn.New(authn.Options{DB: gatewayDB, Logger: logger, Kinds: []authn.Kind{authn.KindTenant}, CacheTTL: time.Duration(cfg.Cache.PrincipalTTL)})
+	guard, err := egress.New(egress.Options{
+		ConnectTimeout: time.Duration(cfg.Upstream.ConnectTimeout),
+		RootCAs:        cfg.Upstream.TLS.RootCAs,
+		Proxy:          cfg.Upstream.Proxy.ParsedURL,
+	})
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
+	defer guard.CloseIdleConnections()
+	gatewayAuthOpts := authn.Options{DB: gatewayDB, Logger: logger, Kinds: []authn.Kind{authn.KindTenant}, CacheTTL: time.Duration(cfg.Cache.PrincipalTTL)}
+	if cfg.Tokens.Enabled {
+		// Keys of token issuers are fetched here and nowhere else, through the egress guard.
+		keys, err := jwks.New(jwks.Options{
+			Transport:          guard.Transport,
+			PrivateHosts:       cfg.Tokens.PrivateHosts,
+			FetchTimeout:       time.Duration(cfg.Tokens.JWKS.FetchTimeout),
+			RefreshInterval:    time.Duration(cfg.Tokens.JWKS.RefreshInterval),
+			MinRefetchInterval: time.Duration(cfg.Tokens.JWKS.MinRefetchInterval),
+			MaxStale:           time.Duration(cfg.Tokens.JWKS.MaxStale),
+			Logger:             logger,
+		})
+		if err != nil {
+			logger.Error("startup failed", "error", err.Error())
+			return 1
+		}
+		gatewayAuthOpts.Kinds = append(gatewayAuthOpts.Kinds, authn.KindToken)
+		gatewayAuthOpts.Tokens = authn.TokenOptions{
+			Keys: keys, MaxBytes: cfg.Tokens.MaxTokenBytes,
+			ClockSkew: time.Duration(cfg.Tokens.ClockSkew), MaxLifetime: time.Duration(cfg.Tokens.MaxLifetime),
+		}
+	}
+	gatewayAuth, err := authn.New(gatewayAuthOpts)
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
@@ -183,16 +216,6 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	guard, err := egress.New(egress.Options{
-		ConnectTimeout: time.Duration(cfg.Upstream.ConnectTimeout),
-		RootCAs:        cfg.Upstream.TLS.RootCAs,
-		Proxy:          cfg.Upstream.Proxy.ParsedURL,
-	})
-	if err != nil {
-		logger.Error("startup failed", "error", err.Error())
-		return 1
-	}
-	defer guard.CloseIdleConnections()
 	fetchPrices := func(ctx context.Context, u string) ([]byte, error) {
 		return catalog.Fetch(ctx, u, catalog.FetchOptions{Transport: guard.Transport(false)})
 	}

@@ -41,7 +41,7 @@ type Record struct {
 	StartedAt          time.Time // step 1, UTC; the partition key
 	RequestID, TraceID string    // TraceID "" when the request has none
 
-	PrincipalKind, PrincipalID, KeyID string // "service_account", its ID, the virtual key ID
+	PrincipalKind, PrincipalID, KeyID string // "service_account" or "token", the service account ID, the virtual key or mapping ID
 	CredentialID                      string // "" until step 8 passed
 
 	Provider, APIFamily, Operation          string
@@ -105,7 +105,7 @@ func (r *Record) checks() []check {
 	return []check{
 		{"request_id", matchHex(r.RequestID, 32, 32)},
 		{"trace_id", r.TraceID == "" || matchHex(r.TraceID, 32, 32)},
-		{"principal_kind", r.PrincipalKind == "service_account"},
+		{"principal_kind", (r.PrincipalKind == "service_account" || r.PrincipalKind == "token")},
 		{"principal_id", len(r.PrincipalID) == 36 && allOf(r.PrincipalID, "0123456789abcdef-")},
 		{"key_id", len(r.KeyID) <= 64 && allOf(r.KeyID, alnum+"_-")},
 		{"provider", inRange(r.Provider, 1, 63) && allOf(r.Provider, lowerAlnum+"-")},

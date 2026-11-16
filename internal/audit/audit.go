@@ -135,3 +135,14 @@ func RecordPlatform(ctx context.Context, tx store.Tx, e Event) error {
 func RecordAuthFailure(ctx context.Context, tx store.Tx, keyID, reason, requestID string) error {
 	return queries.New(tx).RecordAuthFailure(ctx, queries.RecordAuthFailureParams{KeyID: keyID, Reason: reason, RequestID: requestID})
 }
+
+// RecordTokenAuthFailure writes the refusal of a token of the inference listener to the audit log
+// of the tenant whose session tx is, through the one function the gateway role may execute. scope
+// is "tenant" or "platform", issuerID the ID of the registration that selected the token, reason a
+// lower-case word, subject the verified subject (empty unless the signature was verified) and
+// requestID the 32-hex request ID. It is given no token, no header and no unverified claim.
+func RecordTokenAuthFailure(ctx context.Context, tx store.Tx, scope, issuerID, reason, subject, requestID string) error {
+	return queries.New(tx).RecordTokenAuthFailure(ctx, queries.RecordTokenAuthFailureParams{
+		Scope: scope, IssuerID: issuerID, Reason: reason, Subject: subject, RequestID: requestID,
+	})
+}

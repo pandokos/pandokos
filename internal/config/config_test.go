@@ -290,6 +290,15 @@ var wantKeys = []string{
 	"telemetry.traces.sample_ratio",
 	"telemetry.traces.propagate",
 	"telemetry.resource.attributes",
+	"tokens.enabled",
+	"tokens.max_token_bytes",
+	"tokens.clock_skew",
+	"tokens.max_lifetime",
+	"tokens.private_hosts",
+	"tokens.jwks.fetch_timeout",
+	"tokens.jwks.refresh_interval",
+	"tokens.jwks.min_refetch_interval",
+	"tokens.jwks.max_stale",
 }
 
 var wantDefaultText = []string{"info", "0.0.0.0:8080", "10s", "120s", "65536", "", "", "TLS1.2",
@@ -298,7 +307,8 @@ var wantDefaultText = []string{"info", "0.0.0.0:8080", "10s", "120s", "65536", "
 	"", "", "pandokos", "verify-full", "", "5s", "pandokos_gateway", "", "10", "pandokos_admin", "", "10", "pandokos_worker", "", "5", "pandokos_owner", "",
 	"local", "",
 	"true", "false", "https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json", "24h",
-	"50ms", "500", "10000", "10s", "", "http/protobuf", "", "10s", "1", "false", ""}
+	"50ms", "500", "10000", "10s", "", "http/protobuf", "", "10s", "1", "false", "",
+	"true", "8192", "60s", "24h", "", "5s", "15m", "10s", "6h"}
 
 func leafKeys(t reflect.Type, prefix string, out *[]string) {
 	for i := 0; i < t.NumField(); i++ {
@@ -386,7 +396,7 @@ func keyCases(t *testing.T) []keyCase {
 		{key: "listeners.inference.address", a: "127.0.0.1:1111", b: "127.0.0.1:2222"},
 		{key: "listeners.inference.read_header_timeout", a: "11s", b: "12s"},
 		{key: "listeners.inference.idle_timeout", a: "21s", b: "22s"},
-		{key: "listeners.inference.max_header_bytes", a: "8192", b: "16384", yamlInt: true},
+		{key: "listeners.inference.max_header_bytes", a: "16384", b: "32768", yamlInt: true},
 		{key: "listeners.inference.tls.cert_file", a: infCert, b: admCert, tlsFile: true},
 		{key: "listeners.inference.tls.key_file", a: infKey, b: admKey, tlsFile: true},
 		{key: "listeners.inference.tls.min_version", a: "TLS1.3", b: "TLS1.2"},

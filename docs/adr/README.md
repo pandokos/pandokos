@@ -50,6 +50,9 @@ A record is *proposed* until its pull request is merged by the maintainer, then 
 | [0042](0042-openai-compatible-providers-and-stream-usage-option.md) | OpenAI-compatible providers and the per-provider stream usage option | proposed |
 | [0043](0043-tenant-capability-check-and-usage-list.md) | The tenant capability check and the minimal usage list | proposed |
 | [0044](0044-sdk-compatibility-suite-python-typescript.md) | The SDK compatibility suite in Python and TypeScript | proposed |
+| [0045](0045-trusted-token-issuers.md) | Trusted token issuers: registration, selection and validation | proposed |
+| [0046](0046-issuer-key-retrieval-and-caching.md) | Retrieval and caching of issuer keys | proposed |
+| [0047](0047-identity-providers-in-the-test-suite.md) | Identity providers in the test suite | proposed |
 
 ## Questions from SOW 0.1 and where they were decided
 

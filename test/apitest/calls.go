@@ -22,6 +22,9 @@ type Params struct {
 	Model          string // {model} (an identifier), and the model of a new price override
 	PriceVersion   string // {price_version}
 	PriceImport    string // {price_import}
+	TokenIssuer    string // {issuer} of a tenant-bound trusted issuer, and the issuer of a new mapping
+	SubjectMapping string // {mapping}
+	PlatformIssuer string // {issuer} of a platform-level issuer
 }
 
 // Call is how to make a valid call of one operation.
@@ -98,6 +101,22 @@ func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 		body = map[string]any{"source": "embedded", "dry_run": true}
 	case "setModelRestriction":
 		body = map[string]any{"models": []string{}}
+	case "listTokenIssuers", "getTokenIssuer", "deleteTokenIssuer", "listTenantPlatformIssuers", "listSubjectMappings",
+		"getSubjectMapping", "deleteSubjectMapping", "listPlatformIssuers", "getPlatformIssuer", "deletePlatformIssuer",
+		"listPlatformIssuerTenants", "deletePlatformIssuerTenant":
+	case "createTokenIssuer":
+		n := unique.Add(1)
+		body = map[string]any{"name": UniqueName("issuer"), "issuer": "https://created-" + strconv.FormatInt(n, 10) + ".example.test", "audience": "created-" + strconv.FormatInt(n, 10)}
+	case "updateTokenIssuer", "updatePlatformIssuer":
+		body = map[string]any{"description": "changed by a test"}
+	case "createPlatformIssuer":
+		n := unique.Add(1)
+		body = map[string]any{"name": UniqueName("platform"), "issuer": "https://created-platform-" + strconv.FormatInt(n, 10) + ".example.test",
+			"audience": "created-platform-" + strconv.FormatInt(n, 10), "tenant_claim": "org"}
+	case "createSubjectMapping":
+		body = map[string]any{"issuer": map[string]any{"scope": "tenant", "id": p.TokenIssuer}, "subject": UniqueName("subject"), "service_account_id": p.ServiceAccount}
+	case "putPlatformIssuerTenant":
+		body = map[string]any{}
 	default:
 		tb.Fatalf("apitest.CallFor does not know the operation %s: add it", op.ID)
 	}
@@ -109,6 +128,12 @@ func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 	path = strings.ReplaceAll(path, "{model}", p.Model)
 	path = strings.ReplaceAll(path, "{price_version}", p.PriceVersion)
 	path = strings.ReplaceAll(path, "{price_import}", p.PriceImport)
+	path = strings.ReplaceAll(path, "{mapping}", p.SubjectMapping)
+	if strings.Contains(op.Path, "/platform-issuers/{issuer}") {
+		path = strings.ReplaceAll(path, "{issuer}", p.PlatformIssuer)
+	} else {
+		path = strings.ReplaceAll(path, "{issuer}", p.TokenIssuer)
+	}
 	if strings.HasPrefix(op.Path, "/v1/platform-keys/") {
 		path = strings.ReplaceAll(path, "{key}", p.PlatformKey)
 	} else {

@@ -1,0 +1,39 @@
+# Keycloak and Ory Hydra for the trusted issuer tests (build tag idp). Started by test/idp/up.sh,
+# which generates the certificate, the client secrets and the ports. Not for any other use.
+name: pandokos-testidp
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2@sha256:c68e286cacd87b942ac1939a0a1481461109d6acd3a57dc496969a319a76bbf0
+    command:
+      - start-dev
+      - --http-enabled=false
+      - --https-certificate-file=/tls/server.pem
+      - --https-certificate-key-file=/tls/server.key
+      - --https-port=${PANDOKOS_IDP_KEYCLOAK_PORT:?run test/idp/up.sh}
+      - --hostname=https://localhost:${PANDOKOS_IDP_KEYCLOAK_PORT}
+      - --import-realm
+    volumes:
+      - ../../local/idp/tls:/tls:ro
+      - ../../local/idp/keycloak-realm.json:/opt/keycloak/data/import/pandokos.json:ro
+    ports:
+      - "127.0.0.1:${PANDOKOS_IDP_KEYCLOAK_PORT}:${PANDOKOS_IDP_KEYCLOAK_PORT}"
+
+  hydra:
+    image: oryd/hydra:v26.2.0@sha256:ff67c7fb5f95074fa53374d41151713554960504b340cd3f95b09e65deaea2a9
+    command: ["serve", "all", "--sqa-opt-out"]
+    environment:
+      DSN: memory
+      SECRETS_SYSTEM: ${PANDOKOS_IDP_HYDRA_SYSTEM_SECRET:?run test/idp/up.sh}
+      URLS_SELF_ISSUER: https://localhost:${PANDOKOS_IDP_HYDRA_PORT}/
+      URLS_LOGIN: https://localhost:${PANDOKOS_IDP_HYDRA_PORT}/login
+      URLS_CONSENT: https://localhost:${PANDOKOS_IDP_HYDRA_PORT}/consent
+      SERVE_PUBLIC_PORT: ${PANDOKOS_IDP_HYDRA_PORT}
+      SERVE_PUBLIC_TLS_ENABLED: "true"
+      SERVE_PUBLIC_TLS_CERT_PATH: /tls/server.pem
+      SERVE_PUBLIC_TLS_KEY_PATH: /tls/server.key
+      STRATEGIES_ACCESS_TOKEN: jwt
+    volumes:
+      - ../../local/idp/tls:/tls:ro
+    ports:
+      - "127.0.0.1:${PANDOKOS_IDP_HYDRA_PORT}:${PANDOKOS_IDP_HYDRA_PORT}"

@@ -4,8 +4,10 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -116,4 +118,88 @@ func TestImportsOfThisSprint(t *testing.T) {
 			})
 		}
 	})
+}
+
+// TestJOSEImports is T-R36: the JOSE library of sprint 4.1 is imported only by internal/authn,
+// internal/jwks and test/fakeidp, only through its root package, and the root module requires it
+// directly, with nothing else new.
+func TestJOSEImports(t *testing.T) {
+	const jose = "github.com/go-jose/go-jose/v4"
+	allowed := []string{"internal/authn/", "internal/jwks/", "test/fakeidp/"}
+	importers := map[string]bool{}
+	err := filepath.WalkDir(root(t), func(path string, e fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(root(t), path)
+		rel = filepath.ToSlash(rel)
+		if e.IsDir() {
+			switch rel {
+			case ".git", "local", "bin", "planning":
+				return fs.SkipDir
+			}
+			if filepath.Base(rel) == "node_modules" {
+				return fs.SkipDir
+			}
+			// The nested module of the SDK tests has its own go.mod and its own rules.
+			if rel != "." {
+				if _, err := os.Stat(filepath.Join(path, "go.mod")); err == nil {
+					return fs.SkipDir
+				}
+			}
+			return nil
+		}
+		if !strings.HasSuffix(rel, ".go") {
+			return nil
+		}
+		paths, _, _ := importsAndNames(t, rel)
+		for _, p := range paths {
+			if p == jose || strings.HasPrefix(p, jose+"/") || strings.HasPrefix(p, "github.com/go-jose/") {
+				if p != jose {
+					t.Errorf("%s imports %s: only the root package of go-jose is used", rel, p)
+				}
+				importers[rel] = true
+				ok := false
+				for _, a := range allowed {
+					ok = ok || strings.HasPrefix(rel, a)
+				}
+				if !ok {
+					t.Errorf("%s imports the JOSE library, which only %v may", rel, allowed)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Each of the three packages uses it (the module would be dead weight in a package that does not).
+	for _, a := range allowed {
+		found := false
+		for rel := range importers {
+			found = found || strings.HasPrefix(rel, a)
+		}
+		if !found {
+			t.Errorf("%s does not import go-jose", a)
+		}
+	}
+	gomod := read(t, "go.mod")
+	if !regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(jose) + ` v4\.\d+\.\d+\s*$`).MatchString(gomod) {
+		t.Errorf("go.mod does not require %s directly (no // indirect)", jose)
+	}
+	// The module that it brings requires nothing else: go.sum has its lines and no other new module of the sprint.
+	sum := read(t, "go.sum")
+	if strings.Count(sum, jose+" ") < 2 {
+		t.Errorf("go.sum has %d lines of go-jose, want its go.mod and its zip", strings.Count(sum, jose+" "))
+	}
+	// The linter enforces the same layering.
+	lint := read(t, ".golangci.yml")
+	if !strings.Contains(lint, jose) {
+		t.Errorf(".golangci.yml does not mention %s", jose)
+	}
+	for _, dir := range allowed[:2] { // the two packages of the product; the fake is test code
+		if !strings.Contains(lint, strings.TrimSuffix(dir, "/")) {
+			t.Errorf(".golangci.yml does not mention %s", dir)
+		}
+	}
 }

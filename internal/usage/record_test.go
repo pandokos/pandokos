@@ -171,6 +171,29 @@ func TestValidate(t *testing.T) {
 		}
 	}
 
+	// Sprint 4.1: a request authenticated by a token is recorded with principal_kind token, the
+	// service account as principal_id and the ID of the subject mapping as key_id.
+	t.Run("principal_kind token is valid, another kind is not", func(t *testing.T) {
+		r := testutil.ValidRecord(tid())
+		r.PrincipalKind, r.KeyID = "token", testutil.RandomUUID()
+		if err := r.Validate(); err != nil {
+			t.Errorf("a token record: %v", err)
+		}
+		for _, kind := range []string{"Token", "jwt", "platform", "user", "", "token ", "service_account "} {
+			r := testutil.ValidRecord(tid())
+			r.PrincipalKind = kind
+			if err := r.Validate(); err == nil || !strings.Contains(err.Error(), "principal_kind") {
+				t.Errorf("principal_kind %q: %v", kind, err)
+			}
+		}
+		// A key record still says service_account.
+		r = testutil.ValidRecord(tid())
+		r.PrincipalKind = "service_account"
+		if err := r.Validate(); err != nil {
+			t.Errorf("a key record: %v", err)
+		}
+	})
+
 	t.Run("a cost the column cannot hold", func(t *testing.T) {
 		r := testutil.ValidRecord(tid())
 		big, err := pricing.ParseDecimal("100000000000000000000") // 1e20; numeric(38,18) holds less

@@ -58,7 +58,7 @@ func TestTenants(t *testing.T) {
 		if m.PrincipalType != adminapi.PrincipalTypeServiceAccount || m.ID != sa.ID || m.Tenant == nil || m.Tenant.ID != out.Tenant.ID || m.Tenant.State != adminapi.TenantStateActive || m.Bootstrap {
 			t.Errorf("me: %+v", m)
 		}
-		if strings.Join(m.Roles, ",") != "tenant-admin" || len(m.Permissions) != 15 {
+		if strings.Join(m.Roles, ",") != "tenant-admin" || len(m.Permissions) != 21 {
 			t.Errorf("roles %v, permissions %v", m.Roles, m.Permissions)
 		}
 		// The default name of the first service account is admin; no expiry means none.
@@ -490,7 +490,7 @@ func TestPlatformKeys(t *testing.T) {
 	c := api.Client(boot)
 
 	m := me(t, api, boot)
-	if m.PrincipalType != adminapi.PrincipalTypePlatform || !m.Bootstrap || m.Tenant != nil || strings.Join(m.Roles, ",") != "platform-admin" || len(m.Permissions) != 12 {
+	if m.PrincipalType != adminapi.PrincipalTypePlatform || !m.Bootstrap || m.Tenant != nil || strings.Join(m.Roles, ",") != "platform-admin" || len(m.Permissions) != 15 {
 		t.Errorf("me: %+v", m)
 	}
 	r := api.Do(t, "GET", "/v1/me", boot, nil, nil)
@@ -595,8 +595,8 @@ func TestSuspensionBlocksAdministration(t *testing.T) {
 			}
 		}
 	}
-	if n != 27 {
-		t.Errorf("only %d operations were exercised, want 27 (getMe, the twenty tenant operations of epic 2.1, the four of sprint 2.2 and the two of sprint 3.3)", n)
+	if n != 37 {
+		t.Errorf("only %d operations were exercised, want 37 (getMe, the twenty tenant operations of epic 2.1, the four of sprint 2.2, the two of sprint 3.3 and the ten of sprint 4.1)", n)
 	}
 	if after := w.api.SnapshotTenant(t, w.tenant.ID); after != before {
 		t.Error("a row of the suspended tenant changed")

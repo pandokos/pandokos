@@ -56,8 +56,12 @@ type Credentials interface {
 	Open(ctx context.Context, p authz.Principal, requestID, provider string) (Credential, error)
 }
 
-// AuthFailure is a refused credential that names a key of a tenant.
-type AuthFailure struct{ RequestID, Reason, KeyID, TenantID string }
+// AuthFailure is a refused credential that names a key or a registration of a tenant. IssuerID,
+// IssuerScope ("tenant", "platform") and Subject are set for a token only; Subject only when its
+// signature was verified.
+type AuthFailure struct {
+	RequestID, Reason, KeyID, TenantID, IssuerID, IssuerScope, Subject string
+}
 
 // FailureRecorder records authentication failures; it reports whether a record was written.
 type FailureRecorder interface {

@@ -20,6 +20,10 @@ updates:
     directory: /test/db
     schedule:
       interval: weekly
+  - package-ecosystem: docker-compose
+    directory: /test/idp
+    schedule:
+      interval: weekly
   - package-ecosystem: pip
     directory: /test/sdk/python
     schedule:
