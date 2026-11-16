@@ -90,6 +90,7 @@ behaviour: the gateway authenticator is still built without `KindToken`.
    |---|---|---|
    | `CreateTrustedIssuer :one`, `GetTrustedIssuer :one`, `LockTrustedIssuer :one`, `ListTrustedIssuers :many` (filters `name`, `enabled`; sorts `created_at`, `name`), `UpdateTrustedIssuer :one` (each column by `COALESCE(sqlc.narg(x), x)`), `DeleteTrustedIssuer :one` (`RETURNING` the row) | tenant | tenant-bound registrations |
    | `CountSubjectMappingsOfIssuer :one` | tenant | for the audit detail of a delete |
+   | `CountPlatformIssuerMappings :one` | platform | amended at review: the count for a platform-level delete, through the definer function `platform_issuer_mapping_count(issuer_id, tenant_ids)` (admin role, platform scope only), because RLS hides the tenants' mappings from the platform session |
    | `CreateSubjectMapping :one`, `GetSubjectMapping :one`, `ListSubjectMappings :many` (filters issuer ID, service account ID, `subject`; sort `created_at`), `DeleteSubjectMapping :one` | tenant | mappings; every row is returned with the issuer's scope, ID and name and the service account's name |
    | `ListTenantPlatformIssuers :many`, `GetTenantPlatformIssuer :one` | tenant | `platform_issuer` joined with `platform_issuer_tenant`, which the policy narrows to the tenant's rows; returns the tenant's `claim_value` |
    | `CreatePlatformIssuer :one`, `GetPlatformIssuer :one`, `LockPlatformIssuer :one`, `ListPlatformIssuers :many`, `UpdatePlatformIssuer :one`, `DeletePlatformIssuer :one` | platform | platform-level registrations |

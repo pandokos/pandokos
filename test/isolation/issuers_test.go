@@ -445,10 +445,11 @@ func TestIssuerFunctions(t *testing.T) {
 				t.Errorf("%s: %v %v, want %s and no tenant setting left behind", c.what, rows, err, c.want)
 			}
 		}
-		// The platform session itself sees none of the rows; the caller's own tenant setting is restored.
-		rows, err := query(t, ad, sessA, count, piP, []string{b.String()})
-		if err != nil || len(rows) != 1 || rows[0]["n"] != "1" || rows[0]["tenant_after"] != a.String() {
-			t.Errorf("in tenant A's session: %v %v", rows, err)
+		// A tenant session, or one without a scope, is refused.
+		for _, sess := range []session{sessA, noSession} {
+			if _, err := query(t, ad, sess, count, piP, []string{b.String()}); sqlstate(err) != insufficientPrivilege {
+				t.Errorf("session %s: %v, want SQLSTATE %s", sess.name, err, insufficientPrivilege)
+			}
 		}
 		for _, role := range []string{"gateway", "worker"} {
 			if _, err := query(t, d.Connect(t, role), sessA, count, piP, []string{a.String()}); sqlstate(err) != insufficientPrivilege {

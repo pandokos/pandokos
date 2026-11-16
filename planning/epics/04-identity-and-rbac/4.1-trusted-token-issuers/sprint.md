@@ -722,6 +722,7 @@ the fake issuer; **E** the built binary, end to end; **X** external identity pro
 
 ## 11. Consequences for later sprints
 
+- **Carried item:** a NUL character in the `description` of resources older than sprint 4.1 (for example service accounts) returns 500 instead of 400; fixing it needs a shared mapper of SQLSTATE 22021 to `400 invalid_request`.
 - **4.2** (users and sessions): decides whether tokens are accepted on the administration
   listener (O-1) and adds user mappings (IAM-08, "or users"); a mapping row then names a user
   instead of a service account. The relying-party sign-in reuses `internal/jwks` for ID tokens.

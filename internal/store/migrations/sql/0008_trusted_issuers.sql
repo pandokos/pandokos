@@ -318,7 +318,7 @@ GRANT EXECUTE ON FUNCTION pandokos.record_token_auth_failure(text, uuid, text, t
 -- row of its deletion: the platform session cannot see the tenants' mappings, and the policy of
 -- the table is forced on this function's owner too, which no tenant policy names. So the function
 -- counts tenant by tenant, as that tenant's session (the setting is local to the transaction), and
--- restores the session's own tenant setting before it returns. The caller names the tenants (the
+-- restores the session's own tenant setting before it returns. It refuses a session that is not in the platform scope. The caller names the tenants (the
 -- platform session lists them all); the result is one number, never a row. Executable by the
 -- admin role only.
 CREATE FUNCTION pandokos.platform_issuer_mapping_count(p_issuer_id uuid, p_tenant_ids uuid[]) RETURNS bigint
@@ -330,6 +330,9 @@ DECLARE
     t     uuid;
     total bigint := 0;
 BEGIN
+    IF NOT pandokos.platform_scope() THEN
+        RAISE EXCEPTION 'platform_issuer_mapping_count needs the platform scope' USING ERRCODE = 'insufficient_privilege';
+    END IF;
     FOREACH t IN ARRAY COALESCE(p_tenant_ids, ARRAY[]::uuid[]) LOOP
         PERFORM pg_catalog.set_config('app.tenant_id', t::text, true);
         total := total + (SELECT pg_catalog.count(*) FROM pandokos.subject_mapping m WHERE m.platform_issuer_id = p_issuer_id);
