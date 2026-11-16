@@ -56,13 +56,13 @@ db-up: ## Start the test PostgreSQL and PgBouncer (Docker)
 db-down: ## Stop them and discard the data
 	docker compose -f test/db/compose.yaml down -v
 
-idp-up: ## Start Keycloak and Ory Hydra for the issuer tests (Docker)
+idp-up: ## Start Keycloak, Ory Hydra and Authentik for the issuer tests (Docker)
 	sh test/idp/up.sh
 
 idp-down: ## Stop them and discard their data
 	sh test/idp/down.sh
 
-test-idp: ## Trusted issuer tests against Keycloak and Hydra (needs make db-up and make idp-up)
+test-idp: ## Trusted issuer tests against Keycloak, Hydra and Authentik (needs make db-up and make idp-up)
 	@$(DBENV) set -a; . ./local/idp/env; set +a; GOTOOLCHAIN=go$(RELEASE_GO) go test -tags idp -count=1 ./test/idp/...
 
 migrations-sum: ## Rewrite the checksum file of the migrations
