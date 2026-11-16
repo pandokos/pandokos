@@ -186,8 +186,9 @@ func TestTokenFailureAuditor(t *testing.T) {
 		au := newAuditor()
 		clock.t = clock.t.Add(time.Hour)
 		before := n()
-		// A key whose ID is the string of a registration's ID, with the same reason, is another failure.
-		key := gateway.AuthFailure{RequestID: requestIDFor(600), Reason: "bad_signature", KeyID: issuerA, TenantID: a.String()}
+		// A key failure with the same reason is another failure than a token failure. (A key ID
+		// has the shape t + 16 base32 characters, so it can never be the string of a registration's ID.)
+		key := gateway.AuthFailure{RequestID: requestIDFor(600), Reason: "bad_signature", KeyID: "tabcdefghijklmnop", TenantID: a.String()}
 		if !au.Record(ctx(t), tokenFailure(601, issuerA, "tenant", "bad_signature", "")) || !au.Record(ctx(t), key) {
 			t.Error("a token failure and a key failure with equal strings must both be recorded")
 		}

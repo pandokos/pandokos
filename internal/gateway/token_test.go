@@ -197,8 +197,13 @@ func TestTokenAuthentication(t *testing.T) {
 			if strings.Contains(string(r.Body), tok) {
 				t.Errorf("%s: the body of the forwarded request holds the token", name)
 			}
-			if got := r.Header.Get("Authorization"); got != "Bearer "+"synthetic-canary-provider-key" && !strings.HasPrefix(got, "Bearer ") {
-				t.Errorf("%s: Authorization %q is not the provider credential", name, got)
+			// The provider credential travels in the header of the provider's family.
+			credHeader, credPrefix := "Authorization", "Bearer "
+			if strings.HasPrefix(name, "anthropic") {
+				credHeader, credPrefix = "X-Api-Key", ""
+			}
+			if got := r.Header.Get(credHeader); !strings.HasPrefix(got, credPrefix) || got == credPrefix {
+				t.Errorf("%s: %s %q is not the provider credential", name, credHeader, got)
 			}
 		}
 	})
@@ -233,7 +238,7 @@ func TestTokenAuthentication(t *testing.T) {
 		now := time.Now().Unix()
 		other := fakeidp.Start(t, fakeidp.Options{})
 		reasons := map[string]string{
-			"malformed":                "eyJhbGciOiJFUzI1NiJ9.e30.c2ln",
+			"malformed":                "eyJhbGciOiJFUzI1NiJ9.W10.c2ln",
 			"algorithm_not_allowed":    s.idp.Raw(map[string]any{"alg": "none"}, s.idp.Standard(workload, s.audience, time.Minute), nil) + "c2ln",
 			"unknown_issuer":           other.Sign("ES256", other.Standard(workload, "aud-unknown", time.Minute)),
 			"ambiguous_audience":       with([]string{s.audience, "aud-second"}, same),
@@ -495,7 +500,7 @@ func TestTokenFailureAudit(t *testing.T) {
 	t.Run("failures that name no tenant are logged, not audited", func(t *testing.T) {
 		before := len(rows())
 		for reason, tok := range map[string]string{
-			"malformed":             "eyJhbGciOiJFUzI1NiJ9.e30.c2ln",
+			"malformed":             "eyJhbGciOiJFUzI1NiJ9.W10.c2ln",
 			"algorithm_not_allowed": s.idp.Raw(map[string]any{"alg": "none"}, s.idp.Standard(workload, s.audience, time.Minute), nil) + "c2ln",
 			"unknown_issuer":        other.Sign("ES256", other.Standard(workload, "aud-unknown", time.Minute)),
 		} {
@@ -681,7 +686,8 @@ func TestTokenCanary(t *testing.T) {
 	h.logs = logs
 	other := fakeidp.Start(t, fakeidp.Options{})
 
-	good := []string{s.token("ES256", workload), s.token("RS256", workload), s.token("EdDSA", workload)}
+	// The registration allows RS256 and ES256 (the default); EdDSA would be refused.
+	good := []string{s.token("ES256", workload), s.token("RS256", workload), s.token("ES256", workload)}
 	bad := []string{
 		s.token("ES256", "stranger"),
 		other.Sign("ES256", other.Standard(workload, s.audience, time.Minute).With("iss", s.idp.Issuer())),

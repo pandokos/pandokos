@@ -26,6 +26,10 @@ import (
 	"github.com/pandokos/pandokos/internal/usage"
 )
 
+// unavailableRetryAfter is the Retry-After, in seconds, of a 503 because the credential cannot be
+// verified.
+const unavailableRetryAfter = "5"
+
 // ErrShutdown is the cancellation cause of the base context of a server whose drain deadline
 // passed. The gateway reports requests cancelled this way as shutdown_aborted.
 var ErrShutdown = errors.New("forced shutdown")
@@ -411,6 +415,9 @@ func (h *Handler) authenticate(r *http.Request, st *reqState) bool {
 	p, err := h.auth.Authenticate(r.Context(), cred)
 	switch {
 	case errors.Is(err, authz.ErrUnavailable):
+		// The credential cannot be verified now (a database or an issuer's keys): tell the
+		// caller to come back.
+		st.sw.Header().Set("Retry-After", unavailableRetryAfter)
 		h.unavailable(st)
 		return false
 	case err != nil:
@@ -426,6 +433,12 @@ func (h *Handler) authenticate(r *http.Request, st *reqState) bool {
 		attrs := []any{"listener", "inference", "request_id", st.id, "reason", reason}
 		if keyID != "" {
 			attrs = append(attrs, "key_id", keyID)
+		}
+		if detail.IssuerID != "" {
+			attrs = append(attrs, "issuer_id", detail.IssuerID, "issuer_scope", detail.IssuerScope)
+		}
+		if detail.Subject != "" {
+			attrs = append(attrs, "subject", detail.Subject)
 		}
 		if tenantID != "" {
 			attrs = append(attrs, "tenant_id", tenantID)
@@ -576,6 +589,9 @@ func (h *Handler) logRequest(st *reqState, outcome string) {
 	attrs = append(attrs, "duration_ms", time.Since(st.start).Milliseconds())
 	if p := st.principal; p != nil {
 		attrs = append(attrs, "tenant_id", p.TenantID.String(), "service_account_id", p.ID, "key_id", p.KeyID)
+		if p.IssuerID != "" {
+			attrs = append(attrs, "issuer_id", p.IssuerID)
+		}
 	} else if st.keyID != "" {
 		attrs = append(attrs, "key_id", st.keyID)
 	}
