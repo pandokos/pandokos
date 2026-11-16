@@ -1,4 +1,4 @@
-# Keycloak and Ory Hydra for the trusted issuer tests (build tag idp). Started by test/idp/up.sh,
+# Keycloak, Ory Hydra and Authentik for the trusted issuer tests (build tag idp). Started by test/idp/up.sh,
 # which generates the certificate, the client secrets and the ports. Not for any other use.
 name: pandokos-testidp
 
@@ -37,3 +37,71 @@ services:
       - ../../local/idp/tls:/tls:ro
     ports:
       - "127.0.0.1:${PANDOKOS_IDP_HYDRA_PORT}:${PANDOKOS_IDP_HYDRA_PORT}"
+
+  # Authentik (no Redis: it has not needed one since 2025.10). The server serves HTTPS on 9443 with the
+  # certificate of up.sh (set as the web certificate of the default brand by the blueprint); the
+  # blueprint creates the provider, the application and the service accounts, and reads the secrets
+  # from the environment.
+  authentik-db:
+    image: postgres:16-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139
+    environment:
+      POSTGRES_USER: authentik
+      POSTGRES_DB: authentik
+      POSTGRES_PASSWORD: ${PANDOKOS_IDP_AUTHENTIK_DB_PASSWORD:?run test/idp/up.sh}
+    command: ["postgres", "-c", "fsync=off"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik -d authentik"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2026.8.5@sha256:602227a86455d6772e3d16b7d852713c4f864f40df5df894abd1285bb53979a5
+    command: server
+    healthcheck: &authentik-health
+      # The image's own check gives up after about 210 s, before up.sh's waits (and its log dump) do.
+      test: ["CMD", "ak", "healthcheck"]
+      interval: 10s
+      timeout: 30s
+      start_period: 400s
+      retries: 3
+    environment: &authentik-env
+      AUTHENTIK_SECRET_KEY: ${PANDOKOS_IDP_AUTHENTIK_SECRET_KEY:?run test/idp/up.sh}
+      AUTHENTIK_POSTGRESQL__HOST: authentik-db
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${PANDOKOS_IDP_AUTHENTIK_DB_PASSWORD}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${PANDOKOS_IDP_AUTHENTIK_ADMIN_PASSWORD}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${PANDOKOS_IDP_AUTHENTIK_ADMIN_TOKEN}
+      # IPv4 only: the defaults bind [::], which a container without IPv6 refuses.
+      AUTHENTIK_LISTEN__HTTP: 0.0.0.0:9000
+      AUTHENTIK_LISTEN__HTTPS: 0.0.0.0:9443
+      AUTHENTIK_LISTEN__METRICS: 0.0.0.0:9300
+      AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
+      AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      PANDOKOS_APP_PASSWORD_A: ${PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_A}
+      PANDOKOS_APP_PASSWORD_B: ${PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_B}
+      PANDOKOS_APP_PASSWORD_C: ${PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_C}
+      PANDOKOS_APP_PASSWORD_UNMAPPED: ${PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_UNMAPPED}
+      PANDOKOS_CLIENT_SECRET: ${PANDOKOS_TEST_IDP_AUTHENTIK_CLIENT_SECRET}
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+    volumes:
+      - ./authentik-blueprint.yaml:/blueprints/custom/pandokos.yaml:ro
+      - ../../local/idp/tls:/tls:ro
+    ports:
+      - "127.0.0.1:${PANDOKOS_IDP_AUTHENTIK_PORT}:9443"
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2026.8.5@sha256:602227a86455d6772e3d16b7d852713c4f864f40df5df894abd1285bb53979a5
+    command: worker
+    healthcheck: *authentik-health
+    environment: *authentik-env
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+    volumes:
+      - ./authentik-blueprint.yaml:/blueprints/custom/pandokos.yaml:ro
+      - ../../local/idp/tls:/tls:ro

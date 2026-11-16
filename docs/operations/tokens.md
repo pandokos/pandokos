@@ -128,6 +128,37 @@ A token whose `pandokos_org` is `acme-corp` and whose `azp` is `batch-client` ac
 Removing `acme` from the list (`platform-issuer remove-tenant`) stops its tokens at once; the mapping
 stays and is inert.
 
+### Worked example: Authentik
+
+In Authentik a workload is a service account with an app password, and the token comes from the
+client-credentials grant of an OAuth2/OpenID provider whose "allowed grant types" include
+`client_credentials` (empty by default: every request is then `invalid_grant`). The issuer is per
+provider (`https://auth.example.com/application/o/<slug>/`, with the slash), and `aud` is the
+provider's client ID, so that is the audience to register:
+
+```
+pandokos token-issuer create --tenant acme --name authentik \
+  --issuer https://auth.example.com/application/o/pandokos/ --audience <client-id>
+
+pandokos subject-mapping create --tenant acme --issuer <issuer-id> \
+  --subject batch --service-account batch-sa
+```
+
+The workload asks for a token with `client_id`, the service account's `username` and its app password
+as `password` (and the `client_secret` of a confidential provider):
+
+```
+curl https://auth.example.com/application/o/token/ \
+  -d grant_type=client_credentials -d client_id=<client-id> \
+  -d username=batch -d password=$APP_PASSWORD -d scope=pandokos
+```
+
+With the provider's subject mode set to the user name, `sub` is `batch`. To make the provider carry a
+tenant (a platform-level registration with `--tenant-claim pandokos_org`), add a scope mapping that
+returns `{"pandokos_org": request.user.attributes.get("pandokos_org", "")}` and have the workload
+request its scope: a token without the scope has no claim and is refused. The setup that is tested
+is in `test/idp/authentik-blueprint.yaml`.
+
 ## 3. Finding the subject of a workload
 
 The subject is whatever the registration's `subject_claim` holds in a token of the workload. Decode a
@@ -145,6 +176,7 @@ client ID is then in another claim, and `subject_claim` names it.
 |---|---|---|---|
 | Keycloak 26.8 | `azp` | `sub` is a generated UUID; `azp` and `client_id` carry the client ID; the audience comes from an audience mapper; an organisation can be added by a claim mapper | yes |
 | Ory Hydra v26.2 | `sub` (the default) | `sub` equals the client ID; the caller asks for the audience with the `audience` parameter, and a token without one has an empty `aud`, which Pandokos refuses | yes |
+| Authentik 2026.8 | `sub` (the default is a hash of the user ID; set the provider's subject mode to the user name to read it) | a workload is a service account; the audience is the provider's client ID and cannot be chosen; the tenant can be added by a scope mapping, which applies only when the caller requests that scope | yes |
 | Kubernetes service account tokens | `sub` (`system:serviceaccount:<namespace>:<name>`) | the issuer is the cluster's, the audience is chosen when the token is requested | not tested |
 | GitHub Actions | `sub` (repository and ref) or a claim such as `repository` | one issuer is shared by every user of GitHub: see section 5 | not tested |
 | Microsoft Entra ID | `azp` or `appid` | version 1 and version 2 tokens differ in issuer and claim names | not tested |
