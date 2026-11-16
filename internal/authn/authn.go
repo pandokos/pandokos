@@ -20,7 +20,16 @@ type Failure struct {
 	Reason   string    // malformed, kind_not_accepted, unknown_key, wrong_secret, revoked, expired, service_account_disabled, service_account_not_valid
 	KeyID    string    // when the key parsed
 	TenantID tenant.ID // when the key ID belongs to a tenant
+	// IssuerID and IssuerScope ("tenant", "platform") name the registration of a token, once one
+	// was selected; Subject is the verified subject, set only for failures after the signature
+	// was verified. All are empty for a key.
+	IssuerID, IssuerScope, Subject string
 }
+
+// FailureDetail is what a failure tells the log and the audit record. It is an alias of an
+// unnamed struct so that the gateway, which does not import this package, can read it through an
+// interface of its own.
+type FailureDetail = struct{ Reason, KeyID, TenantID, IssuerID, IssuerScope, Subject string }
 
 // Error returns "authn: " and the reason.
 func (f *Failure) Error() string { return "authn: " + f.Reason }
@@ -28,12 +37,14 @@ func (f *Failure) Error() string { return "authn: " + f.Reason }
 // Unwrap returns authz.ErrUnauthenticated.
 func (f *Failure) Unwrap() error { return authz.ErrUnauthenticated }
 
-// Detail returns the reason, the key ID and the tenant ID (empty when unknown), for the log.
-func (f *Failure) Detail() (reason, keyID, tenantID string) {
+// Detail returns the members of f for the log and the audit record; the tenant ID is empty when
+// unknown.
+func (f *Failure) Detail() FailureDetail {
+	d := FailureDetail{Reason: f.Reason, KeyID: f.KeyID, IssuerID: f.IssuerID, IssuerScope: f.IssuerScope, Subject: f.Subject}
 	if !f.TenantID.IsZero() {
-		tenantID = f.TenantID.String()
+		d.TenantID = f.TenantID.String()
 	}
-	return f.Reason, f.KeyID, tenantID
+	return d
 }
 
 // Options configure an Authenticator.
@@ -43,6 +54,7 @@ type Options struct {
 	Kinds    []Kind        // kinds this authenticator accepts
 	CacheTTL time.Duration // 0: no cache
 	Now      func() time.Time
+	Tokens   TokenOptions // used when Kinds has KindToken
 }
 
 // Authenticator turns a presented key into a principal.
@@ -51,6 +63,10 @@ type Authenticator struct {
 	kinds map[Kind]bool
 	now   func() time.Time
 	cache *cache
+	tok   TokenOptions // the validation of tokens; set when KindToken is accepted
+	// The caches of the token path (section 5.6); nil without a cache lifetime.
+	regs       *lookupCache[registration]
+	principals *lookupCache[principalEntry]
 }
 
 // New validates o.
@@ -71,10 +87,20 @@ func New(o Options) (*Authenticator, error) {
 		if k == KindPlatform && o.DB.Role() != store.RoleAdmin {
 			return nil, errors.New("authn: platform keys need the pool of the admin role")
 		}
+		if k == KindToken {
+			if err := checkTokens(o); err != nil {
+				return nil, err
+			}
+			a.tok = o.Tokens
+		}
 		a.kinds[k] = true
 	}
 	if o.CacheTTL > 0 {
 		a.cache = newCache(a.now, o.CacheTTL, o.Logger)
+		if a.kinds[KindToken] {
+			a.regs = newLookupCache[registration]("registration", a.now, o.CacheTTL, o.Logger)
+			a.principals = newLookupCache[principalEntry]("token principal", a.now, o.CacheTTL, o.Logger)
+		}
 	}
 	return a, nil
 }
@@ -86,6 +112,11 @@ func unavailable(err error) error {
 // Authenticate verifies presented and returns the principal. A refusal is a *Failure; a database
 // that cannot answer is authz.ErrUnavailable.
 func (a *Authenticator) Authenticate(ctx context.Context, presented string) (authz.Principal, error) {
+	// A value that starts with pdk_ is a key and never a token; any other value of the shape of a
+	// compact JWT is a token when tokens are accepted (section 5.2).
+	if a.kinds[KindToken] && looksLikeToken(presented, a.tok.MaxBytes) {
+		return a.token(ctx, presented)
+	}
 	keyID, kind, hash, err := Parse(presented)
 	if err != nil {
 		return authz.Principal{}, &Failure{Reason: "malformed"}
@@ -190,10 +221,9 @@ func (a *Authenticator) check(e *entry, keyID string, hash [32]byte) (authz.Prin
 		return fail("revoked")
 	case row.ExpiresAt != nil && !row.ExpiresAt.After(now):
 		return fail("expired")
-	case row.ServiceAccountState != "active":
-		return fail("service_account_disabled")
-	case row.ValidFrom != nil && now.Before(*row.ValidFrom), row.ValidUntil != nil && !now.Before(*row.ValidUntil):
-		return fail("service_account_not_valid")
+	}
+	if reason := serviceAccountRefusal(row.ServiceAccountState, row.ValidFrom, row.ValidUntil, now); reason != "" {
+		return fail(reason)
 	}
 	p := authz.Principal{
 		Kind: authz.KindServiceAccount, ID: row.ServiceAccountID, Name: row.ServiceAccountName, KeyID: keyID,
@@ -212,16 +242,33 @@ func (a *Authenticator) check(e *entry, keyID string, hash [32]byte) (authz.Prin
 	return p, nil
 }
 
-// Invalidate applies a notification payload to the cache (section 5.8).
+// serviceAccountRefusal is the reason a service account does not authenticate at now, or "": the
+// check that keys and tokens share.
+func serviceAccountRefusal(state string, validFrom, validUntil *time.Time, now time.Time) string {
+	switch {
+	case state != "active":
+		return "service_account_disabled"
+	case validFrom != nil && now.Before(*validFrom), validUntil != nil && !now.Before(*validUntil):
+		return "service_account_not_valid"
+	}
+	return ""
+}
+
+// Invalidate applies a notification payload to the caches (section 5.8): the principals of keys,
+// and those of the token path.
 func (a *Authenticator) Invalidate(payload string) {
 	if a.cache != nil {
 		a.cache.invalidate(payload)
 	}
+	a.regs.invalidate(payload)
+	a.principals.invalidate(payload)
 }
 
-// Flush empties the cache.
+// Flush empties the caches.
 func (a *Authenticator) Flush() {
 	if a.cache != nil {
 		a.cache.flush("reset")
 	}
+	a.regs.flush("reset")
+	a.principals.flush("reset")
 }

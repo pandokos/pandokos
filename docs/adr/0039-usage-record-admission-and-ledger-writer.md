@@ -64,3 +64,4 @@ partition would reject records); metadata in one JSON header (parsing ambiguity)
 ## History
 
 - 2026-11: sprint 3.3: the admin role lists a tenant's records ([ADR 0043](0043-tenant-capability-check-and-usage-list.md)).
+- 2026-11: sprint 4.1: `principal_kind` also takes `token`; `principal_id` is the service account and `key_id` the ID of the subject mapping ([ADR 0045](0045-trusted-token-issuers.md)).

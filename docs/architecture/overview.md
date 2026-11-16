@@ -50,7 +50,7 @@ flowchart LR
     evt[Event receiver<br/>for example billing]
 
     app -->|native provider API| gw
-    ops -->|REST, keys or tokens| adm
+    ops -->|REST, keys| adm
     ppl -->|REST, session cookie| adm
     gw -->|native provider API| prov
     gw --- pg
@@ -181,8 +181,12 @@ sequenceDiagram
    The rest of the path must be on the allow-list of the provider's API family.
 2. **Authenticate.** The credential is read from the header the API family uses natively
    (`Authorization: Bearer` for OpenAI, `x-api-key` for Anthropic), so stock SDKs work unchanged.
-   A value with the `pdk_` prefix is a virtual key; anything else is treated as a JWT. The lookup
-   result is cached in memory for a short time.
+   A value with the `pdk_` prefix is a virtual key; any other value of the shape of a JWT is a token
+   of a trusted issuer, in whichever header the family reads, and is verified offline against the keys
+   of the registration that its issuer and audience select ([tokens guide](../operations/tokens.md)).
+   Both end as the principal of a service account. The lookup result is cached in memory for a short
+   time. Tokens are accepted on the inference listener only; the administration API takes virtual
+   keys and platform keys until sprint 4.2 decides for users and sessions.
 3. **Admit and attribute.** Right after authentication the request takes a slot of the ledger buffer
    (step 3a, `Admit`); without a free slot it is refused with `unavailable` and has no record. Then
    caller metadata and trace context are read and the server span is started (step 3b). Nothing of
@@ -234,7 +238,8 @@ revocation takes, so these numbers are part of the product's contract (IAM-05, V
 | Cache | Default lifetime | Invalidation |
 |---|---|---|
 | Principal for a virtual key (gateway only; lifetime `cache.principal_ttl`; the admin API does not cache) | 30 s (5 s for unknown keys) | PostgreSQL `NOTIFY` on change, lifetime as upper bound |
-| JWKS of a trusted issuer | as the issuer's cache headers say, at most 1 h | Refetch on unknown key ID, rate limited |
+| Registration of a trusted issuer, and the principal of a token (gateway only; lifetime `cache.principal_ttl`; 5 s for "unknown" and "not mapped") | 30 s | `tenant:<id>` for a tenant's registrations and mappings; `issuers` for platform-level ones |
+| Keys of a trusted issuer (JWKS) | refreshed every 15 min (`tokens.jwks.refresh_interval`); used for at most 6 h after the last successful fetch (`tokens.jwks.max_stale`); the issuer's cache headers are not read | Refetch on unknown key ID, at most once per source per 10 s; not by notifications |
 | Catalogue (providers, endpoints, models, prices) and each tenant's model access | 30 s (`cache.catalog_ttl`, at most 5 m) | `NOTIFY` (`catalog`, `catalog:<tenant>`) |
 | Unwrapped tenant data key | 5 min | `NOTIFY` on tenant deletion or key rotation |
 | Decrypted provider credential | 60 s | `NOTIFY` on credential change |
@@ -291,7 +296,7 @@ The rule: when Pandokos cannot verify that a request is allowed, it does not for
 | PostgreSQL | Continues from caches until they expire, then refuses; the caches are not emptied when the notification connection is lost, so the bound is their lifetimes. Usage records wait in a bounded memory buffer whose slots are taken at admission: when it is full, `/readyz` fails and new authenticated requests are refused with 503, and those are the only ones without a record | Unavailable |
 | Valkey | Refuses by default. Configurable to continue with per-instance counters | Unaffected |
 | KEK provider | Continues while data keys are cached, then refuses | Credential writes fail |
-| Identity provider | Tokens verify while the JWKS is cached. Virtual keys unaffected | Sign-in through the IdP is unavailable. Open sessions, local accounts and keys are unaffected |
+| Identity provider | Tokens verify while the keys are cached, up to 6 h after the last fetch; then a call with a token is answered 503, never 401. Virtual keys unaffected | Sign-in through the IdP is unavailable (from sprint 4.2). Open sessions, local accounts and keys are unaffected |
 | OTLP collector | Unaffected; spans are dropped when the export queue is full | Unaffected |
 | Event destination | Unaffected; events wait in the outbox | Unaffected |
 | Provider | The provider's error is returned unchanged | Credential validation fails |
@@ -305,7 +310,7 @@ The rule: when Pandokos cannot verify that a request is allowed, it does not for
 | Database | PostgreSQL 16+, `pgx` driver, SQL in files compiled with `sqlc`, migrations embedded in the binary | [0004](../adr/0004-postgresql-and-rls.md) |
 | Counters | In process for one instance; Valkey for several | [0012](../adr/0012-limits-and-budget-reservation.md) |
 | Cryptography | Go standard library: AES-256-GCM, HKDF, SHA-256 | [0008](../adr/0008-vault-envelope-encryption.md) |
-| Tokens | OIDC discovery and JWKS with a small, widely used library | [0005](../adr/0005-data-plane-authentication.md), [0006](../adr/0006-human-authentication-external-oidc.md) |
+| Tokens | OIDC discovery and JWKS fetched through the egress guard; compact JWS and JWK by `go-jose` v4, claims checked by Pandokos | [0005](../adr/0005-data-plane-authentication.md), [0045](../adr/0045-trusted-token-issuers.md), [0046](../adr/0046-issuer-key-retrieval-and-caching.md) |
 | People sign-in | External OIDC or local accounts (Argon2id), server-side sessions | [0006](../adr/0006-human-authentication-external-oidc.md), [0022](../adr/0022-local-accounts-and-sessions.md) |
 | Admin API | OpenAPI 3.1 written first; server interfaces, validation and client generated by an in-repository generator (`internal/apigen`) | [0017](../adr/0017-admin-api-spec-first.md) |
 | Telemetry | OpenTelemetry Go SDK, OTLP, `log/slog` | [0015](../adr/0015-observability.md) |
@@ -327,7 +332,8 @@ internal/
   gateway/               request pipeline of the data plane
   egress/  resolver/     outbound connections and their address checks; catalogue, vault and audit adapters of the gateway
   family/                one package per API family: openai, anthropic, gemini
-  authn/  authz/         key format and authenticator with the principal cache; permission catalogue, roles, decision
+  authn/  authz/         key format, token validation and authenticator with the principal caches; permission catalogue, roles, decision
+  jwks/                  discovery, retrieval and cache of the keys of trusted issuers
   adminapi/  apigen/     generated administration API (types, router, client) and its generator
   cli/  requestid/       API commands of the CLI; request ID shared by both listeners
   tenant/  identity/     tenants, users, service accounts, keys, roles

@@ -39,8 +39,8 @@ group; the table is `pandokos.usage_record`.
 | `recorded_at` | when the row was committed, by the database |
 | `request_id` | the value of `X-Pandokos-Request-Id`, 32 hexadecimal characters |
 | `trace_id` | the trace ID of the request, 32 hexadecimal characters, empty when it has none |
-| `principal_kind`, `principal_id` | who called: `service_account` and its ID |
-| `key_id` | the ID of the virtual key |
+| `principal_kind`, `principal_id` | who called: `service_account` (a virtual key) or `token` (a token of a trusted issuer), and the ID of the service account in both cases, so a report that groups by `principal_id` sees one service account whichever mechanism it used |
+| `key_id` | the ID of the virtual key; for `token`, the ID of the subject mapping that let the subject act as the service account ([tokens guide](tokens.md)) |
 | `credential_id` | the provider credential used; empty until a credential was chosen |
 | `metadata` | the caller's metadata entries, section 5 |
 | `metadata_dropped` | how many metadata entries were dropped |

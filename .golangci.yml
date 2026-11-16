@@ -36,6 +36,17 @@ linters:
             - go.opentelemetry.io/proto/otlp
             - google.golang.org/protobuf
             - github.com/go-logr/logr
+            - github.com/go-jose/go-jose/v4
+        jose-only-where-tokens-are-read:
+          list-mode: lax
+          files:
+            - "**/cmd/**"
+            - "**/internal/**"
+            - "!**/internal/authn/**"
+            - "!**/internal/jwks/**"
+          deny:
+            - pkg: github.com/go-jose/go-jose/v4
+              desc: the JOSE library is confined to the token validation packages (sprint 4.1, rule 2)
         pgx-only-in-store:
           list-mode: lax
           files:

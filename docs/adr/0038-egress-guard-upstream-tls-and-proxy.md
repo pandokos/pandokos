@@ -54,3 +54,7 @@ breaks TLS server names and happy eyeballs); one transport with a per-request po
 context (a pooled connection made under the private rule could serve a public endpoint of the
 same host); honouring `HTTPS_PROXY` and `NO_PROXY` (ambient settings would move credentials
 without a validated key); a per-endpoint CA (a schema change nobody asked for).
+
+## History
+
+- 2026-11: sprint 4.1 amends rule 7: credential validation, the price download and the retrieval of the keys of trusted issuers use the same transports ([ADR 0046](0046-issuer-key-retrieval-and-caching.md)); the public transport is used unless the operator lists the host in `tokens.private_hosts`.

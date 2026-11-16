@@ -1,6 +1,6 @@
 # Roadmap
 
-- Baseline: 2026-11-15 (first baseline 2026-11-11)
+- Baseline: 2026-11-16 (first baseline 2026-11-11)
 - Requirements: [docs/requirements](../docs/requirements/README.md) · Architecture:
   [docs/architecture](../docs/architecture/overview.md)
 
@@ -15,7 +15,7 @@ A release is the tag `vMAJOR.MINOR.PATCH` on the commit of `main` that met its a
 
 | Tag | Theme | Epics | Sprints | Status |
 |---|---|---|---|---|
-| **v0.1.0** | Core BYOK | 1, 2, 3 and sprint 4.1 | 9 | 8 done |
+| **v0.1.0** | Core BYOK | 1, 2, 3 and sprint 4.1 | 9 | 9 done |
 | **v0.2.0** | Governance | 5, rest of 4, and 6 without sprint 6.4 | 7 | |
 | **v0.3.0** | Ready to operate | sprint 6.4, 12 | 4 | |
 | **v0.4.0** | Scale-out and providers | 8 without sprint 8.3, 9 | 4 | |
@@ -63,7 +63,7 @@ flowchart LR
 | 3.2 | Streaming, usage and ledger | Streaming with usage extraction; one usage record with cost per call; cancellation; a span per provider call | done |
 | 3.3 | Anthropic and OpenAI-compatible providers | The Anthropic family; any OpenAI-compatible endpoint by configuration; SDK compatibility suite; Compose reference | done |
 | **4** | **[Identity federation and RBAC](epics/04-identity-and-rbac/epic.md)** | | |
-| 4.1 | Trusted token issuers | JWTs from registered issuers authenticate calls; the tenant comes from the registration or from a claim | |
+| 4.1 | Trusted token issuers | JWTs from registered issuers authenticate calls; the tenant comes from the registration or from a claim | done |
 | | **v0.2.0 — Governance** | | |
 | **5** | **[Limits and budgets](epics/05-limits-and-budgets/epic.md)** | | |
 | 5.1 | Reserve and settle | The limiter interface with in-process counters; request and token rate limits; concurrency; the 429 contract | |

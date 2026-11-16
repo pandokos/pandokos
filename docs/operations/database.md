@@ -407,3 +407,39 @@ has no partition (it is expected to stay empty).
   set by the owner-only function `protect_usage_partition`. The schema lint (rule L-20) checks all of
   this for every partition.
 - Pandokos never drops a partition in this release; retention is a later sprint.
+
+## 13. Grants of migration 0008
+
+Migration `0008_trusted_issuers` adds the registrations of trusted token issuers
+([tokens guide](tokens.md)): `trusted_issuer` and `subject_mapping` (tenant-scoped, canonical tenant
+policy), `platform_issuer` and `platform_issuer_tenant` (global, explicit policies), and
+`issuer_directory`. It also widens the check constraint on `usage_record.principal_kind` to accept
+`token`.
+
+- The gateway role reads the four registration tables and writes none of them. The admin role reads
+  them and holds column-level `INSERT`, `UPDATE` (not on `subject_mapping`: a mapping is deleted and
+  created again) and `DELETE`. The worker role holds nothing on them.
+- `platform_issuer` is readable by the gateway and admin roles; writes need the platform scope.
+  `platform_issuer_tenant` shows a tenant's session its own rows only; the platform scope sees and
+  changes all of them. A mapping belongs to a tenant, so the platform session sees none: deleting a
+  platform-level registration deletes the tenants' mappings by cascade, and the audit row's
+  `mappings_deleted` counts them through the definer function `platform_issuer_mapping_count` (below).
+- `issuer_directory` holds one row per registration, maintained by triggers, and its primary key
+  (`issuer`, `audience`) makes the pair unique across the installation and across both kinds. **No
+  runtime role has any privilege on it.**
+- The gateway role executes three `SECURITY DEFINER` functions, each taking single values and unable
+  to list: `issuer_lookup(issuer, audiences)` (the registrations that an issuer and up to 16 audiences
+  select, exact matches only), `platform_issuer_tenant_lookup(issuer_id, claim_value)` (one tenant ID or
+  NULL) and `record_token_auth_failure(...)` (writes one `auth.failure` row in the session's tenant;
+  the gateway role still holds nothing on the audit tables). A fourth function, `issuer_directory_sync`,
+  is the trigger that maintains the directory and is not executable by any runtime role. One more
+  definer function is executable by the **admin role only**: `platform_issuer_mapping_count(issuer_id,
+  tenant_ids)` returns one number, the mappings of a platform-level registration in the named
+  tenants, for the audit row of its deletion. The policy of `subject_mapping` is forced on the
+  function's owner too and no tenant policy names the owner, so the function counts tenant by
+  tenant, as that tenant's session, and restores the caller's tenant setting; the caller passes all
+  tenants, which its platform session lists.
+- Notifications: a change to `trusted_issuer` or `subject_mapping` sends `tenant:<id>`; a change to
+  `platform_issuer` or `platform_issuer_tenant` sends `issuers`. The gateway empties its registration
+  and token-principal caches on them; the vault and catalogue caches ignore `issuers`.
+- `required_claims` is limited to 4096 bytes of stored size by a check constraint.
