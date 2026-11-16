@@ -33,6 +33,13 @@ ADR 0005 (trusted issuers), 0006, 0007, 0022.
 
 Requirements: IAM-06, IAM-07, IAM-08.
 
+Decided at design (2026-11-16): tokens are accepted on the inference listener only; tokens on the
+administration listener, and mapping a subject to a user (the "or users" of IAM-08), moved to 4.2 with
+users and sessions. Delivered: records [ADR 0045](../../../docs/adr/0045-trusted-token-issuers.md),
+[0046](../../../docs/adr/0046-issuer-key-retrieval-and-caching.md) and
+[0047](../../../docs/adr/0047-identity-providers-in-the-test-suite.md); the
+[tokens guide](../../../docs/operations/tokens.md).
+
 Exit: a token from a platform-level issuer with tenant A in its claim acts for tenant A and cannot
 act for a tenant outside the registration's list; a token with the wrong audience is refused; the
 gateway keeps working through a short outage of the identity provider.
@@ -55,6 +62,7 @@ The security-sensitive part first: passwords and sessions.
   nonce, ID token validation, same session; optional mapping of provider groups to roles.
 - Switch to disable local accounts; refusal of sign-in over plain HTTP outside loopback.
 - Idempotency keys on create operations.
+- Tokens of trusted issuers on the administration listener, and subject mappings to users (moved from 4.1).
 - A browser client served on the same origin as the administration listener, by the binary or by
   a reverse proxy in front of it, can sign in and call the API: tested with a minimal page.
 

@@ -27,11 +27,13 @@ erDiagram
     TENANT ||--o{ USAGE_RECORD : produces
     TENANT ||--o{ AUDIT_EVENT : records
     TENANT ||--o{ TRUSTED_ISSUER : registers
+    TRUSTED_ISSUER ||--o{ SUBJECT_MAPPING : maps
+    SERVICE_ACCOUNT ||--o{ SUBJECT_MAPPING : acts_as
 ```
 
 | Group | Tables | Scope |
 |---|---|---|
-| Platform | `tenant`, `platform_key`, `virtual_key_directory` (no grant to any runtime role), `platform_role_assignment`, `provider`, `provider_endpoint`, `model`, `model_tenant_grant`, `price_version`, `price_rate`, `price_import`, `platform_issuer`, `kek_version` | global |
+| Platform | `tenant`, `platform_key`, `virtual_key_directory` (no grant to any runtime role), `platform_role_assignment`, `provider`, `provider_endpoint`, `model`, `model_tenant_grant`, `price_version`, `price_rate`, `price_import`, `platform_issuer`, `platform_issuer_tenant` (a tenant's session sees its own rows), `issuer_directory` (no grant to any runtime role), `kek_version` | global |
 | Identity | `app_user`, `local_account`, `user_session`, `membership`, `service_account`, `virtual_key`, `trusted_issuer`, `subject_mapping`, `role`, `role_permission`, `role_assignment` | tenant (`app_user`, `local_account` and `user_session` are global, memberships are tenant-scoped) |
 | Vault | `tenant_data_key`, `provider_credential` | tenant |
 | Policy | `tenant_model_restriction`, `limit_rule` | tenant |
@@ -156,6 +158,34 @@ code.
 
 What a user may do in a tenant is still in `membership` and `role_assignment`, under row-level
 security like every other tenant table.
+
+## Trusted issuers, the directory and subject mappings (sprint 4.1)
+
+A registration of a token issuer is a row of `trusted_issuer` (tenant-scoped, canonical policy) or of
+`platform_issuer` (global, with a list of tenants in `platform_issuer_tenant`). A **subject mapping**
+(`subject_mapping`, tenant-scoped) names one registration of either kind, one subject and one service
+account of the tenant; it never changes and is deleted with its registration (cascade).
+[ADR 0045](../adr/0045-trusted-token-issuers.md) gives the reasons.
+
+- **Why two tables.** A tenant's registration is tenant data; a platform-level one describes tenants and
+  belongs to no one. Keeping them apart lets forced row-level security hold for the first without an
+  exception, and keeps the second writable in platform scope only. `platform_issuer_tenant` maps the
+  claim value that designates a tenant to that tenant; the value defaults to the tenant's ID and is
+  unique in the registration; there is no wildcard row.
+- **The directory.** `issuer_directory` has one row per registration, kept by triggers, with the
+  primary key (`issuer`, `audience`): the pair is unique in the whole installation, over both kinds, and
+  a token selects its registration by that pair. No runtime role can read or write it; the gateway
+  reaches it only through `issuer_lookup`, a definer function that takes an issuer and up to 16 exact
+  audiences and returns the matching rows. This is the one path from a token to a tenant-bound
+  registration that crosses the tenant policy, and it returns only what the pair names.
+- **After the lookup** every read of a tenant's registration, mapping and service account happens in
+  that tenant's session. The tenant of a platform-level token is found with
+  `platform_issuer_tenant_lookup`, which takes one registration and one claim value and returns one
+  tenant ID or nothing.
+- **The usage ledger** accepts `principal_kind` `token`: `principal_id` is the service account and
+  `key_id` the mapping.
+- **Limit of the audit record.** The platform session cannot see mappings, so the audit row of a
+  platform-level deletion records `mappings_deleted` as 0 although the cascade deletes them.
 
 ## Provider stream usage option (sprint 3.3)
 

@@ -65,6 +65,8 @@ otherwise; there is no status description, no event and no link. `pandokos.recor
 `pandokos.request.id` join a span to its row in the [usage ledger](usage.md) and to the request log
 line.
 
+For a call authenticated by a token of a trusted issuer ([tokens guide](tokens.md)) `pandokos.principal.id` is the ID of the service account, as for a key, and `pandokos.key.id` is the ID of the subject mapping. No span attribute holds the token, the subject or the issuer.
+
 **Never on a span:** a request or response body, any header value, a secret, a URL or host, the
 caller's metadata, a model string that did not resolve, token counts (they wait for the `gen_ai.*`
 names of the metrics release). No setting enables any of it.

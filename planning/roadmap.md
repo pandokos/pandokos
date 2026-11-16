@@ -63,7 +63,7 @@ flowchart LR
 | 3.2 | Streaming, usage and ledger | Streaming with usage extraction; one usage record with cost per call; cancellation; a span per provider call | done |
 | 3.3 | Anthropic and OpenAI-compatible providers | The Anthropic family; any OpenAI-compatible endpoint by configuration; SDK compatibility suite; Compose reference | done |
 | **4** | **[Identity federation and RBAC](epics/04-identity-and-rbac/epic.md)** | | |
-| 4.1 | Trusted token issuers | JWTs from registered issuers authenticate calls; the tenant comes from the registration or from a claim | |
+| 4.1 | Trusted token issuers | JWTs from registered issuers authenticate calls; the tenant comes from the registration or from a claim | done |
 | | **v0.2.0 — Governance** | | |
 | **5** | **[Limits and budgets](epics/05-limits-and-budgets/epic.md)** | | |
 | 5.1 | Reserve and settle | The limiter interface with in-process counters; request and token rate limits; concurrency; the 429 contract | |

@@ -136,7 +136,7 @@ List commands take
 
 A tenant registers the identity providers whose signed tokens it trusts and maps their subjects to
 its service accounts; a platform administrator can register an issuer that acts for several
-tenants. The operations are:
+tenants ([tokens guide](../operations/tokens.md)). The operations are:
 
 | Operation | Method and path | Permission |
 |---|---|---|
@@ -177,13 +177,13 @@ tenants. The operations are:
 - `listTenantPlatformIssuers` shows a tenant the platform-level registrations that list it, with
   its own `claim_value` and nothing of the other tenants of the list.
 - `putPlatformIssuerTenant` is idempotent. The tenant must exist and not be deleted (`not_found`
-  otherwise); `claim_value` defaults to the tenant's ID and is unique in the registration.
+  otherwise); `claim_value` defaults to the tenant's ID and is unique in the registration. A `PUT` that changes nothing writes no audit row. A `subject_claim` or `claim_value` that is present must not be empty.
 - Audit: `token_issuer.create|update|delete`, `subject_mapping.create|delete` are in the tenant's
   log; `platform_issuer.create|update|delete|tenant_add|tenant_remove` are in the platform log
   only. A creation records the members of the registration; an update records `changed` (the sorted
   names of the members that changed) and their new values, and nothing when nothing changed; a deletion
   records the name and `mappings_deleted`; a platform-level deletion counts only the mappings the
-  platform session can see, which are none, because mappings belong to the tenants.
+  platform session can see, which are none, because mappings belong to the tenants. This is a known limit of the record: the cascade still deletes the tenants' mappings.
 
 Flags of the issuer commands: `token-issuer create --tenant T --name N --issuer URL --audience A
 [--jwks-uri U] [--algorithm X]... [--subject-claim C] [--require CLAIM=VALUE]... [--description D]

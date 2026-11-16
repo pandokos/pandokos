@@ -3,7 +3,7 @@ id: SPRINT-4.1
 title: Trusted token issuers
 epic: EPIC-4
 release: v0.1
-status: in-progress
+status: done
 design: draft 2026-11-16
 ---
 
