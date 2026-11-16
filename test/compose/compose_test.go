@@ -418,4 +418,46 @@ func TestQuickStart(t *testing.T) {
 		testutil.AssertNoCanary(t, "docker compose logs", logs)
 		testutil.AssertAbsent(t, "docker compose logs", logs, secretValues...)
 	})
+
+	// R1 criterion 1: the data lives in the named volumes, so it survives docker compose down
+	// (without -v) and up. The bootstrap and demo keys are in the cli volume and stay valid.
+	t.Run("data survives docker compose down and up", func(t *testing.T) {
+		usageIDs := func() map[string]bool {
+			out := s.pdk(demo, "", "usage", "list", "--all", "-o", "json")
+			var doc struct {
+				Items []adminapi.UsageRecord `json:"items"`
+			}
+			if err := json.Unmarshal([]byte(out), &doc); err != nil {
+				t.Fatalf("%v: %s", err, out)
+			}
+			ids := map[string]bool{}
+			for _, it := range doc.Items {
+				ids[it.ID] = true
+			}
+			return ids
+		}
+		before := usageIDs()
+		if len(before) < 2 {
+			t.Fatalf("%d usage records before down, want at least 2", len(before))
+		}
+		s.mustCompose("", 3*time.Minute, "down", "--remove-orphans")
+		s.mustCompose("", 10*time.Minute, "up", "-d", "--wait")
+		testutil.Eventually(t, 90*time.Second, "readiness after up", func() bool {
+			resp, err := trusting.Get("https://localhost:8080/readyz")
+			if err != nil {
+				return false
+			}
+			defer resp.Body.Close()
+			return resp.StatusCode == 200
+		})
+		if out := s.pdk(boot, "", "tenant", "list", "-o", "json"); !strings.Contains(out, `"demo"`) {
+			t.Errorf("the tenant demo is gone after down and up:\n%s", out)
+		}
+		after := usageIDs()
+		for id := range before {
+			if !after[id] {
+				t.Errorf("usage record %s is gone after down and up", id)
+			}
+		}
+	})
 }
