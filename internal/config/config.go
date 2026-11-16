@@ -49,6 +49,26 @@ type Config struct {
 	Pricing   Pricing   `yaml:"pricing"`
 	Ledger    Ledger    `yaml:"ledger"`
 	Telemetry Telemetry `yaml:"telemetry"`
+	Tokens    Tokens    `yaml:"tokens"`
+}
+
+// Tokens configures the validation of tokens of trusted issuers on the inference listener. Only
+// serve reads and validates these settings.
+type Tokens struct {
+	Enabled       bool       `yaml:"enabled"`
+	MaxTokenBytes int        `yaml:"max_token_bytes"`
+	ClockSkew     Duration   `yaml:"clock_skew"`
+	MaxLifetime   Duration   `yaml:"max_lifetime"`
+	PrivateHosts  []string   `yaml:"private_hosts"` // lower-cased by Load
+	JWKS          TokensJWKS `yaml:"jwks"`
+}
+
+// TokensJWKS configures the retrieval and the cache of the keys of token issuers.
+type TokensJWKS struct {
+	FetchTimeout       Duration `yaml:"fetch_timeout"`
+	RefreshInterval    Duration `yaml:"refresh_interval"`
+	MinRefetchInterval Duration `yaml:"min_refetch_interval"`
+	MaxStale           Duration `yaml:"max_stale"`
 }
 
 // Ledger configures the usage ledger writer. Only serve reads and validates these settings.
@@ -334,6 +354,19 @@ func Defaults() *Config {
 		Telemetry: Telemetry{
 			OTLP:   TelemetryOTLP{Protocol: "http/protobuf", Timeout: Duration(10 * time.Second)},
 			Traces: TelemetryTraces{SampleRatio: 1},
+		},
+		Tokens: Tokens{
+			Enabled:       true,
+			MaxTokenBytes: 8192,
+			ClockSkew:     Duration(60 * time.Second),
+			MaxLifetime:   Duration(24 * time.Hour),
+			PrivateHosts:  []string{},
+			JWKS: TokensJWKS{
+				FetchTimeout:       Duration(5 * time.Second),
+				RefreshInterval:    Duration(15 * time.Minute),
+				MinRefetchInterval: Duration(10 * time.Second),
+				MaxStale:           Duration(6 * time.Hour),
+			},
 		},
 		Vault: Vault{KEK: VaultKEK{Provider: "local"}},
 		Database: Database{

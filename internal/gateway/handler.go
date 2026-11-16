@@ -395,6 +395,10 @@ func (h *Handler) pickErrorShape(r *http.Request, st *reqState) {
 	}
 }
 
+// failureDetail is the shape of authn.FailureDetail, which is an alias of this struct: the gateway
+// does not import authn and reads a failure's detail through an interface of its own.
+type failureDetail = struct{ Reason, KeyID, TenantID, IssuerID, IssuerScope, Subject string }
+
 // authenticate runs steps 3 and 4: the credential, then the decision. It answers and returns
 // false when the request is refused.
 func (h *Handler) authenticate(r *http.Request, st *reqState) bool {
@@ -410,13 +414,14 @@ func (h *Handler) authenticate(r *http.Request, st *reqState) bool {
 		h.unavailable(st)
 		return false
 	case err != nil:
-		reason, keyID, tenantID := "unauthenticated", "", ""
+		detail := failureDetail{Reason: "unauthenticated"}
 		var d interface {
-			Detail() (string, string, string)
+			Detail() failureDetail
 		}
 		if errors.As(err, &d) {
-			reason, keyID, tenantID = d.Detail()
+			detail = d.Detail()
 		}
+		reason, keyID, tenantID := detail.Reason, detail.KeyID, detail.TenantID
 		st.keyID = keyID
 		attrs := []any{"listener", "inference", "request_id", st.id, "reason", reason}
 		if keyID != "" {
@@ -425,7 +430,10 @@ func (h *Handler) authenticate(r *http.Request, st *reqState) bool {
 		if tenantID != "" {
 			attrs = append(attrs, "tenant_id", tenantID)
 			if h.failures != nil {
-				audited := h.failures.Record(r.Context(), AuthFailure{RequestID: st.id, Reason: reason, KeyID: keyID, TenantID: tenantID})
+				audited := h.failures.Record(r.Context(), AuthFailure{
+					RequestID: st.id, Reason: reason, KeyID: keyID, TenantID: tenantID,
+					IssuerID: detail.IssuerID, IssuerScope: detail.IssuerScope, Subject: detail.Subject,
+				})
 				attrs = append(attrs, "audited", audited)
 			}
 		}

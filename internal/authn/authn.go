@@ -20,7 +20,16 @@ type Failure struct {
 	Reason   string    // malformed, kind_not_accepted, unknown_key, wrong_secret, revoked, expired, service_account_disabled, service_account_not_valid
 	KeyID    string    // when the key parsed
 	TenantID tenant.ID // when the key ID belongs to a tenant
+	// IssuerID and IssuerScope ("tenant", "platform") name the registration of a token, once one
+	// was selected; Subject is the verified subject, set only for failures after the signature
+	// was verified. All are empty for a key.
+	IssuerID, IssuerScope, Subject string
 }
+
+// FailureDetail is what a failure tells the log and the audit record. It is an alias of an
+// unnamed struct so that the gateway, which does not import this package, can read it through an
+// interface of its own.
+type FailureDetail = struct{ Reason, KeyID, TenantID, IssuerID, IssuerScope, Subject string }
 
 // Error returns "authn: " and the reason.
 func (f *Failure) Error() string { return "authn: " + f.Reason }
@@ -28,12 +37,14 @@ func (f *Failure) Error() string { return "authn: " + f.Reason }
 // Unwrap returns authz.ErrUnauthenticated.
 func (f *Failure) Unwrap() error { return authz.ErrUnauthenticated }
 
-// Detail returns the reason, the key ID and the tenant ID (empty when unknown), for the log.
-func (f *Failure) Detail() (reason, keyID, tenantID string) {
+// Detail returns the members of f for the log and the audit record; the tenant ID is empty when
+// unknown.
+func (f *Failure) Detail() FailureDetail {
+	d := FailureDetail{Reason: f.Reason, KeyID: f.KeyID, IssuerID: f.IssuerID, IssuerScope: f.IssuerScope, Subject: f.Subject}
 	if !f.TenantID.IsZero() {
-		tenantID = f.TenantID.String()
+		d.TenantID = f.TenantID.String()
 	}
-	return f.Reason, f.KeyID, tenantID
+	return d
 }
 
 // Options configure an Authenticator.
@@ -43,6 +54,7 @@ type Options struct {
 	Kinds    []Kind        // kinds this authenticator accepts
 	CacheTTL time.Duration // 0: no cache
 	Now      func() time.Time
+	Tokens   TokenOptions // used when Kinds has KindToken
 }
 
 // Authenticator turns a presented key into a principal.
@@ -70,6 +82,11 @@ func New(o Options) (*Authenticator, error) {
 	for _, k := range o.Kinds {
 		if k == KindPlatform && o.DB.Role() != store.RoleAdmin {
 			return nil, errors.New("authn: platform keys need the pool of the admin role")
+		}
+		if k == KindToken {
+			if err := checkTokens(o); err != nil {
+				return nil, err
+			}
 		}
 		a.kinds[k] = true
 	}

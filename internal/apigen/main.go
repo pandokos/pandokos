@@ -138,7 +138,25 @@ type schema struct {
 	Items                *schema    `yaml:"items"`
 	Properties           properties `yaml:"properties"`
 	Required             []string   `yaml:"required"`
-	AdditionalProperties *bool      `yaml:"additionalProperties"`
+	AdditionalProperties additional `yaml:"additionalProperties"`
+	MaxProperties        *int       `yaml:"maxProperties"`
+}
+
+// additional is the additionalProperties member: false closes an object; a schema makes it a map
+// from any name to a value of that schema.
+type additional struct {
+	Closed *bool   // set when the member is a boolean
+	Values *schema // set when the member is a schema
+}
+
+// UnmarshalYAML reads a boolean or a schema.
+func (a *additional) UnmarshalYAML(n *yaml.Node) error {
+	if n.Kind == yaml.MappingNode {
+		a.Values = new(schema)
+		return n.Decode(a.Values)
+	}
+	a.Closed = new(bool)
+	return n.Decode(a.Closed)
 }
 
 type generator struct {
@@ -290,6 +308,15 @@ func (g *generator) fieldOf(s *schema, required bool) (field, error) {
 		return f, errors.New(`only an inline string can be nullable`)
 	}
 	switch {
+	case t.Type.Name == "object" && name == "" && t.AdditionalProperties.Values != nil:
+		v, _, err := g.resolve(t.AdditionalProperties.Values)
+		if err != nil {
+			return f, fmt.Errorf("additionalProperties: %w", err)
+		}
+		if v.Type.Name != "string" || len(v.Enum) > 0 || v.Format != "" {
+			return f, errors.New("the values of a map must be plain strings")
+		}
+		f.kind, f.goType, f.item = "stringmap", "map[string]string", v
 	case t.Type.Name == "object":
 		if name == "" {
 			return f, errors.New("an object must be a component schema")
@@ -487,7 +514,7 @@ func (g *generator) enum(name string, s *schema) {
 }
 
 func (g *generator) object(name string, s *schema) error {
-	if s.AdditionalProperties == nil || *s.AdditionalProperties {
+	if s.AdditionalProperties.Closed == nil || *s.AdditionalProperties.Closed {
 		return errors.New("an object must say additionalProperties: false")
 	}
 	required := map[string]bool{}
@@ -516,9 +543,9 @@ func (g *generator) object(name string, s *schema) error {
 		switch {
 		case optional:
 			switch f.kind {
-			case "string", "enum", "int", "bool", "strings":
+			case "string", "enum", "int", "bool", "strings", "stringmap":
 			default:
-				return fmt.Errorf("property %s: an optional member of an update schema must be a string, enum, integer, boolean or array of strings", pn)
+				return fmt.Errorf("property %s: an optional member of an update schema must be a string, enum, integer, boolean, array of strings or map of strings", pn)
 			}
 			f.goType = "Optional[" + f.goType + "]"
 			tag += ",omitzero"
@@ -632,6 +659,15 @@ func (g *generator) check(w *bytes.Buffer, expr, name string, f field, required 
 		}
 		if f.s.Maximum != nil {
 			add(expr+" > "+strconv.Itoa(*f.s.Maximum), "must be at most "+strconv.Itoa(*f.s.Maximum))
+		}
+	case "stringmap":
+		if f.s.MaxProperties != nil {
+			add("len("+expr+") > "+strconv.Itoa(*f.s.MaxProperties), "must have at most "+strconv.Itoa(*f.s.MaxProperties)+" members")
+		}
+		if f.item.Pattern != "" || f.item.MinLength != nil || f.item.MaxLength != nil {
+			fmt.Fprintf(w, "for _, item := range %s {\n", expr)
+			str("item", f.item, "")
+			fmt.Fprintf(w, "}\n")
 		}
 	case "strings":
 		if f.s.MinItems != nil {

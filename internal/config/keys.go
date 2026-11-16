@@ -252,6 +252,27 @@ var keyTable = []keyDef{
 		setBool(func(c *Config) *bool { return &c.Telemetry.Traces.Propagate })),
 	serveDef("telemetry.resource.attributes", "list", "", "Resource attributes of the traces: key=value pairs separated by commas, at most 32",
 		setString(func(c *Config) *string { return &c.Telemetry.Resource.Attributes })),
+	serveDef("tokens.enabled", "boolean", "true", "Accept tokens of trusted issuers on the inference listener; false: every value that is not a virtual key is malformed and no key of an issuer is ever fetched",
+		setBool(func(c *Config) *bool { return &c.Tokens.Enabled })),
+	serveDef("tokens.max_token_bytes", "integer", "8192", "Largest token accepted; 1024 to 16384, at most half of listeners.inference.max_header_bytes",
+		setInt(func(c *Config) *int { return &c.Tokens.MaxTokenBytes })),
+	serveDef("tokens.clock_skew", "duration", "60s", "Tolerance on exp, nbf and iat; 0 to 5m",
+		setDuration(func(c *Config) *Duration { return &c.Tokens.ClockSkew })),
+	serveDef("tokens.max_lifetime", "duration", "24h", "Longest lifetime (exp minus iat) a token may have; 1m to 720h",
+		setDuration(func(c *Config) *Duration { return &c.Tokens.MaxLifetime })),
+	serveDef("tokens.private_hosts", "list", "", "Host names, separated by commas in the environment, whose issuer and key URLs may resolve to private addresses; at most 32 lower-case DNS names, no address literal, no wildcard",
+		func(c *Config, v string) error {
+			c.Tokens.PrivateHosts = strings.Split(v, ",")
+			return nil
+		}),
+	serveDef("tokens.jwks.fetch_timeout", "duration", "5s", "Time allowed to fetch one document of an issuer; 1s to 30s",
+		setDuration(func(c *Config) *Duration { return &c.Tokens.JWKS.FetchTimeout })),
+	serveDef("tokens.jwks.refresh_interval", "duration", "15m", "Time between background refreshes of the key set of an issuer; 1m to 1h",
+		setDuration(func(c *Config) *Duration { return &c.Tokens.JWKS.RefreshInterval })),
+	serveDef("tokens.jwks.min_refetch_interval", "duration", "10s", "Shortest time between two fetches of a key set caused by an unknown key ID; 1s to 5m",
+		setDuration(func(c *Config) *Duration { return &c.Tokens.JWKS.MinRefetchInterval })),
+	serveDef("tokens.jwks.max_stale", "duration", "6h", "Time a key set is used after its last successful fetch; at least twice tokens.jwks.refresh_interval, at most 72h",
+		setDuration(func(c *Config) *Duration { return &c.Tokens.JWKS.MaxStale })),
 }
 
 // serveDef is def for a key that only serve reads.

@@ -200,7 +200,8 @@ func (s *server) before(ctx context.Context, r *http.Request, op *adminapi.Opera
 
 // authFailed logs a failed authentication and records it in the audit log, within the cap.
 func (s *server) authFailed(ctx context.Context, st *reqState, f *authn.Failure) {
-	reason, keyID, tenantID := f.Detail()
+	d := f.Detail()
+	reason, keyID, tenantID := d.Reason, d.KeyID, d.TenantID
 	audited := false
 	if s.limiter.allow() {
 		audited = s.recordFailure(ctx, st, f) == nil
