@@ -178,7 +178,9 @@ func peek(presented string) (alg, kid, iss string, aud []string, err error) {
 	}
 	hb, herr := segment(parts[0])
 	pb, perr := segment(parts[1])
-	if herr != nil || perr != nil {
+	// The signature is decoded strictly too: a segment with bits set that no byte uses decodes to
+	// the same signature as the canonical one, and so would give one token several spellings.
+	if _, serr := segment(parts[2]); herr != nil || perr != nil || serr != nil {
 		return "", "", "", nil, malformed
 	}
 	hdr, herr := decodeObject(hb)
@@ -344,7 +346,7 @@ func (a *Authenticator) validate(ctx context.Context, presented, alg, kid string
 	v := verified{Subject: subject}
 	// 12: the tenant claim of a platform-level registration.
 	if r.Scope == "platform" {
-		if v.TenantClaimValue, ok = claimString(claims, r.TenantClaim); !ok {
+		if v.TenantClaimValue, ok = claimString(claims, r.TenantClaim); !ok || strings.ContainsFunc(v.TenantClaimValue, unicode.IsControl) {
 			f := fail("tenant_claim_missing")
 			f.Subject = subject
 			return verified{}, f

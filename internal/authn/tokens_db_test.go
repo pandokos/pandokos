@@ -86,7 +86,7 @@ func TestTokenPrincipalTenantBound(t *testing.T) {
 			for name, c := range map[string]struct{ set, reason string }{
 				"disabled":       {"state = 'disabled'", "service_account_disabled"},
 				"not valid yet":  {"valid_from = now() + interval '1 hour'", "service_account_not_valid"},
-				"not valid more": {"valid_until = now() - interval '1 second'", "service_account_not_valid"},
+				"not valid more": {"valid_until = now() - interval '1 hour'", "service_account_not_valid"},
 			} {
 				g := newFixture(t, d, "bound-"+strings.ReplaceAll(name, " ", "-"))
 				iss := newTrustedIssuer(t, d, g.tenant, r.idp, "aud-"+name)

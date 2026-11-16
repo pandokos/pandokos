@@ -64,6 +64,9 @@ type Authenticator struct {
 	now   func() time.Time
 	cache *cache
 	tok   TokenOptions // the validation of tokens; set when KindToken is accepted
+	// The caches of the token path (section 5.6); nil without a cache lifetime.
+	regs       *lookupCache[registration]
+	principals *lookupCache[principalEntry]
 }
 
 // New validates o.
@@ -94,6 +97,10 @@ func New(o Options) (*Authenticator, error) {
 	}
 	if o.CacheTTL > 0 {
 		a.cache = newCache(a.now, o.CacheTTL, o.Logger)
+		if a.kinds[KindToken] {
+			a.regs = newLookupCache[registration]("registration", a.now, o.CacheTTL, o.Logger)
+			a.principals = newLookupCache[principalEntry]("token principal", a.now, o.CacheTTL, o.Logger)
+		}
 	}
 	return a, nil
 }
@@ -214,10 +221,9 @@ func (a *Authenticator) check(e *entry, keyID string, hash [32]byte) (authz.Prin
 		return fail("revoked")
 	case row.ExpiresAt != nil && !row.ExpiresAt.After(now):
 		return fail("expired")
-	case row.ServiceAccountState != "active":
-		return fail("service_account_disabled")
-	case row.ValidFrom != nil && now.Before(*row.ValidFrom), row.ValidUntil != nil && !now.Before(*row.ValidUntil):
-		return fail("service_account_not_valid")
+	}
+	if reason := serviceAccountRefusal(row.ServiceAccountState, row.ValidFrom, row.ValidUntil, now); reason != "" {
+		return fail(reason)
 	}
 	p := authz.Principal{
 		Kind: authz.KindServiceAccount, ID: row.ServiceAccountID, Name: row.ServiceAccountName, KeyID: keyID,
@@ -236,16 +242,33 @@ func (a *Authenticator) check(e *entry, keyID string, hash [32]byte) (authz.Prin
 	return p, nil
 }
 
-// Invalidate applies a notification payload to the cache (section 5.8).
+// serviceAccountRefusal is the reason a service account does not authenticate at now, or "": the
+// check that keys and tokens share.
+func serviceAccountRefusal(state string, validFrom, validUntil *time.Time, now time.Time) string {
+	switch {
+	case state != "active":
+		return "service_account_disabled"
+	case validFrom != nil && now.Before(*validFrom), validUntil != nil && !now.Before(*validUntil):
+		return "service_account_not_valid"
+	}
+	return ""
+}
+
+// Invalidate applies a notification payload to the caches (section 5.8): the principals of keys,
+// and those of the token path.
 func (a *Authenticator) Invalidate(payload string) {
 	if a.cache != nil {
 		a.cache.invalidate(payload)
 	}
+	a.regs.invalidate(payload)
+	a.principals.invalidate(payload)
 }
 
-// Flush empties the cache.
+// Flush empties the caches.
 func (a *Authenticator) Flush() {
 	if a.cache != nil {
 		a.cache.flush("reset")
 	}
+	a.regs.flush("reset")
+	a.principals.flush("reset")
 }
