@@ -1,6 +1,6 @@
 -- 0008_trusted_issuers: registrations of trusted token issuers (tenant-bound and platform-level),
 -- the tenant list of platform-level registrations, subject mappings, the directory that selects a
--- registration by issuer and audience, the functions the gateway role may execute, and the usage
+-- registration by issuer and audience, the functions the gateway role (and, for one count, the admin role) may execute, and the usage
 -- ledger's principal kind for tokens (ADR 0045). Runs in one transaction as pandokos_owner. Every
 -- name is schema-qualified.
 
@@ -313,3 +313,31 @@ $$;
 
 REVOKE ALL ON FUNCTION pandokos.record_token_auth_failure(text, uuid, text, text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION pandokos.record_token_auth_failure(text, uuid, text, text, text) TO pandokos_gateway;
+
+-- How many subject mappings of the given tenants a platform-level registration has, for the audit
+-- row of its deletion: the platform session cannot see the tenants' mappings, and the policy of
+-- the table is forced on this function's owner too, which no tenant policy names. So the function
+-- counts tenant by tenant, as that tenant's session (the setting is local to the transaction), and
+-- restores the session's own tenant setting before it returns. The caller names the tenants (the
+-- platform session lists them all); the result is one number, never a row. Executable by the
+-- admin role only.
+CREATE FUNCTION pandokos.platform_issuer_mapping_count(p_issuer_id uuid, p_tenant_ids uuid[]) RETURNS bigint
+    LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    prev  text := pg_catalog.current_setting('app.tenant_id', true);
+    t     uuid;
+    total bigint := 0;
+BEGIN
+    FOREACH t IN ARRAY COALESCE(p_tenant_ids, ARRAY[]::uuid[]) LOOP
+        PERFORM pg_catalog.set_config('app.tenant_id', t::text, true);
+        total := total + (SELECT pg_catalog.count(*) FROM pandokos.subject_mapping m WHERE m.platform_issuer_id = p_issuer_id);
+    END LOOP;
+    PERFORM pg_catalog.set_config('app.tenant_id', COALESCE(prev, ''), true);
+    RETURN total;
+END
+$$;
+
+REVOKE ALL ON FUNCTION pandokos.platform_issuer_mapping_count(uuid, uuid[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION pandokos.platform_issuer_mapping_count(uuid, uuid[]) TO pandokos_admin;

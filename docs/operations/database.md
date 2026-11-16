@@ -423,7 +423,7 @@ policy), `platform_issuer` and `platform_issuer_tenant` (global, explicit polici
   `platform_issuer_tenant` shows a tenant's session its own rows only; the platform scope sees and
   changes all of them. A mapping belongs to a tenant, so the platform session sees none: deleting a
   platform-level registration deletes the tenants' mappings by cascade, and the audit row's
-  `mappings_deleted` is 0 because the session counting them cannot see them.
+  `mappings_deleted` counts them through the definer function `platform_issuer_mapping_count` (below).
 - `issuer_directory` holds one row per registration, maintained by triggers, and its primary key
   (`issuer`, `audience`) makes the pair unique across the installation and across both kinds. **No
   runtime role has any privilege on it.**
@@ -432,7 +432,13 @@ policy), `platform_issuer` and `platform_issuer_tenant` (global, explicit polici
   select, exact matches only), `platform_issuer_tenant_lookup(issuer_id, claim_value)` (one tenant ID or
   NULL) and `record_token_auth_failure(...)` (writes one `auth.failure` row in the session's tenant;
   the gateway role still holds nothing on the audit tables). A fourth function, `issuer_directory_sync`,
-  is the trigger that maintains the directory and is not executable by any runtime role.
+  is the trigger that maintains the directory and is not executable by any runtime role. One more
+  definer function is executable by the **admin role only**: `platform_issuer_mapping_count(issuer_id,
+  tenant_ids)` returns one number, the mappings of a platform-level registration in the named
+  tenants, for the audit row of its deletion. The policy of `subject_mapping` is forced on the
+  function's owner too and no tenant policy names the owner, so the function counts tenant by
+  tenant, as that tenant's session, and restores the caller's tenant setting; the caller passes all
+  tenants, which its platform session lists.
 - Notifications: a change to `trusted_issuer` or `subject_mapping` sends `tenant:<id>`; a change to
   `platform_issuer` or `platform_issuer_tenant` sends `issuers`. The gateway empties its registration
   and token-principal caches on them; the vault and catalogue caches ignore `issuers`.

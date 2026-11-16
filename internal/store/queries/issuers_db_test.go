@@ -383,6 +383,14 @@ func issuerStatements(c context.Context, t *testing.T, admin, gateway *store.DB,
 	}))
 	must("delete the platform-level registration", admin.Platform(c, func(c context.Context, tx store.Tx) error {
 		q := queries.New(tx)
+		// The platform session cannot read the mapping, the definer function counts it.
+		mark("CountPlatformIssuerMappings")
+		if n, err := q.CountPlatformIssuerMappings(c, platform.ID); err != nil || n != 1 {
+			t.Errorf("CountPlatformIssuerMappings: %d %v", n, err)
+		}
+		if n, err := q.CountSubjectMappingsOfIssuer(c, platform.ID); err != nil || n != 0 {
+			t.Errorf("the platform session counts %d mappings itself: %v", n, err)
+		}
 		mark("DeletePlatformIssuer")
 		del, err := q.DeletePlatformIssuer(c, platform.ID)
 		if err != nil || del.ID != platform.ID || del.TenantCount != 0 {

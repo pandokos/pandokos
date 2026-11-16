@@ -182,8 +182,8 @@ tenants ([tokens guide](../operations/tokens.md)). The operations are:
   log; `platform_issuer.create|update|delete|tenant_add|tenant_remove` are in the platform log
   only. A creation records the members of the registration; an update records `changed` (the sorted
   names of the members that changed) and their new values, and nothing when nothing changed; a deletion
-  records the name and `mappings_deleted`; a platform-level deletion counts only the mappings the
-  platform session can see, which are none, because mappings belong to the tenants. This is a known limit of the record: the cascade still deletes the tenants' mappings.
+  records the name and `mappings_deleted`; a platform-level deletion counts the mappings of every tenant
+  that the cascade removes (a database function counts them without returning rows).
 
 Flags of the issuer commands: `token-issuer create --tenant T --name N --issuer URL --audience A
 [--jwks-uri U] [--algorithm X]... [--subject-claim C] [--require CLAIM=VALUE]... [--description D]

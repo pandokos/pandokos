@@ -11,6 +11,7 @@ import (
 
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/authz"
+	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/test/apitest"
 	"github.com/pandokos/pandokos/test/dbtest"
 )
@@ -416,6 +417,43 @@ func TestIssuerFunctions(t *testing.T) {
 		}
 		if n := scalar(t, super, `SELECT count(*)::text FROM pandokos.audit_event WHERE request_id = $1`, request); n != "0" {
 			t.Errorf("%s rows without a tenant", n)
+		}
+	})
+
+	t.Run("platform_issuer_mapping_count counts the mappings of the named tenants, for the admin role only", func(t *testing.T) {
+		for _, tn := range []struct {
+			tenant tenant.ID
+			n      int
+		}{{a, 2}, {b, 1}} {
+			sa := ins(`INSERT INTO pandokos.service_account (tenant_id, name) VALUES ($1::uuid, 'cnt') RETURNING id::text`, tn.tenant.String())
+			for i := 0; i < tn.n; i++ {
+				ins(`INSERT INTO pandokos.subject_mapping (tenant_id, platform_issuer_id, subject, service_account_id) VALUES ($1::uuid, $2::uuid, $3, $4::uuid) RETURNING id::text`,
+					tn.tenant.String(), piP, fmt.Sprintf("s%d", i), sa)
+			}
+		}
+		ad := d.Connect(t, "admin")
+		platform := session{name: "platform", setting: "app.scope", value: "platform"}
+		const count = `SELECT pandokos.platform_issuer_mapping_count($1::uuid, $2::uuid[])::text AS n,
+			COALESCE(current_setting('app.tenant_id', true), '') AS tenant_after`
+		for _, c := range []struct {
+			what    string
+			tenants []string
+			want    string
+		}{{"both tenants", []string{a.String(), b.String()}, "3"}, {"one tenant", []string{b.String()}, "1"}, {"none", []string{}, "0"}} {
+			rows, err := query(t, ad, platform, count, piP, c.tenants)
+			if err != nil || len(rows) != 1 || rows[0]["n"] != c.want || rows[0]["tenant_after"] != "" {
+				t.Errorf("%s: %v %v, want %s and no tenant setting left behind", c.what, rows, err, c.want)
+			}
+		}
+		// The platform session itself sees none of the rows; the caller's own tenant setting is restored.
+		rows, err := query(t, ad, sessA, count, piP, []string{b.String()})
+		if err != nil || len(rows) != 1 || rows[0]["n"] != "1" || rows[0]["tenant_after"] != a.String() {
+			t.Errorf("in tenant A's session: %v %v", rows, err)
+		}
+		for _, role := range []string{"gateway", "worker"} {
+			if _, err := query(t, d.Connect(t, role), sessA, count, piP, []string{a.String()}); sqlstate(err) != insufficientPrivilege {
+				t.Errorf("%s cannot execute platform_issuer_mapping_count: %v, want SQLSTATE %s", role, err, insufficientPrivilege)
+			}
 		}
 	})
 

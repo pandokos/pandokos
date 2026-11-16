@@ -184,8 +184,10 @@ account of the tenant; it never changes and is deleted with its registration (ca
   tenant ID or nothing.
 - **The usage ledger** accepts `principal_kind` `token`: `principal_id` is the service account and
   `key_id` the mapping.
-- **Limit of the audit record.** The platform session cannot see mappings, so the audit row of a
-  platform-level deletion records `mappings_deleted` as 0 although the cascade deletes them.
+- **Mappings count of a platform-level deletion.** The platform session cannot see mappings, so the
+  admin role executes the definer function `platform_issuer_mapping_count`, which returns only the
+  number of mappings of the registration across the tenants named by the caller; the audit row of
+  the deletion records it as `mappings_deleted`.
 
 ## Provider stream usage option (sprint 3.3)
 

@@ -138,10 +138,9 @@ func (s *server) DeletePlatformIssuer(ctx context.Context, in adminapi.DeletePla
 		if _, err := q.LockPlatformIssuer(ctx, in.Issuer); err != nil {
 			return err
 		}
-		// The mappings are the tenants' (a tenant's session sees its own, the platform session
-		// none), so the count is what this session can see: the database deletes the rest with the
-		// registration and the row does not claim more than the session knows.
-		n, err := q.CountSubjectMappingsOfIssuer(ctx, in.Issuer)
+		// The mappings are the tenants' and the platform session cannot read them: a definer
+		// function of the database counts them, and the cascade of the delete removes them.
+		n, err := q.CountPlatformIssuerMappings(ctx, in.Issuer)
 		if err != nil {
 			return err
 		}

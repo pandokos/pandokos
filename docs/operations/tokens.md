@@ -342,6 +342,5 @@ Find the `reason` in the log line `authentication failed` (or in the audit log, 
 
 Stop the workloads that use it first, or switch them to another audience (section 5, residual case).
 Deleting a registration deletes its subject mappings. Deleting a platform-level registration also
-deletes the mappings of every tenant; its audit row records `mappings_deleted` as 0 in any case,
-because the platform session cannot see the tenants' mappings. That count is a known limit of the
-record, not of the deletion. `enabled: false` is the reversible switch and keeps the mappings.
+deletes the mappings of every tenant; its audit row records in `mappings_deleted` how many, counted
+across all tenants by a database function that returns only the number. `enabled: false` is the reversible switch and keeps the mappings.

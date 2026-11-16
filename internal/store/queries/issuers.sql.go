@@ -10,6 +10,18 @@ import (
 	"time"
 )
 
+const countPlatformIssuerMappings = `-- name: CountPlatformIssuerMappings :one
+SELECT pandokos.platform_issuer_mapping_count($1::uuid,
+           (SELECT COALESCE(array_agg(t.id), ARRAY[]::uuid[]) FROM pandokos.tenant t))::bigint AS mappings
+`
+
+func (q *Queries) CountPlatformIssuerMappings(ctx context.Context, issuerID string) (int64, error) {
+	row := q.db.QueryRow(ctx, countPlatformIssuerMappings, issuerID)
+	var mappings int64
+	err := row.Scan(&mappings)
+	return mappings, err
+}
+
 const countSubjectMappingsOfIssuer = `-- name: CountSubjectMappingsOfIssuer :one
 SELECT count(*)::bigint AS mappings
   FROM pandokos.subject_mapping m

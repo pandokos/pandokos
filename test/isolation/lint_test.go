@@ -268,7 +268,7 @@ SELECT $1::uuid, ti.id, 'sub-' || substr(md5(random()::text), 1, 12), sa.id FROM
 			},
 		},
 		SecurityDefiner: []string{"virtual_key_lookup", "virtual_key_directory_add", "record_auth_failure", "ensure_usage_partitions",
-			"issuer_lookup", "platform_issuer_tenant_lookup", "record_token_auth_failure", "issuer_directory_sync"},
+			"issuer_lookup", "platform_issuer_tenant_lookup", "record_token_auth_failure", "issuer_directory_sync", "platform_issuer_mapping_count"},
 		Views:      []string{"provider_credential_metadata"},
 		AppendOnly: []string{"audit_event", "platform_audit_event", "price_import", "usage_record"},
 	}

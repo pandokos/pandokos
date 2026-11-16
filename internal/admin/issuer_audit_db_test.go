@@ -214,12 +214,20 @@ func TestIssuerAudit(t *testing.T) {
 		has(t, "deletePlatformIssuerTenant", row.Detail, "tenant_id", tid)
 		has(t, "deletePlatformIssuerTenant", row.Detail, "claim_value", "org-a2")
 
+		// Mappings in two tenants: the platform session sees none of them, the row counts all three.
 		decodeInto[adminapi.PlatformIssuerTenant](t, w.do(t, w.plat, "PUT", "/v1/platform-issuers/"+plat.ID+"/tenants/"+tid, nil), 200)
+		decodeInto[adminapi.PlatformIssuerTenant](t, w.do(t, w.plat, "PUT", "/v1/platform-issuers/"+plat.ID+"/tenants/"+w.b.ID, nil), 200)
+		for _, m := range []struct {
+			tenant, key, sa, subject string
+		}{{tid, w.ka, w.saA.ID, "p1"}, {tid, w.ka, w.saA.ID, "p2"}, {w.b.ID, w.kb, w.saB.ID, "p3"}} {
+			decodeInto[adminapi.SubjectMapping](t, w.do(t, m.key, "POST", "/v1/tenants/"+m.tenant+"/subject-mappings",
+				map[string]any{"issuer": map[string]any{"scope": "platform", "id": plat.ID}, "subject": m.subject, "service_account_id": m.sa}), 201)
+		}
 		newRows(t, api, seen)
 		r = w.do(t, w.plat, "DELETE", "/v1/platform-issuers/"+plat.ID, nil)
 		row = expectOne(t, "deletePlatformIssuer", r, 200, "platform", "platform_issuer.delete", "platform_issuer", plat.ID)
 		has(t, "deletePlatformIssuer", row.Detail, "name", pbody["name"])
-		has(t, "deletePlatformIssuer", row.Detail, "mappings_deleted", float64(0))
+		has(t, "deletePlatformIssuer", row.Detail, "mappings_deleted", float64(3))
 	})
 
 	t.Run("a change that fails writes no row", func(t *testing.T) {

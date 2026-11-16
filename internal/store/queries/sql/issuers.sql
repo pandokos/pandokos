@@ -28,6 +28,10 @@ SELECT i.id, i.issuer, i.audience, i.jwks_uri, i.algorithms, i.subject_claim, i.
 -- name: LookupPlatformIssuerTenant :one
 SELECT COALESCE(pandokos.platform_issuer_tenant_lookup(sqlc.arg(issuer_id)::uuid, sqlc.arg(claim_value)::text)::text, '')::text AS tenant_id;
 
+-- name: CountPlatformIssuerMappings :one
+SELECT pandokos.platform_issuer_mapping_count(sqlc.arg(issuer_id)::uuid,
+           (SELECT COALESCE(array_agg(t.id), ARRAY[]::uuid[]) FROM pandokos.tenant t))::bigint AS mappings;
+
 -- name: GetTokenPrincipal :one
 SELECT m.id AS mapping_id,
        s.id AS service_account_id, s.name AS service_account_name, s.state AS service_account_state,
