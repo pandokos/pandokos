@@ -319,7 +319,16 @@ func decodeBody(r *http.Request, limit int64, bodyRequired bool, required []stri
 	if err := dec.Decode(dst); err != nil {
 		var te *json.UnmarshalTypeError
 		if errors.As(err, &te) && te.Field != "" {
-			return invalidField(te.Field, "has the wrong type")
+			// From Go 1.27 the field path of an error inside a member's own UnmarshalJSON
+			// (Optional, Nullable) is relative to that member ("0", "tier"), not to the body.
+			// Name the body's member then.
+			field := te.Field
+			if top, _, _ := strings.Cut(field, "."); members[top] == nil {
+				if name := wrongMember(members, dst); name != "" {
+					field = name
+				}
+			}
+			return invalidField(field, "has the wrong type")
 		}
 		if name, ok := strings.CutPrefix(err.Error(), "json: unknown field "); ok {
 			if carriesSecret(dst) {
