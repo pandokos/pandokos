@@ -147,7 +147,7 @@ func TestIssuerCommands(t *testing.T) {
 		r = newRig(t)
 		r.f.out["listTenants"] = &adminapi.TenantList{Items: []adminapi.Tenant{tenant}}
 		mustRun(t, r, "token-issuer", "list", "--tenant", "acme")
-		check(t, "list by tenant name", r.f.only(t, "listTokenIssuers"), adminapi.ListTokenIssuersInput{Tenant: tid})
+		check(t, "list by tenant name", r.f.only(t, "listTokenIssuers"), adminapi.ListTokenIssuersInput{Tenant: tid, Limit: 50, Sort: adminapi.NamedSortCreatedAt})
 
 		// Usage errors reach no operation.
 		r = newRig(t)
@@ -175,7 +175,7 @@ func TestIssuerCommands(t *testing.T) {
 
 	t.Run("subject-mapping", func(t *testing.T) {
 		check(t, "list", call(t, "listSubjectMappings", "subject-mapping", "list", "--tenant", tid, "--issuer", issuerID, "--service-account", sid, "--subject", "spiffe://acme/ns/ci", "--limit", "2"),
-			adminapi.ListSubjectMappingsInput{Tenant: tid, Issuer: issuerID, ServiceAccount: sid, Subject: "spiffe://acme/ns/ci", Limit: 2})
+			adminapi.ListSubjectMappingsInput{Tenant: tid, Issuer: issuerID, ServiceAccount: sid, Subject: "spiffe://acme/ns/ci", Limit: 2, Sort: adminapi.SortCreatedAt})
 		check(t, "create", call(t, "createSubjectMapping", "subject-mapping", "create", "--tenant", tid, "--issuer", issuerID, "--subject", "spiffe://acme/ns/ci", "--service-account", sid, "--description", "ci"),
 			adminapi.CreateSubjectMappingInput{Tenant: tid, Body: adminapi.SubjectMappingCreate{Issuer: adminapi.IssuerRef{Scope: adminapi.IssuerScopeTenant, ID: issuerID}, Subject: "spiffe://acme/ns/ci", ServiceAccountID: sid, Description: "ci"}})
 		check(t, "create for a platform-level issuer", call(t, "createSubjectMapping", "subject-mapping", "create", "--tenant", tid, "--issuer", issuerID, "--platform", "--subject", "w", "--service-account", sid),

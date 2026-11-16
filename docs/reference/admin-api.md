@@ -91,6 +91,9 @@ Every operation has one CLI command that only calls the generated client. `TENAN
 | `model-restriction get`, `set`, `clear` | `getModelRestriction`, `setModelRestriction`, `clearModelRestriction` |
 | `capability check` | `getCapability` |
 | `usage list` | `listUsageRecords` |
+| `token-issuer list`, `create`, `get`, `update`, `delete`, `platform` | `listTokenIssuers`, `createTokenIssuer`, `getTokenIssuer`, `updateTokenIssuer`, `deleteTokenIssuer`, `listTenantPlatformIssuers` |
+| `subject-mapping list`, `create`, `get`, `delete` | `listSubjectMappings`, `createSubjectMapping`, `getSubjectMapping`, `deleteSubjectMapping` |
+| `platform-issuer list`, `create`, `get`, `update`, `delete`, `tenants`, `add-tenant`, `remove-tenant` | `listPlatformIssuers`, `createPlatformIssuer`, `getPlatformIssuer`, `updatePlatformIssuer`, `deletePlatformIssuer`, `listPlatformIssuerTenants`, `putPlatformIssuerTenant`, `deletePlatformIssuerTenant` |
 | `import-prices (--file FILE \| --embedded) [--dry-run]` | none: a host command that reads a price dataset and writes through the database ([catalogue guide](../operations/catalogue.md)) |
 | `kek generate --out FILE` | none: a local command that writes a key-encryption key ([vault guide](../operations/vault.md)) |
 
@@ -181,6 +184,18 @@ tenants. The operations are:
   names of the members that changed) and their new values, and nothing when nothing changed; a deletion
   records the name and `mappings_deleted`; a platform-level deletion counts only the mappings the
   platform session can see, which are none, because mappings belong to the tenants.
+
+Flags of the issuer commands: `token-issuer create --tenant T --name N --issuer URL --audience A
+[--jwks-uri U] [--algorithm X]... [--subject-claim C] [--require CLAIM=VALUE]... [--description D]
+[--disabled]`; `token-issuer update ISSUER` takes the same flags (and `--no-require`, `--enable`,
+`--disable`) and sends only the flags given, an empty value clearing `--jwks-uri` and
+`--description`; `token-issuer list [--name N] [--enabled true|false]`; `token-issuer platform --tenant T`
+lists the platform-level issuers that list the tenant. `subject-mapping create --tenant T --issuer ID
+[--platform] --subject S --service-account SA [--description D]`, with `SA` an ID or a name;
+`subject-mapping list [--issuer ID] [--service-account SA] [--subject S]`. `platform-issuer` takes the
+flags of `token-issuer` without `--tenant` and with `--tenant-claim` (required on `create`);
+`platform-issuer tenants ISSUER`, `add-tenant [--claim-value V] ISSUER TENANT` and
+`remove-tenant ISSUER TENANT` (a tenant by ID or name).
 
 ### The catalogue
 
