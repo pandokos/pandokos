@@ -129,6 +129,59 @@ description (an absent `--description` leaves it alone). `key create --credentia
 List commands take
 `--state`, `--sort`, `--limit`, `--cursor` and `--all`.
 
+### Token issuers and subject mappings
+
+A tenant registers the identity providers whose signed tokens it trusts and maps their subjects to
+its service accounts; a platform administrator can register an issuer that acts for several
+tenants. The operations are:
+
+| Operation | Method and path | Permission |
+|---|---|---|
+| `listTokenIssuers`, `createTokenIssuer` | `GET`, `POST /v1/tenants/{tenant}/token-issuers` | `token_issuer:read`, `token_issuer:write` |
+| `getTokenIssuer`, `updateTokenIssuer`, `deleteTokenIssuer` | `GET`, `PATCH`, `DELETE .../token-issuers/{issuer}` | `token_issuer:read`, `token_issuer:write`, `token_issuer:delete` |
+| `listTenantPlatformIssuers` | `GET /v1/tenants/{tenant}/platform-issuers` | `token_issuer:read` |
+| `listSubjectMappings`, `createSubjectMapping` | `GET`, `POST /v1/tenants/{tenant}/subject-mappings` | `subject_mapping:read`, `subject_mapping:write` |
+| `getSubjectMapping`, `deleteSubjectMapping` | `GET`, `DELETE .../subject-mappings/{mapping}` | `subject_mapping:read`, `subject_mapping:delete` |
+| `listPlatformIssuers`, `createPlatformIssuer` | `GET`, `POST /v1/platform-issuers` | `platform_issuer:read`, `platform_issuer:write` |
+| `getPlatformIssuer`, `updatePlatformIssuer`, `deletePlatformIssuer` | `GET`, `PATCH`, `DELETE /v1/platform-issuers/{issuer}` | `platform_issuer:read`, `platform_issuer:write`, `platform_issuer:delete` |
+| `listPlatformIssuerTenants` | `GET /v1/platform-issuers/{issuer}/tenants` | `platform_issuer:read` |
+| `putPlatformIssuerTenant`, `deletePlatformIssuerTenant` | `PUT`, `DELETE /v1/platform-issuers/{issuer}/tenants/{tenant}` | `platform_issuer:write` |
+
+- `createTokenIssuer` and `createPlatformIssuer` take `name`, `issuer` and `audience` (and
+  `tenant_claim` for a platform-level one); `algorithms` defaults to `["RS256", "ES256"]`,
+  `subject_claim` to `sub`, `required_claims` to `{}` and `enabled` to `true`; `enabled: false` is
+  honoured. `issuer` and a non-empty `jwks_uri` are `https` URLs with a host and without user
+  information or fragment (and `issuer` without a query). The names of `subject_claim`,
+  `tenant_claim` and of the members of `required_claims` are claim names that are not `iss`, `aud`,
+  `exp`, `nbf` or `iat`. The stored size of `required_claims` is bounded (4096 bytes): a set that
+  does not fit is `invalid_request` on `required_claims`.
+- The pair of `issuer` and `audience` is unique in the installation, over both kinds of
+  registration. A taken pair, a taken name, a subject that is already mapped and a claim value that
+  is already in use in a registration are all `conflict`, with the same body and nothing that says
+  what holds them.
+- `PATCH` changes the members that are present; `algorithms` and `required_claims` replace the whole
+  value; `{"enabled": false}` disables a registration and `{"enabled": true}` enables it. A
+  registration has no secret, and the administration plane never fetches the documents of an issuer.
+- `deleteTokenIssuer`, `deletePlatformIssuer`, `deleteSubjectMapping` and `deletePlatformIssuerTenant`
+  return the resource as it was. Deleting a registration deletes its subject mappings.
+- A mapping names a registration (`issuer`: `{scope: tenant|platform, id}`), a `subject` of 1 to 255
+  characters, compared byte for byte, and a service account of the tenant. A registration of another
+  tenant, a platform-level one that does not list the tenant, a service account of another tenant and
+  an ID that exists nowhere are the same `invalid_request` on `issuer` or `service_account_id`: the
+  answer never says whether the ID exists elsewhere. A mapping cannot be changed: delete it and
+  create it again. A mapping to a platform-level registration stays, inert, when the tenant is
+  removed from its list.
+- `listTenantPlatformIssuers` shows a tenant the platform-level registrations that list it, with
+  its own `claim_value` and nothing of the other tenants of the list.
+- `putPlatformIssuerTenant` is idempotent. The tenant must exist and not be deleted (`not_found`
+  otherwise); `claim_value` defaults to the tenant's ID and is unique in the registration.
+- Audit: `token_issuer.create|update|delete`, `subject_mapping.create|delete` are in the tenant's
+  log; `platform_issuer.create|update|delete|tenant_add|tenant_remove` are in the platform log
+  only. A creation records the members of the registration; an update records `changed` (the sorted
+  names of the members that changed) and their new values, and nothing when nothing changed; a deletion
+  records the name and `mappings_deleted`; a platform-level deletion counts only the mappings the
+  platform session can see, which are none, because mappings belong to the tenants.
+
 ### The catalogue
 
 The operations are described in the [catalogue guide](../operations/catalogue.md). Provider and endpoint

@@ -140,6 +140,9 @@ type schema struct {
 	Required             []string   `yaml:"required"`
 	AdditionalProperties additional `yaml:"additionalProperties"`
 	MaxProperties        *int       `yaml:"maxProperties"`
+	// NotEmpty marks an optional string member of a request body whose empty value is a value that
+	// breaks the schema, not an absence: decodeBody refuses it when the body sends it.
+	NotEmpty bool `yaml:"x-pandokos-not-empty"`
 }
 
 // additional is the additionalProperties member: false closes an object; a schema makes it a map
@@ -160,10 +163,15 @@ func (a *additional) UnmarshalYAML(n *yaml.Node) error {
 }
 
 type generator struct {
-	doc      document
-	buf      bytes.Buffer
-	update   map[string]bool // update schemas: component objects used as the body of a PATCH operation
-	patterns []string        // regular expressions, in order of first use
+	doc    document
+	buf    bytes.Buffer
+	update map[string]bool // update schemas: component objects used as the body of a PATCH operation
+	// trueByDefault lists, per component object, the optional boolean members whose document says
+	// default: true. Such a member is always written (an absent member would read as false) and a
+	// request body starts with it set, so that a body that omits it means true and false stays
+	// expressible.
+	trueByDefault map[string][]string
+	patterns      []string // regular expressions, in order of first use
 }
 
 func main() {
@@ -531,7 +539,8 @@ func (g *generator) object(name string, s *schema) error {
 	}
 	g.p("type %s struct {", name)
 	var checks bytes.Buffer
-	var nested []string // the members that are objects, or arrays of objects, for the presence check
+	var nested []string   // the members that are objects, or arrays of objects, for the presence check
+	var notEmpty []string // optional strings that the document does not allow to be empty
 	for _, pn := range s.Properties.Names {
 		ps := s.Properties.By[pn]
 		f, err := g.fieldOf(ps, required[pn])
@@ -554,6 +563,11 @@ func (g *generator) object(name string, s *schema) error {
 				return fmt.Errorf("property %s: a nullable property cannot be required", pn)
 			}
 			tag += ",omitzero"
+		case f.kind == "bool" && !required[pn] && ps.Default != nil && *ps.Default == "true":
+			if g.trueByDefault == nil {
+				g.trueByDefault = map[string][]string{}
+			}
+			g.trueByDefault[name] = append(g.trueByDefault[name], fieldName(pn))
 		case !required[pn]:
 			tag += ",omitempty"
 		}
@@ -568,6 +582,9 @@ func (g *generator) object(name string, s *schema) error {
 				many = "Many: true, "
 			}
 			nested = append(nested, fmt.Sprintf("{Name: %q, %sRequired: required%s, Nested: nested%s}", pn, many, target, target))
+		}
+		if !optional && !required[pn] && f.kind == "string" && !f.nullable && !g.update[name] && ps.NotEmpty {
+			notEmpty = append(notEmpty, pn)
 		}
 		if optional {
 			// Validation runs only when the member is present.
@@ -584,6 +601,12 @@ func (g *generator) object(name string, s *schema) error {
 		g.p("var nested%s []nestedMember\n", name)
 	} else {
 		g.p("var nested%s = []nestedMember{%s}\n", name, strings.Join(nested, ", "))
+	}
+	if len(notEmpty) > 0 {
+		// An optional string is "" when absent, so a body that sends "" for a member whose
+		// schema does not admit it is found by decodeBody from the document's members.
+		g.p("// sentEmpty names the optional members that the document does not allow to be empty.")
+		g.p("func (*%s) sentEmpty() []string { return []string{%s} }\n", name, quoteList(notEmpty))
 	}
 	g.p("// Validate returns the rules of the document that v breaks. A message never repeats a value.")
 	g.p("func (v *%s) Validate() []FieldError {", name)
@@ -911,6 +934,9 @@ func (g *generator) operations() error {
 			g.p("if len(errs) > 0 { h.fail(w, r, op, invalid(errs)); return }")
 		}
 		if o.body != "" {
+			for _, fn := range g.trueByDefault[o.body] {
+				g.p("in.Body.%s = true", fn)
+			}
 			g.p("if err := decodeBody(r, h.hooks.MaxBodyBytes, %t, required%s, nested%s, &in.Body); err != nil { h.fail(w, r, op, err); return }", o.bodyRequired, o.body, o.body)
 			g.p("if errs := in.Body.Validate(); len(errs) > 0 { h.fail(w, r, op, invalid(errs)); return }")
 		}

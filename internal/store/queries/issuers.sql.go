@@ -1236,13 +1236,18 @@ func (q *Queries) LookupPlatformIssuerTenant(ctx context.Context, arg LookupPlat
 }
 
 const putPlatformIssuerTenant = `-- name: PutPlatformIssuerTenant :one
-WITH l AS (
+WITH old AS (
+    SELECT p.claim_value
+      FROM pandokos.platform_issuer_tenant p
+     WHERE p.issuer_id = $1::uuid AND p.tenant_id = $2::uuid
+), l AS (
     INSERT INTO pandokos.platform_issuer_tenant (issuer_id, tenant_id, claim_value)
     VALUES ($1::uuid, $2::uuid, $3::text)
     ON CONFLICT (issuer_id, tenant_id) DO UPDATE SET claim_value = EXCLUDED.claim_value
     RETURNING issuer_id, tenant_id, claim_value, created_at
 )
-SELECT l.issuer_id, l.tenant_id, t.name AS tenant_name, l.claim_value, l.created_at
+SELECT l.issuer_id, l.tenant_id, t.name AS tenant_name, l.claim_value, l.created_at,
+       COALESCE((SELECT o.claim_value FROM old o), '')::text AS previous_claim_value
   FROM l
   JOIN pandokos.tenant t ON t.id = l.tenant_id
 `
@@ -1254,13 +1259,16 @@ type PutPlatformIssuerTenantParams struct {
 }
 
 type PutPlatformIssuerTenantRow struct {
-	IssuerID   string
-	TenantID   string
-	TenantName string
-	ClaimValue string
-	CreatedAt  time.Time
+	IssuerID           string
+	TenantID           string
+	TenantName         string
+	ClaimValue         string
+	CreatedAt          time.Time
+	PreviousClaimValue string
 }
 
+// previous_claim_value is the value the tenant had before this statement, empty when it was not in
+// the list (a claim value is never empty); the caller holds the registration's row lock, so it is what the statement replaced.
 func (q *Queries) PutPlatformIssuerTenant(ctx context.Context, arg PutPlatformIssuerTenantParams) (PutPlatformIssuerTenantRow, error) {
 	row := q.db.QueryRow(ctx, putPlatformIssuerTenant, arg.IssuerID, arg.TenantID, arg.ClaimValue)
 	var i PutPlatformIssuerTenantRow
@@ -1270,6 +1278,7 @@ func (q *Queries) PutPlatformIssuerTenant(ctx context.Context, arg PutPlatformIs
 		&i.TenantName,
 		&i.ClaimValue,
 		&i.CreatedAt,
+		&i.PreviousClaimValue,
 	)
 	return i, err
 }
@@ -1309,7 +1318,7 @@ WITH i AS (
            algorithms      = COALESCE($6::text[], algorithms),
            subject_claim   = COALESCE($7::text, subject_claim),
            tenant_claim    = COALESCE($8::text, tenant_claim),
-           required_claims = COALESCE($9::jsonb, required_claims),
+           required_claims = COALESCE($9::text::jsonb, required_claims),
            enabled         = COALESCE($10::boolean, enabled)
      WHERE id = $11::uuid
     RETURNING id, name, description, issuer, audience, jwks_uri, algorithms, subject_claim, tenant_claim,
@@ -1330,7 +1339,7 @@ type UpdatePlatformIssuerParams struct {
 	Algorithms     []string
 	SubjectClaim   *string
 	TenantClaim    *string
-	RequiredClaims []byte
+	RequiredClaims *string
 	Enabled        *bool
 	ID             string
 }
@@ -1395,7 +1404,7 @@ UPDATE pandokos.trusted_issuer
        jwks_uri        = COALESCE($5::text, jwks_uri),
        algorithms      = COALESCE($6::text[], algorithms),
        subject_claim   = COALESCE($7::text, subject_claim),
-       required_claims = COALESCE($8::jsonb, required_claims),
+       required_claims = COALESCE($8::text::jsonb, required_claims),
        enabled         = COALESCE($9::boolean, enabled)
  WHERE id = $10::uuid
 RETURNING id, tenant_id, name, description, issuer, audience, jwks_uri, algorithms, subject_claim, required_claims,
@@ -1410,7 +1419,7 @@ type UpdateTrustedIssuerParams struct {
 	JwksUri        *string
 	Algorithms     []string
 	SubjectClaim   *string
-	RequiredClaims []byte
+	RequiredClaims *string
 	Enabled        *bool
 	ID             string
 }

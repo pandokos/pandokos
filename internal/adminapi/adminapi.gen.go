@@ -1157,12 +1157,16 @@ type PlatformIssuerCreate struct {
 	SubjectClaim   string            `json:"subject_claim,omitempty"`
 	TenantClaim    string            `json:"tenant_claim"`
 	RequiredClaims map[string]string `json:"required_claims,omitempty"`
-	Enabled        bool              `json:"enabled,omitempty"`
+	// A disabled registration refuses every token. Omitted means true.
+	Enabled bool `json:"enabled"`
 }
 
 var requiredPlatformIssuerCreate = []string{"name", "issuer", "audience", "tenant_claim"}
 
 var nestedPlatformIssuerCreate []nestedMember
+
+// sentEmpty names the optional members that the document does not allow to be empty.
+func (*PlatformIssuerCreate) sentEmpty() []string { return []string{"subject_claim"} }
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformIssuerCreate) Validate() []FieldError {
@@ -1309,6 +1313,9 @@ type PlatformIssuerTenantPut struct {
 var requiredPlatformIssuerTenantPut = []string{}
 
 var nestedPlatformIssuerTenantPut []nestedMember
+
+// sentEmpty names the optional members that the document does not allow to be empty.
+func (*PlatformIssuerTenantPut) sentEmpty() []string { return []string{"claim_value"} }
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformIssuerTenantPut) Validate() []FieldError {
@@ -2791,12 +2798,16 @@ type TokenIssuerCreate struct {
 	Algorithms     []string          `json:"algorithms,omitempty"`
 	SubjectClaim   string            `json:"subject_claim,omitempty"`
 	RequiredClaims map[string]string `json:"required_claims,omitempty"`
-	Enabled        bool              `json:"enabled,omitempty"`
+	// A disabled registration refuses every token. Omitted means true.
+	Enabled bool `json:"enabled"`
 }
 
 var requiredTokenIssuerCreate = []string{"name", "issuer", "audience"}
 
 var nestedTokenIssuerCreate []nestedMember
+
+// sentEmpty names the optional members that the document does not allow to be empty.
+func (*TokenIssuerCreate) sentEmpty() []string { return []string{"subject_claim"} }
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TokenIssuerCreate) Validate() []FieldError {
@@ -4474,6 +4485,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
+		in.Body.Enabled = true
 		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredPlatformIssuerCreate, nestedPlatformIssuerCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -6149,6 +6161,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
+		in.Body.Enabled = true
 		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredTokenIssuerCreate, nestedTokenIssuerCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return

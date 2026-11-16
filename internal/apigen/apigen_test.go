@@ -242,13 +242,14 @@ const thingSchemas = `    Kind:
       required: [name]
       properties:
         name: {type: string, minLength: 1}
-        note: {type: string, maxLength: 5}
+        note: {type: string, maxLength: 5, x-pandokos-not-empty: true}
         rates:
           type: array
           minItems: 1
           maxItems: 3
           items: {$ref: '#/components/schemas/Rate'}
         extra: {$ref: '#/components/schemas/Rate'}
+        live: {type: boolean, default: true}
     ThingUpdate:
       type: object
       additionalProperties: false
@@ -263,6 +264,7 @@ const thingSchemas = `    Kind:
           maxItems: 2
           items: {type: string}
         gone: {type: [string, "null"]}
+        live: {type: boolean, default: true}
 `
 
 // TestOptionalMembersGenerated is part of T-384: the members of an update schema are Optional and
@@ -309,5 +311,25 @@ func TestUpdateSchemaRefusals(t *testing.T) {
 	_, err := generate(writeSpec(t, doc))
 	if err == nil || !strings.Contains(err.Error(), "ThingUpdate") || !strings.Contains(err.Error(), "POST /v1/things") {
 		t.Fatalf("a PATCH body also used by a POST was accepted or badly reported: %v", err)
+	}
+}
+
+// TestTrueByDefaultBoolean (and the marker x-pandokos-not-empty): an optional boolean that defaults to true is always written, so that
+// false can be sent, and a request body starts with it set, so that an absent member means true. In
+// an update schema it stays Optional.
+func TestTrueByDefaultBoolean(t *testing.T) {
+	src, err := generate(writeSpec(t, withSchemas(t, thingSchemas)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := regexp.MustCompile(`[ \t]+`).ReplaceAllString(string(src), " ")
+	for _, want := range []string{"Live bool `json:\"live\"`", "Live Optional[bool] `json:\"live,omitzero\"`", "in.Body.Live = true",
+		"func (*ThingCreate) sentEmpty() []string { return []string{\"note\"} }"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the generated code does not contain %q", want)
+		}
+	}
+	if strings.Contains(text, "live,omitempty") {
+		t.Error("an optional boolean that defaults to true can be omitted when false")
 	}
 }

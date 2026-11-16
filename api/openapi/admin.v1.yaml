@@ -3095,9 +3095,9 @@ components:
         audience: {type: string, minLength: 1, maxLength: 255}
         jwks_uri: {type: string, maxLength: 2048}
         algorithms: {type: array, minItems: 1, maxItems: 10, uniqueItems: true, items: {$ref: '#/components/schemas/TokenAlgorithm'}}
-        subject_claim: {$ref: '#/components/schemas/ClaimName'}
+        subject_claim: {$ref: '#/components/schemas/ClaimName', x-pandokos-not-empty: true}
         required_claims: {type: object, maxProperties: 16, additionalProperties: {type: string, minLength: 1, maxLength: 255}}
-        enabled: {type: boolean}
+        enabled: {type: boolean, default: true, description: A disabled registration refuses every token. Omitted means true.}
     TokenIssuerUpdate:
       type: object
       additionalProperties: false
@@ -3160,10 +3160,10 @@ components:
         audience: {type: string, minLength: 1, maxLength: 255}
         jwks_uri: {type: string, maxLength: 2048}
         algorithms: {type: array, minItems: 1, maxItems: 10, uniqueItems: true, items: {$ref: '#/components/schemas/TokenAlgorithm'}}
-        subject_claim: {$ref: '#/components/schemas/ClaimName'}
+        subject_claim: {$ref: '#/components/schemas/ClaimName', x-pandokos-not-empty: true}
         tenant_claim: {$ref: '#/components/schemas/ClaimName'}
         required_claims: {type: object, maxProperties: 16, additionalProperties: {type: string, minLength: 1, maxLength: 255}}
-        enabled: {type: boolean}
+        enabled: {type: boolean, default: true, description: A disabled registration refuses every token. Omitted means true.}
     PlatformIssuerUpdate:
       type: object
       additionalProperties: false
@@ -3196,6 +3196,7 @@ components:
           type: string
           minLength: 1
           maxLength: 255
+          x-pandokos-not-empty: true
           description: The value of the tenant claim that designates this tenant. Default, the tenant ID.
     TenantPlatformIssuer:
       type: object

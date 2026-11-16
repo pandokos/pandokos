@@ -55,10 +55,19 @@ func TestTokenIssuers(t *testing.T) {
 			ti.SubjectClaim != "azp" || !reflect.DeepEqual(ti.RequiredClaims, map[string]string{"tier": "gold", "env": "prod"}) || ti.Enabled {
 			t.Errorf("created: %+v", ti)
 		}
-		// The limits that are allowed: 16 required claims, 10 algorithms, 255 characters.
+		// The limits that are allowed: 16 required claims, 10 algorithms, 255 characters. The stored
+		// size of the required claims is bounded too (4096 bytes, migration 0008): 16 claims fit up
+		// to values of about 240 characters, and a set that does not fit is a 400 on the member.
 		claims := map[string]string{}
 		for i := 0; i < 16; i++ {
-			claims[fmt.Sprintf("claim%d", i)] = strings.Repeat("v", 255)
+			claims[fmt.Sprintf("claim%d", i)] = strings.Repeat("v", 200)
+		}
+		tooBig := map[string]string{}
+		for i := 0; i < 16; i++ {
+			tooBig[fmt.Sprintf("claim%d", i)] = strings.Repeat("v", 255)
+		}
+		if r := w.do(t, w.ka, "POST", base, uniqueIssuer(map[string]any{"required_claims": tooBig})); r.Status != 400 || !namesMember(problem(t, r), "required_claims") {
+			t.Errorf("required claims over the stored size: %d\n%s", r.Status, r.Body)
 		}
 		edge := uniqueIssuer(map[string]any{"algorithms": []string{"RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512", "EdDSA"},
 			"required_claims": claims, "audience": strings.Repeat("a", 255), "subject_claim": strings.Repeat("c", 64), "description": strings.Repeat("d", 200),
@@ -124,7 +133,7 @@ func TestTokenIssuers(t *testing.T) {
 			t.Errorf("the same issuer, another audience, and the same name in another tenant: %d\n%s", r.Status, r.Body)
 		}
 		// Byte for byte: another case is another pair.
-		if r := w.do(t, w.ka, "POST", base, uniqueIssuer(map[string]any{"issuer": strings.ToUpper(first["issuer"].(string)[:12]) + first["issuer"].(string)[12:], "audience": first["audience"]})); r.Status != 201 {
+		if r := w.do(t, w.ka, "POST", base, uniqueIssuer(map[string]any{"issuer": first["issuer"].(string)[:8] + strings.ToUpper(first["issuer"].(string)[8:]), "audience": first["audience"]})); r.Status != 201 {
 			t.Errorf("an issuer in another case: %d\n%s", r.Status, r.Body)
 		}
 	})

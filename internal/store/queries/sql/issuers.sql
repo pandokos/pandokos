@@ -108,7 +108,7 @@ UPDATE pandokos.trusted_issuer
        jwks_uri        = COALESCE(sqlc.narg(jwks_uri)::text, jwks_uri),
        algorithms      = COALESCE(sqlc.narg(algorithms)::text[], algorithms),
        subject_claim   = COALESCE(sqlc.narg(subject_claim)::text, subject_claim),
-       required_claims = COALESCE(sqlc.narg(required_claims)::jsonb, required_claims),
+       required_claims = COALESCE(sqlc.narg(required_claims)::text::jsonb, required_claims),
        enabled         = COALESCE(sqlc.narg(enabled)::boolean, enabled)
  WHERE id = sqlc.arg(id)::uuid
 RETURNING id, tenant_id, name, description, issuer, audience, jwks_uri, algorithms, subject_claim, required_claims,
@@ -281,7 +281,7 @@ WITH i AS (
            algorithms      = COALESCE(sqlc.narg(algorithms)::text[], algorithms),
            subject_claim   = COALESCE(sqlc.narg(subject_claim)::text, subject_claim),
            tenant_claim    = COALESCE(sqlc.narg(tenant_claim)::text, tenant_claim),
-           required_claims = COALESCE(sqlc.narg(required_claims)::jsonb, required_claims),
+           required_claims = COALESCE(sqlc.narg(required_claims)::text::jsonb, required_claims),
            enabled         = COALESCE(sqlc.narg(enabled)::boolean, enabled)
      WHERE id = sqlc.arg(id)::uuid
     RETURNING id, name, description, issuer, audience, jwks_uri, algorithms, subject_claim, tenant_claim,
@@ -322,13 +322,20 @@ SELECT l.issuer_id, l.tenant_id, t.name AS tenant_name, l.claim_value, l.created
  LIMIT sqlc.arg(page_size)::integer;
 
 -- name: PutPlatformIssuerTenant :one
-WITH l AS (
+-- previous_claim_value is the value the tenant had before this statement, empty when it was not in
+-- the list (a claim value is never empty); the caller holds the registration's row lock, so it is what the statement replaced.
+WITH old AS (
+    SELECT p.claim_value
+      FROM pandokos.platform_issuer_tenant p
+     WHERE p.issuer_id = sqlc.arg(issuer_id)::uuid AND p.tenant_id = sqlc.arg(tenant_id)::uuid
+), l AS (
     INSERT INTO pandokos.platform_issuer_tenant (issuer_id, tenant_id, claim_value)
     VALUES (sqlc.arg(issuer_id)::uuid, sqlc.arg(tenant_id)::uuid, sqlc.arg(claim_value)::text)
     ON CONFLICT (issuer_id, tenant_id) DO UPDATE SET claim_value = EXCLUDED.claim_value
     RETURNING issuer_id, tenant_id, claim_value, created_at
 )
-SELECT l.issuer_id, l.tenant_id, t.name AS tenant_name, l.claim_value, l.created_at
+SELECT l.issuer_id, l.tenant_id, t.name AS tenant_name, l.claim_value, l.created_at,
+       COALESCE((SELECT o.claim_value FROM old o), '')::text AS previous_claim_value
   FROM l
   JOIN pandokos.tenant t ON t.id = l.tenant_id;
 

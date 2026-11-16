@@ -668,7 +668,13 @@ func TestIssuerAPI(t *testing.T) {
 	noRoleKey := noRole(apiA)
 
 	t.Run("a key of tenant B on tenant A's path is a 404", func(t *testing.T) {
-		before := w.api.SnapshotTenant(t, apiA.tenant.ID)
+		// The registrations and mappings that the calls name are made first (w.fresh seeds rows of
+		// tenant A), so that the snapshot compares what the calls with B's key did and nothing else.
+		type pair struct {
+			op     adminapi.Operation
+			cr, cm apitest.Call
+		}
+		var pairs []pair
 		for _, op := range adminapi.Operations {
 			if !tenantOps[op.ID] {
 				continue
@@ -676,7 +682,11 @@ func TestIssuerAPI(t *testing.T) {
 			real := w.fresh(t, apiA, op)
 			missing := real
 			missing.Tenant = randomUUID(t, w)
-			cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
+			pairs = append(pairs, pair{op, apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)})
+		}
+		before := w.api.SnapshotTenant(t, apiA.tenant.ID)
+		for _, p := range pairs {
+			op, cr, cm := p.op, p.cr, p.cm
 			r1 := w.api.Do(t, cr.Method, cr.Path, apiB.adminKey, cr.Body, nil)
 			r2 := w.api.Do(t, cm.Method, cm.Path, apiB.adminKey, cm.Body, nil)
 			if r1.Status != 404 || !strings.Contains(string(r1.Body), `"code":"not_found"`) {

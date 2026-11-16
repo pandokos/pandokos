@@ -304,6 +304,13 @@ func decodeBody(r *http.Request, limit int64, bodyRequired bool, required []stri
 		}
 	}
 	errs = append(errs, missingNested(members, nested, "")...)
+	if se, ok := dst.(interface{ sentEmpty() []string }); ok {
+		for _, name := range se.sentEmpty() {
+			if string(members[name]) == `""` {
+				errs = append(errs, FieldError{Field: name, Message: "must not be empty"})
+			}
+		}
+	}
 	if len(errs) > 0 {
 		return invalid(errs)
 	}
