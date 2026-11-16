@@ -1,5 +1,5 @@
 #!/bin/sh
-# Starts Keycloak and Ory Hydra for the trusted issuer tests and writes local/idp/env.
+# Starts Keycloak, Ory Hydra and Authentik for the trusted issuer tests and writes local/idp/env.
 # Everything generated here (certificate, client secrets, ports) lives in the git-ignored local/.
 # Safe to run again: the containers are replaced, the certificate and the secrets are kept.
 set -eu
@@ -32,11 +32,20 @@ fi
 : "${PANDOKOS_TEST_IDP_HYDRA_SECRET_TENANT:=$(secret)}"
 : "${PANDOKOS_TEST_IDP_HYDRA_SECRET_UNMAPPED:=$(secret)}"
 : "${PANDOKOS_IDP_HYDRA_SYSTEM_SECRET:=$(secret)}"
+: "${PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_A:=$(secret)}"
+: "${PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_B:=$(secret)}"
+: "${PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_C:=$(secret)}"
+: "${PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_UNMAPPED:=$(secret)}"
+: "${PANDOKOS_TEST_IDP_AUTHENTIK_CLIENT_SECRET:=$(secret)}"
+: "${PANDOKOS_IDP_AUTHENTIK_SECRET_KEY:=$(secret)$(secret)}"
+: "${PANDOKOS_IDP_AUTHENTIK_DB_PASSWORD:=$(secret)}"
+: "${PANDOKOS_IDP_AUTHENTIK_ADMIN_PASSWORD:=$(secret)}"
+: "${PANDOKOS_IDP_AUTHENTIK_ADMIN_TOKEN:=$(secret)$(secret)}"
 
-# Two free ports on the loopback.
+# Three free ports on the loopback.
 ports=$(python3 -c '
 import socket
-s = [socket.socket() for _ in range(2)]
+s = [socket.socket() for _ in range(3)]
 for x in s:
     x.bind(("127.0.0.1", 0))
 print(*[x.getsockname()[1] for x in s])
@@ -44,7 +53,12 @@ print(*[x.getsockname()[1] for x in s])
 set -- $ports
 PANDOKOS_IDP_KEYCLOAK_PORT=$1
 PANDOKOS_IDP_HYDRA_PORT=$2
+PANDOKOS_IDP_AUTHENTIK_PORT=$3
 export PANDOKOS_IDP_KEYCLOAK_PORT PANDOKOS_IDP_HYDRA_PORT PANDOKOS_IDP_HYDRA_SYSTEM_SECRET
+export PANDOKOS_IDP_AUTHENTIK_PORT PANDOKOS_IDP_AUTHENTIK_SECRET_KEY PANDOKOS_IDP_AUTHENTIK_DB_PASSWORD
+export PANDOKOS_IDP_AUTHENTIK_ADMIN_PASSWORD PANDOKOS_IDP_AUTHENTIK_ADMIN_TOKEN
+export PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_A PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_B PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_C
+export PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_UNMAPPED PANDOKOS_TEST_IDP_AUTHENTIK_CLIENT_SECRET
 
 # The realm of Keycloak, from its template. The secrets are hexadecimal, so sed is safe.
 (umask 077 && sed \
@@ -60,14 +74,16 @@ docker compose -f test/idp/compose.yaml up -d --wait
 ca="$dir/tls/ca.pem"
 kc_issuer="https://localhost:$PANDOKOS_IDP_KEYCLOAK_PORT/realms/pandokos"
 hy_issuer="https://localhost:$PANDOKOS_IDP_HYDRA_PORT/"
+ak_issuer="https://localhost:$PANDOKOS_IDP_AUTHENTIK_PORT/application/o/pandokos-tests/"
+ak_token_url="https://localhost:$PANDOKOS_IDP_AUTHENTIK_PORT/application/o/token/"
 
 # Neither image has a tool a health check could use: wait from here.
 wait_for() {
     n=0
     until curl -fsS --cacert "$ca" -o /dev/null "$1" 2>/dev/null; do
         n=$((n + 1))
-        if [ "$n" -ge 120 ]; then
-            echo "idp: $1 did not answer in 120 s" >&2
+        if [ "$n" -ge "${2:-120}" ]; then
+            echo "idp: $1 did not answer in ${2:-120} s" >&2
             docker compose -p pandokos-testidp logs --tail 50 >&2 || true
             exit 1
         fi
@@ -76,6 +92,38 @@ wait_for() {
 }
 wait_for "$kc_issuer/.well-known/openid-configuration"
 wait_for "${hy_issuer}health/ready"
+# Authentik migrates its database first (a minute or two), then the worker applies the blueprint
+# (test/idp/authentik-blueprint.yaml) in one transaction: the web certificate of the brand is its last
+# visible effect. The server reads that certificate when it starts (its watcher notices a later change
+# only after minutes), so it is restarted once the blueprint is in.
+n=0
+until [ "$(docker compose -f test/idp/compose.yaml exec -T authentik-db psql -U authentik -d authentik -Atc \
+    'SELECT count(*) FROM authentik_brands_brand WHERE web_certificate_id IS NOT NULL' 2>/dev/null)" = 1 ]; do
+    n=$((n + 1))
+    if [ "$n" -ge 300 ]; then
+        echo "idp: Authentik did not apply the blueprint in 300 s" >&2
+        docker compose -p pandokos-testidp logs --tail 50 authentik-worker >&2 || true
+        exit 1
+    fi
+    sleep 1
+done
+docker compose -f test/idp/compose.yaml restart authentik-server >/dev/null
+# An application that exists answers its discovery document over the certificate of up.sh, and a
+# workload then gets a token (the secrets are those of the blueprint).
+wait_for "${ak_issuer}.well-known/openid-configuration" 300
+n=0
+until curl -fsS --cacert "$ca" -o /dev/null "$ak_token_url" \
+    -d grant_type=client_credentials -d client_id=pandokos-tests \
+    -d "client_secret=$PANDOKOS_TEST_IDP_AUTHENTIK_CLIENT_SECRET" \
+    -d username=workload-a -d "password=$PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_A" 2>/dev/null; do
+    n=$((n + 1))
+    if [ "$n" -ge 120 ]; then
+        echo "idp: Authentik did not issue a token in 120 s" >&2
+        docker compose -p pandokos-testidp logs --tail 50 authentik-worker authentik-server >&2 || true
+        exit 1
+    fi
+    sleep 1
+done
 
 # The Hydra clients, through the administration API inside the container (it is not published).
 hydra_client() {
@@ -106,5 +154,21 @@ hydra_client unmapped-workload "$PANDOKOS_TEST_IDP_HYDRA_SECRET_UNMAPPED"
     printf 'PANDOKOS_TEST_IDP_HYDRA_CLIENT_UNMAPPED=unmapped-workload\n'
     printf 'PANDOKOS_TEST_IDP_HYDRA_SECRET_UNMAPPED=%s\n' "$PANDOKOS_TEST_IDP_HYDRA_SECRET_UNMAPPED"
     printf 'PANDOKOS_IDP_HYDRA_SYSTEM_SECRET=%s\n' "$PANDOKOS_IDP_HYDRA_SYSTEM_SECRET"
+    printf 'PANDOKOS_TEST_IDP_AUTHENTIK_ISSUER=%s\n' "$ak_issuer"
+    printf 'PANDOKOS_TEST_IDP_AUTHENTIK_TOKEN_URL=%s\n' "$ak_token_url"
+    printf 'PANDOKOS_TEST_IDP_AUTHENTIK_CLIENT_ID=pandokos-tests\n'
+    printf 'PANDOKOS_TEST_IDP_AUTHENTIK_CLIENT_SECRET=%s\n' "$PANDOKOS_TEST_IDP_AUTHENTIK_CLIENT_SECRET"
+    printf 'PANDOKOS_TEST_IDP_AUTHENTIK_USER_A=workload-a\n'
+    printf 'PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_A=%s\n' "$PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_A"
+    printf 'PANDOKOS_TEST_IDP_AUTHENTIK_USER_B=workload-b\n'
+    printf 'PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_B=%s\n' "$PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_B"
+    printf 'PANDOKOS_TEST_IDP_AUTHENTIK_USER_C=workload-c\n'
+    printf 'PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_C=%s\n' "$PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_C"
+    printf 'PANDOKOS_TEST_IDP_AUTHENTIK_USER_UNMAPPED=workload-unmapped\n'
+    printf 'PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_UNMAPPED=%s\n' "$PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_UNMAPPED"
+    printf 'PANDOKOS_IDP_AUTHENTIK_SECRET_KEY=%s\n' "$PANDOKOS_IDP_AUTHENTIK_SECRET_KEY"
+    printf 'PANDOKOS_IDP_AUTHENTIK_DB_PASSWORD=%s\n' "$PANDOKOS_IDP_AUTHENTIK_DB_PASSWORD"
+    printf 'PANDOKOS_IDP_AUTHENTIK_ADMIN_PASSWORD=%s\n' "$PANDOKOS_IDP_AUTHENTIK_ADMIN_PASSWORD"
+    printf 'PANDOKOS_IDP_AUTHENTIK_ADMIN_TOKEN=%s\n' "$PANDOKOS_IDP_AUTHENTIK_ADMIN_TOKEN"
 } > "$dir/env")
 echo "identity providers are up; settings are in $dir/env"

@@ -36,8 +36,11 @@ const (
 	keycloakAudience = "https://pandokos.test/llm"
 	otherAudience    = "https://other.test"
 	hydraAudience    = "https://pandokos.test/t1"
-	composeProject   = "pandokos-testidp"
-	chatPath         = "/openai/v1/chat/completions"
+	// authentikAudience is the client ID of the provider (blueprint authentik-blueprint.yaml): Authentik
+	// puts it in aud as a string and offers no other value.
+	authentikAudience = "pandokos-tests"
+	composeProject    = "pandokos-testidp"
+	chatPath          = "/openai/v1/chat/completions"
 )
 
 var (
@@ -58,6 +61,12 @@ var required = []string{
 	"PANDOKOS_TEST_IDP_KEYCLOAK_CLIENT_OTHER", "PANDOKOS_TEST_IDP_KEYCLOAK_SECRET_OTHER",
 	"PANDOKOS_TEST_IDP_HYDRA_CLIENT_TENANT", "PANDOKOS_TEST_IDP_HYDRA_SECRET_TENANT",
 	"PANDOKOS_TEST_IDP_HYDRA_CLIENT_UNMAPPED", "PANDOKOS_TEST_IDP_HYDRA_SECRET_UNMAPPED",
+	"PANDOKOS_TEST_IDP_AUTHENTIK_ISSUER", "PANDOKOS_TEST_IDP_AUTHENTIK_TOKEN_URL",
+	"PANDOKOS_TEST_IDP_AUTHENTIK_CLIENT_ID", "PANDOKOS_TEST_IDP_AUTHENTIK_CLIENT_SECRET",
+	"PANDOKOS_TEST_IDP_AUTHENTIK_USER_A", "PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_A",
+	"PANDOKOS_TEST_IDP_AUTHENTIK_USER_B", "PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_B",
+	"PANDOKOS_TEST_IDP_AUTHENTIK_USER_C", "PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_C",
+	"PANDOKOS_TEST_IDP_AUTHENTIK_USER_UNMAPPED", "PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_UNMAPPED",
 }
 
 // TestMain fails (never skips) when the providers' settings or the database are missing, then builds
@@ -171,6 +180,37 @@ func keycloakToken(t *testing.T, client, secret string) string {
 func hydraToken(t *testing.T, client, secret, audience string) string {
 	t.Helper()
 	return mustIssue(t, env["PANDOKOS_TEST_IDP_HYDRA_TOKEN_URL"], env[client], env[secret], audience)
+}
+
+// authentikToken obtains an access token of a service account of Authentik: the client-credentials
+// grant with the client of the provider and the account's user name and app password. The scope
+// pandokos asks for the claim pandokos_org (a scope mapping applies only to a requested scope).
+func authentikToken(t *testing.T, user, password string) string {
+	t.Helper()
+	form := url.Values{
+		"grant_type": {"client_credentials"}, "client_id": {env["PANDOKOS_TEST_IDP_AUTHENTIK_CLIENT_ID"]},
+		"client_secret": {env["PANDOKOS_TEST_IDP_AUTHENTIK_CLIENT_SECRET"]},
+		"username":      {env[user]}, "password": {env[password]}, "scope": {"pandokos"},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, env["PANDOKOS_TEST_IDP_AUTHENTIK_TOKEN_URL"], strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := providerClient(t).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil || resp.StatusCode != 200 || out.AccessToken == "" {
+		t.Fatalf("service account %s did not get a token (status %d)", env[user], resp.StatusCode)
+	}
+	return out.AccessToken
 }
 
 // segments decodes the header and the payload of a token, for assertions about what a provider
@@ -517,6 +557,150 @@ func TestHydraTenantIssuer(t *testing.T) {
 	}
 }
 
+// authentikTenant sets up a tenant-bound registration of the Authentik provider: the audience is the
+// client ID, and the subject (the user name of the service account) of workload A maps to the
+// tenant's service account.
+func authentikTenant(g *gw, name, audience string) (tenant, string) {
+	g.t.Helper()
+	g.upstream()
+	tn := g.tenant(name)
+	reg := g.id(g.cli(tn.admin, "token-issuer", "create", "--tenant", tn.id, "--name", "authentik", "--issuer", env["PANDOKOS_TEST_IDP_AUTHENTIK_ISSUER"], "--audience", audience))
+	g.cli(tn.admin, "subject-mapping", "create", "--tenant", tn.id, "--issuer", reg, "--subject", env["PANDOKOS_TEST_IDP_AUTHENTIK_USER_A"], "--service-account", tn.sa)
+	return tn, reg
+}
+
+// TestAuthentikTenantIssuer is T-606: an Authentik client-credentials token of a service account
+// acts for the tenant through the mapping of its subject and the usage row is the service account's;
+// an unmapped service account is refused; the same token is refused by a registration with another
+// audience (Authentik issues no other audience than the client ID, so the other audience is the
+// registration's).
+func TestAuthentikTenantIssuer(t *testing.T) {
+	g := start(t, nil, nil)
+	tn, _ := authentikTenant(g, "authentik", authentikAudience)
+	other := g.tenant("authentik-other") // a second tenant that must see nothing
+
+	tok := authentikToken(t, "PANDOKOS_TEST_IDP_AUTHENTIK_USER_A", "PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_A")
+	hdr, pl := segments(t, tok)
+	if hdr["alg"] != "RS256" || pl["sub"] != env["PANDOKOS_TEST_IDP_AUTHENTIK_USER_A"] || pl["aud"] != authentikAudience || pl["iss"] != env["PANDOKOS_TEST_IDP_AUTHENTIK_ISSUER"] {
+		t.Fatalf("the Authentik token is not what the provider was set up to issue: header %v, claims %v", hdr, pl)
+	}
+	if s := g.call(tok); s != 200 {
+		t.Fatalf("the token of a mapped service account: %d", s)
+	}
+	wantToken(t, g.waitUsage(tn.id, 1)[0], tn)
+
+	// A service account the registration does not map, with the right audience.
+	if s := g.call(authentikToken(t, "PANDOKOS_TEST_IDP_AUTHENTIK_USER_UNMAPPED", "PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_UNMAPPED")); s != 401 {
+		t.Errorf("an unmapped subject: %d, want 401", s)
+	}
+	g.waitUsage(tn.id, 1)
+	if n := len(g.usage(other.id)); n != 0 {
+		t.Errorf("the other tenant has %d usage rows", n)
+	}
+
+	// The same token against a registration of the same issuer with another audience.
+	g2 := start(t, nil, nil)
+	tn2, _ := authentikTenant(g2, "authentik-audience", otherAudience)
+	if s := g2.call(tok); s != 401 {
+		t.Errorf("another audience: %d, want 401", s)
+	}
+	if n := len(g2.usage(tn2.id)); n != 0 {
+		t.Errorf("the tenant with the other audience has %d usage rows", n)
+	}
+}
+
+// authentikPlatform sets up the platform-level registration of the Authentik provider: the claim
+// pandokos_org (from the attribute of the service account, through a scope mapping) designates the
+// tenant and the subject is sub, the user name. Tenant A lists org-a, B org-b; C has a mapping but
+// its claim value is not listed (the mapping can only be written while it is).
+func authentikPlatform(g *gw) (a, b, c tenant) {
+	t := g.t
+	t.Helper()
+	g.upstream()
+	boot := g.bootstrap()
+	a, b, c = g.tenant("ak-a"), g.tenant("ak-b"), g.tenant("ak-c")
+	reg := g.id(g.cli(boot, "platform-issuer", "create", "--name", "authentik", "--issuer", env["PANDOKOS_TEST_IDP_AUTHENTIK_ISSUER"],
+		"--audience", authentikAudience, "--tenant-claim", "pandokos_org", "--subject-claim", "sub"))
+	for _, x := range []struct {
+		tn      tenant
+		claim   string
+		subject string
+	}{{a, "org-a", "PANDOKOS_TEST_IDP_AUTHENTIK_USER_A"}, {b, "org-b", "PANDOKOS_TEST_IDP_AUTHENTIK_USER_B"}, {c, "org-c-listed", "PANDOKOS_TEST_IDP_AUTHENTIK_USER_C"}} {
+		g.cli(boot, "platform-issuer", "add-tenant", "--claim-value", x.claim, reg, x.tn.id)
+		g.cli(x.tn.admin, "subject-mapping", "create", "--tenant", x.tn.id, "--issuer", reg, "--platform", "--subject", env[x.subject], "--service-account", x.tn.sa)
+	}
+	g.cli(boot, "platform-issuer", "remove-tenant", reg, c.id)
+	return a, b, c
+}
+
+// TestAuthentikPlatformIssuer is T-607: an Authentik token whose claim designates tenant A calls a
+// model and the usage row is A's; the claim designates the tenant, not the subject; a token whose
+// claim designates a tenant outside the list is refused; a token without the claim (the scope that
+// carries it not requested) is refused.
+func TestAuthentikPlatformIssuer(t *testing.T) {
+	g := start(t, nil, nil)
+	a, b, c := authentikPlatform(g)
+
+	tokA := authentikToken(t, "PANDOKOS_TEST_IDP_AUTHENTIK_USER_A", "PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_A")
+	tokB := authentikToken(t, "PANDOKOS_TEST_IDP_AUTHENTIK_USER_B", "PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_B")
+	tokC := authentikToken(t, "PANDOKOS_TEST_IDP_AUTHENTIK_USER_C", "PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_C")
+	if _, pl := segments(t, tokA); pl["pandokos_org"] != "org-a" || pl["sub"] != env["PANDOKOS_TEST_IDP_AUTHENTIK_USER_A"] {
+		t.Fatalf("the token of workload-a is not what the provider was set up to issue: claims %v", pl)
+	}
+
+	if s := g.call(tokA); s != 200 {
+		t.Fatalf("the token of A: %d", s)
+	}
+	wantToken(t, g.waitUsage(a.id, 1)[0], a)
+	if s := g.call(tokB); s != 200 {
+		t.Fatalf("the token of B: %d", s)
+	}
+	wantToken(t, g.waitUsage(b.id, 1)[0], b)
+
+	// The claim of C designates a tenant outside the list: refused, although C maps the subject.
+	if s := g.call(tokC); s != 401 {
+		t.Errorf("a claim outside the list: %d, want 401", s)
+	}
+	// The unmapped account carries the claim of A, but no mapping: the claim alone acts for nobody.
+	if s := g.call(authentikToken(t, "PANDOKOS_TEST_IDP_AUTHENTIK_USER_UNMAPPED", "PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_UNMAPPED")); s != 401 {
+		t.Errorf("an unmapped subject with the claim of A: %d, want 401", s)
+	}
+	if n := len(g.usage(c.id)); n != 0 {
+		t.Errorf("tenant C has %d usage rows", n)
+	}
+	if n := len(g.usage(a.id)); n != 1 {
+		t.Errorf("tenant A has %d usage rows after the refusals, want 1", n)
+	}
+}
+
+// TestAuthentikTokenShape is T-608: the token and the key set of Authentik at the pinned version
+// are what ADR 0047 records (RS256, aud a string, sub the user name, 300 s, no nbf, only signing
+// keys), because the registration defaults depend on it.
+func TestAuthentikTokenShape(t *testing.T) {
+	tok := authentikToken(t, "PANDOKOS_TEST_IDP_AUTHENTIK_USER_A", "PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_A")
+	hdr, pl := segments(t, tok)
+	if hdr["alg"] != "RS256" || hdr["typ"] != "JWT" || hdr["kid"] == "" {
+		t.Errorf("header %v", hdr)
+	}
+	iat, _ := pl["iat"].(float64)
+	exp, _ := pl["exp"].(float64)
+	if _, ok := pl["nbf"]; ok || exp-iat != 300 || pl["azp"] != authentikAudience {
+		t.Errorf("claims %v: want no nbf, a life of 300 s and azp the client ID", pl)
+	}
+	// The key set at the discovery's jwks_uri (Authentik's own path), every key for signing.
+	keys := fetchJWKS(t, env["PANDOKOS_TEST_IDP_AUTHENTIK_ISSUER"]+"jwks/")
+	found := false
+	for _, k := range keys {
+		if k["use"] != "sig" {
+			t.Errorf("a key with use %v", k["use"])
+		}
+		found = found || k["kid"] == hdr["kid"]
+	}
+	if !found {
+		t.Errorf("the key %v of the token is not in the key set of %d keys", hdr["kid"], len(keys))
+	}
+}
+
 // compose runs docker compose on the project of up.sh, which needs no file to stop and start a service.
 func compose(t *testing.T, args ...string) {
 	t.Helper()
@@ -627,6 +811,7 @@ func TestProviderDocuments(t *testing.T) {
 	}{
 		{"keycloak", env["PANDOKOS_TEST_IDP_KEYCLOAK_ISSUER"], keycloakToken(t, "PANDOKOS_TEST_IDP_KEYCLOAK_CLIENT_A", "PANDOKOS_TEST_IDP_KEYCLOAK_SECRET_A")},
 		{"hydra", env["PANDOKOS_TEST_IDP_HYDRA_ISSUER"], hydraToken(t, "PANDOKOS_TEST_IDP_HYDRA_CLIENT_TENANT", "PANDOKOS_TEST_IDP_HYDRA_SECRET_TENANT", hydraAudience)},
+		{"authentik", env["PANDOKOS_TEST_IDP_AUTHENTIK_ISSUER"], authentikToken(t, "PANDOKOS_TEST_IDP_AUTHENTIK_USER_A", "PANDOKOS_TEST_IDP_AUTHENTIK_SECRET_A")},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

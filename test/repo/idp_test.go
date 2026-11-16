@@ -9,16 +9,17 @@ import (
 )
 
 // TestIDPImagesPinned is T-R38: every image of test/idp/compose.yaml is pinned by digest, the file
-// has the images of both providers, the tests of the providers fail rather than skip, and Dependabot
-// watches the directory.
+// has the images of the three providers (and Authentik's database), the tests of the providers fail
+// rather than skip, and Dependabot watches
+// the directory.
 func TestIDPImagesPinned(t *testing.T) {
 	var doc composeDoc
 	if err := yaml.Unmarshal([]byte(read(t, "test/idp/compose.yaml")), &doc); err != nil {
 		t.Fatal(err)
 	}
 	pinned := regexp.MustCompile(`^[a-z0-9./_-]+:[\w.-]+@sha256:[0-9a-f]{64}$`)
-	if len(doc.Services) < 2 {
-		t.Errorf("test/idp/compose.yaml has %d services, want Keycloak and Hydra", len(doc.Services))
+	if len(doc.Services) < 5 {
+		t.Errorf("test/idp/compose.yaml has %d services, want Keycloak, Hydra and Authentik (server, worker, database)", len(doc.Services))
 	}
 	for name, s := range doc.Services {
 		if !pinned.MatchString(s.Image) {
@@ -30,7 +31,7 @@ func TestIDPImagesPinned(t *testing.T) {
 			}
 		}
 	}
-	for _, want := range []string{"quay.io/keycloak/keycloak:", "oryd/hydra:"} {
+	for _, want := range []string{"quay.io/keycloak/keycloak:", "oryd/hydra:", "ghcr.io/goauthentik/server:", "postgres:"} {
 		found := false
 		for _, s := range doc.Services {
 			found = found || strings.HasPrefix(s.Image, want)

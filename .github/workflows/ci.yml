@@ -110,7 +110,7 @@ jobs:
           sh test/db/up.sh
           echo "::add-mask::$(cat local/testdb/postgres_password)"
           cat local/testdb/env >> "$GITHUB_ENV"
-      - name: Start Keycloak and Hydra
+      - name: Start Keycloak, Hydra and Authentik
         run: make idp-up
       - name: Trusted issuer tests
         run: make test-idp

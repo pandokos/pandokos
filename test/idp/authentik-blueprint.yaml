@@ -1,0 +1,90 @@
+# The Authentik configuration of the trusted issuer tests (test/idp/compose.yaml mounts it in
+# /blueprints/custom). It holds no secret: the passwords and the client secret come from the
+# environment that test/idp/up.sh generated (!Env), and the web certificate from the files of up.sh.
+version: 1
+metadata:
+  name: pandokos-idp-tests
+entries:
+  # The certificate of up.sh as the web certificate: the issuer URL must be https on localhost.
+  - model: authentik_crypto.certificatekeypair
+    id: web-certificate
+    identifiers:
+      name: pandokos-web
+    attrs:
+      certificate_data: !File /tls/server.pem
+      key_data: !File /tls/server.key
+  - model: authentik_brands.brand
+    identifiers:
+      domain: authentik-default
+    attrs:
+      web_certificate: !KeyOf web-certificate
+
+  # The claim that designates the tenant (a platform-level registration): the attribute of the user.
+  - model: authentik_providers_oauth2.scopemapping
+    id: org-scope
+    identifiers:
+      name: pandokos-org
+    attrs:
+      scope_name: pandokos
+      expression: |
+        return {"pandokos_org": request.user.attributes.get("pandokos_org", "")}
+
+  - model: authentik_core.user
+    id: user-a
+    identifiers: {username: workload-a}
+    attrs: {name: workload-a, type: service_account, path: pandokos, attributes: {pandokos_org: org-a}}
+  - model: authentik_core.user
+    id: user-b
+    identifiers: {username: workload-b}
+    attrs: {name: workload-b, type: service_account, path: pandokos, attributes: {pandokos_org: org-b}}
+  - model: authentik_core.user
+    id: user-c
+    identifiers: {username: workload-c}
+    attrs: {name: workload-c, type: service_account, path: pandokos, attributes: {pandokos_org: org-c-listed}}
+  - model: authentik_core.user
+    id: user-unmapped
+    identifiers: {username: workload-unmapped}
+    attrs: {name: workload-unmapped, type: service_account, path: pandokos, attributes: {pandokos_org: org-a}}
+  - model: authentik_core.token
+    identifiers: {identifier: pandokos-workload-a}
+    attrs: {user: !KeyOf user-a, intent: app_password, key: !Env PANDOKOS_APP_PASSWORD_A, expiring: false}
+  - model: authentik_core.token
+    identifiers: {identifier: pandokos-workload-b}
+    attrs: {user: !KeyOf user-b, intent: app_password, key: !Env PANDOKOS_APP_PASSWORD_B, expiring: false}
+  - model: authentik_core.token
+    identifiers: {identifier: pandokos-workload-c}
+    attrs: {user: !KeyOf user-c, intent: app_password, key: !Env PANDOKOS_APP_PASSWORD_C, expiring: false}
+  - model: authentik_core.token
+    identifiers: {identifier: pandokos-workload-unmapped}
+    attrs: {user: !KeyOf user-unmapped, intent: app_password, key: !Env PANDOKOS_APP_PASSWORD_UNMAPPED, expiring: false}
+
+  # RS256: the key pair Authentik generated at its first start. Without a signing key it would sign
+  # with HS256 and the client secret.
+  - model: authentik_providers_oauth2.oauth2provider
+    id: provider
+    identifiers:
+      name: pandokos-tests
+    attrs:
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      client_type: confidential
+      # Off by default in this version: without it every token request is invalid_grant.
+      grant_types: [client_credentials]
+      # sub is the username of the service account (the default is a hash of the user ID).
+      sub_mode: user_username
+      client_id: pandokos-tests
+      client_secret: !Env PANDOKOS_CLIENT_SECRET
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      issuer_mode: per_provider
+      # Required by the schema; no browser flow is ever used.
+      redirect_uris:
+        - {matching_mode: strict, url: "https://pandokos.test/unused"}
+      access_token_validity: minutes=5
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+        - !KeyOf org-scope
+  - model: authentik_core.application
+    identifiers: {slug: pandokos-tests}
+    attrs:
+      name: pandokos-tests
+      provider: !KeyOf provider
