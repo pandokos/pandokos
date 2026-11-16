@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
@@ -220,12 +221,16 @@ func (c *Cache) start(e *entry, now time.Time) chan struct{} {
 }
 
 // logIssuer is the issuer without user information, query or fragment: all that is ever logged
-// of an address.
+// of an address. An address literal is not logged either: what an operator would learn from it is
+// what a blocked fetch must not reveal about the network.
 func logIssuer(issuer string) string {
 	u, err := url.Parse(issuer)
 	if err != nil {
 		return ""
 	}
 	u.User, u.RawQuery, u.Fragment, u.RawFragment = nil, "", "", ""
+	if _, err := netip.ParseAddr(u.Hostname()); err == nil {
+		u.Host = "(address)"
+	}
 	return u.String()
 }

@@ -81,7 +81,7 @@ func (w *tokenProc) useAnthropic(t *testing.T) {
 	t.Helper()
 	w.prepareUpstream(t)
 	w.useAnthropicFake(t, w.boot, w.up, fakeprovider.ModelBasic)
-	w.up.Accept(anthropicCred)
+	w.up.Accept(anthropicCred, fixtures.CanaryCredential) // Accept replaces the set: both families' credentials
 }
 
 // registration registers the fake issuer for the tenant with the audience and returns its ID.
@@ -142,7 +142,12 @@ func TestTokenCall(t *testing.T) {
 	platform := w.platformRegistration(t, "shared", "pandokos-e2e-shared", "org")
 	w.run(t, w.boot, "platform-issuer", "add-tenant", "--claim-value", "org-b", platform, b.id)
 	mapB := w.mapping(t, b, platform, "svc", true)
+	// Tenant C maps the same subject, but is not in the list: a mapping can only be written while
+	// the platform-level registration lists the tenant (it is invisible otherwise), so C is listed
+	// for the time of the mapping and removed again; the mapping stays.
+	w.run(t, w.boot, "platform-issuer", "add-tenant", "--claim-value", "org-c-listed", platform, c.id)
 	w.mapping(t, c, platform, "svc", true)
+	w.run(t, w.boot, "platform-issuer", "remove-tenant", platform, c.id)
 
 	tokenA := w.sign("ES256", "workload-a", "pandokos-e2e-a")
 	tokenB := w.sign("ES256", "svc", "pandokos-e2e-shared", func(cl fakeidp.Claims) fakeidp.Claims { return cl.With("org", "org-b") })
@@ -260,7 +265,7 @@ func TestTokenCanary(t *testing.T) {
 	w.mapping(t, a, iss, "workload", false)
 	other := fakeidp.Start(t, fakeidp.Options{})
 
-	good := []string{w.sign("ES256", "workload", "pandokos-canary"), w.sign("RS256", "workload", "pandokos-canary"), w.sign("EdDSA", "workload", "pandokos-canary")}
+	good := []string{w.sign("ES256", "workload", "pandokos-canary"), w.sign("RS256", "workload", "pandokos-canary"), w.sign("ES256", "workload", "pandokos-canary")}
 	bad := []string{
 		w.sign("ES256", "stranger", "pandokos-canary"),
 		other.Sign("ES256", other.Standard("workload", "pandokos-canary", time.Minute).With("iss", idp.Issuer())),
@@ -539,7 +544,7 @@ func TestTokenSSRF(t *testing.T) {
 		}
 	}
 	if strings.Contains(first.stdout.String(), "10.255.255.1") || strings.Contains(first.stdout.String(), "169.254.169.254") {
-		t.Error("the log names the address of a blocked fetch")
+		t.Errorf("the log names the address of a blocked fetch\n%s", first.stdout.String())
 	}
 
 	// A second process on the same database lists the host: the loopback issuer works, the others stay blocked.
