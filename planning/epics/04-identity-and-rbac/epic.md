@@ -1,7 +1,7 @@
 ---
 id: EPIC-4
 title: Identity federation and RBAC
-status: todo
+status: in-progress
 release: v0.1 (sprint 4.1), v0.2
 depends_on: [EPIC-1]
 ---
