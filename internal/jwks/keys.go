@@ -29,8 +29,8 @@ type usableKey struct {
 	pub crypto.PublicKey
 }
 
-// fits reports whether pub can verify signatures of alg: the type, the curve and the size.
-func fits(pub crypto.PublicKey, alg string) bool {
+// Fits reports whether pub can verify signatures of alg: the type, the curve and the size.
+func Fits(pub crypto.PublicKey, alg string) bool {
 	switch alg {
 	case "RS256", "RS384", "RS512", "PS256", "PS384", "PS512":
 		k, ok := pub.(*rsa.PublicKey)
@@ -104,10 +104,10 @@ func parseKeySet(doc []byte) ([]usableKey, error) {
 // it names one.
 func usableAny(pub crypto.PublicKey, jwkAlg string) bool {
 	if jwkAlg != "" {
-		return fits(pub, jwkAlg) && isProductAlg(jwkAlg)
+		return Fits(pub, jwkAlg) && isProductAlg(jwkAlg)
 	}
 	for _, a := range algorithms {
-		if fits(pub, a) {
+		if Fits(pub, a) {
 			return true
 		}
 	}
@@ -132,7 +132,7 @@ func find(keys []usableKey, kid, alg string) (crypto.PublicKey, bool) {
 		if kid != "" && k.kid != kid {
 			continue
 		}
-		if (k.alg != "" && k.alg != alg) || !fits(k.pub, alg) {
+		if (k.alg != "" && k.alg != alg) || !Fits(k.pub, alg) {
 			continue
 		}
 		found = k.pub

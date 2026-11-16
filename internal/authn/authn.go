@@ -105,6 +105,11 @@ func unavailable(err error) error {
 // Authenticate verifies presented and returns the principal. A refusal is a *Failure; a database
 // that cannot answer is authz.ErrUnavailable.
 func (a *Authenticator) Authenticate(ctx context.Context, presented string) (authz.Principal, error) {
+	// A value that starts with pdk_ is a key and never a token; any other value of the shape of a
+	// compact JWT is a token when tokens are accepted (section 5.2).
+	if a.kinds[KindToken] && looksLikeToken(presented, a.tok.MaxBytes) {
+		return a.token(ctx, presented)
+	}
 	keyID, kind, hash, err := Parse(presented)
 	if err != nil {
 		return authz.Principal{}, &Failure{Reason: "malformed"}
