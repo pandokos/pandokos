@@ -1,6 +1,6 @@
 # Roadmap
 
-- Baseline: 2026-11-15 (first baseline 2026-11-11)
+- Baseline: 2026-11-16 (first baseline 2026-11-11)
 - Requirements: [docs/requirements](../docs/requirements/README.md) · Architecture:
   [docs/architecture](../docs/architecture/overview.md)
 
@@ -15,7 +15,7 @@ A release is the tag `vMAJOR.MINOR.PATCH` on the commit of `main` that met its a
 
 | Tag | Theme | Epics | Sprints | Status |
 |---|---|---|---|---|
-| **v0.1.0** | Core BYOK | 1, 2, 3 and sprint 4.1 | 9 | 8 done |
+| **v0.1.0** | Core BYOK | 1, 2, 3 and sprint 4.1 | 9 | 9 done |
 | **v0.2.0** | Governance | 5, rest of 4, and 6 without sprint 6.4 | 7 | |
 | **v0.3.0** | Ready to operate | sprint 6.4, 12 | 4 | |
 | **v0.4.0** | Scale-out and providers | 8 without sprint 8.3, 9 | 4 | |
