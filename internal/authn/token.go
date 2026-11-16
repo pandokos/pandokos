@@ -3,9 +3,11 @@ package authn
 import (
 	"context"
 	"crypto"
+	"errors"
 	"time"
 
 	"github.com/pandokos/pandokos/internal/jwks"
+	"github.com/pandokos/pandokos/internal/tenant"
 )
 
 // KindToken is the kind of a credential that is a JWT of a registered issuer. It is accepted by
@@ -26,4 +28,36 @@ type TokenOptions struct {
 // implementation of the gateway.
 type KeySource interface {
 	Key(ctx context.Context, src jwks.Source, kid, alg string) (crypto.PublicKey, error)
+}
+
+// registration is what validation needs of a row of trusted_issuer or platform_issuer.
+type registration struct {
+	Scope, ID                 string    // Scope is "tenant" or "platform"
+	TenantID                  tenant.ID // zero for platform
+	Issuer, Audience, JWKSURI string
+	Algorithms                []string
+	SubjectClaim, TenantClaim string
+	RequiredClaims            map[string]string
+	Enabled                   bool
+}
+
+// verified is what a valid token yields.
+type verified struct{ Subject, TenantClaimValue string }
+
+var errTokenNotImplemented = errors.New("authn: token validation is not implemented")
+
+// looksLikeToken reports whether presented has the shape of a compact JWT of at most maxBytes
+// (section 5.2). The scaffolding recognizes none.
+func looksLikeToken(_ string, _ int) bool { return false }
+
+// peek decodes the header and the payload of a token without trusting them: checks 1, 2 and the
+// shapes of 3. The scaffolding refuses every token.
+func peek(_ string) (alg, kid, iss string, aud []string, err error) {
+	return "", "", "", nil, errTokenNotImplemented
+}
+
+// validate runs checks 4 to 12 of section 5.4 against the registration. The scaffolding refuses
+// every token.
+func (a *Authenticator) validate(_ context.Context, _, _, _ string, _ registration) (verified, error) {
+	return verified{}, errTokenNotImplemented
 }

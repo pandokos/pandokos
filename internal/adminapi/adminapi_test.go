@@ -185,6 +185,80 @@ func (f *fake) CreatePriceOverride(_ context.Context, in adminapi.CreatePriceOve
 	return &adminapi.PriceVersion{}, nil
 }
 
+// The token issuer operations of sprint 4.1.
+func (f *fake) ListTokenIssuers(_ context.Context, in adminapi.ListTokenIssuersInput) (*adminapi.TokenIssuerList, error) {
+	f.rec("listTokenIssuers", in)
+	return &adminapi.TokenIssuerList{}, nil
+}
+func (f *fake) CreateTokenIssuer(_ context.Context, in adminapi.CreateTokenIssuerInput) (*adminapi.TokenIssuer, error) {
+	f.rec("createTokenIssuer", in)
+	return &adminapi.TokenIssuer{}, nil
+}
+func (f *fake) GetTokenIssuer(_ context.Context, in adminapi.GetTokenIssuerInput) (*adminapi.TokenIssuer, error) {
+	f.rec("getTokenIssuer", in)
+	return &adminapi.TokenIssuer{}, nil
+}
+func (f *fake) UpdateTokenIssuer(_ context.Context, in adminapi.UpdateTokenIssuerInput) (*adminapi.TokenIssuer, error) {
+	f.rec("updateTokenIssuer", in)
+	return &adminapi.TokenIssuer{}, nil
+}
+func (f *fake) DeleteTokenIssuer(_ context.Context, in adminapi.DeleteTokenIssuerInput) (*adminapi.TokenIssuer, error) {
+	f.rec("deleteTokenIssuer", in)
+	return &adminapi.TokenIssuer{}, nil
+}
+func (f *fake) ListTenantPlatformIssuers(_ context.Context, in adminapi.ListTenantPlatformIssuersInput) (*adminapi.TenantPlatformIssuerList, error) {
+	f.rec("listTenantPlatformIssuers", in)
+	return &adminapi.TenantPlatformIssuerList{}, nil
+}
+func (f *fake) ListSubjectMappings(_ context.Context, in adminapi.ListSubjectMappingsInput) (*adminapi.SubjectMappingList, error) {
+	f.rec("listSubjectMappings", in)
+	return &adminapi.SubjectMappingList{}, nil
+}
+func (f *fake) CreateSubjectMapping(_ context.Context, in adminapi.CreateSubjectMappingInput) (*adminapi.SubjectMapping, error) {
+	f.rec("createSubjectMapping", in)
+	return &adminapi.SubjectMapping{}, nil
+}
+func (f *fake) GetSubjectMapping(_ context.Context, in adminapi.GetSubjectMappingInput) (*adminapi.SubjectMapping, error) {
+	f.rec("getSubjectMapping", in)
+	return &adminapi.SubjectMapping{}, nil
+}
+func (f *fake) DeleteSubjectMapping(_ context.Context, in adminapi.DeleteSubjectMappingInput) (*adminapi.SubjectMapping, error) {
+	f.rec("deleteSubjectMapping", in)
+	return &adminapi.SubjectMapping{}, nil
+}
+func (f *fake) ListPlatformIssuers(_ context.Context, in adminapi.ListPlatformIssuersInput) (*adminapi.PlatformIssuerList, error) {
+	f.rec("listPlatformIssuers", in)
+	return &adminapi.PlatformIssuerList{}, nil
+}
+func (f *fake) CreatePlatformIssuer(_ context.Context, in adminapi.CreatePlatformIssuerInput) (*adminapi.PlatformIssuer, error) {
+	f.rec("createPlatformIssuer", in)
+	return &adminapi.PlatformIssuer{}, nil
+}
+func (f *fake) GetPlatformIssuer(_ context.Context, in adminapi.GetPlatformIssuerInput) (*adminapi.PlatformIssuer, error) {
+	f.rec("getPlatformIssuer", in)
+	return &adminapi.PlatformIssuer{}, nil
+}
+func (f *fake) UpdatePlatformIssuer(_ context.Context, in adminapi.UpdatePlatformIssuerInput) (*adminapi.PlatformIssuer, error) {
+	f.rec("updatePlatformIssuer", in)
+	return &adminapi.PlatformIssuer{}, nil
+}
+func (f *fake) DeletePlatformIssuer(_ context.Context, in adminapi.DeletePlatformIssuerInput) (*adminapi.PlatformIssuer, error) {
+	f.rec("deletePlatformIssuer", in)
+	return &adminapi.PlatformIssuer{}, nil
+}
+func (f *fake) ListPlatformIssuerTenants(_ context.Context, in adminapi.ListPlatformIssuerTenantsInput) (*adminapi.PlatformIssuerTenantList, error) {
+	f.rec("listPlatformIssuerTenants", in)
+	return &adminapi.PlatformIssuerTenantList{}, nil
+}
+func (f *fake) PutPlatformIssuerTenant(_ context.Context, in adminapi.PutPlatformIssuerTenantInput) (*adminapi.PlatformIssuerTenant, error) {
+	f.rec("putPlatformIssuerTenant", in)
+	return &adminapi.PlatformIssuerTenant{}, nil
+}
+func (f *fake) DeletePlatformIssuerTenant(_ context.Context, in adminapi.DeletePlatformIssuerTenantInput) (*adminapi.PlatformIssuerTenant, error) {
+	f.rec("deletePlatformIssuerTenant", in)
+	return &adminapi.PlatformIssuerTenant{}, nil
+}
+
 // The catalogue operations of sprint 2.2 (the fake used to panic on them).
 func (f *fake) ListProviders(_ context.Context, in adminapi.ListProvidersInput) (*adminapi.ProviderList, error) {
 	f.rec("listProviders", in)
@@ -665,8 +739,80 @@ func TestRouterAndClient(t *testing.T) {
 				Rates: []adminapi.PriceRate{{Category: adminapi.PriceCategoryInput, Threshold: 0, Rate: "2.5"}, {Category: adminapi.PriceCategoryOutput, Threshold: 100000, Rate: "10.000000000001"}}}}
 			add("createPriceOverride", in, func() error { _, err := c.CreatePriceOverride(ctx, in); return err })
 		}
-		if len(adminapi.Operations) != 66 {
-			t.Fatalf("%d operations, want 66 (the 35 of epic 1 and sprint 2.1, the 29 of sprint 2.2 and the 2 of sprint 3.3)", len(adminapi.Operations))
+		{
+			in := adminapi.ListTokenIssuersInput{Tenant: tid, Limit: 3, Sort: adminapi.NamedSortMinusName, Name: "idp", Enabled: adminapi.EnabledFilterFalse}
+			add("listTokenIssuers", in, func() error { _, err := c.ListTokenIssuers(ctx, in); return err })
+		}
+		{
+			in := adminapi.CreateTokenIssuerInput{Tenant: tid, Body: adminapi.TokenIssuerCreate{Name: "idp", Issuer: "https://idp.example.com", Audience: "pandokos-acme", JwksUri: "https://idp.example.com/keys", Algorithms: []string{"ES256", "EdDSA"}, SubjectClaim: "azp", RequiredClaims: map[string]string{"tier": "gold"}, Enabled: true, Description: "d"}}
+			add("createTokenIssuer", in, func() error { _, err := c.CreateTokenIssuer(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetTokenIssuerInput{Tenant: tid, Issuer: sid}
+			add("getTokenIssuer", in, func() error { _, err := c.GetTokenIssuer(ctx, in); return err })
+		}
+		{
+			in := adminapi.UpdateTokenIssuerInput{Tenant: tid, Issuer: sid, Body: adminapi.TokenIssuerUpdate{Audience: adminapi.Some("other"), Algorithms: adminapi.Some([]string{"RS256"}), RequiredClaims: adminapi.Some(map[string]string{}), Enabled: adminapi.Some(false), Description: adminapi.Some("")}}
+			add("updateTokenIssuer", in, func() error { _, err := c.UpdateTokenIssuer(ctx, in); return err })
+		}
+		{
+			in := adminapi.DeleteTokenIssuerInput{Tenant: tid, Issuer: sid}
+			add("deleteTokenIssuer", in, func() error { _, err := c.DeleteTokenIssuer(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListTenantPlatformIssuersInput{Tenant: tid, Limit: 2, Sort: adminapi.SortMinusCreatedAt}
+			add("listTenantPlatformIssuers", in, func() error { _, err := c.ListTenantPlatformIssuers(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListSubjectMappingsInput{Tenant: tid, Limit: 2, Sort: adminapi.SortCreatedAt, Issuer: cid, ServiceAccount: sid, Subject: "spiffe://x/y"}
+			add("listSubjectMappings", in, func() error { _, err := c.ListSubjectMappings(ctx, in); return err })
+		}
+		{
+			in := adminapi.CreateSubjectMappingInput{Tenant: tid, Body: adminapi.SubjectMappingCreate{Issuer: adminapi.IssuerRef{Scope: adminapi.IssuerScopePlatform, ID: cid}, Subject: "workload", ServiceAccountID: sid, Description: "d"}}
+			add("createSubjectMapping", in, func() error { _, err := c.CreateSubjectMapping(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetSubjectMappingInput{Tenant: tid, Mapping: cid}
+			add("getSubjectMapping", in, func() error { _, err := c.GetSubjectMapping(ctx, in); return err })
+		}
+		{
+			in := adminapi.DeleteSubjectMappingInput{Tenant: tid, Mapping: cid}
+			add("deleteSubjectMapping", in, func() error { _, err := c.DeleteSubjectMapping(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListPlatformIssuersInput{Limit: 4, Sort: adminapi.NamedSortName, Name: "shared", Enabled: adminapi.EnabledFilterTrue}
+			add("listPlatformIssuers", in, func() error { _, err := c.ListPlatformIssuers(ctx, in); return err })
+		}
+		{
+			in := adminapi.CreatePlatformIssuerInput{Body: adminapi.PlatformIssuerCreate{Name: "shared", Issuer: "https://idp.example.com", Audience: "pandokos", TenantClaim: "org", Algorithms: []string{"PS256"}, Enabled: true}}
+			add("createPlatformIssuer", in, func() error { _, err := c.CreatePlatformIssuer(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetPlatformIssuerInput{Issuer: cid}
+			add("getPlatformIssuer", in, func() error { _, err := c.GetPlatformIssuer(ctx, in); return err })
+		}
+		{
+			in := adminapi.UpdatePlatformIssuerInput{Issuer: cid, Body: adminapi.PlatformIssuerUpdate{TenantClaim: adminapi.Some("org_id"), Enabled: adminapi.Some(true)}}
+			add("updatePlatformIssuer", in, func() error { _, err := c.UpdatePlatformIssuer(ctx, in); return err })
+		}
+		{
+			in := adminapi.DeletePlatformIssuerInput{Issuer: cid}
+			add("deletePlatformIssuer", in, func() error { _, err := c.DeletePlatformIssuer(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListPlatformIssuerTenantsInput{Issuer: cid, Limit: 2, Sort: adminapi.SortCreatedAt}
+			add("listPlatformIssuerTenants", in, func() error { _, err := c.ListPlatformIssuerTenants(ctx, in); return err })
+		}
+		{
+			in := adminapi.PutPlatformIssuerTenantInput{Issuer: cid, Tenant: tid, Body: adminapi.PlatformIssuerTenantPut{ClaimValue: "org-7"}}
+			add("putPlatformIssuerTenant", in, func() error { _, err := c.PutPlatformIssuerTenant(ctx, in); return err })
+		}
+		{
+			in := adminapi.DeletePlatformIssuerTenantInput{Issuer: cid, Tenant: tid}
+			add("deletePlatformIssuerTenant", in, func() error { _, err := c.DeletePlatformIssuerTenant(ctx, in); return err })
+		}
+		if len(adminapi.Operations) != 84 {
+			t.Fatalf("%d operations, want 84 (the 35 of epic 1 and sprint 2.1, the 29 of sprint 2.2, the 2 of sprint 3.3 and the 18 of sprint 4.1)", len(adminapi.Operations))
 		}
 		for _, op := range adminapi.Operations {
 			tc, ok := calls[op.ID]

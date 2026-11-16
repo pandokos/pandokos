@@ -63,6 +63,7 @@ type Authenticator struct {
 	kinds map[Kind]bool
 	now   func() time.Time
 	cache *cache
+	tok   TokenOptions // the validation of tokens; set when KindToken is accepted
 }
 
 // New validates o.
@@ -87,6 +88,7 @@ func New(o Options) (*Authenticator, error) {
 			if err := checkTokens(o); err != nil {
 				return nil, err
 			}
+			a.tok = o.Tokens
 		}
 		a.kinds[k] = true
 	}

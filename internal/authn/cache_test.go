@@ -113,7 +113,7 @@ func TestCache(t *testing.T) {
 		c, _ := newTestCache(time.Minute)
 		c.put("ta1", tenantA, &entry{})
 		c.putNegative("tunknown")
-		for _, p := range []string{"platform", "probe:0123456789abcdef", "probe:", "vault:" + tenantA, "vault:" + tenantB, "vault:"} {
+		for _, p := range []string{"platform", "probe:0123456789abcdef", "probe:", "vault:" + tenantA, "vault:" + tenantB, "vault:", "issuers"} {
 			c.invalidate(p)
 		}
 		if pos, neg := c.sizes(); pos != 1 || neg != 1 {
@@ -140,6 +140,29 @@ func TestCache(t *testing.T) {
 		c.invalidate("vaults:" + tenantA)
 		if pos, neg := c.sizes(); pos != 0 || neg != 0 {
 			t.Errorf("sizes %d/%d after an unknown payload", pos, neg)
+		}
+	})
+
+	// Sprint 4.1: the payload that platform-level registrations and their tenant lists send is
+	// not about virtual keys: it removes no principal of a key, and "issuers:" and its
+	// look-alikes are payloads nobody knows, which flush.
+	t.Run("an issuers payload removes no principal of a key", func(t *testing.T) {
+		c, _ := newTestCache(time.Minute)
+		c.put("ta1", tenantA, &entry{})
+		c.put("tb1", tenantB, &entry{})
+		c.putNegative("tunknown")
+		c.invalidate("issuers")
+		if pos, neg := c.sizes(); pos != 2 || neg != 1 {
+			t.Fatalf("sizes %d/%d after the payload issuers", pos, neg)
+		}
+		for _, k := range []string{"ta1", "tb1"} {
+			if _, ok := c.get(k); !ok {
+				t.Errorf("%s was removed by the payload issuers", k)
+			}
+		}
+		c.invalidate("issuers:" + tenantA)
+		if pos, neg := c.sizes(); pos != 0 || neg != 0 {
+			t.Errorf("sizes %d/%d after a look-alike payload nobody knows", pos, neg)
 		}
 	})
 
