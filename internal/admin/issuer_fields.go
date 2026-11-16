@@ -69,6 +69,9 @@ func checkClaims(claims map[string]string) error {
 		if !claimNameRE.MatchString(name) || reservedClaims[name] {
 			return invalid("required_claims", "must name claims of 1 to 64 characters of letters, digits and _ . : / -, other than iss, aud, exp, nbf and iat")
 		}
+		if hasControl(value) {
+			return invalid("required_claims", "must not contain control characters in a claim value")
+		}
 		if value == "" || len([]rune(value)) > 255 {
 			return invalid("required_claims", "must map each claim to a string of 1 to 255 characters")
 		}
@@ -116,6 +119,9 @@ func patchOfPlatform(b adminapi.PlatformIssuerUpdate) issuerPatch {
 // validate applies the rules to the members that are present. What the document of the API
 // already enforces (lengths, patterns, the list of algorithms) is not repeated.
 func (p issuerPatch) validate() error {
+	if p.Description != nil && hasControl(*p.Description) {
+		return invalid("description", "must not contain control characters")
+	}
 	if p.Issuer != nil {
 		if err := checkURL("issuer", *p.Issuer, false, maxIssuerBytes); err != nil {
 			return err

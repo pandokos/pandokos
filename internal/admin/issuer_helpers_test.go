@@ -119,6 +119,10 @@ func registrationValidation() []validationCase {
 	} {
 		add("algorithms: "+what, "algorithms", v)
 	}
+	for _, v := range []string{"a\x00b", "a\nb", "a\x1fb", "a\x7fb"} {
+		add(fmt.Sprintf("description %q", v), "description", v)
+		add(fmt.Sprintf("required_claims value %q", v), "required_claims", map[string]string{"x": v})
+	}
 	for _, v := range []string{"", "a b", long(65, "a"), "a@b", "a?b", "iss", "aud", "exp", "nbf", "iat"} {
 		add(fmt.Sprintf("subject_claim %q", clip(v)), "subject_claim", v)
 	}

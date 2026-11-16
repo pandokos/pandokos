@@ -72,6 +72,8 @@ func TestSubjectMappings(t *testing.T) {
 			{"a subject of 256 characters", tenantMapping(strings.Repeat("s", 256)), "subject"},
 			{"a subject with a control character", tenantMapping("a\nb"), "subject"},
 			{"a subject with NUL", tenantMapping("a\x00b"), "subject"},
+			{"a description with NUL", mapping("tenant", ti.ID, "d", w.saA.ID, map[string]any{"description": "a\x00b"}), "description"},
+			{"a description with a control character", mapping("tenant", ti.ID, "d", w.saA.ID, map[string]any{"description": "a\x1fb"}), "description"},
 			{"a description of 201 characters", mapping("tenant", ti.ID, "d", w.saA.ID, map[string]any{"description": strings.Repeat("d", 201)}), "description"},
 			{"no subject", map[string]any{"issuer": map[string]any{"scope": "tenant", "id": ti.ID}, "service_account_id": w.saA.ID}, "subject"},
 			{"no issuer", map[string]any{"subject": "x", "service_account_id": w.saA.ID}, "issuer"},

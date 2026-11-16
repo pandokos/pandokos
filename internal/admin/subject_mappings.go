@@ -58,6 +58,9 @@ func (s *server) CreateSubjectMapping(ctx context.Context, in adminapi.CreateSub
 	if hasControl(b.Subject) {
 		return nil, invalid("subject", "must not contain control characters")
 	}
+	if hasControl(b.Description) {
+		return nil, invalid("description", "must not contain control characters")
+	}
 	var out adminapi.SubjectMapping
 	err := s.inTenantPath(ctx, in.Tenant, func(ctx context.Context, tx store.Tx, q *queries.Queries, tid tenant.ID) error {
 		// The registration must be one the session sees: GetTrustedIssuer reads the tenant's own
