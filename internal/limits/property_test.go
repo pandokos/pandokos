@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -74,14 +75,9 @@ func newSched(t *testing.T, seed uint64, n int, cfg schedCfg) *sched {
 
 func (s *sched) fail(format string, args ...any) {
 	s.t.Helper()
-	s.t.Fatalf("%s\n  failure: %s\n  schedule so far (last 40): %v", s.name, fmt.Sprintf(format, args...), tail(s.trace, 40))
-}
-
-func tail(l []string, n int) []string {
-	if len(l) > n {
-		return l[len(l)-n:]
-	}
-	return l
+	// The failing prefix: every step up to the failure, so that the run can be replayed by hand.
+	s.t.Fatalf("%s\n  failure: %s\n  schedule up to the failing step (%d steps):\n    %s",
+		s.name, fmt.Sprintf(format, args...), len(s.trace), strings.Join(s.trace, "\n    "))
 }
 
 func (s *sched) open() []*pevent {
