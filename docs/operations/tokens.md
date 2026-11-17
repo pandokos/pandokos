@@ -338,6 +338,8 @@ Sender-constrained tokens (mutual TLS, DPoP) are not built.
 
 ## 11. What is not there
 
+A subject mapping can be the subject of a limit rule, named by its ID, like a virtual key ([limits guide](limits.md)); limits of the service account apply to tokens too.
+
 - Introspection, revocation of one token, replay tracking by `jti`, opaque tokens, encrypted tokens.
 - Patterns, prefixes or expressions for subjects: a mapping is an exact match.
 - Scopes, model lists or pins per mapping: a token principal has every permission of the service

@@ -196,11 +196,12 @@ sequenceDiagram
    the body is read. Then the body is read up to a size limit and only the fields Pandokos needs are
    parsed: model, stream flag (and, in later sprints, the output-token limit). The model must be
    available to the tenant and allowed by the key.
-5. **Reserve.** An estimate of the request's cost is reserved against every applicable limit. If
-   any limit would be exceeded the request ends here with a 429 in the API family's error shape.
-6. **Resolve.** Endpoint and credential come from the catalogue and the vault (limits, step 5, are
-   not built yet, so in the code this step follows the model check directly). The credential is
-   decrypted, or taken from a short-lived in-memory cache.
+5. **Reserve.** An estimate of the request's tokens (and cost) is reserved against every applicable
+   limit, in one atomic step. If any limit would be exceeded the request ends here with a 429 in the
+   API family's error shape ([limits guide](../operations/limits.md), [ADR 0048](../adr/0048-reserve-and-settle.md)).
+6. **Resolve.** Endpoint and credential come from the catalogue and the vault. In the code the
+   order is: model check, reserve (step 5), then the credential; a request refused by a limit has
+   opened no credential. The credential is decrypted, or taken from a short-lived in-memory cache.
 7. **Forward.** Inbound credentials are stripped, the provider credential is injected, the
    request goes to the catalogue host and nowhere else. The response is copied to the caller as
    it arrives; a copy feeds the usage reader without delaying the stream, and a failure of the reader never changes what the caller receives ([gateway guide](../operations/gateway.md)).
@@ -241,6 +242,7 @@ revocation takes, so these numbers are part of the product's contract (IAM-05, V
 | Registration of a trusted issuer, and the principal of a token (gateway only; lifetime `cache.principal_ttl`; 5 s for "unknown" and "not mapped") | 30 s | `tenant:<id>` for a tenant's registrations and mappings; `issuers` for platform-level ones |
 | Keys of a trusted issuer (JWKS) | refreshed every 15 min (`tokens.jwks.refresh_interval`); used for at most 6 h after the last successful fetch (`tokens.jwks.max_stale`); the issuer's cache headers are not read | Refetch on unknown key ID, at most once per source per 10 s; not by notifications |
 | Catalogue (providers, endpoints, models, prices) and each tenant's model access | 30 s (`cache.catalog_ttl`, at most 5 m) | `NOTIFY` (`catalog`, `catalog:<tenant>`) |
+| Limit rules of a tenant (gateway only) | 30 s (`cache.limits_ttl`, 1 s to 5 m) | `NOTIFY` (`limits`, `limits:<tenant>`, `tenant:<tenant>`) |
 | Unwrapped tenant data key | 5 min | `NOTIFY` on tenant deletion or key rotation |
 | Decrypted provider credential | 60 s | `NOTIFY` on credential change |
 | Session of a signed-in user | 30 s | `NOTIFY` on sign-out, password change or disabling of the user |
@@ -340,7 +342,7 @@ internal/
   catalog/               providers, endpoints, models, access rule, gateway cache, price importer, remote fetch
   pricing/               exact decimals, price versions, cost of a usage; pricing/genaiprices reads the price dataset (embedded snapshot)
   vault/                 envelope encryption, key providers, sealer, opener, validator
-  limits/                counters: memory and Valkey
+  limits/                rules, their cache, counters in memory (Valkey with epic 8)
   usage/  ledger/        the usage record; its writer, admission and partition keeper
   audit/                 append-only writer and reader of the audit log
   outbox/                event relay and destinations

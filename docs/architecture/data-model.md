@@ -33,7 +33,7 @@ erDiagram
 
 | Group | Tables | Scope |
 |---|---|---|
-| Platform | `tenant`, `platform_key`, `virtual_key_directory` (no grant to any runtime role), `platform_role_assignment`, `provider`, `provider_endpoint`, `model`, `model_tenant_grant`, `price_version`, `price_rate`, `price_import`, `platform_issuer`, `platform_issuer_tenant` (a tenant's session sees its own rows), `issuer_directory` (no grant to any runtime role), `kek_version` | global |
+| Platform | `tenant`, `platform_key`, `virtual_key_directory` (no grant to any runtime role), `platform_role_assignment`, `provider`, `provider_endpoint`, `model`, `model_tenant_grant`, `price_version`, `price_rate`, `price_import`, `platform_issuer`, `platform_issuer_tenant` (a tenant's session sees its own rows), `platform_limit_rule` (a tenant's session sees the defaults and its own rows), `issuer_directory` (no grant to any runtime role), `kek_version` | global |
 | Identity | `app_user`, `local_account`, `user_session`, `membership`, `service_account`, `virtual_key`, `trusted_issuer`, `subject_mapping`, `role`, `role_permission`, `role_assignment` | tenant (`app_user`, `local_account` and `user_session` are global, memberships are tenant-scoped) |
 | Vault | `tenant_data_key`, `provider_credential` | tenant |
 | Policy | `tenant_model_restriction`, `limit_rule` | tenant |
@@ -189,6 +189,18 @@ account of the tenant; it never changes and is deleted with its registration (ca
   number of mappings of the registration across the tenants named by the caller; the audit row of
   the deletion records it as `mappings_deleted`.
 
+## Limit rules (sprint 5.1)
+
+Two tables hold the rules that the gateway enforces ([limits guide](../operations/limits.md),
+[ADR 0049](../adr/0049-limit-rules.md)). `limit_rule` is tenant-scoped: a rule names a subject (the
+tenant, a service account, or a key: a virtual key by its key ID, a caller with a token by its subject
+mapping), a metric and a value. `platform_limit_rule` is global: a row without a tenant is the
+default ceiling of every tenant, a row with a tenant replaces it for that tenant, and only the
+platform scope writes it. **No foreign key points to the subject** of a rule, so a key, a service
+account or a mapping can be deleted without touching its rules, and a rule for a subject that does
+not exist is idle and never matches. The gateway role only reads them; both tables notify
+`pandokos_cache`.
+
 ## Provider stream usage option (sprint 3.3)
 
 `provider.stream_usage_option` is `add` (default) or `omit` ([ADR 0042](../adr/0042-openai-compatible-providers-and-stream-usage-option.md)):
@@ -229,7 +241,7 @@ estimate column unless it is `estimated`. The only foreign key is `tenant_id`; a
 key, the credential, the model and the price it names.
 
 Outcomes: `ok`, `upstream_error`, `cancelled`, `timeout`, `rejected_limit`, `rejected_policy`,
-`internal_error`. (`rejected_limit` is written once limits exist.)
+`internal_error`. (`rejected_limit` is written for a request refused by a limit, with no usage and no cost.)
 
 Aggregated reports over the ledger come with sprint 6.2.
 

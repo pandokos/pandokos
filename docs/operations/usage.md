@@ -103,14 +103,16 @@ and the price it names.
 
 | Outcome | When |
 |---|---|
+| `rejected_limit` | Pandokos refused the request because a limit was reached: `rate_limited`. Such a row carries no usage and no cost (cost status `none`), no credential, and counts as no consumption ([limits guide](limits.md)) |
 | `rejected_policy` | Pandokos refused the request: `tenant_suspended`, `forbidden`, `model_not_allowed`, `endpoint_not_supported`, `no_credential`, `invalid_request`, `request_too_large` |
 | `timeout` | `request_timeout`, `upstream_timeout`, or `limits.max_request_duration` passed after the provider's headers |
 | `upstream_error` | `upstream_unreachable`, the provider cut its answer, or the provider answered 4xx or 5xx (`upstream_status` says which) |
-| `internal_error` | `unavailable` while resolving the model or credential, or `internal` |
+| `internal_error` | `unavailable` while resolving the model, the limit rules or the credential, or `internal` |
 | `cancelled` | the caller went away, or the server was forced down at shutdown |
 | `ok` | everything else |
 
-`rejected_limit` exists in the table for the limits of a later release and is not written yet. The
+A `rejected_limit` row is written for every request refused in step 7b, since sprint 5.1; it holds the
+model fields (the model check had passed) and no usage and no cost. The
 request log line keeps its own, finer vocabulary (`client_cancelled`, `shutdown_aborted`, ...); the
 ledger's `cancelled` covers both.
 

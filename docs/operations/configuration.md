@@ -158,6 +158,8 @@ All problems are reported together, not only the first. Each is attached to a ke
 | every duration | greater than zero |
 | `listeners.inference.max_header_bytes` | 4096 to 1048576 |
 | `limits.max_request_body_bytes` | 1 to 104857600 |
+| `limits.default_output_tokens` | 1 to 1000000 |
+| `cache.limits_ttl` | greater than zero, at most 5m (and at least 1s) |
 | `database.address` | set; `host:port`; the port is an integer 1 to 65535; the host is an IP address or a host name |
 | `database.name`, `database.gateway.user`, `database.admin.user`, `database.worker.user`, `database.owner.user` | 1 to 63 characters: letters, digits, underscore, dot, hyphen; not starting with a dot or a hyphen |
 | `database.tls.mode` | `verify-full` or `disable` |

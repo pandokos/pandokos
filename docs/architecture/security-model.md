@@ -128,9 +128,9 @@ disk the operator's database administrators can read, and by auditing every admi
 | The provider credential is sent elsewhere | It is attached only to requests for the registered host (GW-05) |
 | Request smuggling, header injection | Strict parsing by the Go HTTP stack, a header allow-list, removal of hop-by-hop headers (GW-07) |
 | Secrets or content end up in logs or traces | No code path logs bodies or credential headers. Canary tests search every output (VLT-14, OBS-04) |
-| A tenant overspends through concurrency | Reservation before forwarding, settlement after (LIM-07) |
+| A tenant overspends through concurrency | Reservation before forwarding, settlement after (LIM-07). Enforced now, **per gateway instance**: requests per minute and requests in flight are strict, tokens per minute are strict on what is reserved and bounded on what is used; each instance counts alone until the shared store of epic 8, so *N* instances admit up to *N* times a limit, and there is no limit until a rule exists ([limits guide](../operations/limits.md), [ADR 0048](../adr/0048-reserve-and-settle.md)) |
 | Usage is evaded through unmetered endpoints | Only endpoints Pandokos can meter are exposed (GW-09) |
-| Resource exhaustion | Limits on body size, duration and concurrency (GW-16). Bounded buffers everywhere |
+| Resource exhaustion | Limits on body size, duration and concurrency (GW-16). Bounded buffers everywhere. Rate, token and concurrency limits per tenant, service account and key are enforced in each instance from sprint 5.1, when a rule exists; a request whose limits cannot be verified is refused with 503, not forwarded |
 | The audit log is altered | No update or delete grants. Hash chain (AUD-04) |
 | A dependency or the build is compromised | A small dependency set, pinned and scanned. Signed artefacts with provenance and SBOM (SEC-06) |
 | A caller forges trace or metadata to mislead | Metadata headers and trace context are read only after authentication, so an anonymous caller causes no span and no stored value. Both are recorded as declared by the caller, within bounds (eight short ASCII entries; a sampled flag only makes the caller's own requests sampled), and never used in a decision or forwarded (GW-13, OBS-02, [ADR 0039](../adr/0039-usage-record-admission-and-ledger-writer.md)) |

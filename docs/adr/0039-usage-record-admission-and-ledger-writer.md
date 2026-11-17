@@ -65,3 +65,4 @@ partition would reject records); metadata in one JSON header (parsing ambiguity)
 
 - 2026-11: sprint 3.3: the admin role lists a tenant's records ([ADR 0043](0043-tenant-capability-check-and-usage-list.md)).
 - 2026-11: sprint 4.1: `principal_kind` also takes `token`; `principal_id` is the service account and `key_id` the ID of the subject mapping ([ADR 0045](0045-trusted-token-issuers.md)).
+- 2026-11: sprint 5.1 writes outcome `rejected_limit`; limits settle with the record's figures, so the stream estimate of this record is confirmed unchanged ([ADR 0048](0048-reserve-and-settle.md)).
