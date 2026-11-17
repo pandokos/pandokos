@@ -1,0 +1,7 @@
+#!/bin/sh
+# Refuse commit messages that attribute the commit to Claude or Anthropic (see CLAUDE.md).
+if grep -i -q -E '^(co-authored-by:.*(claude|anthropic)|claude-session:)|generated with \[?claude|noreply@anthropic\.com' "$1"; then
+	echo "commit-msg: attribution lines naming Claude or Anthropic are not allowed in this repository (CLAUDE.md)." >&2
+	exit 1
+fi
+exit 0
