@@ -72,6 +72,7 @@ type Request struct {
 	stream bool
 	modelV family.Member // byte range of the value of the model member
 	usage  *edit
+	bound  family.OutputBound
 }
 
 // Parse reads a chat completions request body. Every error wraps family.ErrInvalidRequest and
@@ -103,7 +104,35 @@ func ParseOperation(operation string, body []byte) (*Request, error) {
 		}
 		_, stream = usageEdit(body, members, closeIdx)
 	}
-	return &Request{body: body, model: model, stream: stream, modelV: mm, usage: e}, nil
+	return &Request{body: body, model: model, stream: stream, modelV: mm, usage: e, bound: outputBoundOf(operation, body, members)}, nil
+}
+
+// maxBoundDigits is the longest integer read as an output limit; maxChoices the largest n.
+const (
+	maxBoundDigits = 12
+	maxChoices     = 128
+)
+
+// outputBoundOf reads the output limit of the members already scanned: the table of sprint 5.1
+// section 5.3. Nothing else of the body is read.
+func outputBoundOf(operation string, body []byte, members []family.Member) family.OutputBound {
+	b := family.OutputBound{Choices: 1}
+	switch operation {
+	case OperationEmbeddings:
+		b.None = true
+	case OperationResponses:
+		b.Tokens, _ = family.PositiveInt(body, members, "max_output_tokens", maxBoundDigits)
+	default: // chat completions
+		if n, ok := family.PositiveInt(body, members, "max_completion_tokens", maxBoundDigits); ok {
+			b.Tokens = n
+		} else {
+			b.Tokens, _ = family.PositiveInt(body, members, "max_tokens", maxBoundDigits)
+		}
+		if n, ok := family.PositiveInt(body, members, "n", 3); ok && n <= maxChoices {
+			b.Choices = n
+		}
+	}
+	return b
 }
 
 // Model returns the model as the caller wrote it, JSON-decoded.
@@ -113,7 +142,7 @@ func (r *Request) Model() string { return r.model }
 func (r *Request) Stream() bool { return r.stream }
 
 // OutputBound returns what the request says about the output it may produce.
-func (r *Request) OutputBound() family.OutputBound { return family.OutputBound{Choices: 1} }
+func (r *Request) OutputBound() family.OutputBound { return r.bound }
 
 // Prepare returns the body to forward and whether the usage option was added by Pandokos. The
 // usage option is added when p.StreamUsage is true and the request is a stream that does not ask for it, and the value of

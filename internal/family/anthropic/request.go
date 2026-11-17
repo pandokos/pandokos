@@ -10,6 +10,7 @@ type Request struct {
 	model  string
 	stream bool
 	modelV family.Member // byte range of the value of the model member
+	bound  family.OutputBound
 }
 
 // ParseOperation reads the request body of an operation of the family. Every error wraps
@@ -26,12 +27,18 @@ func ParseOperation(operation string, body []byte) (*Request, error) {
 		return nil, err
 	}
 	var stream bool
+	bound := family.OutputBound{Choices: 1}
+	if operation == OperationCountTokens {
+		bound.None = true
+	} else {
+		bound.Tokens, _ = family.PositiveInt(body, members, "max_tokens", 12)
+	}
 	if operation == OperationMessages {
 		if sm, ok := family.LastMember(members, "stream"); ok {
 			stream = family.IsLiteral(body, sm, "true")
 		}
 	}
-	return &Request{body: body, model: model, stream: stream, modelV: mm}, nil
+	return &Request{body: body, model: model, stream: stream, modelV: mm, bound: bound}, nil
 }
 
 // Model returns the model as the caller wrote it, JSON-decoded.
@@ -41,7 +48,7 @@ func (r *Request) Model() string { return r.model }
 func (r *Request) Stream() bool { return r.stream }
 
 // OutputBound returns what the request says about the output it may produce.
-func (r *Request) OutputBound() family.OutputBound { return family.OutputBound{Choices: 1} }
+func (r *Request) OutputBound() family.OutputBound { return r.bound }
 
 // Prepare returns the body to forward: the value of the model member replaced by p.UpstreamModel
 // when that is not empty and differs from Model(); every other byte as received, and the input
