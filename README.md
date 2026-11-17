@@ -2,7 +2,47 @@
 
 Open-source multi-tenant LLM proxy: governed access to AI providers with BYOK, secrets vault, quotas, audit and OpenTelemetry.
 
-> **Status: v0.1.0 (Core BYOK) is complete and tagged from this commit onwards ([release page](docs/releases/v0.1.0.md)).** Unmodified OpenAI and Anthropic SDKs call models through Pandokos with a virtual key, streaming included, using the calling tenant's own stored credential (BYOK). Each authenticated request leaves one usage record with tokens and estimated cost ([docs/operations/usage.md](docs/operations/usage.md)) and two OpenTelemetry spans ([docs/operations/telemetry.md](docs/operations/telemetry.md)); every outbound connection passes an address-checking egress guard, and OpenAI-compatible providers are added by configuration ([docs/operations/providers.md](docs/operations/providers.md)). Callers authenticate with virtual keys; `pandokos init` issues the first platform key, and the CLI (a client of the administration API) creates tenants, service accounts and keys (first run: [docs/operations/keys.md](docs/operations/keys.md)). Tenants store provider credentials in a vault that nobody can read back ([docs/operations/vault.md](docs/operations/vault.md)), and the platform admin maintains a catalogue of providers, endpoints and models with grants and versioned prices ([docs/operations/catalogue.md](docs/operations/catalogue.md)). A Docker Compose reference takes you from nothing to a first call ([docs/operations/compose.md](docs/operations/compose.md)). Callers can also authenticate with a token from a registered trusted issuer, with the tenant taken from the registration or a claim ([docs/operations/tokens.md](docs/operations/tokens.md)). Rate limits and budgets (epic 5), sign-in for people and reports come later: **not for production**. Requirements, architecture and plan are written and open for review; see [Documentation](#documentation) and [Roadmap](#roadmap).
+## Quick start
+
+From nothing to a first OpenAI call through Pandokos in three commands, on your machine. You need
+Docker with Compose v2, `openssl`, `curl` and an OpenAI API key. This is a local trial, **not a
+production setup**: one instance, PostgreSQL in a container, a self-signed certificate, ports
+published on `127.0.0.1` only.
+
+**1. Get the deployment files.**
+
+```bash
+git clone --depth 1 https://github.com/pandokos/pandokos.git && cd pandokos/deploy/compose
+```
+
+**2. Run the guided setup.** It starts Pandokos and PostgreSQL with the published image
+`ghcr.io/pandokos/pandokos:0.1`, creates a tenant `demo`, stores your OpenAI key in the tenant's vault
+and issues a virtual key into `quickstart.key`. It explains each step and waits for Enter before it
+(`--yes` does not wait). The OpenAI key is taken from `OPENAI_API_KEY` or asked for without echo; it
+reaches Pandokos through standard input, is never written to disk and can never be read back.
+
+```bash
+./quickstart.sh
+```
+
+**3. Call it.** The request is the one you would send to OpenAI: only the address and the key change.
+
+```bash
+curl -sS --cacert secrets/tls_cert https://localhost:8080/openai/v1/chat/completions \
+  -H "Authorization: Bearer $(cat quickstart.key)" -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Say hello from Pandokos."}]}'
+```
+
+`--cacert` makes curl trust the self-signed certificate. The official OpenAI SDKs work unchanged: set
+`base_url` to `https://localhost:8080/openai/v1` and the API key to the content of `quickstart.key`.
+Every call leaves a usage record with tokens and estimated cost, without content; the script prints
+the command that lists them. Running the script again skips what is done; `docker compose down -v`
+removes everything. Each step by hand, streaming, the SDKs in Python and TypeScript, Anthropic and the
+details of each choice are in the [Docker Compose reference](docs/operations/compose.md).
+
+## Status
+
+> **v0.1.0 (Core BYOK) is complete and tagged from this commit onwards ([release page](docs/releases/v0.1.0.md)).** Unmodified OpenAI and Anthropic SDKs call models through Pandokos with a virtual key, streaming included, using the calling tenant's own stored credential (BYOK). Each authenticated request leaves one usage record with tokens and estimated cost ([docs/operations/usage.md](docs/operations/usage.md)) and two OpenTelemetry spans ([docs/operations/telemetry.md](docs/operations/telemetry.md)); every outbound connection passes an address-checking egress guard, and OpenAI-compatible providers are added by configuration ([docs/operations/providers.md](docs/operations/providers.md)). Callers authenticate with virtual keys; `pandokos init` issues the first platform key, and the CLI (a client of the administration API) creates tenants, service accounts and keys (first run: [docs/operations/keys.md](docs/operations/keys.md)). Tenants store provider credentials in a vault that nobody can read back ([docs/operations/vault.md](docs/operations/vault.md)), and the platform admin maintains a catalogue of providers, endpoints and models with grants and versioned prices ([docs/operations/catalogue.md](docs/operations/catalogue.md)). A Docker Compose reference takes you from nothing to a first call ([docs/operations/compose.md](docs/operations/compose.md)). Callers can also authenticate with a token from a registered trusted issuer, with the tenant taken from the registration or a claim ([docs/operations/tokens.md](docs/operations/tokens.md)). Rate limits and budgets (epic 5), sign-in for people and reports come later: **not for production**. Requirements, architecture and plan are written and open for review; see [Documentation](#documentation) and [Roadmap](#roadmap).
 
 ## What it is
 

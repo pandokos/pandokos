@@ -13,23 +13,27 @@ The files are in `deploy/compose/`:
 | `compose.yaml` | the services `postgres`, `migrate` (runs once) and `pandokos` |
 | `setup.sh` | creates `./secrets`: five database passwords, the key-encryption key (32 random bytes, base64) and a self-signed TLS certificate and key (P-256, one year, names `localhost`, `pandokos`, `postgres`, `127.0.0.1`, `::1`) with `openssl`; never overwrites a file |
 | `initdb/10-pandokos.sh` | on the first start of the data directory: the privilege roles of `deploy/postgres/roles.sql` as login users with the generated passwords, and the database (the "Shortest" setup of the [database guide](database.md)) |
-| `.gitignore` | `secrets/` |
+| `quickstart.sh` | the quick start below in one guided run: `setup.sh`, `docker compose up`, the tenant `demo` with an OpenAI credential and a virtual key written to `quickstart.key` (mode 0600). It explains each step, waits for Enter on a terminal (`--yes` does not), skips what is done, takes the OpenAI key from `OPENAI_API_KEY` or asks for it without echo |
+| `.gitignore` | `secrets/`, `quickstart.key` |
 
 ## Prerequisites
 
 - Docker with Compose v2, and `openssl` on the host.
 - The Pandokos image. The default `ghcr.io/pandokos/pandokos:0.1` is published with the tag `v0.1.0`
-  (the release workflow pushes `0.1` for every release that is not a pre-release). Before that, or to
-  run your own build, build it with `make image` in the repository and use it with
-  `PANDOKOS_IMAGE=pandokos:dev`.
+  (the release workflow pushes `0.1` for every release that is not a pre-release). To run your own
+  build instead, build it with `make image` in the repository and prefix the `docker compose` commands
+  with `PANDOKOS_IMAGE=pandokos:dev`.
 - A provider key for each provider you want to call (OpenAI, Anthropic).
 
 ## Quick start
 
+`./quickstart.sh` does the steps of this section for OpenAI and prints the call to make; the README
+starts from it. By hand, for both providers:
+
 ```sh
 cd deploy/compose
 ./setup.sh
-PANDOKOS_IMAGE=pandokos:dev docker compose up -d --wait
+docker compose up -d --wait
 curl --cacert secrets/tls_cert https://localhost:8080/readyz    # repeat until 200
 ```
 
@@ -45,7 +49,7 @@ pdk() { docker compose exec -T -e PANDOKOS_CLI_KEY_FILE=/home/nonroot/demo-admin
 printf %s "$OPENAI_API_KEY"    | pdk credential create --provider openai --secret-file /dev/stdin openai-main
 printf %s "$ANTHROPIC_API_KEY" | pdk credential create --provider anthropic --secret-file /dev/stdin anthropic-main
 pdk service-account create --role inference app
-KEY=$(pdk key create --service-account app)
+export KEY=$(pdk key create --service-account app | awk '/^key:/ {print $2}')
 pdk capability check --provider anthropic --model claude-sonnet-4-5
 ```
 
@@ -53,6 +57,9 @@ The provider keys go through standard input and are never written to disk by the
 capability check answers whether the tenant can call that provider and model now; it reads
 configuration and credential metadata only (never the key), so it does not prove that the provider
 accepts the key (see the [administration API reference](../reference/admin-api.md)).
+
+`key create` prints the new key as its last line (`key:` and the value) after the key's metadata;
+`awk` keeps the value alone. The key is shown only once.
 
 `--tenant` is left out because the demo-admin key belongs to the tenant and acts on it; resolving a
 tenant by name needs a platform key.
