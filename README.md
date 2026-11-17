@@ -2,6 +2,8 @@
 
 Open-source multi-tenant LLM proxy: governed access to AI providers with BYOK, secrets vault, quotas, audit and OpenTelemetry.
 
+https://github.com/user-attachments/assets/eb59d47f-a988-45dd-bb48-637374107999
+
 ## Quick start
 
 From nothing to a first OpenAI call through Pandokos in three commands, on your machine. You need
