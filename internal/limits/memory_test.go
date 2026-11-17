@@ -516,3 +516,78 @@ func TestTenantSeparation(t *testing.T) {
 	}
 	_ = resB
 }
+
+// TestAttributedSecond covers sprint.md 5.4: an amount belongs to the second it was admitted
+// into, under the shard lock. When the wall clock steps back, Reserve attributes the amount to
+// the newest second of the window and settle and release take it from that same second.
+func TestAttributedSecond(t *testing.T) {
+	a := tid(1)
+	for _, tc := range []struct {
+		name   string
+		metric Metric
+		max    int64
+		tokens int64
+		end    func(*testing.T, *Memory, Reservation)
+	}{
+		{"tokens released", TokensPerMinute, 20, 10, func(t *testing.T, m *Memory, r Reservation) {
+			if err := m.Release(bg, r); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"tokens settled to nothing", TokensPerMinute, 20, 10, func(t *testing.T, m *Memory, r Reservation) {
+			if err := m.Settle(bg, r, Amounts{}); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"requests released", RequestsPerMinute, 2, 0, func(t *testing.T, m *Memory, r Reservation) {
+			if err := m.Release(bg, r); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clk := newClock()
+			m, _ := newMemory(t, clk)
+			l := lim(a, SubjectTenant, "", tc.metric, tc.max)
+			mustReserve(t, m, request("a", time.Hour, tc.tokens, l))
+			clk.advance(-30 * time.Second) // the wall clock steps back
+			second := mustReserve(t, m, request("b", time.Hour, tc.tokens, l))
+			tc.end(t, m, second)
+			// What is left is the first reservation alone, still in its second.
+			per := tc.max / 2
+			if got := headroom(t, m, l); got != tc.max-per {
+				t.Fatalf("right after: headroom %d, want %d", got, tc.max-per)
+			}
+			clk.advance(61 * time.Second) // 31 s after the first admission
+			if got := headroom(t, m, l); got != tc.max-per {
+				t.Fatalf("31 s later: headroom %d, want %d (a phantom count or a lost one)", got, tc.max-per)
+			}
+			clk.advance(30 * time.Second) // 61 s after the first admission: it has left
+			if got := headroom(t, m, l); got != tc.max {
+				t.Fatalf("61 s after the first admission: headroom %d, want %d", got, tc.max)
+			}
+		})
+	}
+}
+
+// TestDuplicateCounterKeys: two limits of one request with the same counter key are a caller
+// error; they would otherwise create the counter twice and lose an increment.
+func TestDuplicateCounterKeys(t *testing.T) {
+	a := tid(1)
+	for _, metric := range []Metric{ConcurrentRequests, RequestsPerMinute, TokensPerMinute} {
+		t.Run(string(metric), func(t *testing.T) {
+			clk := newClock()
+			m, _ := newMemory(t, clk)
+			var s Store = m
+			l1 := lim(a, SubjectTenant, "", metric, 15)
+			l2 := lim(a, SubjectTenant, "", metric, 100)
+			l2.Level = LevelPlatform
+			if _, ref, err := s.Reserve(bg, request("dup", time.Minute, 10, l1, l2)); err == nil {
+				t.Fatalf("admitted (refusal %v), want an error", ref)
+			}
+			if m.Outstanding() != 0 || m.Counters() != 0 {
+				t.Fatalf("a rejected request left %d reservations and %d counters", m.Outstanding(), m.Counters())
+			}
+		})
+	}
+}

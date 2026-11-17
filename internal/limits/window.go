@@ -52,18 +52,22 @@ func (w *window) advance(sec int64) {
 	w.newest = sec
 }
 
-// add attributes n to the second of at.
-func (w *window) add(at time.Time, n int64) {
+// add attributes n to the second of at, or to the newest second when at is earlier (time never
+// goes back), and returns the second it was attributed to.
+func (w *window) add(at time.Time, n int64) int64 {
 	w.advance(secondOf(at))
 	w.buckets[slot(w.newest)] += n
 	w.total += n
+	return w.newest
 }
 
 // sub takes n back from the second of at, if that second is still in the window at now. A
 // negative n adds.
-func (w *window) sub(at, now time.Time, n int64) {
+func (w *window) sub(at, now time.Time, n int64) { w.subSec(secondOf(at), now, n) }
+
+// subSec is sub for a second already known, as returned by add.
+func (w *window) subSec(s int64, now time.Time, n int64) {
 	w.advance(secondOf(now))
-	s := secondOf(at)
 	if s > w.newest {
 		s = w.newest
 	}

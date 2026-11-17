@@ -38,6 +38,7 @@ type counter struct {
 type held struct {
 	res       Reservation // the stored copy is what settles, whatever the caller passes back
 	requestID string
+	secs      []int64 // per limit of res: the second its window attributed the amount to
 }
 
 type shard struct {
@@ -100,7 +101,12 @@ func validate(r Request) error {
 	if r.TTL <= 0 {
 		return errors.New("limits: the reservation needs a positive TTL")
 	}
+	seen := make(map[counterKey]struct{}, len(r.Limits))
 	for i, l := range r.Limits {
+		if _, dup := seen[keyOf(l)]; dup {
+			return fmt.Errorf("limits: limit %d repeats the counter of an earlier limit", i)
+		}
+		seen[keyOf(l)] = struct{}{}
 		if l.Tenant != r.Limits[0].Tenant {
 			return errors.New("limits: the limits of one request belong to one tenant")
 		}
@@ -122,9 +128,10 @@ func (m *Memory) Reserve(_ context.Context, r Request) (Reservation, *Refusal, e
 		return Reservation{}, nil, err
 	}
 	id := r.ID + "#" + strconv.FormatUint(m.seq.Add(1), 10)
-	now := m.now()
-	res := Reservation{ID: id, Amounts: r.Estimate, At: now, Expires: now.Add(r.TTL)}
+	res := Reservation{ID: id, Amounts: r.Estimate}
 	if len(r.Limits) == 0 {
+		now := m.now()
+		res.At, res.Expires = now, now.Add(r.TTL)
 		return res, nil, nil
 	}
 	res.Limits = append([]Limit(nil), r.Limits...)
@@ -132,6 +139,10 @@ func (m *Memory) Reserve(_ context.Context, r Request) (Reservation, *Refusal, e
 
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
+	// The clock is read under the lock: admissions of one shard are attributed in the order
+	// they take the lock (sprint.md 5.4).
+	now := m.now()
+	res.At, res.Expires = now, now.Add(r.TTL)
 
 	var buf [12]*counter
 	cs := buf[:0]
@@ -177,21 +188,21 @@ func (m *Memory) Reserve(_ context.Context, r Request) (Reservation, *Refusal, e
 		ref.RetryAfter = retry
 		return Reservation{}, ref, nil
 	}
+	secs := make([]int64, len(res.Limits))
 	for i, l := range res.Limits {
 		c := cs[i]
 		if c == nil {
+			// Keys are distinct (validate), so no other limit of this request made it.
 			c = &counter{}
 			sh.counters[keyOf(l)] = c
-			// The same limit twice in one request shares its counter.
-			cs[i] = c
 		}
 		if l.Metric == ConcurrentRequests {
 			c.gauge++
 		} else {
-			c.win.add(now, amountOf(l, r.Estimate.Tokens))
+			secs[i] = c.win.add(now, amountOf(l, r.Estimate.Tokens))
 		}
 	}
-	sh.held[id] = &held{res: res, requestID: r.ID}
+	sh.held[id] = &held{res: res, requestID: r.ID, secs: secs}
 	return res, nil, nil
 }
 
@@ -207,7 +218,7 @@ func (sh *shard) take(id string) (*held, bool) {
 // finish applies the end of a reservation at now with the tokens it finally counts; the caller
 // holds the lock. A released reservation takes everything back.
 func (sh *shard) finish(h *held, now time.Time, actual int64, release bool) {
-	for _, l := range h.res.Limits {
+	for i, l := range h.res.Limits {
 		k := keyOf(l)
 		c := sh.counters[k]
 		switch l.Metric {
@@ -217,7 +228,7 @@ func (sh *shard) finish(h *held, now time.Time, actual int64, release bool) {
 			}
 		case RequestsPerMinute:
 			if release && c != nil {
-				c.win.sub(h.res.At, now, 1)
+				c.win.subSec(h.secs[i], now, 1)
 			}
 		case TokensPerMinute:
 			delta := actual - h.res.Amounts.Tokens
@@ -235,7 +246,7 @@ func (sh *shard) finish(h *held, now time.Time, actual int64, release bool) {
 				c = &counter{}
 				sh.counters[k] = c
 			}
-			c.win.sub(h.res.At, now, -delta)
+			c.win.subSec(h.secs[i], now, -delta)
 		}
 	}
 }
@@ -246,9 +257,9 @@ func (m *Memory) Settle(_ context.Context, res Reservation, actual Amounts) erro
 		return nil
 	}
 	sh := m.shardOf(res.Limits[0].Tenant)
-	now := m.now()
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
+	now := m.now()
 	h, ok := sh.take(res.ID)
 	if !ok {
 		return ErrNotOutstanding
@@ -263,9 +274,9 @@ func (m *Memory) Release(_ context.Context, res Reservation) error {
 		return nil
 	}
 	sh := m.shardOf(res.Limits[0].Tenant)
-	now := m.now()
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
+	now := m.now()
 	h, ok := sh.take(res.ID)
 	if !ok {
 		return ErrNotOutstanding
