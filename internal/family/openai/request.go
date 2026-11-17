@@ -112,6 +112,9 @@ func (r *Request) Model() string { return r.model }
 // Stream reports whether the caller asked for a stream.
 func (r *Request) Stream() bool { return r.stream }
 
+// OutputBound returns what the request says about the output it may produce.
+func (r *Request) OutputBound() family.OutputBound { return family.OutputBound{Choices: 1} }
+
 // Prepare returns the body to forward and whether the usage option was added by Pandokos. The
 // usage option is added when p.StreamUsage is true and the request is a stream that does not ask for it, and the value of
 // the model member is replaced by upstreamModel when that is not empty and differs from

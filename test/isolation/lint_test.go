@@ -52,6 +52,7 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 			"platform_issuer":        {Reason: "platform-level token issuers; read by the gateway and the admin role, written in platform scope", Restricted: true},
 			"platform_issuer_tenant": {Reason: "the tenants a platform-level token issuer may act for; a tenant's session sees its own rows, the platform scope all of them; protected by its own policies", Restricted: true},
 			"issuer_directory":       {Reason: "which registration an issuer and audience select, for the lookup function; no runtime role has any privilege on it"},
+			"platform_limit_rule":    {Reason: "ceilings the platform sets for tenants; a tenant's session sees the defaults and its own rows, the platform scope all of them; protected by its own policies", Restricted: true},
 		},
 		Grants: map[string]map[string][]string{
 			"schema_migration": {
@@ -151,6 +152,14 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 			"model_tenant_grant": {
 				"pandokos_gateway": {"SELECT"},
 				"pandokos_admin":   {"DELETE", "INSERT(model_id,tenant_id)", "SELECT"},
+			},
+			"limit_rule": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin":   {"DELETE", "INSERT(limit_value,metric,subject_id,subject_kind,tenant_id)", "SELECT", "UPDATE(limit_value)"},
+			},
+			"platform_limit_rule": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin":   {"DELETE", "INSERT(limit_value,metric,tenant_id)", "SELECT", "UPDATE(limit_value)"},
 			},
 			"tenant_model_restriction": {
 				"pandokos_gateway": {"SELECT"},
@@ -261,6 +270,11 @@ VALUES ($1::uuid, 'ti-' || substr(md5(random()::text), 1, 12),
 INSERT INTO pandokos.subject_mapping (tenant_id, trusted_issuer_id, subject, service_account_id)
 SELECT $1::uuid, ti.id, 'sub-' || substr(md5(random()::text), 1, 12), sa.id FROM sa, ti RETURNING id::text`,
 				Update: `subject = 'changed'`,
+			},
+			"limit_rule": {
+				Insert: `INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, subject_id, metric, limit_value)
+VALUES ($1::uuid, 'key', 't' || substr(md5(random()::text), 1, 16), 'requests_per_minute', 10) RETURNING id::text`,
+				Update: `limit_value = 11`,
 			},
 			"tenant_model_restriction": {
 				Insert: `INSERT INTO pandokos.tenant_model_restriction (tenant_id, models) VALUES ($1::uuid, ARRAY['openai/gpt-4o']) RETURNING id::text`,

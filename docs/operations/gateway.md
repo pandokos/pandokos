@@ -140,6 +140,7 @@ The provider's request ID (`X-Request-Id` for `openai`, `Request-Id` for `anthro
 | `upstream_unreachable` | 502 | the provider could not be reached, the egress guard refused the connection, or the provider answered with a redirect |
 | `upstream_timeout` | 504 | the provider did not answer headers within `limits.max_request_duration` |
 | `unavailable` | 503 | the catalogue, the key or the credential could not be verified, the keys of a token's issuer could not be obtained (the answer carries `Retry-After: 5`, as it does whenever authentication is unavailable, the database included), or the usage ledger buffer is full (the log line has `ledger: full`; no usage record is written for that request) |
+| `rate_limited` | 429 | a limit of Pandokos was reached; the answer carries `Retry-After` |
 | `internal` | 500 | an unexpected failure |
 
 Anthropic error types. On an `anthropic` route the body is `{"type":"error","error":{"type":<type>,"message":"Pandokos: ..."}}`
@@ -154,6 +155,7 @@ and `type` is the provider's type for the status:
 | `request_timeout`, `upstream_timeout` | `timeout_error` |
 | `request_too_large` | `request_too_large` |
 | `internal`, `upstream_unreachable`, `unavailable` | `api_error` |
+| `rate_limited` | `rate_limit_error` |
 
 Every Pandokos error carries the headers `X-Pandokos-Error` (the code) and `X-Pandokos-Request-Id`,
 and a body in the family's shape:

@@ -56,6 +56,8 @@ type Options struct {
 	Recorder               Recorder                  // required: receives the usage record of every admitted request
 	Tracer                 trace.TracerProvider      // required
 	PropagateTrace         bool                      // send traceparent and tracestate to the provider
+	Limits                 Limits                    // optional: nil enforces no limit
+	DefaultOutputTokens    int64                     // output tokens reserved per choice when the caller sets no limit; positive
 }
 
 // Handler is the inference handler.
@@ -76,6 +78,8 @@ type Handler struct {
 	tracer      trace.Tracer
 	propagator  propagation.TextMapPropagator
 	propagate   bool
+	limits      Limits
+	defaultOut  int64
 }
 
 // New validates the options and returns a Handler.
@@ -138,6 +142,8 @@ func New(o Options) (*Handler, error) {
 		tracer:      o.Tracer.Tracer(instrumentationScope, trace.WithInstrumentationVersion(buildinfo.Version)),
 		propagator:  propagation.TraceContext{},
 		propagate:   o.PropagateTrace,
+		limits:      o.Limits,
+		defaultOut:  o.DefaultOutputTokens,
 	}
 	h.proxy = h.newProxy(&classTransport{public: o.Public, private: o.Private})
 	return h, nil

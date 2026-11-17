@@ -39,6 +39,17 @@ type PandokosKekVersion struct {
 	CreatedAt time.Time
 }
 
+type PandokosLimitRule struct {
+	TenantID    string
+	ID          string
+	SubjectKind string
+	SubjectID   string
+	Metric      string
+	LimitValue  int64
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
 type PandokosModel struct {
 	ID              string
 	ProviderID      string
@@ -112,6 +123,15 @@ type PandokosPlatformKey struct {
 	RevokedAt   *time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+}
+
+type PandokosPlatformLimitRule struct {
+	ID         string
+	TenantID   *string
+	Metric     string
+	LimitValue int64
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 type PandokosPriceImport struct {

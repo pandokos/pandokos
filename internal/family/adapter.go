@@ -31,10 +31,19 @@ type Preparation struct {
 	StreamUsage   bool   // the provider accepts the stream usage option (openai family only)
 }
 
+// OutputBound is what a request says about the output it may produce.
+type OutputBound struct {
+	None    bool  // the operation produces no output tokens
+	Tokens  int64 // the caller's limit per choice; 0 when the caller set none
+	Choices int64 // the number of choices asked for; at least 1
+}
+
 // Request is what a family read from a request body.
 type Request interface {
 	Model() string // as the caller wrote it, JSON-decoded
 	Stream() bool
+	// OutputBound returns what the request says about the output it may produce.
+	OutputBound() OutputBound
 	// Prepare returns the body to forward: the caller's bytes, with the usage option added
 	// when the family needs it and p.StreamUsage allows it (strip reports that) and the model
 	// replaced by p.UpstreamModel when that is not empty and differs from Model().

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/url"
 	"sort"
+	"time"
 
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/pricing"
@@ -21,6 +22,8 @@ type Target struct {
 	Private            bool
 	Prices             []pricing.Version // the model's price versions, from the snapshot that resolved it; read-only
 	StreamUsage        bool              // the provider's stream_usage_option is "add"
+	MaxOutputTokens    int64             // the model's max_output_tokens; 0 when the catalogue has none
+	ContextWindow      int64             // the model's context window in tokens; 0 when the catalogue has none
 }
 
 // Recorder receives the usage record of every admitted request.
@@ -40,6 +43,41 @@ type Catalogue interface {
 	// Resolve returns the target for a model. ErrModelNotAllowed and ErrProviderUnavailable are
 	// refusals; any other error means the decision could not be taken.
 	Resolve(ctx context.Context, p authz.Principal, provider, model string) (Target, error)
+}
+
+// LimitEstimate is what a call is expected to consume (sprint 5.1 section 5.3).
+type LimitEstimate struct {
+	RequestID                 string
+	InputTokens, OutputTokens int64
+	Cost                      pricing.Cost
+}
+
+// LimitUsage is what a call consumed: the figures of its usage record.
+type LimitUsage struct {
+	Tokens int64
+	Cost   pricing.Cost
+}
+
+// LimitRefusal is a refusal of the limits, in plain values.
+type LimitRefusal struct {
+	Level, Subject, Metric string
+	Limit, Remaining       int64
+	RetryAfter, Reset      time.Duration
+	OverLimit              bool
+}
+
+// Limits reserves capacity for a call. A nil Limits enforces nothing.
+type Limits interface {
+	// Reserve returns the reservation of an admitted call (never nil then), a refusal, or an
+	// error when the limits of the tenant cannot be verified now.
+	Reserve(ctx context.Context, p authz.Principal, e LimitEstimate) (Reservation, *LimitRefusal, error)
+}
+
+// Reservation is settled or released exactly once by the gateway. Neither method blocks or
+// returns an error: the implementation logs what fails.
+type Reservation interface {
+	Settle(u LimitUsage)
+	Release()
 }
 
 // Credential is an opened provider credential.

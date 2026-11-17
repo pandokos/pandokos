@@ -124,6 +124,7 @@ func build(t *testing.T, targets map[string]gateway.Target, guard *egress.Guard,
 	rec := &testutil.MemoryRecorder{}
 	tp, spans := testutil.SpanRecorder(t)
 	o := gateway.Options{
+		DefaultOutputTokens:    4096,
 		Recorder:               rec,
 		Tracer:                 tp,
 		Logger:                 telemetry.NewLogger(logs, "debug"),
@@ -1001,7 +1002,8 @@ func TestNewValidatesOptions(t *testing.T) {
 	creds := testutil.StaticCredentials(nil)
 	good := func() gateway.Options {
 		return gateway.Options{
-			Logger: telemetry.NewLogger(logs, "info"), Authenticator: testAuth, Catalogue: cat, Credentials: creds,
+			DefaultOutputTokens: 4096,
+			Logger:              telemetry.NewLogger(logs, "info"), Authenticator: testAuth, Catalogue: cat, Credentials: creds,
 			Families: map[string]family.Adapter{"openai": openai.Adapter()}, DefaultFamily: "openai",
 			Public: http.DefaultTransport, Private: http.DefaultTransport,
 			MaxRequestBodyBytes: 1, RequestBodyReadTimeout: 1, MaxRequestDuration: 1,

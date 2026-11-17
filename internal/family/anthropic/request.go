@@ -40,6 +40,9 @@ func (r *Request) Model() string { return r.model }
 // Stream reports whether the caller asked for a stream.
 func (r *Request) Stream() bool { return r.stream }
 
+// OutputBound returns what the request says about the output it may produce.
+func (r *Request) OutputBound() family.OutputBound { return family.OutputBound{Choices: 1} }
+
 // Prepare returns the body to forward: the value of the model member replaced by p.UpstreamModel
 // when that is not empty and differs from Model(); every other byte as received, and the input
 // slice itself when nothing changes. Anthropic streams always report usage, so strip is false.

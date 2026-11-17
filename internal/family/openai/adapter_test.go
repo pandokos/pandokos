@@ -248,7 +248,7 @@ func TestAdapterErrors(t *testing.T) {
 		family.CodeUnauthenticated, family.CodeTenantSuspended, family.CodeForbidden, family.CodeModelNotAllowed,
 		family.CodeEndpointNotSupported, family.CodeNoCredential, family.CodeInvalidRequest, family.CodeRequestTimeout,
 		family.CodeRequestTooLarge, family.CodeUpstreamUnreachable, family.CodeUpstreamTimeout, family.CodeUnavailable,
-		family.CodeInternal,
+		family.CodeInternal, family.CodeRateLimited,
 	} {
 		want[string(c)] = struct {
 			status int
