@@ -1,6 +1,6 @@
 # Pandokos
 
-**LLM access for every tenant of your platform, isolated by the database, not by convention.**
+**LLM access for every tenant of your platform, secured by design, not by convention.**
 
 Pandokos is a self-hosted, multi-tenant LLM proxy for teams that build platforms. Each tenant brings
 its own provider keys into a write-only vault, calls OpenAI and Anthropic APIs with the stock SDKs,
