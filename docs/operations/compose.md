@@ -13,7 +13,8 @@ The files are in `deploy/compose/`:
 | `compose.yaml` | the services `postgres`, `migrate` (runs once) and `pandokos` |
 | `setup.sh` | creates `./secrets`: five database passwords, the key-encryption key (32 random bytes, base64) and a self-signed TLS certificate and key (P-256, one year, names `localhost`, `pandokos`, `postgres`, `127.0.0.1`, `::1`) with `openssl`; never overwrites a file |
 | `initdb/10-pandokos.sh` | on the first start of the data directory: the privilege roles of `deploy/postgres/roles.sql` as login users with the generated passwords, and the database (the "Shortest" setup of the [database guide](database.md)) |
-| `.gitignore` | `secrets/` |
+| `quickstart.sh` | the quick start below in one guided run: `setup.sh`, `docker compose up`, the tenant `demo` with an OpenAI credential and a virtual key written to `quickstart.key` (mode 0600). It explains each step, waits for Enter on a terminal (`--yes` does not), skips what is done, takes the OpenAI key from `OPENAI_API_KEY` or asks for it without echo |
+| `.gitignore` | `secrets/`, `quickstart.key` |
 
 ## Prerequisites
 
@@ -25,6 +26,9 @@ The files are in `deploy/compose/`:
 - A provider key for each provider you want to call (OpenAI, Anthropic).
 
 ## Quick start
+
+`./quickstart.sh` does the steps of this section for OpenAI and prints the call to make; the README
+starts from it. By hand, for both providers:
 
 ```sh
 cd deploy/compose

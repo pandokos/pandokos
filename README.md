@@ -4,47 +4,41 @@ Open-source multi-tenant LLM proxy: governed access to AI providers with BYOK, s
 
 ## Quick start
 
-From nothing to a first OpenAI call through Pandokos in three steps, on your machine. You need Docker
-with Compose v2, `openssl`, `curl` and an OpenAI API key in `OPENAI_API_KEY`. Run every step in the
-same shell. This is a local trial, **not a production setup**: one instance, PostgreSQL in a container,
-a self-signed certificate, ports published on `127.0.0.1` only.
+From nothing to a first OpenAI call through Pandokos in three commands, on your machine. You need
+Docker with Compose v2, `openssl`, `curl` and an OpenAI API key. This is a local trial, **not a
+production setup**: one instance, PostgreSQL in a container, a self-signed certificate, ports
+published on `127.0.0.1` only.
 
-**1. Start Pandokos and PostgreSQL** with the published image `ghcr.io/pandokos/pandokos:0.1`:
+**1. Get the deployment files.**
 
 ```bash
-git clone --branch v0.1.0 https://github.com/pandokos/pandokos.git && cd pandokos/deploy/compose
-./setup.sh && docker compose up -d --wait
+git clone --depth 1 https://github.com/pandokos/pandokos.git && cd pandokos/deploy/compose
 ```
 
-`setup.sh` generates the database passwords, the vault's encryption key and a TLS certificate in
-`./secrets`; `--wait` returns once the database is migrated and Pandokos is healthy.
-
-**2. Create a tenant and a virtual key.** The OpenAI key goes into the tenant's vault through standard
-input and can never be read back; the application only ever sees a Pandokos key.
+**2. Run the guided setup.** It starts Pandokos and PostgreSQL with the published image
+`ghcr.io/pandokos/pandokos:0.1`, creates a tenant `demo`, stores your OpenAI key in the tenant's vault
+and issues a virtual key into `quickstart.key`. It explains each step and waits for Enter before it
+(`--yes` does not wait). The OpenAI key is taken from `OPENAI_API_KEY` or asked for without echo; it
+reaches Pandokos through standard input, is never written to disk and can never be read back.
 
 ```bash
-docker compose exec -T pandokos /pandokos init --key-out /home/nonroot/bootstrap.key
-docker compose exec -T -e PANDOKOS_CLI_KEY_FILE=/home/nonroot/bootstrap.key pandokos \
-  /pandokos tenant create demo --admin-key-out /home/nonroot/demo-admin.key
-pdk() { docker compose exec -T -e PANDOKOS_CLI_KEY_FILE=/home/nonroot/demo-admin.key pandokos /pandokos "$@"; }
-printf %s "$OPENAI_API_KEY" | pdk credential create --provider openai --secret-file /dev/stdin openai-main
-pdk service-account create --role inference app
-export PANDOKOS_KEY=$(pdk key create --service-account app | awk '/^key:/ {print $2}')
+./quickstart.sh
 ```
 
 **3. Call it.** The request is the one you would send to OpenAI: only the address and the key change.
 
 ```bash
 curl -sS --cacert secrets/tls_cert https://localhost:8080/openai/v1/chat/completions \
-  -H "Authorization: Bearer $PANDOKOS_KEY" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(cat quickstart.key)" -H "Content-Type: application/json" \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Say hello from Pandokos."}]}'
 ```
 
 `--cacert` makes curl trust the self-signed certificate. The official OpenAI SDKs work unchanged: set
-`base_url` to `https://localhost:8080/openai/v1` and the API key to `$PANDOKOS_KEY`. Every call leaves
-a usage record with tokens and estimated cost, without content: `pdk usage list`.
-`docker compose down -v` removes everything. Streaming, the SDKs in Python and TypeScript, Anthropic
-and the details of each choice are in the [Docker Compose reference](docs/operations/compose.md).
+`base_url` to `https://localhost:8080/openai/v1` and the API key to the content of `quickstart.key`.
+Every call leaves a usage record with tokens and estimated cost, without content; the script prints
+the command that lists them. Running the script again skips what is done; `docker compose down -v`
+removes everything. Each step by hand, streaming, the SDKs in Python and TypeScript, Anthropic and the
+details of each choice are in the [Docker Compose reference](docs/operations/compose.md).
 
 ## Status
 

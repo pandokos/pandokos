@@ -123,7 +123,7 @@ func TestComposeReference(t *testing.T) {
 				t.Errorf("%s = %q, want a file under /run/secrets", k, env[k])
 			}
 		}
-		for _, rel := range []string{"deploy/compose/compose.yaml", "deploy/compose/setup.sh", "deploy/compose/initdb/10-pandokos.sh"} {
+		for _, rel := range []string{"deploy/compose/compose.yaml", "deploy/compose/setup.sh", "deploy/compose/quickstart.sh", "deploy/compose/initdb/10-pandokos.sh"} {
 			if strings.Contains(strings.ToLower(read(t, rel)), "allow_plaintext") {
 				t.Errorf("%s mentions allow_plaintext", rel)
 			}
@@ -156,7 +156,10 @@ func TestComposeReference(t *testing.T) {
 		if !regexp.MustCompile(`(?m)^/?secrets/?\s*$`).MatchString(read(t, "deploy/compose/.gitignore")) {
 			t.Error("deploy/compose/.gitignore does not hold secrets/")
 		}
-		for _, rel := range []string{"deploy/compose/setup.sh", "deploy/compose/initdb/10-pandokos.sh"} {
+		if !regexp.MustCompile(`(?m)^/?quickstart\.key\s*$`).MatchString(read(t, "deploy/compose/.gitignore")) {
+			t.Error("deploy/compose/.gitignore does not hold quickstart.key, the virtual key quickstart.sh writes")
+		}
+		for _, rel := range []string{"deploy/compose/setup.sh", "deploy/compose/quickstart.sh", "deploy/compose/initdb/10-pandokos.sh"} {
 			info, err := os.Stat(filepath.Join(root(t), rel))
 			if err != nil || info.Mode().Perm()&0o111 == 0 {
 				t.Errorf("%s: %v %v", rel, info, err)
@@ -173,10 +176,20 @@ func TestComposeReference(t *testing.T) {
 			"credential create --provider openai --secret-file /dev/stdin", "credential create --provider anthropic --secret-file /dev/stdin",
 			"service-account create --role inference", "key create --service-account app",
 			"capability check --provider anthropic --model", "usage list", "docker compose stop",
-			"make image", "PANDOKOS_IMAGE", "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS",
+			"make image", "PANDOKOS_IMAGE", "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "./quickstart.sh", "quickstart.key",
 		} {
 			if !strings.Contains(guide, c) {
 				t.Errorf("docs/operations/compose.md does not quote %q", c)
+			}
+		}
+	})
+	// The call of the README is run by the Compose test (TestQuickstartScript), which reads it
+	// from the README; here only that the README starts from the script.
+	t.Run("the README quick start runs quickstart.sh and calls with quickstart.key", func(t *testing.T) {
+		readme := read(t, "README.md")
+		for _, c := range []string{"cd pandokos/deploy/compose", "./quickstart.sh", "**3. Call it.**", "Bearer $(cat quickstart.key)", "docs/operations/compose.md"} {
+			if !strings.Contains(readme, c) {
+				t.Errorf("README.md does not quote %q", c)
 			}
 		}
 	})
