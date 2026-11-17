@@ -183,8 +183,12 @@ func TestTokenPrincipalTenantBound(t *testing.T) {
 			}
 			_, err := w.auth.Authenticate(ctx(t), forged)
 			_ = failed(t, "forged payload with a warm cache", err, "bad_signature")
+			// The first character carries six bits of the signature, so changing it keeps the
+			// segment canonical base64url: the token is refused for its signature, not its form.
+			// The last characters do not do that: some of their bits must be zero, and a strict
+			// decoder refuses the token as malformed (about one run in 256 with the former "AA"/"BB").
 			sig := parts[2]
-			flipped := sig[:len(sig)-2] + map[bool]string{true: "AA", false: "BB"}[!strings.HasSuffix(sig, "AA")]
+			flipped := map[bool]string{true: "B", false: "A"}[sig[0] == 'A'] + sig[1:]
 			_, err = w.auth.Authenticate(ctx(t), parts[0]+"."+parts[1]+"."+flipped)
 			_ = failed(t, "altered signature with a warm cache", err, "bad_signature")
 			if _, err := w.auth.Authenticate(ctx(t), tok); err != nil {
