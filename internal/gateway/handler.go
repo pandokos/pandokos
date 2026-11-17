@@ -109,6 +109,8 @@ func New(o Options) (*Handler, error) {
 		return nil, errors.New("gateway: Recorder is required")
 	case o.Tracer == nil:
 		return nil, errors.New("gateway: Tracer is required")
+	case o.DefaultOutputTokens <= 0:
+		return nil, errors.New("gateway: DefaultOutputTokens must be positive")
 	}
 	families := make(map[string]family.Adapter, len(o.Families))
 	for name, a := range o.Families {
@@ -209,6 +211,12 @@ type reqState struct {
 	deltas          int64
 	costUsage       family.Usage // the figures the cost was computed on
 	rec             *usage.Record
+
+	// Sprint 5.1: the reservation of step 7b.
+	reservation    Reservation
+	reservedTokens int64
+	refusal        *LimitRefusal
+	forwarded      bool
 
 	streamBody *streamBody
 	teeBody    *teeBody
@@ -313,6 +321,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	st.target, st.resolved = target, true
 
+	// Step 7b: the limits.
+	if !h.reserve(st, parsed.OutputBound()) {
+		return
+	}
+
 	// Step 8: the credential.
 	cred, err := h.credentials.Open(r.Context(), *st.principal, st.id, st.provider)
 	switch {
@@ -344,6 +357,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	req.ContentLength = int64(len(prepared))
 	req.TransferEncoding = nil
 	req.GetBody = nil
+	st.forwarded = true
 	h.proxy.ServeHTTP(st.sw, req)
 }
 
@@ -568,6 +582,7 @@ func (h *Handler) finish(st *reqState, rec any) {
 	if st.admitted {
 		h.finishRecord(st, outcome)
 	}
+	h.settleLimit(st)
 	h.logRequest(st, outcome)
 
 	switch {
@@ -589,6 +604,7 @@ func (h *Handler) logRequest(st *reqState, outcome string) {
 	if st.errCode != "" {
 		attrs = append(attrs, "error_code", string(st.errCode))
 	}
+	attrs = append(attrs, st.limitAttrs()...)
 	if st.invalidReason != "" {
 		attrs = append(attrs, "invalid_reason", st.invalidReason)
 	}

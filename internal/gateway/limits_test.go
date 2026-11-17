@@ -274,6 +274,8 @@ func TestRateLimited(t *testing.T) {
 			if f.name == "anthropic" && c.header.Get("Retry-After") == "" && c.header.Get("Anthropic-Ratelimit-Requests-Remaining") == "" {
 				t.Errorf("the provider's own rate limit headers are gone: %v", c.header)
 			}
+			// The handler settles in finish, after the caller has the answer.
+			testutil.Eventually(t, 3*time.Second, "the settle", func() bool { return len(lim.Of("settle")) == 1 })
 			if got := lim.Of("settle"); len(got) != 1 || got[0].Usage.Tokens != 0 {
 				t.Errorf("settles %+v, want one with 0 tokens", got)
 			}
@@ -397,8 +399,17 @@ func TestSettleEqualsRecord(t *testing.T) {
 			t.Run(f.name+"/"+c.name, func(t *testing.T) {
 				lim := testutil.NewStaticLimits()
 				h := f.newH(t, func(o *gateway.Options) { o.Limits = lim })
-				resp := f.send(t, h, f.body(c.model, c.stream))
-				_ = resp
+				if c.model == fakeprovider.ModelCutAfterStart {
+					// The stream is cut: reading the body fails by design.
+					resp, err := h.request(ctx5(t), t, http.MethodPost, f.path, f.body(c.model, c.stream), f.hdr())
+					if err != nil {
+						t.Fatal(err)
+					}
+					_, _ = io.Copy(io.Discard, resp.Body)
+					resp.Body.Close()
+				} else {
+					f.send(t, h, f.body(c.model, c.stream))
+				}
 				r := h.oneRecord(t)
 				u := onlySettle(t, lim)
 				if want := recordTokens(r); u.Tokens != want {

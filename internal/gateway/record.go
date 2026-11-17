@@ -19,6 +19,8 @@ func outcomeOf(st *reqState, logOutcome string) usage.Outcome {
 	case family.CodeTenantSuspended, family.CodeForbidden, family.CodeModelNotAllowed, family.CodeEndpointNotSupported,
 		family.CodeNoCredential, family.CodeInvalidRequest, family.CodeRequestTooLarge:
 		return usage.OutcomeRejectedPolicy
+	case family.CodeRateLimited:
+		return usage.OutcomeRejectedLimit
 	case family.CodeRequestTimeout, family.CodeUpstreamTimeout:
 		return usage.OutcomeTimeout
 	case family.CodeUpstreamUnreachable:
