@@ -1,7 +1,7 @@
 ---
 id: EPIC-5
 title: Limits and budgets
-status: todo
+status: in-progress
 release: v0.2
 depends_on: [EPIC-3]
 ---
