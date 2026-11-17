@@ -1,6 +1,61 @@
 # Pandokos
 
-Open-source multi-tenant LLM proxy: governed access to AI providers with BYOK, secrets vault, quotas, audit and OpenTelemetry.
+**LLM access for every tenant of your platform, isolated by design, not by convention.**
+
+Pandokos is a self-hosted, multi-tenant LLM proxy for teams that build platforms. Each tenant brings
+its own provider keys into a write-only vault, calls OpenAI and Anthropic APIs with the stock SDKs,
+and authenticates with virtual keys or with tokens from its own identity provider; every call is
+metered. Tenants are kept apart by PostgreSQL row-level security. All of it is in the Apache 2.0
+core: there is no enterprise edition.
+
+Federated identity is tested in CI against **Keycloak 26.8**, **Ory Hydra v26.2** and
+**Authentik 2026.8** ([trusted issuers](docs/operations/tokens.md)).
+
+[![CI](https://github.com/pandokos/pandokos/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pandokos/pandokos/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/pandokos/pandokos)](https://github.com/pandokos/pandokos/releases)
+
+## How it compares
+
+Pandokos is younger and narrower than LiteLLM and Bifrost. It does fewer things, and puts tenant
+isolation, custody of tenants' keys and federated identity in the open-source core.
+
+✅ in the open-source core · 💼 enterprise edition only · 🗓️ on the Pandokos roadmap · ➖ not planned
+
+| | Pandokos | LiteLLM | Bifrost |
+|---|---|---|---|
+| License | Apache 2.0, one edition | MIT core, commercial enterprise edition | Apache 2.0 core, commercial enterprise edition |
+| Written in | Go | Python | Go |
+| **Tenants and secrets** | | | |
+| Unit of isolation | ✅ tenant, enforced by PostgreSQL row-level security and separate database roles | ✅ team · 💼 organization | ✅ customer and team · 💼 business unit |
+| Tenants' own provider keys (BYOK) | ✅ write-only vault, envelope encryption with per-tenant keys | ✅ provider keys encrypted in the database · 💼 team-managed models | ✅ provider keys · 💼 secret managers |
+| Key-encryption key in an external KMS or secret manager | 🗓️ v0.3 | 💼 | 💼 |
+| **Identity and control** | | | |
+| Calls authenticated with tokens from your IdP (JWT) | ✅ tested on Keycloak, Ory Hydra, Authentik | 💼 | 💼 OIDC and JWT (SSO) |
+| People sign in with SSO or OIDC | 🗓️ v0.2 | 💼 free up to 5 users | 💼 |
+| Roles (RBAC) | ✅ built-in roles · 🗓️ v0.2 custom roles | 💼 | 💼 |
+| Audit log of administrative changes | ✅ atomic, append-only | 💼 | 💼 |
+| **Spend** | | | |
+| Usage and cost of every call | ✅ without prompts or completions | ✅ | ✅ |
+| Rate limits, quotas, budgets | 🗓️ v0.2 | ✅ | ✅ |
+| **Providers and traffic** | | | |
+| Providers | OpenAI, Anthropic, any OpenAI-compatible API · 🗓️ v0.4 Gemini, Azure OpenAI | 100+ | 23+ |
+| Fallbacks, load balancing, routing | ➖ a transparent proxy by design | ✅ | ✅ · 💼 adaptive |
+| Caching | ➖ | ✅ | ✅ semantic |
+| Guardrails and moderation | ➖ | ✅ custom, Presidio · 💼 built-in | 💼 |
+| MCP gateway | ➖ | ✅ | ✅ |
+| **Operations** | | | |
+| Administration | API and CLI · ➖ web UI | ✅ web UI | ✅ web UI |
+| Replicas behind a load balancer | 🗓️ v0.4 | ✅ | 💼 clustering |
+| Ready for production | not yet (v0.1) | ✅ | ✅ |
+
+Compared from the public documentation in November 2026: LiteLLM [enterprise
+features](https://docs.litellm.ai/docs/enterprise) and [multi-tenancy](https://docs.litellm.ai/docs/proxy/multi_tenant_architecture);
+Bifrost [repository](https://github.com/maximhq/bifrost), [governance](https://docs.getbifrost.ai/features/governance),
+[enterprise governance](https://docs.getbifrost.ai/enterprise/advanced-governance) and
+[secret management](https://docs.getbifrost.ai/deployment-guides/helm/secret-management). If a cell is
+wrong or out of date, please open an issue. What Pandokos will not become is in
+[What it is not](#what-it-is-not).
 
 ## Quick start
 
@@ -8,6 +63,8 @@ From nothing to a first OpenAI call through Pandokos in three commands, on your 
 Docker with Compose v2, `openssl`, `curl` and an OpenAI API key. This is a local trial, **not a
 production setup**: one instance, PostgreSQL in a container, a self-signed certificate, ports
 published on `127.0.0.1` only.
+
+https://github.com/user-attachments/assets/eb59d47f-a988-45dd-bb48-637374107999
 
 **1. Get the deployment files.**
 
@@ -66,7 +123,7 @@ Tenants use LLM models with **BYOK** (bring your own key): each tenant supplies 
 
 ## What it is not
 
-Pandokos is deliberately not an identity provider, an agent or workflow framework, a prompt manager or store, a content-moderation system, a complete billing system, or a model hosting platform.
+Pandokos is deliberately not an identity provider, an agent or workflow framework, a prompt manager or store, a semantic cache, a content-moderation or guardrail engine, a router that picks models, falls back or balances load, a translator between provider APIs, a complete billing system, a model hosting platform, or a general-purpose API gateway ([non-goals](docs/requirements/README.md#non-goals)).
 
 ## Design principles
 
