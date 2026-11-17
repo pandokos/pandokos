@@ -125,6 +125,8 @@ linters:
               desc: the administration plane never opens a credential
             - pkg: github.com/pandokos/pandokos/internal/resolver
               desc: the administration plane never opens a credential
+            - pkg: github.com/pandokos/pandokos/internal/limits
+              desc: limits are enforced by the data plane; the administration plane reaches rules through the store
         gateway-takes-plain-values:
           list-mode: lax
           files:
@@ -155,6 +157,8 @@ linters:
               desc: the gateway sees the ledger through gateway.Recorder
             - pkg: github.com/pandokos/pandokos/internal/telemetry
               desc: the gateway receives a trace provider through Options
+            - pkg: github.com/pandokos/pandokos/internal/limits
+              desc: the gateway sees limits through gateway.Limits
         otel-sdk-in-telemetry:
           list-mode: lax
           files:

@@ -93,8 +93,9 @@ fuzz: ## Run each fuzz target for FUZZTIME
 	go test ./internal/family/openai/ -run '^$$' -fuzz '^FuzzOutputBound$$' -fuzztime $(FUZZTIME)
 	go test ./internal/family/anthropic/ -run '^$$' -fuzz '^FuzzOutputBound$$' -fuzztime $(FUZZTIME)
 
-bench: ## Usage reader benchmark
+bench: ## Usage reader and limits benchmarks
 	go test ./internal/family/openai/ -run '^$$' -bench . -benchmem
+	go test ./internal/limits/ -run '^$$' -bench . -benchmem
 
 fmt: ## Format the code
 	gofmt -w cmd internal test
