@@ -5,7 +5,7 @@ Open-source multi-tenant LLM proxy: governed access to AI providers with BYOK, s
 ## Quick start
 
 From nothing to a first OpenAI call through Pandokos in three steps, on your machine. You need Docker
-with Compose v2, `openssl`, Python 3 and an OpenAI API key in `OPENAI_API_KEY`. Run every step in the
+with Compose v2, `openssl`, `curl` and an OpenAI API key in `OPENAI_API_KEY`. Run every step in the
 same shell. This is a local trial, **not a production setup**: one instance, PostgreSQL in a container,
 a self-signed certificate, ports published on `127.0.0.1` only.
 
@@ -32,33 +32,19 @@ pdk service-account create --role inference app
 export PANDOKOS_KEY=$(pdk key create --service-account app | awk '/^key:/ {print $2}')
 ```
 
-**3. Call it with the official OpenAI SDK.** Only `base_url` and the key change. Save this as
-`hello.py`:
-
-```python
-import os
-from openai import OpenAI
-
-client = OpenAI(
-    base_url="https://localhost:8080/openai/v1",  # Pandokos instead of api.openai.com
-    api_key=os.environ["PANDOKOS_KEY"],           # the virtual key, not the OpenAI key
-)
-reply = client.chat.completions.create(
-    model="gpt-4o-mini",
-    messages=[{"role": "user", "content": "Say hello from Pandokos."}],
-)
-print(reply.choices[0].message.content)
-```
+**3. Call it.** The request is the one you would send to OpenAI: only the address and the key change.
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -q openai
-SSL_CERT_FILE=$PWD/secrets/tls_cert .venv/bin/python hello.py
+curl -sS --cacert secrets/tls_cert https://localhost:8080/openai/v1/chat/completions \
+  -H "Authorization: Bearer $PANDOKOS_KEY" -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Say hello from Pandokos."}]}'
 ```
 
-`SSL_CERT_FILE` makes the SDK trust the self-signed certificate. Every call leaves a usage record with
-tokens and estimated cost, without content: `pdk usage list`. `docker compose down -v` removes
-everything. Streaming, the Anthropic SDK, curl and the details of each choice are in the
-[Docker Compose reference](docs/operations/compose.md).
+`--cacert` makes curl trust the self-signed certificate. The official OpenAI SDKs work unchanged: set
+`base_url` to `https://localhost:8080/openai/v1` and the API key to `$PANDOKOS_KEY`. Every call leaves
+a usage record with tokens and estimated cost, without content: `pdk usage list`.
+`docker compose down -v` removes everything. Streaming, the SDKs in Python and TypeScript, Anthropic
+and the details of each choice are in the [Docker Compose reference](docs/operations/compose.md).
 
 ## Status
 
