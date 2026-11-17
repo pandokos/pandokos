@@ -2,6 +2,7 @@ package limits
 
 import (
 	"context"
+	"errors"
 
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/tenant"
@@ -14,3 +15,5 @@ const MaxRulesPerTenant = 5000
 func LoadRules(_ context.Context, _ *store.DB, _ tenant.ID) (RuleSet, error) {
 	return RuleSet{}, errNotImplemented
 }
+
+var errNotImplemented = errors.New("limits: not implemented")
