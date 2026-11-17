@@ -271,8 +271,15 @@ func TestRateLimited(t *testing.T) {
 					t.Errorf("%s on a provider's 429", k)
 				}
 			}
-			if f.name == "anthropic" && c.header.Get("Retry-After") == "" && c.header.Get("Anthropic-Ratelimit-Requests-Remaining") == "" {
-				t.Errorf("the provider's own rate limit headers are gone: %v", c.header)
+			if got := c.header.Get("Retry-After"); got != "7" {
+				t.Errorf("Retry-After %q, want the provider's 7", got)
+			}
+			own := "X-Ratelimit-Remaining-Requests"
+			if f.name == "anthropic" {
+				own = "Anthropic-Ratelimit-Requests-Remaining"
+			}
+			if got := c.header.Get(own); got != "99" {
+				t.Errorf("%s %q, want the provider's 99: %v", own, got, c.header)
 			}
 			// The handler settles in finish, after the caller has the answer.
 			testutil.Eventually(t, 3*time.Second, "the settle", func() bool { return len(lim.Of("settle")) == 1 })
