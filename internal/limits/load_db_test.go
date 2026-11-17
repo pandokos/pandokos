@@ -93,11 +93,15 @@ func TestLoadRules(t *testing.T) {
 
 		t.Run("5,000 rules load and 5,001 are an error", func(t *testing.T) {
 			c := d.SeedTenant(t, "load-many")
-			super := d.Super(t)
+			adm := d.Open(t, store.RoleAdmin)
 			insert := func(from, to int) {
 				t.Helper()
-				if _, err := super.Exec(ctx, `INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, subject_id, metric, limit_value)
-					SELECT $1::uuid, 'key', 'k-' || g, 'requests_per_minute', 10 FROM generate_series($2::int, $3::int) g`, c.String(), from, to); err != nil {
+				err := adm.WithTenant(ctx, c, func(ctx context.Context, tx store.Tx) error {
+					_, err := tx.Exec(ctx, `INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, subject_id, metric, limit_value)
+						SELECT $1::uuid, 'key', 'k-' || g, 'requests_per_minute', 10 FROM generate_series($2::int, $3::int) g`, c.String(), from, to)
+					return err
+				})
+				if err != nil {
 					t.Fatal(err)
 				}
 			}
