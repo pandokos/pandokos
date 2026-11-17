@@ -2,7 +2,67 @@
 
 Open-source multi-tenant LLM proxy: governed access to AI providers with BYOK, secrets vault, quotas, audit and OpenTelemetry.
 
-> **Status: v0.1.0 (Core BYOK) is complete and tagged from this commit onwards ([release page](docs/releases/v0.1.0.md)).** Unmodified OpenAI and Anthropic SDKs call models through Pandokos with a virtual key, streaming included, using the calling tenant's own stored credential (BYOK). Each authenticated request leaves one usage record with tokens and estimated cost ([docs/operations/usage.md](docs/operations/usage.md)) and two OpenTelemetry spans ([docs/operations/telemetry.md](docs/operations/telemetry.md)); every outbound connection passes an address-checking egress guard, and OpenAI-compatible providers are added by configuration ([docs/operations/providers.md](docs/operations/providers.md)). Callers authenticate with virtual keys; `pandokos init` issues the first platform key, and the CLI (a client of the administration API) creates tenants, service accounts and keys (first run: [docs/operations/keys.md](docs/operations/keys.md)). Tenants store provider credentials in a vault that nobody can read back ([docs/operations/vault.md](docs/operations/vault.md)), and the platform admin maintains a catalogue of providers, endpoints and models with grants and versioned prices ([docs/operations/catalogue.md](docs/operations/catalogue.md)). A Docker Compose reference takes you from nothing to a first call ([docs/operations/compose.md](docs/operations/compose.md)). Callers can also authenticate with a token from a registered trusted issuer, with the tenant taken from the registration or a claim ([docs/operations/tokens.md](docs/operations/tokens.md)). Rate limits and budgets (epic 5), sign-in for people and reports come later: **not for production**. Requirements, architecture and plan are written and open for review; see [Documentation](#documentation) and [Roadmap](#roadmap).
+## Quick start
+
+From nothing to a first OpenAI call through Pandokos in three steps, on your machine. You need Docker
+with Compose v2, `openssl`, Python 3 and an OpenAI API key in `OPENAI_API_KEY`. Run every step in the
+same shell. This is a local trial, **not a production setup**: one instance, PostgreSQL in a container,
+a self-signed certificate, ports published on `127.0.0.1` only.
+
+**1. Start Pandokos and PostgreSQL** with the published image `ghcr.io/pandokos/pandokos:0.1`:
+
+```bash
+git clone --branch v0.1.0 https://github.com/pandokos/pandokos.git && cd pandokos/deploy/compose
+./setup.sh && docker compose up -d --wait
+```
+
+`setup.sh` generates the database passwords, the vault's encryption key and a TLS certificate in
+`./secrets`; `--wait` returns once the database is migrated and Pandokos is healthy.
+
+**2. Create a tenant and a virtual key.** The OpenAI key goes into the tenant's vault through standard
+input and can never be read back; the application only ever sees a Pandokos key.
+
+```bash
+docker compose exec -T pandokos /pandokos init --key-out /home/nonroot/bootstrap.key
+docker compose exec -T -e PANDOKOS_CLI_KEY_FILE=/home/nonroot/bootstrap.key pandokos \
+  /pandokos tenant create demo --admin-key-out /home/nonroot/demo-admin.key
+pdk() { docker compose exec -T -e PANDOKOS_CLI_KEY_FILE=/home/nonroot/demo-admin.key pandokos /pandokos "$@"; }
+printf %s "$OPENAI_API_KEY" | pdk credential create --provider openai --secret-file /dev/stdin openai-main
+pdk service-account create --role inference app
+export PANDOKOS_KEY=$(pdk key create --service-account app | awk '/^key:/ {print $2}')
+```
+
+**3. Call it with the official OpenAI SDK.** Only `base_url` and the key change. Save this as
+`hello.py`:
+
+```python
+import os
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://localhost:8080/openai/v1",  # Pandokos instead of api.openai.com
+    api_key=os.environ["PANDOKOS_KEY"],           # the virtual key, not the OpenAI key
+)
+reply = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "Say hello from Pandokos."}],
+)
+print(reply.choices[0].message.content)
+```
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -q openai
+SSL_CERT_FILE=$PWD/secrets/tls_cert .venv/bin/python hello.py
+```
+
+`SSL_CERT_FILE` makes the SDK trust the self-signed certificate. Every call leaves a usage record with
+tokens and estimated cost, without content: `pdk usage list`. `docker compose down -v` removes
+everything. Streaming, the Anthropic SDK, curl and the details of each choice are in the
+[Docker Compose reference](docs/operations/compose.md).
+
+## Status
+
+> **v0.1.0 (Core BYOK) is complete and tagged from this commit onwards ([release page](docs/releases/v0.1.0.md)).** Unmodified OpenAI and Anthropic SDKs call models through Pandokos with a virtual key, streaming included, using the calling tenant's own stored credential (BYOK). Each authenticated request leaves one usage record with tokens and estimated cost ([docs/operations/usage.md](docs/operations/usage.md)) and two OpenTelemetry spans ([docs/operations/telemetry.md](docs/operations/telemetry.md)); every outbound connection passes an address-checking egress guard, and OpenAI-compatible providers are added by configuration ([docs/operations/providers.md](docs/operations/providers.md)). Callers authenticate with virtual keys; `pandokos init` issues the first platform key, and the CLI (a client of the administration API) creates tenants, service accounts and keys (first run: [docs/operations/keys.md](docs/operations/keys.md)). Tenants store provider credentials in a vault that nobody can read back ([docs/operations/vault.md](docs/operations/vault.md)), and the platform admin maintains a catalogue of providers, endpoints and models with grants and versioned prices ([docs/operations/catalogue.md](docs/operations/catalogue.md)). A Docker Compose reference takes you from nothing to a first call ([docs/operations/compose.md](docs/operations/compose.md)). Callers can also authenticate with a token from a registered trusted issuer, with the tenant taken from the registration or a claim ([docs/operations/tokens.md](docs/operations/tokens.md)). Rate limits and budgets (epic 5), sign-in for people and reports come later: **not for production**. Requirements, architecture and plan are written and open for review; see [Documentation](#documentation) and [Roadmap](#roadmap).
 
 ## What it is
 
