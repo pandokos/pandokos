@@ -57,7 +57,9 @@ func TestLoadRules(t *testing.T) {
 		}
 		// Nothing of tenant B: not its rules, not its platform row, not its subjects.
 		for _, l := range got.For("", "k-b") {
-			t.Errorf("a limit for B's key in A's rules: %+v", l)
+			if l.Subject != limits.SubjectTenant { // the tenant's own limits apply to every caller
+				t.Errorf("a limit for B's key in A's rules: %+v", l)
+			}
 		}
 		if _, ok := find(g, limits.SubjectTenant, "", limits.ConcurrentRequests); ok {
 			t.Error("B's platform row or tenant rule is in A's rules")
@@ -104,8 +106,8 @@ func TestLoadRules(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%d rules: %v", limits.MaxRulesPerTenant, err)
 			}
-			if l := set.For("", "k-5000"); len(l) != 1 {
-				t.Errorf("the last rule is missing: %+v", l)
+			if _, ok := find(set.For("", "k-5000"), limits.SubjectKey, "k-5000", limits.RequestsPerMinute); !ok {
+				t.Error("the last rule is missing")
 			}
 			insert(limits.MaxRulesPerTenant+1, limits.MaxRulesPerTenant+1)
 			if _, err := limits.LoadRules(ctx, gw, c); err == nil {

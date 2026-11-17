@@ -130,7 +130,7 @@ func (c *cache) flush(reason string) {
 func (c *cache) invalidate(payload string) {
 	switch {
 	case payload == "platform", payload == "issuers", strings.HasPrefix(payload, "probe:"), strings.HasPrefix(payload, "vault:"),
-		payload == "catalog", strings.HasPrefix(payload, "catalog:"):
+		payload == "catalog", strings.HasPrefix(payload, "catalog:"), payload == "limits", strings.HasPrefix(payload, "limits:"):
 		return
 	case strings.HasPrefix(payload, "tenant:") && len(payload) > len("tenant:"):
 		id := strings.TrimPrefix(payload, "tenant:")
@@ -303,7 +303,7 @@ func (c *lookupCache[V]) invalidate(payload string) {
 	}
 	switch {
 	case payload == "platform", strings.HasPrefix(payload, "probe:"), strings.HasPrefix(payload, "vault:"),
-		payload == "catalog", strings.HasPrefix(payload, "catalog:"):
+		payload == "catalog", strings.HasPrefix(payload, "catalog:"), payload == "limits", strings.HasPrefix(payload, "limits:"):
 		return
 	case payload == "issuers":
 		c.mu.Lock()

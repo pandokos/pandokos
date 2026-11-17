@@ -213,7 +213,7 @@ func (c *Cache) ResolveIn(ctx context.Context, p authz.Principal, provider, name
 }
 
 // Invalidate applies a notification payload: catalog marks the snapshot stale; catalog:<tenant>
-// and tenant:<tenant> drop that tenant's entry; platform, issuers, probe:… and vault:… touch nothing;
+// and tenant:<tenant> drop that tenant's entry; platform, issuers, limits, limits:…, probe:… and vault:… touch nothing;
 // anything else, a payload this version does not know, flushes everything.
 func (c *Cache) Invalidate(payload string) {
 	switch {
@@ -223,7 +223,8 @@ func (c *Cache) Invalidate(payload string) {
 		c.snap = nil
 		c.mu.Unlock()
 		return
-	case payload == "platform", payload == "issuers", strings.HasPrefix(payload, "probe:"), strings.HasPrefix(payload, "vault:"):
+	case payload == "platform", payload == "issuers", strings.HasPrefix(payload, "probe:"), strings.HasPrefix(payload, "vault:"),
+		payload == "limits", strings.HasPrefix(payload, "limits:"):
 		return
 	case strings.HasPrefix(payload, "catalog:"), strings.HasPrefix(payload, "tenant:"):
 		_, rest, _ := strings.Cut(payload, ":")
