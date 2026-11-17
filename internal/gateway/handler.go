@@ -579,10 +579,12 @@ func (h *Handler) finish(st *reqState, rec any) {
 		st.errCode = family.CodeInternal
 		outcome = "pandokos_error"
 	}
+	// The reservation ends whatever the record, the client or the server end do: a panic in
+	// any of them must not leave the slot and the tokens held until they expire.
+	defer h.settleLimit(st)
 	if st.admitted {
 		h.finishRecord(st, outcome)
 	}
-	h.settleLimit(st)
 	h.logRequest(st, outcome)
 
 	switch {

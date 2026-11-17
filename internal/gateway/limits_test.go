@@ -655,6 +655,20 @@ func TestEveryEndSettles(t *testing.T) {
 		exactlyOne(t, lim)
 	})
 
+	t.Run("a recorder that panics", func(t *testing.T) {
+		lim := testutil.NewStaticLimits()
+		h := newHarness(t, func(o *gateway.Options) {
+			o.Limits = lim
+			o.Recorder = panicRecorder{}
+		})
+		// The panic reaches the server's own recovery; the client may see a cut connection.
+		if resp, err := h.request(ctx5(t), t, http.MethodPost, route, chat("fake-basic", false), authed()); err == nil {
+			_, _ = io.ReadAll(resp.Body)
+			resp.Body.Close()
+		}
+		exactlyOne(t, lim)
+	})
+
 	t.Run("a usage reader that panics", func(t *testing.T) {
 		lim := testutil.NewStaticLimits()
 		h := newHarness(t, func(o *gateway.Options) {
@@ -767,3 +781,9 @@ func newDiscard() http.ResponseWriter { return httptest.NewRecorder() }
 
 // bytesReader returns a reader of b.
 func bytesReader(b []byte) io.Reader { return strings.NewReader(string(b)) }
+
+// panicRecorder admits every request and panics when it is handed the record.
+type panicRecorder struct{}
+
+func (panicRecorder) Admit() bool         { return true }
+func (panicRecorder) Record(usage.Record) { panic("recorder failure") }
