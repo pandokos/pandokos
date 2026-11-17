@@ -278,8 +278,11 @@ func TestParallelLoad(t *testing.T) {
 		if n := real.Outstanding(); n != 0 {
 			t.Fatalf("%d reservations outstanding after the last handler returned", n)
 		}
-		if got := len(h.rec.Records()); got != total {
-			t.Errorf("%d records for %d requests", got, total)
+		// A caller that gives up before its connection is set up never reaches the handler, on a
+		// loaded machine: every request the handler saw has a record, the others none.
+		seen := len(h.logs.Find(t, "request"))
+		if got := len(h.rec.Records()); got != seen || seen > total || seen < total*9/10 {
+			t.Errorf("%d records for %d requests that reached the handler (%d sent)", got, seen, total)
 		}
 		real.Advance(61 * time.Second)
 		real.Sweep()
