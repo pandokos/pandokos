@@ -2,14 +2,14 @@
 
 Open-source multi-tenant LLM proxy: governed access to AI providers with BYOK, secrets vault, quotas, audit and OpenTelemetry.
 
-https://github.com/user-attachments/assets/eb59d47f-a988-45dd-bb48-637374107999
-
 ## Quick start
 
 From nothing to a first OpenAI call through Pandokos in three commands, on your machine. You need
 Docker with Compose v2, `openssl`, `curl` and an OpenAI API key. This is a local trial, **not a
 production setup**: one instance, PostgreSQL in a container, a self-signed certificate, ports
 published on `127.0.0.1` only.
+
+https://github.com/user-attachments/assets/eb59d47f-a988-45dd-bb48-637374107999
 
 **1. Get the deployment files.**
 
