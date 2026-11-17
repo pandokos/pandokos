@@ -194,7 +194,7 @@ func TestCache(t *testing.T) {
 		c, l, _ := newTestCache(t, time.Minute)
 		_, _ = c.Snapshot(ctx)
 		_, _ = c.Access(ctx, a)
-		for _, p := range []string{"vault:" + a.String(), "vault:", "platform", "probe:0123456789abcdef", "probe:", "issuers"} {
+		for _, p := range []string{"vault:" + a.String(), "vault:", "platform", "probe:0123456789abcdef", "probe:", "issuers", "limits", "limits:" + a.String(), "limits:"} {
 			c.Invalidate(p)
 		}
 		_, _ = c.Snapshot(ctx)

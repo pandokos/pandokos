@@ -858,3 +858,63 @@ func TestShutdownRecordsEverything(t *testing.T) {
 	}
 	<-hung
 }
+
+// TestLimitsWiring is T-642: Options.Limits and limits.default_output_tokens reach the gateway.
+func TestLimitsWiring(t *testing.T) {
+	post := func(t *testing.T, srv *Server) (int, string, string) {
+		t.Helper()
+		body := `{"model":"` + fakeprovider.ModelBasic + `","messages":[{"role":"user","content":"` + fixtures.CanaryPrompt + `"}]}`
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+srv.InferenceAddr().String()+"/openai/v1/chat/completions", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+testKey)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, resp.Header.Get("X-Pandokos-Error"), string(b)
+	}
+
+	t.Run("a server built with a refusing Limits answers 429", func(t *testing.T) {
+		lim := testutil.NewStaticLimits().Refuse(gateway.LimitRefusal{
+			Level: "tenant", Subject: "tenant", Metric: "requests_per_minute", Limit: 5, RetryAfter: 7 * time.Second, Reset: 7 * time.Second,
+		})
+		srv, up, _, _, _, _ := startServerOpts(t, nil, func(o *Options, _ *fakeprovider.Server) { o.Limits = lim })
+		status, code, _ := post(t, srv)
+		if status != http.StatusTooManyRequests || code != "rate_limited" {
+			t.Fatalf("status %d, X-Pandokos-Error %q, want 429 rate_limited", status, code)
+		}
+		if n := len(lim.Of("reserve")); n != 1 {
+			t.Errorf("%d reserves", n)
+		}
+		if n := len(up.Requests()); n != 0 {
+			t.Errorf("the provider received %d requests", n)
+		}
+	})
+
+	t.Run("one built without Limits answers as before", func(t *testing.T) {
+		srv, up, _, _, _, _ := startServerOpts(t, nil, nil)
+		if status, code, _ := post(t, srv); status != 200 || code != "" {
+			t.Fatalf("status %d, X-Pandokos-Error %q", status, code)
+		}
+		if n := len(up.Requests()); n != 1 {
+			t.Errorf("the provider received %d requests", n)
+		}
+	})
+
+	t.Run("limits.default_output_tokens is the output reserved for a request without a limit", func(t *testing.T) {
+		lim := testutil.NewStaticLimits()
+		srv, _, _, _, _, _ := startServerOpts(t, func(c *config.Config) { c.Limits.DefaultOutputTokens = 1234 },
+			func(o *Options, _ *fakeprovider.Server) { o.Limits = lim })
+		if status, _, _ := post(t, srv); status != 200 {
+			t.Fatalf("status %d", status)
+		}
+		rs := lim.Of("reserve")
+		if len(rs) != 1 || rs[0].Estimate.OutputTokens != 1234 {
+			t.Fatalf("reserves %+v, want one with an output estimate of 1234", rs)
+		}
+	})
+}

@@ -90,6 +90,8 @@ fuzz: ## Run each fuzz target for FUZZTIME
 	go test ./internal/family/anthropic/ -run '^$$' -fuzz '^FuzzAnthropicReadUsage$$' -fuzztime $(FUZZTIME)
 	go test ./internal/family/anthropic/ -run '^$$' -fuzz '^FuzzAnthropicParseRequest$$' -fuzztime $(FUZZTIME)
 	go test ./internal/family/sse/ -run '^$$' -fuzz '^FuzzFraming$$' -fuzztime $(FUZZTIME)
+	go test ./internal/family/openai/ -run '^$$' -fuzz '^FuzzOutputBound$$' -fuzztime $(FUZZTIME)
+	go test ./internal/family/anthropic/ -run '^$$' -fuzz '^FuzzOutputBound$$' -fuzztime $(FUZZTIME)
 
 bench: ## Usage reader benchmark
 	go test ./internal/family/openai/ -run '^$$' -bench . -benchmem

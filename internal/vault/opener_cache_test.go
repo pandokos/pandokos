@@ -581,6 +581,10 @@ func TestOpenerCache(t *testing.T) {
 			{payload: "catalog:" + a.String()},
 			{payload: "catalog:" + b.String()},
 			{payload: "catalog:"},
+			{payload: "limits"}, // sprint 5.1: limit rules, not credentials
+			{payload: "limits:" + a.String()},
+			{payload: "limits:" + b.String()},
+			{payload: "limits:"},
 			{payload: "probe:0123456789abcdef"},
 			{payload: "probe:"},
 			{payload: "something:else", dropA: true, dropB: true},

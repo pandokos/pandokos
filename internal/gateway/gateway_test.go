@@ -1018,6 +1018,16 @@ func TestNewValidatesOptions(t *testing.T) {
 	if _, err := gateway.New(o); err != nil {
 		t.Fatalf("Failures is optional and may be set: %v", err)
 	}
+	o = good()
+	o.Limits = nil
+	if _, err := gateway.New(o); err != nil {
+		t.Fatalf("Limits is optional and may be nil: %v", err)
+	}
+	o = good()
+	o.Limits = testutil.NewStaticLimits()
+	if _, err := gateway.New(o); err != nil {
+		t.Fatalf("Limits may be set: %v", err)
+	}
 	for name, mutate := range map[string]func(*gateway.Options){
 		"logger":                func(o *gateway.Options) { o.Logger = nil },
 		"authenticator":         func(o *gateway.Options) { o.Authenticator = nil },
@@ -1036,6 +1046,8 @@ func TestNewValidatesOptions(t *testing.T) {
 		"recorder":              func(o *gateway.Options) { o.Recorder = nil },
 		"tracer":                func(o *gateway.Options) { o.Tracer = nil },
 		"a negative body limit": func(o *gateway.Options) { o.MaxRequestBodyBytes = -1 },
+		"no default output":     func(o *gateway.Options) { o.DefaultOutputTokens = 0 },
+		"a negative default":    func(o *gateway.Options) { o.DefaultOutputTokens = -1 },
 	} {
 		o := good()
 		mutate(&o)

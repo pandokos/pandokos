@@ -61,6 +61,14 @@ func startRecording(t *testing.T) (baseURL string, up *fakeprovider.Server, rec 
 // of its inference listener and the recorder of its usage records.
 func startServer(t *testing.T, providers map[string]string, targets map[string]gateway.Target, secrets map[string]string) (addr string, rec *testutil.MemoryRecorder) {
 	t.Helper()
+	return startServerWith(t, providers, targets, secrets, nil, testutil.InferencePrincipal())
+}
+
+// startServerWith is startServer with limits (nil enforces none) and the principal the test key
+// authenticates as, which the limits of a test are written for.
+func startServerWith(t *testing.T, providers map[string]string, targets map[string]gateway.Target, secrets map[string]string,
+	lim gateway.Limits, principal authz.Principal) (addr string, rec *testutil.MemoryRecorder) {
+	t.Helper()
 	rec = &testutil.MemoryRecorder{}
 	tp, _ := testutil.SpanRecorder(t)
 	cfg := config.Defaults()
@@ -68,7 +76,8 @@ func startServer(t *testing.T, providers map[string]string, targets map[string]g
 	cfg.Listeners.Admin.Address = "127.0.0.1:0"
 	srv, err := server.New(server.Options{
 		Config: cfg, Logger: telemetry.NewLogger(io.Discard, "info"), Admin: http.NotFoundHandler(),
-		Authenticator: testutil.StaticAuthenticator(map[string]authz.Principal{testKey: testutil.InferencePrincipal()}),
+		Authenticator: testutil.StaticAuthenticator(map[string]authz.Principal{testKey: principal}),
+		Limits:        lim,
 		Catalogue:     testutil.StaticCatalogue(providers, targets),
 		Credentials:   testutil.StaticCredentials(secrets),
 		Egress:        testutil.TestGuard(t),

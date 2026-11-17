@@ -36,6 +36,12 @@ func NewRuleCache(o RuleCacheOptions) (*RuleCache, error) {
 	}, o)
 }
 
+// NewRuleCacheFunc builds a RuleCache whose loader is load, for tests and tools that keep the rules
+// in memory instead of in the database.
+func NewRuleCacheFunc(load func(context.Context, tenant.ID) (RuleSet, error), o RuleCacheOptions) (*RuleCache, error) {
+	return newRuleCache(load, o)
+}
+
 func newRuleCache(load func(context.Context, tenant.ID) (RuleSet, error), o RuleCacheOptions) (*RuleCache, error) {
 	if load == nil {
 		return nil, errors.New("limits: the rule cache needs a loader")

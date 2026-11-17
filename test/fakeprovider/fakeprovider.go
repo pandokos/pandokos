@@ -124,6 +124,7 @@ type Server struct {
 	steps     chan struct{}
 	basePath  string
 	nextReqID atomic.Int64
+	reportN   atomic.Int64
 }
 
 // New starts a plain HTTP/1.1 fake on 127.0.0.1; it is closed through tb.Cleanup.
@@ -339,6 +340,46 @@ func (s *Server) GateEachEvent() { s.stepping.Store(true) }
 // Advance lets one gated stream send its next event.
 func (s *Server) Advance() { s.steps <- struct{}{} }
 
+// ReportTokens makes every answer that is not a stream report usage of n tokens in all: one of
+// input and n-1 of output, with the total where the document has one. A test passes the
+// reservation it expects plus the excess it wants to simulate. Zero, the default, leaves the
+// fixtures as they are.
+func (s *Server) ReportTokens(n int64) { s.reportN.Store(n) }
+
+// report rewrites the usage of a JSON document according to ReportTokens.
+func (s *Server) report(doc []byte) []byte {
+	n := s.reportN.Load()
+	if n <= 0 {
+		return doc
+	}
+	var m map[string]any
+	if json.Unmarshal(doc, &m) != nil {
+		return doc
+	}
+	u, ok := m["usage"].(map[string]any)
+	if !ok {
+		return doc
+	}
+	for _, k := range []string{"prompt_tokens", "input_tokens"} {
+		if _, ok := u[k]; ok {
+			u[k] = 1
+		}
+	}
+	for _, k := range []string{"completion_tokens", "output_tokens"} {
+		if _, ok := u[k]; ok {
+			u[k] = n - 1
+		}
+	}
+	if _, ok := u["total_tokens"]; ok {
+		u["total_tokens"] = n
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return doc
+	}
+	return out
+}
+
 // Release lets gated and hanging handlers continue. It is idempotent.
 func (s *Server) Release() { s.once.Do(func() { close(s.gate) }) }
 
@@ -521,7 +562,7 @@ func streams(op string) bool { return op == pathChat || op == pathResponses }
 
 func (s *Server) answer(w http.ResponseWriter, r *http.Request, op string, stream, includeUsage, gated bool) {
 	if !stream || !streams(op) {
-		writeJSON(w, http.StatusOK, oneOf(op, "chat_completion.json"))
+		writeJSON(w, http.StatusOK, s.report(oneOf(op, "chat_completion.json")))
 		return
 	}
 	if op == pathResponses {
