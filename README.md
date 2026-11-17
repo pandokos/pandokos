@@ -15,8 +15,6 @@ Federated identity is tested in CI against **Keycloak 26.8**, **Ory Hydra v26.2*
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/pandokos/pandokos)](https://github.com/pandokos/pandokos/releases)
 
-https://github.com/user-attachments/assets/eb59d47f-a988-45dd-bb48-637374107999
-
 ## How it compares
 
 Pandokos is younger and narrower than LiteLLM and Bifrost. It does fewer things, and puts tenant
@@ -65,6 +63,8 @@ From nothing to a first OpenAI call through Pandokos in three commands, on your 
 Docker with Compose v2, `openssl`, `curl` and an OpenAI API key. This is a local trial, **not a
 production setup**: one instance, PostgreSQL in a container, a self-signed certificate, ports
 published on `127.0.0.1` only.
+
+https://github.com/user-attachments/assets/eb59d47f-a988-45dd-bb48-637374107999
 
 **1. Get the deployment files.**
 
