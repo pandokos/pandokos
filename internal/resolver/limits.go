@@ -9,6 +9,7 @@ import (
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/gateway"
 	"github.com/pandokos/pandokos/internal/limits"
+	"github.com/pandokos/pandokos/internal/tenant"
 )
 
 // LimitsOptions configure Limits.
@@ -43,7 +44,70 @@ func NewLimits(o LimitsOptions) (*Limits, error) {
 	return &Limits{rules: o.Rules, store: o.Store, ttl: o.TTL, log: o.Logger}, nil
 }
 
-// Reserve is not implemented yet.
-func (l *Limits) Reserve(context.Context, authz.Principal, gateway.LimitEstimate) (gateway.Reservation, *gateway.LimitRefusal, error) {
-	return nil, nil, errors.New("resolver: limits are not implemented")
+// settleTimeout bounds a call to the store made after the request ended.
+const settleTimeout = 2 * time.Second
+
+// noReservation is the reservation of a call no limit applies to: it does nothing.
+type noReservation struct{}
+
+func (noReservation) Settle(gateway.LimitUsage) {}
+func (noReservation) Release()                  {}
+
+// reservation ends a reservation of the store. It uses a context of its own: the request's is
+// often cancelled by the time the request ends.
+type reservation struct {
+	l   *Limits
+	id  string
+	res limits.Reservation
+}
+
+func (r *reservation) Settle(u gateway.LimitUsage) {
+	ctx, cancel := context.WithTimeout(context.Background(), settleTimeout)
+	defer cancel()
+	r.log(r.l.store.Settle(ctx, r.res, limits.Amounts{Tokens: u.Tokens, Cost: u.Cost}))
+}
+
+func (r *reservation) Release() {
+	ctx, cancel := context.WithTimeout(context.Background(), settleTimeout)
+	defer cancel()
+	r.log(r.l.store.Release(ctx, r.res))
+}
+
+func (r *reservation) log(err error) {
+	if err != nil {
+		r.l.log.Error("limit settle failed", "request_id", r.id, "error", err.Error())
+	}
+}
+
+// Reserve reserves the estimate against the limits of the principal's service account, key and
+// tenant. A principal no limit applies to gets a reservation that does nothing.
+func (l *Limits) Reserve(ctx context.Context, p authz.Principal, e gateway.LimitEstimate) (gateway.Reservation, *gateway.LimitRefusal, error) {
+	if p.Kind != authz.KindServiceAccount || p.TenantID == (tenant.ID{}) {
+		return nil, nil, errors.New("resolver: limits need a service account principal with a tenant")
+	}
+	rules, err := l.rules.Rules(ctx, p.TenantID)
+	if err != nil {
+		return nil, nil, err
+	}
+	ls := rules.For(p.ID, p.KeyID)
+	if len(ls) == 0 {
+		return noReservation{}, nil, nil
+	}
+	res, ref, err := l.store.Reserve(ctx, limits.Request{
+		ID:       e.RequestID,
+		Limits:   ls,
+		Estimate: limits.Amounts{Tokens: e.InputTokens + e.OutputTokens, Cost: e.Cost},
+		TTL:      l.ttl,
+	})
+	switch {
+	case err != nil:
+		return nil, nil, err
+	case ref != nil:
+		return nil, &gateway.LimitRefusal{
+			Level: ref.Limit.Level, Subject: string(ref.Limit.Subject), Metric: string(ref.Limit.Metric),
+			Limit: ref.Limit.Max, Remaining: ref.Remaining, RetryAfter: ref.RetryAfter, Reset: ref.Reset,
+			OverLimit: ref.OverLimit,
+		}, nil
+	}
+	return &reservation{l: l, id: e.RequestID, res: res}, nil, nil
 }

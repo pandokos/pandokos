@@ -22,14 +22,15 @@ import (
 // fakeStore is a limits.Store that records what the adapter asks of it. It admits unless refuse
 // is set.
 type fakeStore struct {
-	mu         sync.Mutex
-	reserves   []limits.Request
-	settles    []limits.Amounts
-	releases   int
-	settleCtx  context.Context
-	refuse     *limits.Refusal
-	settleErr  error
-	releaseErr error
+	mu              sync.Mutex
+	reserves        []limits.Request
+	settles         []limits.Amounts
+	releases        int
+	settleCtx       context.Context
+	settleErrAtCall error // ctx.Err() as the store saw it
+	refuse          *limits.Refusal
+	settleErr       error
+	releaseErr      error
 }
 
 func (f *fakeStore) Reserve(_ context.Context, r limits.Request) (limits.Reservation, *limits.Refusal, error) {
@@ -46,7 +47,7 @@ func (f *fakeStore) Settle(ctx context.Context, _ limits.Reservation, a limits.A
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.settles = append(f.settles, a)
-	f.settleCtx = ctx
+	f.settleCtx, f.settleErrAtCall = ctx, ctx.Err()
 	return f.settleErr
 }
 
@@ -54,7 +55,7 @@ func (f *fakeStore) Release(ctx context.Context, _ limits.Reservation) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.releases++
-	f.settleCtx = ctx
+	f.settleCtx, f.settleErrAtCall = ctx, ctx.Err()
 	return f.releaseErr
 }
 
@@ -259,7 +260,7 @@ func TestLimitsAdapter(t *testing.T) {
 			} else {
 				res.Release()
 			}
-			if st.settleCtx == nil || st.settleCtx.Err() != nil {
+			if st.settleCtx == nil || st.settleErrAtCall != nil {
 				t.Errorf("%s: the store got a cancelled context", end)
 			}
 		}

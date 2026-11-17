@@ -36,7 +36,7 @@ func (d *Database) SetLimitRule(tb testing.TB, id tenant.ID, subjectKind, subjec
 	defer cancel()
 	err := adm.WithTenant(ctx, id, func(c context.Context, tx store.Tx) error {
 		tag, err := tx.Exec(c, `UPDATE pandokos.limit_rule SET limit_value = $5
-			WHERE subject_kind = $2 AND subject_id = $3 AND metric = $4`, id.String(), subjectKind, subjectID, metric, value)
+			WHERE tenant_id = $1::uuid AND subject_kind = $2 AND subject_id = $3 AND metric = $4`, id.String(), subjectKind, subjectID, metric, value)
 		if err == nil && tag.RowsAffected() != 1 {
 			tb.Errorf("set limit rule: %d rows changed", tag.RowsAffected())
 		}
