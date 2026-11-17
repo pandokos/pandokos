@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -292,4 +293,34 @@ func TestRuleCache(t *testing.T) {
 			t.Error("NewRuleCache without a database accepted")
 		}
 	})
+}
+
+// TestSkippedRulesLogged: the number of rules a load skipped is logged once, at debug level,
+// through the cache's own logger.
+func TestSkippedRulesLogged(t *testing.T) {
+	l, buf := newLogger()
+	a := tid(1)
+	skipped := 2
+	c, err := newCountingRuleCache(func(context.Context, tenant.ID) (RuleSet, int, error) {
+		return NewRuleSet(a, nil, nil, nil), skipped, nil
+	}, RuleCacheOptions{Logger: l, TTL: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Rules(context.Background(), a); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if n := strings.Count(out, "skipped"); n < 1 || !strings.Contains(out, `"skipped":2`) || !strings.Contains(out, `"level":"DEBUG"`) {
+		t.Errorf("log %q, want one debug line with skipped=2", out)
+	}
+	skipped = 0
+	c.Flush()
+	buf.buf.Reset()
+	if _, err := c.Rules(context.Background(), a); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "skipped") {
+		t.Errorf("a load that skipped nothing logged %q", buf.String())
+	}
 }

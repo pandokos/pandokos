@@ -47,7 +47,7 @@ type ruleFlight struct {
 // the start of its load; a notification drops it sooner; a failure is not cached. It is safe for
 // concurrent use.
 type RuleCache struct {
-	load func(context.Context, tenant.ID) (RuleSet, error)
+	load func(context.Context, tenant.ID) (RuleSet, int, error)
 	log  *slog.Logger
 	ttl  time.Duration
 	now  func() time.Time
@@ -63,8 +63,8 @@ func NewRuleCache(o RuleCacheOptions) (*RuleCache, error) {
 	if o.DB == nil {
 		return nil, errors.New("limits: the rule cache needs a database")
 	}
-	return newRuleCache(func(ctx context.Context, id tenant.ID) (RuleSet, error) {
-		return LoadRules(ctx, o.DB, id)
+	return newCountingRuleCache(func(ctx context.Context, id tenant.ID) (RuleSet, int, error) {
+		return loadRules(ctx, o.DB, id)
 	}, o)
 }
 
@@ -75,6 +75,17 @@ func NewRuleCacheFunc(load func(context.Context, tenant.ID) (RuleSet, error), o 
 }
 
 func newRuleCache(load func(context.Context, tenant.ID) (RuleSet, error), o RuleCacheOptions) (*RuleCache, error) {
+	if load == nil {
+		return newCountingRuleCache(nil, o)
+	}
+	return newCountingRuleCache(func(ctx context.Context, id tenant.ID) (RuleSet, int, error) {
+		set, err := load(ctx, id)
+		return set, 0, err
+	}, o)
+}
+
+// newCountingRuleCache is newRuleCache with a loader that also returns how many rules it skipped.
+func newCountingRuleCache(load func(context.Context, tenant.ID) (RuleSet, int, error), o RuleCacheOptions) (*RuleCache, error) {
 	switch {
 	case load == nil:
 		return nil, errors.New("limits: the rule cache needs a loader")
@@ -113,9 +124,12 @@ func (c *RuleCache) Rules(ctx context.Context, id tenant.ID) (RuleSet, error) {
 		go func() {
 			lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ruleLoadTimeout)
 			defer cancel()
-			f.val, f.err = c.load(lctx, id)
+			var skipped int
+			f.val, skipped, f.err = c.load(lctx, id)
 			if f.err != nil {
 				c.log.Warn("limit rules unavailable", "tenant_id", id.String())
+			} else if skipped > 0 {
+				c.log.Debug("limit rules of an unknown metric or subject skipped", "tenant_id", id.String(), "skipped", skipped)
 			}
 			c.mu.Lock()
 			if c.flights[id] == f {

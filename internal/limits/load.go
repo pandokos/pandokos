@@ -3,7 +3,6 @@ package limits
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/queries"
@@ -15,9 +14,15 @@ const MaxRulesPerTenant = 5000
 
 // LoadRules reads the rules of one tenant in one tenant transaction on the gateway pool: the
 // platform rules (the defaults and the tenant's own row), then the tenant's rules. A metric or
-// subject kind this version does not know (a newer schema during an upgrade) is skipped and
-// counted in one debug line.
+// subject kind this version does not know (a newer schema during an upgrade) is skipped; the
+// rule cache logs how many in one debug line.
 func LoadRules(ctx context.Context, db *store.DB, id tenant.ID) (RuleSet, error) {
+	set, _, err := loadRules(ctx, db, id)
+	return set, err
+}
+
+// loadRules is LoadRules that also returns the number of rules skipped.
+func loadRules(ctx context.Context, db *store.DB, id tenant.ID) (RuleSet, int, error) {
 	var set RuleSet
 	skipped := 0
 	err := db.WithTenant(ctx, id, func(ctx context.Context, tx store.Tx) error {
@@ -59,10 +64,7 @@ func LoadRules(ctx context.Context, db *store.DB, id tenant.ID) (RuleSet, error)
 		return nil
 	})
 	if err != nil {
-		return RuleSet{}, fmt.Errorf("limits: load rules: %w", err)
+		return RuleSet{}, 0, fmt.Errorf("limits: load rules: %w", err)
 	}
-	if skipped > 0 {
-		slog.Debug("limit rules of an unknown metric or subject skipped", "tenant_id", id.String(), "skipped", skipped)
-	}
-	return set, nil
+	return set, skipped, nil
 }
