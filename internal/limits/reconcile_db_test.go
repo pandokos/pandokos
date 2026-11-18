@@ -183,6 +183,28 @@ func TestReconciler(t *testing.T) {
 			}
 		})
 
+		t.Run("ensure: a restart just after midnight counts the day from the ledger", func(t *testing.T) {
+			c := d.SeedTenant(t, "rec-midnight")
+			d.SeedUsage(t, c,
+				dbtest.UsageRow{StartedAt: utc(2026, 11, 17, 0, 1, 0), InputTokens: 4},
+				dbtest.UsageRow{StartedAt: utc(2026, 11, 17, 0, 1, 30), InputTokens: 6},
+			)
+			f := newReconcilerFixture(t, d, time.Minute)
+			f.clk.advance(-(11*time.Hour + 55*time.Minute)) // 00:05
+			l := f.limit(c, limits.RequestsPerDay, limits.PerDay)
+			l.Max = 2
+			if err := f.rec.Ensure(ctx, c, []limits.Limit{l}); err != nil {
+				t.Fatal(err)
+			}
+			if got := mustCounted(t, f.mem, l); got.N != 2 {
+				t.Fatalf("the day counts %d, the ledger holds 2", got.N)
+			}
+			_, ref, err := f.mem.Reserve(ctx, limits.Request{ID: "r", Limits: []limits.Limit{l}, Start: f.clk.now(), TTL: time.Minute})
+			if err != nil || ref == nil {
+				t.Fatalf("reserve after the restart: refusal %v, error %v; want a refusal", ref, err)
+			}
+		})
+
 		t.Run("ensure: nothing is cached after a failure", func(t *testing.T) {
 			f := newReconcilerFixture(t, d, time.Minute)
 			l := f.limit(a, limits.TokensPerMonth, limits.PerMonth)

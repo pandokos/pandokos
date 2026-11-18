@@ -337,6 +337,28 @@ func (m *Memory) Missing(ls []Limit) []Limit {
 	return out
 }
 
+// NeedsLoad returns the period limits of ls that have no counter and whose period began before
+// the store started to follow the tenant (or before its cut): the ledger may hold requests of
+// the period that this process never saw, so the counter must be loaded, not created empty. A
+// period that begins later is created by Reserve; Missing is the narrower set Reserve cannot
+// serve.
+func (m *Memory) NeedsLoad(ls []Limit) []Limit {
+	var out []Limit
+	for _, l := range ls {
+		if !isPeriod(l.Metric) {
+			continue
+		}
+		sh := m.shardOf(l.Tenant)
+		sh.mu.Lock()
+		ts := sh.ten[l.Tenant]
+		if ts == nil || (ts.pcs[keyOf(l)] == nil && (l.Period.Start.Before(ts.cut) || l.Period.Start.Before(ts.setAt))) {
+			out = append(out, l)
+		}
+		sh.mu.Unlock()
+	}
+	return out
+}
+
 // seed splits the rows a limit counts into the base (before the live part) and the minutes.
 func seed(l Limit, rows []UsageGroup) (base amt, mins []liveMin) {
 	cost := l.Metric.Cost()
@@ -363,6 +385,13 @@ func seed(l Limit, rows []UsageGroup) (base amt, mins []liveMin) {
 	return base, mins
 }
 
+// PeriodLoad is the rows of one period for the limits that count it.
+type PeriodLoad struct {
+	Period Period
+	Limits []Limit
+	Rows   []UsageGroup
+}
+
 // Load creates the counters of ls for one period from rows read with liveFrom = the tenant's
 // cut. A counter that exists is left alone; a tenant without a cut gets no counter. A day and a
 // month that start at the same instant are loaded from the same rows, so a limit is served when
@@ -371,6 +400,25 @@ func (m *Memory) Load(t tenant.ID, p Period, ls []Limit, rows []UsageGroup) {
 	sh := m.shardOf(t)
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
+	m.loadLocked(sh, t, p, ls, rows)
+}
+
+// Install gives the tenant its cut (only when it has none) and creates the counters of every
+// load in one critical section, so a Reserve cannot create a counter of those periods empty
+// between the cut and the loads.
+func (m *Memory) Install(t tenant.ID, cut time.Time, loads []PeriodLoad) {
+	sh := m.shardOf(t)
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+	if sh.ten[t] == nil {
+		sh.ten[t] = &tenantPeriods{cut: cut, setAt: m.now(), pcs: map[counterKey]*counter{}}
+	}
+	for _, ld := range loads {
+		m.loadLocked(sh, t, ld.Period, ld.Limits, ld.Rows)
+	}
+}
+
+func (m *Memory) loadLocked(sh *shard, t tenant.ID, p Period, ls []Limit, rows []UsageGroup) {
 	ts := sh.ten[t]
 	if ts == nil {
 		return

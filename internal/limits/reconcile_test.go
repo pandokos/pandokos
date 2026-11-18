@@ -223,6 +223,48 @@ func TestLoadFoldRebase(t *testing.T) {
 		}
 	})
 
+	t.Run("the reconciler: a restart just after the boundary loads the period that starts after the cut", func(t *testing.T) {
+		e := newRecEnv(t)
+		e.clk.t = at(2026, 11, 17, 0, 5, 0) // the cut is 23:52 of the day before: the day starts after it
+		day := utcCal.Of(PerDay, e.clk.now())
+		for i := range 10 {
+			e.commit(at(2026, 11, 17, 0, 1, i), "k1", 5, 0)
+		}
+		l := e.limit(RequestsPerDay, day)
+		l.Max = 10
+		lm := e.limit(TokensPerMonth, utcCal.Of(PerMonth, e.clk.now()))
+		if err := e.rec.Ensure(bg, e.tn, []Limit{l, lm}); err != nil {
+			t.Fatal(err)
+		}
+		if cut := e.cut(t); !cut.Before(day.Start) {
+			t.Fatalf("cut %v, want a cut before the day starts", cut)
+		}
+		if c := counted(t, e.m, l); c.N != 10 {
+			t.Fatalf("the day counts %d after the restart, the ledger holds 10", c.N)
+		}
+		if c := counted(t, e.m, lm); c.N != 50 {
+			t.Fatalf("the month counts %d, want 50", c.N)
+		}
+		mustRefuse(t, e.m, periodReq("after", e.clk.now(), time.Hour, 1, pricing.Cost{}, l))
+		// A limit of the same tenant first needed later (another key): the process saw the tenant
+		// after the period began, so its counter is loaded too, not created empty.
+		e.commit(at(2026, 11, 17, 0, 2, 0), "k2", 7, 0)
+		e.clk.advance(time.Minute)
+		lk := perLimit(e.tn, SubjectKey, "k2", TokensPerDay, 1_000_000, day)
+		if err := e.rec.Ensure(bg, e.tn, []Limit{lk}); err != nil {
+			t.Fatal(err)
+		}
+		if c := counted(t, e.m, lk); c.N != 7 {
+			t.Fatalf("the key counts %d, the ledger holds 7", c.N)
+		}
+		// The live rows are swapped, not added, by the fold.
+		e.clk.advance(15 * time.Minute)
+		e.rec.Tick(bg)
+		if c := counted(t, e.m, l); c.N != 11 {
+			t.Errorf("the day counts %d after the fold, want 11: the 10 loaded as live minutes swapped once, and the record of k2", c.N)
+		}
+	})
+
 	t.Run("the reconciler: the cut stops at a pending record and never moves back", func(t *testing.T) {
 		e := newRecEnv(t)
 		mon := utcCal.Of(PerMonth, e.clk.now())

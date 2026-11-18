@@ -96,7 +96,7 @@ func earlier(a, b time.Time) time.Time {
 // Ensure makes sure the period counters of ls are loaded. When there is nothing to load it
 // takes no lock of its own.
 func (r *Reconciler) Ensure(ctx context.Context, t tenant.ID, ls []Limit) error {
-	if len(r.o.Store.Missing(ls)) == 0 {
+	if len(r.o.Store.NeedsLoad(ls)) == 0 {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, ensureTimeout)
@@ -106,7 +106,7 @@ func (r *Reconciler) Ensure(ctx context.Context, t tenant.ID, ls []Limit) error 
 		return err
 	}
 	defer unlock()
-	missing := r.o.Store.Missing(ls)
+	missing := r.o.Store.NeedsLoad(ls)
 	if len(missing) == 0 {
 		return nil
 	}
@@ -115,37 +115,26 @@ func (r *Reconciler) Ensure(ctx context.Context, t tenant.ID, ls []Limit) error 
 	if !has {
 		cut = r.cut(now)
 	}
-	type load struct {
-		p    Period
-		ls   []Limit
-		rows []UsageGroup
-	}
-	var loads []*load
+	var loads []PeriodLoad
 next:
 	for _, l := range missing {
-		if !l.Period.Start.Before(cut) {
-			continue // Reserve creates it
-		}
-		for _, ld := range loads {
-			if samePeriod(ld.p, l.Period) {
-				ld.ls = append(ld.ls, l)
+		for i := range loads {
+			if samePeriod(loads[i].Period, l.Period) {
+				loads[i].Limits = append(loads[i].Limits, l)
 				continue next
 			}
 		}
-		loads = append(loads, &load{p: l.Period, ls: []Limit{l}})
+		loads = append(loads, PeriodLoad{Period: l.Period, Limits: []Limit{l}})
 	}
-	for _, ld := range loads {
-		rows, err := r.o.Ledger.Usage(ctx, t, ld.p.Start, cut, earlier(now, ld.p.End))
+	for i := range loads {
+		rows, err := r.o.Ledger.Usage(ctx, t, loads[i].Period.Start, cut, earlier(now, loads[i].Period.End))
 		if err != nil {
 			return err
 		}
-		ld.rows = rows
+		loads[i].Rows = rows
 	}
-	// Nothing was changed until every query succeeded.
-	r.o.Store.SetCut(t, cut)
-	for _, ld := range loads {
-		r.o.Store.Load(t, ld.p, ld.ls, ld.rows)
-	}
+	// Nothing was changed until every query succeeded; the cut and the counters appear together.
+	r.o.Store.Install(t, cut, loads)
 	r.mu.Lock()
 	if _, ok := r.rebased[t]; !ok {
 		r.rebased[t] = now

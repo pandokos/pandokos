@@ -69,8 +69,9 @@ type prop struct {
 	seen       map[string]Limit
 	trace      []string
 	lastTick   time.Time
-	admitting  *refReq // the request being admitted: it left pend but its start bounds the cut
-	laggy      bool    // records are committed after a delay, may be lost, others write too
+	admitting  *refReq   // the request being admitted: it left pend but its start bounds the cut
+	boundary   time.Time // restart schedules: the cut the by-hand ensure uses, before the period starts
+	laggy      bool      // records are committed after a delay, may be lost, others write too
 }
 
 func newProp(t *testing.T, seed uint64, n int, withReconciler bool) *prop {
@@ -110,6 +111,31 @@ func newProp(t *testing.T, seed uint64, n int, withReconciler bool) *prop {
 	}
 	p.lastTick = clk.now()
 	return p
+}
+
+// restartAfterBoundary makes the schedule start the way a restart just after local midnight or the
+// 1st of the month does: the clock is a few minutes after the boundary (inside the horizon) and the
+// ledger holds the records of the period that began before the process started. The store knows
+// none of them, so every counter must be loaded from the ledger, not created empty.
+func (p *prop) restartAfterBoundary(n int) {
+	rng := rngOf(uint64(p.rng.Uint64()), n+1000)
+	kind := PerDay
+	if rng.IntN(3) == 0 {
+		kind = PerMonth
+	}
+	per := p.cal.Of(kind, p.clk.now())
+	now := per.Start.Add(time.Duration(1+rng.IntN(12)) * time.Minute)
+	p.clk.t = now
+	p.lastTick = now
+	p.boundary = per.Start.Add(-time.Minute)
+	for range 6 + rng.IntN(12) {
+		start := per.Start.Add(time.Duration(rng.Int64N(int64(now.Sub(per.Start)))))
+		tokens := int64(1 + rng.IntN(300))
+		p.model.add(&refReq{tn: p.tn, sa: []string{"s1", "s2"}[rng.IntN(2)], key: []string{"k1", "k2"}[rng.IntN(2)],
+			provider: []string{"p1", "p2"}[rng.IntN(2)], model: []string{"m1", "m2"}[rng.IntN(2)], start: start, end: refSettled,
+			admitted: true, actTokens: tokens, actCost: int64(1 + rng.IntN(400_000)), commitAt: start, resolveAt: start})
+	}
+	p.logf("restart %s after the start of the %s", now.Sub(per.Start), per.Start.Format(time.RFC3339))
 }
 
 func (p *prop) logf(format string, args ...any) {
@@ -165,7 +191,7 @@ func (p *prop) ensure(ls []Limit) error {
 	if p.rec != nil {
 		return p.rec.Ensure(context.Background(), p.tn, ls)
 	}
-	miss := p.m.Missing(ls)
+	miss := p.m.NeedsLoad(ls)
 	if len(miss) == 0 {
 		return nil
 	}
@@ -180,16 +206,17 @@ func (p *prop) ensure(ls []Limit) error {
 				oldest = q.start
 			}
 		}
+		if !p.boundary.IsZero() {
+			oldest = p.boundary
+		}
 		p.m.SetCut(p.tn, oldest.Truncate(time.Minute))
 	}
 	cut, _ := p.m.Cut(p.tn)
 	byPeriod := map[time.Time][]Limit{}
 	periods := map[time.Time]Period{}
 	for _, l := range miss {
-		if l.Period.Start.Before(cut) {
-			byPeriod[l.Period.Start] = append(byPeriod[l.Period.Start], l)
-			periods[l.Period.Start] = l.Period
-		}
+		byPeriod[l.Period.Start] = append(byPeriod[l.Period.Start], l)
+		periods[l.Period.Start] = l.Period
 	}
 	for s, ls := range byPeriod {
 		rows, err := p.led.Usage(context.Background(), p.tn, s, cut, now.Add(time.Second))
@@ -457,6 +484,9 @@ func TestPropertyPeriods(t *testing.T) {
 	for n := range max(1, schedules()/10) {
 		p := newProp(t, seed, n, false)
 		last = p
+		if n%2 == 1 {
+			p.restartAfterBoundary(n)
+		}
 		p.run(80)
 		if got := p.m.Outstanding(); got != 0 {
 			p.fail("%d reservations outstanding after everything ended", got)
@@ -493,9 +523,12 @@ func TestPropertyReconcile(t *testing.T) {
 			last.fail("no counter was left to compare in any schedule")
 		}
 	}()
-	for n := range max(1, schedules()/20) {
+	for n := range max(2, schedules()/20) { // the odd ones restart just after a boundary
 		p := newProp(t, seed, n, true)
 		last = p
+		if n%2 == 1 {
+			p.restartAfterBoundary(n)
+		}
 		p.run(90)
 		// H + the interval after the last request, and one more tick: every counter is the ledger.
 		p.advance(testHorizon + testInterval + 2*time.Minute)
