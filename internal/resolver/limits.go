@@ -193,15 +193,16 @@ func (l *Limits) Reserve(ctx context.Context, p authz.Principal, e gateway.Limit
 	}
 
 	// Unpriced: a cost limit whose currency the estimate cannot be priced in.
-	var unpriced bool
+	var unpriced, enforced bool
 	for _, x := range ls {
 		if cannotMeasure(x, e) {
 			unpriced = true
-			break
+			// An unenforced budget (threshold events only) never refuses: enforce false.
+			enforced = enforced || x.Max > 0
 		}
 	}
 	if unpriced {
-		if l.refusePrice {
+		if l.refusePrice && enforced {
 			return nil, &gateway.LimitRefusal{Code: string(family.CodeNoPrice)}, nil
 		}
 		kept := make([]limits.Limit, 0, len(ls))
@@ -237,13 +238,21 @@ func (l *Limits) Reserve(ctx context.Context, p authz.Principal, e gateway.Limit
 		return wrap(noReservation{}, unpriced, unverified), nil, nil
 	}
 
-	res, ref, err := l.store.Reserve(ctx, limits.Request{
+	req := limits.Request{
 		ID:       e.RequestID,
 		Limits:   ls,
 		Start:    e.Start,
 		Estimate: limits.Amounts{Tokens: e.InputTokens + e.OutputTokens, Cost: e.Cost},
 		TTL:      l.ttl,
-	})
+	}
+	res, ref, err := l.store.Reserve(ctx, req)
+	if errors.Is(err, limits.ErrNotLoaded) && hasPeriod && l.ensurer != nil && ctx.Err() == nil {
+		// A sweep dropped the counter or the cut between the load and the reservation: load it
+		// again, once, before the failure policy applies.
+		if err = l.ensurer.Ensure(ctx, p.TenantID, ls); err == nil {
+			res, ref, err = l.store.Reserve(ctx, req)
+		}
+	}
 	switch {
 	case err != nil:
 		if l.refuseStore || ctx.Err() != nil {

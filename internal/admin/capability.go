@@ -102,7 +102,7 @@ func (s *server) GetCapability(ctx context.Context, in adminapi.GetCapabilityInp
 }
 
 // budgetCheck is checks.budget (sprint 5.2, section 5.13): the enforced period limits of the tenant
-// that match the provider and the model, read from the ledger by the admin role, never from the
+// that match the provider and the model, read from the ledger on the worker pool (inside the tenant session, under RLS), never from the
 // counters of the gateway. As the rest of the check it describes a key of the tenant without pin
 // and model list, so the rules of service accounts and keys, soft rules and rate limits take no
 // part; requests in flight are not counted.

@@ -367,6 +367,30 @@ func (f *fakeEnsurer) n() int {
 	return len(f.calls)
 }
 
+// notLoadedStore returns limits.ErrNotLoaded from the first failures reserves.
+type notLoadedStore struct {
+	*fakeStore
+	failures int
+	n        int
+}
+
+func (s *notLoadedStore) Reserve(ctx context.Context, r limits.Request) (limits.Reservation, *limits.Refusal, error) {
+	s.mu.Lock()
+	s.n++
+	fail := s.n <= s.failures
+	s.mu.Unlock()
+	if fail {
+		return limits.Reservation{}, nil, limits.ErrNotLoaded
+	}
+	return s.fakeStore.Reserve(ctx, r)
+}
+
+func (s *notLoadedStore) attempts() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.n
+}
+
 func periodAdapter(t *testing.T, rules []limits.Rule, store limits.Store, ens resolver.Ensurer, unknownPrice, storeFailure string) (*resolver.Limits, *logSink) {
 	t.Helper()
 	sink := &logSink{}
@@ -509,6 +533,31 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 		}
 	})
 
+	t.Run("on_unknown_price refuse: an unenforced budget never refuses; it is dropped and marked", func(t *testing.T) {
+		soft := periodRule("soft", limits.CostPerMonth, 100_000_000, "", "", "EUR")
+		soft.Enforce = false
+		soft.Thresholds = []int{80}
+		for _, setting := range []string{"", "refuse"} {
+			st := &fakeStore{}
+			l, _ := periodAdapter(t, []limits.Rule{soft, periodRule("q", limits.RequestsPerDay, 5, "", "", "")}, st, &fakeEnsurer{}, setting, "")
+			res, ref, err := l.Reserve(bg, p, est) // the estimate is in USD, the budget in EUR
+			if err != nil || ref != nil || res == nil {
+				t.Fatalf("%q: %v %v %v, want an admission: enforce false never refuses", setting, res, ref, err)
+			}
+			if len(st.reserves) != 1 || len(st.reserves[0].Limits) != 1 || st.reserves[0].Limits[0].RuleID != "q" {
+				t.Errorf("%q: reserves %+v, want the request quota only", setting, st.reserves)
+			}
+			if m, ok := res.(unpricedMark); !ok || !m.Unpriced() {
+				t.Errorf("%q: the reservation does not say the budget was left out", setting)
+			}
+		}
+		// An enforced budget beside it still refuses.
+		l, _ := periodAdapter(t, []limits.Rule{soft, budget}, &fakeStore{}, &fakeEnsurer{}, "refuse", "")
+		if _, ref, err := l.Reserve(bg, p, est); err != nil || ref == nil || ref.Code != "no_price" {
+			t.Errorf("an enforced budget: %v %v, want no_price", ref, err)
+		}
+	})
+
 	t.Run("on_unknown_price refuse: a price in the currency of the budget is measured", func(t *testing.T) {
 		st := &fakeStore{}
 		usd := periodRule("b", limits.CostPerMonth, 100_000_000, "", "", "USD")
@@ -581,6 +630,39 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 			}
 			if len(st.reserves) != 0 {
 				t.Errorf("%q: the store was called", setting)
+			}
+		}
+	})
+
+	t.Run("a counter dropped between ensure and reserve is loaded again once", func(t *testing.T) {
+		for _, c := range []struct {
+			name     string
+			failures int
+			setting  string
+			wantErr  bool
+			wantUnv  bool
+		}{
+			{"one drop", 1, "refuse", false, false},
+			{"two drops, refuse", 2, "refuse", true, false},
+			{"two drops, allow", 2, "allow", false, true},
+		} {
+			st := &notLoadedStore{fakeStore: &fakeStore{}, failures: c.failures}
+			ens := &fakeEnsurer{}
+			l, _ := periodAdapter(t, []limits.Rule{periodRule("q", limits.RequestsPerDay, 5, "", "", "")}, st, ens, "", c.setting)
+			res, ref, err := l.Reserve(bg, p, est)
+			if (err != nil) != c.wantErr || ref != nil || (err == nil && res == nil) {
+				t.Fatalf("%s: %v %v %v", c.name, res, ref, err)
+			}
+			if ens.n() != 2 {
+				t.Errorf("%s: %d loads, want 2 (one more after ErrNotLoaded, and no more)", c.name, ens.n())
+			}
+			if st.attempts() != min(c.failures+1, 2) {
+				t.Errorf("%s: %d reserves, want %d", c.name, st.attempts(), min(c.failures+1, 2))
+			}
+			if err == nil {
+				if m, ok := res.(unverifiedMark); c.wantUnv && (!ok || !m.Unverified()) || !c.wantUnv && ok && m.Unverified() {
+					t.Errorf("%s: unverified mark wrong: %#v", c.name, res)
+				}
 			}
 		}
 	})
