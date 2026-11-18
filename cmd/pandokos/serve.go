@@ -258,6 +258,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		Refresh:   refresh,
 	}
 	adminOpts.Limits.Calendar, adminOpts.Limits.OnUnknownPrice = calendar, cfg.Limits.OnUnknownPrice
+	adminOpts.Limits.Ledger = limits.NewLedger(workerDB)
 	adminHandler, err := admin.New(adminOpts)
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())

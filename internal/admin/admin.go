@@ -49,6 +49,9 @@ type Options struct {
 	Limits struct {
 		Calendar       *limits.Calendar
 		OnUnknownPrice string
+		// Ledger reads the usage of the current periods for the capability check; cmd/pandokos
+		// builds it (T-R43). Required.
+		Ledger limits.Ledger
 	}
 }
 
@@ -75,6 +78,7 @@ type server struct {
 	limits    struct {
 		Calendar       *limits.Calendar
 		OnUnknownPrice string
+		Ledger         limits.Ledger
 	}
 }
 
@@ -115,7 +119,7 @@ func New(o Options) (http.Handler, error) {
 	}
 	s := &server{log: o.Logger, db: o.DB, auth: o.Authenticator, now: o.Now, sealer: o.Sealer, validator: o.Validator,
 		snapshot: o.Snapshot, refresh: o.Refresh}
-	s.limits.Calendar, s.limits.OnUnknownPrice = o.Limits.Calendar, o.Limits.OnUnknownPrice
+	s.limits.Calendar, s.limits.OnUnknownPrice, s.limits.Ledger = o.Limits.Calendar, o.Limits.OnUnknownPrice, o.Limits.Ledger
 	if s.now == nil {
 		s.now = time.Now
 	}

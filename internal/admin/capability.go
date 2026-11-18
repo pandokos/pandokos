@@ -138,7 +138,7 @@ func (s *server) budgetCheck(ctx context.Context, tid tenant.ID, snap *catalog.S
 		}
 	}
 	exhausted := false
-	ledger := limits.NewLedger(s.db)
+	ledger := s.limits.Ledger
 	byPeriod := map[limits.Period][]limits.UsageGroup{}
 	for _, l := range matching {
 		rows, read := byPeriod[l.Period]
