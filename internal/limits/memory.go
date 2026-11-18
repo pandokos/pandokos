@@ -101,12 +101,13 @@ func validate(r Request) error {
 	if r.TTL <= 0 {
 		return errors.New("limits: the reservation needs a positive TTL")
 	}
-	seen := make(map[counterKey]struct{}, len(r.Limits))
 	for i, l := range r.Limits {
-		if _, dup := seen[keyOf(l)]; dup {
-			return fmt.Errorf("limits: limit %d repeats the counter of an earlier limit", i)
+		// Pairwise: a request has at most a handful of limits, and this does not allocate.
+		for _, e := range r.Limits[:i] {
+			if keyOf(e) == keyOf(l) {
+				return fmt.Errorf("limits: limit %d repeats the counter of an earlier limit", i)
+			}
 		}
-		seen[keyOf(l)] = struct{}{}
 		if l.Tenant != r.Limits[0].Tenant {
 			return errors.New("limits: the limits of one request belong to one tenant")
 		}
