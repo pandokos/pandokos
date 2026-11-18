@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // TestReleaseR1 is T-R39: docs/releases/v0.1.0.md names each of the eleven R1 criteria of
@@ -225,4 +227,38 @@ func TestLatestReleaseIsPinned(t *testing.T) {
 		has(t, "docs/releases/"+tag+".md", "ghcr.io/pandokos/pandokos:"+v)
 		has(t, "CONTRIBUTING.md", "### Releasing")
 	})
+
+	// info.version of the administration API is the version of the release it is attached to. In
+	// the development of the next release it is already that release's, so it may be ahead of the
+	// newest page, never behind it: a release page without the version bumped fails here.
+	t.Run("version of the administration API", func(t *testing.T) {
+		var doc struct {
+			Info struct {
+				Version string `yaml:"version"`
+			} `yaml:"info"`
+		}
+		if err := yaml.Unmarshal([]byte(read(t, "api/openapi/admin.v1.yaml")), &doc); err != nil {
+			t.Fatal(err)
+		}
+		got, ok := parseVersion(doc.Info.Version)
+		if !ok {
+			t.Fatalf("info.version of api/openapi/admin.v1.yaml is %q, want MAJOR.MINOR.PATCH", doc.Info.Version)
+		}
+		if want, _ := parseVersion(v); got[0] < want[0] || got[0] == want[0] && (got[1] < want[1] || got[1] == want[1] && got[2] < want[2]) {
+			t.Errorf("info.version of api/openapi/admin.v1.yaml is %s, older than the newest release page (%s)", doc.Info.Version, v)
+		}
+	})
+}
+
+// parseVersion reads "MAJOR.MINOR.PATCH".
+func parseVersion(s string) ([3]int, bool) {
+	m := regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)$`).FindStringSubmatch(s)
+	if m == nil {
+		return [3]int{}, false
+	}
+	var n [3]int
+	for i := range n {
+		n[i], _ = strconv.Atoi(m[i+1])
+	}
+	return n, true
 }
