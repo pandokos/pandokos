@@ -50,6 +50,13 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | `platform_limit:write` | platform | Creating and changing the ceilings the platform sets for tenants |
 | `platform_limit:delete` | platform | Deleting a ceiling the platform sets for tenants |
 
+The six limit permissions are held by two roles: `tenant-admin` has `limit:read`, `limit:write` and
+`limit:delete`; `platform-admin` has `platform_limit:read`, `platform_limit:write` and
+`platform_limit:delete`. The role `inference` has none. A platform principal cannot write a tenant's own
+rules and a tenant principal can neither read nor write platform rules beyond the ceilings that apply to
+its own tenant (`listTenantPlatformLimits`, under `limit:read`). Custom roles are not yet possible
+(sprint 4.3), so these are the only holders ([limits guide](../operations/limits.md)).
+
 Scope *platform*: held by platform principals only. Scope *tenant*: held by principals of that
 tenant only, and checked against the tenant of the request. Scope *self*: the caller itself.
 

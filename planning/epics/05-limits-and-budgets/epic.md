@@ -41,6 +41,8 @@ reserved.
 
 ### 5.2 Quotas and budgets
 
+Designed and delivered as [5.2-quotas-and-budgets/sprint.md](5.2-quotas-and-budgets/sprint.md).
+
 - Periodic counters per day and month with a configurable time zone.
 - Monetary budgets on estimated cost; behaviour with unknown prices.
 - Per-provider and per-model rules.
@@ -62,4 +64,4 @@ after the period resets; after a restart counters match the ledger.
 
 - Estimating output tokens when the caller sets no limit forces a conservative default that may
   refuse requests near a budget's end. The default is per model and configurable, and the
-  behaviour is documented.
+  behaviour is documented. (Delivered as `model.default_output_tokens`.)

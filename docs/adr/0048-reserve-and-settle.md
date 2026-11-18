@@ -65,3 +65,7 @@ which nothing was admitted, and the bound could not be stated per interval.
 **Taking the concurrency slot before the body is read.** Two calls that must be kept consistent.
 
 **A code per metric.** One code with a metric header serves callers and SDKs as well.
+
+## History
+
+- 2026-11-18: sprint 5.2: a request counts when its credential was opened (its usage record carries a credential ID), replacing "forwarded"; a model can carry its own default output reservation ([ADR 0050](0050-quotas-and-budgets-periods-attribution-currencies.md)).

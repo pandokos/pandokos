@@ -37,3 +37,7 @@ a usage record without SQL, while reports belong to a later release.
 key and its caches, but an application concern rather than an integrator's, and it would open the
 credential to answer a question.
 **No list until reports exist.** The quick-start would need SQL as the database owner.
+
+## History
+
+- 2026-11-18: sprint 5.2: `checks.budget` takes the values `not_enforced`, `unpriced`, `exhausted` and `available`, with the reasons `no_price` and `budget_exhausted` ([ADR 0051](0051-period-counters-and-the-ledger.md)).

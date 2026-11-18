@@ -18,7 +18,7 @@ needs a platform key; model access for a tenant needs a key of that tenant.
 | Provider | A company or service that sells models, such as `openai` | `name` is the first path segment of the inference route, fixed at creation, lower case letters, digits and hyphens; `healthz`, `readyz` and `v1` are reserved. Has an API family and can be disabled |
 | API family | The wire format the provider speaks: `openai` or `anthropic` | Fixed per provider at creation; the list is in the program |
 | Endpoint | A base URL of a provider, such as `https://api.openai.com` | A provider has one default endpoint, which the gateway uses; `private` marks one that may use `http` or a private address |
-| Model | What callers name: `provider/name` | `name` (public, fixed), `upstream_id` (what is sent to the provider, defaults to the name), status `active`, `deprecated` or `retired`, availability `all` or `selected` |
+| Model | What callers name: `provider/name` | `name` (public, fixed), `upstream_id` (what is sent to the provider, defaults to the name), status `active`, `deprecated` or `retired`, availability `all` or `selected`, and optionally `context_window`, `max_output_tokens` and `default_output_tokens` |
 | Credential | A tenant's secret for a provider, kept in the [vault](vault.md) | The credential names the provider; the provider must be in the catalogue |
 
 A model is always referred to as `provider/name`, split at the first `/` (a model name may contain more
@@ -63,6 +63,10 @@ Pandokos add the usage option to a chat stream whose caller did not ask for usag
   `https://models.example.com/serve/v1/chat/completions`.
 - A model is created `selected` unless `--availability all` is given: nobody may use it until a tenant
   is granted it. Names and upstream identifiers are unique per provider.
+- `--default-output-tokens N` (1 to 1,000,000; `model update ... --default-output-tokens 0` clears it) sets
+  the output the limiter reserves for a request to this model that sets no output limit of its own,
+  in place of `limits.default_output_tokens`; the model's `max_output_tokens` still caps it. Writing it
+  needs `catalog:write` and is audited with the model ([limits guide](limits.md), section 6).
 - A provider is deleted only when no endpoint, model or credential references it. A model with price
   versions cannot be deleted: set its status to `retired` instead.
 - A disabled provider still accepts credentials, so a tenant can prepare one before the provider is
@@ -244,4 +248,6 @@ version is recorded with the cost, so the record is self-consistent.
 - The dataset is third-party data under the MIT licence; its accuracy is not guaranteed.
 - A model the dataset does not match has no price until you set an override; its cost is unknown, not
   zero.
-- A model without a price is served and recorded with an unknown cost, never a zero cost.
+- A model without a price is served and recorded with an unknown cost, never a zero cost. Under a
+  budget ([limits guide](limits.md), section 5) such a call is refused with 409 `no_price` unless
+  `limits.on_unknown_price` is `allow`.

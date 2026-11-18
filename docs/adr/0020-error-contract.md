@@ -76,3 +76,4 @@ transparency principle.
 - 2026-11: sprint 3.2: invalid_request also covers a responses request that asks for background processing; unavailable also covers a full ledger buffer.
 - 2026-11: sprint 3.3 adds the Anthropic error shape and the rule that chooses the shape of a request no family serves; no new code ([ADR 0041](0041-anthropic-api-family.md)).
 - 2026-11: sprint 5.1 puts `rate_limited` into use, for requests, tokens and concurrency, with the limit headers of [ADR 0048](0048-reserve-and-settle.md); no new code.
+- 2026-11-18: sprint 5.2 puts `quota_exceeded` into use (429) and adds `no_price` (409) ([ADR 0050](0050-quotas-and-budgets-periods-attribution-currencies.md)).

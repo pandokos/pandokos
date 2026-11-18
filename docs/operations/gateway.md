@@ -3,7 +3,7 @@
 The inference listener forwards requests of a provider's own API to that provider, on behalf of a
 tenant, with the tenant's stored credential. This page says what a caller sends, what a call needs,
 what Pandokos changes in a request, which errors it answers with, and how outbound connections are
-controlled. It applies from sprint 3.1; sprint 3.2 adds two operations, streaming details, caller metadata and the usage record; sprint 3.3 adds the `anthropic` family and OpenAI-compatible providers; sprint 4.1 adds tokens of trusted issuers as a second credential; sprint 5.1 adds limits (step 7b).
+controlled. It applies from sprint 3.1; sprint 3.2 adds two operations, streaming details, caller metadata and the usage record; sprint 3.3 adds the `anthropic` family and OpenAI-compatible providers; sprint 4.1 adds tokens of trusted issuers as a second credential; sprint 5.1 adds limits (step 7b); sprint 5.2 adds quotas and budgets to that step.
 
 ## 1. Base URLs
 
@@ -246,11 +246,21 @@ of the buffer.
 ### Step 7b: limits
 
 After the model check and before the credential is opened, the request is reserved against every
-limit that applies to its key, service account and tenant, in one atomic step. A refusal ends the
-request there: no credential is opened and no provider is reached. With no rule for the caller the
-step does nothing. When the request finishes the reservation is settled with the figures of its
-usage record, or released if the request was never sent. The estimate, the guarantees, the 429
-and the headers are in the [limits guide](limits.md).
+limit that applies to its key, service account and tenant, in one atomic step: the rates, the
+concurrency and the quotas and budgets of the day and month in the zone `limits.time_zone`. The
+estimate carries the provider, the model and the start time of the request, so rules scoped to a
+provider or model apply and the request is counted in the period it started in. A refusal ends the
+request there: no credential is opened and no provider is reached. The refusals are 429
+`rate_limited`, 429 `quota_exceeded`, 409 `no_price` (a budget applies and the model has no price
+it can measure, with `limits.on_unknown_price` `refuse`) and 503 `unavailable` (the rules or the
+counters cannot be verified, with `limits.on_store_failure` `refuse`). With no rule for the caller
+the step does nothing.
+
+The request **counts** (as a request, with the tokens and cost of its usage record) once its
+credential has been opened, the same rule the ledger applies: its usage record carries a credential
+ID. When it finishes the reservation is settled with the figures of that record, or released if the
+credential was never opened. The estimate, the guarantees, the 429 and the headers are in the
+[limits guide](limits.md).
 
 ## 6. Outbound connections
 
@@ -340,7 +350,9 @@ The `request` line of the [container guide](container.md) gains these fields fro
 | `issuer_id` | the credential was a token | the ID of the registration that accepted it; `key_id` is then the ID of the subject mapping |
 | `ledger` | step 3a refused the request | `full` (written `ledger: full` in this guide) |
 | `reserved_tokens` | a reservation was made (sprint 5.1) | input plus output tokens reserved by the estimate |
-| `limit_subject`, `limit_metric`, `limit_level`, `limit`, `retry_after_s` | step 7b refused the request | the subject kind (`tenant`, `service_account`, `key`), the metric, who set the value (`platform` or `tenant`), the value in force and the `Retry-After` sent |
+| `limit_subject`, `limit_metric`, `limit_scope`, `limit_currency`, `limit_level`, `limit`, `retry_after_s` | step 7b refused the request (`limit_scope` `all`, `provider` or `model`; `limit_currency` for a budget, whose `limit` is a decimal) | the subject kind (`tenant`, `service_account`, `key`), the metric, who set the value (`platform` or `tenant`), the value in force and the `Retry-After` sent |
 | `estimate_over_limit` | the estimate alone exceeds the limit | `true`: waiting cannot help |
+| `budget_unpriced` | the request was admitted although a budget could not measure it (`limits.on_unknown_price` `allow`) | `true` |
+| `limits_unverified` | the request was admitted although its counters could not be verified (`limits.on_store_failure` `allow`) | `true` |
 
 `ttfb_ms` now means the first body byte (section 4a).

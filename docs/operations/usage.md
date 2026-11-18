@@ -103,7 +103,7 @@ and the price it names.
 
 | Outcome | When |
 |---|---|
-| `rejected_limit` | Pandokos refused the request because a limit was reached: `rate_limited`. Such a row carries no usage and no cost (cost status `none`), no credential, and counts as no consumption ([limits guide](limits.md)) |
+| `rejected_limit` | Pandokos refused the request because a limit was reached or a budget could not be applied: `error_code` `rate_limited`, `quota_exceeded` or `no_price`. Such a row carries no usage and no cost (cost status `none`), no credential, and counts as no consumption ([limits guide](limits.md)) |
 | `rejected_policy` | Pandokos refused the request: `tenant_suspended`, `forbidden`, `model_not_allowed`, `endpoint_not_supported`, `no_credential`, `invalid_request`, `request_too_large` |
 | `timeout` | `request_timeout`, `upstream_timeout`, or `limits.max_request_duration` passed after the provider's headers |
 | `upstream_error` | `upstream_unreachable`, the provider cut its answer, or the provider answered 4xx or 5xx (`upstream_status` says which) |
@@ -112,7 +112,16 @@ and the price it names.
 | `ok` | everything else |
 
 A `rejected_limit` row is written for every request refused in step 7b, since sprint 5.1; it holds the
-model fields (the model check had passed) and no usage and no cost. The
+model fields (the model check had passed) and no usage and no cost. Its `error_code` is `rate_limited`
+(requests, tokens, concurrency), `quota_exceeded` (a quota or budget of a day or month) or `no_price`
+(sprint 5.2).
+
+**Which records the limits count.** A quota or budget counts the records that carry a credential ID, that
+is the requests whose credential was opened, with the input plus output tokens of the record
+(provider figures, else the estimate) and its cost when known. A `rejected_limit` or `rejected_policy`
+row has no credential ID and counts nothing; a request that the provider answered with an error counts
+as one request without tokens. The limiter and the ledger use the same definition, so a total over
+`started_at` in a period equals the counter ([limits guide](limits.md), section 11). The
 request log line keeps its own, finer vocabulary (`client_cancelled`, `shutdown_aborted`, ...); the
 ledger's `cancelled` covers both.
 

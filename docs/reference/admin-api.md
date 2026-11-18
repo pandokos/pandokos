@@ -149,12 +149,6 @@ tenants ([tokens guide](../operations/tokens.md)). The operations are:
 | `getPlatformIssuer`, `updatePlatformIssuer`, `deletePlatformIssuer` | `GET`, `PATCH`, `DELETE /v1/platform-issuers/{issuer}` | `platform_issuer:read`, `platform_issuer:write`, `platform_issuer:delete` |
 | `listPlatformIssuerTenants` | `GET /v1/platform-issuers/{issuer}/tenants` | `platform_issuer:read` |
 | `putPlatformIssuerTenant`, `deletePlatformIssuerTenant` | `PUT`, `DELETE /v1/platform-issuers/{issuer}/tenants/{tenant}` | `platform_issuer:write` |
-| `listLimits`, `createLimit` | `GET`, `POST /v1/tenants/{tenant}/limits` | `limit:read`, `limit:write` |
-| `getLimit`, `updateLimit`, `deleteLimit` | `GET`, `PATCH`, `DELETE .../limits/{rule}` | `limit:read`, `limit:write`, `limit:delete` |
-| `listTenantPlatformLimits` | `GET /v1/tenants/{tenant}/platform-limits` | `limit:read` |
-| `listLimitEvents` | `GET /v1/tenants/{tenant}/limit-events` | `limit:read` |
-| `listPlatformLimits`, `createPlatformLimit` | `GET`, `POST /v1/platform-limits` | `platform_limit:read`, `platform_limit:write` |
-| `getPlatformLimit`, `updatePlatformLimit`, `deletePlatformLimit` | `GET`, `PATCH`, `DELETE /v1/platform-limits/{rule}` | `platform_limit:read`, `platform_limit:write`, `platform_limit:delete` |
 
 - `createTokenIssuer` and `createPlatformIssuer` take `name`, `issuer` and `audience` (and
   `tenant_claim` for a platform-level one); `algorithms` defaults to `["RS256", "ES256"]`,
@@ -203,6 +197,65 @@ flags of `token-issuer` without `--tenant` and with `--tenant-claim` (required o
 `platform-issuer tenants ISSUER`, `add-tenant [--claim-value V] ISSUER TENANT` and
 `remove-tenant ISSUER TENANT` (a tenant by ID or name).
 
+### Limits
+
+A tenant administrator writes the tenant's limit rules and reads the platform ceilings that apply to
+it; a platform administrator writes ceilings for every tenant or for one. What the rules mean and how
+they are enforced is in the [limits guide](../operations/limits.md).
+
+| Operation | Method and path | Permission |
+|---|---|---|
+| `listLimits`, `createLimit` | `GET`, `POST /v1/tenants/{tenant}/limits` | `limit:read`, `limit:write` |
+| `getLimit`, `updateLimit`, `deleteLimit` | `GET`, `PATCH`, `DELETE .../limits/{rule}` | `limit:read`, `limit:write`, `limit:delete` |
+| `listTenantPlatformLimits` | `GET /v1/tenants/{tenant}/platform-limits` | `limit:read` |
+| `listLimitEvents` | `GET /v1/tenants/{tenant}/limit-events` | `limit:read` |
+| `listPlatformLimits`, `createPlatformLimit` | `GET`, `POST /v1/platform-limits` | `platform_limit:read`, `platform_limit:write` |
+| `getPlatformLimit`, `updatePlatformLimit`, `deletePlatformLimit` | `GET`, `PATCH`, `DELETE /v1/platform-limits/{rule}` | `platform_limit:read`, `platform_limit:write`, `platform_limit:delete` |
+
+- **A rule** has `id`, `subject_kind` (`tenant`, `service_account`, `key`), `subject_id`, `provider`,
+  `model`, `metric` (one of the nine), `limit` (an integer; 0 for a cost metric), `amount` (a decimal
+  string with at most six fraction digits; empty unless a cost metric), `currency`, `enforce`,
+  `thresholds` (up to four percentages, ascending), `created_at` and `updated_at`. A platform rule has
+  `tenant` (an ID; empty for a default of every tenant) in place of the subject. `listLimits` filters
+  by `subject_kind`, `subject_id`, `metric`, `provider` and `model`; `listPlatformLimits` by the tenant
+  it applies to and `metric`.
+- **Validation** (400 `invalid_request` naming the field; 409 `conflict` when a rule of the same
+  subject, scope and metric exists). A count metric needs `limit` (1 to 1,000,000,000,000) and takes no
+  `amount` or `currency`; a cost metric needs `amount` (greater than 0, at most 1,000,000,000, at most
+  six fraction digits) and `currency` (three capital letters) and takes no `limit`. The three metrics
+  `concurrent_requests`, `requests_per_minute` and `tokens_per_minute` take `enforce: true` and no
+  thresholds; `enforce: false` needs at least one threshold; a repeated threshold is refused.
+  `subject_kind` `tenant` takes no `subject_id`; the other kinds need one that exists **in the
+  tenant**: a service account by ID, or for `key` a virtual key by key ID or a subject mapping by ID.
+  `model` needs `provider`; the provider must exist and the model must be one the tenant can see (for
+  a platform rule, one that exists). The message is the same whether an ID exists in another tenant or
+  nowhere. A platform rule with a `tenant` needs an existing tenant.
+- **At most 5,000 rules** per tenant: the count is checked in the transaction of the creation, under a
+  lock per tenant, and the 5,001st is refused with 409 `invalid_state`.
+- `PATCH` takes `limit` or `amount`, `enforce` and `thresholds` (at least one, and the result must
+  satisfy the rules above; `limit: 0` counts as absent). The subject, scope, metric and currency never
+  change: delete the rule and create another. `DELETE` returns the rule as it was.
+- `listTenantPlatformLimits` shows a tenant the defaults and its own platform rows, and nothing of
+  another tenant. `listLimitEvents` returns the events of the tenant newest first, with the filters
+  `kind` (`threshold_reached` or `exhausted`) and `rule`; an event holds the rule, its level, the
+  subject, scope, metric, currency, the period, the value of the rule, `observed` and `percent`.
+- **Audit.** Every write is audited in the transaction of the change; a refused write records
+  nothing. Six actions: `limit.create`, `limit.update` and `limit.delete` in the tenant's log
+  (resource `limit_rule`) and `platform_limit.create`, `platform_limit.update` and
+  `platform_limit.delete` in the platform log (resource `platform_limit_rule`). A create or delete
+  records every field of the rule, an update the `from` and `to` of each changed field and the rule's
+  subject, scope and metric; platform records also hold the `tenant`. `default_output_tokens` appears
+  in the detail of `model.create` and `model.update`.
+- A change reaches the gateway at once through a notification and at the latest after
+  `cache.limits_ttl`; counters are not reset.
+- CLI: `limit list|get|create|update|delete`, `limit platform`, `limit events` and
+  `platform-limit list|get|create|update|delete`, each with `--tenant` where the route has one.
+  `limit create` takes `--metric`, `--limit` or `--amount` with `--currency`, `--subject
+  tenant|service-account|key` with `--service-account ID_OR_NAME` or `--key KEY_ID`, `--provider`,
+  `--model`, `--soft` and a repeatable `--threshold`; `platform-limit create` takes `--for-tenant`;
+  `update` takes `--limit`, `--amount`, `--soft`, `--enforce`, `--threshold` and `--no-thresholds`.
+  `limit events` takes `--kind` and `--rule`.
+
 ### The catalogue
 
 The operations are described in the [catalogue guide](../operations/catalogue.md). Provider and endpoint
@@ -229,7 +282,7 @@ reference `provider/name` wherever it takes a model.
 | `getCapability` | `GET /v1/tenants/{tenant}/capability` | `model:read` |
 | `listUsageRecords` | `GET /v1/tenants/{tenant}/usage-records` | `usage:read` |
 
-- `getCapability` answers whether a tenant can call a provider and model now (`provider` and `model` are required): `callable`, the failing `reasons` in a fixed order (`provider_unavailable`, `model_not_allowed`, `no_credential`, `credential_disabled`, `credential_revoked`), the `checks` and `budget: not_enforced`. It reads committed catalogue state and credential metadata and never opens a credential, so it can differ from a call made at the same moment by at most the cache lifetimes; a key's pin and model list are not evaluated. A suspended tenant is answered 403 `tenant_suspended`. CLI: `capability check --tenant T --provider P --model M`. [ADR 0043](../adr/0043-tenant-capability-check-and-usage-list.md).
+- `getCapability` answers whether a tenant can call a provider and model now (`provider` and `model` are required): `callable`, the failing `reasons` in a fixed order (`provider_unavailable`, `model_not_allowed`, `no_credential`, `credential_disabled`, `credential_revoked`), the `checks` and `budget`, which takes four values from the tenant's enforced quotas and budgets of a day or month that match the provider and model, read from the usage ledger: `not_enforced` (none matches), `unpriced` (a budget matches and the model has no price in the budget's currency while `limits.on_unknown_price` is `refuse`; reason `no_price`), `exhausted` (the total of the current period is at or above a limit; reason `budget_exhausted`) and `available`. The two reasons follow the others in that order. Only the tenant's own rules for the whole tenant count (the check describes a key without pin or list, so rules of service accounts and keys, soft rules and rate limits are not evaluated), requests in flight are not in the total, and `available` means "not exhausted": a call whose estimate exceeds what is left is still refused. It reads committed catalogue state and credential metadata and never opens a credential, so it can differ from a call made at the same moment by at most the cache lifetimes; a key's pin and model list are not evaluated. A suspended tenant is answered 403 `tenant_suspended`. CLI: `capability check --tenant T --provider P --model M`. [ADR 0043](../adr/0043-tenant-capability-check-and-usage-list.md).
 - `listUsageRecords` lists a tenant's usage records newest first, with `from`, `to`, `provider`, `limit` and `cursor` (rules and representation in the [usage guide](../operations/usage.md), section 9). CLI: `usage list --tenant T [--from --to --provider]`.
 - The provider member `stream_usage_option` is `add` or `omit`; `omit` for a provider of family `anthropic` is `invalid_request` ("must be add for a provider of family anthropic").
 - Collections: `listModels` filters by `provider`, `name`, `status` and `availability`. `createModel`
@@ -257,7 +310,7 @@ reference `provider/name` wherever it takes a model.
 Flags of the catalogue commands: `provider create NAME --family F [--display-name --description
 --dataset-provider --stream-usage-option add|omit]`; `endpoint create PROVIDER NAME --base-url U [--region --private --default]`;
 `model create REF [--upstream-id --availability --status --capability ...  --context-window
---max-output-tokens]`; `model grant|revoke-grant MODEL --tenant T`; `price override MODEL --currency C
+--max-output-tokens --default-output-tokens]`; `model grant|revoke-grant MODEL --tenant T`; `price override MODEL --currency C
 --rate category[@threshold]=amount ... [--valid-from --note]`; `price clear-override MODEL --reason R`;
 `price-import run [--source embedded|remote] [--dry-run]`; `model-restriction set --tenant T --model REF
 ...` or `--none`. Update commands clear an optional text member with `--flag ""`; booleans are set with
