@@ -212,6 +212,7 @@ func TestDefaults(t *testing.T) {
 		{"upstream.tls.ca_file", d.Upstream.TLS.CAFile, ""},
 		{"upstream.proxy.url", d.Upstream.Proxy.URL, ""},
 		{"pricing.import_at_start", d.Pricing.ImportAtStart, true},
+		{"pricing.default_currency", d.Pricing.DefaultCurrency, "USD"},
 		{"pricing.refresh.enabled", d.Pricing.Refresh.Enabled, false},
 		{"pricing.refresh.url", d.Pricing.Refresh.URL, "https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json"},
 		{"pricing.refresh.interval", time.Duration(d.Pricing.Refresh.Interval), 24 * time.Hour},
@@ -226,6 +227,7 @@ func TestDefaults(t *testing.T) {
 		{"telemetry.traces.sample_ratio", d.Telemetry.Traces.SampleRatio, 1.0},
 		{"telemetry.traces.propagate", d.Telemetry.Traces.Propagate, false},
 		{"telemetry.resource.attributes", d.Telemetry.Resource.Attributes, ""},
+		{"telemetry.tenant_usage_details", d.Telemetry.TenantUsageDetails, false},
 	}
 	for _, c := range checks {
 		if !reflect.DeepEqual(c.got, c.want) {
@@ -288,6 +290,7 @@ var wantKeys = []string{
 	"vault.kek.provider",
 	"vault.kek.local.key_file",
 	"pricing.import_at_start",
+	"pricing.default_currency",
 	"pricing.refresh.enabled",
 	"pricing.refresh.url",
 	"pricing.refresh.interval",
@@ -302,6 +305,7 @@ var wantKeys = []string{
 	"telemetry.traces.sample_ratio",
 	"telemetry.traces.propagate",
 	"telemetry.resource.attributes",
+	"telemetry.tenant_usage_details",
 	"tokens.enabled",
 	"tokens.max_token_bytes",
 	"tokens.clock_skew",
@@ -318,8 +322,8 @@ var wantDefaultText = []string{"info", "0.0.0.0:8080", "10s", "120s", "65536", "
 	"10485760", "30s", "10m", "4096", "UTC", "refuse", "refuse", "5m", "10s", "", "", "30s", "30s", "30s", "5m", "30s", "30s",
 	"", "", "pandokos", "verify-full", "", "5s", "pandokos_gateway", "", "10", "pandokos_admin", "", "10", "pandokos_worker", "", "5", "pandokos_owner", "",
 	"local", "",
-	"true", "false", "https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json", "24h",
-	"50ms", "500", "10000", "10s", "", "http/protobuf", "", "10s", "1", "false", "",
+	"true", "USD", "false", "https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json", "24h",
+	"50ms", "500", "10000", "10s", "", "http/protobuf", "", "10s", "1", "false", "", "false",
 	"true", "8192", "60s", "24h", "", "5s", "15m", "10s", "6h"}
 
 func leafKeys(t reflect.Type, prefix string, out *[]string) {

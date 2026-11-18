@@ -152,7 +152,7 @@ func usageRecordOut(r queries.ListUsageRecordsRow) adminapi.UsageRecord {
 		EstimatedInputTokens: side(estIn, r.EstimatedInputTokens), EstimatedOutputTokens: side(estOut, r.EstimatedOutputTokens),
 		OtherUnits: counters(r.OtherUnits), ProviderUsage: counters(r.ProviderUsage),
 		CostStatus: r.CostStatus, CostReason: r.CostReason, Cost: adminapi.Null[string](), Currency: str(r.Currency),
-		PriceVersionID: str(r.PriceVersionID), CostFallbacks: append([]string{}, r.CostFallbacks...),
+		PriceVersionID: str(r.PriceVersionID), PriceSource: r.PriceSource, CostFallbacks: append([]string{}, r.CostFallbacks...),
 		Metadata: metadataEntries(r.Metadata), MetadataDropped: int(r.MetadataDropped), LimitState: r.LimitState,
 	}
 	if r.UpstreamStatus != nil {

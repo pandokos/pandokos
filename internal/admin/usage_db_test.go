@@ -139,6 +139,11 @@ func usageRecords(t testing.TB, tid tenant.ID, now time.Time) []usage.Record {
 
 // expectedItem is the representation of section 5.7a of a record.
 func expectedItem(r usage.Record) adminapi.UsageRecord {
+	// A record that names a version but no list was written when every version was the catalogue's.
+	priceSource := r.Cost.Source
+	if priceSource == "" && r.Cost.VersionID != "" {
+		priceSource = "catalogue"
+	}
 	provIn, provOut := r.InputSource == usage.SourceProvider, r.OutputSource == usage.SourceProvider
 	estIn, estOut := r.InputSource == usage.SourceEstimated, r.OutputSource == usage.SourceEstimated
 	n := func(ok bool, v int64) int {
@@ -195,7 +200,7 @@ func expectedItem(r usage.Record) adminapi.UsageRecord {
 		CacheWriteTokens: n(provIn, r.Usage.CacheWriteTokens), ReasoningTokens: n(provOut, r.Usage.ReasoningTokens),
 		EstimatedInputTokens: n(estIn, r.Estimated.InputTokens), EstimatedOutputTokens: n(estOut, r.Estimated.OutputTokens),
 		OtherUnits: counters(r.Usage.Extra), ProviderUsage: counters(r.Usage.Reported),
-		CostStatus: r.CostStatus, CostReason: reason, Cost: cost, Currency: r.Cost.Currency, PriceVersionID: r.Cost.VersionID,
+		CostStatus: r.CostStatus, CostReason: reason, Cost: cost, Currency: r.Cost.Currency, PriceVersionID: r.Cost.VersionID, PriceSource: priceSource,
 		CostFallbacks: fallbacks, Metadata: meta, MetadataDropped: r.MetadataDropped,
 	}
 }

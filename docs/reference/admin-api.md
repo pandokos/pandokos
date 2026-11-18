@@ -218,6 +218,10 @@ they are enforced is in the [limits guide](../operations/limits.md).
 | `listTenantPlatformLimits` | `GET /v1/tenants/{tenant}/platform-limits` | `limit:read` |
 | `listLimitEvents` | `GET /v1/tenants/{tenant}/limit-events` | `limit:read` |
 | `getTenantTimeZone`, `setTenantTimeZone` | `GET`, `PUT /v1/tenants/{tenant}/time-zone` | `limit:read`, `limit:write` |
+| `listPriceLists` | `GET /v1/tenants/{tenant}/price-lists` | `price_list:read` |
+| `listPriceListVersions`, `createPriceListVersion` | `GET`, `POST /v1/tenants/{tenant}/prices` | `price_list:read`, `price_list:write` |
+| `getPriceListVersion`, `deletePriceListVersion` | `GET`, `DELETE /v1/tenants/{tenant}/prices/{price}` | `price_list:read`, `price_list:delete` |
+| `getActiveCurrency`, `setActiveCurrency` | `GET`, `PUT /v1/tenants/{tenant}/active-currency` | `price_list:read`, `price_list:write` |
 | `listPlatformLimits`, `createPlatformLimit` | `GET`, `POST /v1/platform-limits` | `platform_limit:read`, `platform_limit:write` |
 | `getPlatformLimit`, `updatePlatformLimit`, `deletePlatformLimit` | `GET`, `PATCH`, `DELETE /v1/platform-limits/{rule}` | `platform_limit:read`, `platform_limit:write`, `platform_limit:delete` |
 

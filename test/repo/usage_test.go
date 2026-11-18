@@ -240,8 +240,8 @@ func TestUsageAndTelemetryGuides(t *testing.T) {
 				}
 			}
 		}
-		if keys != 7 {
-			t.Errorf("%d telemetry keys, want 7", keys)
+		if keys != 8 {
+			t.Errorf("%d telemetry keys, want 8", keys)
 		}
 		for _, w := range []string{"OTEL_RESOURCE_ATTRIBUTES", "OTEL_", "traceparent", "upstream.tls.ca_file", "sampl", "propagat"} {
 			if !strings.Contains(doc, w) {

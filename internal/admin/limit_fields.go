@@ -329,7 +329,7 @@ func limitRuleOut(r queries.GetLimitRuleRow) adminapi.LimitRule {
 	limit, amount := valueOut(r.Metric, r.LimitValue)
 	return adminapi.LimitRule{ID: r.ID, SubjectKind: adminapi.LimitSubjectKind(r.SubjectKind), SubjectID: r.SubjectID, Provider: r.Provider,
 		ProviderID: r.ProviderID, ModelID: r.ModelID, Model: r.Model, Metric: adminapi.LimitMetric(r.Metric), Limit: limit, Amount: amount, Currency: r.Currency, Enforce: r.Enforce,
-		Thresholds: thresholdsOut(r.Thresholds), CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC()}
+		Thresholds: thresholdsOut(r.Thresholds), Active: true, CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC()}
 }
 
 func platformRuleOut(r queries.GetPlatformLimitRuleRow) adminapi.PlatformLimitRule {

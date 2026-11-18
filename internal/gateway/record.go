@@ -181,11 +181,10 @@ func (h *Handler) recordOf(st *reqState, logOutcome string) usage.Record {
 
 	// Cost: the price in force when the request started.
 	if r.InputSource != usage.SourceNone {
-		v, found := pricing.VersionAt(st.target.Prices, st.start)
-		r.Cost = pricing.CostOf(st.costUsage, v, found)
+		r.Cost = st.target.PriceList().Cost(st.costUsage, st.start)
 		if r.Cost.Known && !usage.CostFits(r.Cost.Amount) {
 			// An amount the column cannot hold: the figures are not credible.
-			r.Cost = pricing.Cost{Reason: pricing.ReasonInconsistentUsage, Currency: v.Currency, VersionID: v.ID}
+			r.Cost = pricing.Cost{Reason: pricing.ReasonInconsistentUsage, Currency: r.Cost.Currency, VersionID: r.Cost.VersionID, Source: r.Cost.Source}
 		}
 		r.CostStatus = "unknown"
 		if r.Cost.Known {

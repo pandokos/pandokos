@@ -58,6 +58,7 @@ type Options struct {
 	PropagateTrace         bool                      // send traceparent and tracestate to the provider
 	Limits                 Limits                    // optional: nil enforces no limit
 	DefaultOutputTokens    int64                     // output tokens reserved per choice when the caller sets no limit; positive
+	UsageDetails           bool                      // telemetry.tenant_usage_details: cost, currency and token counts in the log line and the spans
 }
 
 // Handler is the inference handler.
@@ -80,6 +81,8 @@ type Handler struct {
 	propagate   bool
 	limits      Limits
 	defaultOut  int64
+	// usageDetails is Options.UsageDetails; the log line and the spans do not yet consult it.
+	usageDetails bool
 }
 
 // New validates the options and returns a Handler.
@@ -129,23 +132,24 @@ func New(o Options) (*Handler, error) {
 	}
 	sort.Strings(names)
 	h := &Handler{
-		familyNames: names,
-		logger:      o.Logger,
-		auth:        o.Authenticator,
-		catalogue:   o.Catalogue,
-		credentials: o.Credentials,
-		failures:    o.Failures,
-		families:    families,
-		def:         def,
-		maxBody:     o.MaxRequestBodyBytes,
-		readTimeout: o.RequestBodyReadTimeout,
-		maxDuration: o.MaxRequestDuration,
-		recorder:    o.Recorder,
-		tracer:      o.Tracer.Tracer(instrumentationScope, trace.WithInstrumentationVersion(buildinfo.Version)),
-		propagator:  propagation.TraceContext{},
-		propagate:   o.PropagateTrace,
-		limits:      o.Limits,
-		defaultOut:  o.DefaultOutputTokens,
+		familyNames:  names,
+		logger:       o.Logger,
+		auth:         o.Authenticator,
+		catalogue:    o.Catalogue,
+		credentials:  o.Credentials,
+		failures:     o.Failures,
+		families:     families,
+		def:          def,
+		maxBody:      o.MaxRequestBodyBytes,
+		readTimeout:  o.RequestBodyReadTimeout,
+		maxDuration:  o.MaxRequestDuration,
+		recorder:     o.Recorder,
+		tracer:       o.Tracer.Tracer(instrumentationScope, trace.WithInstrumentationVersion(buildinfo.Version)),
+		propagator:   propagation.TraceContext{},
+		propagate:    o.PropagateTrace,
+		limits:       o.Limits,
+		defaultOut:   o.DefaultOutputTokens,
+		usageDetails: o.UsageDetails,
 	}
 	h.proxy = h.newProxy(&classTransport{public: o.Public, private: o.Private})
 	return h, nil

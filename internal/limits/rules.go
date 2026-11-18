@@ -4,6 +4,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/pandokos/pandokos/internal/pricing"
 	"github.com/pandokos/pandokos/internal/tenant"
 )
 
@@ -49,6 +50,9 @@ type RuleSet struct {
 	// Calendar is the calendar of the tenant: the loader sets it; For takes the period of a limit
 	// from it. A zero calendar yields no period limit.
 	Calendar TenantCalendar
+	// Currency is the active currency of the tenant: the loader will set it and For will apply a
+	// cost limit only in the currency in force. Zero for now.
+	Currency pricing.Active
 	subjects map[subjectRef]map[scopeKey]*scopeLimits
 }
 

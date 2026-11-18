@@ -47,10 +47,9 @@ func estimateOf(a family.Adapter, op family.Operation, bound family.OutputBound,
 		output = min(output, maxEstimateTokens-input)
 	}
 
-	v, found := pricing.VersionAt(t.Prices, start)
-	cost := pricing.CostOf(family.Usage{InputTokens: input, OutputTokens: output}, v, found)
+	cost := t.PriceList().Cost(family.Usage{InputTokens: input, OutputTokens: output}, start)
 	if cost.Known && !usage.CostFits(cost.Amount) {
-		cost = pricing.Cost{Reason: pricing.ReasonInconsistentUsage, Currency: v.Currency, VersionID: v.ID}
+		cost = pricing.Cost{Reason: pricing.ReasonInconsistentUsage, Currency: cost.Currency, VersionID: cost.VersionID, Source: cost.Source}
 	}
 	return LimitEstimate{InputTokens: input, OutputTokens: output, Cost: cost, Provider: t.Provider, Model: t.Model, ProviderID: t.ProviderID, ModelID: t.ModelID, Start: start}
 }

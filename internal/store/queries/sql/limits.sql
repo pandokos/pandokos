@@ -145,7 +145,9 @@ SELECT pr.id::text AS provider_id,
 -- scope, the version in force now and every version that starts later. In a tenant session with
 -- visible_only, the models are those the tenant can be given (available to all, or granted: the
 -- policy of model_tenant_grant shows the tenant's grants only); otherwise every model of the
--- scope. Sprint 5.4 adds the currencies of the tenant's own price list to this set.
+-- scope. Rules of a tenant use `ListBudgetCurrenciesForTenantScope`
+-- (`tenant_prices.sql`), which adds the tenant's own lists; this statement serves the ceilings of
+-- the platform.
 
 -- name: ListPriceCurrenciesForScope :many
 SELECT DISTINCT v.currency

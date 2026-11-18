@@ -122,7 +122,7 @@ func (s *server) CreateLimit(ctx context.Context, in adminapi.CreateLimitInput) 
 			}
 		}
 		// After the visibility check: a model granted elsewhere or nowhere must not answer differently on currency.
-		if err := checkBudgetCurrency(ctx, q, string(f.Metric), f.Currency, scope.ProviderID, scope.ModelID, true); err != nil {
+		if err := checkBudgetCurrency(ctx, q, string(f.Metric), f.Currency, budgetScope{ProviderID: nilIfEmpty(scope.ProviderID), ModelID: nilIfEmpty(scope.ModelID), Tenant: true}); err != nil {
 			return err
 		}
 		row, err := q.CreateLimitRule(ctx, queries.CreateLimitRuleParams{
@@ -190,7 +190,7 @@ func (s *server) UpdateLimit(ctx context.Context, in adminapi.UpdateLimitInput) 
 			out = limitRuleOut(queries.GetLimitRuleRow(cur))
 			return nil
 		}
-		if err := checkBudgetCurrency(ctx, q, cur.Metric, cur.Currency, cur.ProviderID, cur.ModelID, true); err != nil {
+		if err := checkBudgetCurrency(ctx, q, cur.Metric, cur.Currency, budgetScope{ProviderID: nilIfEmpty(cur.ProviderID), ModelID: nilIfEmpty(cur.ModelID), Tenant: true}); err != nil {
 			return err
 		}
 		row, err := q.UpdateLimitRule(ctx, queries.UpdateLimitRuleParams{ID: cur.ID, LimitValue: next.Value, Enforce: next.Enforce, Thresholds: next.Thresholds})

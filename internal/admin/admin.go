@@ -43,6 +43,9 @@ type Options struct {
 	// Refresh configures the download of the price dataset; an import with source remote is
 	// refused unless Refresh.Enabled.
 	Refresh RefreshOptions
+	// DefaultCurrency is pricing.default_currency: the active currency of a tenant that chose
+	// none; USD when empty.
+	DefaultCurrency string
 	// Limits are the settings of the capability check: limits.on_unknown_price ("refuse", the
 	// default, or "allow") and the zones that give the calendar of each tenant.
 	Limits struct {
@@ -76,7 +79,9 @@ type server struct {
 	validator vault.Validator
 	snapshot  []byte
 	refresh   RefreshOptions
-	limits    struct {
+	// defaultCurrency is Options.DefaultCurrency, USD when that is empty.
+	defaultCurrency string
+	limits          struct {
 		OnUnknownPrice string
 		Zones          *limits.Zones
 		Ledger         limits.Ledger
@@ -122,6 +127,9 @@ func New(o Options) (http.Handler, error) {
 		snapshot: o.Snapshot, refresh: o.Refresh}
 	s.limits.OnUnknownPrice, s.limits.Ledger = o.Limits.OnUnknownPrice, o.Limits.Ledger
 	s.limits.Zones = o.Limits.Zones
+	if s.defaultCurrency = o.DefaultCurrency; s.defaultCurrency == "" {
+		s.defaultCurrency = "USD"
+	}
 	if s.now == nil {
 		s.now = time.Now
 	}

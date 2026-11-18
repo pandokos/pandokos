@@ -41,9 +41,9 @@ func (f fakeSource) Resolve(_ context.Context, p authz.Principal, provider, name
 	return f.snap.Resolve(p, catalog.TenantAccess{}, provider, name)
 }
 
-func (f fakeSource) ResolveIn(ctx context.Context, p authz.Principal, provider, name string) (*catalog.Snapshot, catalog.Model, catalog.Endpoint, error) {
+func (f fakeSource) ResolveIn(ctx context.Context, p authz.Principal, provider, name string) (*catalog.Snapshot, catalog.TenantAccess, catalog.Model, catalog.Endpoint, error) {
 	m, e, err := f.Resolve(ctx, p, provider, name)
-	return f.snap, m, e, err
+	return f.snap, catalog.TenantAccess{}, m, e, err
 }
 
 func testPrincipal() authz.Principal {

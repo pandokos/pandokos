@@ -190,6 +190,99 @@ func (d *Database) SeedPrice(tb testing.TB, provider, model, currency string, va
 	return vid
 }
 
+// Rate is one rate of a seeded tenant price: per million units, as decimal text.
+type Rate struct {
+	Category  string
+	Threshold int64
+	Rate      string
+}
+
+// SeedTenantPrice inserts a price version of a tenant's list (the tenant's versions in one
+// currency) for a model, with its rates in the same transaction, and returns its ID. Without rates
+// it has `input` 1 and `output` 2, as SeedPrice does. A zero validFrom is "now": the version is in
+// force at once (a version cannot start in the past).
+func (d *Database) SeedTenantPrice(tb testing.TB, id tenant.ID, currency, provider, model string, validFrom time.Time, rates ...Rate) string {
+	tb.Helper()
+	if len(rates) == 0 {
+		rates = []Rate{{Category: "input", Rate: "1"}, {Category: "output", Rate: "2"}}
+	}
+	ctx, cancel := ctx30()
+	defer cancel()
+	var vid string
+	err := pgx.BeginFunc(ctx, d.Super(tb), func(tx pgx.Tx) error {
+		var from any
+		if !validFrom.IsZero() {
+			from = validFrom.UTC()
+		}
+		if err := tx.QueryRow(ctx, `INSERT INTO pandokos.tenant_price_version (tenant_id, model_id, valid_from, currency)
+			SELECT $1::uuid, m.id, COALESCE($4::timestamptz, now()), $5
+			  FROM pandokos.model m JOIN pandokos.provider p ON p.id = m.provider_id WHERE p.name = $2 AND m.name = $3
+			RETURNING id::text`, id.String(), provider, model, from, currency).Scan(&vid); err != nil {
+			return err
+		}
+		for _, r := range rates {
+			if _, err := tx.Exec(ctx, `INSERT INTO pandokos.tenant_price_rate (tenant_id, price_version_id, category, threshold, rate)
+				VALUES ($1::uuid, $2::uuid, $3, $4, $5::numeric)`, id.String(), vid, r.Category, r.Threshold, r.Rate); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		tb.Fatalf("seed tenant price: %v", err)
+	}
+	return vid
+}
+
+// SeedTenantPriceEnd inserts a version of kind end into a tenant's list: from validFrom the list
+// no longer prices the model. It has no rates. A zero validFrom is "now".
+func (d *Database) SeedTenantPriceEnd(tb testing.TB, id tenant.ID, currency, provider, model string, validFrom time.Time) string {
+	tb.Helper()
+	var from any
+	if !validFrom.IsZero() {
+		from = validFrom.UTC()
+	}
+	return d.seedScalar(tb, "seed tenant price end", `INSERT INTO pandokos.tenant_price_version (tenant_id, model_id, valid_from, kind, currency)
+		SELECT $1::uuid, m.id, COALESCE($4::timestamptz, now()), 'end', $5
+		  FROM pandokos.model m JOIN pandokos.provider p ON p.id = m.provider_id WHERE p.name = $2 AND m.name = $3
+		RETURNING id::text`, id.String(), provider, model, from, currency)
+}
+
+// SetTenantCurrency changes the three active currency columns of a tenant on a superuser
+// connection, in the platform scope. A zero effectiveFrom clears the pending instant; an instant in
+// the past is a change that took effect. As SetTenantZone does, it writes the row with the triggers
+// off and then notifies catalog:<tenant> and limits:<tenant>, which the triggers would have.
+func (d *Database) SetTenantCurrency(tb testing.TB, id tenant.ID, currency, previous string, effectiveFrom time.Time) {
+	tb.Helper()
+	ctx, cancel := ctx30()
+	defer cancel()
+	err := pgx.BeginFunc(ctx, d.Super(tb), func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT pg_catalog.set_config('app.scope', 'platform', true)`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `SET LOCAL session_replication_role = replica`); err != nil {
+			return err
+		}
+		var at any
+		if !effectiveFrom.IsZero() {
+			at = effectiveFrom.UTC()
+		}
+		if _, err := tx.Exec(ctx, `UPDATE pandokos.tenant SET active_currency = $2, active_currency_previous = $3, active_currency_effective_from = $4::timestamptz
+			WHERE id = $1::uuid`, id.String(), currency, previous, at); err != nil {
+			return err
+		}
+		for _, ch := range []string{"catalog:", "limits:"} {
+			if _, err := tx.Exec(ctx, `SELECT pg_notify('pandokos_cache', $1)`, ch+id.String()); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		tb.Fatalf("set tenant currency: %v", err)
+	}
+}
+
 // SetTenantZone changes the three time zone columns of a tenant on a superuser connection, in the
 // platform scope. A zero effectiveFrom clears the pending instant; an instant in the past is a change
 // that took effect. The row is written with the triggers off (see below).

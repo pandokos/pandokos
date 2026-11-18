@@ -69,10 +69,13 @@ func TestCatalogue(t *testing.T) {
 		{"platform_limit:read", ScopePlatform},
 		{"platform_limit:write", ScopePlatform},
 		{"platform_limit:delete", ScopePlatform},
+		{"price_list:read", ScopeTenant},
+		{"price_list:write", ScopeTenant},
+		{"price_list:delete", ScopeTenant},
 	}
 	got := Catalogue()
-	if len(got) != 41 {
-		t.Fatalf("%d permissions, want 41", len(got))
+	if len(got) != 44 {
+		t.Fatalf("%d permissions, want 44", len(got))
 	}
 	re := regexp.MustCompile(`^[a-z_]+:[a-z_]+$`)
 	seen := map[string]bool{}
@@ -122,7 +125,8 @@ func TestRoles(t *testing.T) {
 		PlatformIssuerRead, PlatformIssuerWrite, PlatformIssuerDelete, PlatformLimitRead, PlatformLimitWrite, PlatformLimitDelete}
 	tenantAll := []string{IdentityRead, ServiceAccountRead, ServiceAccountWrite, VirtualKeyRead, VirtualKeyWrite, VirtualKeyRevoke, ModelInvoke,
 		CredentialRead, CredentialWrite, CredentialRotate, CredentialDelete, CredentialUse, ModelRead, ModelRestrict, UsageRead,
-		TokenIssuerRead, TokenIssuerWrite, TokenIssuerDelete, SubjectMappingRead, SubjectMappingWrite, SubjectMappingDelete, LimitRead, LimitWrite, LimitDelete}
+		TokenIssuerRead, TokenIssuerWrite, TokenIssuerDelete, SubjectMappingRead, SubjectMappingWrite, SubjectMappingDelete, LimitRead, LimitWrite, LimitDelete,
+		PriceListRead, PriceListWrite, PriceListDelete}
 	want := []struct {
 		name string
 		kind Kind
@@ -272,7 +276,7 @@ func TestEffective(t *testing.T) {
 	}{
 		{"union of roles", sa(id(1), tenant.StateActive, []string{RoleInference, RoleTenantAdmin}, nil),
 			[]string{CredentialDelete, CredentialRead, CredentialRotate, CredentialUse, CredentialWrite, IdentityRead, LimitDelete, LimitRead, LimitWrite, ModelInvoke,
-				ModelRead, ModelRestrict, ServiceAccountRead, ServiceAccountWrite, SubjectMappingDelete, SubjectMappingRead, SubjectMappingWrite,
+				ModelRead, ModelRestrict, PriceListDelete, PriceListRead, PriceListWrite, ServiceAccountRead, ServiceAccountWrite, SubjectMappingDelete, SubjectMappingRead, SubjectMappingWrite,
 				TokenIssuerDelete, TokenIssuerRead, TokenIssuerWrite, UsageRead, VirtualKeyRead, VirtualKeyRevoke, VirtualKeyWrite}},
 		{"scopes intersect", sa(id(1), tenant.StateActive, []string{RoleTenantAdmin}, []string{VirtualKeyRead, "tenant:read", ModelInvoke}),
 			[]string{ModelInvoke, VirtualKeyRead}},

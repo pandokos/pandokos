@@ -83,7 +83,7 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 			},
 			"tenant": {
 				"pandokos_gateway": {"SELECT"},
-				"pandokos_admin":   {"INSERT(display_name,name,time_zone)", "SELECT", "UPDATE(display_name,name,state,time_zone,time_zone_effective_from,time_zone_previous)"},
+				"pandokos_admin":   {"INSERT(display_name,name,time_zone)", "SELECT", "UPDATE(active_currency,active_currency_effective_from,active_currency_previous,display_name,name,state,time_zone,time_zone_effective_from,time_zone_previous)"},
 				"pandokos_worker":  {"SELECT"},
 			},
 			"service_account": {
@@ -180,8 +180,16 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 				"pandokos_admin":   {"DELETE", "INSERT(currency,import_id,model_id,note,source,valid_from)", "SELECT"},
 				"pandokos_worker":  {"INSERT(currency,import_id,model_id,note,source,valid_from)", "SELECT"},
 			},
+			"tenant_price_version": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin":   {"DELETE", "INSERT(currency,kind,model_id,note,tenant_id,valid_from)", "SELECT"},
+			},
+			"tenant_price_rate": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin":   {"INSERT(category,price_version_id,rate,tenant_id,threshold)", "SELECT"},
+			},
 			"usage_record": {
-				"pandokos_gateway": {"INSERT(api_family,cache_read_tokens,cache_write_tokens,cost,cost_fallbacks,cost_reason,cost_status,credential_id,currency,duration_ms,endpoint,error_code,estimated_input_tokens,estimated_output_tokens,id,input_source,input_tokens,key_id,limit_state,metadata,metadata_dropped,model,model_id,operation,other_units,outcome,output_source,output_tokens,price_version_id,principal_id,principal_kind,provider,provider_usage,reasoning_tokens,request_bytes,request_id,response_bytes,started_at,stream,tenant_id,trace_id,ttfb_ms,upstream_model,upstream_status)"},
+				"pandokos_gateway": {"INSERT(api_family,cache_read_tokens,cache_write_tokens,cost,cost_fallbacks,cost_reason,cost_status,credential_id,currency,duration_ms,endpoint,error_code,estimated_input_tokens,estimated_output_tokens,id,input_source,input_tokens,key_id,limit_state,metadata,metadata_dropped,model,model_id,operation,other_units,outcome,output_source,output_tokens,price_source,price_version_id,principal_id,principal_kind,provider,provider_usage,reasoning_tokens,request_bytes,request_id,response_bytes,started_at,stream,tenant_id,trace_id,ttfb_ms,upstream_model,upstream_status)"},
 				"pandokos_admin":   {"SELECT"},
 				"pandokos_worker":  {"SELECT"},
 			},
@@ -286,6 +294,25 @@ VALUES ($1::uuid, 'tenant', 'requests_per_minute', 10) RETURNING id::text`,
 				Insert: `INSERT INTO pandokos.limit_event (tenant_id, kind, rule_id, rule_level, subject_kind, metric, period_start, period_end, percent, limit_value, observed)
 VALUES ($1::uuid, 'threshold_reached', pandokos.uuid_v7(), 'tenant', 'tenant', 'tokens_per_day', date_trunc('day', now()), date_trunc('day', now()) + interval '1 day', 80, 10, 8) RETURNING id::text`,
 				Update: `percent = 81`,
+			},
+			"tenant_price_version": {
+				Insert: `WITH v AS (INSERT INTO pandokos.tenant_price_version (tenant_id, model_id, valid_from, currency)
+           SELECT $1::uuid, m.id, now() + interval '1 hour' + random() * interval '1 hour', 'EUR'
+             FROM pandokos.model m ORDER BY m.id LIMIT 1 RETURNING tenant_id, id),
+     r AS (INSERT INTO pandokos.tenant_price_rate (tenant_id, price_version_id, category, rate)
+           SELECT v.tenant_id, v.id, 'input', 1 FROM v RETURNING price_version_id)
+SELECT r.price_version_id::text FROM r`,
+				Update: `note = 'changed'`,
+			},
+			"tenant_price_rate": {
+				Insert: `WITH v AS (INSERT INTO pandokos.tenant_price_version (tenant_id, model_id, valid_from, currency)
+           SELECT $1::uuid, m.id, now() + interval '1 hour' + random() * interval '1 hour', 'EUR'
+             FROM pandokos.model m ORDER BY m.id LIMIT 1 RETURNING tenant_id, id),
+     r AS (INSERT INTO pandokos.tenant_price_rate (tenant_id, price_version_id, category, rate)
+           SELECT v.tenant_id, v.id, 'input', 1 FROM v RETURNING price_version_id)
+SELECT r.price_version_id::text FROM r`,
+				Key:    "price_version_id",
+				Update: `rate = 2`,
 			},
 			"tenant_model_restriction": {
 				Insert: `INSERT INTO pandokos.tenant_model_restriction (tenant_id, models) VALUES ($1::uuid, ARRAY['openai/gpt-4o']) RETURNING id::text`,

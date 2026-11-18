@@ -27,7 +27,9 @@ type CacheOptions struct {
 	DB     *store.DB // the gateway pool
 	Logger *slog.Logger
 	TTL    time.Duration // cache.catalog_ttl, 1 s to 5 m
-	Now    func() time.Time
+	// DefaultCurrency is pricing.default_currency: the active currency of a tenant that chose none.
+	DefaultCurrency string
+	Now             func() time.Time
 }
 
 // loader is where a Cache gets what it caches.
@@ -190,26 +192,27 @@ func (c *Cache) Access(ctx context.Context, id tenant.ID) (TenantAccess, error) 
 // is refused without loading anything of a tenant; a failed load is an error that is neither
 // refusal.
 func (c *Cache) Resolve(ctx context.Context, p authz.Principal, provider, name string) (Model, Endpoint, error) {
-	_, m, e, err := c.ResolveIn(ctx, p, provider, name)
+	_, _, m, e, err := c.ResolveIn(ctx, p, provider, name)
 	return m, e, err
 }
 
-// ResolveIn is Resolve that also returns the snapshot the answer came from, so that a caller that
-// needs more of the same state (the price versions of the model) reads no second snapshot, which
-// could be another one or fail on its own.
-func (c *Cache) ResolveIn(ctx context.Context, p authz.Principal, provider, name string) (*Snapshot, Model, Endpoint, error) {
+// ResolveIn is Resolve that also returns the snapshot the answer came from and the tenant's
+// access it was resolved with, so that a caller that needs more of the same state (the price
+// versions of the model, the tenant's currency and prices) reads no second copy, which could be
+// another one or fail on its own.
+func (c *Cache) ResolveIn(ctx context.Context, p authz.Principal, provider, name string) (*Snapshot, TenantAccess, Model, Endpoint, error) {
 	s, err := c.Snapshot(ctx)
 	if err != nil {
-		return nil, Model{}, Endpoint{}, err
+		return nil, TenantAccess{}, Model{}, Endpoint{}, err
 	}
 	var ta TenantAccess
 	if p.Kind == authz.KindServiceAccount && !p.TenantID.IsZero() {
 		if ta, err = c.Access(ctx, p.TenantID); err != nil {
-			return nil, Model{}, Endpoint{}, err
+			return nil, TenantAccess{}, Model{}, Endpoint{}, err
 		}
 	}
 	m, e, err := s.Resolve(p, ta, provider, name)
-	return s, m, e, err
+	return s, ta, m, e, err
 }
 
 // Invalidate applies a notification payload: catalog marks the snapshot stale; catalog:<tenant>

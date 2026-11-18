@@ -50,6 +50,12 @@ type TenantAccess struct {
 	Granted    map[string]bool // model IDs granted to the tenant
 	Restricted bool            // the tenant has a restriction row
 	Allowed    map[string]bool // references of the restriction
+	// Currency is the active currency of the tenant, resolved with the default of the
+	// installation. Zero until the loader fills it.
+	Currency pricing.Active
+	// Prices holds the tenant's price versions by model ID, of the currencies of Currency. Nil
+	// until the loader fills it.
+	Prices map[string][]pricing.Version
 }
 
 // SnapshotData is what NewSnapshot builds a Snapshot from.

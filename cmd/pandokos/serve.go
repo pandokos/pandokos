@@ -201,7 +201,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	catalogCache, err := catalog.NewCache(catalog.CacheOptions{DB: gatewayDB, Logger: logger, TTL: time.Duration(cfg.Cache.CatalogTTL)})
+	catalogCache, err := catalog.NewCache(catalog.CacheOptions{DB: gatewayDB, Logger: logger, TTL: time.Duration(cfg.Cache.CatalogTTL), DefaultCurrency: cfg.Pricing.DefaultCurrency})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
@@ -258,6 +258,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		Refresh:   refresh,
 	}
 	adminOpts.Limits.Zones, adminOpts.Limits.OnUnknownPrice = zones, cfg.Limits.OnUnknownPrice
+	adminOpts.DefaultCurrency = cfg.Pricing.DefaultCurrency
 	adminOpts.Limits.Ledger = limits.NewLedger(workerDB)
 	adminHandler, err := admin.New(adminOpts)
 	if err != nil {

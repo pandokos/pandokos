@@ -58,6 +58,7 @@ type Version struct {
 	Currency    string // ISO 4217 letters
 	Source      string // import, override
 	Rates       []Rate // sorted by category, then threshold
+	End         bool   // a tenant's version that stops the list for the model (no rates)
 }
 
 // Rules a version can break. None carries a value.

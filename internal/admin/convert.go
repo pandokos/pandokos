@@ -29,6 +29,7 @@ func (s *server) tenantOut(r queries.PandokosTenant) adminapi.Tenant {
 		ID: r.ID, Name: r.Name, DisplayName: r.DisplayName, State: adminapi.TenantState(r.State),
 		CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(), StateChangedAt: r.StateChangedAt.UTC(),
 		TimeZone: r.TimeZone, TimeZoneInForce: z.InForce, TimeZoneEffectiveFrom: z.EffectiveFrom,
+		ActiveCurrency: r.ActiveCurrency, ActiveCurrencyInForce: r.ActiveCurrency, ActiveCurrencyEffectiveFrom: utc(r.ActiveCurrencyEffectiveFrom),
 	}
 }
 

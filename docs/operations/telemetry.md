@@ -18,6 +18,7 @@ Metrics and token counts on spans come with a later release.
 | `telemetry.traces.sample_ratio` | share of new traces that is sampled, 0 to 1 (default 1) |
 | `telemetry.traces.propagate` | send the trace context to the provider (default false) |
 | `telemetry.resource.attributes` | extra resource attributes, `key=value` pairs separated by commas |
+| `telemetry.tenant_usage_details` | write the cost, currency and token counts of a tenant's requests to the request log and to traces (default false) |
 
 Each has an environment variable (`PANDOKOS_TELEMETRY_...`) as in the
 [configuration reference](configuration.md). They are read by `serve` only.

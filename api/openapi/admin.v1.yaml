@@ -22,6 +22,9 @@ tags:
   - name: tenant-credentials
   - name: catalog
   - name: prices
+  - name: tenant-prices
+    description: Price lists of a tenant and its active currency
+
   - name: model-access
   - name: platform-keys
   - name: usage
@@ -1013,7 +1016,7 @@ paths:
       tags: [catalog]
       summary: Delete a model that has no price
       description: >-
-        Refused with invalid_state once a price version exists: retire the model instead; also refused while a limit rule of any tenant or of the platform references it, and errors then names limit_rules. Grants are removed with it. The response is the model as it was.
+        Refused with invalid_state once a price version exists: retire the model instead; also refused while a limit rule of any tenant or of the platform references it, and errors then names limit_rules; or while a price version of a tenant references it; errors then names tenant_prices. Grants are removed with it. The response is the model as it was.
       x-pandokos-permission: catalog:write
       responses:
         "200": {$ref: '#/components/responses/Model'}
@@ -1212,7 +1215,7 @@ paths:
       tags: [model-access]
       summary: List the models available to the tenant
       description: >-
-        Models the platform made available to the tenant, with allowed false for those outside the tenant's restriction, and the price in force now.
+        Models the platform made available to the tenant, with allowed false for those outside the tenant's restriction, and the price in force now: price is the catalogue's version in force, tenant_price the version of the tenant's active list; price_source says which applies.
       x-pandokos-permission: model:read
       parameters:
         - {$ref: '#/components/parameters/Limit'}
@@ -1343,6 +1346,141 @@ paths:
             schema: {$ref: '#/components/schemas/Reason'}
       responses:
         "200": {$ref: '#/components/responses/PlatformKey'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/price-lists:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: listPriceLists
+      tags: [tenant-prices]
+      summary: List the price lists of the tenant, one per currency
+      x-pandokos-permission: price_list:read
+      responses:
+        "200": {$ref: '#/components/responses/TenantPriceListList'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/prices:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: listPriceListVersions
+      tags: [tenant-prices]
+      summary: List the price versions of the tenant's price lists, newest first
+      description: >-
+        A cursor is valid only with the same currency, provider, model and at.
+      x-pandokos-permission: price_list:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {name: currency, in: query, description: Only versions of the list in this currency., schema: {$ref: '#/components/schemas/Currency'}}
+        - {name: provider, in: query, description: Only versions for models of this provider., schema: {$ref: '#/components/schemas/ProviderName'}}
+        - {name: model, in: query, description: Only versions for the model of this name; needs provider., schema: {$ref: '#/components/schemas/ModelName'}}
+        - {name: at, in: query, description: 'An RFC 3339 time: only the versions in force then, one per list and model.', schema: {type: string, minLength: 1, maxLength: 64}}
+      responses:
+        "200": {$ref: '#/components/responses/TenantPriceVersionList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: createPriceListVersion
+      tags: [tenant-prices]
+      summary: Add a price version to one of the tenant's price lists
+      description: >-
+        The list is the one of the version's currency; the first version in a currency creates the
+        list. The version starts at valid_from (now when absent; never in the past). While the
+        currency is the tenant's active currency it is the price of the tenant's requests for the
+        model, in place of the catalogue price in that currency; in another currency it is kept and
+        unused. kind end takes no rates: from its start the list does not price the model. The
+        model must be available to the tenant.
+      x-pandokos-permission: price_list:write
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TenantPriceCreate'}}}}
+      responses:
+        "201": {$ref: '#/components/responses/TenantPriceVersionCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/prices/{price}:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/TenantPrice'}
+    get:
+      operationId: getPriceListVersion
+      tags: [tenant-prices]
+      summary: Read a price version of the tenant's price lists
+      description: >-
+        Any version, past ones included: the one a usage record names with price_source tenant.
+      x-pandokos-permission: price_list:read
+      responses:
+        "200": {$ref: '#/components/responses/TenantPriceVersion'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    delete:
+      operationId: deletePriceListVersion
+      tags: [tenant-prices]
+      summary: Remove a price version of the tenant's lists that has not started
+      description: >-
+        Refused with invalid_state once the version is in force or past: versions are immutable.
+        The response is the version as it was.
+      x-pandokos-permission: price_list:delete
+      responses:
+        "200": {$ref: '#/components/responses/TenantPriceVersion'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/active-currency:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: getActiveCurrency
+      tags: [tenant-prices]
+      summary: Read the currency every cost of the tenant is computed in
+      x-pandokos-permission: price_list:read
+      responses:
+        "200": {$ref: '#/components/responses/ActiveCurrency'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    put:
+      operationId: setActiveCurrency
+      tags: [tenant-prices]
+      summary: Choose the currency every cost of the tenant is computed in
+      description: >-
+        The currency must have a list: prices of the tenant in it, or catalogue prices in it. The
+        change takes effect at the start of the next month in the tenant's time zone; until then
+        effective_from says when. Setting the currency in force again withdraws a pending change.
+        An empty currency is the default of the installation. From the change on, only budgets and
+        ceilings in the new currency apply; inactive_limits names the others.
+      x-pandokos-permission: price_list:write
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ActiveCurrencySet'}}}}
+      responses:
+        "200": {$ref: '#/components/responses/ActiveCurrency'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
         "401": {$ref: '#/components/responses/Unauthenticated'}
         "403": {$ref: '#/components/responses/Forbidden'}
@@ -1626,8 +1764,8 @@ paths:
       tags: [limits]
       summary: Create a limit rule of a tenant
       description: >-
-        One rule per subject, scope and metric. The subject and the scope must exist. A count metric
-        takes limit; a cost metric takes amount and currency. A tenant has at most 5000 rules. The currency of a cost rule is checked against the currencies the scope can be priced in.
+        One rule per subject, scope, metric and currency. The subject and the scope must exist. A count metric
+        takes limit; a cost metric takes amount and currency. A tenant has at most 5000 rules. The currency of a cost rule must have a price list for the scope: the tenant's or the catalogue's (for a ceiling of one tenant: the catalogue's, or the tenant's active currency).
       x-pandokos-permission: limit:write
       requestBody:
         required: true
@@ -1667,7 +1805,7 @@ paths:
       summary: Change the value, the enforcement or the thresholds of a limit rule
       description: >-
         At least one member. Subject, scope, metric and currency never change. Counters are not
-        reset by a change. The currency of a cost rule is checked against the currencies the scope can be priced in.
+        reset by a change. The currency of a cost rule must have a price list for the scope: the tenant's or the catalogue's (for a ceiling of one tenant: the catalogue's, or the tenant's active currency).
       x-pandokos-permission: limit:write
       requestBody:
         required: true
@@ -1806,7 +1944,7 @@ paths:
       summary: Create a ceiling for every tenant or for one
       description: >-
         Without tenant the rule is the default for every tenant; with a tenant it replaces the
-        default of the same scope and metric for that tenant. The currency of a cost rule is checked against the currencies the scope can be priced in.
+        default of the same scope, metric and currency for that tenant. The currency of a cost rule must have a price list for the scope: the tenant's or the catalogue's (for a ceiling of one tenant: the catalogue's, or the tenant's active currency).
       x-pandokos-permission: platform_limit:write
       requestBody:
         required: true
@@ -1843,7 +1981,7 @@ paths:
       tags: [platform-limits]
       summary: Change the value, the enforcement or the thresholds of a platform ceiling
       description: >-
-        The currency of a cost rule is checked against the currencies the scope can be priced in.
+        The currency of a cost rule must have a price list for the scope: the tenant's or the catalogue's (for a ceiling of one tenant: the catalogue's, or the tenant's active currency).
       x-pandokos-permission: platform_limit:write
       requestBody:
         required: true
@@ -2092,6 +2230,12 @@ components:
       in: path
       required: true
       description: Price version ID.
+      schema: {$ref: '#/components/schemas/ID'}
+    TenantPrice:
+      name: price
+      in: path
+      required: true
+      description: ID of a price version of the tenant's price lists.
       schema: {$ref: '#/components/schemas/ID'}
     PriceImport:
       name: price_import
@@ -2366,6 +2510,31 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/PriceVersionList'}
+    TenantPriceVersion:
+      description: The price version.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/TenantPriceVersion'}
+    TenantPriceVersionCreated:
+      description: The new price version.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/TenantPriceVersion'}
+    TenantPriceVersionList:
+      description: One page of price versions of the tenant's price lists.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/TenantPriceVersionList'}
+    TenantPriceListList:
+      description: The price lists of the tenant.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/TenantPriceListList'}
+    ActiveCurrency:
+      description: The active currency of the tenant.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ActiveCurrency'}
     PriceImport:
       description: The import, with its report.
       content:
@@ -2544,7 +2713,7 @@ components:
       enum: [active, missing, disabled, revoked]
     BudgetAvailability:
       type: string
-      description: not_enforced when no enforced quota or budget of the tenant matches; unpriced when a budget matches and the model has no price in its currency; exhausted when a matching quota or budget is used up for the current period.
+      description: not_enforced when no enforced quota or budget in force matches (a budget in another currency than the tenant's active currency is not in force); unpriced when a budget matches and the model has no price in the active currency; exhausted when a matching quota or budget is used up for the current period.
       enum: [not_enforced, available, exhausted, unpriced]
     CapabilityChecks:
       type: object
@@ -2593,7 +2762,7 @@ components:
                  error_code, upstream_status, ttfb_ms, request_bytes, response_bytes, input_source, output_source,
                  input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
                  estimated_input_tokens, estimated_output_tokens, other_units, provider_usage, cost_status, cost_reason,
-                 currency, price_version_id, cost_fallbacks, metadata, metadata_dropped, limit_state]
+                 currency, price_version_id, price_source, cost_fallbacks, metadata, metadata_dropped, limit_state]
       properties:
         id: {$ref: '#/components/schemas/ID'}
         request_id: {type: string}
@@ -2639,6 +2808,7 @@ components:
         cost: {type: [string, "null"], description: Decimal amount in currency; null unless cost_status is known. Informational under BYOK.}
         currency: {type: string}
         price_version_id: {type: string}
+        price_source: {type: string, description: 'catalogue or tenant: the price list price_version_id belongs to; empty when the record has no price version.'}
         cost_fallbacks:
           type: array
           items: {type: string}
@@ -2880,6 +3050,104 @@ components:
           minItems: 1
           maxItems: 64
           items: {$ref: '#/components/schemas/PriceRate'}
+    TenantPriceKind:
+      type: string
+      description: price carries rates; end carries none, and from its start the list does not price the model.
+      enum: [price, end]
+    CurrencyOrDefault:
+      type: string
+      pattern: '^([A-Z]{3})?$'
+      description: An ISO 4217 code; empty for the default currency of the installation.
+    TenantPriceVersion:
+      type: object
+      additionalProperties: false
+      required: [id, model_id, provider, model, kind, valid_from, currency, rates, note, in_force, created_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        model_id: {$ref: '#/components/schemas/ID'}
+        provider: {$ref: '#/components/schemas/ProviderName'}
+        model: {$ref: '#/components/schemas/ModelName'}
+        kind: {$ref: '#/components/schemas/TenantPriceKind'}
+        valid_from: {type: string, format: date-time}
+        currency: {$ref: '#/components/schemas/Currency'}
+        rates:
+          type: array
+          items: {$ref: '#/components/schemas/PriceRate'}
+        note: {type: string}
+        in_force: {type: boolean, description: true when this is the version of its list and model in force now. A list is used only while its currency is the active currency.}
+        created_at: {type: string, format: date-time}
+    TenantPriceVersionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/TenantPriceVersion'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    TenantPriceCreate:
+      type: object
+      additionalProperties: false
+      required: [provider, model, currency]
+      properties:
+        provider: {$ref: '#/components/schemas/ProviderName'}
+        model: {$ref: '#/components/schemas/ModelName'}
+        currency: {$ref: '#/components/schemas/Currency'}
+        kind: {$ref: '#/components/schemas/TenantPriceKind'}
+        valid_from: {type: string, format: date-time, description: Now when absent; never in the past.}
+        note: {type: string, maxLength: 500}
+        rates:
+          type: array
+          maxItems: 64
+          items: {$ref: '#/components/schemas/PriceRate'}
+    TenantPriceList:
+      type: object
+      additionalProperties: false
+      required: [currency, versions, models_priced, active]
+      properties:
+        currency: {$ref: '#/components/schemas/Currency'}
+        versions: {type: integer, description: Versions of the list, past ones included.}
+        models_priced: {type: integer, description: Models the list prices now.}
+        active: {type: boolean, description: true when the currency of the list is the active currency in force.}
+    TenantPriceListList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/TenantPriceList'}
+    InactiveLimit:
+      type: object
+      additionalProperties: false
+      required: [level, rule_id, metric, currency]
+      properties:
+        level: {type: string, description: 'platform (a ceiling) or tenant (a rule of the tenant).'}
+        rule_id: {$ref: '#/components/schemas/ID'}
+        metric: {$ref: '#/components/schemas/LimitMetric'}
+        currency: {$ref: '#/components/schemas/Currency'}
+    ActiveCurrency:
+      type: object
+      additionalProperties: false
+      required: [currency, in_force]
+      properties:
+        currency: {$ref: '#/components/schemas/CurrencyOrDefault'}
+        in_force: {$ref: '#/components/schemas/Currency'}
+        effective_from: {type: string, format: date-time, description: Present while a change is pending; the instant from which currency is in force.}
+        inactive_limits:
+          type: array
+          maxItems: 100
+          description: >-
+            Only in the answer to a change: the cost rules of the tenant and the ceilings of the
+            platform that apply to it whose currency is not the new one. From effective_from they
+            are inactive: they count nothing and refuse nothing.
+          items: {$ref: '#/components/schemas/InactiveLimit'}
+    ActiveCurrencySet:
+      type: object
+      additionalProperties: false
+      required: [currency]
+      properties:
+        currency: {$ref: '#/components/schemas/CurrencyOrDefault'}
     PriceImportIssue:
       type: object
       additionalProperties: false
@@ -2949,7 +3217,9 @@ components:
       properties:
         model: {$ref: '#/components/schemas/Model'}
         allowed: {type: boolean, description: false when the tenant's restriction leaves the model out.}
-        price: {$ref: '#/components/schemas/PriceVersion'}
+        price: {$ref: '#/components/schemas/PriceVersion', description: The catalogue's version in force.}
+        tenant_price: {$ref: '#/components/schemas/TenantPriceVersion'}
+        price_source: {type: string, description: 'tenant or catalogue: which of tenant_price and price applies to the tenant in its active currency; empty when neither does.'}
     TenantModelList:
       type: object
       additionalProperties: false
@@ -3169,7 +3439,8 @@ components:
     Tenant:
       type: object
       additionalProperties: false
-      required: [id, name, display_name, state, created_at, updated_at, state_changed_at, time_zone, time_zone_in_force]
+      required: [id, name, display_name, state, created_at, updated_at, state_changed_at, time_zone, time_zone_in_force,
+                 active_currency, active_currency_in_force]
       properties:
         id: {$ref: '#/components/schemas/ID'}
         name: {$ref: '#/components/schemas/Name'}
@@ -3181,6 +3452,9 @@ components:
         time_zone: {$ref: '#/components/schemas/TimeZoneName'}
         time_zone_in_force: {type: string}
         time_zone_effective_from: {type: string, format: date-time}
+        active_currency: {$ref: '#/components/schemas/CurrencyOrDefault'}
+        active_currency_in_force: {type: string}
+        active_currency_effective_from: {type: string, format: date-time}
     TenantCreate:
       type: object
       additionalProperties: false
@@ -3679,7 +3953,7 @@ components:
       type: object
       additionalProperties: false
       required: [id, subject_kind, subject_id, provider, provider_id, model, model_id, metric, limit, amount, currency, enforce, thresholds,
-                 created_at, updated_at]
+                 active, created_at, updated_at]
       properties:
         id: {$ref: '#/components/schemas/ID'}
         subject_kind: {$ref: '#/components/schemas/LimitSubjectKind'}
@@ -3694,6 +3968,7 @@ components:
         currency: {type: string, description: Empty unless a cost metric.}
         enforce: {type: boolean, description: false means the rule never refuses and only records its thresholds.}
         thresholds: {type: array, description: 'Percentages of the limit at which an event is recorded, ascending.', maxItems: 4, uniqueItems: true, items: {type: integer, minimum: 1, maximum: 100}}
+        active: {type: boolean, description: 'false for a cost rule whose currency is not the active currency of the tenant in force now; such a rule counts and refuses nothing.'}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
     LimitRuleCreate:
@@ -3736,6 +4011,7 @@ components:
         currency: {type: string, description: Empty unless a cost metric.}
         enforce: {type: boolean, description: false means the rule never refuses and only records its thresholds.}
         thresholds: {type: array, description: 'Percentages of the limit at which an event is recorded, ascending.', maxItems: 4, uniqueItems: true, items: {type: integer, minimum: 1, maximum: 100}}
+        active: {type: boolean, description: 'Only in listTenantPlatformLimits: whether the ceiling applies to the tenant in its active currency.'}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
     PlatformLimitRuleCreate:

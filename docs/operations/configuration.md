@@ -91,6 +91,7 @@ replaced by `_`.
 | `vault.kek.provider` | `PANDOKOS_VAULT_KEK_PROVIDER` | `local` | `local` | Key-encryption key provider; only `local` exists |
 | `vault.kek.local.key_file` | `PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE` | path | none, required by `serve` | File with the key-encryption key: 32 random bytes in standard base64. Create it with `pandokos kek generate` ([vault guide](vault.md)) |
 | `pricing.import_at_start` | `PANDOKOS_PRICING_IMPORT_AT_START` | boolean | `true` | Import the embedded price snapshot when `serve` starts, unless an identical or a newer import exists ([catalogue guide](catalogue.md)) |
+| `pricing.default_currency` | `PANDOKOS_PRICING_DEFAULT_CURRENCY` | ISO 4217 code | `USD` | The currency in which the costs of the tenants that have not chosen an active currency are computed, and in which their cost budgets apply; three capital letters |
 | `pricing.refresh.enabled` | `PANDOKOS_PRICING_REFRESH_ENABLED` | boolean | `false` | Download the price dataset periodically: an outbound request to `pricing.refresh.url` |
 | `pricing.refresh.url` | `PANDOKOS_PRICING_REFRESH_URL` | URL | `https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json` | Address of the price dataset; `https` only, no user information. Pin it to a commit to control what is imported |
 | `pricing.refresh.interval` | `PANDOKOS_PRICING_REFRESH_INTERVAL` | duration | `24h` | Time between downloads (1h to 720h) |
@@ -105,6 +106,7 @@ replaced by `_`.
 | `telemetry.traces.sample_ratio` | `PANDOKOS_TELEMETRY_TRACES_SAMPLE_RATIO` | decimal | `1` | Share of the traces started here that is sampled (0 to 1); the sampled flag of a caller's `traceparent` is followed |
 | `telemetry.traces.propagate` | `PANDOKOS_TELEMETRY_TRACES_PROPAGATE` | boolean | `false` | Send the trace context to the provider in a `traceparent` header |
 | `telemetry.resource.attributes` | `PANDOKOS_TELEMETRY_RESOURCE_ATTRIBUTES` | list | none | Resource attributes of the traces: `key=value` pairs separated by commas, in YAML and in the environment |
+| `telemetry.tenant_usage_details` | `PANDOKOS_TELEMETRY_TENANT_USAGE_DETAILS` | boolean | `false` | Write the cost, currency and token counts of a tenant's requests to the request log and to traces; off by default because they are the tenant's data |
 
 Durations are strings in Go syntax (`"30s"`, `"10m"`); a YAML number is rejected for a duration.
 Sizes are integers in bytes.
