@@ -91,6 +91,11 @@ Added after the review of ADR 0049 by the maintainer (2026-11-18). Content still
 - A budget is refused on write when no price that can be in force for its scope is in its currency
   (no conversion, ADR 0050 option A), with an answer that names the currencies the prices of that
   scope use; the limits guide explains that prices are set by the platform for every tenant.
+- Documentation: the limits guide explains the two quotas, the one decided in Pandokos and the one
+  a provider grants to a credential, which Pandokos cannot see, and shows how to protect a
+  provider tier and keep a batch key from starving an interactive one with rules scoped to the
+  provider (issue #32); the table of the tokens guide states that a subject mapping can be the
+  subject of a limit rule and that service-account limits apply to tokens (issue #30).
 - Amendments to ADR 0049 and ADR 0050 record these decisions.
 
 Requirements: LIM-02, LIM-03, LIM-04, AUD-01.

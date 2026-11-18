@@ -101,7 +101,9 @@ flowchart LR
 
 Not planned in detail: Bedrock, Vertex AI and Cohere; batch and file endpoints; identity providers
 configured per tenant for interactive sign-in; a Kubernetes operator for cells; certificate-bound
-tokens; sealing credentials with public keys.
+tokens; sealing credentials with public keys; limit rules scoped to a pinned provider credential
+(issue #32); time-boxed budget exceptions (issue #31); limits and usage per end user from a verified
+token claim (issue #36).
 
 ## What can change this plan
 

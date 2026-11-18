@@ -28,6 +28,8 @@ erasure), 0014.
 - Prometheus endpoint on the admin listener.
 - Redacting log handler; log reference.
 - Example dashboards.
+- The provider's own 429 answers counted per provider credential (never as a tenant label), so that
+  an operator can see which credential is saturated (issue #32).
 
 Requirements: OBS-01 (metrics), OBS-03, OBS-06, OBS-07.
 
