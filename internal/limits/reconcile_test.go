@@ -525,3 +525,51 @@ func TestReconcilerTwoZones(t *testing.T) {
 		t.Errorf("the second tick left the cut at %s", c2)
 	}
 }
+
+// TestReconcilerCounterCreatedMidFold: the cut points are read before the ledger queries, so a
+// counter that a Reserve creates empty while the fold is reading, with its period starting strictly
+// inside a piece, must not make the fold skip that piece and still move the cut past the start of
+// the period (design 5.7: the counter receives the usage of its first minutes when the cut passes
+// them). The fold is refused and read again with the new cut points.
+func TestReconcilerCounterCreatedMidFold(t *testing.T) {
+	clk := newClock()
+	clk.t = at(2026, 11, 30, 15, 20, 30)
+	model := &refModel{}
+	m := newMemoryWith(t, clk, nil)
+	led := &fakeLedger{model: model, clk: clk}
+	rec, err := NewReconciler(ReconcilerOptions{Store: m, Ledger: led, Horizon: testHorizon, Interval: testInterval, Logger: quietLogger(), Now: clk.now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tn := tid(1)
+	utc, tokyo := mustCalendar(t, "UTC"), mustCalendar(t, "Asia/Tokyo")
+	cut := at(2026, 11, 30, 14, 30, 0)
+	m.SetCut(tn, cut)
+	add := func(start time.Time, tokens int64) {
+		model.add(&refReq{tn: tn, sa: "sa1", key: "k1", start: start, end: refSettled, admitted: true, actTokens: tokens, commitAt: start, resolveAt: start})
+	}
+	add(at(2026, 11, 30, 14, 40, 0), 10)
+	add(at(2026, 11, 30, 15, 5, 0), 1000) // inside Tokyo's new day, which starts at 15:00Z
+	uday := perLimit(tn, SubjectTenant, "", TokensPerDay, 1e12, utc.Of(PerDay, cut))
+	m.Load(tn, uday.Period, []Limit{uday}, model.Ledger(clk.now(), tn, uday.Period.Start, cut, cut))
+	tday := perLimit(tn, SubjectTenant, "", TokensPerDay, 1e12, tokyo.Of(PerDay, at(2026, 11, 30, 15, 10, 0)))
+	if !tday.Period.Start.Equal(at(2026, 11, 30, 15, 0, 0)) {
+		t.Fatalf("tokyo day starts %s", tday.Period.Start)
+	}
+	var once sync.Once
+	led.onUsage = func(int) {
+		// A request of the tenant in its Tokyo day arrives during the fold: the counter is created empty.
+		once.Do(func() { m.Load(tn, tday.Period, []Limit{tday}, nil) })
+	}
+	rec.Tick(context.Background())
+	next, _ := m.Cut(tn)
+	if !next.After(at(2026, 11, 30, 15, 5, 0)) {
+		t.Fatalf("the cut did not pass the usage: %s", next)
+	}
+	got, ok := m.Counted(tday)
+	end := earlier(tday.Period.End, next)
+	want := Sum(tday, model.Ledger(clk.now(), tn, tday.Period.Start, end, end))
+	if !ok || got.N != want.N || want.N != 1000 {
+		t.Errorf("tokyo day counted %d (present %v), the ledger holds %d, want 1000", got.N, ok, want.N)
+	}
+}

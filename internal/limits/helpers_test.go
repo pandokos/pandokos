@@ -547,6 +547,8 @@ type fakeLedger struct {
 	mu    sync.Mutex
 	err   error
 	calls []ledgerCall
+	// onUsage, when set, runs at the start of every Usage call with its index (from 0), outside the lock.
+	onUsage func(n int)
 }
 
 type ledgerCall struct {
@@ -568,9 +570,14 @@ func (f *fakeLedger) callLog() []ledgerCall {
 
 func (f *fakeLedger) Usage(_ context.Context, t tenant.ID, from, liveFrom, to time.Time) ([]UsageGroup, error) {
 	f.mu.Lock()
+	n := len(f.calls)
 	f.calls = append(f.calls, ledgerCall{t, from, liveFrom, to})
 	err := f.err
+	hook := f.onUsage
 	f.mu.Unlock()
+	if hook != nil {
+		hook(n)
+	}
 	if err != nil {
 		return nil, err
 	}

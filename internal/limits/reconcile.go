@@ -17,7 +17,10 @@ const (
 	defaultInterval = 5 * time.Minute
 	rebaseEvery     = time.Hour
 	ensureTimeout   = 5 * time.Second
+	foldAttempts    = 4 // reads of the pieces before a fold that keeps meeting new counters gives up until the next tick
 )
+
+var errFoldRaced = errors.New("limits: counters kept appearing inside the pieces of the fold")
 
 // ReconcilerOptions configure a Reconciler.
 type ReconcilerOptions struct {
@@ -223,21 +226,29 @@ func (r *Reconciler) reconcile(ctx context.Context, t tenant.ID) error {
 	if next := r.cut(now); next.After(cut) {
 		// Pieces are cut at every start and end of a period the store holds for the tenant, so that a
 		// piece lies inside every counter it is added to, whatever zones the tenant had (sprint 5.3).
-		var pieces []Piece
-		points := r.cutPoints(t, cut, next)
-		for from := cut; from.Before(next); {
-			to := next
-			if len(points) > 0 {
-				to, points = points[0], points[1:]
+		// A counter created while the ledger is read (by a Reserve) can have a boundary inside a piece:
+		// Fold then refuses, atomically, and the pieces are read again with that boundary.
+		folded := false
+		for attempt := 0; attempt < foldAttempts && !folded; attempt++ {
+			var pieces []Piece
+			points := r.cutPoints(t, cut, next)
+			for from := cut; from.Before(next); {
+				to := next
+				if len(points) > 0 {
+					to, points = points[0], points[1:]
+				}
+				rows, err := r.o.Ledger.Usage(ctx, t, from, to, to)
+				if err != nil {
+					return err
+				}
+				pieces = append(pieces, Piece{From: from, To: to, Rows: rows})
+				from = to
 			}
-			rows, err := r.o.Ledger.Usage(ctx, t, from, to, to)
-			if err != nil {
-				return err
-			}
-			pieces = append(pieces, Piece{From: from, To: to, Rows: rows})
-			from = to
+			folded = r.o.Store.Fold(t, pieces, next)
 		}
-		r.o.Store.Fold(t, pieces, next)
+		if !folded {
+			return errFoldRaced
+		}
 		cut = next
 	}
 	r.mu.Lock()
