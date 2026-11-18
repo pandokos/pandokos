@@ -1,6 +1,6 @@
 # 0023. Test-only dependencies live in nested modules
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-12
 
 ## Context
@@ -37,3 +37,4 @@ can break the nested module without the root build noticing; the CI job catches 
 ## History
 
 - 2026-11: sprint 3.3: the nested module also runs the Python and TypeScript suites behind a build tag ([ADR 0044](0044-sdk-compatibility-suite-python-typescript.md)).
+- 2026-11-18: recorded as accepted by the maintainer.

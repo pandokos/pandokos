@@ -28,20 +28,20 @@ A record is *proposed* until the maintainer accepts it, by merging its pull requ
 | [0019](0019-configuration.md) | Configuration: static settings in a file, dynamic state in the database | accepted |
 | [0020](0020-error-contract.md) | Error contract: the shape of the API being called | accepted |
 | [0022](0022-local-accounts-and-sessions.md) | Local accounts and sessions | accepted |
-| [0023](0023-test-dependencies-in-nested-modules.md) | Test-only dependencies live in nested modules | proposed |
-| [0024](0024-openai-stream-usage-option.md) | OpenAI chat streams: how usage is requested and what is removed | proposed |
-| [0025](0025-go-toolchain.md) | Go toolchain: language floor and release toolchain | proposed |
-| [0026](0026-schema-migrations.md) | Schema migrations: in-house, forward-only, exact match at start | proposed |
-| [0027](0027-database-roles-and-session-context.md) | Database roles, session context and pooler safety | proposed |
-| [0028](0028-admin-api-generator.md) | Administration API: in-repository generator and conventions | proposed |
-| [0029](0029-static-sql-sqlc.md) | Static SQL: `sqlc`, text-mode rules, and a test against built SQL | proposed |
-| [0030](0030-keys-format-storage-lookup.md) | Keys: format, storage, lookup, platform keys, revocation bound | proposed |
-| [0031](0031-authorization-core-and-provisioning.md) | Authorization core and tenant provisioning | proposed |
-| [0032](0032-audit-log-first-version.md) | Audit log, first version | proposed |
-| [0033](0033-vault-formats-and-key-identifiers.md) | Vault: formats, derived keys, key identifiers, caches | proposed |
-| [0034](0034-credential-model-and-platform-oversight.md) | Credential model and platform oversight | proposed |
-| [0035](0035-catalogue-and-model-access.md) | Catalogue and model access | proposed |
-| [0036](0036-prices-costs-and-importer.md) | Prices, costs and the price importer | proposed |
+| [0023](0023-test-dependencies-in-nested-modules.md) | Test-only dependencies live in nested modules | accepted |
+| [0024](0024-openai-stream-usage-option.md) | OpenAI chat streams: how usage is requested and what is removed | accepted |
+| [0025](0025-go-toolchain.md) | Go toolchain: language floor and release toolchain | accepted |
+| [0026](0026-schema-migrations.md) | Schema migrations: in-house, forward-only, exact match at start | accepted |
+| [0027](0027-database-roles-and-session-context.md) | Database roles, session context and pooler safety | accepted |
+| [0028](0028-admin-api-generator.md) | Administration API: in-repository generator and conventions | accepted |
+| [0029](0029-static-sql-sqlc.md) | Static SQL: `sqlc`, text-mode rules, and a test against built SQL | accepted |
+| [0030](0030-keys-format-storage-lookup.md) | Keys: format, storage, lookup, platform keys, revocation bound | accepted |
+| [0031](0031-authorization-core-and-provisioning.md) | Authorization core and tenant provisioning | accepted |
+| [0032](0032-audit-log-first-version.md) | Audit log, first version | accepted |
+| [0033](0033-vault-formats-and-key-identifiers.md) | Vault: formats, derived keys, key identifiers, caches | accepted |
+| [0034](0034-credential-model-and-platform-oversight.md) | Credential model and platform oversight | accepted |
+| [0035](0035-catalogue-and-model-access.md) | Catalogue and model access | accepted |
+| [0036](0036-prices-costs-and-importer.md) | Prices, costs and the price importer | accepted |
 | [0037](0037-request-pipeline-and-resolution.md) | Request pipeline and resolution | accepted |
 | [0038](0038-egress-guard-upstream-tls-and-proxy.md) | Egress guard, upstream TLS and proxy | accepted |
 | [0039](0039-usage-record-admission-and-ledger-writer.md) | Usage record, admission and the ledger writer | accepted |

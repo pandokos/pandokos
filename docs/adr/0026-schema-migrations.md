@@ -1,6 +1,6 @@
 # 0026. Schema migrations: in-house, forward-only, exact match at start
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-12
 
 Refines [ADR 0004](0004-postgresql-and-rls.md); does not supersede it.
@@ -43,3 +43,7 @@ with forced row-level security, which hides rows from the owner too.
   first.
 - Applying migrations at `serve` start: gives every instance owner credentials, against
   [ADR 0003](0003-single-binary-with-roles.md).
+
+## History
+
+- 2026-11-18: recorded as accepted by the maintainer.

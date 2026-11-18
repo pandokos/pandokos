@@ -1,6 +1,6 @@
 # 0033. Vault: formats, derived keys, key identifiers, caches
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-13
 
 Refines [ADR 0008](0008-vault-envelope-encryption.md) and [ADR 0030](0030-keys-format-storage-lookup.md).
@@ -47,3 +47,7 @@ A counter nonce (needs durable state per key); the data key used directly for bo
 (one key, two primitives); an unkeyed or globally keyed hash as fingerprint (offline guessing,
 cross-tenant correlation); operator-chosen version labels (a label can be attached to the
 wrong file); no registry of versions (a wrong file would fail tenant by tenant).
+
+## History
+
+- 2026-11-18: recorded as accepted by the maintainer.
