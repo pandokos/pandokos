@@ -2,6 +2,7 @@ package limits_test
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -129,4 +130,90 @@ func find(ls []limits.Limit, kind limits.SubjectKind, id string, m limits.Metric
 		}
 	}
 	return limits.Limit{}, false
+}
+
+// TestLoadRulesColumns is T-662: the loader maps the scope, the currency, the enforcement and the
+// thresholds of both tables, and skips a row this version does not know.
+func TestLoadRulesColumns(t *testing.T) {
+	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		a := d.SeedTenant(t, "cols-a")
+		gw := d.Open(t, store.RoleGateway)
+		cal, err := limits.NewCalendar(time.UTC)
+		if err != nil {
+			t.Fatal(err)
+		}
+		start := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+
+		d.SeedPlatformLimit(t, nil, "cost_per_month", 9_000_000_000, dbtest.LimitOptions{Currency: "EUR", Thresholds: []int{90}})
+		d.SeedPlatformLimit(t, nil, "tokens_per_day", 5_000_000, dbtest.LimitOptions{Provider: "openai"})
+		d.SeedPlatformLimit(t, &a, "tokens_per_day", 1_000_000, dbtest.LimitOptions{Provider: "openai"}) // replaces the default of that scope
+		d.SeedLimitRule(t, a, "tenant", "", "tokens_per_day", 400_000, dbtest.LimitOptions{Provider: "openai", Model: "gpt-4", Thresholds: []int{50, 80}})
+		d.SeedLimitRule(t, a, "tenant", "", "cost_per_month", 5_000_000_000, dbtest.LimitOptions{Currency: "EUR", NoEnforce: true, Thresholds: []int{100}})
+		d.SeedLimitRule(t, a, "key", "k-1", "requests_per_day", 7, dbtest.LimitOptions{Provider: "anthropic"})
+		d.SeedLimitRule(t, a, "service_account", "sa-1", "requests_per_month", 70)
+
+		set, err := limits.LoadRules(ctx, gw, a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := set.For(limits.Query{ServiceAccountID: "sa-1", KeyID: "k-1", Provider: "openai", Model: "gpt-4", Start: start}, cal)
+		byKey := map[string]limits.Limit{}
+		for _, l := range got {
+			byKey[fmt.Sprintf("%s/%s/%s/%s", l.Subject, l.Provider, l.Model, l.Metric)] = l
+		}
+		if l := byKey["tenant/openai//tokens_per_day"]; l.Max != 1_000_000 || l.Level != limits.LevelPlatform {
+			t.Errorf("platform row of the tenant for the provider scope: %+v, want 1,000,000 from the platform", l)
+		}
+		if l := byKey["tenant/openai/gpt-4/tokens_per_day"]; l.Max != 400_000 || l.Level != limits.LevelTenant || len(l.Marks) != 2 || l.Marks[0].At != 200_000 || l.Marks[1].At != 320_000 {
+			t.Errorf("model scope with thresholds: %+v", l)
+		}
+		l := byKey["tenant///"+string(limits.CostPerMonth)]
+		if l.Currency != "EUR" || l.Max != 9_000_000_000 || len(l.Marks) != 2 {
+			t.Errorf("a platform ceiling and an unenforced tenant budget on one counter: %+v, want Max 9e9 (the enforced one), two marks", l)
+		}
+		if l.Period != cal.Of(limits.PerMonth, start) {
+			t.Errorf("period %v", l.Period)
+		}
+		if _, ok := byKey["key/anthropic//requests_per_day"]; ok {
+			t.Error("a rule scoped to another provider matched")
+		}
+		if l := byKey["service_account///requests_per_month"]; l.Max != 70 || l.ID != "sa-1" {
+			t.Errorf("service account rule %+v", l)
+		}
+		anth := set.For(limits.Query{KeyID: "k-1", Provider: "anthropic", Model: "claude", Start: start}, cal)
+		found := false
+		for _, l := range anth {
+			if l.Subject == limits.SubjectKey && l.Provider == "anthropic" && l.Metric == limits.RequestsPerDay && l.Max == 7 {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("the key rule scoped to anthropic does not match anthropic: %+v", anth)
+		}
+
+		t.Run("a row this version does not know is skipped", func(t *testing.T) {
+			c := d.SeedTenant(t, "cols-unknown")
+			super := d.Super(t)
+			for _, stmt := range []string{
+				`ALTER TABLE pandokos.limit_rule DROP CONSTRAINT limit_rule_metric_valid`,
+				`ALTER TABLE pandokos.limit_rule DROP CONSTRAINT limit_rule_soft_by_metric`,
+			} {
+				if _, err := super.Exec(ctx, stmt); err != nil {
+					t.Fatalf("cannot prepare a row of a newer schema: %v", err)
+				}
+			}
+			d.SeedLimitRule(t, c, "tenant", "", "tokens_per_hour", 10)
+			d.SeedLimitRule(t, c, "tenant", "", "tokens_per_day", 20)
+			set, err := limits.LoadRules(ctx, gw, c)
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			ls := set.For(limits.Query{Start: start}, cal)
+			if len(ls) != 1 || ls[0].Metric != limits.TokensPerDay || ls[0].Max != 20 {
+				t.Errorf("limits %+v, want the known rule only", ls)
+			}
+		})
+	})
 }

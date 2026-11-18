@@ -721,12 +721,18 @@ func scenarios() []scenario {
 			h := basic(t, func(o *gateway.Options) { o.Limits = lim })
 			return h.sendAuthed(t, route, chat("fake-basic", false)), h
 		}},
+		{family.CodeQuotaExceeded, func(t *testing.T) (captured, *harness) {
+			lim := testutil.NewStaticLimits().Refuse(quotaRefusal("requests_per_day"))
+			h := basic(t, func(o *gateway.Options) { o.Limits = lim })
+			return h.sendAuthed(t, route, chat("fake-basic", false)), h
+		}},
+		{family.CodeNoPrice, func(t *testing.T) (captured, *harness) {
+			lim := testutil.NewStaticLimits().Refuse(gateway.LimitRefusal{Code: "no_price"})
+			h := basic(t, func(o *gateway.Options) { o.Limits = lim })
+			return h.sendAuthed(t, route, chat("fake-basic", false)), h
+		}},
 	}
 }
-
-// codesPendingC5 are the codes sprint 5.2 added to family.go before the pipeline raises them: the
-// sweeps over every code leave them out until step C5 adds their scenarios and removes this set.
-var codesPendingC5 = map[string]bool{"quota_exceeded": true, "no_price": true}
 
 // TestErrorContract is T-439: each code of section 5.8 by its condition, with the status, both
 // headers, the family's body and the constant message. The sweep fails on a code this table of
@@ -745,7 +751,7 @@ func TestErrorContract(t *testing.T) {
 		})
 	}
 	for _, name := range familycodes.All(t) {
-		if !seen[name] && !codesPendingC5[name] {
+		if !seen[name] {
 			t.Errorf("the code %q is declared in family.go and has no scenario", name)
 		}
 	}

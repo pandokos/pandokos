@@ -357,3 +357,79 @@ func TestUsageRead(t *testing.T) {
 		}
 	}
 }
+
+// TestLimitPermissions is T-683: the six permissions of sprint 5.2 with their scopes, the two roles
+// that hold them, and the role inference unchanged.
+func TestLimitPermissions(t *testing.T) {
+	tenantPerms := []string{LimitRead, LimitWrite, LimitDelete}
+	platformPerms := []string{PlatformLimitRead, PlatformLimitWrite, PlatformLimitDelete}
+	for name, scope := range map[string]Scope{
+		"limit:read": ScopeTenant, "limit:write": ScopeTenant, "limit:delete": ScopeTenant,
+		"platform_limit:read": ScopePlatform, "platform_limit:write": ScopePlatform, "platform_limit:delete": ScopePlatform,
+	} {
+		p, ok := Lookup(name)
+		if !ok || p.Scope != scope || p.Description == "" {
+			t.Errorf("%s: %+v %v, want scope %s and a description", name, p, ok, scope)
+		}
+	}
+	for _, c := range []struct {
+		role string
+		has  []string
+		not  []string
+	}{
+		{RoleTenantAdmin, tenantPerms, platformPerms},
+		{RolePlatformAdmin, platformPerms, tenantPerms},
+		{RoleInference, nil, append(append([]string(nil), tenantPerms...), platformPerms...)},
+	} {
+		r, ok := RoleByName(c.role)
+		if !ok {
+			t.Fatalf("no role %s", c.role)
+		}
+		held := map[string]bool{}
+		for _, p := range r.Permissions {
+			held[p] = true
+		}
+		for _, p := range c.has {
+			if !held[p] {
+				t.Errorf("%s lacks %s", c.role, p)
+			}
+		}
+		for _, p := range c.not {
+			if held[p] {
+				t.Errorf("%s holds %s", c.role, p)
+			}
+		}
+	}
+	if r, _ := RoleByName(RoleInference); !reflect.DeepEqual(r.Permissions, []string{CredentialUse, ModelInvoke}) {
+		t.Errorf("inference holds %v, want credential:use and model:invoke only", r.Permissions)
+	}
+
+	a, b := id(1), id(2)
+	admin := sa(a, tenant.StateActive, []string{RoleTenantAdmin}, nil)
+	platform := Principal{Kind: KindPlatform, ID: "p", Roles: []string{RolePlatformAdmin}}
+	for _, p := range tenantPerms {
+		if d := Decide(admin, p, Target{TenantID: a}); d != Allow {
+			t.Errorf("tenant admin, %s, own tenant: %v", p, d)
+		}
+		if d := Decide(admin, p, Target{TenantID: b}); d != DenyNotFound {
+			t.Errorf("tenant admin, %s, another tenant: %v", p, d)
+		}
+		if d := Decide(platform, p, Target{TenantID: a}); d != Deny {
+			t.Errorf("platform admin, %s: %v, want a refusal", p, d)
+		}
+		if d := Decide(sa(a, tenant.StateActive, []string{RoleInference}, nil), p, Target{TenantID: a}); d != Deny {
+			t.Errorf("inference, %s: %v", p, d)
+		}
+		if d := Decide(sa(a, tenant.StateActive, []string{RoleTenantAdmin}, []string{VirtualKeyRead}), p, Target{TenantID: a}); d != Deny {
+			t.Errorf("a key scoped without %s: %v", p, d)
+		}
+	}
+	for _, p := range platformPerms {
+		if d := Decide(platform, p, Target{}); d != Allow {
+			t.Errorf("platform admin, %s: %v", p, d)
+		}
+		if d := Decide(admin, p, Target{TenantID: a}); d != Deny {
+			t.Errorf("tenant admin, %s: %v, want a refusal", p, d)
+		}
+	}
+}

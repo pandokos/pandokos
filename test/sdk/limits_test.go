@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 
 	"github.com/pandokos/pandokos/internal/gateway"
 	"github.com/pandokos/pandokos/internal/limits"
+	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/test/fakeprovider"
 	"github.com/pandokos/pandokos/test/fixtures"
 	"github.com/pandokos/pandokos/test/limitstest"
@@ -88,6 +90,57 @@ func TestRateLimitError(t *testing.T) {
 		_ = stream.Close()
 		if n := len(up.Requests()); n != 2 {
 			t.Errorf("the provider saw %d requests, want 2 (the held stream and the retried call)", n)
+		}
+	})
+}
+
+// TestQuotaError is T-691: the OpenAI Go SDK raises its 429 error for quota_exceeded, with the
+// Pandokos header readable from it; with the default retries the call returns within 10 s although
+// Retry-After is hours.
+func TestQuotaError(t *testing.T) {
+	up := fakeprovider.New(t)
+	targets := map[string]gateway.Target{"openai/" + fakeprovider.ModelBasic: testutil.TargetFor(up, "openai", fakeprovider.ModelBasic)}
+	principal := testutil.InferencePrincipal()
+	real := limitstest.NewWith(t, limitstest.Options{Rules: map[tenant.ID][]limits.Rule{principal.TenantID: {
+		{ID: "r-day", SubjectKind: limits.SubjectTenant, Metric: limits.RequestsPerDay, Value: 1, Enforce: true},
+	}}})
+	addr, _ := startServerWith(t, map[string]string{"openai": "openai"}, targets, map[string]string{"openai": fixtures.CanaryProviderKey}, real, principal)
+	base := "http://" + addr + "/openai/v1"
+
+	client := newClient(base, testKey)
+	if _, err := client.Chat.Completions.New(ctx10(t), params(fakeprovider.ModelBasic)); err != nil {
+		t.Fatalf("the first call: %v", err)
+	}
+	t.Run("the SDK's error carries the status, the code and the headers", func(t *testing.T) {
+		_, err := client.Chat.Completions.New(ctx10(t), params(fakeprovider.ModelBasic))
+		var apiErr *openai.Error
+		if !errors.As(err, &apiErr) {
+			t.Fatalf("the error is %T %v, want *openai.Error", err, err)
+		}
+		if apiErr.StatusCode != 429 || apiErr.Code != "quota_exceeded" {
+			t.Errorf("status %d code %q, want 429 quota_exceeded", apiErr.StatusCode, apiErr.Code)
+		}
+		h := apiErr.Response.Header
+		if h.Get("X-Pandokos-Error") != "quota_exceeded" || h.Get("X-Pandokos-Limit-Metric") != "requests_per_day" || h.Get("X-Pandokos-Limit-Scope") != "all" {
+			t.Errorf("headers %v", h)
+		}
+		if secs, err := strconv.Atoi(h.Get("Retry-After")); err != nil || secs < 1 || secs > 86400 {
+			t.Errorf("Retry-After %q is not the number of seconds to the end of the day", h.Get("Retry-After"))
+		}
+	})
+	t.Run("with the default retries the call returns at once although Retry-After is hours", func(t *testing.T) {
+		retrying := openai.NewClient(option.WithBaseURL(base), option.WithAPIKey(testKey)) // the default of two retries
+		start := time.Now()
+		_, err := retrying.Chat.Completions.New(ctx10(t), params(fakeprovider.ModelBasic))
+		var apiErr *openai.Error
+		if !errors.As(err, &apiErr) || apiErr.StatusCode != 429 || apiErr.Code != "quota_exceeded" {
+			t.Fatalf("the error is %T %v, want the 429 quota_exceeded", err, err)
+		}
+		if d := time.Since(start); d > 10*time.Second {
+			t.Errorf("the call took %s: the SDK waited for the end of the period", d)
+		}
+		if n := len(up.Requests()); n != 1 {
+			t.Errorf("the provider saw %d requests, want 1", n)
 		}
 	})
 }

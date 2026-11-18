@@ -127,3 +127,11 @@ func (s RuleSet) For(q Query, _ *Calendar) []Limit {
 	add(SubjectKey, s.Keys, keyID)
 	return out
 }
+
+// NewScopedRuleSet builds the RuleSet of a tenant from rules that carry a scope, a currency, an
+// enforcement and thresholds (sprint 5.2): the platform default rows, the platform rows of this
+// tenant (the subject of a platform rule is ignored) and the tenant's own rules. NewRuleSet is
+// the same for the three metrics of sprint 5.1 without scope. Scaffolding: part C2 implements it.
+func NewScopedRuleSet(t tenant.ID, _, _, _ []Rule) RuleSet {
+	return RuleSet{Tenant: t}
+}

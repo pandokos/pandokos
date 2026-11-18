@@ -12,12 +12,25 @@ import (
 	"github.com/pandokos/pandokos/internal/tenant"
 )
 
+// Ensurer makes sure the period counters of limits are loaded from the ledger (the limits.Reconciler).
+type Ensurer interface {
+	Ensure(ctx context.Context, t tenant.ID, ls []limits.Limit) error
+}
+
 // LimitsOptions configure Limits.
 type LimitsOptions struct {
 	Rules  *limits.RuleCache
 	Store  limits.Store
 	TTL    time.Duration // the lifetime of a reservation the store was not told about
 	Logger *slog.Logger
+	// Sprint 5.2: the calendar of the period limits, what loads their counters, and the two
+	// settings that say what a request that cannot be measured or verified meets: "refuse" (the
+	// default) or "allow". Scaffolding: part C5 gives them their effect; a nil Calendar means that
+	// period limits do not apply, as in sprint 5.1.
+	Calendar       *limits.Calendar
+	Reconciler     Ensurer
+	OnUnknownPrice string
+	OnStoreFailure string
 }
 
 // Limits implements gateway.Limits over the rule cache and a store of counters.

@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -21,9 +23,12 @@ import (
 	"github.com/pandokos/pandokos/internal/family"
 	"github.com/pandokos/pandokos/internal/family/openai"
 	"github.com/pandokos/pandokos/internal/gateway"
+	"github.com/pandokos/pandokos/internal/limits"
+	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/internal/usage"
 	"github.com/pandokos/pandokos/test/fakeprovider"
 	"github.com/pandokos/pandokos/test/fixtures"
+	"github.com/pandokos/pandokos/test/limitstest"
 	"github.com/pandokos/pandokos/test/testutil"
 )
 
@@ -59,12 +64,12 @@ func (f limFam) send(t *testing.T, h *harness, body []byte) captured {
 func refusalOf(metric string) gateway.LimitRefusal {
 	switch metric {
 	case "tokens_per_minute":
-		return gateway.LimitRefusal{Level: "platform", Subject: "service_account", Metric: metric, Limit: 1000, Remaining: 12,
+		return gateway.LimitRefusal{Code: "rate_limited", Scope: "provider", Level: "platform", Subject: "service_account", Metric: metric, Limit: 1000, Remaining: 12,
 			RetryAfter: 17 * time.Second, Reset: 44 * time.Second}
 	case "concurrent_requests":
-		return gateway.LimitRefusal{Level: "tenant", Subject: "key", Metric: metric, Limit: 3, Remaining: 0, RetryAfter: time.Second}
+		return gateway.LimitRefusal{Code: "rate_limited", Scope: "model", Level: "tenant", Subject: "key", Metric: metric, Limit: 3, Remaining: 0, RetryAfter: time.Second}
 	}
-	return gateway.LimitRefusal{Level: "tenant", Subject: "tenant", Metric: metric, Limit: 5, Remaining: 0,
+	return gateway.LimitRefusal{Code: "rate_limited", Scope: "all", Level: "tenant", Subject: "tenant", Metric: metric, Limit: 5, Remaining: 0,
 		RetryAfter: 30 * time.Second, Reset: 45 * time.Second}
 }
 
@@ -218,6 +223,7 @@ func TestRateLimited(t *testing.T) {
 					"Retry-After":               strconv.Itoa(int(ref.RetryAfter / time.Second)),
 					"X-Pandokos-Error":          "rate_limited",
 					family.HeaderLimitSubject:   ref.Subject,
+					family.HeaderLimitScope:     ref.Scope, // sprint 5.2: how narrow the rule is, on rate_limited too
 					family.HeaderLimitMetric:    ref.Metric,
 					family.HeaderLimit:          strconv.FormatInt(ref.Limit, 10),
 					family.HeaderLimitRemaining: strconv.FormatInt(ref.Remaining, 10),
@@ -247,7 +253,7 @@ func TestRateLimited(t *testing.T) {
 				for k := range c.header {
 					if strings.HasPrefix(k, "X-Pandokos-Limit") {
 						switch k {
-						case family.HeaderLimitSubject, family.HeaderLimitMetric, family.HeaderLimit, family.HeaderLimitRemaining, family.HeaderLimitReset:
+						case family.HeaderLimitSubject, family.HeaderLimitScope, family.HeaderLimitMetric, family.HeaderLimit, family.HeaderLimitRemaining, family.HeaderLimitReset:
 						default:
 							t.Errorf("unexpected header %s", k)
 						}
@@ -322,7 +328,7 @@ func TestRejectedLimitRecord(t *testing.T) {
 				}
 				line := h.awaitOutcome(t, "pandokos_error")
 				if line["error_code"] != "rate_limited" || line["limit_subject"] != ref.Subject || line["limit_metric"] != ref.Metric ||
-					line["limit_level"] != ref.Level || line["limit"] != float64(ref.Limit) || line["retry_after_s"] != float64(17) {
+					line["limit_level"] != ref.Level || line["limit_scope"] != ref.Scope || line["limit"] != float64(ref.Limit) || line["retry_after_s"] != float64(17) {
 					t.Errorf("request line %v", line)
 				}
 				if v, ok := line["estimate_over_limit"]; over && v != true {
@@ -476,8 +482,9 @@ func (b *blockingCreds) Open(ctx context.Context, _ authz.Principal, _, _ string
 	return gateway.Credential{}, ctx.Err()
 }
 
-// TestReleaseWhenNotForwarded is T-634: when nothing was sent to the provider the reservation is
-// released once and never settled.
+// TestReleaseWhenNotForwarded is T-634: when no credential was opened for the request the
+// reservation is released once and never settled (sprint 5.2, D-2: what counts is the credential,
+// see TestCountedWithCredential for the cases after it).
 func TestReleaseWhenNotForwarded(t *testing.T) {
 	for _, f := range limFamilies() {
 		release := func(t *testing.T, lim *testutil.StaticLimits) {
@@ -614,8 +621,17 @@ func TestEveryEndSettles(t *testing.T) {
 			h := f.newH(t, func(o *gateway.Options) { o.Private = panicTransport{}; o.Limits = lim })
 			f.send(t, h, f.body("fake-basic", false))
 			exactlyOne(t, lim)
-			if r := h.oneRecord(t); r.Outcome != usage.OutcomeInternalError {
+			r := h.oneRecord(t)
+			if r.Outcome != usage.OutcomeInternalError {
 				t.Errorf("outcome %q", r.Outcome)
+			}
+			// Sprint 5.2 (D-2): the credential was opened, so the request counts: it is settled with
+			// no tokens, not released, and its record carries the credential.
+			if s, rel := lim.Of("settle"), lim.Of("release"); len(s) != 1 || len(rel) != 0 || s[0].Usage.Tokens != 0 {
+				t.Errorf("%d settles (%+v) and %d releases, want one settle with no tokens", len(s), s, len(rel))
+			}
+			if r.CredentialID == "" {
+				t.Error("the record of a request whose credential was opened has none")
 			}
 		})
 
@@ -794,3 +810,272 @@ type panicRecorder struct{}
 
 func (panicRecorder) Admit() bool         { return true }
 func (panicRecorder) Record(usage.Record) { panic("recorder failure") }
+
+// cancelAfterOpen opens the credential and then cancels the caller's context: the request ends
+// between the opening of the credential and the call to the provider.
+type cancelAfterOpen struct {
+	inner  gateway.Credentials
+	cancel context.CancelFunc
+}
+
+func (c cancelAfterOpen) Open(ctx context.Context, p authz.Principal, provider, endpoint string) (gateway.Credential, error) {
+	cred, err := c.inner.Open(ctx, p, provider, endpoint)
+	c.cancel()
+	return cred, err
+}
+
+// TestCountedWithCredential is T-667 (sprint 5.2, D-2): a request counts, as a request, exactly
+// when a credential was opened for it.
+func TestCountedWithCredential(t *testing.T) {
+	for _, f := range limFamilies() {
+		t.Run(f.name+"/the caller goes before the credential: released, the record has none", func(t *testing.T) {
+			lim := testutil.NewStaticLimits()
+			creds := &blockingCreds{}
+			h := f.newH(t, func(o *gateway.Options) { o.Limits = lim; o.Credentials = creds })
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				if resp, err := h.request(ctx, t, http.MethodPost, f.path, f.body("fake-basic", false), f.hdr()); err == nil {
+					resp.Body.Close()
+				}
+			}()
+			testutil.Eventually(t, 3*time.Second, "the credential to be asked for", func() bool { return creds.opened.Load() == 1 })
+			cancel()
+			<-done
+			testutil.Eventually(t, 3*time.Second, "the reservation to end", func() bool { return lim.Admitted() == 1 && lim.Open() == 0 })
+			time.Sleep(30 * time.Millisecond)
+			if s, r := lim.Of("settle"), lim.Of("release"); len(s) != 0 || len(r) != 1 {
+				t.Fatalf("%d settles and %d releases, want 0 and 1", len(s), len(r))
+			}
+			if r := h.oneRecord(t); r.CredentialID != "" {
+				t.Errorf("the record carries the credential %q of a request that never opened one", r.CredentialID)
+			}
+		})
+
+		t.Run(f.name+"/the caller goes after the credential: settled with one request and no tokens", func(t *testing.T) {
+			lim := testutil.NewStaticLimits()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			h := f.newH(t, func(o *gateway.Options) {
+				o.Limits = lim
+				o.Credentials = cancelAfterOpen{inner: o.Credentials, cancel: cancel}
+			})
+			req := httptest.NewRequest(http.MethodPost, f.path, strings.NewReader(string(f.body("fake-basic", false)))).WithContext(ctx)
+			req.Header = f.hdr()
+			func() {
+				defer func() { _ = recover() }()
+				h.handler.ServeHTTP(httptest.NewRecorder(), req)
+			}()
+			if u := onlySettle(t, lim); u.Tokens != 0 {
+				t.Errorf("settled %d tokens, want none", u.Tokens)
+			}
+			if r := h.oneRecord(t); r.CredentialID == "" || r.Outcome != usage.OutcomeCancelled {
+				t.Errorf("record: credential %q, outcome %q, want a credential and cancelled", r.CredentialID, r.Outcome)
+			}
+		})
+
+		t.Run(f.name+"/a panic after the credential: settled with one request and no tokens", func(t *testing.T) {
+			lim := testutil.NewStaticLimits()
+			h := f.newH(t, func(o *gateway.Options) { o.Private = panicTransport{}; o.Limits = lim })
+			f.send(t, h, f.body("fake-basic", false))
+			if u := onlySettle(t, lim); u.Tokens != 0 {
+				t.Errorf("settled %d tokens, want none", u.Tokens)
+			}
+			if r := h.oneRecord(t); r.CredentialID == "" || r.Outcome != usage.OutcomeInternalError {
+				t.Errorf("record: credential %q, outcome %q", r.CredentialID, r.Outcome)
+			}
+		})
+
+		t.Run(f.name+"/a request sent and failed upstream still counts", func(t *testing.T) {
+			lim := testutil.NewStaticLimits()
+			h := f.newH(t, func(o *gateway.Options) { o.Limits = lim })
+			f.send(t, h, f.body(fakeprovider.ModelError500Echo, false))
+			if u := onlySettle(t, lim); u.Tokens != 0 {
+				t.Errorf("settled %d tokens", u.Tokens)
+			}
+			if r := h.oneRecord(t); r.CredentialID == "" {
+				t.Error("the record has no credential")
+			}
+		})
+
+		t.Run(f.name+"/a refusal before the credential counts nothing", func(t *testing.T) {
+			lim := testutil.NewStaticLimits()
+			h := f.newH(t, func(o *gateway.Options) { o.Limits = lim; o.Credentials = testutil.StaticCredentials(nil) })
+			f.send(t, h, f.body("fake-basic", false))
+			testutil.Eventually(t, 3*time.Second, "the reservation to end", func() bool { return lim.Admitted() == 1 && lim.Open() == 0 })
+			if s, r := lim.Of("settle"), lim.Of("release"); len(s) != 0 || len(r) != 1 {
+				t.Errorf("%d settles and %d releases, want 0 and 1", len(s), len(r))
+			}
+			if r := h.oneRecord(t); r.CredentialID != "" {
+				t.Errorf("credential %q", r.CredentialID)
+			}
+		})
+	}
+}
+
+// failingLedger fails every read, or answers from nothing.
+type failingLedger struct {
+	mu   sync.Mutex
+	fail bool
+	n    int
+}
+
+func (l *failingLedger) set(v bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.fail = v
+}
+
+func (l *failingLedger) Usage(context.Context, tenant.ID, time.Time, time.Time, time.Time) ([]limits.UsageGroup, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.n++
+	if l.fail {
+		return nil, errors.New("synthetic ledger failure")
+	}
+	return nil, nil
+}
+
+// mutableRules is a rule source a test can change and make fail.
+type mutableRules struct {
+	mu    sync.Mutex
+	rules []limits.Rule
+	err   error
+}
+
+func (m *mutableRules) set(rules []limits.Rule, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.rules, m.err = rules, err
+}
+
+func (m *mutableRules) load(_ context.Context, id tenant.ID) (limits.RuleSet, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.err != nil {
+		return limits.RuleSet{}, m.err
+	}
+	return limits.NewScopedRuleSet(id, nil, nil, m.rules), nil
+}
+
+// TestStoreFailure is T-668: counters that cannot be verified, with each value of
+// limits.on_store_failure.
+func TestStoreFailure(t *testing.T) {
+	for _, f := range limFamilies() {
+		build := func(t *testing.T, setting string, rules []limits.Rule) (*harness, *failingLedger, *mutableRules, *limits.RuleCache) {
+			t.Helper()
+			src := &mutableRules{rules: rules}
+			cache, err := limits.NewRuleCacheFunc(src.load, limits.RuleCacheOptions{Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), TTL: time.Minute})
+			if err != nil {
+				t.Fatal(err)
+			}
+			led := &failingLedger{}
+			logs := &testutil.LogBuffer{}
+			real := limitstest.NewWith(t, limitstest.Options{Cache: cache, Ledger: led, OnStoreFailure: setting, Logs: logs})
+			h := f.newH(t, func(o *gateway.Options) { o.Limits = real })
+			return h, led, src, cache
+		}
+		rate := countRule("r-rate", limits.RequestsPerMinute, 2)
+		monthly := countRule("r-month", limits.RequestsPerMonth, 3)
+		tokens := countRule("r-tokens", limits.TokensPerMonth, 1_000_000)
+
+		t.Run(f.name+"/refuse: 503 with Retry-After 5 and nothing forwarded", func(t *testing.T) {
+			h, led, _, _ := build(t, "refuse", []limits.Rule{monthly})
+			led.set(true)
+			c := f.send(t, h, f.body("fake-basic", false))
+			f.contract(t, "unavailable", c, family.CodeUnavailable)
+			if c.header.Get("Retry-After") != "5" {
+				t.Errorf("Retry-After %q, want 5", c.header.Get("Retry-After"))
+			}
+			r := h.oneRecord(t)
+			if r.Outcome != usage.OutcomeInternalError || r.ErrorCode != "unavailable" || r.CredentialID != "" {
+				t.Errorf("record: outcome %q code %q credential %q", r.Outcome, r.ErrorCode, r.CredentialID)
+			}
+			if n := len(h.creds.Calls()) + len(h.up.Requests()); n != 0 {
+				t.Errorf("%d credential opens or provider requests", n)
+			}
+			led.set(false) // a failed load is not cached: the next request tries again
+			if c := f.send(t, h, f.body("fake-basic", false)); c.status != 200 {
+				t.Errorf("after the ledger came back: %d %s", c.status, c.body)
+			}
+		})
+
+		t.Run(f.name+"/allow: forwarded, loaded counters and rate limits still enforced, limits_unverified logged", func(t *testing.T) {
+			h, led, src, cache := build(t, "allow", []limits.Rule{rate, monthly})
+			if c := f.send(t, h, f.body("fake-basic", false)); c.status != 200 { // loads the counters
+				t.Fatalf("%d %s", c.status, c.body)
+			}
+			src.set([]limits.Rule{rate, monthly, tokens}, nil) // a rule whose counter is not loaded
+			cache.Flush()
+			led.set(true)
+			c := f.send(t, h, f.body("fake-basic", false))
+			if c.status != 200 {
+				t.Fatalf("with the ledger down: %d %s", c.status, c.body)
+			}
+			// The rate limit (2 a minute) and the loaded monthly quota (3) still apply.
+			c = f.send(t, h, f.body("fake-basic", false))
+			f.contract(t, "rate", c, family.CodeRateLimited)
+			unverified := 0
+			for _, l := range h.requestLines(t, 3) {
+				if l["limits_unverified"] == true {
+					unverified++
+				}
+			}
+			if unverified < 1 {
+				t.Errorf("no request line carries limits_unverified, want the one of the request admitted without its counter")
+			}
+			if got := len(h.up.Requests()); got != 2 {
+				t.Errorf("%d requests reached the provider, want 2", got)
+			}
+		})
+
+		t.Run(f.name+"/allow: the loaded monthly counter still refuses", func(t *testing.T) {
+			h, led, src, cache := build(t, "allow", []limits.Rule{countRule("r-month", limits.RequestsPerMonth, 2)})
+			for range 2 {
+				if c := f.send(t, h, f.body("fake-basic", false)); c.status != 200 {
+					t.Fatalf("%d %s", c.status, c.body)
+				}
+			}
+			src.set([]limits.Rule{countRule("r-month", limits.RequestsPerMonth, 2), tokens}, nil)
+			cache.Flush()
+			led.set(true)
+			c := f.send(t, h, f.body("fake-basic", false))
+			f.contract(t, "quota", c, family.CodeQuotaExceeded)
+		})
+
+		t.Run(f.name+"/the warning is given at most once per tenant and 10 seconds", func(t *testing.T) {
+			logs := &testutil.LogBuffer{}
+			src := &mutableRules{rules: []limits.Rule{monthly}}
+			cache, _ := limits.NewRuleCacheFunc(src.load, limits.RuleCacheOptions{Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), TTL: time.Minute})
+			led := &failingLedger{fail: true}
+			real := limitstest.NewWith(t, limitstest.Options{Cache: cache, Ledger: led, OnStoreFailure: "allow", Logs: logs})
+			h := f.newH(t, func(o *gateway.Options) { o.Limits = real })
+			for range 4 {
+				if c := f.send(t, h, f.body("fake-basic", false)); c.status != 200 {
+					t.Fatalf("%d", c.status)
+				}
+			}
+			if n := strings.Count(logs.String(), "limit counters unavailable"); n != 1 {
+				t.Errorf("%d warnings for four requests of one tenant in a moment, want 1", n)
+			}
+		})
+
+		for _, setting := range []string{"refuse", "allow"} {
+			t.Run(f.name+"/rules that cannot be loaded give 503 with "+setting, func(t *testing.T) {
+				h, _, src, cache := build(t, setting, nil)
+				src.set(nil, errors.New("synthetic rules failure"))
+				cache.Flush()
+				c := f.send(t, h, f.body("fake-basic", false))
+				f.contract(t, "unavailable", c, family.CodeUnavailable)
+				if c.header.Get("Retry-After") != "5" {
+					t.Errorf("Retry-After %q", c.header.Get("Retry-After"))
+				}
+				if n := len(h.up.Requests()); n != 0 {
+					t.Errorf("%d requests reached the provider: a request whose limits are unknown is not forwarded", n)
+				}
+			})
+		}
+	}
+}

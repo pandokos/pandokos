@@ -437,6 +437,16 @@ func anthropicScenarios() []scenario {
 			h := basic(t, func(o *gateway.Options) { o.Limits = lim })
 			return h.sendA(t, anthropicRoute, messages("fake-basic", false), anthropicHdr()), h
 		}},
+		{family.CodeQuotaExceeded, func(t *testing.T) (captured, *harness) {
+			lim := testutil.NewStaticLimits().Refuse(quotaRefusal("tokens_per_month"))
+			h := basic(t, func(o *gateway.Options) { o.Limits = lim })
+			return h.sendA(t, anthropicRoute, messages("fake-basic", false), anthropicHdr()), h
+		}},
+		{family.CodeNoPrice, func(t *testing.T) (captured, *harness) {
+			lim := testutil.NewStaticLimits().Refuse(gateway.LimitRefusal{Code: "no_price"})
+			h := basic(t, func(o *gateway.Options) { o.Limits = lim })
+			return h.sendA(t, anthropicRoute, messages("fake-basic", false), anthropicHdr()), h
+		}},
 	}
 }
 
@@ -456,7 +466,7 @@ func TestAnthropicErrors(t *testing.T) {
 		})
 	}
 	for _, name := range familycodes.All(t) {
-		if !seen[name] && !codesPendingC5[name] {
+		if !seen[name] {
 			t.Errorf("the code %q is declared in family.go and has no anthropic scenario", name)
 		}
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/catalog"
+	"github.com/pandokos/pandokos/internal/limits" //nolint:depguard // sprint 5.2 scaffolding: part D of the plan lets the capability check name the calendar
 	"github.com/pandokos/pandokos/internal/requestid"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/tenant"
@@ -42,6 +43,13 @@ type Options struct {
 	// Refresh configures the download of the price dataset; an import with source remote is
 	// refused unless Refresh.Enabled.
 	Refresh RefreshOptions
+	// Limits are the settings of the capability check of sprint 5.2: the calendar that says when
+	// the current day and month start (nil: UTC) and limits.on_unknown_price ("refuse", the
+	// default, or "allow"). Scaffolding: part C6 gives them their effect.
+	Limits struct {
+		Calendar       *limits.Calendar
+		OnUnknownPrice string
+	}
 }
 
 // RefreshOptions say whether and from where the price dataset may be downloaded.

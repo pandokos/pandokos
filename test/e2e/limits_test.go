@@ -1,11 +1,13 @@
 package e2e
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/test/fakeprovider"
 	"github.com/pandokos/pandokos/test/fixtures"
@@ -263,6 +265,243 @@ func TestLimitCanary(t *testing.T) {
 		}
 	}
 	// The refusals were logged: a test that finds nothing proves nothing.
+	if n := len(logLines(t, p.stdout.String(), "request")); n < 4 {
+		t.Errorf("%d request log lines at debug level, want at least 4", n)
+	}
+}
+
+// limitRuleID is the ID in the text output of `limit create`.
+func limitRuleID(t *testing.T, out string) string {
+	t.Helper()
+	m := reID.FindStringSubmatch(out)
+	if m == nil {
+		t.Fatalf("no rule ID in the output of limit create:\n%s", out)
+	}
+	return m[1]
+}
+
+// priceFake gives the fake model of a provider a price in USD (3 and 6 per million), so that a budget
+// can measure it.
+func (p *proc) priceFake(t *testing.T, boot, provider string) {
+	t.Helper()
+	p.mustCLI(t, boot, "price", "override", "--currency", "USD", "--rate", "input=3", "--rate", "output=6", provider+"/fake-basic")
+}
+
+// TestMonthlyBudget is T-686: the binary, a budget made with the CLI, calls until 429 quota_exceeded;
+// the process is stopped and started and the next call is refused at once; raising the budget with
+// the CLI admits the next call within 2 s; the audit log holds the two changes.
+func TestMonthlyBudget(t *testing.T) {
+	p, up, boot := limitsProc(t, "info")
+	p.priceFake(t, boot, "openai")
+	tn := p.newLimitsTenant(t, boot, "budget")
+	// The reservation of a call is about 0.0246 dollars (4,096 output tokens at 6 per million); a settled
+	// call costs 0.000099: this budget admits about nine calls.
+	out := p.mustCLI(t, tn.admin, "limit", "create", "--tenant", tn.idStr, "--metric", "cost_per_month", "--amount", "0.0255", "--currency", "USD")
+	rule := limitRuleID(t, out)
+
+	admitted := 0
+	var refusal string
+	for i := 0; i < 40 && refusal == ""; i++ {
+		status, text := p.openaiCall(t, tn.key)
+		switch status {
+		case 200:
+			admitted++
+		case 429:
+			refusal = text
+		default:
+			t.Fatalf("call %d: %d\n%s", i, status, text)
+		}
+	}
+	if refusal == "" || admitted < 2 {
+		t.Fatalf("%d calls admitted and no refusal", admitted)
+	}
+	assertPandokosError(t, "the refusal", 429, refusal, 429, "quota_exceeded")
+	for _, want := range []string{"X-Pandokos-Limit-Metric: cost_per_month", "X-Pandokos-Limit-Currency: USD", "X-Pandokos-Limit-Scope: all", "X-Pandokos-Limit: 0.0255", "Retry-After: "} {
+		if !strings.Contains(refusal, want) {
+			t.Errorf("the refusal lacks %q\n%s", want, refusal)
+		}
+	}
+	waitRows(t, p.db, tn.idStr, admitted+1)
+
+	// A restart: the counters come back from the ledger and the first call is refused.
+	if code := p.stop(t); code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+	p2 := startBinary(t, opts{level: "info", up: up, db: p.db})
+	p2.platformFile, p2.upReady = boot, true
+	status, text := p2.openaiCall(t, tn.key)
+	assertPandokosError(t, "the first call after the restart", status, text, 429, "quota_exceeded")
+
+	// Raising the budget admits the next call within 2 s.
+	p2.mustCLI(t, tn.admin, "limit", "update", "--tenant", tn.idStr, "--amount", "5", rule)
+	testutil.Eventually(t, 2*time.Second, "the raised budget to admit", func() bool {
+		status, _ := p2.openaiCall(t, tn.key)
+		return status == 200
+	})
+
+	actions := auditActions(t, p.db, `SELECT action FROM pandokos.audit_event WHERE tenant_id = $1::uuid AND action LIKE 'limit.%' ORDER BY id`, tn.idStr)
+	if strings.Join(actions, ",") != "limit.create,limit.update" {
+		t.Errorf("audit actions %v, want limit.create and limit.update", actions)
+	}
+}
+
+// TestLimitAdministration is T-687: with the CLI, a rate rule of 5.1, a quota, a scoped rule, a
+// platform default, a soft rule; list, change, delete; `capability check` says exhausted; `limit
+// events` shows the threshold.
+func TestLimitAdministration(t *testing.T) {
+	p, _, boot := limitsProc(t, "info")
+	p.priceFake(t, boot, "openai")
+	tn := p.newLimitsTenant(t, boot, "admin-limits")
+	create := func(args ...string) string {
+		t.Helper()
+		return limitRuleID(t, p.mustCLI(t, tn.admin, append([]string{"limit", "create", "--tenant", tn.idStr}, args...)...))
+	}
+	rate := create("--metric", "requests_per_minute", "--limit", "1000")
+	quota := create("--metric", "requests_per_day", "--limit", "3")
+	scoped := create("--metric", "tokens_per_month", "--limit", "9000000", "--provider", "openai", "--model", "fake-basic")
+	soft := create("--metric", "cost_per_month", "--amount", "0.0003", "--currency", "USD", "--soft", "--threshold", "80", "--threshold", "100")
+	platform := limitRuleID(t, p.mustCLI(t, boot, "platform-limit", "create", "--for-tenant", tn.idStr, "--metric", "concurrent_requests", "--limit", "50"))
+
+	list := p.mustCLI(t, tn.admin, "limit", "list", "--tenant", tn.idStr, "-o", "json")
+	var doc struct {
+		Items []adminapi.LimitRule `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(list), &doc); err != nil || len(doc.Items) != 4 {
+		t.Fatalf("limit list: %v, %d items\n%s", err, len(doc.Items), list)
+	}
+	for _, r := range doc.Items {
+		switch r.ID {
+		case soft:
+			if r.Enforce || r.Amount != "0.0003" || r.Currency != "USD" || len(r.Thresholds) != 2 {
+				t.Errorf("the soft rule: %+v", r)
+			}
+		case scoped:
+			if r.Provider != "openai" || r.Model != "fake-basic" || r.Limit != 9000000 {
+				t.Errorf("the scoped rule: %+v", r)
+			}
+		}
+	}
+	if out := p.mustCLI(t, tn.admin, "limit", "platform", "--tenant", tn.idStr, "-o", "json"); !strings.Contains(out, platform) {
+		t.Errorf("limit platform does not show the ceiling of the tenant:\n%s", out)
+	}
+	if out := p.mustCLI(t, boot, "platform-limit", "list", "-o", "json"); !strings.Contains(out, platform) {
+		t.Errorf("platform-limit list lacks the rule:\n%s", out)
+	}
+	if out := p.mustCLI(t, tn.admin, "limit", "get", "--tenant", tn.idStr, rate); !strings.Contains(out, "requests_per_minute") {
+		t.Errorf("limit get:\n%s", out)
+	}
+
+	// Change and delete.
+	p.mustCLI(t, tn.admin, "limit", "update", "--tenant", tn.idStr, "--limit", "2000", rate)
+	if out := p.mustCLI(t, tn.admin, "limit", "get", "--tenant", tn.idStr, "-o", "json", rate); !strings.Contains(out, `"limit": 2000`) && !strings.Contains(out, `"limit":2000`) {
+		t.Errorf("limit update did not change the value:\n%s", out)
+	}
+	p.mustCLI(t, boot, "platform-limit", "update", "--limit", "60", platform)
+	p.mustCLI(t, boot, "platform-limit", "delete", platform)
+	p.mustCLI(t, tn.admin, "limit", "delete", "--tenant", tn.idStr, rate)
+	if code, _, _ := p.cli(t, tn.admin, "limit", "get", "--tenant", tn.idStr, rate); code == 0 {
+		t.Error("a deleted rule is still there")
+	}
+
+	// Three calls use the quota of the day; the capability check says exhausted.
+	for i := 0; i < 3; i++ {
+		if status, text := p.openaiCall(t, tn.key); status != 200 {
+			t.Fatalf("call %d: %d\n%s", i, status, text)
+		}
+	}
+	waitRows(t, p.db, tn.idStr, 3)
+	var got adminapi.Capability
+	testutil.Eventually(t, 5*time.Second, "the capability check to say exhausted", func() bool {
+		got = p.capabilityOf(t, tn.admin, tn.idStr, "openai", fakeprovider.ModelBasic)
+		return got.Checks.Budget == adminapi.BudgetAvailabilityExhausted
+	})
+	if got.Callable || !strings.Contains(strings.Join(got.Reasons, ","), "budget_exhausted") {
+		t.Errorf("capability: callable %v, reasons %v", got.Callable, got.Reasons)
+	}
+	if status, text := p.openaiCall(t, tn.key); status != 429 {
+		t.Errorf("a fourth call: %d\n%s", status, text)
+	}
+	_ = quota
+
+	// The soft budget crossed 80 % (3 × 99 millionths of 300) on the third call: the event is there.
+	var events string
+	testutil.Eventually(t, 5*time.Second, "the threshold event", func() bool {
+		events = p.mustCLI(t, tn.admin, "limit", "events", "--tenant", tn.idStr, "-o", "json")
+		return strings.Contains(events, "threshold_reached")
+	})
+	if !strings.Contains(events, soft) {
+		t.Errorf("the event does not name the soft rule %s:\n%s", soft, events)
+	}
+	if out := p.mustCLI(t, tn.admin, "limit", "events", "--tenant", tn.idStr, "--kind", "exhausted", "-o", "json"); !strings.Contains(out, "exhausted") {
+		t.Errorf("limit events --kind exhausted shows no exhausted event:\n%s", out)
+	}
+	if out := p.mustCLI(t, tn.admin, "limit", "events", "--tenant", tn.idStr, "--rule", soft, "-o", "json"); strings.Contains(out, quota) {
+		t.Errorf("limit events --rule names another rule:\n%s", out)
+	}
+}
+
+// TestQuotaCanary is T-688: at log level debug, with canaries in the body, the provider credential and
+// the virtual key, no log line, record, event, audit row, header or error body holds them.
+func TestQuotaCanary(t *testing.T) {
+	p, _, boot := limitsProc(t, "debug")
+	p.priceFake(t, boot, "openai")
+	tn := p.newLimitsTenant(t, boot, "quota-canary")
+	p.mustCLI(t, tn.admin, "limit", "create", "--tenant", tn.idStr, "--metric", "requests_per_day", "--limit", "2", "--threshold", "50", "--soft")
+	p.mustCLI(t, tn.admin, "limit", "create", "--tenant", tn.idStr, "--metric", "cost_per_month", "--amount", "0.0001", "--currency", "USD", "--provider", "openai", "--soft", "--threshold", "100")
+	p.mustCLI(t, tn.admin, "limit", "create", "--tenant", tn.idStr, "--metric", "tokens_per_month", "--limit", "30", "--provider", "anthropic")
+
+	type response struct{ what, text string }
+	var responses []response
+	record := func(what string, status int, text string, want int) {
+		t.Helper()
+		if status != want {
+			t.Fatalf("%s: status %d, want %d\n%s", what, status, want, text)
+		}
+		responses = append(responses, response{what, text})
+	}
+	status, text := p.chatCall(t, tn.key, fakeprovider.ModelBasic, true)
+	record("a settled stream", status, text, 200)
+	status, text = p.chatCall(t, tn.key, fakeprovider.ModelBasic, false)
+	record("a settled call", status, text, 200)
+	status, text = p.anthropicCall(t, tn.key) // the token quota of the anthropic provider: its estimate alone is over 30 tokens
+	record("a quota refusal, anthropic", status, text, 429)
+	assertAnthropicPandokosError(t, "the anthropic refusal", status, text, 429, "quota_exceeded", "rate_limit_error")
+	// An unpriced model under a budget: no_price.
+	p.mustCLI(t, boot, "model", "create", "--availability", "all", "openai/fake-unpriced")
+	status, text = p.chatCall(t, tn.key, "fake-unpriced", false)
+	record("no_price", status, text, 409)
+	assertPandokosError(t, "no_price", status, text, 409, "no_price")
+
+	waitRows(t, p.db, tn.idStr, 4)
+	testutil.Eventually(t, 5*time.Second, "an event row", func() bool {
+		var n int
+		_ = p.db.Super(t).QueryRow(t.Context(), `SELECT count(*) FROM pandokos.limit_event`).Scan(&n)
+		return n > 0
+	})
+	if code := p.stop(t); code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+	outputs := []response{{"stdout", p.stdout.String()}, {"stderr", p.stderr.String()}}
+	for _, table := range []string{"usage_record", "audit_event", "platform_audit_event", "limit_rule", "platform_limit_rule", "limit_event"} {
+		var dump string
+		if err := p.db.Super(t).QueryRow(t.Context(), "SELECT COALESCE(jsonb_agg(to_jsonb(t))::text, '') FROM pandokos."+table+" t").Scan(&dump); err != nil {
+			t.Fatal(err)
+		}
+		outputs = append(outputs, response{table, dump})
+	}
+	secrets := testutil.KeyForms(tn.key)
+	secrets = append(secrets, testutil.SecretForms(fixtures.CanaryCredential)...)
+	secrets = append(secrets, testutil.SecretForms(anthropicLimitsSecret)...)
+	secrets = append(secrets, testutil.SecretForms(fixtures.CanaryProviderKey)...)
+	secrets = append(secrets, p.db.Passwords()...)
+	for _, o := range outputs {
+		testutil.AssertNoCanary(t, o.what, o.text)
+		testutil.AssertAbsent(t, o.what, o.text, secrets...)
+	}
+	for _, r := range responses {
+		testutil.AssertAbsent(t, "the response "+r.what, r.text, secrets...)
+		testutil.AssertNoCanary(t, "the response "+r.what, r.text)
+	}
 	if n := len(logLines(t, p.stdout.String(), "request")); n < 4 {
 		t.Errorf("%d request log lines at debug level, want at least 4", n)
 	}

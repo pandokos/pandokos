@@ -1,9 +1,16 @@
 package isolation
 
 import (
+	"encoding/json"
 	"sort"
+	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
+
+	"github.com/pandokos/pandokos/internal/adminapi"
+	"github.com/pandokos/pandokos/internal/tenant"
+	"github.com/pandokos/pandokos/test/apitest"
 	"github.com/pandokos/pandokos/test/dbtest"
 )
 
@@ -284,5 +291,355 @@ func TestLimitRulePolicies(t *testing.T) {
 				t.Errorf("limit_value of platform_limit_rule: %d %v", n, err)
 			}
 		})
+	})
+}
+
+// TestLimitEventPolicies is T-661: limit_event for each role and session. The gateway inserts the
+// rows of its own tenant and reads nothing; the admin role reads the rows of its own tenant; the
+// worker has nothing; nobody updates, deletes or truncates, the owner included; every check
+// constraint and the unique key.
+func TestLimitEventPolicies(t *testing.T) {
+	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
+		super := d.Super(t)
+		a, b := d.SeedTenant(t, "events-a"), d.SeedTenant(t, "events-b")
+		sessA := sessions(a)[0]
+		sessB := session{name: "tenant-b", setting: "app.tenant_id", value: b.String()}
+		platform := session{name: "platform", setting: "app.scope", value: "platform"}
+		none, empty := session{name: "none"}, session{name: "empty", setting: "app.tenant_id", value: ""}
+
+		const cols = `tenant_id, kind, rule_id, rule_level, subject_kind, subject_id, provider, model, metric, currency, period_start, period_end, percent, limit_value, observed`
+		const vals = `$1::uuid, $2, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11::timestamptz, $12::timestamptz, $13, $14, $15`
+		insert := `INSERT INTO pandokos.limit_event (` + cols + `) VALUES (` + vals + `)`
+		rule := "00000000-0000-4000-8000-0000000000a1"
+		args := func(tenantID tenant.ID, o map[string]any) []any {
+			base := map[string]any{"kind": "threshold_reached", "rule": rule, "level": "tenant", "subject_kind": "key", "subject_id": "k1", "provider": "openai", "model": "gpt-4",
+				"metric": "tokens_per_day", "currency": "", "start": "2026-11-17T00:00:00Z", "end": "2026-11-18T00:00:00Z", "percent": 80, "value": 100, "observed": 81.5}
+			for k, v := range o {
+				base[k] = v
+			}
+			return []any{tenantID.String(), base["kind"], base["rule"], base["level"], base["subject_kind"], base["subject_id"], base["provider"], base["model"], base["metric"],
+				base["currency"], base["start"], base["end"], base["percent"], base["value"], base["observed"]}
+		}
+		for _, id := range []tenant.ID{a, b} {
+			if _, err := super.Exec(ctx(t), insert, args(id, nil)...); err != nil {
+				t.Fatal(err)
+			}
+		}
+		gw, ad, wk := d.Connect(t, "gateway"), d.Connect(t, "admin"), d.Connect(t, "worker")
+
+		t.Run("the gateway inserts the rows of its own tenant", func(t *testing.T) {
+			if n, err := execIn(t, gw, sessA, insert, args(a, map[string]any{"percent": 90})...); err != nil || n != 1 {
+				t.Errorf("own tenant: %d %v", n, err)
+			}
+			for _, c := range []struct {
+				sess   session
+				tenant tenant.ID
+			}{{sessA, b}, {sessB, a}, {none, a}, {empty, a}, {platform, a}} {
+				if _, err := execIn(t, gw, c.sess, insert, args(c.tenant, map[string]any{"percent": 91})...); sqlstate(err) != insufficientPrivilege {
+					t.Errorf("session %s, a row of another tenant or no tenant: %v, want SQLSTATE %s", c.sess.name, err, insufficientPrivilege)
+				}
+			}
+			// Recording is idempotent: the same event twice inserts one row without an error.
+			dup := args(a, map[string]any{"percent": 95})
+			if n, err := execIn(t, gw, sessA, insert+` ON CONFLICT DO NOTHING`, dup...); err != nil || n != 1 {
+				t.Errorf("first insert: %d %v", n, err)
+			}
+			if n, err := execIn(t, gw, sessA, insert+` ON CONFLICT DO NOTHING`, dup...); err != nil || n != 0 {
+				t.Errorf("the same event again: %d %v, want no row and no error", n, err)
+			}
+			if _, err := execIn(t, gw, sessA, insert, dup...); sqlstate(err) != uniqueViolation {
+				t.Errorf("a plain insert of the same event: %v, want SQLSTATE %s", err, uniqueViolation)
+			}
+		})
+
+		t.Run("the gateway reads nothing", func(t *testing.T) {
+			for _, sess := range []session{sessA, sessB, platform, none, empty} {
+				if _, err := query(t, gw, sess, `SELECT count(*) FROM pandokos.limit_event`); sqlstate(err) != insufficientPrivilege {
+					t.Errorf("session %s: %v, want SQLSTATE %s", sess.name, err, insufficientPrivilege)
+				}
+			}
+		})
+
+		t.Run("the admin role reads the rows of its own tenant", func(t *testing.T) {
+			for _, c := range []struct {
+				sess session
+				want int
+			}{{sessA, 3}, {sessB, 1}, {none, 0}, {empty, 0}, {platform, 0}} {
+				rows, err := query(t, ad, c.sess, `SELECT tenant_id::text AS tenant_id FROM pandokos.limit_event`)
+				if err != nil {
+					t.Errorf("session %s: %v", c.sess.name, err)
+					continue
+				}
+				if len(rows) != c.want {
+					t.Errorf("session %s sees %d rows, want %d", c.sess.name, len(rows), c.want)
+				}
+				for _, r := range rows {
+					if (c.sess.name == "tenant-b" && r["tenant_id"] != b.String()) || (c.sess.name == "tenant-a" && r["tenant_id"] != a.String()) {
+						t.Errorf("session %s sees a row of tenant %v", c.sess.name, r["tenant_id"])
+					}
+				}
+			}
+			if _, err := execIn(t, ad, sessA, insert, args(a, map[string]any{"percent": 70})...); sqlstate(err) != insufficientPrivilege {
+				t.Errorf("the admin role inserted: %v", err)
+			}
+		})
+
+		t.Run("the worker has nothing", func(t *testing.T) {
+			for _, sess := range []session{sessA, platform, none} {
+				if _, err := query(t, wk, sess, `SELECT count(*) FROM pandokos.limit_event`); sqlstate(err) != insufficientPrivilege {
+					t.Errorf("session %s SELECT: %v", sess.name, err)
+				}
+				if _, err := execIn(t, wk, sess, insert, args(a, map[string]any{"percent": 60})...); sqlstate(err) != insufficientPrivilege {
+					t.Errorf("session %s INSERT: %v", sess.name, err)
+				}
+			}
+		})
+
+		t.Run("nobody updates, deletes or truncates, the owner included", func(t *testing.T) {
+			before := scalar(t, super, `SELECT count(*)::text FROM pandokos.limit_event`)
+			for what, sql := range map[string]string{
+				"UPDATE":   `UPDATE pandokos.limit_event SET observed = 0`,
+				"DELETE":   `DELETE FROM pandokos.limit_event`,
+				"TRUNCATE": `TRUNCATE pandokos.limit_event`,
+			} {
+				for role, conn := range map[string]*pgx.Conn{"gateway": gw, "admin": ad, "worker": wk} {
+					if _, err := execIn(t, conn, sessA, sql); sqlstate(err) != insufficientPrivilege {
+						t.Errorf("%s as %s: %v, want SQLSTATE %s", what, role, err, insufficientPrivilege)
+					}
+				}
+				if _, err := execIn(t, d.Connect(t, "owner"), sessA, sql); err == nil {
+					t.Errorf("%s as the owner succeeded", what)
+				}
+				if _, err := super.Exec(ctx(t), sql); err == nil {
+					t.Errorf("%s as the superuser succeeded: the table is append-only", what)
+				}
+			}
+			if after := scalar(t, super, `SELECT count(*)::text FROM pandokos.limit_event`); after != before {
+				t.Errorf("%s rows after the refused changes, %s before", after, before)
+			}
+		})
+
+		t.Run("every check constraint and the unique key", func(t *testing.T) {
+			bad := func(what string, code string, o map[string]any) {
+				t.Helper()
+				if _, err := execIn(t, gw, sessA, insert, args(a, o)...); sqlstate(err) != code {
+					t.Errorf("%s: %v, want SQLSTATE %s", what, err, code)
+				}
+			}
+			bad("an unknown kind", checkViolation, map[string]any{"kind": "alarm", "percent": 41})
+			bad("a threshold without a percentage", checkViolation, map[string]any{"percent": 0})
+			bad("a percentage above 100", checkViolation, map[string]any{"percent": 101})
+			bad("an exhausted event with a percentage", checkViolation, map[string]any{"kind": "exhausted", "percent": 50})
+			bad("an unknown rule level", checkViolation, map[string]any{"level": "global", "percent": 42})
+			bad("an unknown subject kind", checkViolation, map[string]any{"subject_kind": "team", "percent": 43})
+			bad("a tenant subject with an ID", checkViolation, map[string]any{"subject_kind": "tenant", "percent": 44})
+			bad("a key subject without an ID", checkViolation, map[string]any{"subject_id": "", "percent": 45})
+			bad("an ID with a space", checkViolation, map[string]any{"subject_id": "a b", "percent": 46})
+			bad("an upper-case provider", checkViolation, map[string]any{"provider": "OpenAI", "percent": 47})
+			bad("a model without a provider", checkViolation, map[string]any{"provider": "", "percent": 48})
+			bad("a rate metric", checkViolation, map[string]any{"metric": "requests_per_minute", "percent": 49})
+			bad("a currency on a count metric", checkViolation, map[string]any{"currency": "EUR", "percent": 50})
+			bad("a budget without a currency", checkViolation, map[string]any{"metric": "cost_per_day", "percent": 51})
+			bad("a lower-case currency", checkViolation, map[string]any{"metric": "cost_per_day", "currency": "eur", "percent": 52})
+			bad("an empty period", checkViolation, map[string]any{"end": "2026-11-17T00:00:00Z", "percent": 53})
+			bad("a value of 0", checkViolation, map[string]any{"value": 0, "percent": 54})
+			bad("an observed value below 0", checkViolation, map[string]any{"observed": -1, "percent": 55})
+			bad("the same rule, period, kind and percentage", uniqueViolation, nil)
+			// And the valid forms: a budget, an exhausted event, a tenant subject.
+			for what, o := range map[string]map[string]any{
+				"a budget":          {"metric": "cost_per_month", "currency": "EUR", "percent": 10, "value": 250500000},
+				"an exhausted":      {"kind": "exhausted", "percent": 0},
+				"a tenant subject":  {"subject_kind": "tenant", "subject_id": "", "provider": "", "model": "", "percent": 20},
+				"a platform level":  {"level": "platform", "percent": 30},
+				"a service account": {"subject_kind": "service_account", "subject_id": "0192f0f0-0000-7000-8000-000000000001", "percent": 40},
+			} {
+				if n, err := execIn(t, gw, sessA, insert, args(a, o)...); err != nil || n != 1 {
+					t.Errorf("%s: %d %v", what, n, err)
+				}
+			}
+		})
+	})
+}
+
+// TestLimitAPI is T-679: for every route of the limit operations with a tenant in the path, a key of
+// tenant B gets the same 404 for tenant A as for a tenant that does not exist, and a rule ID or an
+// event of A is not found under B. The routes are those of the generated route table that name a
+// limit, so that a route added later without a test fails this one.
+func TestLimitAPI(t *testing.T) {
+	w := newAPIWorld(t)
+	var ops []adminapi.Operation
+	for _, op := range adminapi.Operations {
+		if strings.Contains(op.Path, "limit") && strings.Contains(op.Path, "{tenant}") {
+			ops = append(ops, op)
+		}
+	}
+	if len(ops) != 7 {
+		t.Fatalf("%d tenant routes name a limit, want 7 (the route table changed: give the new routes their cases)", len(ops))
+	}
+	// An event of A.
+	if _, err := w.api.Super(t).Exec(ctx(t), `INSERT INTO pandokos.limit_event (tenant_id, kind, rule_id, rule_level, subject_kind, metric, period_start, period_end, percent, limit_value, observed)
+		VALUES ($1::uuid, 'threshold_reached', $2::uuid, 'tenant', 'tenant', 'requests_per_day', now(), now() + interval '1 day', 80, 100, 81)`, w.a.tenant.ID, w.a.limitRule); err != nil {
+		t.Fatal(err)
+	}
+	before := w.api.SnapshotTenant(t, w.a.tenant.ID)
+	for _, op := range ops {
+		onA, missing := w.b.params(), w.b.params()
+		onA.Tenant, onA.LimitRule = w.a.tenant.ID, w.a.limitRule
+		missing.Tenant, missing.LimitRule = randomUUID(t, w), randomUUID(t, w)
+		ca, cm := apitest.CallFor(t, op, onA), apitest.CallFor(t, op, missing)
+		r1 := w.api.Do(t, ca.Method, ca.Path, w.b.adminKey, ca.Body, nil)
+		r2 := w.api.Do(t, cm.Method, cm.Path, w.b.adminKey, cm.Body, nil)
+		if r1.Status != 404 || r2.Status != 404 || !strings.Contains(string(r1.Body), `"code":"not_found"`) {
+			t.Errorf("%s: tenant A gives %d, a missing tenant %d, want 404 not_found\n%s", op.ID, r1.Status, r2.Status, r1.Body)
+		}
+		if normalize(t, r1) != normalize(t, r2) {
+			t.Errorf("%s: tenant A and a missing tenant differ:\n%s\n%s", op.ID, normalize(t, r1), normalize(t, r2))
+		}
+		if after := w.api.SnapshotTenant(t, w.a.tenant.ID); after != before {
+			t.Fatalf("%s changed a row of tenant A", op.ID)
+		}
+
+		// A rule of A under B's own tenant path is not found, as a rule that does not exist is not.
+		if strings.Contains(op.Path, "{rule}") {
+			ownPath, missingRule := w.b.params(), w.b.params()
+			ownPath.LimitRule, missingRule.LimitRule = w.a.limitRule, randomUUID(t, w)
+			c1, c2 := apitest.CallFor(t, op, ownPath), apitest.CallFor(t, op, missingRule)
+			r1 := w.api.Do(t, c1.Method, c1.Path, w.b.adminKey, c1.Body, nil)
+			r2 := w.api.Do(t, c2.Method, c2.Path, w.b.adminKey, c2.Body, nil)
+			if r1.Status != 404 || r2.Status != 404 || normalize(t, r1) != normalize(t, r2) {
+				t.Errorf("%s: A's rule under B gives %d, a missing rule %d (the bodies must be the same)\n%s\n%s", op.ID, r1.Status, r2.Status, r1.Body, r2.Body)
+			}
+			if after := w.api.SnapshotTenant(t, w.a.tenant.ID); after != before {
+				t.Fatalf("%s under B changed a row of tenant A", op.ID)
+			}
+		}
+	}
+
+	t.Run("the events and the rules of A are not in the lists of B", func(t *testing.T) {
+		var ev adminapi.LimitEventList
+		r := w.api.Do(t, "GET", "/v1/tenants/"+w.b.tenant.ID+"/limit-events?limit=100", w.b.adminKey, nil, nil)
+		if r.Status != 200 {
+			t.Fatalf("%d %s", r.Status, r.Body)
+		}
+		if err := json.Unmarshal(r.Body, &ev); err != nil || len(ev.Items) != 0 {
+			t.Errorf("B lists %d events: %v %s", len(ev.Items), err, r.Body)
+		}
+		var rules adminapi.LimitRuleList
+		r = w.api.Do(t, "GET", "/v1/tenants/"+w.b.tenant.ID+"/limits?limit=100", w.b.adminKey, nil, nil)
+		if err := json.Unmarshal(r.Body, &rules); err != nil {
+			t.Fatal(err)
+		}
+		for _, it := range rules.Items {
+			if it.ID == w.a.limitRule {
+				t.Errorf("B lists the rule of A")
+			}
+		}
+		var pl adminapi.PlatformLimitRuleList
+		r = w.api.Do(t, "GET", "/v1/tenants/"+w.b.tenant.ID+"/platform-limits?limit=100", w.b.adminKey, nil, nil)
+		if err := json.Unmarshal(r.Body, &pl); err != nil {
+			t.Fatal(err)
+		}
+		for _, it := range pl.Items {
+			if it.ID == w.a.platformLimit || it.Tenant == w.a.tenant.ID {
+				t.Errorf("B sees the platform rule of A: %+v", it)
+			}
+		}
+	})
+
+	t.Run("the platform routes are refused to a tenant key", func(t *testing.T) {
+		for _, op := range adminapi.Operations {
+			if !strings.HasPrefix(op.Path, "/v1/platform-limits") {
+				continue
+			}
+			c := apitest.CallFor(t, op, w.a.params())
+			r := w.api.Do(t, c.Method, c.Path, w.a.adminKey, c.Body, nil)
+			if r.Status != 403 {
+				t.Errorf("%s: status %d, want 403\n%s", op.ID, r.Status, r.Body)
+			}
+		}
+	})
+}
+
+// TestLimitRuleChecks is T-626 extended (sprint 5.2): the scope, the currency, the enforcement and the
+// thresholds of both rule tables, and the unique keys that include the scope.
+func TestLimitRuleChecks(t *testing.T) {
+	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
+		a := d.SeedTenant(t, "checks-a")
+		sessA := sessions(a)[0]
+		platform := session{name: "platform", setting: "app.scope", value: "platform"}
+		ad := d.Connect(t, "admin")
+
+		type row struct {
+			tenant     any
+			provider   string
+			model      string
+			metric     string
+			value      int64
+			currency   string
+			enforce    bool
+			thresholds []int16
+		}
+		def := func(o func(*row)) row {
+			r := row{provider: "", model: "", metric: "tokens_per_day", value: 10, currency: "", enforce: true, thresholds: []int16{}}
+			if o != nil {
+				o(&r)
+			}
+			return r
+		}
+		tenantRule := func(r row) error {
+			_, err := execIn(t, ad, sessA, `INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, subject_id, provider, model, metric, limit_value, currency, enforce, thresholds)
+				VALUES ($1::uuid, 'tenant', '', $2, $3, $4, $5, $6, $7, $8::smallint[])`, a.String(), r.provider, r.model, r.metric, r.value, r.currency, r.enforce, r.thresholds)
+			return err
+		}
+		platformRule := func(r row) error {
+			_, err := execIn(t, ad, platform, `INSERT INTO pandokos.platform_limit_rule (tenant_id, provider, model, metric, limit_value, currency, enforce, thresholds)
+				VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8::smallint[])`, r.tenant, r.provider, r.model, r.metric, r.value, r.currency, r.enforce, r.thresholds)
+			return err
+		}
+		for table, insert := range map[string]func(row) error{"limit_rule": tenantRule, "platform_limit_rule": platformRule} {
+			t.Run(table, func(t *testing.T) {
+				bad := func(what string, o func(*row)) {
+					t.Helper()
+					if got := sqlstate(insert(def(o))); got != checkViolation {
+						t.Errorf("%s: SQLSTATE %q, want %s", what, got, checkViolation)
+					}
+				}
+				good := func(what string, o func(*row)) {
+					t.Helper()
+					if err := insert(def(o)); err != nil {
+						t.Errorf("%s: %v", what, err)
+					}
+				}
+				bad("an upper-case provider", func(r *row) { r.provider = "OpenAI" })
+				bad("a provider that starts with a digit", func(r *row) { r.provider = "1openai" })
+				bad("a model without a provider", func(r *row) { r.model = "gpt-4" })
+				bad("a model with a space", func(r *row) { r.provider, r.model = "openai", "gpt 4" })
+				bad("a currency on a count metric", func(r *row) { r.currency = "EUR" })
+				bad("a budget without a currency", func(r *row) { r.metric = "cost_per_day" })
+				bad("a lower-case currency", func(r *row) { r.metric, r.currency = "cost_per_day", "eur" })
+				bad("a four-letter currency", func(r *row) { r.metric, r.currency = "cost_per_month", "EURO" })
+				bad("a count above 10^12", func(r *row) { r.value = 1_000_000_000_001 })
+				bad("a budget above 10^15 millionths", func(r *row) { r.metric, r.currency, r.value = "cost_per_day", "EUR", 1_000_000_000_000_001 })
+				bad("five thresholds", func(r *row) { r.thresholds = []int16{10, 20, 30, 40, 50} })
+				bad("a threshold of 0", func(r *row) { r.thresholds = []int16{0} })
+				bad("a threshold of 101", func(r *row) { r.thresholds = []int16{101} })
+				bad("a soft rule without thresholds", func(r *row) { r.enforce = false })
+				bad("a soft rate metric", func(r *row) { r.metric, r.enforce, r.thresholds = "requests_per_minute", false, []int16{50} })
+				bad("thresholds on a rate metric", func(r *row) { r.metric, r.thresholds = "concurrent_requests", []int16{50} })
+				bad("an unknown metric", func(r *row) { r.metric = "tokens_per_hour" })
+				good("a budget at the largest amount", func(r *row) { r.metric, r.currency, r.value = "cost_per_day", "EUR", 1_000_000_000_000_000 })
+				good("a count at the largest value", func(r *row) { r.metric, r.value = "requests_per_month", 1_000_000_000_000 })
+				good("a soft rule with four thresholds", func(r *row) { r.metric, r.enforce, r.thresholds = "requests_per_day", false, []int16{1, 50, 99, 100} })
+				good("a scope of provider and model", func(r *row) { r.provider, r.model = "openai", "gpt-4o" })
+				good("a scope of a provider", func(r *row) { r.provider, r.metric = "anthropic", "tokens_per_month" })
+				// The unique key includes the scope: the same metric in the same scope is refused, in another is not.
+				if got := sqlstate(insert(def(func(r *row) { r.provider, r.model = "openai", "gpt-4o" }))); got != uniqueViolation {
+					t.Errorf("the same rule in the same scope: SQLSTATE %q, want %s", got, uniqueViolation)
+				}
+				if got := sqlstate(insert(def(func(r *row) { r.provider = "anthropic" }))); got != "" {
+					t.Errorf("the same metric in another scope: SQLSTATE %q", got)
+				}
+			})
+		}
 	})
 }

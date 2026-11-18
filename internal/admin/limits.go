@@ -7,6 +7,10 @@ import (
 	"github.com/pandokos/pandokos/internal/adminapi"
 )
 
+// maxLimitRules is the number of limit rules a tenant may have (sprint 5.2, section 5.11); the tests
+// of the bound lower it through export_test.go. Scaffolding: part C6 uses it.
+var maxLimitRules = 5000
+
 // errLimitsNotImplemented is what the operations on limits answer until sprint 5.2 implements them.
 var errLimitsNotImplemented = errors.New("admin: limits administration is not implemented")
 

@@ -556,7 +556,7 @@ func TestEveryChangeIsAudited(t *testing.T) {
 
 	// Reads write nothing: every GET operation, with a key that is allowed to make it.
 	for _, op := range adminapi.Operations {
-		if op.Method != "GET" || pendingLimitOps[op.ID] {
+		if op.Method != "GET" {
 			continue
 		}
 		key := f.w.adminKey

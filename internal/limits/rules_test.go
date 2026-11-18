@@ -1,6 +1,10 @@
 package limits
 
-import "testing"
+import (
+	"fmt"
+	"reflect"
+	"testing"
+)
 
 func mm(kv ...any) map[Metric]int64 {
 	out := map[Metric]int64{}
@@ -277,4 +281,334 @@ func dedupe(rs []Rule) []Rule {
 		}
 	}
 	return out
+}
+
+// ---- sprint 5.2: scope, currency, enforcement and thresholds ----------------------------------
+
+type ckey struct {
+	kind            SubjectKind
+	id, prov, model string
+	metric          Metric
+	currency        string
+}
+
+func ckeyOf(l Limit) ckey {
+	return ckey{l.Subject, l.ID, l.Provider, l.Model, l.Metric, l.Currency}
+}
+
+func scoped(id string, kind SubjectKind, sid, prov, model string, m Metric, v int64, enforce bool, thr ...int) Rule {
+	r := Rule{ID: id, SubjectKind: kind, SubjectID: sid, Provider: prov, Model: model, Metric: m, Value: v, Enforce: enforce, Thresholds: thr}
+	if m.Cost() {
+		r.Currency = "EUR"
+	}
+	return r
+}
+
+func metricIndex(m Metric) int {
+	for i, x := range Metrics() {
+		if x == m {
+			return i
+		}
+	}
+	return -1
+}
+
+func scopeIndex(l Limit) int {
+	switch {
+	case l.Model != "":
+		return 2
+	case l.Provider != "":
+		return 1
+	}
+	return 0
+}
+
+func subjectIndex(k SubjectKind) int {
+	for i, x := range SubjectKinds() {
+		if x == k {
+			return i
+		}
+	}
+	return -1
+}
+
+func mustOne(t *testing.T, ls []Limit) Limit {
+	t.Helper()
+	if len(ls) == 0 {
+		t.Fatal("no limit")
+	}
+	return ls[0]
+}
+
+// TestResolveScopes is T-654.
+func TestResolveScopes(t *testing.T) {
+	a := tid(1)
+	q := Query{ServiceAccountID: "sa-1", KeyID: "key-1", Provider: "openai", Model: "gpt-4", Start: at(2026, 11, 17, 12, 0, 0)}
+
+	t.Run("the order of section 5.3", func(t *testing.T) {
+		var rules []Rule
+		n := 0
+		// Every combination, added in a shuffled order.
+		for _, m := range []Metric{CostPerMonth, TokensPerDay, ConcurrentRequests, RequestsPerMonth, RequestsPerMinute, TokensPerMonth, CostPerDay, TokensPerMinute, RequestsPerDay} {
+			for _, sc := range [][2]string{{"openai", "gpt-4"}, {"", ""}, {"openai", ""}} {
+				for _, sub := range []struct {
+					k  SubjectKind
+					id string
+				}{{SubjectKey, "key-1"}, {SubjectTenant, ""}, {SubjectServiceAccount, "sa-1"}} {
+					n++
+					rules = append(rules, scoped(fmt.Sprintf("r%d", n), sub.k, sub.id, sc[0], sc[1], m, 1000, true))
+				}
+			}
+		}
+		got := NewScopedRuleSet(a, nil, nil, rules).For(q, utcCal)
+		if len(got) != 81 {
+			t.Fatalf("%d limits, want 81 (three subjects, three scopes, nine metrics)", len(got))
+		}
+		for i := 1; i < len(got); i++ {
+			p, c := got[i-1], got[i]
+			pk := [3]int{subjectIndex(p.Subject), scopeIndex(p), metricIndex(p.Metric)}
+			ck := [3]int{subjectIndex(c.Subject), scopeIndex(c), metricIndex(c.Metric)}
+			if pk[0] > ck[0] || (pk[0] == ck[0] && (pk[1] > ck[1] || (pk[1] == ck[1] && pk[2] >= ck[2]))) {
+				t.Fatalf("position %d: %s/%d/%s after %s/%d/%s", i, c.Subject, scopeIndex(c), c.Metric, p.Subject, scopeIndex(p), p.Metric)
+			}
+		}
+		seen := map[ckey]bool{}
+		for _, l := range got {
+			if seen[ckeyOf(l)] {
+				t.Fatalf("two limits for one counter: %+v", l)
+			}
+			seen[ckeyOf(l)] = true
+		}
+	})
+
+	t.Run("scope matching", func(t *testing.T) {
+		set := NewScopedRuleSet(a, nil, nil, []Rule{
+			scoped("p", SubjectTenant, "", "openai", "", RequestsPerDay, 10, true),
+			scoped("pa", SubjectTenant, "", "anthropic", "", RequestsPerDay, 11, true),
+			scoped("m", SubjectTenant, "", "openai", "gpt-4", TokensPerDay, 20, true),
+			scoped("mo", SubjectTenant, "", "openai", "gpt-3", TokensPerDay, 21, true),
+			scoped("mx", SubjectTenant, "", "other", "gpt-4", TokensPerDay, 22, true), // the model of another provider
+			scoped("k", SubjectKey, "key-1", "openai", "gpt-4", RequestsPerMinute, 5, true),
+			scoped("k2", SubjectKey, "key-2", "openai", "gpt-4", RequestsPerMinute, 6, true),
+		})
+		got := set.For(q, utcCal)
+		var ids []string
+		for _, l := range got {
+			ids = append(ids, l.RuleID)
+		}
+		if want := []string{"p", "m", "k"}; !reflect.DeepEqual(ids, want) {
+			t.Fatalf("rules in force %v, want %v", ids, want)
+		}
+		for _, l := range got {
+			if l.Tenant != a {
+				t.Errorf("tenant %v", l.Tenant)
+			}
+		}
+		if l := got[1]; l.Provider != "openai" || l.Model != "gpt-4" || l.Max != 20 || l.Level != LevelTenant || l.Subject != SubjectTenant {
+			t.Errorf("the model limit is %+v", l)
+		}
+		if other := set.For(Query{Provider: "anthropic", Model: "claude", Start: q.Start}, utcCal); len(other) != 1 || other[0].RuleID != "pa" {
+			t.Errorf("limits for another provider %+v", other)
+		}
+	})
+
+	t.Run("the period and the calendar", func(t *testing.T) {
+		set := NewScopedRuleSet(a, nil, nil, []Rule{
+			scoped("d", SubjectTenant, "", "", "", RequestsPerDay, 10, true),
+			scoped("mo", SubjectTenant, "", "", "", TokensPerMonth, 10, true),
+			scoped("rate", SubjectTenant, "", "", "", RequestsPerMinute, 10, true),
+		})
+		got := set.For(q, utcCal)
+		if len(got) != 3 {
+			t.Fatalf("%d limits", len(got))
+		}
+		if got[0].Metric != RequestsPerMinute || got[0].Period != (Period{}) {
+			t.Errorf("a rate limit has a period: %+v", got[0])
+		}
+		if want := utcCal.Of(PerDay, q.Start); got[1].Period != want {
+			t.Errorf("day period %v, want %v", got[1].Period, want)
+		}
+		if want := utcCal.Of(PerMonth, q.Start); got[2].Period != want {
+			t.Errorf("month period %v, want %v", got[2].Period, want)
+		}
+		if nocal := set.For(q, nil); len(nocal) != 1 || nocal[0].Metric != RequestsPerMinute {
+			t.Errorf("without a calendar: %+v, want the rate limit only", nocal)
+		}
+	})
+
+	t.Run("a platform and a tenant rule share one counter", func(t *testing.T) {
+		plat := []Rule{scoped("pl", SubjectTenant, "", "", "", TokensPerDay, 1000, true, 80)}
+		ten := []Rule{scoped("te", SubjectTenant, "", "", "", TokensPerDay, 600, true, 50)}
+		got := NewScopedRuleSet(a, plat, nil, ten).For(q, utcCal)
+		if len(got) != 1 {
+			t.Fatalf("%d limits, want one counter", len(got))
+		}
+		l := got[0]
+		if l.Max != 600 || l.Level != LevelTenant || l.RuleID != "te" {
+			t.Errorf("limit %+v, want the tenant's 600", l)
+		}
+		wantMarks := []Mark{
+			{At: 300, Percent: 50, RuleID: "te", Level: LevelTenant, Value: 600},
+			{At: 800, Percent: 80, RuleID: "pl", Level: LevelPlatform, Value: 1000},
+		}
+		if !reflect.DeepEqual(l.Marks, wantMarks) {
+			t.Errorf("marks %+v, want %+v", l.Marks, wantMarks)
+		}
+		// The tenant's rule above the ceiling: the ceiling stays, both sets of marks are kept.
+		ten[0].Value = 2000
+		l = mustOne(t, NewScopedRuleSet(a, plat, nil, ten).For(q, utcCal))
+		if l.Max != 1000 || l.Level != LevelPlatform || l.RuleID != "pl" {
+			t.Errorf("limit %+v, want the ceiling of 1000", l)
+		}
+		if len(l.Marks) != 2 || l.Marks[0].At != 800 || l.Marks[0].RuleID != "pl" || l.Marks[1].At != 1000 || l.Marks[1].RuleID != "te" {
+			t.Errorf("marks %+v, want the platform's 800 and the tenant's 1000, ascending", l.Marks)
+		}
+	})
+
+	t.Run("the minimum of the enforced values; an unenforced rule only marks", func(t *testing.T) {
+		plat := []Rule{scoped("pl", SubjectTenant, "", "", "", TokensPerMonth, 1000, true)}
+		soft := []Rule{scoped("so", SubjectTenant, "", "", "", TokensPerMonth, 500, false, 100)}
+		l := mustOne(t, NewScopedRuleSet(a, plat, nil, soft).For(q, utcCal))
+		if l.Max != 1000 || l.RuleID != "pl" || len(l.Marks) != 1 || l.Marks[0].At != 500 || l.Marks[0].Percent != 100 || l.Marks[0].RuleID != "so" {
+			t.Errorf("limit %+v", l)
+		}
+		bothSoft := NewScopedRuleSet(a, []Rule{scoped("ps", SubjectTenant, "", "", "", TokensPerMonth, 1000, false, 90)}, nil, soft).For(q, utcCal)
+		if len(bothSoft) != 1 || bothSoft[0].Max != 0 || len(bothSoft[0].Marks) != 2 {
+			t.Errorf("two unenforced rules: %+v, want Max 0 and two marks", bothSoft)
+		}
+	})
+
+	t.Run("the platform row of a tenant replaces the default of its scope and metric", func(t *testing.T) {
+		def := []Rule{scoped("d1", SubjectTenant, "", "", "", RequestsPerDay, 100, true), scoped("d2", SubjectTenant, "", "openai", "", RequestsPerDay, 50, true)}
+		own := []Rule{scoped("o1", SubjectTenant, "", "", "", RequestsPerDay, 500, true)}
+		got := NewScopedRuleSet(a, def, own, nil).For(q, utcCal)
+		if len(got) != 2 || got[0].Max != 500 || got[0].RuleID != "o1" || got[1].Max != 50 || got[1].RuleID != "d2" {
+			t.Errorf("limits %+v", got)
+		}
+	})
+
+	t.Run("different currencies are two limits with two counters", func(t *testing.T) {
+		plat := []Rule{scoped("pl", SubjectTenant, "", "", "", CostPerDay, 5_000_000, true)}
+		ten := scoped("te", SubjectTenant, "", "", "", CostPerDay, 3_000_000, true)
+		ten.Currency = "USD"
+		got := NewScopedRuleSet(a, plat, nil, []Rule{ten}).For(q, utcCal)
+		if len(got) != 2 {
+			t.Fatalf("%d limits, want 2: %+v", len(got), got)
+		}
+		cur := map[string]int64{}
+		for _, l := range got {
+			cur[l.Currency] = l.Max
+		}
+		if !reflect.DeepEqual(cur, map[string]int64{"EUR": 5_000_000, "USD": 3_000_000}) {
+			t.Errorf("limits by currency %v", cur)
+		}
+		same := scoped("te2", SubjectTenant, "", "", "", CostPerDay, 3_000_000, true) // EUR, as the ceiling
+		got = NewScopedRuleSet(a, plat, nil, []Rule{same}).For(q, utcCal)
+		if len(got) != 1 || got[0].Max != 3_000_000 || got[0].Currency != "EUR" {
+			t.Errorf("same currency: %+v", got)
+		}
+	})
+
+	t.Run("a mark is the value times the percentage, rounded up", func(t *testing.T) {
+		got := mustOne(t, NewScopedRuleSet(a, nil, nil, []Rule{scoped("r", SubjectTenant, "", "", "", TokensPerDay, 1001, true, 33, 100, 1)}).For(q, utcCal))
+		var at []int64
+		for _, m := range got.Marks {
+			at = append(at, m.At)
+		}
+		if want := []int64{11, 331, 1001}; !reflect.DeepEqual(at, want) {
+			t.Errorf("marks at %v, want %v", at, want)
+		}
+		big := mustOne(t, NewScopedRuleSet(a, nil, nil, []Rule{scoped("r", SubjectTenant, "", "", "", CostPerMonth, 1_000_000_000_000_000, true, 99)}).For(q, utcCal))
+		if len(big.Marks) != 1 || big.Marks[0].At != 990_000_000_000_000 {
+			t.Errorf("marks %+v of 10^15 at 99%%", big.Marks)
+		}
+	})
+
+	t.Run("property: adding a rule never removes or raises a limit", func(t *testing.T) {
+		seed := seedOf(t)
+		for n := range schedules() {
+			rng := rngOf(seed, n)
+			metrics := Metrics()
+			randRule := func(i int) Rule {
+				m := metrics[rng.IntN(len(metrics))]
+				kind := SubjectKinds()[rng.IntN(3)]
+				sid := ""
+				switch kind {
+				case SubjectServiceAccount:
+					sid = []string{"sa-1", "sa-2"}[rng.IntN(2)]
+				case SubjectKey:
+					sid = []string{"key-1", "key-2"}[rng.IntN(2)]
+				}
+				prov := []string{"", "openai", "anthropic"}[rng.IntN(3)]
+				model := ""
+				if prov != "" && rng.IntN(2) == 0 {
+					model = []string{"gpt-4", "gpt-3"}[rng.IntN(2)]
+				}
+				r := scoped(fmt.Sprintf("r%d", i), kind, sid, prov, model, m, int64(1+rng.IntN(1000)), true)
+				if m.Cost() && rng.IntN(3) == 0 {
+					r.Currency = "USD"
+				}
+				if m == ConcurrentRequests || m == RequestsPerMinute || m == TokensPerMinute {
+					return r
+				}
+				if rng.IntN(3) == 0 {
+					r.Enforce, r.Thresholds = false, []int{1 + rng.IntN(100)}
+				}
+				return r
+			}
+			var plat, rules []Rule
+			for i := range rng.IntN(12) {
+				r := randRule(i)
+				switch rng.IntN(3) {
+				case 0:
+					r.SubjectKind, r.SubjectID = SubjectTenant, ""
+					plat = append(plat, r)
+				default:
+					rules = append(rules, r)
+				}
+			}
+			dedupeRules := func(rs []Rule) []Rule { // one rule per subject, scope and metric (and currency for the platform)
+				seen := map[ckey]bool{}
+				var out []Rule
+				for _, r := range rs {
+					k := ckey{r.SubjectKind, r.SubjectID, r.Provider, r.Model, r.Metric, ""}
+					if !seen[k] {
+						seen[k] = true
+						out = append(out, r)
+					}
+				}
+				return out
+			}
+			plat, rules = dedupeRules(plat), dedupeRules(rules)
+			before := NewScopedRuleSet(a, plat, nil, rules).For(q, utcCal)
+			seen := map[ckey]bool{}
+			for _, l := range before {
+				if seen[ckeyOf(l)] {
+					t.Fatalf("seed %d case %d: two limits for the counter %+v", seed, n, ckeyOf(l))
+				}
+				seen[ckeyOf(l)] = true
+			}
+			extra := randRule(100)
+			var after []Limit
+			if rng.IntN(2) == 0 {
+				extra.SubjectKind, extra.SubjectID = SubjectTenant, ""
+				after = NewScopedRuleSet(a, dedupeRules(append(append([]Rule(nil), plat...), extra)), nil, rules).For(q, utcCal)
+			} else {
+				after = NewScopedRuleSet(a, plat, nil, dedupeRules(append(append([]Rule(nil), rules...), extra))).For(q, utcCal)
+			}
+			byKey := map[ckey]Limit{}
+			for _, l := range after {
+				byKey[ckeyOf(l)] = l
+			}
+			for _, b := range before {
+				l, ok := byKey[ckeyOf(b)]
+				if !ok {
+					t.Fatalf("seed %d case %d: adding %+v removed the limit %+v", seed, n, extra, b)
+				}
+				if b.Max > 0 && (l.Max == 0 || l.Max > b.Max) {
+					t.Fatalf("seed %d case %d: adding %+v raised %+v to %d", seed, n, extra, b, l.Max)
+				}
+			}
+		}
+	})
 }

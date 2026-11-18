@@ -128,3 +128,50 @@ func TestEstimate(t *testing.T) {
 		}
 	})
 }
+
+// TestEstimateModelDefault is T-663: the formula of section 5.10 at each branch, and what the
+// estimate carries for the period limits.
+func TestEstimateModelDefault(t *testing.T) {
+	start := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	chat := operationOf(t, openai.Adapter(), openai.OperationChatCompletions)
+	oa := openai.Adapter()
+	const configured = 4096
+	for _, c := range []struct {
+		name   string
+		bound  family.OutputBound
+		target Target
+		want   int64
+	}{
+		{"the caller's limit wins over the model's default", family.OutputBound{Tokens: 1000, Choices: 1}, Target{DefaultOutputTokens: 800}, 1000},
+		{"the model's default when the caller sets no limit", family.OutputBound{Choices: 1}, Target{DefaultOutputTokens: 800}, 800},
+		{"the configured default when the model has none", family.OutputBound{Choices: 1}, Target{}, configured},
+		{"the model's default above the configured one", family.OutputBound{Choices: 1}, Target{DefaultOutputTokens: 100_000}, 100_000},
+		{"the model's maximum caps the model's default", family.OutputBound{Choices: 1}, Target{DefaultOutputTokens: 800, MaxOutputTokens: 500}, 500},
+		{"a maximum above the model's default changes nothing", family.OutputBound{Choices: 1}, Target{DefaultOutputTokens: 800, MaxOutputTokens: 5000}, 800},
+		{"choices multiply the model's default", family.OutputBound{Choices: 3}, Target{DefaultOutputTokens: 800}, 2400},
+		{"the cap applies per choice", family.OutputBound{Choices: 3}, Target{DefaultOutputTokens: 800, MaxOutputTokens: 300}, 900},
+		{"a default of one", family.OutputBound{Choices: 1}, Target{DefaultOutputTokens: 1}, 1},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got := estimateOf(oa, chat, c.bound, 400, c.target, configured, start)
+			if got.OutputTokens != c.want {
+				t.Errorf("output %d, want %d", got.OutputTokens, c.want)
+			}
+		})
+	}
+
+	t.Run("an operation without output ignores the model's default", func(t *testing.T) {
+		emb := operationOf(t, oa, openai.OperationEmbeddings)
+		got := estimateOf(oa, emb, family.OutputBound{None: true, Choices: 1}, 400, Target{DefaultOutputTokens: 800}, configured, start)
+		if got.OutputTokens != 0 {
+			t.Errorf("output %d, want 0", got.OutputTokens)
+		}
+	})
+
+	t.Run("the estimate carries the provider, the model and the start", func(t *testing.T) {
+		got := estimateOf(oa, chat, family.OutputBound{Choices: 1}, 400, Target{Provider: "openai-main", Model: "gpt-4o"}, configured, start)
+		if got.Provider != "openai-main" || got.Model != "gpt-4o" || !got.Start.Equal(start) {
+			t.Errorf("provider %q, model %q, start %v", got.Provider, got.Model, got.Start)
+		}
+	})
+}

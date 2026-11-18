@@ -10,6 +10,9 @@ import (
 	"testing"
 
 	"github.com/pandokos/pandokos/internal/adminapi"
+	"github.com/pandokos/pandokos/internal/authz"
+	"github.com/pandokos/pandokos/internal/catalog"
+	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/test/apitest"
 )
 
@@ -454,4 +457,133 @@ func TestConcurrentDefaultEndpoints(t *testing.T) {
 	if len(list.Items) != n+1 || defaults != 1 {
 		t.Errorf("%d endpoints, %d defaults (the first was %s)", len(list.Items), defaults, first.Name)
 	}
+}
+
+// TestModelDefaultOutput is T-682: the default output reservation of a model (sprint 5.2, section
+// 5.10): created, changed, cleared, bounded, audited, and carried by the catalogue snapshot to the
+// target of the gateway.
+func TestModelDefaultOutput(t *testing.T) {
+	c := newCat(t)
+	p := c.createProvider(t, nil)
+	c.createEndpoint(t, p.Name, nil)
+
+	t.Run("create, change, clear", func(t *testing.T) {
+		bare := c.createModel(t, p.Name, nil)
+		if bare.DefaultOutputTokens != 0 {
+			t.Errorf("a model without the value: %d, want 0", bare.DefaultOutputTokens)
+		}
+		m := c.createModel(t, p.Name, map[string]any{"default_output_tokens": 700, "availability": "all"})
+		if m.DefaultOutputTokens != 700 {
+			t.Errorf("created with 700: %+v", m)
+		}
+		raw := c.platform(t, "GET", "/v1/models/"+m.ID, nil)
+		if !strings.Contains(string(raw.Body), `"default_output_tokens":700`) {
+			t.Errorf("the wire form: %s", raw.Body)
+		}
+		up := decode[adminapi.Model](t, c.platform(t, "PATCH", "/v1/models/"+m.ID, map[string]any{"default_output_tokens": 900}), 200)
+		if up.DefaultOutputTokens != 900 || up.MaxOutputTokens != m.MaxOutputTokens || up.ContextWindow != m.ContextWindow {
+			t.Errorf("changed to 900: %+v", up)
+		}
+		// A member that is not sent is left as it is.
+		up = decode[adminapi.Model](t, c.platform(t, "PATCH", "/v1/models/"+m.ID, map[string]any{"description": "new"}), 200)
+		if up.DefaultOutputTokens != 900 {
+			t.Errorf("an update of another member changed the value: %d", up.DefaultOutputTokens)
+		}
+		up = decode[adminapi.Model](t, c.platform(t, "PATCH", "/v1/models/"+m.ID, map[string]any{"default_output_tokens": 0}), 200)
+		if up.DefaultOutputTokens != 0 {
+			t.Errorf("cleared with 0: %d", up.DefaultOutputTokens)
+		}
+		if got := decode[adminapi.Model](t, c.platform(t, "GET", "/v1/models/"+m.ID, nil), 200); got.DefaultOutputTokens != 0 {
+			t.Errorf("get after clearing: %d", got.DefaultOutputTokens)
+		}
+		list := decode[adminapi.ModelList](t, c.platform(t, "GET", "/v1/models?provider="+p.Name+"&limit=100", nil), 200)
+		found := false
+		for _, it := range list.Items {
+			if it.ID == m.ID {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("the model is not in the list")
+		}
+	})
+
+	t.Run("bounds: 1 to 1,000,000", func(t *testing.T) {
+		m := c.createModel(t, p.Name, map[string]any{"default_output_tokens": 1000000})
+		if m.DefaultOutputTokens != 1000000 {
+			t.Errorf("the largest value: %+v", m)
+		}
+		one := c.createModel(t, p.Name, map[string]any{"default_output_tokens": 1})
+		if one.DefaultOutputTokens != 1 {
+			t.Errorf("the smallest value: %+v", one)
+		}
+		for _, v := range []any{1000001, -1, "many", 1.5} {
+			invalidOn(t, "create", c.platform(t, "POST", "/v1/models", map[string]any{"provider": p.Name, "name": apitest.UniqueName("synthetic-bad"), "default_output_tokens": v}), "default_output_tokens")
+			invalidOn(t, "update", c.platform(t, "PATCH", "/v1/models/"+m.ID, map[string]any{"default_output_tokens": v}), "default_output_tokens")
+		}
+		if got := decode[adminapi.Model](t, c.platform(t, "GET", "/v1/models/"+m.ID, nil), 200); got.DefaultOutputTokens != 1000000 {
+			t.Errorf("a refused update changed the value: %d", got.DefaultOutputTokens)
+		}
+		// The platform key is the only one that may write it (catalog:write).
+		expect(t, c.do(t, "PATCH", "/v1/models/"+m.ID, c.ka, map[string]any{"default_output_tokens": 5}), 403, adminapi.ProblemCodeForbidden)
+	})
+
+	t.Run("the audit detail names it", func(t *testing.T) {
+		m := c.createModel(t, p.Name, map[string]any{"default_output_tokens": 500})
+		decode[adminapi.Model](t, c.platform(t, "PATCH", "/v1/models/"+m.ID, map[string]any{"default_output_tokens": 800}), 200)
+		decode[adminapi.Model](t, c.platform(t, "PATCH", "/v1/models/"+m.ID, map[string]any{"default_output_tokens": 800}), 200) // no change: no row
+		var create, update []auditRow
+		for _, r := range auditRows(t, c.api) {
+			switch {
+			case r.ResourceID == m.ID && r.Action == "model.create":
+				create = append(create, r)
+			case r.ResourceID == m.ID && r.Action == "model.update":
+				update = append(update, r)
+			}
+		}
+		if len(create) != 1 || len(update) != 1 {
+			t.Fatalf("%d create and %d update rows, want 1 and 1", len(create), len(update))
+		}
+		if v := create[0].Detail["default_output_tokens"]; v != float64(500) {
+			t.Errorf("the creation detail: %v (%v)", v, create[0].Detail)
+		}
+		ch, ok := update[0].Detail["default_output_tokens"].(map[string]any)
+		if !ok || ch["from"] != float64(500) || ch["to"] != float64(800) {
+			t.Errorf("the update detail: %v", update[0].Detail)
+		}
+	})
+
+	t.Run("it reaches the target through the catalogue snapshot", func(t *testing.T) {
+		m := c.createModel(t, p.Name, map[string]any{"default_output_tokens": 640, "availability": "all"})
+		none := c.createModel(t, p.Name, map[string]any{"availability": "all"})
+		tn, err := tenant.ParseID(c.a.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		snap, err := catalog.LoadSnapshot(ctx(t), c.api.Admin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ta, err := catalog.LoadTenantAccess(ctx(t), c.api.Admin, tn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pr := authz.Principal{Kind: authz.KindServiceAccount, TenantID: tn}
+		got, _, err := snap.Resolve(pr, ta, p.Name, m.Name)
+		if err != nil || got.DefaultOutputTokens != 640 {
+			t.Errorf("the snapshot holds %+v, %v, want a default of 640", got, err)
+		}
+		got, _, err = snap.Resolve(pr, ta, p.Name, none.Name)
+		if err != nil || got.DefaultOutputTokens != 0 {
+			t.Errorf("a model without the value: %+v, %v", got, err)
+		}
+		decode[adminapi.Model](t, c.platform(t, "PATCH", "/v1/models/"+m.ID, map[string]any{"default_output_tokens": 0}), 200)
+		snap, err = catalog.LoadSnapshot(ctx(t), c.api.Admin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, _, err := snap.Resolve(pr, ta, p.Name, m.Name); err != nil || got.DefaultOutputTokens != 0 {
+			t.Errorf("after clearing: %+v, %v", got, err)
+		}
+	})
 }

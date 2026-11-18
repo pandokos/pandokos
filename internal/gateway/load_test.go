@@ -3,6 +3,7 @@ package gateway_test
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"sync"
@@ -14,6 +15,8 @@ import (
 	"github.com/pandokos/pandokos/internal/family"
 	"github.com/pandokos/pandokos/internal/gateway"
 	"github.com/pandokos/pandokos/internal/limits"
+	"github.com/pandokos/pandokos/internal/pricing"
+	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/internal/usage"
 	"github.com/pandokos/pandokos/test/fakeprovider"
 	"github.com/pandokos/pandokos/test/limitstest"
@@ -303,4 +306,166 @@ func (s *sometimesNoCredential) Open(ctx context.Context, p authz.Principal, req
 		return gateway.Credential{}, gateway.ErrNoCredential
 	}
 	return s.inner.Open(ctx, p, requestID, provider)
+}
+
+// inflightTracker knows the oldest request that has been reserved and has not yet handed its usage
+// record to the recorder: what the ledger writer's OldestPendingStart gives the reconciler.
+type inflightTracker struct {
+	mu    sync.Mutex
+	start map[string]time.Time
+}
+
+func newInflightTracker() *inflightTracker { return &inflightTracker{start: map[string]time.Time{}} }
+
+func (t *inflightTracker) oldest() (time.Time, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	var o time.Time
+	for _, s := range t.start {
+		if o.IsZero() || s.Before(o) {
+			o = s
+		}
+	}
+	return o, !o.IsZero()
+}
+
+type trackedLimits struct {
+	inner gateway.Limits
+	t     *inflightTracker
+	shift func() time.Duration
+}
+
+func (l trackedLimits) Reserve(ctx context.Context, p authz.Principal, e gateway.LimitEstimate) (gateway.Reservation, *gateway.LimitRefusal, error) {
+	l.t.mu.Lock()
+	l.t.start[e.RequestID] = e.Start.Add(l.shift()) // before the reserve: the cut cannot pass the request
+	l.t.mu.Unlock()
+	return l.inner.Reserve(ctx, p, e)
+}
+
+type trackedRecorder struct {
+	inner *testutil.MemoryRecorder
+	t     *inflightTracker
+}
+
+func (r trackedRecorder) Admit() bool { return r.inner.Admit() }
+
+func (r trackedRecorder) Record(rec usage.Record) {
+	r.inner.Record(rec)
+	r.t.mu.Lock()
+	delete(r.t.start, rec.RequestID)
+	r.t.mu.Unlock()
+}
+
+// TestParallelBudget is T-671: the bound of the budget with 64 workers, a concurrency limit k and a
+// provider that reports d above every reservation, with and without a fold running every 50 ms.
+func TestParallelBudget(t *testing.T) {
+	const workers, k, outputs = 64, 5, 100
+	body := chat("fake-basic", false)
+	reservedTokens := ceil4(len(body)) + outputs
+
+	run := func(t *testing.T, metric limits.Metric, limit, d int64, fold bool) (spentTokens int64, spentCost pricing.Decimal, ok, refused int) {
+		t.Helper()
+		rec := &testutil.MemoryRecorder{}
+		tr := newInflightTracker()
+		rules := []limits.Rule{
+			{ID: "r-main", SubjectKind: limits.SubjectTenant, Metric: metric, Value: limit, Enforce: true},
+			{ID: "r-conc", SubjectKind: limits.SubjectTenant, Metric: limits.ConcurrentRequests, Value: k, Enforce: true},
+		}
+		if metric.Cost() {
+			rules[0].Currency = "USD"
+		}
+		opts := limitstest.Options{Rules: map[tenant.ID][]limits.Rule{testPrincipal.TenantID: rules}, Pending: tr.oldest,
+			Start: time.Date(2026, 11, 17, 11, 59, 59, 0, time.UTC), Horizon: time.Second, Interval: 50 * time.Millisecond}
+		var real *limitstest.Real
+		opts.Ledger = recordLedger{rec: rec, shift: func() time.Duration { return real.Shift() }}
+		real = limitstest.NewWith(t, opts)
+		h := newHarness(t, func(o *gateway.Options) {
+			o.Limits = trackedLimits{inner: real, t: tr, shift: real.Shift}
+			o.Recorder = trackedRecorder{inner: rec, t: tr}
+			o.DefaultOutputTokens = outputs
+		})
+		h.rec = rec
+		h.up.ReportTokens(reservedTokens + d)
+		stop := make(chan struct{})
+		var folds sync.WaitGroup
+		if fold {
+			folds.Add(1)
+			go func() {
+				defer folds.Done()
+				for {
+					select {
+					case <-stop:
+						return
+					case <-time.After(50 * time.Millisecond):
+						real.Tick(context.Background())
+					}
+				}
+			}()
+		}
+		c := loadClient()
+		fire(400, workers, func(int) int { return postChat(h, c, body) })
+		close(stop)
+		folds.Wait()
+		for _, r := range h.records(t, 400) {
+			switch r.Outcome {
+			case usage.OutcomeOK:
+				ok++
+				spentTokens += r.Usage.InputTokens + r.Usage.OutputTokens
+				if r.Cost.Known {
+					spentCost = spentCost.Add(r.Cost.Amount)
+				}
+			case usage.OutcomeRejectedLimit:
+				refused++
+			}
+		}
+		return
+	}
+
+	for _, fold := range []bool{false, true} {
+		name := "no fold"
+		if fold {
+			name = "a fold every 50 ms"
+		}
+		for _, d := range []int64{0, 40} {
+			t.Run(fmt.Sprintf("tokens, d %d, %s", d, name), func(t *testing.T) {
+				limit := 20 * reservedTokens
+				tokens, _, ok, refused := run(t, limits.TokensPerMonth, limit, d, fold)
+				if bound := limit + k*d; tokens > bound {
+					t.Errorf("%d tokens spent, the bound is %d (limit %d, k %d, d %d)", tokens, bound, limit, k, d)
+				}
+				if d == 0 && tokens > limit {
+					t.Errorf("%d tokens spent with no excess, the limit is %d", tokens, limit)
+				}
+				if ok == 0 || refused == 0 {
+					t.Errorf("%d ok and %d refused: the test proves nothing", ok, refused)
+				}
+			})
+		}
+		t.Run("cost, d 40, "+name, func(t *testing.T) {
+			// What a request is reserved: input at 3 and output at 6 millionths of a dollar a token. What the
+			// provider reports: one input token and the rest as output.
+			c := ceil4(len(body))
+			estMicro := c*3 + outputs*6
+			actualMicro := int64(3) + (reservedTokens+40-1)*6
+			excess := max(0, actualMicro-estMicro)
+			limit := 20 * estMicro
+			_, cost, ok, refused := run(t, limits.CostPerMonth, limit, 40, fold)
+			bound := dec(t, fmt.Sprint(limit+k*excess)).DivPow10(6)
+			if cost.Cmp(bound) > 0 {
+				t.Errorf("%s spent, the bound is %s (limit %d, k %d, excess %d millionths)", cost, bound, limit, k, excess)
+			}
+			if ok == 0 || refused == 0 {
+				t.Errorf("%d ok and %d refused: the test proves nothing", ok, refused)
+			}
+		})
+	}
+}
+
+func dec(t *testing.T, s string) pricing.Decimal {
+	t.Helper()
+	d, err := pricing.ParseDecimal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
 }

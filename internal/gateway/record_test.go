@@ -171,6 +171,12 @@ func TestOneRecordPerOutcome(t *testing.T) {
 		{name: "step 7b: a limit refuses", mutate: func(o *gateway.Options) {
 			o.Limits = testutil.NewStaticLimits().Refuse(refusalOf("requests_per_minute"))
 		}, do: chatPost, outcome: usage.OutcomeRejectedLimit, code: "rate_limited"},
+		{name: "step 7b: a quota refuses", mutate: func(o *gateway.Options) {
+			o.Limits = testutil.NewStaticLimits().Refuse(quotaRefusal("cost_per_month"))
+		}, do: chatPost, outcome: usage.OutcomeRejectedLimit, code: "quota_exceeded"},
+		{name: "step 7b: a budget cannot measure the call", mutate: func(o *gateway.Options) {
+			o.Limits = testutil.NewStaticLimits().Refuse(gateway.LimitRefusal{Code: "no_price"})
+		}, do: chatPost, outcome: usage.OutcomeRejectedLimit, code: "no_price"},
 		// Step 8.
 		{name: "step 8: no credential", mutate: func(o *gateway.Options) { o.Credentials = testutil.StaticCredentials(nil) }, do: chatPost, outcome: rejected, code: "no_credential"},
 		{name: "step 8: the principal may not use a credential", prepare: func(h *harness) { h.creds.Err = gateway.ErrCredentialDenied }, do: chatPost, outcome: rejected, code: "forbidden"},

@@ -69,6 +69,13 @@ func startServer(t *testing.T, providers map[string]string, targets map[string]g
 func startServerWith(t *testing.T, providers map[string]string, targets map[string]gateway.Target, secrets map[string]string,
 	lim gateway.Limits, principal authz.Principal) (addr string, rec *testutil.MemoryRecorder) {
 	t.Helper()
+	return startServerKeys(t, providers, targets, secrets, lim, map[string]authz.Principal{testKey: principal})
+}
+
+// startServerKeys is startServerWith with several keys: each authenticates as its principal.
+func startServerKeys(t *testing.T, providers map[string]string, targets map[string]gateway.Target, secrets map[string]string,
+	lim gateway.Limits, principals map[string]authz.Principal) (addr string, rec *testutil.MemoryRecorder) {
+	t.Helper()
 	rec = &testutil.MemoryRecorder{}
 	tp, _ := testutil.SpanRecorder(t)
 	cfg := config.Defaults()
@@ -76,7 +83,7 @@ func startServerWith(t *testing.T, providers map[string]string, targets map[stri
 	cfg.Listeners.Admin.Address = "127.0.0.1:0"
 	srv, err := server.New(server.Options{
 		Config: cfg, Logger: telemetry.NewLogger(io.Discard, "info"), Admin: http.NotFoundHandler(),
-		Authenticator: testutil.StaticAuthenticator(map[string]authz.Principal{testKey: principal}),
+		Authenticator: testutil.StaticAuthenticator(principals),
 		Limits:        lim,
 		Catalogue:     testutil.StaticCatalogue(providers, targets),
 		Credentials:   testutil.StaticCredentials(secrets),

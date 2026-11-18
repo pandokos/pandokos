@@ -25,6 +25,9 @@ type Endpoint struct {
 type Model struct {
 	ID, Provider, Name, UpstreamID, Status, Availability string
 	ContextWindow, MaxOutputTokens                       int64 // 0: unknown
+	// DefaultOutputTokens is the output reservation per choice of a request to the model that sets
+	// no limit; 0: the configured default. Scaffolding of sprint 5.2: part C6 fills it.
+	DefaultOutputTokens int64
 }
 
 // The two refusals of Resolve. Every reason that makes a model unavailable to a caller is the

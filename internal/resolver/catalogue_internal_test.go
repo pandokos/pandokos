@@ -127,6 +127,29 @@ func TestCatalogueEndpointUnusable(t *testing.T) {
 	})
 }
 
+// TestCatalogueDefaultOutput is part of T-628 and T-682: the default output reservation of a model
+// is carried to the target (sprint 5.2, section 5.10), 0 when the model has none.
+func TestCatalogueDefaultOutput(t *testing.T) {
+	snap := catalog.NewSnapshot(catalog.SnapshotData{
+		Providers: []catalog.Provider{{ID: "p1", Name: "synth", Family: "openai", Enabled: true}},
+		Endpoints: map[string][]catalog.Endpoint{"synth": {{Name: "main", BaseURL: "http://10.0.0.5:8000/v1", Private: true, Enabled: true, Default: true}}},
+		Models: []catalog.Model{
+			{ID: "m-default", Provider: "synth", Name: "default", UpstreamID: "default", Status: "active", Availability: "all", DefaultOutputTokens: 700},
+			{ID: "m-none", Provider: "synth", Name: "none", UpstreamID: "none", Status: "active", Availability: "all"},
+		},
+	})
+	cat := newCatalogue(fakeSource{snap: snap}, telemetry.NewLogger(&testutil.LogBuffer{}, "debug"))
+	for name, want := range map[string]int64{"default": 700, "none": 0} {
+		got, err := cat.Resolve(context.Background(), testPrincipal(), "synth", name)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got.DefaultOutputTokens != want {
+			t.Errorf("%s: DefaultOutputTokens %d, want %d", name, got.DefaultOutputTokens, want)
+		}
+	}
+}
+
 // TestCatalogueLimitsValues is T-629: the two values the estimate needs come from the catalogue
 // model, 0 when it has none.
 func TestCatalogueLimitsValues(t *testing.T) {
