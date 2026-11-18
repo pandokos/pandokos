@@ -32,7 +32,7 @@ type ruleSpec struct {
 
 func (r ruleSpec) limit(tn tenant.ID, cal *Calendar, start time.Time) Limit {
 	k, _ := r.metric.Period()
-	return Limit{Tenant: tn, Subject: r.subject, ID: r.sid, Provider: r.provider, Model: r.model, Metric: r.metric,
+	return Limit{Tenant: tn, Subject: r.subject, ID: r.sid, ProviderID: r.provider, ModelID: r.model, Metric: r.metric,
 		Currency: r.currency, Max: r.max, Level: LevelTenant, RuleID: r.id, Period: cal.Of(k, start)}
 }
 
@@ -102,7 +102,7 @@ func newProp(t *testing.T, seed uint64, n int, withReconciler bool) *prop {
 		p.specs[3].activeFrom, p.specs[5].activeFrom = 10+rng.IntN(20), 20+rng.IntN(20) // created mid-way
 		var err error
 		p.rec, err = NewReconciler(ReconcilerOptions{
-			Store: p.m, Ledger: p.led, Calendar: cal, Pending: p.pending, Horizon: testHorizon, Interval: testInterval,
+			Store: p.m, Ledger: p.led, Pending: p.pending, Horizon: testHorizon, Interval: testInterval,
 			Logger: quietLogger(), Now: clk.now,
 		})
 		if err != nil {
@@ -299,7 +299,7 @@ func (p *prop) admit() {
 	q.admitted, q.admit, q.admitSeq, q.res, q.limits = true, p.clk.now(), p.model.tick(), res, ls
 	p.open = append(p.open, q)
 	for _, l := range ls {
-		p.seen[fmt.Sprintf("%s/%s/%s/%s/%s/%s/%d", l.Subject, l.ID, l.Provider, l.Model, l.Metric, l.Currency, l.Period.Start.Unix())] = l
+		p.seen[fmt.Sprintf("%s/%s/%s/%s/%s/%s/%d", l.Subject, l.ID, l.ProviderID, l.ModelID, l.Metric, l.Currency, l.Period.Start.Unix())] = l
 	}
 	p.logf("#%d admitted with %d limits", q.id, len(ls))
 }

@@ -400,13 +400,15 @@ func periodAdapter(t *testing.T, rules []limits.Rule, store limits.Store, ens re
 		t.Fatal(err)
 	}
 	cache, err := limits.NewRuleCacheFunc(func(_ context.Context, tn tenant.ID) (limits.RuleSet, error) {
-		return limits.NewScopedRuleSet(tn, nil, nil, rules), nil
+		rs := limits.NewScopedRuleSet(tn, nil, nil, rules)
+		rs.Calendar = limits.TenantCalendar{Current: cal}
+		return rs, nil
 	}, limits.RuleCacheOptions{Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), TTL: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
 	l, err := resolver.NewLimits(resolver.LimitsOptions{Rules: cache, Store: store, TTL: 7 * time.Minute, Logger: log,
-		Calendar: cal, Reconciler: ens, OnUnknownPrice: unknownPrice, OnStoreFailure: storeFailure})
+		Reconciler: ens, OnUnknownPrice: unknownPrice, OnStoreFailure: storeFailure})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,7 +416,7 @@ func periodAdapter(t *testing.T, rules []limits.Rule, store limits.Store, ens re
 }
 
 func periodRule(id string, m limits.Metric, v int64, provider, model, currency string) limits.Rule {
-	return limits.Rule{ID: id, SubjectKind: limits.SubjectTenant, Provider: provider, Model: model, Metric: m, Value: v, Currency: currency, Enforce: true}
+	return limits.Rule{ID: id, SubjectKind: limits.SubjectTenant, ProviderID: provider, ModelID: model, Provider: provider, Model: model, Metric: m, Value: v, Currency: currency, Enforce: true}
 }
 
 // marks is an optional interface of a reservation the gateway reads for its two log fields.
@@ -425,7 +427,7 @@ type unpricedMark interface{ Unpriced() bool }
 func TestLimitsAdapterPeriods(t *testing.T) {
 	a := limitTenantID(2)
 	start := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
-	est := gateway.LimitEstimate{RequestID: "req-2", InputTokens: 100, OutputTokens: 400, Provider: "openai", Model: "gpt-4o", Start: start,
+	est := gateway.LimitEstimate{RequestID: "req-2", InputTokens: 100, OutputTokens: 400, Provider: "openai", Model: "gpt-4o", ProviderID: "openai", ModelID: "gpt-4o", Start: start,
 		Cost: pricing.Cost{Known: true, Amount: dec(t, "0.5"), Currency: "USD", VersionID: "v1"}}
 	p := limitPrincipal(a, "sa-1", "key-1", "")
 	bg := context.Background()
@@ -597,13 +599,13 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 			limit limits.Limit
 			want  gateway.LimitRefusal
 		}{
-			{limits.Limit{Tenant: a, Subject: limits.SubjectTenant, Metric: limits.CostPerMonth, Currency: "EUR", Provider: "openai", Model: "gpt-4o", Max: 250_500_000, Level: limits.LevelTenant},
+			{limits.Limit{Tenant: a, Subject: limits.SubjectTenant, Metric: limits.CostPerMonth, Currency: "EUR", ProviderID: "p-openai", ModelID: "m-gpt-4o", Provider: "openai", Model: "gpt-4o", Max: 250_500_000, Level: limits.LevelTenant},
 				gateway.LimitRefusal{Code: "quota_exceeded", Scope: "model", Currency: "EUR", Level: "tenant", Subject: "tenant", Metric: "cost_per_month", Limit: 250_500_000}},
-			{limits.Limit{Tenant: a, Subject: limits.SubjectKey, ID: "key-1", Metric: limits.TokensPerDay, Provider: "openai", Max: 5000, Level: limits.LevelPlatform},
+			{limits.Limit{Tenant: a, Subject: limits.SubjectKey, ID: "key-1", Metric: limits.TokensPerDay, ProviderID: "p-openai", Provider: "openai", Max: 5000, Level: limits.LevelPlatform},
 				gateway.LimitRefusal{Code: "quota_exceeded", Scope: "provider", Level: "platform", Subject: "key", Metric: "tokens_per_day", Limit: 5000}},
 			{limits.Limit{Tenant: a, Subject: limits.SubjectTenant, Metric: limits.RequestsPerMonth, Max: 7, Level: limits.LevelTenant},
 				gateway.LimitRefusal{Code: "quota_exceeded", Scope: "all", Level: "tenant", Subject: "tenant", Metric: "requests_per_month", Limit: 7}},
-			{limits.Limit{Tenant: a, Subject: limits.SubjectTenant, Metric: limits.RequestsPerMinute, Provider: "openai", Model: "gpt-4o", Max: 3, Level: limits.LevelTenant},
+			{limits.Limit{Tenant: a, Subject: limits.SubjectTenant, Metric: limits.RequestsPerMinute, ProviderID: "p-openai", ModelID: "m-gpt-4o", Provider: "openai", Model: "gpt-4o", Max: 3, Level: limits.LevelTenant},
 				gateway.LimitRefusal{Code: "rate_limited", Scope: "model", Level: "tenant", Subject: "tenant", Metric: "requests_per_minute", Limit: 3}},
 		} {
 			st := &fakeStore{refuse: &limits.Refusal{Limit: c.limit, Remaining: 0, RetryAfter: 90 * time.Second, Reset: 90 * time.Second}}
@@ -713,7 +715,9 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 		if m, ok := res.(unverifiedMark); !ok || !m.Unverified() {
 			t.Errorf("the reservation does not say it is unverified")
 		}
-		ls := limits.NewScopedRuleSet(a, nil, nil, rules).For(limits.Query{ServiceAccountID: "sa-1", KeyID: "key-1", Provider: "openai", Model: "gpt-4o", Start: now}, real.Calendar)
+		rs := limits.NewScopedRuleSet(a, nil, nil, rules)
+		rs.Calendar = real.TenantCalendar(a)
+		ls := rs.For(limits.Query{ServiceAccountID: "sa-1", KeyID: "key-1", ProviderID: "openai", ModelID: "gpt-4o", Start: now})
 		for _, l := range ls {
 			c, ok := real.Mem.Counted(l)
 			switch l.RuleID {
@@ -743,9 +747,8 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 			cache, _ := limits.NewRuleCacheFunc(func(context.Context, tenant.ID) (limits.RuleSet, error) {
 				return limits.RuleSet{}, errors.New("synthetic load failure")
 			}, limits.RuleCacheOptions{Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), TTL: time.Minute})
-			cal, _ := limits.NewCalendar(time.UTC)
 			l, err := resolver.NewLimits(resolver.LimitsOptions{Rules: cache, Store: st, TTL: time.Minute, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-				Calendar: cal, Reconciler: &fakeEnsurer{}, OnStoreFailure: setting})
+				Reconciler: &fakeEnsurer{}, OnStoreFailure: setting})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -769,7 +772,7 @@ func dec(t *testing.T, s string) pricing.Decimal {
 func TestLimitState(t *testing.T) {
 	a := limitTenantID(7)
 	start := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
-	priced := gateway.LimitEstimate{RequestID: "req-7", InputTokens: 100, OutputTokens: 400, Provider: "openai", Model: "gpt-4o", Start: start,
+	priced := gateway.LimitEstimate{RequestID: "req-7", InputTokens: 100, OutputTokens: 400, Provider: "openai", Model: "gpt-4o", ProviderID: "openai", ModelID: "gpt-4o", Start: start,
 		Cost: pricing.Cost{Known: true, Amount: dec(t, "0.5"), Currency: "USD", VersionID: "v1"}}
 	unpriced := priced
 	unpriced.Cost = pricing.Cost{}
@@ -847,9 +850,8 @@ func TestLimitState(t *testing.T) {
 						if err != nil {
 							t.Fatal(err)
 						}
-						cal, _ := limits.NewCalendar(time.UTC)
 						l, err = resolver.NewLimits(resolver.LimitsOptions{Rules: cache, Store: st, TTL: time.Minute, Logger: slog.New(slog.NewJSONHandler(sink, nil)),
-							Calendar: cal, Reconciler: ens, OnUnknownPrice: price, OnStoreFailure: failure})
+							Reconciler: ens, OnUnknownPrice: price, OnStoreFailure: failure})
 						if err != nil {
 							t.Fatal(err)
 						}

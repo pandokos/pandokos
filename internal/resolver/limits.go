@@ -28,7 +28,6 @@ type LimitsOptions struct {
 	// Sprint 5.2: the calendar of the period limits (nil: they do not apply, as in 5.1), what loads
 	// their counters, and the two settings that say what a request that cannot be measured or
 	// verified meets: "refuse" (the default) or "allow".
-	Calendar       *limits.Calendar
 	Reconciler     Ensurer
 	OnUnknownPrice string
 	OnStoreFailure string
@@ -43,7 +42,6 @@ type Limits struct {
 	store       limits.Store
 	ttl         time.Duration
 	log         *slog.Logger
-	cal         *limits.Calendar
 	ensurer     Ensurer
 	refusePrice bool // on_unknown_price is "refuse" (the default)
 	refuseStore bool // on_store_failure is "refuse" (the default)
@@ -66,7 +64,7 @@ func NewLimits(o LimitsOptions) (*Limits, error) {
 		return nil, errors.New("resolver: limits need a logger")
 	}
 	return &Limits{
-		rules: o.Rules, store: o.Store, ttl: o.TTL, log: o.Logger, cal: o.Calendar, ensurer: o.Reconciler,
+		rules: o.Rules, store: o.Store, ttl: o.TTL, log: o.Logger, ensurer: o.Reconciler,
 		refusePrice: o.OnUnknownPrice != "allow", refuseStore: o.OnStoreFailure != "allow",
 		noticed: map[tenant.ID]time.Time{},
 	}, nil
@@ -172,9 +170,9 @@ func errorClass(err error) string {
 // scopeOf says how narrow a limit is.
 func scopeOf(l limits.Limit) string {
 	switch {
-	case l.Model != "":
+	case l.ModelID != "":
 		return "model"
-	case l.Provider != "":
+	case l.ProviderID != "":
 		return "provider"
 	}
 	return "all"
@@ -197,7 +195,7 @@ func (l *Limits) reserve(ctx context.Context, p authz.Principal, e gateway.Limit
 	if err != nil {
 		return nil, nil, err
 	}
-	ls := rules.For(limits.Query{ServiceAccountID: p.ID, KeyID: p.KeyID, Provider: e.Provider, Model: e.Model, Start: e.Start}, l.cal)
+	ls := rules.For(limits.Query{ServiceAccountID: p.ID, KeyID: p.KeyID, ProviderID: e.ProviderID, ModelID: e.ModelID, Provider: e.Provider, Model: e.Model, Start: e.Start})
 	if len(ls) == 0 {
 		return noReservation{}, nil, nil
 	}
@@ -304,7 +302,7 @@ next:
 	for _, x := range ls {
 		for _, d := range drop {
 			if x.RuleID == d.RuleID && x.Subject == d.Subject && x.ID == d.ID && x.Metric == d.Metric &&
-				x.Provider == d.Provider && x.Model == d.Model && x.Period == d.Period {
+				x.ProviderID == d.ProviderID && x.ModelID == d.ModelID && x.Period == d.Period {
 				continue next
 			}
 		}

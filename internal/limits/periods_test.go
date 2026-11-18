@@ -294,9 +294,9 @@ func TestPeriodCounters(t *testing.T) {
 		e := newPeriodsEnv(t)
 		all := perLimit(e.tn, SubjectTenant, "", RequestsPerDay, 10, e.day)
 		prov := all
-		prov.Provider = "openai"
+		prov.ProviderID = "openai"
 		model := prov
-		model.Model = "gpt"
+		model.ModelID = "gpt"
 		for range 3 {
 			mustReserve(t, e.m, periodReq("s", e.clk.now(), time.Hour, 0, pricing.Cost{}, all, prov, model))
 		}

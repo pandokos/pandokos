@@ -46,7 +46,11 @@ func newLevelsEnv(t *testing.T, d *dbtest.Database) *levelsEnv {
 	tn := d.SeedTenant(t, "levels-"+testutil.RandomUUID()[:8])
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
 	logs := &testutil.LogBuffer{}
-	cache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: d.Open(t, store.RoleGateway), Logger: quiet, TTL: 5 * time.Minute})
+	zones, err := limits.NewZones(time.UTC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: d.Open(t, store.RoleGateway), Logger: quiet, TTL: 5 * time.Minute, Zones: zones})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,10 +326,9 @@ func newQuotaStack(t *testing.T, d *dbtest.Database, tn tenant.ID, o stackOption
 		k := testutil.NewKey(t)
 		s.keys[name], s.principals[name], auth[k] = k, p, p
 	}
-	// The zones of the tenants (sprint 5.3): until step C2 places NewZones the cache has none.
-	var zones *limits.Zones
-	if z, err := limits.NewZones(time.UTC); err == nil {
-		zones = z
+	zones, err := limits.NewZones(time.UTC)
+	if err != nil {
+		t.Fatal(err)
 	}
 	cache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: s.gw, Logger: quiet, TTL: time.Minute, Zones: zones})
 	if err != nil {
@@ -382,6 +385,7 @@ func newQuotaStack(t *testing.T, d *dbtest.Database, tn tenant.ID, o stackOption
 			g.Catalogue = uuidCatalogue{g.Catalogue}
 		}
 	})
+	s.catalogueIDs(t)
 	t.Cleanup(func() {
 		cancel()
 		<-evDone
@@ -390,6 +394,37 @@ func newQuotaStack(t *testing.T, d *dbtest.Database, tn tenant.ID, o stackOption
 		s.events.Close(cctx)
 	})
 	return s
+}
+
+// catalogueID returns the IDs of a provider and a model of the catalogue; empty for what the
+// catalogue does not hold.
+func catalogueID(t testing.TB, d *dbtest.Database, provider, model string) (providerID, modelID string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	row := d.Super(t).QueryRow(ctx, `SELECT p.id::text, COALESCE((SELECT m.id::text FROM pandokos.model m WHERE m.provider_id = p.id AND m.name = $2), '')
+		FROM pandokos.provider p WHERE p.name = $1`, provider, model)
+	if err := row.Scan(&providerID, &modelID); err != nil {
+		return "", ""
+	}
+	return providerID, modelID
+}
+
+// catalogueIDs gives the targets of the harness the identifiers of the catalogue entries of the
+// test database that they name: rules are matched by identifier, and the gateway takes the
+// identifiers from the target as it does from the catalogue. A target the catalogue does not hold
+// keeps none.
+func (s *quotaStack) catalogueIDs(t testing.TB) {
+	t.Helper()
+	for key, tgt := range s.h.targets {
+		if pid, mid := catalogueID(t, s.d, tgt.Provider, tgt.Model); pid != "" {
+			tgt.ProviderID, tgt.ModelID = pid, mid
+			if mid == "" {
+				tgt.ModelID = "synthetic-model-" + tgt.Model
+			}
+			s.h.targets[key] = tgt
+		}
+	}
 }
 
 // uuidCredentials gives the credentials of the harness the UUID ID that the ledger can hold.
@@ -514,12 +549,18 @@ func (s *quotaStack) limitsFor(t *testing.T, who, provider, model string, at tim
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	set, err := limits.LoadRules(ctx, s.gw, s.tn)
+	zones, err := limits.NewZones(time.UTC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := limits.LoadRules(ctx, s.gw, s.tn, zones)
 	if err != nil {
 		t.Fatal(err)
 	}
 	p := s.principals[who]
-	return set.For(limits.Query{ServiceAccountID: p.ID, KeyID: p.KeyID, Provider: provider, Model: model, Start: at}, s.real.Calendar)
+	q := limits.Query{ServiceAccountID: p.ID, KeyID: p.KeyID, Provider: provider, Model: model, Start: at}
+	q.ProviderID, q.ModelID = catalogueID(t, s.d, provider, model)
+	return set.For(q)
 }
 
 func findLimit(ls []limits.Limit, m limits.Metric) (limits.Limit, bool) {
@@ -771,6 +812,7 @@ func TestScopedRules(t *testing.T) {
 		for _, m := range []string{"fake-basic", "fake-details"} {
 			s.h.targets["compat/"+m] = testutil.TargetFor(s.h.up, "compat", m)
 		}
+		s.catalogueIDs(t)
 		return s
 	}
 	refused := func(t *testing.T, c captured, code family.ErrorCode, scope, metric string) {

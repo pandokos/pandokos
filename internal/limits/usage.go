@@ -19,8 +19,8 @@ import (
 type UsageGroup struct {
 	Minute                       int64 // 0: before the live part
 	PrincipalID, KeyID, Currency string
-	ProviderID, ModelID          string // what the ledger reader fills
-	Provider, Model              string // names; set by callers that know them
+	ProviderID, ModelID          string // what the ledger reader fills; the only fields that decide
+	Provider, Model              string // names, for display; they never decide
 	Requests, Tokens             int64
 	Cost                         pricing.Decimal
 }
@@ -32,8 +32,9 @@ type Amount struct {
 }
 
 // groupMatches reports whether the counter of l counts the group: the subject matches (the tenant:
-// always; a service account: PrincipalID; a key: KeyID), the provider and the model are empty or
-// equal.
+// always; a service account: PrincipalID; a key: KeyID), the provider ID and the model ID are empty
+// in the limit or equal. Names never decide; a group without a model ID counts for the scopes all
+// and provider only.
 func groupMatches(l Limit, g *UsageGroup) bool {
 	switch l.Subject {
 	case SubjectServiceAccount:
@@ -45,20 +46,7 @@ func groupMatches(l Limit, g *UsageGroup) bool {
 			return false
 		}
 	}
-	return scopeMatches(l.ProviderID, l.Provider, g.ProviderID, g.Provider) &&
-		scopeMatches(l.ModelID, l.Model, g.ModelID, g.Model)
-}
-
-// scopeMatches compares one scope dimension: an empty scope matches everything; identifiers are
-// compared when both sides have one (the ledger reader fills only identifiers), names otherwise.
-func scopeMatches(limitID, limitName, groupID, groupName string) bool {
-	if limitID == "" && limitName == "" {
-		return true
-	}
-	if limitID != "" && groupID != "" {
-		return limitID == groupID
-	}
-	return limitName == groupName
+	return (l.ProviderID == "" || l.ProviderID == g.ProviderID) && (l.ModelID == "" || l.ModelID == g.ModelID)
 }
 
 // groupAmount is what the counter of l counts of a group: requests, tokens or, in the currency of
@@ -94,7 +82,7 @@ func amtOfSum(l Limit, rows []UsageGroup) amt {
 // Sum says which groups a counter counts and adds them: the one definition of what the ledger
 // counts, used by the store, the reconciler and the capability check. A group counts when the
 // subject matches (the tenant: always; a service account: PrincipalID; a key: KeyID), the provider
-// is empty or equal and the model is empty or equal; it adds Requests, Tokens or, when its
+// ID is empty or equal and the model ID is empty or equal; it adds Requests, Tokens or, when its
 // Currency is the limit's, Cost.
 func Sum(l Limit, rows []UsageGroup) Amount {
 	a := amtOfSum(l, rows)

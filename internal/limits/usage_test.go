@@ -9,16 +9,16 @@ import (
 // TestUsageSum is T-657.
 func TestUsageSum(t *testing.T) {
 	groups := []UsageGroup{
-		{PrincipalID: "sa1", KeyID: "k1", Provider: "openai", Model: "gpt", Currency: "EUR", Requests: 2, Tokens: 100, Cost: dec(t, "1.5")},
-		{PrincipalID: "sa1", KeyID: "k2", Provider: "openai", Model: "gpt-mini", Currency: "EUR", Requests: 1, Tokens: 50, Cost: dec(t, "0.25")},
-		{PrincipalID: "sa2", KeyID: "k1", Provider: "anthropic", Model: "claude", Currency: "USD", Requests: 4, Tokens: 400, Cost: dec(t, "3")},
-		{PrincipalID: "sa2", KeyID: "k2", Provider: "openai", Model: "gpt", Currency: "", Requests: 1, Tokens: 10, Cost: pricing.Decimal{}},
-		{Minute: 29_000_000, PrincipalID: "sa1", KeyID: "k1", Provider: "openai", Model: "gpt", Currency: "EUR", Requests: 1, Tokens: 5, Cost: dec(t, "0.5")},
+		{PrincipalID: "sa1", KeyID: "k1", ProviderID: "openai", ModelID: "gpt", Currency: "EUR", Requests: 2, Tokens: 100, Cost: dec(t, "1.5")},
+		{PrincipalID: "sa1", KeyID: "k2", ProviderID: "openai", ModelID: "gpt-mini", Currency: "EUR", Requests: 1, Tokens: 50, Cost: dec(t, "0.25")},
+		{PrincipalID: "sa2", KeyID: "k1", ProviderID: "anthropic", ModelID: "claude", Currency: "USD", Requests: 4, Tokens: 400, Cost: dec(t, "3")},
+		{PrincipalID: "sa2", KeyID: "k2", ProviderID: "openai", ModelID: "gpt", Currency: "", Requests: 1, Tokens: 10, Cost: pricing.Decimal{}},
+		{Minute: 29_000_000, PrincipalID: "sa1", KeyID: "k1", ProviderID: "openai", ModelID: "gpt", Currency: "EUR", Requests: 1, Tokens: 5, Cost: dec(t, "0.5")},
 	}
 	tn := tid(1)
 	mk := func(kind SubjectKind, id, provider, model string, m Metric, cur string) Limit {
 		l := lim(tn, kind, id, m, 1)
-		l.Provider, l.Model, l.Currency = provider, model, cur
+		l.ProviderID, l.ModelID, l.Currency = provider, model, cur
 		return l
 	}
 	for _, c := range []struct {
