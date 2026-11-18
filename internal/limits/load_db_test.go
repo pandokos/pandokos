@@ -47,6 +47,7 @@ func TestLoadRules(t *testing.T) {
 			t.Fatalf("limits %+v, want %+v", g, w)
 		}
 		for i := range g {
+			g[i].RuleID, w[i].RuleID = "", "" // the rows have identifiers, the rules built by hand do not
 			if !reflect.DeepEqual(g[i], w[i]) {
 				t.Errorf("limit %d: %+v, want %+v", i, g[i], w[i])
 			}
@@ -210,7 +211,12 @@ func TestLoadRulesColumns(t *testing.T) {
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}
-			ls := set.For(limits.Query{Start: start}, cal)
+			var ls []limits.Limit
+			for _, l := range set.For(limits.Query{Start: start}, cal) {
+				if l.Level == limits.LevelTenant { // the platform default seeded above applies to every tenant
+					ls = append(ls, l)
+				}
+			}
 			if len(ls) != 1 || ls[0].Metric != limits.TokensPerDay || ls[0].Max != 20 {
 				t.Errorf("limits %+v, want the known rule only", ls)
 			}

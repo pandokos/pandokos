@@ -38,33 +38,51 @@ func loadRules(ctx context.Context, db *store.DB, id tenant.ID) (RuleSet, int, e
 		if len(rows) > MaxRulesPerTenant {
 			return fmt.Errorf("a tenant has more than %d limit rules (%d read)", MaxRulesPerTenant, len(rows))
 		}
-		def, own := map[Metric]int64{}, map[Metric]int64{}
-		for _, r := range plat {
-			m := Metric(r.Metric)
-			if !knownMetric(m) {
-				skipped++
-				continue
+		toRule := func(r Rule) (Rule, bool) {
+			if !knownMetric(r.Metric) || (r.SubjectKind != "" && !knownSubject(r.SubjectKind)) || !validRule(r) {
+				return r, false
 			}
-			if r.IsDefault {
-				def[m] = r.LimitValue
-			} else {
-				own[m] = r.LimitValue
+			return r, true
+		}
+		var def, own []Rule
+		for _, r := range plat {
+			rule, ok := toRule(Rule{ID: r.ID, SubjectKind: SubjectTenant, Provider: r.Provider, Model: r.Model,
+				Metric: Metric(r.Metric), Value: r.LimitValue, Currency: r.Currency, Enforce: r.Enforce, Thresholds: percents(r.Thresholds)})
+			switch {
+			case !ok:
+				skipped++
+			case r.IsDefault:
+				def = append(def, rule)
+			default:
+				own = append(own, rule)
 			}
 		}
 		rules := make([]Rule, 0, len(rows))
 		for _, r := range rows {
-			k := SubjectKind(r.SubjectKind)
-			if !knownMetric(Metric(r.Metric)) || (k != SubjectTenant && k != SubjectServiceAccount && k != SubjectKey) {
+			rule, ok := toRule(Rule{ID: r.ID, SubjectKind: SubjectKind(r.SubjectKind), SubjectID: r.SubjectID, Provider: r.Provider,
+				Model: r.Model, Metric: Metric(r.Metric), Value: r.LimitValue, Currency: r.Currency, Enforce: r.Enforce, Thresholds: percents(r.Thresholds)})
+			if !ok || !knownSubject(rule.SubjectKind) {
 				skipped++
 				continue
 			}
-			rules = append(rules, Rule{SubjectKind: k, SubjectID: r.SubjectID, Metric: Metric(r.Metric), Value: r.LimitValue})
+			rules = append(rules, rule)
 		}
-		set = NewRuleSet(id, def, own, rules)
+		set = NewScopedRuleSet(id, def, own, rules)
 		return nil
 	})
 	if err != nil {
 		return RuleSet{}, 0, fmt.Errorf("limits: load rules: %w", err)
 	}
 	return set, skipped, nil
+}
+
+func percents(in []int16) []int {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]int, len(in))
+	for i, p := range in {
+		out[i] = int(p)
+	}
+	return out
 }
