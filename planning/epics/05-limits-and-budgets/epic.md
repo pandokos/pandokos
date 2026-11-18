@@ -84,9 +84,16 @@ Added after the review of ADR 0049 by the maintainer (2026-11-18). Content still
 - The first request of a tenant in a day that no rule covers writes one audit row
   `limit.unlimited_traffic` in the tenant's log and in the platform log, through a restricted
   function as for authentication failures.
-- An amendment to ADR 0049 records these decisions.
+- A time zone per tenant for days and months (a column of the tenant, `limits.time_zone` becoming
+  the default for tenants that have none), set by the platform or by the tenant; a change takes
+  effect from the first period that starts after it, so moving a boundary never frees a quota. The
+  reports of sprint 6.2 use the same zone.
+- A budget is refused on write when no price that can be in force for its scope is in its currency
+  (no conversion, ADR 0050 option A), with an answer that names the currencies the prices of that
+  scope use; the limits guide explains that prices are set by the platform for every tenant.
+- Amendments to ADR 0049 and ADR 0050 record these decisions.
 
-Requirements: LIM-04, AUD-01.
+Requirements: LIM-02, LIM-03, LIM-04, AUD-01.
 
 Exit: deleting a mapping or an issuer, or revoking a key, removes the rules of those subjects in the
 same transaction with one audit row each; a provider or model that a rule references cannot be
