@@ -50,7 +50,7 @@ func setBool(f func(c *Config) *bool) func(*Config, string) error {
 }
 
 func parseInt(v string) (int64, error) {
-	n, err := strconv.ParseInt(v, 10, 64)
+	n, err := strconv.ParseInt(v, 10, strconv.IntSize)
 	if err != nil {
 		return 0, errNotInteger
 	}
