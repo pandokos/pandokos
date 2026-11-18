@@ -131,7 +131,8 @@ func validateLimits(c *Config) []Problem {
 }
 
 // parseZone loads an IANA zone and checks that every offset it uses is a whole number of
-// minutes, as the minute buckets of the period counters require.
+// minutes between 2020 and 2040, as the minute buckets of the period counters require (the same
+// walk as limits.NewCalendar; earlier local mean times have offsets with seconds).
 func parseZone(name string) (*time.Location, string) {
 	const msg = "must be the name of an IANA time zone, such as UTC or Europe/Rome, whose offsets are whole minutes"
 	if name == "" || name == "Local" {
@@ -141,8 +142,8 @@ func parseZone(name string) (*time.Location, string) {
 	if err != nil {
 		return nil, msg
 	}
-	t := time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC)
-	for i := 0; i < 10000 && t.Year() < 2200; i++ {
+	t := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < 10000 && t.Year() < 2040; i++ {
 		if _, off := t.In(loc).Zone(); off%60 != 0 {
 			return nil, msg
 		}

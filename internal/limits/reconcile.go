@@ -2,11 +2,15 @@ package limits
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
 	"github.com/pandokos/pandokos/internal/tenant"
 )
+
+// errNotImplemented is what the parts of sprint 5.2 that are still scaffolding answer.
+var errNotImplemented = errors.New("limits: not implemented")
 
 // ReconcilerOptions configure a Reconciler.
 type ReconcilerOptions struct {
