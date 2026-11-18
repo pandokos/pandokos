@@ -49,6 +49,10 @@ replaced by `_`.
 | `limits.request_body_read_timeout` | `PANDOKOS_LIMITS_REQUEST_BODY_READ_TIMEOUT` | duration | `30s` | Time allowed to read the request body |
 | `limits.max_request_duration` | `PANDOKOS_LIMITS_MAX_REQUEST_DURATION` | duration | `10m` | Total time for one proxied request, stream included, measured from the end of the body read |
 | `limits.default_output_tokens` | `PANDOKOS_LIMITS_DEFAULT_OUTPUT_TOKENS` | integer | `4096` | Output tokens reserved per choice for a request that sets no output limit; capped by the model's `max_output_tokens` when the catalogue has it (1 to 1000000) |
+| `limits.time_zone` | `PANDOKOS_LIMITS_TIME_ZONE` | IANA zone name | `UTC` | The zone in which the days and months of quotas and budgets start; a name known to the embedded time zone database whose offsets are whole minutes |
+| `limits.on_unknown_price` | `PANDOKOS_LIMITS_ON_UNKNOWN_PRICE` | `refuse`, `allow` | `refuse` | What happens to a request that a budget applies to and cannot measure because the model has no price in the budget's currency: refused with 409 `no_price`, or admitted |
+| `limits.on_store_failure` | `PANDOKOS_LIMITS_ON_STORE_FAILURE` | `refuse`, `allow` | `refuse` | What happens to a request whose quota and budget counters cannot be verified: refused with 503 `unavailable`, or admitted; `allow` is a start-up warning |
+| `limits.reconcile_interval` | `PANDOKOS_LIMITS_RECONCILE_INTERVAL` | duration | `5m` | How often the period counters of quotas and budgets are folded into the usage ledger (10s to 1h) |
 | `upstream.connect_timeout` | `PANDOKOS_UPSTREAM_CONNECT_TIMEOUT` | duration | `10s` | TCP connect timeout, and separately TLS handshake timeout, towards the provider |
 | `upstream.tls.ca_file` | `PANDOKOS_UPSTREAM_TLS_CA_FILE` | path | none | PEM file whose certificates are added to the system roots for every outbound TLS connection of the server (providers, validation, price download, an `https` proxy); read by `serve` only |
 | `upstream.proxy.url` | `PANDOKOS_UPSTREAM_PROXY_URL` | URL | none | Proxy for provider calls to public endpoints, credential validation and the price download; private endpoints go direct; `HTTPS_PROXY` and similar variables are never read; read by `serve` only |
@@ -159,6 +163,9 @@ All problems are reported together, not only the first. Each is attached to a ke
 | `listeners.inference.max_header_bytes` | 4096 to 1048576 |
 | `limits.max_request_body_bytes` | 1 to 104857600 |
 | `limits.default_output_tokens` | 1 to 1000000 |
+| `limits.time_zone` | an IANA zone name known to the embedded database, whose offsets are whole minutes |
+| `limits.on_unknown_price`, `limits.on_store_failure` | `refuse` or `allow` |
+| `limits.reconcile_interval` | 10s to 1h |
 | `cache.limits_ttl` | greater than zero, at most 5m (and at least 1s) |
 | `database.address` | set; `host:port`; the port is an integer 1 to 65535; the host is an IP address or a host name |
 | `database.name`, `database.gateway.user`, `database.admin.user`, `database.worker.user`, `database.owner.user` | 1 to 63 characters: letters, digits, underscore, dot, hyphen; not starting with a dot or a hyphen |

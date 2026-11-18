@@ -39,6 +39,26 @@ type PandokosKekVersion struct {
 	CreatedAt time.Time
 }
 
+type PandokosLimitEvent struct {
+	TenantID    string
+	ID          string
+	Kind        string
+	RuleID      string
+	RuleLevel   string
+	SubjectKind string
+	SubjectID   string
+	Provider    string
+	Model       string
+	Metric      string
+	Currency    string
+	PeriodStart time.Time
+	PeriodEnd   time.Time
+	Percent     int16
+	LimitValue  int64
+	Observed    string
+	OccurredAt  time.Time
+}
+
 type PandokosLimitRule struct {
 	TenantID    string
 	ID          string
@@ -48,23 +68,29 @@ type PandokosLimitRule struct {
 	LimitValue  int64
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	Provider    string
+	Model       string
+	Currency    string
+	Enforce     bool
+	Thresholds  []int16
 }
 
 type PandokosModel struct {
-	ID              string
-	ProviderID      string
-	Name            string
-	UpstreamID      string
-	DisplayName     string
-	Description     string
-	Status          string
-	Availability    string
-	Capabilities    []string
-	ContextWindow   *int64
-	MaxOutputTokens *int64
-	PriceOverride   bool
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                  string
+	ProviderID          string
+	Name                string
+	UpstreamID          string
+	DisplayName         string
+	Description         string
+	Status              string
+	Availability        string
+	Capabilities        []string
+	ContextWindow       *int64
+	MaxOutputTokens     *int64
+	PriceOverride       bool
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	DefaultOutputTokens *int64
 }
 
 type PandokosModelTenantGrant struct {
@@ -132,6 +158,11 @@ type PandokosPlatformLimitRule struct {
 	LimitValue int64
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+	Provider   string
+	Model      string
+	Currency   string
+	Enforce    bool
+	Thresholds []int16
 }
 
 type PandokosPriceImport struct {

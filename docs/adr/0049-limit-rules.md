@@ -45,3 +45,7 @@ policy on the actor, not on the scope.
 **Rejecting a rule that exceeds its parent.** A later change of the parent would invalidate rows.
 
 **Rules in the configuration file.** ADR 0019 puts limits with the state managed through the API.
+
+## History
+
+- 2026-11-18: sprint 5.2 adds the columns (scope, currency, enforcement, thresholds) and the administration API ([ADR 0052](0052-administration-of-limits.md)).

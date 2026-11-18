@@ -92,24 +92,25 @@ func (q *Queries) CreateEndpoint(ctx context.Context, arg CreateEndpointParams) 
 
 const createModel = `-- name: CreateModel :one
 INSERT INTO pandokos.model (provider_id, name, upstream_id, display_name, description, status, availability, capabilities,
-                            context_window, max_output_tokens)
+                            context_window, max_output_tokens, default_output_tokens)
 VALUES ($1::uuid, $2::text, $3::text, $4::text,
         $5::text, $6::text, $7::text, $8::text[],
-        $9::bigint, $10::bigint)
+        $9::bigint, $10::bigint, $11::bigint)
 RETURNING id
 `
 
 type CreateModelParams struct {
-	ProviderID      string
-	Name            string
-	UpstreamID      string
-	DisplayName     string
-	Description     string
-	Status          string
-	Availability    string
-	Capabilities    []string
-	ContextWindow   *int64
-	MaxOutputTokens *int64
+	ProviderID          string
+	Name                string
+	UpstreamID          string
+	DisplayName         string
+	Description         string
+	Status              string
+	Availability        string
+	Capabilities        []string
+	ContextWindow       *int64
+	MaxOutputTokens     *int64
+	DefaultOutputTokens *int64
 }
 
 func (q *Queries) CreateModel(ctx context.Context, arg CreateModelParams) (string, error) {
@@ -124,6 +125,7 @@ func (q *Queries) CreateModel(ctx context.Context, arg CreateModelParams) (strin
 		arg.Capabilities,
 		arg.ContextWindow,
 		arg.MaxOutputTokens,
+		arg.DefaultOutputTokens,
 	)
 	var id string
 	err := row.Scan(&id)
@@ -272,28 +274,29 @@ func (q *Queries) GetEndpoint(ctx context.Context, arg GetEndpointParams) (Pando
 
 const getModel = `-- name: GetModel :one
 SELECT m.id, p.name AS provider, p.api_family, m.name, m.upstream_id, m.display_name, m.description, m.status,
-       m.availability, m.capabilities, m.context_window, m.max_output_tokens, m.price_override, m.created_at, m.updated_at
+       m.availability, m.capabilities, m.context_window, m.max_output_tokens, m.default_output_tokens, m.price_override, m.created_at, m.updated_at
   FROM pandokos.model m
   JOIN pandokos.provider p ON p.id = m.provider_id
  WHERE m.id = $1::uuid
 `
 
 type GetModelRow struct {
-	ID              string
-	Provider        string
-	ApiFamily       string
-	Name            string
-	UpstreamID      string
-	DisplayName     string
-	Description     string
-	Status          string
-	Availability    string
-	Capabilities    []string
-	ContextWindow   *int64
-	MaxOutputTokens *int64
-	PriceOverride   bool
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                  string
+	Provider            string
+	ApiFamily           string
+	Name                string
+	UpstreamID          string
+	DisplayName         string
+	Description         string
+	Status              string
+	Availability        string
+	Capabilities        []string
+	ContextWindow       *int64
+	MaxOutputTokens     *int64
+	DefaultOutputTokens *int64
+	PriceOverride       bool
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 func (q *Queries) GetModel(ctx context.Context, id string) (GetModelRow, error) {
@@ -312,6 +315,7 @@ func (q *Queries) GetModel(ctx context.Context, id string) (GetModelRow, error) 
 		&i.Capabilities,
 		&i.ContextWindow,
 		&i.MaxOutputTokens,
+		&i.DefaultOutputTokens,
 		&i.PriceOverride,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -548,7 +552,7 @@ func (q *Queries) ListModelGrants(ctx context.Context, arg ListModelGrantsParams
 
 const listModels = `-- name: ListModels :many
 SELECT m.id, p.name AS provider, p.api_family, m.name, m.upstream_id, m.display_name, m.description, m.status,
-       m.availability, m.capabilities, m.context_window, m.max_output_tokens, m.price_override, m.created_at, m.updated_at
+       m.availability, m.capabilities, m.context_window, m.max_output_tokens, m.default_output_tokens, m.price_override, m.created_at, m.updated_at
   FROM pandokos.model m
   JOIN pandokos.provider p ON p.id = m.provider_id
  WHERE ($1::text = '' OR p.name = $1::text)
@@ -576,21 +580,22 @@ type ListModelsParams struct {
 }
 
 type ListModelsRow struct {
-	ID              string
-	Provider        string
-	ApiFamily       string
-	Name            string
-	UpstreamID      string
-	DisplayName     string
-	Description     string
-	Status          string
-	Availability    string
-	Capabilities    []string
-	ContextWindow   *int64
-	MaxOutputTokens *int64
-	PriceOverride   bool
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                  string
+	Provider            string
+	ApiFamily           string
+	Name                string
+	UpstreamID          string
+	DisplayName         string
+	Description         string
+	Status              string
+	Availability        string
+	Capabilities        []string
+	ContextWindow       *int64
+	MaxOutputTokens     *int64
+	DefaultOutputTokens *int64
+	PriceOverride       bool
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 func (q *Queries) ListModels(ctx context.Context, arg ListModelsParams) ([]ListModelsRow, error) {
@@ -624,6 +629,7 @@ func (q *Queries) ListModels(ctx context.Context, arg ListModelsParams) ([]ListM
 			&i.Capabilities,
 			&i.ContextWindow,
 			&i.MaxOutputTokens,
+			&i.DefaultOutputTokens,
 			&i.PriceOverride,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -718,7 +724,7 @@ func (q *Queries) ListTenantGrants(ctx context.Context) ([]string, error) {
 
 const listVisibleModels = `-- name: ListVisibleModels :many
 SELECT m.id, p.name AS provider, p.api_family, m.name, m.upstream_id, m.display_name, m.description, m.status,
-       m.availability, m.capabilities, m.context_window, m.max_output_tokens, m.price_override, m.created_at, m.updated_at
+       m.availability, m.capabilities, m.context_window, m.max_output_tokens, m.default_output_tokens, m.price_override, m.created_at, m.updated_at
   FROM pandokos.model m
   JOIN pandokos.provider p ON p.id = m.provider_id
  WHERE p.enabled
@@ -738,21 +744,22 @@ type ListVisibleModelsParams struct {
 }
 
 type ListVisibleModelsRow struct {
-	ID              string
-	Provider        string
-	ApiFamily       string
-	Name            string
-	UpstreamID      string
-	DisplayName     string
-	Description     string
-	Status          string
-	Availability    string
-	Capabilities    []string
-	ContextWindow   *int64
-	MaxOutputTokens *int64
-	PriceOverride   bool
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                  string
+	Provider            string
+	ApiFamily           string
+	Name                string
+	UpstreamID          string
+	DisplayName         string
+	Description         string
+	Status              string
+	Availability        string
+	Capabilities        []string
+	ContextWindow       *int64
+	MaxOutputTokens     *int64
+	DefaultOutputTokens *int64
+	PriceOverride       bool
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 func (q *Queries) ListVisibleModels(ctx context.Context, arg ListVisibleModelsParams) ([]ListVisibleModelsRow, error) {
@@ -782,6 +789,7 @@ func (q *Queries) ListVisibleModels(ctx context.Context, arg ListVisibleModelsPa
 			&i.Capabilities,
 			&i.ContextWindow,
 			&i.MaxOutputTokens,
+			&i.DefaultOutputTokens,
 			&i.PriceOverride,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -842,21 +850,22 @@ func (q *Queries) LoadEndpoints(ctx context.Context) ([]LoadEndpointsRow, error)
 
 const loadModels = `-- name: LoadModels :many
 SELECT m.id, m.provider_id, m.name, m.upstream_id, m.status, m.availability, m.context_window, m.max_output_tokens,
-       m.price_override
+       m.default_output_tokens, m.price_override
   FROM pandokos.model m
  ORDER BY m.id
 `
 
 type LoadModelsRow struct {
-	ID              string
-	ProviderID      string
-	Name            string
-	UpstreamID      string
-	Status          string
-	Availability    string
-	ContextWindow   *int64
-	MaxOutputTokens *int64
-	PriceOverride   bool
+	ID                  string
+	ProviderID          string
+	Name                string
+	UpstreamID          string
+	Status              string
+	Availability        string
+	ContextWindow       *int64
+	MaxOutputTokens     *int64
+	DefaultOutputTokens *int64
+	PriceOverride       bool
 }
 
 func (q *Queries) LoadModels(ctx context.Context) ([]LoadModelsRow, error) {
@@ -877,6 +886,7 @@ func (q *Queries) LoadModels(ctx context.Context) ([]LoadModelsRow, error) {
 			&i.Availability,
 			&i.ContextWindow,
 			&i.MaxOutputTokens,
+			&i.DefaultOutputTokens,
 			&i.PriceOverride,
 		); err != nil {
 			return nil, err
@@ -932,22 +942,28 @@ func (q *Queries) LoadProviders(ctx context.Context) ([]LoadProvidersRow, error)
 }
 
 const lockModel = `-- name: LockModel :one
-SELECT m.id, m.name, m.price_override
+SELECT m.id, m.name, m.price_override, m.default_output_tokens
   FROM pandokos.model m
  WHERE m.id = $1::uuid
    FOR UPDATE
 `
 
 type LockModelRow struct {
-	ID            string
-	Name          string
-	PriceOverride bool
+	ID                  string
+	Name                string
+	PriceOverride       bool
+	DefaultOutputTokens *int64
 }
 
 func (q *Queries) LockModel(ctx context.Context, id string) (LockModelRow, error) {
 	row := q.db.QueryRow(ctx, lockModel, id)
 	var i LockModelRow
-	err := row.Scan(&i.ID, &i.Name, &i.PriceOverride)
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.PriceOverride,
+		&i.DefaultOutputTokens,
+	)
 	return i, err
 }
 
@@ -1084,28 +1100,31 @@ UPDATE pandokos.model
        availability      = CASE WHEN $9::boolean THEN $10::text ELSE availability END,
        capabilities      = CASE WHEN $11::boolean THEN $12::text[] ELSE capabilities END,
        context_window    = CASE WHEN $13::boolean THEN $14::bigint ELSE context_window END,
-       max_output_tokens = CASE WHEN $15::boolean THEN $16::bigint ELSE max_output_tokens END
- WHERE id = $17::uuid
+       max_output_tokens = CASE WHEN $15::boolean THEN $16::bigint ELSE max_output_tokens END,
+       default_output_tokens = CASE WHEN $17::boolean THEN $18::bigint ELSE default_output_tokens END
+ WHERE id = $19::uuid
 `
 
 type UpdateModelParams struct {
-	SetUpstreamID      bool
-	UpstreamID         string
-	SetDisplayName     bool
-	DisplayName        string
-	SetDescription     bool
-	Description        string
-	SetStatus          bool
-	Status             string
-	SetAvailability    bool
-	Availability       string
-	SetCapabilities    bool
-	Capabilities       []string
-	SetContextWindow   bool
-	ContextWindow      *int64
-	SetMaxOutputTokens bool
-	MaxOutputTokens    *int64
-	ID                 string
+	SetUpstreamID          bool
+	UpstreamID             string
+	SetDisplayName         bool
+	DisplayName            string
+	SetDescription         bool
+	Description            string
+	SetStatus              bool
+	Status                 string
+	SetAvailability        bool
+	Availability           string
+	SetCapabilities        bool
+	Capabilities           []string
+	SetContextWindow       bool
+	ContextWindow          *int64
+	SetMaxOutputTokens     bool
+	MaxOutputTokens        *int64
+	SetDefaultOutputTokens bool
+	DefaultOutputTokens    *int64
+	ID                     string
 }
 
 func (q *Queries) UpdateModel(ctx context.Context, arg UpdateModelParams) (int64, error) {
@@ -1126,6 +1145,8 @@ func (q *Queries) UpdateModel(ctx context.Context, arg UpdateModelParams) (int64
 		arg.ContextWindow,
 		arg.SetMaxOutputTokens,
 		arg.MaxOutputTokens,
+		arg.SetDefaultOutputTokens,
+		arg.DefaultOutputTokens,
 		arg.ID,
 	)
 	if err != nil {

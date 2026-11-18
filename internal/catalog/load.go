@@ -54,7 +54,7 @@ func LoadSnapshot(ctx context.Context, db *store.DB) (*Snapshot, error) {
 				continue
 			}
 			d.Models = append(d.Models, Model{ID: m.ID, Provider: name, Name: m.Name, UpstreamID: m.UpstreamID, Status: m.Status, Availability: m.Availability,
-				ContextWindow: deref(m.ContextWindow), MaxOutputTokens: deref(m.MaxOutputTokens)})
+				ContextWindow: deref(m.ContextWindow), MaxOutputTokens: deref(m.MaxOutputTokens), DefaultOutputTokens: deref(m.DefaultOutputTokens)})
 		}
 		for _, v := range vers {
 			rates, err := ratesOf(v.Categories, v.Thresholds, v.Rates)

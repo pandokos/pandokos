@@ -125,8 +125,13 @@ flowchart TB
   (later) client certificates ([ADR 0005](../adr/0005-data-plane-authentication.md)).
 - **authz** evaluates `resource:action` permissions in process
   ([ADR 0007](../adr/0007-authorization-rbac.md)).
-- **limits** reserves capacity before forwarding and settles after
-  ([ADR 0012](../adr/0012-limits-and-budget-reservation.md)).
+- **limits** reserves capacity before forwarding and settles after: requests, tokens and cost per
+  minute, day and month, and requests in flight, with rules scoped to a provider or model
+  ([ADR 0012](../adr/0012-limits-and-budget-reservation.md), [ADR 0050](../adr/0050-quotas-and-budgets-periods-attribution-currencies.md),
+  [ADR 0051](../adr/0051-period-counters-and-the-ledger.md)). The counters of a day or month are
+  rebuilt from the usage ledger: the ledger is their source, a reconciliation that runs with the
+  worker's database role reads it at first use of a tenant, folds it in every few minutes and rebases
+  hourly, and a failure to read it is governed by `limits.on_store_failure`.
 - **resolver** (`internal/resolver`) maps the request to a provider endpoint and a credential, both
   taken from the catalogue, never from the request, and records authentication failures
   ([ADR 0037](../adr/0037-request-pipeline-and-resolution.md)).
@@ -194,11 +199,12 @@ sequenceDiagram
    whatever happens.
 4. **Authorize.** Both `model:invoke` and `credential:use` are decided from the principal before
    the body is read. Then the body is read up to a size limit and only the fields Pandokos needs are
-   parsed: model, stream flag (and, in later sprints, the output-token limit). The model must be
+   parsed: model, stream flag and the output-token limit. The model must be
    available to the tenant and allowed by the key.
 5. **Reserve.** An estimate of the request's tokens (and cost) is reserved against every applicable
-   limit, in one atomic step. If any limit would be exceeded the request ends here with a 429 in the
-   API family's error shape ([limits guide](../operations/limits.md), [ADR 0048](../adr/0048-reserve-and-settle.md)).
+   limit, in one atomic step, after the counters of the periods it falls in are known. If any limit
+   would be exceeded the request ends here with a 429 (`rate_limited` or `quota_exceeded`) in the
+   API family's error shape, or with 409 `no_price` when a budget cannot measure it ([limits guide](../operations/limits.md), [ADR 0048](../adr/0048-reserve-and-settle.md)).
 6. **Resolve.** Endpoint and credential come from the catalogue and the vault. In the code the
    order is: model check, reserve (step 5), then the credential; a request refused by a limit has
    opened no credential. The credential is decrypted, or taken from a short-lived in-memory cache.
@@ -224,7 +230,7 @@ write happens after the response has been delivered.
 | Store | Required | Holds | Notes |
 |---|---|---|---|
 | PostgreSQL 16+ | always | Everything durable: tenants, identities, roles, catalogue, encrypted credentials, limits, usage ledger, audit log, outbox | System of record. Row-level security on every tenant table ([ADR 0004](../adr/0004-postgresql-and-rls.md)) |
-| Valkey (Redis protocol) | with more than one gateway instance | Rate-limit windows, budget reservations | Never the source of truth: counters are rebuilt from the ledger ([ADR 0012](../adr/0012-limits-and-budget-reservation.md)) |
+| Valkey (Redis protocol) | with more than one gateway instance | Rate-limit windows, budget reservations (planned, epic 8: counters are in process today) | Never the source of truth: counters are rebuilt from the ledger ([ADR 0012](../adr/0012-limits-and-budget-reservation.md)) |
 | KEK provider | always | The key-encryption key | A local key file by default; KMS or transit service optionally |
 | Process memory | — | Caches of principals, catalogue, data keys, decrypted credentials | Bounded lifetime; see below |
 
@@ -297,6 +303,7 @@ The rule: when Pandokos cannot verify that a request is allowed, it does not for
 |---|---|---|
 | PostgreSQL | Continues from caches until they expire, then refuses; the caches are not emptied when the notification connection is lost, so the bound is their lifetimes. Usage records wait in a bounded memory buffer whose slots are taken at admission: when it is full, `/readyz` fails and new authenticated requests are refused with 503, and those are the only ones without a record | Unavailable |
 | Valkey | Refuses by default. Configurable to continue with per-instance counters | Unaffected |
+| The usage ledger, when a counter of a day or month has to be loaded | Refuses with 503 by default, or admits without the limits that could not be verified (`limits.on_store_failure`); a counter already loaded keeps counting | Unaffected |
 | KEK provider | Continues while data keys are cached, then refuses | Credential writes fail |
 | Identity provider | Tokens verify while the keys are cached, up to 6 h after the last fetch; then a call with a token is answered 503, never 401. Virtual keys unaffected | Sign-in through the IdP is unavailable (from sprint 4.2). Open sessions, local accounts and keys are unaffected |
 | OTLP collector | Unaffected; spans are dropped when the export queue is full | Unaffected |
@@ -310,7 +317,7 @@ The rule: when Pandokos cannot verify that a request is allowed, it does not for
 | Language | Go, current stable release | [0002](../adr/0002-implementation-language-go.md) |
 | HTTP server and proxy | Standard library `net/http` and `httputil.ReverseProxy` | [0002](../adr/0002-implementation-language-go.md), [0018](../adr/0018-supply-chain.md) |
 | Database | PostgreSQL 16+, `pgx` driver, SQL in files compiled with `sqlc`, migrations embedded in the binary | [0004](../adr/0004-postgresql-and-rls.md) |
-| Counters | In process for one instance; Valkey for several | [0012](../adr/0012-limits-and-budget-reservation.md) |
+| Counters | In process for one instance, with the periods rebuilt from the ledger; Valkey for several | [0012](../adr/0012-limits-and-budget-reservation.md), [0050](../adr/0050-quotas-and-budgets-periods-attribution-currencies.md), [0051](../adr/0051-period-counters-and-the-ledger.md) |
 | Cryptography | Go standard library: AES-256-GCM, HKDF, SHA-256 | [0008](../adr/0008-vault-envelope-encryption.md) |
 | Tokens | OIDC discovery and JWKS fetched through the egress guard; compact JWS and JWK by `go-jose` v4, claims checked by Pandokos | [0005](../adr/0005-data-plane-authentication.md), [0045](../adr/0045-trusted-token-issuers.md), [0046](../adr/0046-issuer-key-retrieval-and-caching.md) |
 | People sign-in | External OIDC or local accounts (Argon2id), server-side sessions | [0006](../adr/0006-human-authentication-external-oidc.md), [0022](../adr/0022-local-accounts-and-sessions.md) |

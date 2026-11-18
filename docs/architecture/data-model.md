@@ -201,6 +201,27 @@ account or a mapping can be deleted without touching its rules, and a rule for a
 not exist is idle and never matches. The gateway role only reads them; both tables notify
 `pandokos_cache`.
 
+## Quotas, budgets and limit events (sprint 5.2)
+
+Migration 0010 gives both rule tables the same new columns ([database guide](../operations/database.md),
+[ADR 0050](../adr/0050-quotas-and-budgets-periods-attribution-currencies.md),
+[ADR 0052](../adr/0052-administration-of-limits.md)): `provider` and `model` (the scope: names of the
+catalogue, empty meaning all; no foreign key, so a rule whose scope names nothing never matches),
+`currency` (three capital letters for a cost metric, empty otherwise), `enforce` (false: the rule never
+refuses and only records its thresholds) and `thresholds` (up to four percentages). The metrics
+include six per period, and `limit_value` of a cost metric is in **millionths** of the currency. The
+key is tenant, subject, scope and metric: one rule per metric and scope.
+
+`limit_event` is tenant-scoped (policy `tenant_isolation`) and append-only for every role. A row records
+that a threshold was reached (`threshold_reached`, with its percentage) or that an enforced limit
+refused for the first time in a period (`exhausted`): rule and level, subject, scope, metric, currency,
+period, the value of the rule and the value observed. It names no request, caller or content and has no
+foreign key to the rule, so an event outlives it. One row exists per tenant, rule, period start, kind
+and percentage (a unique key), which makes recording idempotent. The gateway role inserts the listed
+columns, the admin role reads, the worker role has no grant. `model.default_output_tokens` (1 to
+1,000,000, null by default) is the per-model default output reservation. No column was added to
+`usage_record`: the limiter counts what the ledger already holds.
+
 ## Provider stream usage option (sprint 3.3)
 
 `provider.stream_usage_option` is `add` (default) or `omit` ([ADR 0042](../adr/0042-openai-compatible-providers-and-stream-usage-option.md)):

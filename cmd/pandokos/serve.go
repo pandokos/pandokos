@@ -211,15 +211,19 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	memory, err := limits.NewMemory(limits.MemoryOptions{Logger: logger})
+	calendar, err := limits.NewCalendar(cfg.Limits.Location)
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	limitsPort, err := resolver.NewLimits(resolver.LimitsOptions{
-		Rules: ruleCache, Store: memory, Logger: logger,
-		TTL: time.Duration(cfg.Limits.MaxRequestDuration) + time.Minute,
-	})
+	events, err := limits.NewEventWriter(limits.EventWriterOptions{DB: gatewayDB, Logger: logger})
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
+	// The horizon is longer than any request lives from its start to the hand-over of its record.
+	horizon := time.Duration(cfg.Limits.RequestBodyReadTimeout) + time.Duration(cfg.Limits.MaxRequestDuration) + 2*time.Minute
+	memory, err := limits.NewMemory(limits.MemoryOptions{Logger: logger, Events: events, Horizon: horizon})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
@@ -247,12 +251,15 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	if cfg.Pricing.Refresh.Enabled {
 		refresh = admin.RefreshOptions{Enabled: true, URL: cfg.Pricing.Refresh.ParsedURL.String(), Fetch: fetchPrices}
 	}
-	adminHandler, err := admin.New(admin.Options{
+	adminOpts := admin.Options{
 		Logger: logger, DB: adminDB, Authenticator: adminAuth, Sealer: sealer,
 		Validator: vault.NewValidator(guard.Transport(false), guard.Transport(true), 10*time.Second),
 		Snapshot:  genaiprices.Snapshot(),
 		Refresh:   refresh,
-	})
+	}
+	adminOpts.Limits.Calendar, adminOpts.Limits.OnUnknownPrice = calendar, cfg.Limits.OnUnknownPrice
+	adminOpts.Limits.Ledger = limits.NewLedger(workerDB)
+	adminHandler, err := admin.New(adminOpts)
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
@@ -286,6 +293,27 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
+	reconciler, err := limits.NewReconciler(limits.ReconcilerOptions{
+		Store: memory, Ledger: limits.NewLedger(workerDB), Calendar: calendar,
+		Pending: writer.OldestPendingStart, Horizon: horizon,
+		Interval: time.Duration(cfg.Limits.ReconcileInterval), Logger: logger,
+	})
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
+	limitsPort, err := resolver.NewLimits(resolver.LimitsOptions{
+		Rules: ruleCache, Store: memory, Logger: logger,
+		TTL:      time.Duration(cfg.Limits.MaxRequestDuration) + time.Minute,
+		Calendar: calendar, Reconciler: reconciler,
+		OnUnknownPrice: cfg.Limits.OnUnknownPrice, OnStoreFailure: cfg.Limits.OnStoreFailure,
+	})
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
+	logger.Info("limits ready", "time_zone", cfg.Limits.TimeZone,
+		"on_unknown_price", cfg.Limits.OnUnknownPrice, "on_store_failure", cfg.Limits.OnStoreFailure)
 	partitioner := &ledger.Partitioner{DB: workerDB, Logger: logger}
 	// Ensure bounds itself. A failure is a warning: the keeper retries, and rows whose month has
 	// no partition land in the default one.
@@ -323,17 +351,24 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	background, stopBackground := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	defer func() { stopBackground(); wg.Wait() }()
-	wg.Add(4)
+	wg.Add(5)
 	go func() { defer wg.Done(); listener.Run(background) }()
 	go func() { defer wg.Done(); warnBootstrap(background, logger, adminDB) }()
 	go func() { defer wg.Done(); partitioner.Run(background) }()
 	go func() { defer wg.Done(); memory.Run(background) }()
+	go func() { defer wg.Done(); reconciler.Run(background) }()
 	// The writer is not stopped by the signal: it runs until Close has returned.
 	writerCtx, stopWriter := context.WithCancel(context.WithoutCancel(ctx))
 	var writerDone sync.WaitGroup
 	writerDone.Add(1)
 	go func() { defer writerDone.Done(); writer.Run(writerCtx) }()
 	defer func() { stopWriter(); writerDone.Wait() }()
+	// The event writer likewise runs until the flush has stopped it, so that Close finds the queue.
+	eventsCtx, stopEvents := context.WithCancel(context.WithoutCancel(ctx))
+	var eventsDone sync.WaitGroup
+	eventsDone.Add(1)
+	go func() { defer eventsDone.Done(); events.Run(eventsCtx) }()
+	defer func() { stopEvents(); eventsDone.Wait() }()
 	if cfg.Pricing.Refresh.Enabled {
 		refresher := &catalog.Refresher{
 			DB: workerDB, Logger: logger, URL: cfg.Pricing.Refresh.ParsedURL.String(),
@@ -354,13 +389,23 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 
 	// Every handler has recorded: write what is queued and flush the spans, together, within
 	// ledger.shutdown_flush_timeout (OPS-12).
-	flushCtx, flushCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Duration(cfg.Ledger.ShutdownFlushTimeout))
+	flushDeadline := time.Now().Add(time.Duration(cfg.Ledger.ShutdownFlushTimeout))
+	flushCtx, flushCancel := context.WithDeadline(context.WithoutCancel(ctx), flushDeadline)
 	var unwritten int
 	var flush sync.WaitGroup
 	flush.Add(2)
 	go func() { defer flush.Done(); unwritten = writer.Close(flushCtx) }()
 	go func() { defer flush.Done(); _ = traces.Shutdown(flushCtx) }()
 	flush.Wait()
+	// Then the limit events, with what is left of the flush deadline (at least one second).
+	left := max(time.Until(flushDeadline), time.Second)
+	eventsFlush, eventsCancel := context.WithTimeout(context.WithoutCancel(ctx), left)
+	stopEvents()
+	eventsDone.Wait()
+	if n := events.Close(eventsFlush); n > 0 {
+		logger.Warn("limit events not recorded", "unwritten", n)
+	}
+	eventsCancel()
 	flushCancel()
 	logger.Info("ledger flushed", "unwritten", unwritten)
 

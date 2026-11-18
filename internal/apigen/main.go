@@ -300,7 +300,7 @@ func comment(text string) string {
 // field describes how one property or parameter is represented in Go.
 type field struct {
 	goType   string
-	kind     string // "string", "enum", "time", "int", "bool", "object", "strings", "objects"
+	kind     string // "string", "enum", "time", "int", "bool", "object", "strings", "ints", "objects"
 	nullable bool
 	s        *schema // resolved schema, for the constraints
 	item     *schema // resolved item schema of an array
@@ -365,8 +365,10 @@ func (g *generator) fieldOf(s *schema, required bool) (field, error) {
 			f.kind, f.goType = "objects", "[]"+itName
 		case it.Type.Name == "string" && len(it.Enum) == 0 && it.Format == "":
 			f.kind, f.goType = "strings", "[]string"
+		case it.Type.Name == "integer":
+			f.kind, f.goType = "ints", "[]int"
 		default:
-			return f, errors.New("array items must be a component object or a plain string")
+			return f, errors.New("array items must be a component object, a plain string or an integer")
 		}
 	default:
 		return f, fmt.Errorf("unsupported type %q with format %q", t.Type.Name, t.Format)
@@ -552,9 +554,9 @@ func (g *generator) object(name string, s *schema) error {
 		switch {
 		case optional:
 			switch f.kind {
-			case "string", "enum", "int", "bool", "strings", "stringmap":
+			case "string", "enum", "int", "bool", "strings", "ints", "stringmap":
 			default:
-				return fmt.Errorf("property %s: an optional member of an update schema must be a string, enum, integer, boolean, array of strings or map of strings", pn)
+				return fmt.Errorf("property %s: an optional member of an update schema must be a string, enum, integer, boolean, array of strings or integers, or map of strings", pn)
 			}
 			f.goType = "Optional[" + f.goType + "]"
 			tag += ",omitzero"
@@ -677,8 +679,13 @@ func (g *generator) check(w *bytes.Buffer, expr, name string, f field, required 
 		}
 		add(guard+"!"+expr+".Valid()", "must be one of "+strings.Join(f.s.Enum, ", "))
 	case "int":
+		// An optional integer is 0 when absent: a minimum above 0 is checked only when present.
+		guard := ""
+		if !required {
+			guard = expr + " != 0 && "
+		}
 		if f.s.Minimum != nil {
-			add(expr+" < "+strconv.Itoa(*f.s.Minimum), "must be at least "+strconv.Itoa(*f.s.Minimum))
+			add(guard+expr+" < "+strconv.Itoa(*f.s.Minimum), "must be at least "+strconv.Itoa(*f.s.Minimum))
 		}
 		if f.s.Maximum != nil {
 			add(expr+" > "+strconv.Itoa(*f.s.Maximum), "must be at most "+strconv.Itoa(*f.s.Maximum))
@@ -691,6 +698,22 @@ func (g *generator) check(w *bytes.Buffer, expr, name string, f field, required 
 			fmt.Fprintf(w, "for _, item := range %s {\n", expr)
 			str("item", f.item, "")
 			fmt.Fprintf(w, "}\n")
+		}
+	case "ints":
+		if f.s.MinItems != nil {
+			add(expr+" != nil && len("+expr+") < "+strconv.Itoa(*f.s.MinItems), "must have at least "+strconv.Itoa(*f.s.MinItems)+" items")
+		}
+		if f.s.MaxItems != nil {
+			add("len("+expr+") > "+strconv.Itoa(*f.s.MaxItems), "must have at most "+strconv.Itoa(*f.s.MaxItems)+" items")
+		}
+		if f.s.UniqueItems {
+			add("!unique("+expr+")", "must not repeat an item")
+		}
+		if f.item.Minimum != nil {
+			add("anyBelow("+expr+", "+strconv.Itoa(*f.item.Minimum)+")", "every item must be at least "+strconv.Itoa(*f.item.Minimum))
+		}
+		if f.item.Maximum != nil {
+			add("anyAbove("+expr+", "+strconv.Itoa(*f.item.Maximum)+")", "every item must be at most "+strconv.Itoa(*f.item.Maximum))
 		}
 	case "strings":
 		if f.s.MinItems != nil {

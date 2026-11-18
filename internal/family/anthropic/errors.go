@@ -11,7 +11,7 @@ import (
 // (sprint 3.3 section 5.2).
 func ErrorType(code family.ErrorCode) string {
 	switch code {
-	case family.CodeInvalidRequest, family.CodeNoCredential:
+	case family.CodeInvalidRequest, family.CodeNoCredential, family.CodeNoPrice:
 		return "invalid_request_error"
 	case family.CodeUnauthenticated:
 		return "authentication_error"
@@ -23,7 +23,7 @@ func ErrorType(code family.ErrorCode) string {
 		return "timeout_error"
 	case family.CodeRequestTooLarge:
 		return "request_too_large"
-	case family.CodeRateLimited:
+	case family.CodeRateLimited, family.CodeQuotaExceeded:
 		return "rate_limit_error"
 	default:
 		return "api_error"

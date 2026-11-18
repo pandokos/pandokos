@@ -144,9 +144,9 @@ func DefaultSpec() Spec {
 				"pandokos_gateway": {"SELECT"},
 				"pandokos_admin": {
 					"DELETE",
-					"INSERT(availability,capabilities,context_window,description,display_name,max_output_tokens,name,provider_id,status,upstream_id)",
+					"INSERT(availability,capabilities,context_window,default_output_tokens,description,display_name,max_output_tokens,name,provider_id,status,upstream_id)",
 					"SELECT",
-					"UPDATE(availability,capabilities,context_window,description,display_name,max_output_tokens,price_override,status,upstream_id)",
+					"UPDATE(availability,capabilities,context_window,default_output_tokens,description,display_name,max_output_tokens,price_override,status,upstream_id)",
 				},
 				"pandokos_worker": {"SELECT"},
 			},
@@ -205,11 +205,17 @@ func DefaultSpec() Spec {
 			},
 			"limit_rule": {
 				"pandokos_gateway": {"SELECT"},
-				"pandokos_admin":   {"DELETE", "INSERT(limit_value,metric,subject_id,subject_kind,tenant_id)", "SELECT", "UPDATE(limit_value)"},
+				"pandokos_admin": {"DELETE", "INSERT(currency,enforce,limit_value,metric,model,provider,subject_id,subject_kind,tenant_id,thresholds)",
+					"SELECT", "UPDATE(enforce,limit_value,thresholds)"},
 			},
 			"platform_limit_rule": {
 				"pandokos_gateway": {"SELECT"},
-				"pandokos_admin":   {"DELETE", "INSERT(limit_value,metric,tenant_id)", "SELECT", "UPDATE(limit_value)"},
+				"pandokos_admin": {"DELETE", "INSERT(currency,enforce,limit_value,metric,model,provider,tenant_id,thresholds)",
+					"SELECT", "UPDATE(enforce,limit_value,thresholds)"},
+			},
+			"limit_event": {
+				"pandokos_gateway": {"INSERT(currency,kind,limit_value,metric,model,observed,percent,period_end,period_start,provider,rule_id,rule_level,subject_id,subject_kind,tenant_id)"},
+				"pandokos_admin":   {"SELECT"},
 			},
 		},
 		Fixtures: map[string]Fixture{
@@ -281,10 +287,15 @@ SELECT $1::uuid, ti.id, 'sub-' || substr(md5(random()::text), 1, 12), sa.id FROM
 VALUES ($1::uuid, 'key', 't' || substr(md5(random()::text), 1, 16), 'requests_per_minute', 10) RETURNING id::text`,
 				Update: `limit_value = 11`,
 			},
+			"limit_event": {
+				Insert: `INSERT INTO pandokos.limit_event (tenant_id, kind, rule_id, rule_level, subject_kind, metric, period_start, period_end, percent, limit_value, observed)
+VALUES ($1::uuid, 'threshold_reached', pandokos.uuid_v7(), 'tenant', 'tenant', 'tokens_per_day', date_trunc('day', now()), date_trunc('day', now()) + interval '1 day', 80, 10, 8) RETURNING id::text`,
+				Update: `percent = 81`,
+			},
 		},
 		SecurityDefiner: []string{"virtual_key_lookup", "virtual_key_directory_add", "record_auth_failure", "ensure_usage_partitions",
 			"issuer_lookup", "platform_issuer_tenant_lookup", "record_token_auth_failure", "issuer_directory_sync", "platform_issuer_mapping_count"},
 		Views:      []string{"provider_credential_metadata"},
-		AppendOnly: []string{"audit_event", "platform_audit_event", "price_import", "usage_record"},
+		AppendOnly: []string{"audit_event", "platform_audit_event", "price_import", "usage_record", "limit_event"},
 	}
 }

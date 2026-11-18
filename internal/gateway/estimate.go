@@ -14,7 +14,7 @@ const maxEstimateTokens = 1_000_000_000_000
 
 // estimateOf computes the request-side estimate of sprint 5.1 section 5.3: the input from the
 // size of the body through the family's estimator, capped by the model's context window; the
-// output from the caller's limit per choice (else defaultOutput, capped by the model's maximum)
+// output from the caller's limit per choice (else the model's default, else defaultOutput, capped by the model's maximum)
 // times the number of choices; the cost at the price version in force at start. The arithmetic
 // saturates: the sum of input and output never exceeds 1e12. The RequestID of the result is
 // left for the caller.
@@ -28,6 +28,9 @@ func estimateOf(a family.Adapter, op family.Operation, bound family.OutputBound,
 	var output int64
 	if !bound.None {
 		per := defaultOutput
+		if t.DefaultOutputTokens > 0 {
+			per = t.DefaultOutputTokens
+		}
 		if bound.Tokens > 0 {
 			per = bound.Tokens
 		}
@@ -49,5 +52,5 @@ func estimateOf(a family.Adapter, op family.Operation, bound family.OutputBound,
 	if cost.Known && !usage.CostFits(cost.Amount) {
 		cost = pricing.Cost{Reason: pricing.ReasonInconsistentUsage, Currency: v.Currency, VersionID: v.ID}
 	}
-	return LimitEstimate{InputTokens: input, OutputTokens: output, Cost: cost}
+	return LimitEstimate{InputTokens: input, OutputTokens: output, Cost: cost, Provider: t.Provider, Model: t.Model, Start: start}
 }

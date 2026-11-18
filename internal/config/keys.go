@@ -156,6 +156,14 @@ var keyTable = []keyDef{
 			c.Limits.DefaultOutputTokens = n
 			return nil
 		}),
+	def("limits.time_zone", "IANA zone name", "UTC", "The zone in which the days and months of quotas and budgets start; a name known to the embedded time zone database whose offsets are whole minutes",
+		setString(func(c *Config) *string { return &c.Limits.TimeZone })),
+	def("limits.on_unknown_price", "refuse, allow", "refuse", "What happens to a request that a budget applies to and cannot measure because the model has no price in the budget's currency: refused with 409 no_price, or admitted",
+		setString(func(c *Config) *string { return &c.Limits.OnUnknownPrice })),
+	def("limits.on_store_failure", "refuse, allow", "refuse", "What happens to a request whose quota and budget counters cannot be verified: refused with 503 unavailable, or admitted (allow is a start-up warning)",
+		setString(func(c *Config) *string { return &c.Limits.OnStoreFailure })),
+	def("limits.reconcile_interval", "duration", "5m", "How often the period counters of quotas and budgets are folded into the usage ledger; 10s to 1h",
+		setDuration(func(c *Config) *Duration { return &c.Limits.ReconcileInterval })),
 	def("upstream.connect_timeout", "duration", "10s", "TCP connect timeout, and separately TLS handshake timeout, towards the provider",
 		setDuration(func(c *Config) *Duration { return &c.Upstream.ConnectTimeout })),
 	def("upstream.tls.ca_file", "path", "", "PEM file with certificate authorities added to the system roots for every outbound TLS connection (providers, validation, price download)",

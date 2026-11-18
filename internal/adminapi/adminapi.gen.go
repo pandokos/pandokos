@@ -25,19 +25,20 @@ var (
 	re4  = regexp.MustCompile("^https?://[^/?#@\\s]+(/[^?#\\s]*)?$")
 	re5  = regexp.MustCompile("^[a-z0-9][a-z0-9-]{0,62}$")
 	re6  = regexp.MustCompile("^([a-z0-9][a-z0-9-]{0,62})?$")
-	re7  = regexp.MustCompile("^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$")
-	re8  = regexp.MustCompile("^[!-~]+$")
-	re9  = regexp.MustCompile("^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$")
-	re10 = regexp.MustCompile("^https://[^\\s?#@]+$")
-	re11 = regexp.MustCompile("^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$")
-	re12 = regexp.MustCompile("^[A-Za-z0-9_.:/-]{1,64}$")
-	re13 = regexp.MustCompile("^p[a-z2-7]{16}$")
-	re14 = regexp.MustCompile("^[A-Z]{3}$")
-	re15 = regexp.MustCompile("^(0|[1-9][0-9]{0,6})(\\.[0-9]{1,12})?$")
-	re16 = regexp.MustCompile("^[a-z0-9][a-z0-9_.-]{0,62}$")
-	re17 = regexp.MustCompile("^([a-z0-9][a-z0-9_.-]{0,62})?$")
-	re18 = regexp.MustCompile("^t[a-z2-7]{16}$")
-	re19 = regexp.MustCompile("^[a-z_]+:[a-z_]+$")
+	re7  = regexp.MustCompile("^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,6})?$")
+	re8  = regexp.MustCompile("^[A-Z]{3}$")
+	re9  = regexp.MustCompile("^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$")
+	re10 = regexp.MustCompile("^[!-~]+$")
+	re11 = regexp.MustCompile("^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$")
+	re12 = regexp.MustCompile("^https://[^\\s?#@]+$")
+	re13 = regexp.MustCompile("^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$")
+	re14 = regexp.MustCompile("^[A-Za-z0-9_.:/-]{1,64}$")
+	re15 = regexp.MustCompile("^p[a-z2-7]{16}$")
+	re16 = regexp.MustCompile("^(0|[1-9][0-9]{0,6})(\\.[0-9]{1,12})?$")
+	re17 = regexp.MustCompile("^[a-z0-9][a-z0-9_.-]{0,62}$")
+	re18 = regexp.MustCompile("^([a-z0-9][a-z0-9_.-]{0,62})?$")
+	re19 = regexp.MustCompile("^t[a-z2-7]{16}$")
+	re20 = regexp.MustCompile("^[a-z_]+:[a-z_]+$")
 )
 
 // ApiFamily: The wire protocol of a provider.
@@ -58,18 +59,21 @@ func (v ApiFamily) Valid() bool {
 	return false
 }
 
-// BudgetAvailability: not_enforced until limits exist.
+// BudgetAvailability: not_enforced when no enforced quota or budget of the tenant matches; unpriced when a budget matches and the model has no price in its currency; exhausted when a matching quota or budget is used up for the current period.
 type BudgetAvailability string
 
 // Values of BudgetAvailability.
 const (
 	BudgetAvailabilityNotEnforced BudgetAvailability = "not_enforced"
+	BudgetAvailabilityAvailable   BudgetAvailability = "available"
+	BudgetAvailabilityExhausted   BudgetAvailability = "exhausted"
+	BudgetAvailabilityUnpriced    BudgetAvailability = "unpriced"
 )
 
 // Valid reports whether v is a value of the enumeration.
 func (v BudgetAvailability) Valid() bool {
 	switch v {
-	case BudgetAvailabilityNotEnforced:
+	case BudgetAvailabilityNotEnforced, BudgetAvailabilityAvailable, BudgetAvailabilityExhausted, BudgetAvailabilityUnpriced:
 		return true
 	}
 	return false
@@ -80,7 +84,7 @@ type Capability struct {
 	Provider string `json:"provider"`
 	Model    string `json:"model"`
 	Callable bool   `json:"callable"`
-	// Every failing check, in this order: provider_unavailable, model_not_allowed, no_credential, credential_disabled, credential_revoked. Empty when callable.
+	// Every failing check, in this order: provider_unavailable, model_not_allowed, no_credential, credential_disabled, credential_revoked, no_price, budget_exhausted. Empty when callable.
 	Reasons   []string         `json:"reasons"`
 	Checks    CapabilityChecks `json:"checks"`
 	CheckedAt time.Time        `json:"checked_at"`
@@ -128,7 +132,7 @@ func (v *CapabilityChecks) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "credential", Message: "must be one of active, missing, disabled, revoked"})
 	}
 	if !v.Budget.Valid() {
-		errs = append(errs, FieldError{Field: "budget", Message: "must be one of not_enforced"})
+		errs = append(errs, FieldError{Field: "budget", Message: "must be one of not_enforced, available, exhausted, unpriced"})
 	}
 	return errs
 }
@@ -622,6 +626,354 @@ func (v KeyState) Valid() bool {
 	return false
 }
 
+// LimitEvent is a schema of the administration API.
+type LimitEvent struct {
+	ID          string           `json:"id"`
+	Kind        LimitEventKind   `json:"kind"`
+	RuleID      string           `json:"rule_id"`
+	RuleLevel   LimitRuleLevel   `json:"rule_level"`
+	SubjectKind LimitSubjectKind `json:"subject_kind"`
+	SubjectID   string           `json:"subject_id"`
+	Provider    string           `json:"provider"`
+	Model       string           `json:"model"`
+	Metric      LimitMetric      `json:"metric"`
+	Currency    string           `json:"currency"`
+	PeriodStart time.Time        `json:"period_start"`
+	PeriodEnd   time.Time        `json:"period_end"`
+	// The threshold reached; 0 for exhausted.
+	Percent int `json:"percent"`
+	// The value of the rule in requests or tokens; 0 for a cost metric.
+	Limit int `json:"limit"`
+	// The value of the rule as a decimal; empty unless a cost metric.
+	Amount string `json:"amount"`
+	// What was used when the event was recorded: a decimal in requests, tokens or the currency.
+	Observed   string    `json:"observed"`
+	OccurredAt time.Time `json:"occurred_at"`
+}
+
+var requiredLimitEvent = []string{"id", "kind", "rule_id", "rule_level", "subject_kind", "subject_id", "provider", "model", "metric", "currency", "period_start", "period_end", "percent", "limit", "amount", "observed", "occurred_at"}
+
+var nestedLimitEvent []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *LimitEvent) Validate() []FieldError {
+	var errs []FieldError
+	if !re2.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !v.Kind.Valid() {
+		errs = append(errs, FieldError{Field: "kind", Message: "must be one of threshold_reached, exhausted"})
+	}
+	if !re2.MatchString(v.RuleID) {
+		errs = append(errs, FieldError{Field: "rule_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !v.RuleLevel.Valid() {
+		errs = append(errs, FieldError{Field: "rule_level", Message: "must be one of tenant, platform"})
+	}
+	if !v.SubjectKind.Valid() {
+		errs = append(errs, FieldError{Field: "subject_kind", Message: "must be one of tenant, service_account, key"})
+	}
+	if !v.Metric.Valid() {
+		errs = append(errs, FieldError{Field: "metric", Message: "must be one of concurrent_requests, requests_per_minute, tokens_per_minute, requests_per_day, requests_per_month, tokens_per_day, tokens_per_month, cost_per_day, cost_per_month"})
+	}
+	return errs
+}
+
+// LimitEventKind is an enumeration of the administration API.
+type LimitEventKind string
+
+// Values of LimitEventKind.
+const (
+	LimitEventKindThresholdReached LimitEventKind = "threshold_reached"
+	LimitEventKindExhausted        LimitEventKind = "exhausted"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v LimitEventKind) Valid() bool {
+	switch v {
+	case LimitEventKindThresholdReached, LimitEventKindExhausted:
+		return true
+	}
+	return false
+}
+
+// LimitEventList is a schema of the administration API.
+type LimitEventList struct {
+	Items []LimitEvent `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredLimitEventList = []string{"items"}
+
+var nestedLimitEventList = []nestedMember{{Name: "items", Many: true, Required: requiredLimitEvent, Nested: nestedLimitEvent}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *LimitEventList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// LimitMetric is an enumeration of the administration API.
+type LimitMetric string
+
+// Values of LimitMetric.
+const (
+	LimitMetricConcurrentRequests LimitMetric = "concurrent_requests"
+	LimitMetricRequestsPerMinute  LimitMetric = "requests_per_minute"
+	LimitMetricTokensPerMinute    LimitMetric = "tokens_per_minute"
+	LimitMetricRequestsPerDay     LimitMetric = "requests_per_day"
+	LimitMetricRequestsPerMonth   LimitMetric = "requests_per_month"
+	LimitMetricTokensPerDay       LimitMetric = "tokens_per_day"
+	LimitMetricTokensPerMonth     LimitMetric = "tokens_per_month"
+	LimitMetricCostPerDay         LimitMetric = "cost_per_day"
+	LimitMetricCostPerMonth       LimitMetric = "cost_per_month"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v LimitMetric) Valid() bool {
+	switch v {
+	case LimitMetricConcurrentRequests, LimitMetricRequestsPerMinute, LimitMetricTokensPerMinute, LimitMetricRequestsPerDay, LimitMetricRequestsPerMonth, LimitMetricTokensPerDay, LimitMetricTokensPerMonth, LimitMetricCostPerDay, LimitMetricCostPerMonth:
+		return true
+	}
+	return false
+}
+
+// LimitRule is a schema of the administration API.
+type LimitRule struct {
+	ID          string           `json:"id"`
+	SubjectKind LimitSubjectKind `json:"subject_kind"`
+	// Empty for the tenant; a service account ID; a key ID or a subject mapping ID.
+	SubjectID string `json:"subject_id"`
+	// Empty when the rule is not scoped to a provider.
+	Provider string `json:"provider"`
+	// Empty when the rule is not scoped to a model.
+	Model  string      `json:"model"`
+	Metric LimitMetric `json:"metric"`
+	// Requests or tokens; 0 for a cost metric.
+	Limit int `json:"limit"`
+	// The budget as a decimal; empty unless a cost metric.
+	Amount string `json:"amount"`
+	// Empty unless a cost metric.
+	Currency string `json:"currency"`
+	// false means the rule never refuses and only records its thresholds.
+	Enforce bool `json:"enforce"`
+	// Percentages of the limit at which an event is recorded, ascending.
+	Thresholds []int     `json:"thresholds"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+var requiredLimitRule = []string{"id", "subject_kind", "subject_id", "provider", "model", "metric", "limit", "amount", "currency", "enforce", "thresholds", "created_at", "updated_at"}
+
+var nestedLimitRule []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *LimitRule) Validate() []FieldError {
+	var errs []FieldError
+	if !re2.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !v.SubjectKind.Valid() {
+		errs = append(errs, FieldError{Field: "subject_kind", Message: "must be one of tenant, service_account, key"})
+	}
+	if !v.Metric.Valid() {
+		errs = append(errs, FieldError{Field: "metric", Message: "must be one of concurrent_requests, requests_per_minute, tokens_per_minute, requests_per_day, requests_per_month, tokens_per_day, tokens_per_month, cost_per_day, cost_per_month"})
+	}
+	if len(v.Thresholds) > 4 {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "must have at most 4 items"})
+	}
+	if !unique(v.Thresholds) {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "must not repeat an item"})
+	}
+	if anyBelow(v.Thresholds, 1) {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "every item must be at least 1"})
+	}
+	if anyAbove(v.Thresholds, 100) {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "every item must be at most 100"})
+	}
+	return errs
+}
+
+// LimitRuleCreate is a schema of the administration API.
+type LimitRuleCreate struct {
+	SubjectKind LimitSubjectKind `json:"subject_kind,omitempty"`
+	SubjectID   string           `json:"subject_id,omitempty"`
+	Provider    string           `json:"provider,omitempty"`
+	Model       string           `json:"model,omitempty"`
+	Metric      LimitMetric      `json:"metric"`
+	Limit       int              `json:"limit,omitempty"`
+	Amount      string           `json:"amount,omitempty"`
+	Currency    string           `json:"currency,omitempty"`
+	Enforce     bool             `json:"enforce"`
+	// Percentages of the limit at which an event is recorded, ascending.
+	Thresholds []int `json:"thresholds,omitempty"`
+}
+
+var requiredLimitRuleCreate = []string{"metric"}
+
+var nestedLimitRuleCreate []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *LimitRuleCreate) Validate() []FieldError {
+	var errs []FieldError
+	if v.SubjectKind != "" && !v.SubjectKind.Valid() {
+		errs = append(errs, FieldError{Field: "subject_kind", Message: "must be one of tenant, service_account, key"})
+	}
+	if v.SubjectID != "" && runeCount(v.SubjectID) < 1 {
+		errs = append(errs, FieldError{Field: "subject_id", Message: "length must be at least 1"})
+	}
+	if runeCount(v.SubjectID) > 64 {
+		errs = append(errs, FieldError{Field: "subject_id", Message: "length must be at most 64"})
+	}
+	if v.Provider != "" && !re0.MatchString(v.Provider) {
+		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+	}
+	if v.Model != "" && !re1.MatchString(v.Model) {
+		errs = append(errs, FieldError{Field: "model", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
+	}
+	if !v.Metric.Valid() {
+		errs = append(errs, FieldError{Field: "metric", Message: "must be one of concurrent_requests, requests_per_minute, tokens_per_minute, requests_per_day, requests_per_month, tokens_per_day, tokens_per_month, cost_per_day, cost_per_month"})
+	}
+	if v.Limit != 0 && v.Limit < 1 {
+		errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+	}
+	if v.Limit > 1000000000000 {
+		errs = append(errs, FieldError{Field: "limit", Message: "must be at most 1000000000000"})
+	}
+	if v.Amount != "" && !re7.MatchString(v.Amount) {
+		errs = append(errs, FieldError{Field: "amount", Message: "must match ^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,6})?$"})
+	}
+	if v.Currency != "" && !re8.MatchString(v.Currency) {
+		errs = append(errs, FieldError{Field: "currency", Message: "must match ^[A-Z]{3}$"})
+	}
+	if len(v.Thresholds) > 4 {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "must have at most 4 items"})
+	}
+	if !unique(v.Thresholds) {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "must not repeat an item"})
+	}
+	if anyBelow(v.Thresholds, 1) {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "every item must be at least 1"})
+	}
+	if anyAbove(v.Thresholds, 100) {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "every item must be at most 100"})
+	}
+	return errs
+}
+
+// LimitRuleLevel: Who owns the rule that recorded the event.
+type LimitRuleLevel string
+
+// Values of LimitRuleLevel.
+const (
+	LimitRuleLevelTenant   LimitRuleLevel = "tenant"
+	LimitRuleLevelPlatform LimitRuleLevel = "platform"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v LimitRuleLevel) Valid() bool {
+	switch v {
+	case LimitRuleLevelTenant, LimitRuleLevelPlatform:
+		return true
+	}
+	return false
+}
+
+// LimitRuleList is a schema of the administration API.
+type LimitRuleList struct {
+	Items []LimitRule `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredLimitRuleList = []string{"items"}
+
+var nestedLimitRuleList = []nestedMember{{Name: "items", Many: true, Required: requiredLimitRule, Nested: nestedLimitRule}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *LimitRuleList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// LimitRuleUpdate is a schema of the administration API.
+type LimitRuleUpdate struct {
+	Limit   Optional[int]    `json:"limit,omitzero"`
+	Amount  Optional[string] `json:"amount,omitzero"`
+	Enforce Optional[bool]   `json:"enforce,omitzero"`
+	// Percentages of the limit at which an event is recorded, ascending.
+	Thresholds Optional[[]int] `json:"thresholds,omitzero"`
+}
+
+var requiredLimitRuleUpdate = []string{}
+
+var nestedLimitRuleUpdate []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *LimitRuleUpdate) Validate() []FieldError {
+	var errs []FieldError
+	if v.Limit.Set {
+		if v.Limit.Value < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if v.Limit.Value > 1000000000000 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 1000000000000"})
+		}
+	}
+	if v.Amount.Set {
+		if !re7.MatchString(v.Amount.Value) {
+			errs = append(errs, FieldError{Field: "amount", Message: "must match ^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,6})?$"})
+		}
+	}
+	if v.Enforce.Set {
+	}
+	if v.Thresholds.Set {
+		if len(v.Thresholds.Value) > 4 {
+			errs = append(errs, FieldError{Field: "thresholds", Message: "must have at most 4 items"})
+		}
+		if !unique(v.Thresholds.Value) {
+			errs = append(errs, FieldError{Field: "thresholds", Message: "must not repeat an item"})
+		}
+		if anyBelow(v.Thresholds.Value, 1) {
+			errs = append(errs, FieldError{Field: "thresholds", Message: "every item must be at least 1"})
+		}
+		if anyAbove(v.Thresholds.Value, 100) {
+			errs = append(errs, FieldError{Field: "thresholds", Message: "every item must be at most 100"})
+		}
+	}
+	return errs
+}
+
+// LimitSubjectKind is an enumeration of the administration API.
+type LimitSubjectKind string
+
+// Values of LimitSubjectKind.
+const (
+	LimitSubjectKindTenant         LimitSubjectKind = "tenant"
+	LimitSubjectKindServiceAccount LimitSubjectKind = "service_account"
+	LimitSubjectKindKey            LimitSubjectKind = "key"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v LimitSubjectKind) Valid() bool {
+	switch v {
+	case LimitSubjectKindTenant, LimitSubjectKindServiceAccount, LimitSubjectKindKey:
+		return true
+	}
+	return false
+}
+
 // Me is a schema of the administration API.
 type Me struct {
 	PrincipalType PrincipalType `json:"principal_type"`
@@ -690,13 +1042,15 @@ type Model struct {
 	ContextWindow int `json:"context_window"`
 	// In tokens; 0 when not known.
 	MaxOutputTokens int `json:"max_output_tokens"`
+	// In tokens; 0 when not set.
+	DefaultOutputTokens int `json:"default_output_tokens"`
 	// An operator price is in place and imports leave the model alone.
 	PriceOverride bool      `json:"price_override"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
-var requiredModel = []string{"id", "provider", "api_family", "name", "ref", "upstream_id", "display_name", "description", "status", "availability", "capabilities", "context_window", "max_output_tokens", "price_override", "created_at", "updated_at"}
+var requiredModel = []string{"id", "provider", "api_family", "name", "ref", "upstream_id", "display_name", "description", "status", "availability", "capabilities", "context_window", "max_output_tokens", "default_output_tokens", "price_override", "created_at", "updated_at"}
 
 var nestedModel []nestedMember
 
@@ -715,7 +1069,7 @@ func (v *Model) Validate() []FieldError {
 	if !re1.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 	}
-	if !re7.MatchString(v.Ref) {
+	if !re9.MatchString(v.Ref) {
 		errs = append(errs, FieldError{Field: "ref", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 	}
 	if !v.Status.Valid() {
@@ -747,16 +1101,17 @@ func (v ModelAvailability) Valid() bool {
 
 // ModelCreate is a schema of the administration API.
 type ModelCreate struct {
-	Provider        string            `json:"provider"`
-	Name            string            `json:"name"`
-	UpstreamID      string            `json:"upstream_id,omitempty"`
-	DisplayName     string            `json:"display_name,omitempty"`
-	Description     string            `json:"description,omitempty"`
-	Status          ModelStatus       `json:"status,omitempty"`
-	Availability    ModelAvailability `json:"availability,omitempty"`
-	Capabilities    []string          `json:"capabilities,omitempty"`
-	ContextWindow   int               `json:"context_window,omitempty"`
-	MaxOutputTokens int               `json:"max_output_tokens,omitempty"`
+	Provider            string            `json:"provider"`
+	Name                string            `json:"name"`
+	UpstreamID          string            `json:"upstream_id,omitempty"`
+	DisplayName         string            `json:"display_name,omitempty"`
+	Description         string            `json:"description,omitempty"`
+	Status              ModelStatus       `json:"status,omitempty"`
+	Availability        ModelAvailability `json:"availability,omitempty"`
+	Capabilities        []string          `json:"capabilities,omitempty"`
+	ContextWindow       int               `json:"context_window,omitempty"`
+	MaxOutputTokens     int               `json:"max_output_tokens,omitempty"`
+	DefaultOutputTokens int               `json:"default_output_tokens,omitempty"`
 }
 
 var requiredModelCreate = []string{"provider", "name"}
@@ -772,7 +1127,7 @@ func (v *ModelCreate) Validate() []FieldError {
 	if !re1.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 	}
-	if v.UpstreamID != "" && !re8.MatchString(v.UpstreamID) {
+	if v.UpstreamID != "" && !re10.MatchString(v.UpstreamID) {
 		errs = append(errs, FieldError{Field: "upstream_id", Message: "must match ^[!-~]+$"})
 	}
 	if runeCount(v.UpstreamID) > 256 {
@@ -797,21 +1152,27 @@ func (v *ModelCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "capabilities", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Capabilities {
-		if !re9.MatchString(item) {
+		if !re11.MatchString(item) {
 			errs = append(errs, FieldError{Field: "capabilities", Message: "must match ^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$"})
 		}
 	}
-	if v.ContextWindow < 0 {
+	if v.ContextWindow != 0 && v.ContextWindow < 0 {
 		errs = append(errs, FieldError{Field: "context_window", Message: "must be at least 0"})
 	}
 	if v.ContextWindow > 100000000 {
 		errs = append(errs, FieldError{Field: "context_window", Message: "must be at most 100000000"})
 	}
-	if v.MaxOutputTokens < 0 {
+	if v.MaxOutputTokens != 0 && v.MaxOutputTokens < 0 {
 		errs = append(errs, FieldError{Field: "max_output_tokens", Message: "must be at least 0"})
 	}
 	if v.MaxOutputTokens > 100000000 {
 		errs = append(errs, FieldError{Field: "max_output_tokens", Message: "must be at most 100000000"})
+	}
+	if v.DefaultOutputTokens != 0 && v.DefaultOutputTokens < 0 {
+		errs = append(errs, FieldError{Field: "default_output_tokens", Message: "must be at least 0"})
+	}
+	if v.DefaultOutputTokens > 1000000 {
+		errs = append(errs, FieldError{Field: "default_output_tokens", Message: "must be at most 1000000"})
 	}
 	return errs
 }
@@ -903,7 +1264,7 @@ var nestedModelRestriction []nestedMember
 func (v *ModelRestriction) Validate() []FieldError {
 	var errs []FieldError
 	for _, item := range v.Models {
-		if !re7.MatchString(item) {
+		if !re9.MatchString(item) {
 			errs = append(errs, FieldError{Field: "models", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 		}
 	}
@@ -929,7 +1290,7 @@ func (v *ModelRestrictionSet) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "models", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Models {
-		if !re7.MatchString(item) {
+		if !re9.MatchString(item) {
 			errs = append(errs, FieldError{Field: "models", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 		}
 	}
@@ -967,6 +1328,8 @@ type ModelUpdate struct {
 	ContextWindow Optional[int] `json:"context_window,omitzero"`
 	// 0 clears it.
 	MaxOutputTokens Optional[int] `json:"max_output_tokens,omitzero"`
+	// 0 clears it.
+	DefaultOutputTokens Optional[int] `json:"default_output_tokens,omitzero"`
 }
 
 var requiredModelUpdate = []string{}
@@ -977,7 +1340,7 @@ var nestedModelUpdate []nestedMember
 func (v *ModelUpdate) Validate() []FieldError {
 	var errs []FieldError
 	if v.UpstreamID.Set {
-		if !re8.MatchString(v.UpstreamID.Value) {
+		if !re10.MatchString(v.UpstreamID.Value) {
 			errs = append(errs, FieldError{Field: "upstream_id", Message: "must match ^[!-~]+$"})
 		}
 		if runeCount(v.UpstreamID.Value) > 256 {
@@ -1012,7 +1375,7 @@ func (v *ModelUpdate) Validate() []FieldError {
 			errs = append(errs, FieldError{Field: "capabilities", Message: "must not repeat an item"})
 		}
 		for _, item := range v.Capabilities.Value {
-			if !re9.MatchString(item) {
+			if !re11.MatchString(item) {
 				errs = append(errs, FieldError{Field: "capabilities", Message: "must match ^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$"})
 			}
 		}
@@ -1031,6 +1394,14 @@ func (v *ModelUpdate) Validate() []FieldError {
 		}
 		if v.MaxOutputTokens.Value > 100000000 {
 			errs = append(errs, FieldError{Field: "max_output_tokens", Message: "must be at most 100000000"})
+		}
+	}
+	if v.DefaultOutputTokens.Set {
+		if v.DefaultOutputTokens.Value < 0 {
+			errs = append(errs, FieldError{Field: "default_output_tokens", Message: "must be at least 0"})
+		}
+		if v.DefaultOutputTokens.Value > 1000000 {
+			errs = append(errs, FieldError{Field: "default_output_tokens", Message: "must be at most 1000000"})
 		}
 	}
 	return errs
@@ -1094,7 +1465,7 @@ func (v *PlatformIssuer) Validate() []FieldError {
 	if runeCount(v.Description) > 200 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
 	}
-	if !re10.MatchString(v.Issuer) {
+	if !re12.MatchString(v.Issuer) {
 		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 	}
 	if runeCount(v.Issuer) > 255 {
@@ -1119,14 +1490,14 @@ func (v *PlatformIssuer) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Algorithms {
-		if !re11.MatchString(item) {
+		if !re13.MatchString(item) {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 		}
 	}
-	if !re12.MatchString(v.SubjectClaim) {
+	if !re14.MatchString(v.SubjectClaim) {
 		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
-	if !re12.MatchString(v.TenantClaim) {
+	if !re14.MatchString(v.TenantClaim) {
 		errs = append(errs, FieldError{Field: "tenant_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
 	if len(v.RequiredClaims) > 16 {
@@ -1177,7 +1548,7 @@ func (v *PlatformIssuerCreate) Validate() []FieldError {
 	if runeCount(v.Description) > 200 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
 	}
-	if !re10.MatchString(v.Issuer) {
+	if !re12.MatchString(v.Issuer) {
 		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 	}
 	if runeCount(v.Issuer) > 255 {
@@ -1202,14 +1573,14 @@ func (v *PlatformIssuerCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Algorithms {
-		if !re11.MatchString(item) {
+		if !re13.MatchString(item) {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 		}
 	}
-	if v.SubjectClaim != "" && !re12.MatchString(v.SubjectClaim) {
+	if v.SubjectClaim != "" && !re14.MatchString(v.SubjectClaim) {
 		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
-	if !re12.MatchString(v.TenantClaim) {
+	if !re14.MatchString(v.TenantClaim) {
 		errs = append(errs, FieldError{Field: "tenant_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
 	if len(v.RequiredClaims) > 16 {
@@ -1361,7 +1732,7 @@ func (v *PlatformIssuerUpdate) Validate() []FieldError {
 		}
 	}
 	if v.Issuer.Set {
-		if !re10.MatchString(v.Issuer.Value) {
+		if !re12.MatchString(v.Issuer.Value) {
 			errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 		}
 		if runeCount(v.Issuer.Value) > 255 {
@@ -1392,18 +1763,18 @@ func (v *PlatformIssuerUpdate) Validate() []FieldError {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 		}
 		for _, item := range v.Algorithms.Value {
-			if !re11.MatchString(item) {
+			if !re13.MatchString(item) {
 				errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 			}
 		}
 	}
 	if v.SubjectClaim.Set {
-		if !re12.MatchString(v.SubjectClaim.Value) {
+		if !re14.MatchString(v.SubjectClaim.Value) {
 			errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 		}
 	}
 	if v.TenantClaim.Set {
-		if !re12.MatchString(v.TenantClaim.Value) {
+		if !re14.MatchString(v.TenantClaim.Value) {
 			errs = append(errs, FieldError{Field: "tenant_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 		}
 	}
@@ -1444,7 +1815,7 @@ var nestedPlatformKey []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformKey) Validate() []FieldError {
 	var errs []FieldError
-	if !re13.MatchString(v.ID) {
+	if !re15.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^p[a-z2-7]{16}$"})
 	}
 	if !v.State.Valid() {
@@ -1505,6 +1876,140 @@ var nestedPlatformKeyList = []nestedMember{{Name: "items", Many: true, Required:
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformKeyList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// PlatformLimitRule is a schema of the administration API.
+type PlatformLimitRule struct {
+	ID string `json:"id"`
+	// The tenant the rule is for; empty for the default of every tenant.
+	Tenant string `json:"tenant"`
+	// Empty when the rule is not scoped to a provider.
+	Provider string `json:"provider"`
+	// Empty when the rule is not scoped to a model.
+	Model  string      `json:"model"`
+	Metric LimitMetric `json:"metric"`
+	// Requests or tokens; 0 for a cost metric.
+	Limit int `json:"limit"`
+	// The budget as a decimal; empty unless a cost metric.
+	Amount string `json:"amount"`
+	// Empty unless a cost metric.
+	Currency string `json:"currency"`
+	// false means the rule never refuses and only records its thresholds.
+	Enforce bool `json:"enforce"`
+	// Percentages of the limit at which an event is recorded, ascending.
+	Thresholds []int     `json:"thresholds"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+var requiredPlatformLimitRule = []string{"id", "tenant", "provider", "model", "metric", "limit", "amount", "currency", "enforce", "thresholds", "created_at", "updated_at"}
+
+var nestedPlatformLimitRule []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *PlatformLimitRule) Validate() []FieldError {
+	var errs []FieldError
+	if !re2.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !v.Metric.Valid() {
+		errs = append(errs, FieldError{Field: "metric", Message: "must be one of concurrent_requests, requests_per_minute, tokens_per_minute, requests_per_day, requests_per_month, tokens_per_day, tokens_per_month, cost_per_day, cost_per_month"})
+	}
+	if len(v.Thresholds) > 4 {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "must have at most 4 items"})
+	}
+	if !unique(v.Thresholds) {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "must not repeat an item"})
+	}
+	if anyBelow(v.Thresholds, 1) {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "every item must be at least 1"})
+	}
+	if anyAbove(v.Thresholds, 100) {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "every item must be at most 100"})
+	}
+	return errs
+}
+
+// PlatformLimitRuleCreate is a schema of the administration API.
+type PlatformLimitRuleCreate struct {
+	Tenant   string      `json:"tenant,omitempty"`
+	Provider string      `json:"provider,omitempty"`
+	Model    string      `json:"model,omitempty"`
+	Metric   LimitMetric `json:"metric"`
+	Limit    int         `json:"limit,omitempty"`
+	Amount   string      `json:"amount,omitempty"`
+	Currency string      `json:"currency,omitempty"`
+	Enforce  bool        `json:"enforce"`
+	// Percentages of the limit at which an event is recorded, ascending.
+	Thresholds []int `json:"thresholds,omitempty"`
+}
+
+var requiredPlatformLimitRuleCreate = []string{"metric"}
+
+var nestedPlatformLimitRuleCreate []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *PlatformLimitRuleCreate) Validate() []FieldError {
+	var errs []FieldError
+	if v.Tenant != "" && !re2.MatchString(v.Tenant) {
+		errs = append(errs, FieldError{Field: "tenant", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if v.Provider != "" && !re0.MatchString(v.Provider) {
+		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+	}
+	if v.Model != "" && !re1.MatchString(v.Model) {
+		errs = append(errs, FieldError{Field: "model", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
+	}
+	if !v.Metric.Valid() {
+		errs = append(errs, FieldError{Field: "metric", Message: "must be one of concurrent_requests, requests_per_minute, tokens_per_minute, requests_per_day, requests_per_month, tokens_per_day, tokens_per_month, cost_per_day, cost_per_month"})
+	}
+	if v.Limit != 0 && v.Limit < 1 {
+		errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+	}
+	if v.Limit > 1000000000000 {
+		errs = append(errs, FieldError{Field: "limit", Message: "must be at most 1000000000000"})
+	}
+	if v.Amount != "" && !re7.MatchString(v.Amount) {
+		errs = append(errs, FieldError{Field: "amount", Message: "must match ^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,6})?$"})
+	}
+	if v.Currency != "" && !re8.MatchString(v.Currency) {
+		errs = append(errs, FieldError{Field: "currency", Message: "must match ^[A-Z]{3}$"})
+	}
+	if len(v.Thresholds) > 4 {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "must have at most 4 items"})
+	}
+	if !unique(v.Thresholds) {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "must not repeat an item"})
+	}
+	if anyBelow(v.Thresholds, 1) {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "every item must be at least 1"})
+	}
+	if anyAbove(v.Thresholds, 100) {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "every item must be at most 100"})
+	}
+	return errs
+}
+
+// PlatformLimitRuleList is a schema of the administration API.
+type PlatformLimitRuleList struct {
+	Items []PlatformLimitRule `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredPlatformLimitRuleList = []string{"items"}
+
+var nestedPlatformLimitRuleList = []nestedMember{{Name: "items", Many: true, Required: requiredPlatformLimitRule, Nested: nestedPlatformLimitRule}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *PlatformLimitRuleList) Validate() []FieldError {
 	var errs []FieldError
 	for i := range v.Items {
 		for _, e := range v.Items[i].Validate() {
@@ -1726,7 +2231,7 @@ var nestedPriceOverride = []nestedMember{{Name: "rates", Many: true, Required: r
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceOverride) Validate() []FieldError {
 	var errs []FieldError
-	if !re14.MatchString(v.Currency) {
+	if !re8.MatchString(v.Currency) {
 		errs = append(errs, FieldError{Field: "currency", Message: "must match ^[A-Z]{3}$"})
 	}
 	if runeCount(v.Note) > 500 {
@@ -1771,7 +2276,7 @@ func (v *PriceRate) Validate() []FieldError {
 	if v.Threshold > 100000000 {
 		errs = append(errs, FieldError{Field: "threshold", Message: "must be at most 100000000"})
 	}
-	if !re15.MatchString(v.Rate) {
+	if !re16.MatchString(v.Rate) {
 		errs = append(errs, FieldError{Field: "rate", Message: "must match ^(0|[1-9][0-9]{0,6})(\\.[0-9]{1,12})?$"})
 	}
 	return errs
@@ -2005,7 +2510,7 @@ func (v *ProviderCreate) Validate() []FieldError {
 	if runeCount(v.Description) > 500 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 500"})
 	}
-	if v.DatasetProvider != "" && !re16.MatchString(v.DatasetProvider) {
+	if v.DatasetProvider != "" && !re17.MatchString(v.DatasetProvider) {
 		errs = append(errs, FieldError{Field: "dataset_provider", Message: "must match ^[a-z0-9][a-z0-9_.-]{0,62}$"})
 	}
 	if v.StreamUsageOption != "" && !v.StreamUsageOption.Valid() {
@@ -2066,7 +2571,7 @@ func (v *ProviderUpdate) Validate() []FieldError {
 	if v.Enabled.Set {
 	}
 	if v.DatasetProvider.Set {
-		if !re17.MatchString(v.DatasetProvider.Value) {
+		if !re18.MatchString(v.DatasetProvider.Value) {
 			errs = append(errs, FieldError{Field: "dataset_provider", Message: "must match ^([a-z0-9][a-z0-9_.-]{0,62})?$"})
 		}
 	}
@@ -2593,16 +3098,16 @@ func (v *TenantPlatformIssuer) Validate() []FieldError {
 	if !re3.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
-	if !re10.MatchString(v.Issuer) {
+	if !re12.MatchString(v.Issuer) {
 		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 	}
 	if runeCount(v.Issuer) > 255 {
 		errs = append(errs, FieldError{Field: "issuer", Message: "length must be at most 255"})
 	}
-	if !re12.MatchString(v.SubjectClaim) {
+	if !re14.MatchString(v.SubjectClaim) {
 		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
-	if !re12.MatchString(v.TenantClaim) {
+	if !re14.MatchString(v.TenantClaim) {
 		errs = append(errs, FieldError{Field: "tenant_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
 	return errs
@@ -2742,7 +3247,7 @@ func (v *TokenIssuer) Validate() []FieldError {
 	if runeCount(v.Description) > 200 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
 	}
-	if !re10.MatchString(v.Issuer) {
+	if !re12.MatchString(v.Issuer) {
 		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 	}
 	if runeCount(v.Issuer) > 255 {
@@ -2767,11 +3272,11 @@ func (v *TokenIssuer) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Algorithms {
-		if !re11.MatchString(item) {
+		if !re13.MatchString(item) {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 		}
 	}
-	if !re12.MatchString(v.SubjectClaim) {
+	if !re14.MatchString(v.SubjectClaim) {
 		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
 	if len(v.RequiredClaims) > 16 {
@@ -2818,7 +3323,7 @@ func (v *TokenIssuerCreate) Validate() []FieldError {
 	if runeCount(v.Description) > 200 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
 	}
-	if !re10.MatchString(v.Issuer) {
+	if !re12.MatchString(v.Issuer) {
 		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 	}
 	if runeCount(v.Issuer) > 255 {
@@ -2843,11 +3348,11 @@ func (v *TokenIssuerCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Algorithms {
-		if !re11.MatchString(item) {
+		if !re13.MatchString(item) {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 		}
 	}
-	if v.SubjectClaim != "" && !re12.MatchString(v.SubjectClaim) {
+	if v.SubjectClaim != "" && !re14.MatchString(v.SubjectClaim) {
 		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
 	if len(v.RequiredClaims) > 16 {
@@ -2917,7 +3422,7 @@ func (v *TokenIssuerUpdate) Validate() []FieldError {
 		}
 	}
 	if v.Issuer.Set {
-		if !re10.MatchString(v.Issuer.Value) {
+		if !re12.MatchString(v.Issuer.Value) {
 			errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 		}
 		if runeCount(v.Issuer.Value) > 255 {
@@ -2948,13 +3453,13 @@ func (v *TokenIssuerUpdate) Validate() []FieldError {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 		}
 		for _, item := range v.Algorithms.Value {
-			if !re11.MatchString(item) {
+			if !re13.MatchString(item) {
 				errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 			}
 		}
 	}
 	if v.SubjectClaim.Set {
-		if !re12.MatchString(v.SubjectClaim.Value) {
+		if !re14.MatchString(v.SubjectClaim.Value) {
 			errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 		}
 	}
@@ -3126,7 +3631,7 @@ var nestedVirtualKey []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *VirtualKey) Validate() []FieldError {
 	var errs []FieldError
-	if !re18.MatchString(v.ID) {
+	if !re19.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^t[a-z2-7]{16}$"})
 	}
 	if !re2.MatchString(v.TenantID) {
@@ -3139,7 +3644,7 @@ func (v *VirtualKey) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "credential_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	for _, item := range v.Models {
-		if !re7.MatchString(item) {
+		if !re9.MatchString(item) {
 			errs = append(errs, FieldError{Field: "models", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 		}
 	}
@@ -3185,7 +3690,7 @@ func (v *VirtualKeyCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "models", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Models {
-		if !re7.MatchString(item) {
+		if !re9.MatchString(item) {
 			errs = append(errs, FieldError{Field: "models", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 		}
 	}
@@ -3199,7 +3704,7 @@ func (v *VirtualKeyCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "scopes", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Scopes {
-		if !re19.MatchString(item) {
+		if !re20.MatchString(item) {
 			errs = append(errs, FieldError{Field: "scopes", Message: "must match ^[a-z_]+:[a-z_]+$"})
 		}
 	}
@@ -3273,8 +3778,13 @@ var Operations = []Operation{
 	{ID: "deletePlatformIssuerTenant", Method: "DELETE", Path: "/v1/platform-issuers/{issuer}/tenants/{tenant}", Permission: "platform_issuer:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re2}, {Name: "tenant", Pattern: re2}}},
 	{ID: "listPlatformKeys", Method: "GET", Path: "/v1/platform-keys", Permission: "platform_key:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "createPlatformKey", Method: "POST", Path: "/v1/platform-keys", Permission: "platform_key:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getPlatformKey", Method: "GET", Path: "/v1/platform-keys/{key}", Permission: "platform_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "key", Pattern: re13}}},
-	{ID: "revokePlatformKey", Method: "POST", Path: "/v1/platform-keys/{key}/revoke", Permission: "platform_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "key", Pattern: re13}}},
+	{ID: "getPlatformKey", Method: "GET", Path: "/v1/platform-keys/{key}", Permission: "platform_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "key", Pattern: re15}}},
+	{ID: "revokePlatformKey", Method: "POST", Path: "/v1/platform-keys/{key}/revoke", Permission: "platform_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "key", Pattern: re15}}},
+	{ID: "listPlatformLimits", Method: "GET", Path: "/v1/platform-limits", Permission: "platform_limit:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
+	{ID: "createPlatformLimit", Method: "POST", Path: "/v1/platform-limits", Permission: "platform_limit:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
+	{ID: "getPlatformLimit", Method: "GET", Path: "/v1/platform-limits/{rule}", Permission: "platform_limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "rule", Pattern: re2}}},
+	{ID: "updatePlatformLimit", Method: "PATCH", Path: "/v1/platform-limits/{rule}", Permission: "platform_limit:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "rule", Pattern: re2}}},
+	{ID: "deletePlatformLimit", Method: "DELETE", Path: "/v1/platform-limits/{rule}", Permission: "platform_limit:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "rule", Pattern: re2}}},
 	{ID: "listPriceImports", Method: "GET", Path: "/v1/price-imports", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "runPriceImport", Method: "POST", Path: "/v1/price-imports", Permission: "catalog:price", Status: 201, HasBody: true, PathParams: []PathParam{}},
 	{ID: "getPriceImport", Method: "GET", Path: "/v1/price-imports/{price_import}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "price_import", Pattern: re2}}},
@@ -3307,11 +3817,18 @@ var Operations = []Operation{
 	{ID: "revokeCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/revoke", Permission: "credential:delete", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
 	{ID: "replaceCredentialSecret", Method: "PUT", Path: "/v1/tenants/{tenant}/credentials/{credential}/secret", Permission: "credential:rotate", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
 	{ID: "setDefaultCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/set-default", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
+	{ID: "listLimitEvents", Method: "GET", Path: "/v1/tenants/{tenant}/limit-events", Permission: "limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "listLimits", Method: "GET", Path: "/v1/tenants/{tenant}/limits", Permission: "limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "createLimit", Method: "POST", Path: "/v1/tenants/{tenant}/limits", Permission: "limit:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "getLimit", Method: "GET", Path: "/v1/tenants/{tenant}/limits/{rule}", Permission: "limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "rule", Pattern: re2}}},
+	{ID: "updateLimit", Method: "PATCH", Path: "/v1/tenants/{tenant}/limits/{rule}", Permission: "limit:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "rule", Pattern: re2}}},
+	{ID: "deleteLimit", Method: "DELETE", Path: "/v1/tenants/{tenant}/limits/{rule}", Permission: "limit:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "rule", Pattern: re2}}},
 	{ID: "getModelRestriction", Method: "GET", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "setModelRestriction", Method: "PUT", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:restrict", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "clearModelRestriction", Method: "DELETE", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:restrict", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "listTenantModels", Method: "GET", Path: "/v1/tenants/{tenant}/models", Permission: "model:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "listTenantPlatformIssuers", Method: "GET", Path: "/v1/tenants/{tenant}/platform-issuers", Permission: "token_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "listTenantPlatformLimits", Method: "GET", Path: "/v1/tenants/{tenant}/platform-limits", Permission: "limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "reactivateTenant", Method: "POST", Path: "/v1/tenants/{tenant}/reactivate", Permission: "tenant:suspend", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "listServiceAccounts", Method: "GET", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "createServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
@@ -3332,8 +3849,8 @@ var Operations = []Operation{
 	{ID: "listUsageRecords", Method: "GET", Path: "/v1/tenants/{tenant}/usage-records", Permission: "usage:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "listVirtualKeys", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "createVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "getVirtualKey", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys/{key}", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "key", Pattern: re18}}},
-	{ID: "revokeVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys/{key}/revoke", Permission: "virtual_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "key", Pattern: re18}}},
+	{ID: "getVirtualKey", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys/{key}", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "key", Pattern: re19}}},
+	{ID: "revokeVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys/{key}/revoke", Permission: "virtual_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "key", Pattern: re19}}},
 }
 
 // GetMeInput is the input of getMe.
@@ -3490,6 +4007,36 @@ type GetPlatformKeyInput struct {
 type RevokePlatformKeyInput struct {
 	Key  string // path
 	Body Reason
+}
+
+// ListPlatformLimitsInput is the input of listPlatformLimits.
+type ListPlatformLimitsInput struct {
+	Limit     int         // query; the zero value means absent
+	Cursor    string      // query; the zero value means absent
+	Sort      Sort        // query; the zero value means absent
+	AppliesTo string      // query; the zero value means absent
+	Metric    LimitMetric // query; the zero value means absent
+}
+
+// CreatePlatformLimitInput is the input of createPlatformLimit.
+type CreatePlatformLimitInput struct {
+	Body PlatformLimitRuleCreate
+}
+
+// GetPlatformLimitInput is the input of getPlatformLimit.
+type GetPlatformLimitInput struct {
+	Rule string // path
+}
+
+// UpdatePlatformLimitInput is the input of updatePlatformLimit.
+type UpdatePlatformLimitInput struct {
+	Rule string // path
+	Body LimitRuleUpdate
+}
+
+// DeletePlatformLimitInput is the input of deletePlatformLimit.
+type DeletePlatformLimitInput struct {
+	Rule string // path
 }
 
 // ListPriceImportsInput is the input of listPriceImports.
@@ -3699,6 +4246,53 @@ type SetDefaultCredentialInput struct {
 	Body       Reason
 }
 
+// ListLimitEventsInput is the input of listLimitEvents.
+type ListLimitEventsInput struct {
+	Tenant string         // path
+	Limit  int            // query; the zero value means absent
+	Cursor string         // query; the zero value means absent
+	Kind   LimitEventKind // query; the zero value means absent
+	Rule   string         // query; the zero value means absent
+}
+
+// ListLimitsInput is the input of listLimits.
+type ListLimitsInput struct {
+	Tenant      string           // path
+	Limit       int              // query; the zero value means absent
+	Cursor      string           // query; the zero value means absent
+	Sort        Sort             // query; the zero value means absent
+	SubjectKind LimitSubjectKind // query; the zero value means absent
+	SubjectID   string           // query; the zero value means absent
+	Metric      LimitMetric      // query; the zero value means absent
+	Provider    string           // query; the zero value means absent
+	Model       string           // query; the zero value means absent
+}
+
+// CreateLimitInput is the input of createLimit.
+type CreateLimitInput struct {
+	Tenant string // path
+	Body   LimitRuleCreate
+}
+
+// GetLimitInput is the input of getLimit.
+type GetLimitInput struct {
+	Tenant string // path
+	Rule   string // path
+}
+
+// UpdateLimitInput is the input of updateLimit.
+type UpdateLimitInput struct {
+	Tenant string // path
+	Rule   string // path
+	Body   LimitRuleUpdate
+}
+
+// DeleteLimitInput is the input of deleteLimit.
+type DeleteLimitInput struct {
+	Tenant string // path
+	Rule   string // path
+}
+
 // GetModelRestrictionInput is the input of getModelRestriction.
 type GetModelRestrictionInput struct {
 	Tenant string // path
@@ -3729,6 +4323,13 @@ type ListTenantPlatformIssuersInput struct {
 	Limit  int    // query; the zero value means absent
 	Cursor string // query; the zero value means absent
 	Sort   Sort   // query; the zero value means absent
+}
+
+// ListTenantPlatformLimitsInput is the input of listTenantPlatformLimits.
+type ListTenantPlatformLimitsInput struct {
+	Tenant string // path
+	Limit  int    // query; the zero value means absent
+	Cursor string // query; the zero value means absent
 }
 
 // ReactivateTenantInput is the input of reactivateTenant.
@@ -3941,6 +4542,16 @@ type Server interface {
 	GetPlatformKey(ctx context.Context, in GetPlatformKeyInput) (*PlatformKey, error)
 	// RevokePlatformKey: POST /v1/platform-keys/{key}/revoke. Revoke a platform key
 	RevokePlatformKey(ctx context.Context, in RevokePlatformKeyInput) (*PlatformKey, error)
+	// ListPlatformLimits: GET /v1/platform-limits. List the ceilings the platform sets for tenants
+	ListPlatformLimits(ctx context.Context, in ListPlatformLimitsInput) (*PlatformLimitRuleList, error)
+	// CreatePlatformLimit: POST /v1/platform-limits. Create a ceiling for every tenant or for one
+	CreatePlatformLimit(ctx context.Context, in CreatePlatformLimitInput) (*PlatformLimitRule, error)
+	// GetPlatformLimit: GET /v1/platform-limits/{rule}. Read a platform ceiling
+	GetPlatformLimit(ctx context.Context, in GetPlatformLimitInput) (*PlatformLimitRule, error)
+	// UpdatePlatformLimit: PATCH /v1/platform-limits/{rule}. Change the value, the enforcement or the thresholds of a platform ceiling
+	UpdatePlatformLimit(ctx context.Context, in UpdatePlatformLimitInput) (*PlatformLimitRule, error)
+	// DeletePlatformLimit: DELETE /v1/platform-limits/{rule}. Delete a platform ceiling
+	DeletePlatformLimit(ctx context.Context, in DeletePlatformLimitInput) (*PlatformLimitRule, error)
 	// ListPriceImports: GET /v1/price-imports. List price imports, newest first
 	ListPriceImports(ctx context.Context, in ListPriceImportsInput) (*PriceImportList, error)
 	// RunPriceImport: POST /v1/price-imports. Import prices now
@@ -4005,6 +4616,18 @@ type Server interface {
 	ReplaceCredentialSecret(ctx context.Context, in ReplaceCredentialSecretInput) (*Credential, error)
 	// SetDefaultCredential: POST /v1/tenants/{tenant}/credentials/{credential}/set-default. Make a credential the default of its provider
 	SetDefaultCredential(ctx context.Context, in SetDefaultCredentialInput) (*Credential, error)
+	// ListLimitEvents: GET /v1/tenants/{tenant}/limit-events. List what the tenant's quotas and budgets recorded, newest first
+	ListLimitEvents(ctx context.Context, in ListLimitEventsInput) (*LimitEventList, error)
+	// ListLimits: GET /v1/tenants/{tenant}/limits. List the limit rules of a tenant
+	ListLimits(ctx context.Context, in ListLimitsInput) (*LimitRuleList, error)
+	// CreateLimit: POST /v1/tenants/{tenant}/limits. Create a limit rule of a tenant
+	CreateLimit(ctx context.Context, in CreateLimitInput) (*LimitRule, error)
+	// GetLimit: GET /v1/tenants/{tenant}/limits/{rule}. Read a limit rule
+	GetLimit(ctx context.Context, in GetLimitInput) (*LimitRule, error)
+	// UpdateLimit: PATCH /v1/tenants/{tenant}/limits/{rule}. Change the value, the enforcement or the thresholds of a limit rule
+	UpdateLimit(ctx context.Context, in UpdateLimitInput) (*LimitRule, error)
+	// DeleteLimit: DELETE /v1/tenants/{tenant}/limits/{rule}. Delete a limit rule
+	DeleteLimit(ctx context.Context, in DeleteLimitInput) (*LimitRule, error)
 	// GetModelRestriction: GET /v1/tenants/{tenant}/model-restriction. Read the model restriction of the tenant
 	GetModelRestriction(ctx context.Context, in GetModelRestrictionInput) (*ModelRestriction, error)
 	// SetModelRestriction: PUT /v1/tenants/{tenant}/model-restriction. Restrict the tenant to the models named
@@ -4015,6 +4638,8 @@ type Server interface {
 	ListTenantModels(ctx context.Context, in ListTenantModelsInput) (*TenantModelList, error)
 	// ListTenantPlatformIssuers: GET /v1/tenants/{tenant}/platform-issuers. List the platform-level token issuers that list the tenant
 	ListTenantPlatformIssuers(ctx context.Context, in ListTenantPlatformIssuersInput) (*TenantPlatformIssuerList, error)
+	// ListTenantPlatformLimits: GET /v1/tenants/{tenant}/platform-limits. List the ceilings the platform sets for a tenant
+	ListTenantPlatformLimits(ctx context.Context, in ListTenantPlatformLimitsInput) (*PlatformLimitRuleList, error)
 	// ReactivateTenant: POST /v1/tenants/{tenant}/reactivate. Reactivate a suspended tenant
 	ReactivateTenant(ctx context.Context, in ReactivateTenantInput) (*Tenant, error)
 	// ListServiceAccounts: GET /v1/tenants/{tenant}/service-accounts. List the service accounts of a tenant
@@ -4743,6 +5368,144 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		out, err := h.server.RevokePlatformKey(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "listPlatformLimits":
+		var in ListPlatformLimitsInput
+		q, err := parseQuery(r, "limit", "cursor", "sort", "applies_to", "metric")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		in.Sort = Sort("created_at")
+		if v, ok := q["sort"]; ok {
+			in.Sort = Sort(v)
+		}
+		if in.Sort != "" && !in.Sort.Valid() {
+			errs = append(errs, FieldError{Field: "sort", Message: "must be one of created_at, -created_at"})
+		}
+		if v, ok := q["applies_to"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "applies_to", Message: "must not be empty"})
+			}
+			in.AppliesTo = v
+		}
+		if in.AppliesTo != "" && runeCount(in.AppliesTo) < 1 {
+			errs = append(errs, FieldError{Field: "applies_to", Message: "length must be at least 1"})
+		}
+		if runeCount(in.AppliesTo) > 36 {
+			errs = append(errs, FieldError{Field: "applies_to", Message: "length must be at most 36"})
+		}
+		if v, ok := q["metric"]; ok {
+			in.Metric = LimitMetric(v)
+		}
+		if in.Metric != "" && !in.Metric.Valid() {
+			errs = append(errs, FieldError{Field: "metric", Message: "must be one of concurrent_requests, requests_per_minute, tokens_per_minute, requests_per_day, requests_per_month, tokens_per_day, tokens_per_month, cost_per_day, cost_per_month"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListPlatformLimits(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "createPlatformLimit":
+		var in CreatePlatformLimitInput
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		in.Body.Enforce = true
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredPlatformLimitRuleCreate, nestedPlatformLimitRuleCreate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.CreatePlatformLimit(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 201, out)
+	case "getPlatformLimit":
+		var in GetPlatformLimitInput
+		in.Rule = params["rule"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GetPlatformLimit(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "updatePlatformLimit":
+		var in UpdatePlatformLimitInput
+		in.Rule = params["rule"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredLimitRuleUpdate, nestedLimitRuleUpdate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.UpdatePlatformLimit(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "deletePlatformLimit":
+		var in DeletePlatformLimitInput
+		in.Rule = params["rule"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.DeletePlatformLimit(r.Context(), in)
 		if err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -5588,6 +6351,234 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		writeJSON(w, 200, out)
+	case "listLimitEvents":
+		var in ListLimitEventsInput
+		in.Tenant = params["tenant"]
+		q, err := parseQuery(r, "limit", "cursor", "kind", "rule")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		if v, ok := q["kind"]; ok {
+			in.Kind = LimitEventKind(v)
+		}
+		if in.Kind != "" && !in.Kind.Valid() {
+			errs = append(errs, FieldError{Field: "kind", Message: "must be one of threshold_reached, exhausted"})
+		}
+		if v, ok := q["rule"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "rule", Message: "must not be empty"})
+			}
+			in.Rule = v
+		}
+		if in.Rule != "" && !re2.MatchString(in.Rule) {
+			errs = append(errs, FieldError{Field: "rule", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListLimitEvents(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "listLimits":
+		var in ListLimitsInput
+		in.Tenant = params["tenant"]
+		q, err := parseQuery(r, "limit", "cursor", "sort", "subject_kind", "subject_id", "metric", "provider", "model")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		in.Sort = Sort("created_at")
+		if v, ok := q["sort"]; ok {
+			in.Sort = Sort(v)
+		}
+		if in.Sort != "" && !in.Sort.Valid() {
+			errs = append(errs, FieldError{Field: "sort", Message: "must be one of created_at, -created_at"})
+		}
+		if v, ok := q["subject_kind"]; ok {
+			in.SubjectKind = LimitSubjectKind(v)
+		}
+		if in.SubjectKind != "" && !in.SubjectKind.Valid() {
+			errs = append(errs, FieldError{Field: "subject_kind", Message: "must be one of tenant, service_account, key"})
+		}
+		if v, ok := q["subject_id"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "subject_id", Message: "must not be empty"})
+			}
+			in.SubjectID = v
+		}
+		if in.SubjectID != "" && runeCount(in.SubjectID) < 1 {
+			errs = append(errs, FieldError{Field: "subject_id", Message: "length must be at least 1"})
+		}
+		if runeCount(in.SubjectID) > 64 {
+			errs = append(errs, FieldError{Field: "subject_id", Message: "length must be at most 64"})
+		}
+		if v, ok := q["metric"]; ok {
+			in.Metric = LimitMetric(v)
+		}
+		if in.Metric != "" && !in.Metric.Valid() {
+			errs = append(errs, FieldError{Field: "metric", Message: "must be one of concurrent_requests, requests_per_minute, tokens_per_minute, requests_per_day, requests_per_month, tokens_per_day, tokens_per_month, cost_per_day, cost_per_month"})
+		}
+		if v, ok := q["provider"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "provider", Message: "must not be empty"})
+			}
+			in.Provider = v
+		}
+		if in.Provider != "" && !re0.MatchString(in.Provider) {
+			errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+		}
+		if v, ok := q["model"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "model", Message: "must not be empty"})
+			}
+			in.Model = v
+		}
+		if in.Model != "" && !re1.MatchString(in.Model) {
+			errs = append(errs, FieldError{Field: "model", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListLimits(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "createLimit":
+		var in CreateLimitInput
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		in.Body.Enforce = true
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredLimitRuleCreate, nestedLimitRuleCreate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.CreateLimit(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 201, out)
+	case "getLimit":
+		var in GetLimitInput
+		in.Tenant = params["tenant"]
+		in.Rule = params["rule"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GetLimit(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "updateLimit":
+		var in UpdateLimitInput
+		in.Tenant = params["tenant"]
+		in.Rule = params["rule"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredLimitRuleUpdate, nestedLimitRuleUpdate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.UpdateLimit(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "deleteLimit":
+		var in DeleteLimitInput
+		in.Tenant = params["tenant"]
+		in.Rule = params["rule"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.DeleteLimit(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
 	case "getModelRestriction":
 		var in GetModelRestrictionInput
 		in.Tenant = params["tenant"]
@@ -5738,6 +6729,52 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		out, err := h.server.ListTenantPlatformIssuers(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "listTenantPlatformLimits":
+		var in ListTenantPlatformLimitsInput
+		in.Tenant = params["tenant"]
+		q, err := parseQuery(r, "limit", "cursor")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListTenantPlatformLimits(r.Context(), in)
 		if err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -6749,6 +7786,71 @@ func (c *Client) RevokePlatformKey(ctx context.Context, in RevokePlatformKeyInpu
 	return &out, nil
 }
 
+// ListPlatformLimits calls GET /v1/platform-limits. List the ceilings the platform sets for tenants
+func (c *Client) ListPlatformLimits(ctx context.Context, in ListPlatformLimitsInput) (*PlatformLimitRuleList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	if in.Sort != "" {
+		q.Set("sort", string(in.Sort))
+	}
+	if in.AppliesTo != "" {
+		q.Set("applies_to", string(in.AppliesTo))
+	}
+	if in.Metric != "" {
+		q.Set("metric", string(in.Metric))
+	}
+	var out PlatformLimitRuleList
+	if err := c.do(ctx, "GET", "/v1/platform-limits", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreatePlatformLimit calls POST /v1/platform-limits. Create a ceiling for every tenant or for one
+func (c *Client) CreatePlatformLimit(ctx context.Context, in CreatePlatformLimitInput) (*PlatformLimitRule, error) {
+	q := url.Values{}
+	var out PlatformLimitRule
+	if err := c.do(ctx, "POST", "/v1/platform-limits", q, &in.Body, 201, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetPlatformLimit calls GET /v1/platform-limits/{rule}. Read a platform ceiling
+func (c *Client) GetPlatformLimit(ctx context.Context, in GetPlatformLimitInput) (*PlatformLimitRule, error) {
+	q := url.Values{}
+	var out PlatformLimitRule
+	if err := c.do(ctx, "GET", "/v1/platform-limits/"+url.PathEscape(in.Rule)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdatePlatformLimit calls PATCH /v1/platform-limits/{rule}. Change the value, the enforcement or the thresholds of a platform ceiling
+func (c *Client) UpdatePlatformLimit(ctx context.Context, in UpdatePlatformLimitInput) (*PlatformLimitRule, error) {
+	q := url.Values{}
+	var out PlatformLimitRule
+	if err := c.do(ctx, "PATCH", "/v1/platform-limits/"+url.PathEscape(in.Rule)+"", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeletePlatformLimit calls DELETE /v1/platform-limits/{rule}. Delete a platform ceiling
+func (c *Client) DeletePlatformLimit(ctx context.Context, in DeletePlatformLimitInput) (*PlatformLimitRule, error) {
+	q := url.Values{}
+	var out PlatformLimitRule
+	if err := c.do(ctx, "DELETE", "/v1/platform-limits/"+url.PathEscape(in.Rule)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // ListPriceImports calls GET /v1/price-imports. List price imports, newest first
 func (c *Client) ListPriceImports(ctx context.Context, in ListPriceImportsInput) (*PriceImportList, error) {
 	q := url.Values{}
@@ -7138,6 +8240,102 @@ func (c *Client) SetDefaultCredential(ctx context.Context, in SetDefaultCredenti
 	return &out, nil
 }
 
+// ListLimitEvents calls GET /v1/tenants/{tenant}/limit-events. List what the tenant's quotas and budgets recorded, newest first
+func (c *Client) ListLimitEvents(ctx context.Context, in ListLimitEventsInput) (*LimitEventList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	if in.Kind != "" {
+		q.Set("kind", string(in.Kind))
+	}
+	if in.Rule != "" {
+		q.Set("rule", string(in.Rule))
+	}
+	var out LimitEventList
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/limit-events", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListLimits calls GET /v1/tenants/{tenant}/limits. List the limit rules of a tenant
+func (c *Client) ListLimits(ctx context.Context, in ListLimitsInput) (*LimitRuleList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	if in.Sort != "" {
+		q.Set("sort", string(in.Sort))
+	}
+	if in.SubjectKind != "" {
+		q.Set("subject_kind", string(in.SubjectKind))
+	}
+	if in.SubjectID != "" {
+		q.Set("subject_id", string(in.SubjectID))
+	}
+	if in.Metric != "" {
+		q.Set("metric", string(in.Metric))
+	}
+	if in.Provider != "" {
+		q.Set("provider", string(in.Provider))
+	}
+	if in.Model != "" {
+		q.Set("model", string(in.Model))
+	}
+	var out LimitRuleList
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/limits", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreateLimit calls POST /v1/tenants/{tenant}/limits. Create a limit rule of a tenant
+func (c *Client) CreateLimit(ctx context.Context, in CreateLimitInput) (*LimitRule, error) {
+	q := url.Values{}
+	var out LimitRule
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/limits", q, &in.Body, 201, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetLimit calls GET /v1/tenants/{tenant}/limits/{rule}. Read a limit rule
+func (c *Client) GetLimit(ctx context.Context, in GetLimitInput) (*LimitRule, error) {
+	q := url.Values{}
+	var out LimitRule
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/limits/"+url.PathEscape(in.Rule)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateLimit calls PATCH /v1/tenants/{tenant}/limits/{rule}. Change the value, the enforcement or the thresholds of a limit rule
+func (c *Client) UpdateLimit(ctx context.Context, in UpdateLimitInput) (*LimitRule, error) {
+	q := url.Values{}
+	var out LimitRule
+	if err := c.do(ctx, "PATCH", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/limits/"+url.PathEscape(in.Rule)+"", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeleteLimit calls DELETE /v1/tenants/{tenant}/limits/{rule}. Delete a limit rule
+func (c *Client) DeleteLimit(ctx context.Context, in DeleteLimitInput) (*LimitRule, error) {
+	q := url.Values{}
+	var out LimitRule
+	if err := c.do(ctx, "DELETE", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/limits/"+url.PathEscape(in.Rule)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // GetModelRestriction calls GET /v1/tenants/{tenant}/model-restriction. Read the model restriction of the tenant
 func (c *Client) GetModelRestriction(ctx context.Context, in GetModelRestrictionInput) (*ModelRestriction, error) {
 	q := url.Values{}
@@ -7201,6 +8399,22 @@ func (c *Client) ListTenantPlatformIssuers(ctx context.Context, in ListTenantPla
 	}
 	var out TenantPlatformIssuerList
 	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/platform-issuers", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListTenantPlatformLimits calls GET /v1/tenants/{tenant}/platform-limits. List the ceilings the platform sets for a tenant
+func (c *Client) ListTenantPlatformLimits(ctx context.Context, in ListTenantPlatformLimitsInput) (*PlatformLimitRuleList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	var out PlatformLimitRuleList
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/platform-limits", q, nil, 200, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

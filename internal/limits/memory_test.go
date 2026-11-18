@@ -3,9 +3,15 @@ package limits
 import (
 	"context"
 	"errors"
+	"fmt"
+	"reflect"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/pandokos/pandokos/internal/pricing"
 )
 
 var bg = context.Background()
@@ -47,7 +53,7 @@ func TestReserveAtomic(t *testing.T) {
 			before := headrooms(t, m, all[:i])
 			outBefore := m.Outstanding()
 			ref := mustRefuse(t, m, request("r", time.Minute, 10, all...))
-			if ref.Limit != all[i] {
+			if !reflect.DeepEqual(ref.Limit, all[i]) {
 				t.Fatalf("case %d: refused by %+v, want the first without room %+v", i, ref.Limit, all[i])
 			}
 			if m.Outstanding() != outBefore {
@@ -112,7 +118,7 @@ func TestReserveAtomic(t *testing.T) {
 		_ = m.Settle(bg, res, Amounts{Tokens: 100})
 		clk.advance(10 * time.Second) // 40 s after the request, 10 s after the tokens
 		ref := mustRefuse(t, m, request("three", time.Hour, 50, req, tok))
-		if ref.Limit != req {
+		if !reflect.DeepEqual(ref.Limit, req) {
 			t.Fatalf("named %+v, want the request limit first", ref.Limit)
 		}
 		if ref.RetryAfter != 51*time.Second {
@@ -460,7 +466,7 @@ func TestRetryAfter(t *testing.T) {
 		res := mustReserve(t, m, request("fill", time.Hour, 70, toks))
 		_ = m.Settle(bg, res, Amounts{Tokens: 70})
 		ref := mustRefuse(t, m, request("r", time.Hour, 50, toks))
-		if ref.Remaining != 30 || ref.Limit != toks {
+		if ref.Remaining != 30 || !reflect.DeepEqual(ref.Limit, toks) {
 			t.Fatalf("refusal %+v", ref)
 		}
 	})
@@ -482,7 +488,7 @@ func TestRetryAfter(t *testing.T) {
 		m, _ := newMemory(t, clk)
 		mustReserve(t, m, request("a", time.Hour, 0, conc))
 		ref := mustRefuse(t, m, request("b", time.Hour, 0, conc))
-		if ref.RetryAfter != time.Second || ref.Reset != 0 || ref.Remaining != 0 || ref.Limit != conc {
+		if ref.RetryAfter != time.Second || ref.Reset != 0 || ref.Remaining != 0 || !reflect.DeepEqual(ref.Limit, conc) {
 			t.Fatalf("refusal %+v", ref)
 		}
 	})
@@ -589,5 +595,248 @@ func TestDuplicateCounterKeys(t *testing.T) {
 				t.Fatalf("a rejected request left %d reservations and %d counters", m.Outstanding(), m.Counters())
 			}
 		})
+	}
+}
+
+// TestMemoryRacePeriods is T-655: reservations and settlements across a day boundary while the
+// cut is folded forward, counters are rebased and loaded, and the store is swept. Nothing races
+// and nothing is lost or counted twice: at the end every counter holds exactly what was settled.
+func TestMemoryRacePeriods(t *testing.T) {
+	clk := newClock()
+	clk.t = at(2026, 11, 17, 23, 55, 0)
+	m, _ := newMemory(t, clk)
+	tn := tid(1)
+	day17 := utcCal.Of(PerDay, clk.now())
+	day18 := utcCal.Of(PerDay, day17.End)
+	m.SetCut(tn, day17.Start) // the cut is the start of the first period: nothing needs a load
+
+	type rec struct {
+		start  time.Time
+		tokens int64
+	}
+	var (
+		mu       sync.Mutex // the writer's side: records settled, requests in flight
+		recs     []rec
+		inflight = map[int]time.Time{}
+		adm      sync.Mutex // serializes fold, rebase and load, as the mutex of a tenant does
+	)
+	limitsAt := func(start time.Time) []Limit {
+		p := utcCal.Of(PerDay, start)
+		return []Limit{
+			perLimit(tn, SubjectTenant, "", RequestsPerDay, 1<<40, p),
+			perLimit(tn, SubjectTenant, "", TokensPerDay, 1<<40, p),
+		}
+	}
+	sumRecs := func(from, to time.Time) UsageGroup {
+		var g UsageGroup
+		for _, r := range recs {
+			if !r.start.Before(from) && r.start.Before(to) {
+				g.Requests++
+				g.Tokens += r.tokens
+			}
+		}
+		return g
+	}
+
+	// Both counters exist from the start (a reconciler would have loaded them).
+	m.Load(tn, day17, limitsAt(day17.Start), nil)
+	m.Load(tn, day18, limitsAt(day18.Start), nil)
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	var workers sync.WaitGroup
+	for w := range 64 {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			rng := rngOf(uint64(w), 1)
+			for i := range 40 {
+				id := w*1000 + i
+				mu.Lock()
+				start := clk.now()
+				inflight[id] = start
+				mu.Unlock()
+				ls := limitsAt(start)
+				est := int64(1 + rng.IntN(50))
+				res, ref, err := m.Reserve(context.Background(), periodReq(fmt.Sprintf("w%d-%d", w, i), start, time.Hour, est, pricing.Cost{}, ls...))
+				if err != nil || ref != nil {
+					t.Errorf("reserve: refusal %v, error %v", ref, err)
+					return
+				}
+				runtime.Gosched()
+				actual := int64(rng.IntN(120))
+				if err := m.Settle(context.Background(), res, Amounts{Tokens: actual}); err != nil {
+					t.Errorf("settle: %v", err)
+					return
+				}
+				mu.Lock()
+				recs = append(recs, rec{start, actual})
+				delete(inflight, id) // after the record: the cut may pass a minute only when its records are all there
+				mu.Unlock()
+			}
+		}()
+	}
+	// The clock crosses midnight while the workers run.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for range 30 {
+			clk.advance(20 * time.Second)
+			runtime.Gosched()
+		}
+	}()
+	foldTo := func() {
+		adm.Lock()
+		defer adm.Unlock()
+		mu.Lock()
+		cut, _ := m.Cut(tn)
+		limit := clk.now()
+		for _, s := range inflight {
+			if s.Before(limit) {
+				limit = s
+			}
+		}
+		newCut := limit.Truncate(time.Minute)
+		var pieces []Piece
+		if newCut.After(cut) && !cut.IsZero() {
+			for from := cut; from.Before(newCut); {
+				to := utcCal.Of(PerDay, from).End
+				if !to.After(from) {
+					break // no calendar: the test fails on its assertions, not by running forever
+				}
+				if to.After(newCut) {
+					to = newCut
+				}
+				g := sumRecs(from, to)
+				pieces = append(pieces, Piece{From: from, To: to, Rows: []UsageGroup{g}})
+				from = to
+			}
+		}
+		mu.Unlock()
+		if newCut.After(cut) {
+			m.Fold(tn, pieces, newCut)
+		}
+	}
+	rebase := func() {
+		adm.Lock()
+		defer adm.Unlock()
+		mu.Lock()
+		cut, _ := m.Cut(tn)
+		g17, g18 := sumRecs(day17.Start, minTime(cut, day17.End)), sumRecs(day18.Start, cut)
+		mu.Unlock()
+		m.Rebase(tn, day17, []UsageGroup{g17})
+		if cut.After(day18.Start) {
+			m.Rebase(tn, day18, []UsageGroup{g18})
+		}
+	}
+	for g := range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				switch g % 4 {
+				case 0:
+					foldTo()
+				case 1:
+					rebase()
+				case 2:
+					adm.Lock()
+					m.Load(tn, day17, limitsAt(day17.Start), []UsageGroup{{Requests: 1 << 30, Tokens: 1 << 30}}) // counters exist: untouched
+					adm.Unlock()
+					m.Missing(limitsAt(clk.now()))
+					m.Counted(limitsAt(day17.Start)[0])
+				default:
+					m.Sweep(clk.now())
+				}
+				runtime.Gosched()
+			}
+		}()
+	}
+	workers.Wait()
+	close(stop)
+	wg.Wait()
+	foldTo()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if got := m.Outstanding(); got != 0 {
+		t.Fatalf("%d reservations outstanding", got)
+	}
+	for _, p := range []Period{day17, day18} {
+		want := sumRecs(p.Start, p.End)
+		ls := limitsAt(p.Start)
+		if c := counted(t, m, ls[0]); c.N != want.Requests {
+			t.Errorf("requests of %s: counted %d, settled %d", p.Start, c.N, want.Requests)
+		}
+		if c := counted(t, m, ls[1]); c.N != want.Tokens {
+			t.Errorf("tokens of %s: counted %d, settled %d", p.Start, c.N, want.Tokens)
+		}
+	}
+	if len(recs) != 64*40 {
+		t.Errorf("%d records, want %d", len(recs), 64*40)
+	}
+}
+
+func minTime(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+	return b
+}
+
+// TestReserveManyLimits is part of T-620 (sprint 5.2): a request has up to 81 limits (three subjects,
+// three scopes, nine metrics) and the check for a repeated counter scales to them.
+func TestReserveManyLimits(t *testing.T) {
+	e := newPeriodsEnv(t)
+	var ls []Limit
+	for _, k := range SubjectKinds() {
+		id := map[SubjectKind]string{SubjectTenant: "", SubjectServiceAccount: "sa-1", SubjectKey: "key-1"}[k]
+		for _, scope := range [][2]string{{"", ""}, {"openai", ""}, {"openai", "gpt-4"}} {
+			for _, m := range Metrics() {
+				l := lim(e.tn, k, id, m, 1_000_000)
+				l.Provider, l.Model = scope[0], scope[1]
+				if kind, ok := m.Period(); ok {
+					l.Period = utcCal.Of(kind, e.clk.now())
+				}
+				if m.Cost() {
+					l.Currency = "EUR"
+				}
+				ls = append(ls, l)
+			}
+		}
+	}
+	if len(ls) != 81 {
+		t.Fatalf("%d limits", len(ls))
+	}
+	var months []Limit
+	for _, l := range ls {
+		if l.Period == e.mon {
+			months = append(months, l)
+		}
+	}
+	e.loadMonth(months...)
+	res := mustReserve(t, e.m, periodReq("many", e.clk.now(), time.Hour, 10, known("EUR", dec(t, "0.5")), ls...))
+	if err := e.m.Settle(context.Background(), res, Amounts{Tokens: 10, Cost: known("EUR", dec(t, "0.5"))}); err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range ls {
+		if k, ok := l.Metric.Period(); ok && k == PerDay && l.Metric == RequestsPerDay {
+			if c := counted(t, e.m, l); c.N != 1 {
+				t.Errorf("%s %s/%s counts %d, want 1", l.Subject, l.Provider, l.Model, c.N)
+			}
+		}
+	}
+	// A repeated counter anywhere among the 81 is an error, and nothing is reserved.
+	dup := append(append([]Limit(nil), ls...), ls[40])
+	if _, _, err := e.m.Reserve(context.Background(), periodReq("dup", e.clk.now(), time.Hour, 10, known("EUR", dec(t, "0.5")), dup...)); err == nil {
+		t.Error("a request that repeats a counter was accepted")
+	}
+	if e.m.Outstanding() != 0 {
+		t.Errorf("%d reservations outstanding", e.m.Outstanding())
 	}
 }

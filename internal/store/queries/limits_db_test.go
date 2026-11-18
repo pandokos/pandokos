@@ -4,6 +4,7 @@ import (
 	"context"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/queries"
@@ -66,10 +67,18 @@ func limitStatements(c context.Context, t *testing.T, admin, gateway *store.DB, 
 		if err != nil {
 			return err
 		}
+		// The identifiers are generated: the want carries those that were read. Since sprint 5.2 a
+		// rule also has a scope, a currency, an enforcement and thresholds; the rows above leave
+		// them at their defaults.
 		want := []queries.ListLimitRulesRow{
-			{SubjectKind: "key", SubjectID: "k1", Metric: "concurrent_requests", LimitValue: 4},
-			{SubjectKind: "key", SubjectID: "k1", Metric: "requests_per_minute", LimitValue: 60},
-			{SubjectKind: "tenant", SubjectID: "", Metric: "tokens_per_minute", LimitValue: 1000000},
+			{SubjectKind: "key", SubjectID: "k1", Metric: "concurrent_requests", LimitValue: 4, Enforce: true, Thresholds: []int16{}},
+			{SubjectKind: "key", SubjectID: "k1", Metric: "requests_per_minute", LimitValue: 60, Enforce: true, Thresholds: []int16{}},
+			{SubjectKind: "tenant", SubjectID: "", Metric: "tokens_per_minute", LimitValue: 1000000, Enforce: true, Thresholds: []int16{}},
+		}
+		for i := range want {
+			if i < len(rules) {
+				want[i].ID = rules[i].ID
+			}
 		}
 		if !reflect.DeepEqual(rules, want) {
 			t.Errorf("ListLimitRules: %+v, want %+v", rules, want)
@@ -80,11 +89,185 @@ func limitStatements(c context.Context, t *testing.T, admin, gateway *store.DB, 
 			return err
 		}
 		wantPlatform := []queries.ListPlatformLimitRulesRow{
-			{IsDefault: true, Metric: "concurrent_requests", LimitValue: 100},
-			{IsDefault: false, Metric: "requests_per_minute", LimitValue: 500},
+			{IsDefault: true, Metric: "concurrent_requests", LimitValue: 100, Enforce: true, Thresholds: []int16{}},
+			{IsDefault: false, Metric: "requests_per_minute", LimitValue: 500, Enforce: true, Thresholds: []int16{}},
+		}
+		for i := range wantPlatform {
+			if i < len(platform) {
+				wantPlatform[i].ID = platform[i].ID
+			}
 		}
 		if !reflect.DeepEqual(platform, wantPlatform) {
 			t.Errorf("ListPlatformLimitRules: %+v, want %+v", platform, wantPlatform)
+		}
+		return nil
+	}))
+}
+
+// noID is the identifier a paged statement is given when no cursor is: the parameter is a uuid and
+// is cast even when the cursor is not used.
+const noID = "00000000-0000-0000-0000-000000000000"
+
+// quotaStatements covers the statements of sprint 5.2: the administration of limit rules and of
+// platform ceilings, the limit events, and the ledger aggregate the counters are rebuilt from.
+func quotaStatements(c context.Context, t *testing.T, admin, gateway *store.DB, tid tenant.ID, called map[string]bool) {
+	t.Helper()
+	must := func(what string, err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatalf("%s: %v", what, err)
+		}
+	}
+	fail := func(format string, args ...any) { t.Helper(); t.Errorf(format, args...) }
+	var rule queries.CreateLimitRuleRow
+	var before int64
+
+	must("tenant rules administered", admin.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
+		q := queries.New(tx)
+		called["LockLimitRules"] = true
+		if err := q.LockLimitRules(c); err != nil {
+			return err
+		}
+		called["CountLimitRules"] = true
+		var err error
+		if before, err = q.CountLimitRules(c); err != nil {
+			return err
+		}
+		called["LimitSubjectExists"] = true
+		if ok, err := q.LimitSubjectExists(c, queries.LimitSubjectExistsParams{SubjectKind: "tenant"}); err != nil || !ok {
+			fail("the tenant subject: %v %v", ok, err)
+		}
+		if ok, err := q.LimitSubjectExists(c, queries.LimitSubjectExistsParams{SubjectKind: "service_account", SubjectID: "0192f0f0-0000-7000-8000-000000000001"}); err != nil || ok {
+			fail("a missing service account: %v %v", ok, err)
+		}
+		if ok, err := q.LimitSubjectExists(c, queries.LimitSubjectExistsParams{SubjectKind: "key", SubjectID: "tmissingkeyid00000"}); err != nil || ok {
+			fail("a missing key: %v %v", ok, err)
+		}
+		called["LimitScopeExists"] = true
+		if ok, err := q.LimitScopeExists(c, queries.LimitScopeExistsParams{Provider: "no-such-provider", Model: ""}); err != nil || ok {
+			fail("a missing provider: %v %v", ok, err)
+		}
+		called["CreateLimitRule"] = true
+		rule, err = q.CreateLimitRule(c, queries.CreateLimitRuleParams{SubjectKind: "tenant", Metric: "cost_per_day", LimitValue: 250500000,
+			Currency: "EUR", Enforce: false, Thresholds: []int16{80, 100}})
+		if err != nil {
+			return err
+		}
+		if rule.ID == "" || rule.Metric != "cost_per_day" || rule.LimitValue != 250500000 || rule.Currency != "EUR" || rule.Enforce || !reflect.DeepEqual(rule.Thresholds, []int16{80, 100}) {
+			fail("CreateLimitRule: %+v", rule)
+		}
+		called["GetLimitRule"] = true
+		got, err := q.GetLimitRule(c, rule.ID)
+		if err != nil || got.ID != rule.ID || got.Currency != "EUR" {
+			fail("GetLimitRule: %+v %v", got, err)
+		}
+		called["LockLimitRule"] = true
+		if l, err := q.LockLimitRule(c, rule.ID); err != nil || l.ID != rule.ID {
+			fail("LockLimitRule: %+v %v", l, err)
+		}
+		called["ListLimitRulesPage"] = true
+		page, err := q.ListLimitRulesPage(c, queries.ListLimitRulesPageParams{Metric: "cost_per_day", Sort: "created_at", AfterID: noID, PageSize: 10})
+		if err != nil || len(page) != 1 || page[0].ID != rule.ID {
+			fail("ListLimitRulesPage: %+v %v", page, err)
+		}
+		called["UpdateLimitRule"] = true
+		up, err := q.UpdateLimitRule(c, queries.UpdateLimitRuleParams{ID: rule.ID, LimitValue: 300000000, Enforce: true, Thresholds: []int16{}})
+		if err != nil || up.LimitValue != 300000000 || !up.Enforce || len(up.Thresholds) != 0 {
+			fail("UpdateLimitRule: %+v %v", up, err)
+		}
+		if n, err := q.CountLimitRules(c); err != nil || n != before+1 {
+			fail("CountLimitRules after the insert: %d %v, want %d", n, err, before+1)
+		}
+		called["DeleteLimitRule"] = true
+		del, err := q.DeleteLimitRule(c, rule.ID)
+		if err != nil || del.ID != rule.ID || del.LimitValue != 300000000 {
+			fail("DeleteLimitRule: %+v %v", del, err)
+		}
+		if n, err := q.CountLimitRules(c); err != nil || n != before {
+			fail("CountLimitRules after the delete: %d %v, want %d", n, err, before)
+		}
+		return nil
+	}))
+
+	var platform queries.CreatePlatformLimitRuleRow
+	must("platform ceilings administered", admin.Platform(c, func(c context.Context, tx store.Tx) error {
+		q := queries.New(tx)
+		called["CreatePlatformLimitRule"] = true
+		var err error
+		platform, err = q.CreatePlatformLimitRule(c, queries.CreatePlatformLimitRuleParams{Metric: "tokens_per_month", LimitValue: 5000000, Enforce: true, Thresholds: []int16{90}})
+		if err != nil {
+			return err
+		}
+		if platform.ID == "" || platform.TenantID != nil || platform.Metric != "tokens_per_month" || !reflect.DeepEqual(platform.Thresholds, []int16{90}) {
+			fail("CreatePlatformLimitRule: %+v", platform)
+		}
+		called["GetPlatformLimitRule"] = true
+		if g, err := q.GetPlatformLimitRule(c, platform.ID); err != nil || g.ID != platform.ID {
+			fail("GetPlatformLimitRule: %+v %v", g, err)
+		}
+		called["LockPlatformLimitRule"] = true
+		if l, err := q.LockPlatformLimitRule(c, platform.ID); err != nil || l.ID != platform.ID {
+			fail("LockPlatformLimitRule: %+v %v", l, err)
+		}
+		called["ListPlatformLimitRulesPage"] = true
+		page, err := q.ListPlatformLimitRulesPage(c, queries.ListPlatformLimitRulesPageParams{AppliesTo: "default", Metric: "tokens_per_month", Sort: "-created_at", AfterID: noID, PageSize: 10})
+		if err != nil || len(page) != 1 || page[0].ID != platform.ID {
+			fail("ListPlatformLimitRulesPage: %+v %v", page, err)
+		}
+		return nil
+	}))
+
+	must("a tenant sees the ceiling and records an event", gateway.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
+		q := queries.New(tx)
+		called["InsertLimitEvent"] = true
+		start := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+		ev := queries.InsertLimitEventParams{Kind: "threshold_reached", RuleID: platform.ID, RuleLevel: "platform", SubjectKind: "tenant", Metric: "tokens_per_month",
+			PeriodStart: start, PeriodEnd: start.AddDate(0, 1, 0), Percent: 90, LimitValue: 5000000, Observed: "4500000"}
+		for i, want := range []int64{1, 0} { // the second insert of the same event is left alone
+			if n, err := q.InsertLimitEvent(c, ev); err != nil || n != want {
+				fail("InsertLimitEvent %d: %d %v, want %d", i, n, err, want)
+			}
+		}
+		return nil
+	}))
+	must("the ceiling and the event are read", admin.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
+		q := queries.New(tx)
+		called["ListTenantPlatformLimitRules"] = true
+		seen, err := q.ListTenantPlatformLimitRules(c, queries.ListTenantPlatformLimitRulesParams{AfterID: noID, PageSize: 50})
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, r := range seen {
+			found = found || (r.ID == platform.ID && r.IsDefault)
+		}
+		if !found {
+			fail("ListTenantPlatformLimitRules does not show the default: %+v", seen)
+		}
+		called["ListLimitEvents"] = true
+		evs, err := q.ListLimitEvents(c, queries.ListLimitEventsParams{Kind: "threshold_reached", RuleID: platform.ID, AfterID: noID, PageSize: 10})
+		if err != nil || len(evs) != 1 || evs[0].Percent != 90 || evs[0].Observed != "4500000.000000000000000000" {
+			fail("ListLimitEvents: %+v %v", evs, err)
+		}
+		called["AggregateUsageForLimits"] = true
+		now := time.Now().UTC()
+		if _, err := q.AggregateUsageForLimits(c, queries.AggregateUsageForLimitsParams{LiveFrom: now.Add(-time.Hour), FromTime: now.Add(-24 * time.Hour), ToTime: now}); err != nil {
+			return err
+		}
+		return nil
+	}))
+
+	must("the ceiling is changed and removed", admin.Platform(c, func(c context.Context, tx store.Tx) error {
+		q := queries.New(tx)
+		called["UpdatePlatformLimitRule"] = true
+		up, err := q.UpdatePlatformLimitRule(c, queries.UpdatePlatformLimitRuleParams{ID: platform.ID, LimitValue: 6000000, Enforce: false, Thresholds: []int16{50}})
+		if err != nil || up.LimitValue != 6000000 || up.Enforce {
+			fail("UpdatePlatformLimitRule: %+v %v", up, err)
+		}
+		called["DeletePlatformLimitRule"] = true
+		del, err := q.DeletePlatformLimitRule(c, platform.ID)
+		if err != nil || del.ID != platform.ID {
+			fail("DeletePlatformLimitRule: %+v %v", del, err)
 		}
 		return nil
 	}))

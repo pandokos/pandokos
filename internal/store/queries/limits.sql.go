@@ -7,27 +7,593 @@ package queries
 
 import (
 	"context"
+	"time"
 )
+
+const aggregateUsageForLimits = `-- name: AggregateUsageForLimits :many
+
+SELECT (CASE WHEN u.started_at >= $1::timestamptz
+             THEN floor(extract(epoch FROM u.started_at) / 60)::bigint ELSE 0 END)::bigint AS minute,
+       u.principal_id, u.key_id, u.provider, u.model, COALESCE(u.currency, '')::text AS currency,
+       count(*) FILTER (WHERE u.credential_id IS NOT NULL)::bigint AS requests,
+       COALESCE(sum(COALESCE(u.input_tokens, u.estimated_input_tokens, 0)
+                    + COALESCE(u.output_tokens, u.estimated_output_tokens, 0))
+                FILTER (WHERE u.credential_id IS NOT NULL), 0)::numeric AS tokens,
+       COALESCE(sum(u.cost) FILTER (WHERE u.credential_id IS NOT NULL), 0)::numeric AS cost
+  FROM pandokos.usage_record u
+ WHERE u.started_at >= $2::timestamptz
+   AND u.started_at < $3::timestamptz
+ GROUP BY 1, u.principal_id, u.key_id, u.provider, u.model, COALESCE(u.currency, '')
+HAVING count(*) FILTER (WHERE u.credential_id IS NOT NULL) > 0
+`
+
+type AggregateUsageForLimitsParams struct {
+	LiveFrom time.Time
+	FromTime time.Time
+	ToTime   time.Time
+}
+
+type AggregateUsageForLimitsRow struct {
+	Minute      int64
+	PrincipalID string
+	KeyID       string
+	Provider    string
+	Model       string
+	Currency    string
+	Requests    int64
+	Tokens      string
+	Cost        string
+}
+
+// Worker pool (counters) or admin pool (capability check), session of the tenant. What the
+// ledger holds for the requests that started in [from_time, to_time), by the dimensions a rule
+// can name. Rows that started before live_from are summed with minute 0; later rows by the minute
+// they started in (Unix time / 60). A request counts when a credential was opened for it; its
+// tokens are those the cost was computed on; its cost counts when it is known.
+func (q *Queries) AggregateUsageForLimits(ctx context.Context, arg AggregateUsageForLimitsParams) ([]AggregateUsageForLimitsRow, error) {
+	rows, err := q.db.Query(ctx, aggregateUsageForLimits, arg.LiveFrom, arg.FromTime, arg.ToTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AggregateUsageForLimitsRow{}
+	for rows.Next() {
+		var i AggregateUsageForLimitsRow
+		if err := rows.Scan(
+			&i.Minute,
+			&i.PrincipalID,
+			&i.KeyID,
+			&i.Provider,
+			&i.Model,
+			&i.Currency,
+			&i.Requests,
+			&i.Tokens,
+			&i.Cost,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const countLimitRules = `-- name: CountLimitRules :one
+SELECT count(*)::bigint FROM pandokos.limit_rule
+`
+
+func (q *Queries) CountLimitRules(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countLimitRules)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const createLimitRule = `-- name: CreateLimitRule :one
+INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, subject_id, provider, model, metric, limit_value, currency,
+                                 enforce, thresholds)
+VALUES (pandokos.current_tenant_id(), $1::text, $2::text,
+        $3::text, $4::text, $5::text, $6::bigint,
+        $7::text, $8::boolean, $9::smallint[])
+RETURNING id, subject_kind, subject_id, provider, model, metric, limit_value, currency, enforce, thresholds,
+          created_at, updated_at
+`
+
+type CreateLimitRuleParams struct {
+	SubjectKind string
+	SubjectID   string
+	Provider    string
+	Model       string
+	Metric      string
+	LimitValue  int64
+	Currency    string
+	Enforce     bool
+	Thresholds  []int16
+}
+
+type CreateLimitRuleRow struct {
+	ID          string
+	SubjectKind string
+	SubjectID   string
+	Provider    string
+	Model       string
+	Metric      string
+	LimitValue  int64
+	Currency    string
+	Enforce     bool
+	Thresholds  []int16
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func (q *Queries) CreateLimitRule(ctx context.Context, arg CreateLimitRuleParams) (CreateLimitRuleRow, error) {
+	row := q.db.QueryRow(ctx, createLimitRule,
+		arg.SubjectKind,
+		arg.SubjectID,
+		arg.Provider,
+		arg.Model,
+		arg.Metric,
+		arg.LimitValue,
+		arg.Currency,
+		arg.Enforce,
+		arg.Thresholds,
+	)
+	var i CreateLimitRuleRow
+	err := row.Scan(
+		&i.ID,
+		&i.SubjectKind,
+		&i.SubjectID,
+		&i.Provider,
+		&i.Model,
+		&i.Metric,
+		&i.LimitValue,
+		&i.Currency,
+		&i.Enforce,
+		&i.Thresholds,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createPlatformLimitRule = `-- name: CreatePlatformLimitRule :one
+
+INSERT INTO pandokos.platform_limit_rule (tenant_id, provider, model, metric, limit_value, currency, enforce,
+                                          thresholds)
+VALUES ($1::uuid, $2::text, $3::text, $4::text,
+        $5::bigint, $6::text, $7::boolean,
+        $8::smallint[])
+RETURNING id, tenant_id, provider, model, metric, limit_value, currency, enforce, thresholds, created_at, updated_at
+`
+
+type CreatePlatformLimitRuleParams struct {
+	TenantID   *string
+	Provider   string
+	Model      string
+	Metric     string
+	LimitValue int64
+	Currency   string
+	Enforce    bool
+	Thresholds []int16
+}
+
+type CreatePlatformLimitRuleRow struct {
+	ID         string
+	TenantID   *string
+	Provider   string
+	Model      string
+	Metric     string
+	LimitValue int64
+	Currency   string
+	Enforce    bool
+	Thresholds []int16
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+// Administration API, platform session (admin pool).
+func (q *Queries) CreatePlatformLimitRule(ctx context.Context, arg CreatePlatformLimitRuleParams) (CreatePlatformLimitRuleRow, error) {
+	row := q.db.QueryRow(ctx, createPlatformLimitRule,
+		arg.TenantID,
+		arg.Provider,
+		arg.Model,
+		arg.Metric,
+		arg.LimitValue,
+		arg.Currency,
+		arg.Enforce,
+		arg.Thresholds,
+	)
+	var i CreatePlatformLimitRuleRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Provider,
+		&i.Model,
+		&i.Metric,
+		&i.LimitValue,
+		&i.Currency,
+		&i.Enforce,
+		&i.Thresholds,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const deleteLimitRule = `-- name: DeleteLimitRule :one
+DELETE FROM pandokos.limit_rule
+ WHERE id = $1::uuid
+RETURNING id, subject_kind, subject_id, provider, model, metric, limit_value, currency, enforce, thresholds,
+          created_at, updated_at
+`
+
+type DeleteLimitRuleRow struct {
+	ID          string
+	SubjectKind string
+	SubjectID   string
+	Provider    string
+	Model       string
+	Metric      string
+	LimitValue  int64
+	Currency    string
+	Enforce     bool
+	Thresholds  []int16
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func (q *Queries) DeleteLimitRule(ctx context.Context, id string) (DeleteLimitRuleRow, error) {
+	row := q.db.QueryRow(ctx, deleteLimitRule, id)
+	var i DeleteLimitRuleRow
+	err := row.Scan(
+		&i.ID,
+		&i.SubjectKind,
+		&i.SubjectID,
+		&i.Provider,
+		&i.Model,
+		&i.Metric,
+		&i.LimitValue,
+		&i.Currency,
+		&i.Enforce,
+		&i.Thresholds,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const deletePlatformLimitRule = `-- name: DeletePlatformLimitRule :one
+DELETE FROM pandokos.platform_limit_rule
+ WHERE id = $1::uuid
+RETURNING id, tenant_id, provider, model, metric, limit_value, currency, enforce, thresholds, created_at, updated_at
+`
+
+type DeletePlatformLimitRuleRow struct {
+	ID         string
+	TenantID   *string
+	Provider   string
+	Model      string
+	Metric     string
+	LimitValue int64
+	Currency   string
+	Enforce    bool
+	Thresholds []int16
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+func (q *Queries) DeletePlatformLimitRule(ctx context.Context, id string) (DeletePlatformLimitRuleRow, error) {
+	row := q.db.QueryRow(ctx, deletePlatformLimitRule, id)
+	var i DeletePlatformLimitRuleRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Provider,
+		&i.Model,
+		&i.Metric,
+		&i.LimitValue,
+		&i.Currency,
+		&i.Enforce,
+		&i.Thresholds,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getLimitRule = `-- name: GetLimitRule :one
+SELECT r.id, r.subject_kind, r.subject_id, r.provider, r.model, r.metric, r.limit_value, r.currency, r.enforce,
+       r.thresholds, r.created_at, r.updated_at
+  FROM pandokos.limit_rule r
+ WHERE r.id = $1::uuid
+`
+
+type GetLimitRuleRow struct {
+	ID          string
+	SubjectKind string
+	SubjectID   string
+	Provider    string
+	Model       string
+	Metric      string
+	LimitValue  int64
+	Currency    string
+	Enforce     bool
+	Thresholds  []int16
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func (q *Queries) GetLimitRule(ctx context.Context, id string) (GetLimitRuleRow, error) {
+	row := q.db.QueryRow(ctx, getLimitRule, id)
+	var i GetLimitRuleRow
+	err := row.Scan(
+		&i.ID,
+		&i.SubjectKind,
+		&i.SubjectID,
+		&i.Provider,
+		&i.Model,
+		&i.Metric,
+		&i.LimitValue,
+		&i.Currency,
+		&i.Enforce,
+		&i.Thresholds,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getPlatformLimitRule = `-- name: GetPlatformLimitRule :one
+SELECT r.id, r.tenant_id, r.provider, r.model, r.metric, r.limit_value, r.currency, r.enforce, r.thresholds,
+       r.created_at, r.updated_at
+  FROM pandokos.platform_limit_rule r
+ WHERE r.id = $1::uuid
+`
+
+type GetPlatformLimitRuleRow struct {
+	ID         string
+	TenantID   *string
+	Provider   string
+	Model      string
+	Metric     string
+	LimitValue int64
+	Currency   string
+	Enforce    bool
+	Thresholds []int16
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+func (q *Queries) GetPlatformLimitRule(ctx context.Context, id string) (GetPlatformLimitRuleRow, error) {
+	row := q.db.QueryRow(ctx, getPlatformLimitRule, id)
+	var i GetPlatformLimitRuleRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Provider,
+		&i.Model,
+		&i.Metric,
+		&i.LimitValue,
+		&i.Currency,
+		&i.Enforce,
+		&i.Thresholds,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const insertLimitEvent = `-- name: InsertLimitEvent :execrows
+
+INSERT INTO pandokos.limit_event (tenant_id, kind, rule_id, rule_level, subject_kind, subject_id, provider, model,
+                                  metric, currency, period_start, period_end, percent, limit_value, observed)
+VALUES (pandokos.current_tenant_id(), $1::text, $2::uuid, $3::text,
+        $4::text, $5::text, $6::text, $7::text,
+        $8::text, $9::text, $10::timestamptz,
+        $11::timestamptz, $12::smallint, $13::bigint,
+        $14::numeric)
+ON CONFLICT DO NOTHING
+`
+
+type InsertLimitEventParams struct {
+	Kind        string
+	RuleID      string
+	RuleLevel   string
+	SubjectKind string
+	SubjectID   string
+	Provider    string
+	Model       string
+	Metric      string
+	Currency    string
+	PeriodStart time.Time
+	PeriodEnd   time.Time
+	Percent     int16
+	LimitValue  int64
+	Observed    string
+}
+
+// Gateway pool, session of the tenant. A row that exists already is left alone: recording is
+// idempotent per rule, period, kind and percentage.
+func (q *Queries) InsertLimitEvent(ctx context.Context, arg InsertLimitEventParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertLimitEvent,
+		arg.Kind,
+		arg.RuleID,
+		arg.RuleLevel,
+		arg.SubjectKind,
+		arg.SubjectID,
+		arg.Provider,
+		arg.Model,
+		arg.Metric,
+		arg.Currency,
+		arg.PeriodStart,
+		arg.PeriodEnd,
+		arg.Percent,
+		arg.LimitValue,
+		arg.Observed,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const limitScopeExists = `-- name: LimitScopeExists :one
+
+SELECT EXISTS (SELECT 1 FROM pandokos.provider p
+                WHERE p.name = $1::text
+                  AND ($2::text = ''
+                       OR EXISTS (SELECT 1 FROM pandokos.model m
+                                   WHERE m.provider_id = p.id AND m.name = $2::text)))::boolean AS found
+`
+
+type LimitScopeExistsParams struct {
+	Provider string
+	Model    string
+}
+
+// In a tenant session a model is found when the tenant can see it; in the platform scope when
+// it exists.
+func (q *Queries) LimitScopeExists(ctx context.Context, arg LimitScopeExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, limitScopeExists, arg.Provider, arg.Model)
+	var found bool
+	err := row.Scan(&found)
+	return found, err
+}
+
+const limitSubjectExists = `-- name: LimitSubjectExists :one
+SELECT (CASE $1::text
+            WHEN 'tenant' THEN true
+            WHEN 'service_account' THEN EXISTS (SELECT 1 FROM pandokos.service_account s
+                                                 WHERE s.id::text = $2::text)
+            WHEN 'key' THEN EXISTS (SELECT 1 FROM pandokos.virtual_key k WHERE k.key_id = $2::text)
+                            OR EXISTS (SELECT 1 FROM pandokos.subject_mapping m
+                                        WHERE m.id::text = $2::text)
+            ELSE false END)::boolean AS found
+`
+
+type LimitSubjectExistsParams struct {
+	SubjectKind string
+	SubjectID   string
+}
+
+func (q *Queries) LimitSubjectExists(ctx context.Context, arg LimitSubjectExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, limitSubjectExists, arg.SubjectKind, arg.SubjectID)
+	var found bool
+	err := row.Scan(&found)
+	return found, err
+}
+
+const listLimitEvents = `-- name: ListLimitEvents :many
+SELECT e.id, e.kind, e.rule_id, e.rule_level, e.subject_kind, e.subject_id, e.provider, e.model, e.metric,
+       e.currency, e.period_start, e.period_end, e.percent, e.limit_value, e.observed, e.occurred_at
+  FROM pandokos.limit_event e
+ WHERE ($1::text = '' OR e.kind = $1::text)
+   AND ($2::text = '' OR e.rule_id::text = $2::text)
+   AND (NOT $3::boolean OR e.id < $4::uuid)
+ ORDER BY e.id DESC
+ LIMIT $5::integer
+`
+
+type ListLimitEventsParams struct {
+	Kind     string
+	RuleID   string
+	After    bool
+	AfterID  string
+	PageSize int32
+}
+
+type ListLimitEventsRow struct {
+	ID          string
+	Kind        string
+	RuleID      string
+	RuleLevel   string
+	SubjectKind string
+	SubjectID   string
+	Provider    string
+	Model       string
+	Metric      string
+	Currency    string
+	PeriodStart time.Time
+	PeriodEnd   time.Time
+	Percent     int16
+	LimitValue  int64
+	Observed    string
+	OccurredAt  time.Time
+}
+
+func (q *Queries) ListLimitEvents(ctx context.Context, arg ListLimitEventsParams) ([]ListLimitEventsRow, error) {
+	rows, err := q.db.Query(ctx, listLimitEvents,
+		arg.Kind,
+		arg.RuleID,
+		arg.After,
+		arg.AfterID,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLimitEventsRow{}
+	for rows.Next() {
+		var i ListLimitEventsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.RuleID,
+			&i.RuleLevel,
+			&i.SubjectKind,
+			&i.SubjectID,
+			&i.Provider,
+			&i.Model,
+			&i.Metric,
+			&i.Currency,
+			&i.PeriodStart,
+			&i.PeriodEnd,
+			&i.Percent,
+			&i.LimitValue,
+			&i.Observed,
+			&i.OccurredAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
 
 const listLimitRules = `-- name: ListLimitRules :many
 
-SELECT r.subject_kind, r.subject_id, r.metric, r.limit_value
+
+SELECT r.id, r.subject_kind, r.subject_id, r.provider, r.model, r.metric, r.limit_value, r.currency, r.enforce,
+       r.thresholds
   FROM pandokos.limit_rule r
- ORDER BY r.subject_kind, r.subject_id, r.metric
+ ORDER BY r.subject_kind, r.subject_id, r.provider, r.model, r.metric
  LIMIT 5001
 `
 
 type ListLimitRulesRow struct {
+	ID          string
 	SubjectKind string
 	SubjectID   string
+	Provider    string
+	Model       string
 	Metric      string
 	LimitValue  int64
+	Currency    string
+	Enforce     bool
+	Thresholds  []int16
 }
 
-// Limit rules. Both statements run on the gateway pool in the session of the tenant whose rules
-// are loaded (store.DB.WithTenant). Neither names the tenant in a WHERE clause on purpose: the
-// policies do (TEN-04). In that session platform_limit_rule shows the defaults and the tenant's
-// own rows, nothing of another tenant.
+// Limit rules, the events of quotas and budgets, and the ledger aggregates their counters are
+// rebuilt from. Every statement runs in a store transaction helper; none names the tenant in a
+// WHERE clause: the policies do (TEN-04).
+// Gateway pool, session of the tenant whose rules are loaded. platform_limit_rule shows the
+// defaults and the tenant's own rows in that session.
 func (q *Queries) ListLimitRules(ctx context.Context) ([]ListLimitRulesRow, error) {
 	rows, err := q.db.Query(ctx, listLimitRules)
 	if err != nil {
@@ -38,10 +604,104 @@ func (q *Queries) ListLimitRules(ctx context.Context) ([]ListLimitRulesRow, erro
 	for rows.Next() {
 		var i ListLimitRulesRow
 		if err := rows.Scan(
+			&i.ID,
 			&i.SubjectKind,
 			&i.SubjectID,
+			&i.Provider,
+			&i.Model,
 			&i.Metric,
 			&i.LimitValue,
+			&i.Currency,
+			&i.Enforce,
+			&i.Thresholds,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLimitRulesPage = `-- name: ListLimitRulesPage :many
+SELECT r.id, r.subject_kind, r.subject_id, r.provider, r.model, r.metric, r.limit_value, r.currency, r.enforce,
+       r.thresholds, r.created_at, r.updated_at
+  FROM pandokos.limit_rule r
+ WHERE ($1::text = '' OR r.subject_kind = $1::text)
+   AND ($2::text = '' OR r.subject_id = $2::text)
+   AND ($3::text = '' OR r.metric = $3::text)
+   AND ($4::text = '' OR r.provider = $4::text)
+   AND ($5::text = '' OR r.model = $5::text)
+   AND (NOT $6::boolean OR CASE $7::text
+            WHEN 'created_at'  THEN r.id > $8::uuid
+            WHEN '-created_at' THEN r.id < $8::uuid
+            ELSE false END)
+ ORDER BY CASE WHEN $7::text = 'created_at'  THEN r.id END ASC,
+          CASE WHEN $7::text = '-created_at' THEN r.id END DESC
+ LIMIT $9::integer
+`
+
+type ListLimitRulesPageParams struct {
+	SubjectKind string
+	SubjectID   string
+	Metric      string
+	Provider    string
+	Model       string
+	After       bool
+	Sort        string
+	AfterID     string
+	PageSize    int32
+}
+
+type ListLimitRulesPageRow struct {
+	ID          string
+	SubjectKind string
+	SubjectID   string
+	Provider    string
+	Model       string
+	Metric      string
+	LimitValue  int64
+	Currency    string
+	Enforce     bool
+	Thresholds  []int16
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func (q *Queries) ListLimitRulesPage(ctx context.Context, arg ListLimitRulesPageParams) ([]ListLimitRulesPageRow, error) {
+	rows, err := q.db.Query(ctx, listLimitRulesPage,
+		arg.SubjectKind,
+		arg.SubjectID,
+		arg.Metric,
+		arg.Provider,
+		arg.Model,
+		arg.After,
+		arg.Sort,
+		arg.AfterID,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLimitRulesPageRow{}
+	for rows.Next() {
+		var i ListLimitRulesPageRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SubjectKind,
+			&i.SubjectID,
+			&i.Provider,
+			&i.Model,
+			&i.Metric,
+			&i.LimitValue,
+			&i.Currency,
+			&i.Enforce,
+			&i.Thresholds,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -54,15 +714,22 @@ func (q *Queries) ListLimitRules(ctx context.Context) ([]ListLimitRulesRow, erro
 }
 
 const listPlatformLimitRules = `-- name: ListPlatformLimitRules :many
-SELECT (r.tenant_id IS NULL)::boolean AS is_default, r.metric, r.limit_value
+SELECT r.id, (r.tenant_id IS NULL)::boolean AS is_default, r.provider, r.model, r.metric, r.limit_value, r.currency,
+       r.enforce, r.thresholds
   FROM pandokos.platform_limit_rule r
- ORDER BY r.tenant_id NULLS FIRST, r.metric
+ ORDER BY r.tenant_id NULLS FIRST, r.provider, r.model, r.metric
 `
 
 type ListPlatformLimitRulesRow struct {
+	ID         string
 	IsDefault  bool
+	Provider   string
+	Model      string
 	Metric     string
 	LimitValue int64
+	Currency   string
+	Enforce    bool
+	Thresholds []int16
 }
 
 func (q *Queries) ListPlatformLimitRules(ctx context.Context) ([]ListPlatformLimitRulesRow, error) {
@@ -74,7 +741,17 @@ func (q *Queries) ListPlatformLimitRules(ctx context.Context) ([]ListPlatformLim
 	items := []ListPlatformLimitRulesRow{}
 	for rows.Next() {
 		var i ListPlatformLimitRulesRow
-		if err := rows.Scan(&i.IsDefault, &i.Metric, &i.LimitValue); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.IsDefault,
+			&i.Provider,
+			&i.Model,
+			&i.Metric,
+			&i.LimitValue,
+			&i.Currency,
+			&i.Enforce,
+			&i.Thresholds,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -83,4 +760,355 @@ func (q *Queries) ListPlatformLimitRules(ctx context.Context) ([]ListPlatformLim
 		return nil, err
 	}
 	return items, nil
+}
+
+const listPlatformLimitRulesPage = `-- name: ListPlatformLimitRulesPage :many
+
+SELECT r.id, r.tenant_id, r.provider, r.model, r.metric, r.limit_value, r.currency, r.enforce, r.thresholds,
+       r.created_at, r.updated_at
+  FROM pandokos.platform_limit_rule r
+ WHERE ($1::text = ''
+        OR ($1::text = 'default' AND r.tenant_id IS NULL)
+        OR r.tenant_id::text = $1::text)
+   AND ($2::text = '' OR r.metric = $2::text)
+   AND (NOT $3::boolean OR CASE $4::text
+            WHEN 'created_at'  THEN r.id > $5::uuid
+            WHEN '-created_at' THEN r.id < $5::uuid
+            ELSE false END)
+ ORDER BY CASE WHEN $4::text = 'created_at'  THEN r.id END ASC,
+          CASE WHEN $4::text = '-created_at' THEN r.id END DESC
+ LIMIT $6::integer
+`
+
+type ListPlatformLimitRulesPageParams struct {
+	AppliesTo string
+	Metric    string
+	After     bool
+	Sort      string
+	AfterID   string
+	PageSize  int32
+}
+
+type ListPlatformLimitRulesPageRow struct {
+	ID         string
+	TenantID   *string
+	Provider   string
+	Model      string
+	Metric     string
+	LimitValue int64
+	Currency   string
+	Enforce    bool
+	Thresholds []int16
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+// applies_to: ” every row, 'default' the rows without tenant, otherwise a tenant ID.
+func (q *Queries) ListPlatformLimitRulesPage(ctx context.Context, arg ListPlatformLimitRulesPageParams) ([]ListPlatformLimitRulesPageRow, error) {
+	rows, err := q.db.Query(ctx, listPlatformLimitRulesPage,
+		arg.AppliesTo,
+		arg.Metric,
+		arg.After,
+		arg.Sort,
+		arg.AfterID,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPlatformLimitRulesPageRow{}
+	for rows.Next() {
+		var i ListPlatformLimitRulesPageRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Provider,
+			&i.Model,
+			&i.Metric,
+			&i.LimitValue,
+			&i.Currency,
+			&i.Enforce,
+			&i.Thresholds,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTenantPlatformLimitRules = `-- name: ListTenantPlatformLimitRules :many
+
+SELECT r.id, (r.tenant_id IS NULL)::boolean AS is_default, r.provider, r.model, r.metric, r.limit_value, r.currency,
+       r.enforce, r.thresholds, r.created_at, r.updated_at
+  FROM pandokos.platform_limit_rule r
+ WHERE (NOT $1::boolean OR r.id > $2::uuid)
+ ORDER BY r.id
+ LIMIT $3::integer
+`
+
+type ListTenantPlatformLimitRulesParams struct {
+	After    bool
+	AfterID  string
+	PageSize int32
+}
+
+type ListTenantPlatformLimitRulesRow struct {
+	ID         string
+	IsDefault  bool
+	Provider   string
+	Model      string
+	Metric     string
+	LimitValue int64
+	Currency   string
+	Enforce    bool
+	Thresholds []int16
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+// The ceilings that apply to the tenant of the session: the defaults and its own rows.
+func (q *Queries) ListTenantPlatformLimitRules(ctx context.Context, arg ListTenantPlatformLimitRulesParams) ([]ListTenantPlatformLimitRulesRow, error) {
+	rows, err := q.db.Query(ctx, listTenantPlatformLimitRules, arg.After, arg.AfterID, arg.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTenantPlatformLimitRulesRow{}
+	for rows.Next() {
+		var i ListTenantPlatformLimitRulesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.IsDefault,
+			&i.Provider,
+			&i.Model,
+			&i.Metric,
+			&i.LimitValue,
+			&i.Currency,
+			&i.Enforce,
+			&i.Thresholds,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockLimitRule = `-- name: LockLimitRule :one
+SELECT r.id, r.subject_kind, r.subject_id, r.provider, r.model, r.metric, r.limit_value, r.currency, r.enforce,
+       r.thresholds, r.created_at, r.updated_at
+  FROM pandokos.limit_rule r
+ WHERE r.id = $1::uuid
+   FOR UPDATE
+`
+
+type LockLimitRuleRow struct {
+	ID          string
+	SubjectKind string
+	SubjectID   string
+	Provider    string
+	Model       string
+	Metric      string
+	LimitValue  int64
+	Currency    string
+	Enforce     bool
+	Thresholds  []int16
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func (q *Queries) LockLimitRule(ctx context.Context, id string) (LockLimitRuleRow, error) {
+	row := q.db.QueryRow(ctx, lockLimitRule, id)
+	var i LockLimitRuleRow
+	err := row.Scan(
+		&i.ID,
+		&i.SubjectKind,
+		&i.SubjectID,
+		&i.Provider,
+		&i.Model,
+		&i.Metric,
+		&i.LimitValue,
+		&i.Currency,
+		&i.Enforce,
+		&i.Thresholds,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const lockLimitRules = `-- name: LockLimitRules :exec
+
+SELECT pg_catalog.pg_advisory_xact_lock(
+           pg_catalog.hashtextextended('pandokos.limit_rule:' || pandokos.current_tenant_id()::text, 0))
+`
+
+// Administration API, tenant session (admin pool).
+func (q *Queries) LockLimitRules(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, lockLimitRules)
+	return err
+}
+
+const lockPlatformLimitRule = `-- name: LockPlatformLimitRule :one
+SELECT r.id, r.tenant_id, r.provider, r.model, r.metric, r.limit_value, r.currency, r.enforce, r.thresholds,
+       r.created_at, r.updated_at
+  FROM pandokos.platform_limit_rule r
+ WHERE r.id = $1::uuid
+   FOR UPDATE
+`
+
+type LockPlatformLimitRuleRow struct {
+	ID         string
+	TenantID   *string
+	Provider   string
+	Model      string
+	Metric     string
+	LimitValue int64
+	Currency   string
+	Enforce    bool
+	Thresholds []int16
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+func (q *Queries) LockPlatformLimitRule(ctx context.Context, id string) (LockPlatformLimitRuleRow, error) {
+	row := q.db.QueryRow(ctx, lockPlatformLimitRule, id)
+	var i LockPlatformLimitRuleRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Provider,
+		&i.Model,
+		&i.Metric,
+		&i.LimitValue,
+		&i.Currency,
+		&i.Enforce,
+		&i.Thresholds,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateLimitRule = `-- name: UpdateLimitRule :one
+UPDATE pandokos.limit_rule
+   SET limit_value = $1::bigint,
+       enforce     = $2::boolean,
+       thresholds  = $3::smallint[]
+ WHERE id = $4::uuid
+RETURNING id, subject_kind, subject_id, provider, model, metric, limit_value, currency, enforce, thresholds,
+          created_at, updated_at
+`
+
+type UpdateLimitRuleParams struct {
+	LimitValue int64
+	Enforce    bool
+	Thresholds []int16
+	ID         string
+}
+
+type UpdateLimitRuleRow struct {
+	ID          string
+	SubjectKind string
+	SubjectID   string
+	Provider    string
+	Model       string
+	Metric      string
+	LimitValue  int64
+	Currency    string
+	Enforce     bool
+	Thresholds  []int16
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func (q *Queries) UpdateLimitRule(ctx context.Context, arg UpdateLimitRuleParams) (UpdateLimitRuleRow, error) {
+	row := q.db.QueryRow(ctx, updateLimitRule,
+		arg.LimitValue,
+		arg.Enforce,
+		arg.Thresholds,
+		arg.ID,
+	)
+	var i UpdateLimitRuleRow
+	err := row.Scan(
+		&i.ID,
+		&i.SubjectKind,
+		&i.SubjectID,
+		&i.Provider,
+		&i.Model,
+		&i.Metric,
+		&i.LimitValue,
+		&i.Currency,
+		&i.Enforce,
+		&i.Thresholds,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updatePlatformLimitRule = `-- name: UpdatePlatformLimitRule :one
+UPDATE pandokos.platform_limit_rule
+   SET limit_value = $1::bigint,
+       enforce     = $2::boolean,
+       thresholds  = $3::smallint[]
+ WHERE id = $4::uuid
+RETURNING id, tenant_id, provider, model, metric, limit_value, currency, enforce, thresholds, created_at, updated_at
+`
+
+type UpdatePlatformLimitRuleParams struct {
+	LimitValue int64
+	Enforce    bool
+	Thresholds []int16
+	ID         string
+}
+
+type UpdatePlatformLimitRuleRow struct {
+	ID         string
+	TenantID   *string
+	Provider   string
+	Model      string
+	Metric     string
+	LimitValue int64
+	Currency   string
+	Enforce    bool
+	Thresholds []int16
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+func (q *Queries) UpdatePlatformLimitRule(ctx context.Context, arg UpdatePlatformLimitRuleParams) (UpdatePlatformLimitRuleRow, error) {
+	row := q.db.QueryRow(ctx, updatePlatformLimitRule,
+		arg.LimitValue,
+		arg.Enforce,
+		arg.Thresholds,
+		arg.ID,
+	)
+	var i UpdatePlatformLimitRuleRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Provider,
+		&i.Model,
+		&i.Metric,
+		&i.LimitValue,
+		&i.Currency,
+		&i.Enforce,
+		&i.Thresholds,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

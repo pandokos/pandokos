@@ -13,8 +13,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pandokos/pandokos/internal/admin"
 	"github.com/pandokos/pandokos/internal/adminapi"
+	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/test/apitest"
+	"github.com/pandokos/pandokos/test/dbtest"
 	"github.com/pandokos/pandokos/test/fakeprovider"
 	"github.com/pandokos/pandokos/test/fixtures"
 	"github.com/pandokos/pandokos/test/testutil"
@@ -216,10 +219,18 @@ func TestCapability(t *testing.T) {
 		}
 	})
 
-	t.Run("budget", func(t *testing.T) {
+	t.Run("budget: not_enforced only while no enforced period limit of the tenant matches", func(t *testing.T) {
 		p, all, _ := newProvider(t)
 		if got := capabilityOf(t, c, c.a.ID, c.ka, p, all.Name); got.Checks.Budget != adminapi.BudgetAvailabilityNotEnforced {
 			t.Errorf("budget %q", got.Checks.Budget)
+		}
+		// Sprint 5.2: a quota of the tenant that matches the call changes the answer (T-681 has the cases).
+		r := c.do(t, "POST", "/v1/tenants/"+c.a.ID+"/limits", c.ka, map[string]any{"metric": "requests_per_month", "limit": 100, "provider": p})
+		if r.Status != 201 {
+			t.Fatalf("create: %d %s", r.Status, r.Body)
+		}
+		if got := capabilityOf(t, c, c.a.ID, c.ka, p, all.Name); got.Checks.Budget != adminapi.BudgetAvailabilityAvailable {
+			t.Errorf("budget %q with a matching quota, want available", got.Checks.Budget)
 		}
 	})
 
@@ -359,5 +370,185 @@ func TestCapabilityIsolation(t *testing.T) {
 			t.Fatalf("suspend: %d %s", r.Status, r.Body)
 		}
 		expect(t, capCall(t, c, c.ka, c.a.ID, p.Name, m.Name), 403, adminapi.ProblemCodeTenantSuspended)
+	})
+}
+
+// TestCapabilityBudget is T-681: the four values of checks.budget (sprint 5.2, section 5.13).
+func TestCapabilityBudget(t *testing.T) {
+	c := newCat(t)
+	tn, err := tenant.ParseID(c.a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newModel := func(t *testing.T, priced bool) (provider string, m adminapi.Model) {
+		t.Helper()
+		p := c.createProvider(t, nil)
+		c.createEndpoint(t, p.Name, nil)
+		m = c.createModel(t, p.Name, map[string]any{"availability": "all"})
+		credentialFor(t, c, p.Name, "main")
+		if priced {
+			r := c.platform(t, "POST", "/v1/models/"+m.ID+"/prices", map[string]any{"currency": "USD", "rates": []map[string]any{{"category": "input", "threshold": 0, "rate": "1"}, {"category": "output", "threshold": 0, "rate": "2"}}})
+			if r.Status/100 != 2 {
+				t.Fatalf("a price: %d %s", r.Status, r.Body)
+			}
+		}
+		return p.Name, m
+	}
+	rule := func(t *testing.T, body map[string]any) adminapi.LimitRule {
+		t.Helper()
+		return decode[adminapi.LimitRule](t, c.do(t, "POST", "/v1/tenants/"+c.a.ID+"/limits", c.ka, body), 201)
+	}
+	budget := func(t *testing.T, provider string, m adminapi.Model) adminapi.Capability {
+		t.Helper()
+		return capabilityOf(t, c, c.a.ID, c.ka, provider, m.Name)
+	}
+	now := func() time.Time { return time.Now().UTC() }
+	usageRows := func(provider, model string, n int, tokens int64, cost, currency string) []dbtest.UsageRow {
+		rows := make([]dbtest.UsageRow, n)
+		for i := range rows {
+			rows[i] = dbtest.UsageRow{StartedAt: now().Add(-time.Duration(i+1) * time.Millisecond), Provider: provider, Model: model, InputTokens: tokens, Cost: cost, Currency: currency}
+		}
+		return rows
+	}
+	want := func(t *testing.T, got adminapi.Capability, budget adminapi.BudgetAvailability, callable bool, reasons ...string) {
+		t.Helper()
+		if got.Checks.Budget != budget || got.Callable != callable || strings.Join(got.Reasons, ",") != strings.Join(reasons, ",") {
+			t.Errorf("budget %q, callable %v, reasons %v; want %q, %v, %v", got.Checks.Budget, got.Callable, got.Reasons, budget, callable, reasons)
+		}
+	}
+
+	t.Run("requests: not enforced, available, exhausted", func(t *testing.T) {
+		p, m := newModel(t, true)
+		want(t, budget(t, p, m), adminapi.BudgetAvailabilityNotEnforced, true)
+		r := rule(t, map[string]any{"metric": "requests_per_day", "limit": 3, "provider": p})
+		want(t, budget(t, p, m), adminapi.BudgetAvailabilityAvailable, true)
+		c.api.DB.SeedUsage(t, tn, usageRows(p, m.Name, 2, 10, "", "")...)
+		want(t, budget(t, p, m), adminapi.BudgetAvailabilityAvailable, true)
+		c.api.DB.SeedUsage(t, tn, usageRows(p, m.Name, 1, 10, "", "")...)
+		want(t, budget(t, p, m), adminapi.BudgetAvailabilityExhausted, false, "budget_exhausted")
+		// What is available is "not exhausted": raising the limit makes the call callable again.
+		decode[adminapi.LimitRule](t, c.do(t, "PATCH", "/v1/tenants/"+c.a.ID+"/limits/"+r.ID, c.ka, map[string]any{"limit": 4}), 200)
+		want(t, budget(t, p, m), adminapi.BudgetAvailabilityAvailable, true)
+	})
+
+	t.Run("tokens, with the estimated figure when the provider reported none", func(t *testing.T) {
+		p, m := newModel(t, true)
+		rule(t, map[string]any{"metric": "tokens_per_month", "limit": 100, "provider": p})
+		c.api.DB.SeedUsage(t, tn,
+			dbtest.UsageRow{StartedAt: now().Add(-time.Second), Provider: p, Model: m.Name, InputTokens: 50, OutputTokens: 30},
+			dbtest.UsageRow{StartedAt: now().Add(-2 * time.Second), Provider: p, Model: m.Name, EstimatedInputTokens: 10, EstimatedOutputTokens: 9})
+		want(t, budget(t, p, m), adminapi.BudgetAvailabilityAvailable, true) // 99
+		c.api.DB.SeedUsage(t, tn, dbtest.UsageRow{StartedAt: now(), Provider: p, Model: m.Name, InputTokens: 1})
+		want(t, budget(t, p, m), adminapi.BudgetAvailabilityExhausted, false, "budget_exhausted")
+	})
+
+	t.Run("cost in the currency of the budget", func(t *testing.T) {
+		p, m := newModel(t, true)
+		rule(t, map[string]any{"metric": "cost_per_day", "amount": "1", "currency": "USD", "provider": p})
+		c.api.DB.SeedUsage(t, tn, usageRows(p, m.Name, 1, 5, "0.6", "USD")...)
+		c.api.DB.SeedUsage(t, tn, usageRows(p, m.Name, 1, 5, "50", "EUR")...) // another currency: no cost for this budget
+		want(t, budget(t, p, m), adminapi.BudgetAvailabilityAvailable, true)
+		c.api.DB.SeedUsage(t, tn, usageRows(p, m.Name, 1, 5, "0.4", "USD")...)
+		want(t, budget(t, p, m), adminapi.BudgetAvailabilityExhausted, false, "budget_exhausted")
+	})
+
+	t.Run("unpriced: no price in the currency of the budget", func(t *testing.T) {
+		p, m := newModel(t, false)
+		rule(t, map[string]any{"metric": "cost_per_month", "amount": "10", "currency": "USD", "provider": p})
+		want(t, budget(t, p, m), adminapi.BudgetAvailabilityUnpriced, false, "no_price")
+		q, priced := newModel(t, true)
+		rule(t, map[string]any{"metric": "cost_per_month", "amount": "10", "currency": "EUR", "provider": q}) // priced in USD only
+		want(t, budget(t, q, priced), adminapi.BudgetAvailabilityUnpriced, false, "no_price")
+	})
+
+	t.Run("unpriced with on_unknown_price allow: the call can be made", func(t *testing.T) {
+		ac := newCat(t, func(o *admin.Options) { o.Limits.OnUnknownPrice = "allow" })
+		atn, _ := tenant.ParseID(ac.a.ID)
+		p := ac.createProvider(t, nil)
+		ac.createEndpoint(t, p.Name, nil)
+		m := ac.createModel(t, p.Name, map[string]any{"availability": "all"})
+		credentialFor(t, ac, p.Name, "main")
+		decode[adminapi.LimitRule](t, ac.do(t, "POST", "/v1/tenants/"+ac.a.ID+"/limits", ac.ka, map[string]any{"metric": "cost_per_month", "amount": "10", "currency": "USD", "provider": p.Name}), 201)
+		got := capabilityOf(t, ac, ac.a.ID, ac.ka, p.Name, m.Name)
+		want(t, got, adminapi.BudgetAvailabilityAvailable, true)
+		decode[adminapi.LimitRule](t, ac.do(t, "POST", "/v1/tenants/"+ac.a.ID+"/limits", ac.ka, map[string]any{"metric": "requests_per_month", "limit": 1, "provider": p.Name}), 201)
+		ac.api.DB.SeedUsage(t, atn, usageRows(p.Name, m.Name, 1, 1, "", "")...)
+		want(t, capabilityOf(t, ac, ac.a.ID, ac.ka, p.Name, m.Name), adminapi.BudgetAvailabilityExhausted, false, "budget_exhausted")
+	})
+
+	t.Run("scope: a rule applies to its provider and model only", func(t *testing.T) {
+		p, m := newModel(t, true)
+		other := c.createModel(t, p, map[string]any{"availability": "all"})
+		rule(t, map[string]any{"metric": "requests_per_day", "limit": 1, "provider": p, "model": m.Name})
+		c.api.DB.SeedUsage(t, tn, usageRows(p, m.Name, 1, 1, "", "")...)
+		want(t, budget(t, p, m), adminapi.BudgetAvailabilityExhausted, false, "budget_exhausted")
+		want(t, budget(t, p, other), adminapi.BudgetAvailabilityNotEnforced, true) // another model of the provider
+		// The usage of another provider does not count.
+		q, qm := newModel(t, true)
+		rule(t, map[string]any{"metric": "requests_per_day", "limit": 1, "provider": q})
+		c.api.DB.SeedUsage(t, tn, usageRows(p, m.Name, 3, 1, "", "")...)
+		want(t, budget(t, q, qm), adminapi.BudgetAvailabilityAvailable, true)
+	})
+
+	t.Run("soft rules, rules of a service account or a key, and rate limits are not evaluated", func(t *testing.T) {
+		p, m := newModel(t, true)
+		sa := decode[adminapi.ServiceAccount](t, c.do(t, "POST", "/v1/tenants/"+c.a.ID+"/service-accounts", c.ka, map[string]any{"name": "capability-sa"}), 201)
+		rule(t, map[string]any{"metric": "requests_per_day", "limit": 1, "provider": p, "enforce": false, "thresholds": []int{100}})
+		rule(t, map[string]any{"metric": "tokens_per_day", "limit": 1, "provider": p, "subject_kind": "service_account", "subject_id": sa.ID})
+		rule(t, map[string]any{"metric": "requests_per_minute", "limit": 1, "provider": p})
+		rule(t, map[string]any{"metric": "concurrent_requests", "limit": 1, "provider": p})
+		c.api.DB.SeedUsage(t, tn, usageRows(p, m.Name, 5, 100, "", "")...)
+		want(t, budget(t, p, m), adminapi.BudgetAvailabilityNotEnforced, true)
+	})
+
+	t.Run("a platform ceiling counts, and another tenant's usage does not", func(t *testing.T) {
+		p, m := newModel(t, true)
+		pl := decode[adminapi.PlatformLimitRule](t, c.platform(t, "POST", "/v1/platform-limits", map[string]any{"tenant": c.a.ID, "metric": "requests_per_day", "limit": 2, "provider": p}), 201)
+		btn, _ := tenant.ParseID(c.b.ID)
+		c.api.DB.SeedUsage(t, btn, usageRows(p, m.Name, 5, 1, "", "")...)
+		want(t, budget(t, p, m), adminapi.BudgetAvailabilityAvailable, true)
+		c.api.DB.SeedUsage(t, tn, usageRows(p, m.Name, 2, 1, "", "")...)
+		want(t, budget(t, p, m), adminapi.BudgetAvailabilityExhausted, false, "budget_exhausted")
+		// A tenant rule above the ceiling does not lift it.
+		rule(t, map[string]any{"metric": "requests_per_day", "limit": 50, "provider": p})
+		want(t, budget(t, p, m), adminapi.BudgetAvailabilityExhausted, false, "budget_exhausted")
+		decode[adminapi.PlatformLimitRule](t, c.platform(t, "DELETE", "/v1/platform-limits/"+pl.ID, nil), 200)
+		want(t, budget(t, p, m), adminapi.BudgetAvailabilityAvailable, true)
+	})
+
+	t.Run("the reasons come after those of 3.3, in the order no_price, budget_exhausted", func(t *testing.T) {
+		p, m := newModel(t, false)
+		if r := c.do(t, "GET", "/v1/tenants/"+c.a.ID+"/credentials?provider="+p, c.ka, nil); r.Status != 200 {
+			t.Fatal(r.Status)
+		}
+		rule(t, map[string]any{"metric": "cost_per_month", "amount": "10", "currency": "USD", "provider": p})
+		rule(t, map[string]any{"metric": "requests_per_month", "limit": 1, "provider": p})
+		c.api.DB.SeedUsage(t, tn, usageRows(p, m.Name, 1, 1, "", "")...)
+		want(t, budget(t, p, m), adminapi.BudgetAvailabilityUnpriced, false, "no_price", "budget_exhausted")
+		// With a credential problem as well: the reason of 3.3 comes first.
+		nc := c.createProvider(t, nil)
+		c.createEndpoint(t, nc.Name, nil)
+		nm := c.createModel(t, nc.Name, map[string]any{"availability": "all"}) // no credential
+		rule(t, map[string]any{"metric": "requests_per_month", "limit": 1, "provider": nc.Name})
+		c.api.DB.SeedUsage(t, tn, usageRows(nc.Name, nm.Name, 1, 1, "", "")...)
+		want(t, budget(t, nc.Name, nm), adminapi.BudgetAvailabilityExhausted, false, "no_credential", "budget_exhausted")
+	})
+
+	t.Run("nothing is written and nothing of another tenant is read", func(t *testing.T) {
+		p, m := newModel(t, true)
+		rule(t, map[string]any{"metric": "requests_per_day", "limit": 5, "provider": p})
+		count := func() (n int) {
+			if err := c.api.Super(t).QueryRow(ctx(t), `SELECT (SELECT count(*) FROM pandokos.audit_event) + (SELECT count(*) FROM pandokos.platform_audit_event) + (SELECT count(*) FROM pandokos.limit_event)`).Scan(&n); err != nil {
+				t.Fatal(err)
+			}
+			return n
+		}
+		before := count()
+		budget(t, p, m)
+		if after := count(); after != before {
+			t.Errorf("the check wrote %d rows", after-before)
+		}
+		// B's key asking about A's tenant sees the same 404 as for a tenant that does not exist.
+		expect(t, capCall(t, c, c.kb, c.a.ID, p, m.Name), 404, adminapi.ProblemCodeNotFound)
 	})
 }

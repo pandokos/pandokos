@@ -721,6 +721,16 @@ func scenarios() []scenario {
 			h := basic(t, func(o *gateway.Options) { o.Limits = lim })
 			return h.sendAuthed(t, route, chat("fake-basic", false)), h
 		}},
+		{family.CodeQuotaExceeded, func(t *testing.T) (captured, *harness) {
+			lim := testutil.NewStaticLimits().Refuse(quotaRefusal("requests_per_day"))
+			h := basic(t, func(o *gateway.Options) { o.Limits = lim })
+			return h.sendAuthed(t, route, chat("fake-basic", false)), h
+		}},
+		{family.CodeNoPrice, func(t *testing.T) (captured, *harness) {
+			lim := testutil.NewStaticLimits().Refuse(gateway.LimitRefusal{Code: "no_price"})
+			h := basic(t, func(o *gateway.Options) { o.Limits = lim })
+			return h.sendAuthed(t, route, chat("fake-basic", false)), h
+		}},
 	}
 }
 

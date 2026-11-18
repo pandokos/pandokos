@@ -216,7 +216,7 @@ type reqState struct {
 	reservation    Reservation
 	reservedTokens int64
 	refusal        *LimitRefusal
-	forwarded      bool
+	counted        bool // the credential was opened: the request counts (sprint 5.2 D-2)
 
 	streamBody *streamBody
 	teeBody    *teeBody
@@ -339,7 +339,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.unavailable(st)
 		return
 	}
-	st.credential, st.credentialID, st.pinned, st.opened = cred.Secret, cred.ID, cred.Pinned, true
+	st.credential, st.credentialID, st.pinned, st.opened, st.counted = cred.Secret, cred.ID, cred.Pinned, true, true
 
 	// Step 9: forward. A request that was cancelled in steps 2 to 8 is not forwarded.
 	if r.Context().Err() != nil {
@@ -357,7 +357,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	req.ContentLength = int64(len(prepared))
 	req.TransferEncoding = nil
 	req.GetBody = nil
-	st.forwarded = true
 	h.proxy.ServeHTTP(st.sw, req)
 }
 

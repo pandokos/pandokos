@@ -80,3 +80,4 @@ guarantees that are hard to state and test.
 ## History
 
 - 2026-11: sprint 5.1 fixes the pipeline step, the estimate, the window and the bound, which names input and output ([ADR 0048](0048-reserve-and-settle.md)), and the rules ([ADR 0049](0049-limit-rules.md)); quotas, budgets and the behaviour of a failing store follow in 5.2.
+- 2026-11-18: sprint 5.2 implements periods, budgets, the rebuild of counters from the ledger and the failing store ([ADR 0050](0050-quotas-and-budgets-periods-attribution-currencies.md), [ADR 0051](0051-period-counters-and-the-ledger.md)).

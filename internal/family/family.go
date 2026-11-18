@@ -148,6 +148,8 @@ const (
 	CodeInvalidRequest       ErrorCode = "invalid_request"        // 400
 	CodeRequestTimeout       ErrorCode = "request_timeout"        // 408
 	CodeRateLimited          ErrorCode = "rate_limited"           // 429
+	CodeQuotaExceeded        ErrorCode = "quota_exceeded"         // 429
+	CodeNoPrice              ErrorCode = "no_price"               // 409
 )
 
 // Status returns the HTTP status of the code.
@@ -165,13 +167,13 @@ func (c ErrorCode) Status() int {
 		return 504
 	case CodeForbidden, CodeTenantSuspended, CodeModelNotAllowed:
 		return 403
-	case CodeNoCredential:
+	case CodeNoCredential, CodeNoPrice:
 		return 409
 	case CodeInvalidRequest:
 		return 400
 	case CodeRequestTimeout:
 		return 408
-	case CodeRateLimited:
+	case CodeRateLimited, CodeQuotaExceeded:
 		return 429
 	case CodeUnavailable:
 		return 503
@@ -209,6 +211,10 @@ func (c ErrorCode) Message() string {
 		return "Pandokos: the request body was not received in time."
 	case CodeRateLimited:
 		return "Pandokos: a rate limit of Pandokos was reached; retry after the time given in Retry-After."
+	case CodeQuotaExceeded:
+		return "Pandokos: a quota or budget of Pandokos was reached; it resets at the time given in Retry-After."
+	case CodeNoPrice:
+		return "Pandokos: a budget applies to this call and the model has no price the budget can be measured with."
 	default:
 		return "Pandokos: internal error."
 	}
@@ -230,4 +236,8 @@ const (
 	HeaderLimit          = "X-Pandokos-Limit"
 	HeaderLimitRemaining = "X-Pandokos-Limit-Remaining"
 	HeaderLimitReset     = "X-Pandokos-Limit-Reset"
+	// HeaderLimitCurrency names the currency of a budget; HeaderLimitScope says how narrow the
+	// rule is: all, provider or model (sprint 5.2 section 5.8).
+	HeaderLimitCurrency = "X-Pandokos-Limit-Currency"
+	HeaderLimitScope    = "X-Pandokos-Limit-Scope"
 )

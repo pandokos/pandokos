@@ -19,10 +19,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/gateway"
+	"github.com/pandokos/pandokos/internal/limits"
+	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/internal/usage"
 	"github.com/pandokos/pandokos/test/fakeprovider"
 	"github.com/pandokos/pandokos/test/fixtures"
+	"github.com/pandokos/pandokos/test/limitstest"
 	"github.com/pandokos/pandokos/test/testutil"
 )
 
@@ -48,6 +52,21 @@ type external struct {
 	controlURL string
 	up         *fakeprovider.Server
 	rec        *testutil.MemoryRecorder
+	// limitedKeys are the keys of sprint 5.2 (T-689, T-690), by the suffix of the environment
+	// variable that carries them: one key per family and code, each with a rule of subject key.
+	limitedKeys map[string]string
+}
+
+// limitedKeySpecs are the four keys of the SDK suites: a family and a rule that refuses the second
+// call. The in-process harness gives them to the static authenticator with the limits of
+// sprint 5.2 behind it; the design asks for them to be made through the CLI, which this harness
+// has no process for.
+var limitedKeySpecs = []struct {
+	suffix string
+	metric limits.Metric
+}{
+	{"RATE_OPENAI", limits.RequestsPerMinute}, {"RATE_ANTHROPIC", limits.RequestsPerMinute},
+	{"QUOTA_OPENAI", limits.RequestsPerDay}, {"QUOTA_ANTHROPIC", limits.RequestsPerDay},
 }
 
 // startExternal starts the in-process server with three providers (openai; anthropic, family
@@ -66,10 +85,23 @@ func startExternal(t *testing.T) *external {
 		compat.StreamUsage = false
 		targets["compat/"+m] = compat
 	}
-	addr, rec := startServer(t,
+	principal := testutil.InferencePrincipal()
+	principals := map[string]authz.Principal{testKey: principal}
+	limitedKeys := map[string]string{}
+	var rules []limits.Rule
+	for i, spec := range limitedKeySpecs {
+		key := testutil.NewKey(t)
+		p := principal
+		p.KeyID = fmt.Sprintf("tsdk%012d", i)
+		principals[key], limitedKeys[spec.suffix] = p, key
+		rules = append(rules, limits.Rule{ID: "sdk-" + spec.suffix, SubjectKind: limits.SubjectKey, SubjectID: p.KeyID, Metric: spec.metric, Value: 1, Enforce: true})
+	}
+	lim := limitstest.NewWith(t, limitstest.Options{Rules: map[tenant.ID][]limits.Rule{principal.TenantID: rules}})
+	addr, rec := startServerKeys(t,
 		map[string]string{"openai": "openai", "anthropic": "anthropic", "compat": "openai"}, targets,
-		map[string]string{"openai": fixtures.CanaryProviderKey, "anthropic": fixtures.CanaryProviderKey, "compat": fixtures.CanaryProviderKey})
-	e := &external{baseURL: "http://" + addr, up: up, rec: rec}
+		map[string]string{"openai": fixtures.CanaryProviderKey, "anthropic": fixtures.CanaryProviderKey, "compat": fixtures.CanaryProviderKey},
+		lim, principals)
+	e := &external{baseURL: "http://" + addr, up: up, rec: rec, limitedKeys: limitedKeys}
 	ctl := httptest.NewServer(e.control())
 	t.Cleanup(ctl.Close)
 	e.controlURL = ctl.URL
@@ -150,10 +182,14 @@ func (e *external) suiteEnv() []string {
 	for _, kv := range os.Environ() {
 		name, _, _ := strings.Cut(kv, "=")
 		switch strings.ToUpper(name) {
-		case "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "PANDOKOS_BASE_URL", "PANDOKOS_KEY", "PANDOKOS_CONTROL_URL":
+		case "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "PANDOKOS_BASE_URL", "PANDOKOS_KEY", "PANDOKOS_CONTROL_URL",
+			"PANDOKOS_KEY_RATE_OPENAI", "PANDOKOS_KEY_RATE_ANTHROPIC", "PANDOKOS_KEY_QUOTA_OPENAI", "PANDOKOS_KEY_QUOTA_ANTHROPIC":
 			continue
 		}
 		env = append(env, kv)
+	}
+	for suffix, key := range e.limitedKeys {
+		env = append(env, "PANDOKOS_KEY_"+suffix+"="+key)
 	}
 	return append(env,
 		"PANDOKOS_BASE_URL="+e.baseURL,
@@ -257,6 +293,11 @@ func TestExternalHarness(t *testing.T) {
 		for _, k := range []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"} {
 			if v, ok := env[k]; ok {
 				t.Errorf("%s=%s reached the suite", k, v)
+			}
+		}
+		for _, spec := range limitedKeySpecs {
+			if env["PANDOKOS_KEY_"+spec.suffix] == "" || env["PANDOKOS_KEY_"+spec.suffix] == testKey {
+				t.Errorf("PANDOKOS_KEY_%s did not reach the suite", spec.suffix)
 			}
 		}
 		if env["PANDOKOS_BASE_URL"] != e.baseURL || env["PANDOKOS_KEY"] != testKey || env["PANDOKOS_CONTROL_URL"] != e.controlURL ||

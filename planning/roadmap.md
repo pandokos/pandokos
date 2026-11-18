@@ -65,9 +65,9 @@ flowchart LR
 | **4** | **[Identity federation and RBAC](epics/04-identity-and-rbac/epic.md)** | | |
 | 4.1 | Trusted token issuers | JWTs from registered issuers authenticate calls; the tenant comes from the registration or from a claim | done |
 | | **v0.2.0 — Governance** | | |
-| **5** | **[Limits and budgets](epics/05-limits-and-budgets/epic.md)** | | |
+| **5** | **[Limits and budgets](epics/05-limits-and-budgets/epic.md)** | | done |
 | 5.1 | Reserve and settle | The limiter interface with in-process counters; request and token rate limits; concurrency; the 429 contract | done |
-| 5.2 | Quotas and budgets | Periodic quotas and monetary budgets with reservation; scopes; soft thresholds; reconciliation from the ledger | |
+| 5.2 | Quotas and budgets | Periodic quotas and monetary budgets with reservation; scopes; soft thresholds; reconciliation from the ledger | done |
 | **4** | **Identity federation and RBAC** (continued) | | |
 | 4.2 | Users, local accounts and sessions | People sign in to the administration API with a local account or through an external OIDC provider and obtain a session; memberships in several tenants; local disable | |
 | 4.3 | Roles | All built-in roles, custom roles, platform roles, support actions with reason; the API reports a user's effective permissions | |

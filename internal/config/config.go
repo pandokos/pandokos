@@ -201,6 +201,13 @@ type Limits struct {
 	RequestBodyReadTimeout Duration `yaml:"request_body_read_timeout"`
 	MaxRequestDuration     Duration `yaml:"max_request_duration"`
 	DefaultOutputTokens    int64    `yaml:"default_output_tokens"`
+	TimeZone               string   `yaml:"time_zone"`
+	OnUnknownPrice         string   `yaml:"on_unknown_price"`
+	OnStoreFailure         string   `yaml:"on_store_failure"`
+	ReconcileInterval      Duration `yaml:"reconcile_interval"`
+
+	// Location is the zone named by TimeZone, parsed by Load.
+	Location *time.Location `yaml:"-"`
 }
 
 // Upstream configures the connection to providers.
@@ -335,6 +342,11 @@ func Defaults() *Config {
 			RequestBodyReadTimeout: Duration(30 * time.Second),
 			MaxRequestDuration:     Duration(10 * time.Minute),
 			DefaultOutputTokens:    4096,
+			TimeZone:               "UTC",
+			OnUnknownPrice:         "refuse",
+			OnStoreFailure:         "refuse",
+			ReconcileInterval:      Duration(5 * time.Minute),
+			Location:               time.UTC,
 		},
 		Upstream: Upstream{ConnectTimeout: Duration(10 * time.Second)},
 		Shutdown: Shutdown{DrainTimeout: Duration(30 * time.Second)},

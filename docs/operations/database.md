@@ -461,10 +461,35 @@ Migration `0009_limit_rules` adds the two tables of the limit rules ([limits gui
 - Who reads and writes. **The gateway role reads both and writes neither**; it reads a tenant's rules
   with two queries inside that tenant's session. The admin role reads both and holds column-level
   `INSERT` and `DELETE`, and `UPDATE` on `limit_value` only (a rule changes its value, never its
-  subject or metric). The worker role holds nothing. Until sprint 5.2 no role writes a rule in a
-  running installation; the tables are empty and nothing is seeded.
+  subject or metric). The worker role holds nothing. Rules are written through the administration API
+  and the CLI (migration 0010 and [limits guide](limits.md)); nothing is seeded.
 - Notifications on `pandokos_cache`: a change to `limit_rule`, or to a row of `platform_limit_rule`
   that has a tenant, sends `limits:<tenant id>`; a change to a platform default (a row without a
   tenant) sends `limits`. The gateway's rule cache drops that tenant on `limits:<id>` and on
   `tenant:<id>`, and every tenant on `limits`; the other caches ignore both payloads. The cache
   lifetime is `cache.limits_ttl`, the bound on how long a change takes when no notification arrives.
+
+## 15. Grants of migration 0010
+
+Migration `0010_quotas_budgets` adds quotas and budgets to the limit rules ([limits guide](limits.md),
+[ADR 0050](../adr/0050-quotas-and-budgets-periods-attribution-currencies.md),
+[ADR 0052](../adr/0052-administration-of-limits.md)). It runs in one transaction as the owner role.
+
+- `limit_rule` and `platform_limit_rule` gain `provider`, `model`, `currency`, `enforce` and
+  `thresholds`, all with defaults (empty, empty, empty, true, no thresholds), and the unique key,
+  the metric check and the value range are replaced by ones that know the nine metrics and the scope.
+  The admin role gets `INSERT` on the new columns and `UPDATE` on `enforce` and `thresholds` besides
+  `limit_value`; a rule's subject, scope, metric and currency still never change.
+- The table `limit_event` is new: tenant-scoped (`tenant_isolation`), append-only for every role
+  (update, delete and truncate are refused by triggers), with a unique key per tenant, rule, period
+  start, kind and percentage. The gateway role holds `INSERT` on the listed columns, the admin role
+  `SELECT`, the worker role nothing. Notifications are unchanged.
+- `model` gains `default_output_tokens` (null by default); the admin role holds `INSERT` and `UPDATE`
+  on it.
+- Nothing is rewritten: only columns with defaults are added, so a table that already holds rows does
+  not need a rewrite, `usage_record` is not touched, and the migration is quick. **It is safe to apply
+  before the new binary starts**, and an old binary keeps working on the new schema: it reads rules
+  with the three metrics it knows and ignores rules of metrics it does not know (it logs how many in
+  one debug line), so rules written for quotas and budgets are not enforced until the new binary runs.
+- The usage ledger reads for the counters (`AggregateUsageForLimits`) run on the worker role in the
+  tenant's session; the gateway role still reads no usage record.

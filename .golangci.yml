@@ -125,8 +125,18 @@ linters:
               desc: the administration plane never opens a credential
             - pkg: github.com/pandokos/pandokos/internal/resolver
               desc: the administration plane never opens a credential
-            - pkg: github.com/pandokos/pandokos/internal/limits
-              desc: limits are enforced by the data plane; the administration plane reaches rules through the store
+        limits-is-below-the-planes:
+          list-mode: lax
+          files:
+            - "**/internal/limits/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/pandokos/pandokos/internal/ledger
+              desc: the counters read the ledger through their own reader on the worker pool (ADR 0051)
+            - pkg: github.com/pandokos/pandokos/internal/admin
+              desc: the limiter is used by the planes and does not know them
+            - pkg: github.com/pandokos/pandokos/internal/gateway
+              desc: the limiter is used by the gateway through gateway.Limits and does not know it
         gateway-takes-plain-values:
           list-mode: lax
           files:

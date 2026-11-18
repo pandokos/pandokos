@@ -46,3 +46,7 @@ outbox.
 to a third party.
 
 **A vendor adapter as the only output.** Locks the product to one receiving system.
+
+## History
+
+- 2026-11-18: sprint 5.2 records limit facts (a threshold reached, a limit exhausted) in `limit_event`; the outbox row follows in sprint 6.4 ([ADR 0052](0052-administration-of-limits.md)).

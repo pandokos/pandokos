@@ -400,8 +400,8 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func runeCount(s string) int { return utf8.RuneCountInString(s) }
 
-func unique(items []string) bool {
-	seen := map[string]bool{}
+func unique[T comparable](items []T) bool {
+	seen := map[T]bool{}
 	for _, s := range items {
 		if seen[s] {
 			return false
@@ -409,6 +409,26 @@ func unique(items []string) bool {
 		seen[s] = true
 	}
 	return true
+}
+
+//nolint:unparam // the bound is the minimum of the document, the same for every use so far
+func anyBelow(items []int, min int) bool {
+	for _, n := range items {
+		if n < min {
+			return true
+		}
+	}
+	return false
+}
+
+//nolint:unparam // the bound is the maximum of the document, the same for every use so far
+func anyAbove(items []int, max int) bool {
+	for _, n := range items {
+		if n > max {
+			return true
+		}
+	}
+	return false
 }
 
 // ProblemError is an error response of the API, as the client returns it.

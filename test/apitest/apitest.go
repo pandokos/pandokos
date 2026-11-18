@@ -21,6 +21,7 @@ import (
 	"github.com/pandokos/pandokos/internal/admin"
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/authn"
+	"github.com/pandokos/pandokos/internal/limits"
 	"github.com/pandokos/pandokos/internal/pricing/genaiprices"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/telemetry"
@@ -85,6 +86,7 @@ func NewOn(tb testing.TB, d *dbtest.Database, mutate ...func(*admin.Options)) *A
 		tb.Fatal(err)
 	}
 	o := admin.Options{Logger: logger, DB: a.Admin, Authenticator: auth, Sealer: a.Sealer, Snapshot: genaiprices.Snapshot()}
+	o.Limits.Ledger = limits.NewLedger(a.Admin)
 	for _, m := range mutate {
 		m(&o)
 	}

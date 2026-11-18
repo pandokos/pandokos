@@ -55,6 +55,9 @@ A record is *proposed* until its pull request is merged by the maintainer, then 
 | [0047](0047-identity-providers-in-the-test-suite.md) | Identity providers in the test suite | proposed |
 | [0048](0048-reserve-and-settle.md) | Reserve and settle in the pipeline: estimate, counters, guarantees and the 429 contract | proposed |
 | [0049](0049-limit-rules.md) | Limit rules: levels, subjects and resolution | proposed |
+| [0050](0050-quotas-and-budgets-periods-attribution-currencies.md) | Quotas and budgets: periods, attribution, currencies and unknown prices | proposed |
+| [0051](0051-period-counters-and-the-ledger.md) | Period counters and the ledger: load, cut, reconciliation, the failing store | proposed |
+| [0052](0052-administration-of-limits.md) | Administration of limits: scopes, thresholds, events, API and permissions | proposed |
 
 ## Questions from SOW 0.1 and where they were decided
 

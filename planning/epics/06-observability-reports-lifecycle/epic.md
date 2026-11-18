@@ -37,7 +37,7 @@ collector stopped, inference latency is unchanged.
 ### 6.2 Reports and audit reading
 
 - Usage rollups maintained by the worker; report API by period, provider, model and caller;
-  platform aggregates.
+  platform aggregates. The rollup serves the limit counters and the capability check (5.2 §11).
 - Usage export as newline-delimited JSON and CSV.
 - Audit reading API with filters; per-tenant hash chain; `pandokos audit verify`; audit export.
 - Retention settings for usage and audit; partition dropping through the audited function.
@@ -68,7 +68,8 @@ version; a tenant export can be read with the published schema.
 ### 6.4 Events for external systems — part of v0.3
 
 - Outbox table written in the transaction that records the fact; relay in the worker with
-  claiming, backoff, dead-letter state and replay.
+  claiming, backoff, dead-letter state and replay. The outbox row of a limit event is written with
+  its `limit_event` row (5.2 §11).
 - CloudEvents format and versioned event types: usage recorded, limit threshold reached, limit
   exhausted, tenant deleted. An external reference per tenant, carried by every event.
 - Signed webhook destination; pull export of events.

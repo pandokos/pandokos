@@ -34,8 +34,8 @@ func TestIssuerPermissions(t *testing.T) {
 				first = i + 1
 			}
 		}
-		if first < 0 || len(cat) != first+9 {
-			t.Fatalf("%d permissions, usage:read at %d: the nine are not the last nine", len(cat), first)
+		if first < 0 || len(cat) < first+9 {
+			t.Fatalf("%d permissions, usage:read at %d: the nine do not follow it", len(cat), first)
 		}
 		for i, w := range want {
 			p := cat[first+i]

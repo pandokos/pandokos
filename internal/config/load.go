@@ -77,12 +77,21 @@ func Load(src Source) (*Config, []Warning, error) {
 	return cfg, warnings(cfg, env, known, src), nil
 }
 
+// limitsWarnings warns that requests are admitted when their counters cannot be verified.
+func limitsWarnings(c *Config) []Warning {
+	if c.Limits.OnStoreFailure == "allow" {
+		return []Warning{{Key: "limits.on_store_failure", Message: "requests are admitted when their quota and budget counters cannot be verified: a quota or budget can be exceeded while the counters are unavailable"}}
+	}
+	return nil
+}
+
 func warnings(cfg *Config, env map[string]string, known map[string]bool, src Source) []Warning {
 	ws := listenerAndURLWarnings(cfg)
 	if src.Purpose == PurposeServe {
 		ws = append(ws, proxyEnvironmentWarnings(cfg, src.Environ)...)
 		ws = append(ws, otelEnvironmentWarnings(cfg, src.Environ)...)
 		ws = append(ws, tokenWarnings(cfg)...)
+		ws = append(ws, limitsWarnings(cfg)...)
 	}
 	var unknown []string
 	for name := range env {

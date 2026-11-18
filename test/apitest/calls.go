@@ -25,7 +25,13 @@ type Params struct {
 	TokenIssuer    string // {issuer} of a tenant-bound trusted issuer, and the issuer of a new mapping
 	SubjectMapping string // {mapping}
 	PlatformIssuer string // {issuer} of a platform-level issuer
+	LimitRule      string // {rule} of a limit rule of the tenant
+	PlatformLimit  string // {rule} of a platform limit rule
 }
+
+// NoLimitRule is the {rule} of a call whose Params name no limit rule: a well-formed identifier
+// that no row has.
+const NoLimitRule = "0192f0f0-0000-7000-8000-00000000000a"
 
 // Call is how to make a valid call of one operation.
 type Call struct {
@@ -117,6 +123,12 @@ func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 		body = map[string]any{"issuer": map[string]any{"scope": "tenant", "id": p.TokenIssuer}, "subject": UniqueName("subject"), "service_account_id": p.ServiceAccount}
 	case "putPlatformIssuerTenant":
 		body = map[string]any{}
+	case "listLimits", "getLimit", "deleteLimit", "listTenantPlatformLimits", "listLimitEvents",
+		"listPlatformLimits", "getPlatformLimit", "deletePlatformLimit":
+	case "createLimit", "createPlatformLimit":
+		body = map[string]any{"metric": "requests_per_day", "limit": 1000}
+	case "updateLimit", "updatePlatformLimit":
+		body = map[string]any{"limit": 2000}
 	default:
 		tb.Fatalf("apitest.CallFor does not know the operation %s: add it", op.ID)
 	}
@@ -129,6 +141,14 @@ func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 	path = strings.ReplaceAll(path, "{price_version}", p.PriceVersion)
 	path = strings.ReplaceAll(path, "{price_import}", p.PriceImport)
 	path = strings.ReplaceAll(path, "{mapping}", p.SubjectMapping)
+	rule := p.LimitRule
+	if strings.HasPrefix(op.Path, "/v1/platform-limits/") {
+		rule = p.PlatformLimit
+	}
+	if rule == "" {
+		rule = NoLimitRule
+	}
+	path = strings.ReplaceAll(path, "{rule}", rule)
 	if strings.Contains(op.Path, "/platform-issuers/{issuer}") {
 		path = strings.ReplaceAll(path, "{issuer}", p.PlatformIssuer)
 	} else {

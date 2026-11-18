@@ -407,6 +407,7 @@ var catalogueCommands = []command{
 		fs.Var(&caps, "capability", "capability (repeatable)")
 		window := fs.Int("context-window", 0, "context window in tokens")
 		maxOut := fs.Int("max-output-tokens", 0, "largest output in tokens")
+		defOut := fs.Int("default-output-tokens", 0, "output tokens reserved when a request sets no limit")
 		pos, err := parse(fs, args, 1)
 		if err != nil {
 			return err
@@ -416,7 +417,7 @@ var catalogueCommands = []command{
 			return usagef("a model is created with a reference provider/name")
 		}
 		body := adminapi.ModelCreate{Provider: p, Name: n, UpstreamID: *upstream, DisplayName: *display, Description: *desc,
-			Capabilities: caps, ContextWindow: *window, MaxOutputTokens: *maxOut}
+			Capabilities: caps, ContextWindow: *window, MaxOutputTokens: *maxOut, DefaultOutputTokens: *defOut}
 		if *status != "" {
 			if body.Status, err = parseStatus(*status); err != nil {
 				return err
@@ -461,6 +462,7 @@ var catalogueCommands = []command{
 		noCaps := fs.Bool("no-capabilities", false, "remove every capability")
 		window := fs.Int("context-window", 0, "context window in tokens (0 clears)")
 		maxOut := fs.Int("max-output-tokens", 0, "largest output in tokens (0 clears)")
+		defOut := fs.Int("default-output-tokens", 0, "output tokens reserved when a request sets no limit (0 clears)")
 		pos, err := parse(fs, args, 1)
 		if err != nil {
 			return err
@@ -503,8 +505,11 @@ var catalogueCommands = []command{
 		if given(fs, "max-output-tokens") {
 			body.MaxOutputTokens = adminapi.Some(*maxOut)
 		}
+		if given(fs, "default-output-tokens") {
+			body.DefaultOutputTokens = adminapi.Some(*defOut)
+		}
 		if !body.UpstreamID.Set && !body.DisplayName.Set && !body.Description.Set && !body.Status.Set && !body.Availability.Set &&
-			!body.Capabilities.Set && !body.ContextWindow.Set && !body.MaxOutputTokens.Set {
+			!body.Capabilities.Set && !body.ContextWindow.Set && !body.MaxOutputTokens.Set && !body.DefaultOutputTokens.Set {
 			return usagef("model update needs a member to change")
 		}
 		if err := a.connect(); err != nil {
