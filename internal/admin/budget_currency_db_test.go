@@ -135,7 +135,7 @@ func TestBudgetCurrency(t *testing.T) {
 			t.Errorf("the platform in the currency of a selected model: %d\n%s", r.Status, r.Body)
 		}
 		// Granted to the tenant, the model is in its set.
-		if r := w.do(t, w.plat, "POST", "/v1/models/"+closed.ID+"/grants", map[string]any{"tenant": w.a.ID}); r.Status != 201 && r.Status != 200 {
+		if r := w.do(t, w.plat, "PUT", "/v1/models/"+closed.ID+"/grants/"+w.a.ID, map[string]any{}); r.Status != 200 {
 			t.Fatalf("grant: %d\n%s", r.Status, r.Body)
 		}
 		if r := tenantPost(budget(p, "", "JPY", nil)); r.Status != 201 {

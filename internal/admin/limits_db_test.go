@@ -243,6 +243,9 @@ func TestLimits(t *testing.T) {
 				t.Errorf("%v: %d\n%s", b, r.Status, r.Body)
 			}
 		}
+		// The model has a price in both currencies (the second starts later, which counts), so that the second budget passes the currency check
+		// of 5.8 and meets the conflict (a budget has one currency).
+		w.api.DB.SeedPrice(t, w.cat.Provider.Name, w.cat.All.Name, "USD", time.Now().Add(24*time.Hour))
 		w.create(t, map[string]any{"metric": "cost_per_day", "amount": "5", "currency": "EUR", "provider": w.cat.Provider.Name, "model": w.cat.All.Name})
 		expect(t, w.do(t, w.ka, "POST", w.baseA, map[string]any{"metric": "cost_per_day", "amount": "7", "currency": "USD", "provider": w.cat.Provider.Name, "model": w.cat.All.Name}), 409, adminapi.ProblemCodeConflict)
 		// The same rule in another tenant is fine.

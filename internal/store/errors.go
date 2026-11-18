@@ -74,3 +74,13 @@ func IsUnavailable(err error) bool {
 	}
 	return strings.Contains(err.Error(), "failed to connect") || strings.Contains(err.Error(), "conn closed")
 }
+
+// ErrorMessage returns the message of a database error, or "". It identifies what a trigger raised
+// when the error carries no constraint name.
+func ErrorMessage(err error) string {
+	var pe *pgconn.PgError
+	if errors.As(err, &pe) {
+		return pe.Message
+	}
+	return ""
+}

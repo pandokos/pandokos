@@ -56,6 +56,15 @@ type invalidError struct{ fields []adminapi.FieldError }
 
 func (e *invalidError) Error() string { return "admin: invalid request" }
 
+// stateError is an invalid_state with the members that explain it (sprint 5.3, section 5.4).
+type stateError struct{ fields []adminapi.FieldError }
+
+func (e *stateError) Error() string { return "admin: invalid state" }
+
+func invalidState(field, message string) error {
+	return &stateError{fields: []adminapi.FieldError{{Field: field, Message: message}}}
+}
+
 func invalid(field, message string) error {
 	return &invalidError{fields: []adminapi.FieldError{{Field: field, Message: message}}}
 }

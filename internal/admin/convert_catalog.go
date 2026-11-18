@@ -210,6 +210,12 @@ func mapCatalogError(err error) error {
 			return errConflict
 		}
 	case "foreign_key", "restrict":
+		switch name {
+		case "limit_rule_provider_fkey", "platform_limit_rule_provider_fkey":
+			return invalidState("limit_rules", "limit rules reference this provider; disable the provider instead")
+		case "limit_rule_model_fkey", "platform_limit_rule_model_fkey":
+			return invalidState("limit_rules", "limit rules reference this model; retire the model or remove its grants instead")
+		}
 		return errInvalidState
 	case "check":
 		if name == "provider_name_reserved" {

@@ -269,12 +269,15 @@ func (s *server) fail(w http.ResponseWriter, r *http.Request, _ *adminapi.Operat
 	var fields []adminapi.FieldError
 	var re *adminapi.RequestError
 	var ie *invalidError
+	var st2 *stateError
 	var fe *catalog.FetchError
 	switch {
 	case errors.As(err, &re):
 		code, fields = re.Code, re.Fields
 	case errors.As(err, &ie):
 		code, fields = adminapi.ProblemCodeInvalidRequest, ie.fields
+	case errors.As(err, &st2):
+		code, fields = adminapi.ProblemCodeInvalidState, st2.fields
 	case errors.Is(err, errUnauthenticated):
 		code = adminapi.ProblemCodeUnauthenticated
 	case errors.Is(err, errForbidden):

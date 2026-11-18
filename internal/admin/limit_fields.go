@@ -203,7 +203,13 @@ func valueOut(metric string, v int64) (limit int, amount string) {
 }
 
 // ruleDetail is what the audit row of a creation or deletion holds: every member of the rule.
-func ruleDetail(d map[string]any, metric string, value int64, currency string, enforce bool, thresholds []int16) map[string]any {
+func ruleDetail(d map[string]any, providerID, modelID, metric string, value int64, currency string, enforce bool, thresholds []int16) map[string]any {
+	if providerID != "" {
+		d["provider_id"] = providerID
+	}
+	if modelID != "" {
+		d["model_id"] = modelID
+	}
 	d["metric"] = metric
 	if costMetric(adminapi.LimitMetric(metric)) {
 		d["amount"], d["currency"] = amountText(value), currency
@@ -294,6 +300,16 @@ func mapLimitError(err error) error {
 	switch {
 	case kind == "unique" && (name == "limit_rule_key" || name == "platform_limit_rule_key"):
 		return errConflict
+	case kind == "foreign_key" && (name == "limit_rule_service_account_fkey" || name == "limit_rule_virtual_key_fkey" || name == "limit_rule_subject_mapping_fkey"):
+		return invalid("subject_id", noSuchRuleSubj)
+	case kind == "foreign_key" && (name == "limit_rule_provider_fkey" || name == "platform_limit_rule_provider_fkey"):
+		return invalid("provider", "must name a provider")
+	case kind == "foreign_key" && name == "limit_rule_model_fkey":
+		return invalid("model", "must name a model available to this tenant")
+	case kind == "foreign_key" && name == "platform_limit_rule_model_fkey":
+		return invalid("model", "must name a model of the provider")
+	case kind == "check" && store.ErrorMessage(err) == "a revoked key takes no limit rule":
+		return invalid("subject_id", noSuchRuleSubj)
 	case kind == "foreign_key" && strings.HasPrefix(name, "platform_limit_rule_tenant"):
 		return invalid("tenant", noSuchRuleTenant)
 	}
