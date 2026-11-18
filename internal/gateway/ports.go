@@ -24,6 +24,9 @@ type Target struct {
 	StreamUsage        bool              // the provider's stream_usage_option is "add"
 	MaxOutputTokens    int64             // the model's max_output_tokens; 0 when the catalogue has none
 	ContextWindow      int64             // the model's context window in tokens; 0 when the catalogue has none
+	// DefaultOutputTokens is the output reservation per choice of a request that sets no output
+	// limit; 0 when the model has none and the configured default applies.
+	DefaultOutputTokens int64
 }
 
 // Recorder receives the usage record of every admitted request.
@@ -50,6 +53,8 @@ type LimitEstimate struct {
 	RequestID                 string
 	InputTokens, OutputTokens int64
 	Cost                      pricing.Cost
+	Provider, Model           string    // names of the target
+	Start                     time.Time // start of the request: the period its amounts belong to
 }
 
 // LimitUsage is what a call consumed: the figures of its usage record.
@@ -60,7 +65,9 @@ type LimitUsage struct {
 
 // LimitRefusal is a refusal of the limits, in plain values.
 type LimitRefusal struct {
+	Code                   string // "rate_limited", "quota_exceeded" or "no_price"
 	Level, Subject, Metric string
+	Scope, Currency        string // how narrow the rule is (all, provider, model); the currency of a budget
 	Limit, Remaining       int64
 	RetryAfter, Reset      time.Duration
 	OverLimit              bool

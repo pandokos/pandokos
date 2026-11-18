@@ -149,3 +149,18 @@ func clip(s string) string {
 	}
 	return s
 }
+
+// limitMutations are the mutating operations of sprint 5.2. Their handlers, audit steps and tests
+// arrive with step C6; until then the enumerating tests of earlier sprints leave them out.
+var limitMutations = map[string]bool{
+	"createLimit": true, "updateLimit": true, "deleteLimit": true,
+	"createPlatformLimit": true, "updatePlatformLimit": true, "deletePlatformLimit": true,
+}
+
+// pendingLimitOps are the twelve operations of sprint 5.2 whose handlers arrive with step C6: the
+// sweeps that need a working handler leave them out until then.
+var pendingLimitOps = map[string]bool{
+	"listLimits": true, "createLimit": true, "getLimit": true, "updateLimit": true, "deleteLimit": true,
+	"listTenantPlatformLimits": true, "listLimitEvents": true,
+	"listPlatformLimits": true, "createPlatformLimit": true, "getPlatformLimit": true, "updatePlatformLimit": true, "deletePlatformLimit": true,
+}

@@ -1,13 +1,29 @@
 package limits
 
-import "github.com/pandokos/pandokos/internal/tenant"
+import (
+	"time"
+
+	"github.com/pandokos/pandokos/internal/tenant"
+)
 
 // Rule is one row of limit_rule.
 type Rule struct {
-	SubjectKind SubjectKind
-	SubjectID   string
-	Metric      Metric
-	Value       int64
+	ID              string
+	SubjectKind     SubjectKind
+	SubjectID       string
+	Provider, Model string // scope; "" means every
+	Metric          Metric
+	Value           int64 // requests or tokens; millionths of the currency for a cost metric
+	Currency        string
+	Enforce         bool
+	Thresholds      []int // percentages of Value
+}
+
+// Query is what a request is, for the resolution of its limits.
+type Query struct {
+	ServiceAccountID, KeyID string
+	Provider, Model         string    // names of the target
+	Start                   time.Time // start of the request
 }
 
 // RuleSet is the rules in force for one tenant.
@@ -77,12 +93,13 @@ func NewRuleSet(t tenant.ID, platformDefault, platformTenant map[Metric]int64, r
 	return s
 }
 
-// For returns the limits a request of a service account and a key is reserved against, in the
+// For returns the limits a request described by q is reserved against, in the
 // order of resolution: the tenant, then the service account, then the key; within a subject
 // concurrent requests, requests per minute, tokens per minute. An empty ID yields no limit for
 // that subject. A subject without a rule yields no limit, and so does a tenant without a platform
 // ceiling or rule.
-func (s RuleSet) For(serviceAccountID, keyID string) []Limit {
+func (s RuleSet) For(q Query, _ *Calendar) []Limit {
+	serviceAccountID, keyID := q.ServiceAccountID, q.KeyID
 	out := make([]Limit, 0, 9)
 	for _, m := range Metrics() {
 		ceil, hasCeil := s.Platform[m]

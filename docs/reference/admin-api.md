@@ -149,6 +149,12 @@ tenants ([tokens guide](../operations/tokens.md)). The operations are:
 | `getPlatformIssuer`, `updatePlatformIssuer`, `deletePlatformIssuer` | `GET`, `PATCH`, `DELETE /v1/platform-issuers/{issuer}` | `platform_issuer:read`, `platform_issuer:write`, `platform_issuer:delete` |
 | `listPlatformIssuerTenants` | `GET /v1/platform-issuers/{issuer}/tenants` | `platform_issuer:read` |
 | `putPlatformIssuerTenant`, `deletePlatformIssuerTenant` | `PUT`, `DELETE /v1/platform-issuers/{issuer}/tenants/{tenant}` | `platform_issuer:write` |
+| `listLimits`, `createLimit` | `GET`, `POST /v1/tenants/{tenant}/limits` | `limit:read`, `limit:write` |
+| `getLimit`, `updateLimit`, `deleteLimit` | `GET`, `PATCH`, `DELETE .../limits/{rule}` | `limit:read`, `limit:write`, `limit:delete` |
+| `listTenantPlatformLimits` | `GET /v1/tenants/{tenant}/platform-limits` | `limit:read` |
+| `listLimitEvents` | `GET /v1/tenants/{tenant}/limit-events` | `limit:read` |
+| `listPlatformLimits`, `createPlatformLimit` | `GET`, `POST /v1/platform-limits` | `platform_limit:read`, `platform_limit:write` |
+| `getPlatformLimit`, `updatePlatformLimit`, `deletePlatformLimit` | `GET`, `PATCH`, `DELETE /v1/platform-limits/{rule}` | `platform_limit:read`, `platform_limit:write`, `platform_limit:delete` |
 
 - `createTokenIssuer` and `createPlatformIssuer` take `name`, `issuer` and `audience` (and
   `tenant_claim` for a platform-level one); `algorithms` defaults to `["RS256", "ES256"]`,

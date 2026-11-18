@@ -28,6 +28,8 @@ var errorTypes = map[family.ErrorCode]string{
 	family.CodeUpstreamUnreachable:  "api_error",
 	family.CodeUnavailable:          "api_error",
 	family.CodeRateLimited:          "rate_limit_error",
+	family.CodeQuotaExceeded:        "rate_limit_error",
+	family.CodeNoPrice:              "invalid_request_error",
 }
 
 // TestWriteErrorEveryCode keeps the test's table complete against family.go.

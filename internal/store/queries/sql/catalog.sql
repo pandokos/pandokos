@@ -93,7 +93,7 @@ RETURNING id, provider_id, name, base_url, region, private, enabled, is_default,
 
 -- name: ListModels :many
 SELECT m.id, p.name AS provider, p.api_family, m.name, m.upstream_id, m.display_name, m.description, m.status,
-       m.availability, m.capabilities, m.context_window, m.max_output_tokens, m.price_override, m.created_at, m.updated_at
+       m.availability, m.capabilities, m.context_window, m.max_output_tokens, m.default_output_tokens, m.price_override, m.created_at, m.updated_at
   FROM pandokos.model m
   JOIN pandokos.provider p ON p.id = m.provider_id
  WHERE (sqlc.arg(provider)::text = '' OR p.name = sqlc.arg(provider)::text)
@@ -110,23 +110,23 @@ SELECT m.id, p.name AS provider, p.api_family, m.name, m.upstream_id, m.display_
 
 -- name: GetModel :one
 SELECT m.id, p.name AS provider, p.api_family, m.name, m.upstream_id, m.display_name, m.description, m.status,
-       m.availability, m.capabilities, m.context_window, m.max_output_tokens, m.price_override, m.created_at, m.updated_at
+       m.availability, m.capabilities, m.context_window, m.max_output_tokens, m.default_output_tokens, m.price_override, m.created_at, m.updated_at
   FROM pandokos.model m
   JOIN pandokos.provider p ON p.id = m.provider_id
  WHERE m.id = sqlc.arg(id)::uuid;
 
 -- name: LockModel :one
-SELECT m.id, m.name, m.price_override
+SELECT m.id, m.name, m.price_override, m.default_output_tokens
   FROM pandokos.model m
  WHERE m.id = sqlc.arg(id)::uuid
    FOR UPDATE;
 
 -- name: CreateModel :one
 INSERT INTO pandokos.model (provider_id, name, upstream_id, display_name, description, status, availability, capabilities,
-                            context_window, max_output_tokens)
+                            context_window, max_output_tokens, default_output_tokens)
 VALUES (sqlc.arg(provider_id)::uuid, sqlc.arg(name)::text, sqlc.arg(upstream_id)::text, sqlc.arg(display_name)::text,
         sqlc.arg(description)::text, sqlc.arg(status)::text, sqlc.arg(availability)::text, sqlc.arg(capabilities)::text[],
-        sqlc.narg(context_window)::bigint, sqlc.narg(max_output_tokens)::bigint)
+        sqlc.narg(context_window)::bigint, sqlc.narg(max_output_tokens)::bigint, sqlc.narg(default_output_tokens)::bigint)
 RETURNING id;
 
 -- name: UpdateModel :execrows
@@ -138,7 +138,8 @@ UPDATE pandokos.model
        availability      = CASE WHEN sqlc.arg(set_availability)::boolean THEN sqlc.arg(availability)::text ELSE availability END,
        capabilities      = CASE WHEN sqlc.arg(set_capabilities)::boolean THEN sqlc.arg(capabilities)::text[] ELSE capabilities END,
        context_window    = CASE WHEN sqlc.arg(set_context_window)::boolean THEN sqlc.narg(context_window)::bigint ELSE context_window END,
-       max_output_tokens = CASE WHEN sqlc.arg(set_max_output_tokens)::boolean THEN sqlc.narg(max_output_tokens)::bigint ELSE max_output_tokens END
+       max_output_tokens = CASE WHEN sqlc.arg(set_max_output_tokens)::boolean THEN sqlc.narg(max_output_tokens)::bigint ELSE max_output_tokens END,
+       default_output_tokens = CASE WHEN sqlc.arg(set_default_output_tokens)::boolean THEN sqlc.narg(default_output_tokens)::bigint ELSE default_output_tokens END
  WHERE id = sqlc.arg(id)::uuid;
 
 -- name: SetModelPriceOverride :execrows
@@ -181,7 +182,7 @@ SELECT g.model_id
 
 -- name: ListVisibleModels :many
 SELECT m.id, p.name AS provider, p.api_family, m.name, m.upstream_id, m.display_name, m.description, m.status,
-       m.availability, m.capabilities, m.context_window, m.max_output_tokens, m.price_override, m.created_at, m.updated_at
+       m.availability, m.capabilities, m.context_window, m.max_output_tokens, m.default_output_tokens, m.price_override, m.created_at, m.updated_at
   FROM pandokos.model m
   JOIN pandokos.provider p ON p.id = m.provider_id
  WHERE p.enabled
@@ -217,6 +218,6 @@ SELECT e.provider_id, e.name, e.base_url, e.region, e.private, e.enabled, e.is_d
 
 -- name: LoadModels :many
 SELECT m.id, m.provider_id, m.name, m.upstream_id, m.status, m.availability, m.context_window, m.max_output_tokens,
-       m.price_override
+       m.default_output_tokens, m.price_override
   FROM pandokos.model m
  ORDER BY m.id;

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	_ "time/tzdata" // the zone database of limits.time_zone does not depend on the container image
 
 	"github.com/pandokos/pandokos/internal/buildinfo"
 )

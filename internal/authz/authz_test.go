@@ -63,10 +63,16 @@ func TestCatalogue(t *testing.T) {
 		{"platform_issuer:read", ScopePlatform},
 		{"platform_issuer:write", ScopePlatform},
 		{"platform_issuer:delete", ScopePlatform},
+		{"limit:read", ScopeTenant},
+		{"limit:write", ScopeTenant},
+		{"limit:delete", ScopeTenant},
+		{"platform_limit:read", ScopePlatform},
+		{"platform_limit:write", ScopePlatform},
+		{"platform_limit:delete", ScopePlatform},
 	}
 	got := Catalogue()
-	if len(got) != 35 {
-		t.Fatalf("%d permissions, want 35", len(got))
+	if len(got) != 41 {
+		t.Fatalf("%d permissions, want 41", len(got))
 	}
 	re := regexp.MustCompile(`^[a-z_]+:[a-z_]+$`)
 	seen := map[string]bool{}
@@ -113,10 +119,10 @@ func TestCatalogue(t *testing.T) {
 func TestRoles(t *testing.T) {
 	platform := []string{IdentityRead, TenantRead, TenantWrite, TenantSuspend, PlatformKeyRead, PlatformKeyWrite, PlatformKeyRevoke,
 		TenantCredentialRead, TenantCredentialRevoke, CatalogRead, CatalogWrite, CatalogPrice,
-		PlatformIssuerRead, PlatformIssuerWrite, PlatformIssuerDelete}
+		PlatformIssuerRead, PlatformIssuerWrite, PlatformIssuerDelete, PlatformLimitRead, PlatformLimitWrite, PlatformLimitDelete}
 	tenantAll := []string{IdentityRead, ServiceAccountRead, ServiceAccountWrite, VirtualKeyRead, VirtualKeyWrite, VirtualKeyRevoke, ModelInvoke,
 		CredentialRead, CredentialWrite, CredentialRotate, CredentialDelete, CredentialUse, ModelRead, ModelRestrict, UsageRead,
-		TokenIssuerRead, TokenIssuerWrite, TokenIssuerDelete, SubjectMappingRead, SubjectMappingWrite, SubjectMappingDelete}
+		TokenIssuerRead, TokenIssuerWrite, TokenIssuerDelete, SubjectMappingRead, SubjectMappingWrite, SubjectMappingDelete, LimitRead, LimitWrite, LimitDelete}
 	want := []struct {
 		name string
 		kind Kind
@@ -265,7 +271,7 @@ func TestEffective(t *testing.T) {
 		want []string
 	}{
 		{"union of roles", sa(id(1), tenant.StateActive, []string{RoleInference, RoleTenantAdmin}, nil),
-			[]string{CredentialDelete, CredentialRead, CredentialRotate, CredentialUse, CredentialWrite, IdentityRead, ModelInvoke,
+			[]string{CredentialDelete, CredentialRead, CredentialRotate, CredentialUse, CredentialWrite, IdentityRead, LimitDelete, LimitRead, LimitWrite, ModelInvoke,
 				ModelRead, ModelRestrict, ServiceAccountRead, ServiceAccountWrite, SubjectMappingDelete, SubjectMappingRead, SubjectMappingWrite,
 				TokenIssuerDelete, TokenIssuerRead, TokenIssuerWrite, UsageRead, VirtualKeyRead, VirtualKeyRevoke, VirtualKeyWrite}},
 		{"scopes intersect", sa(id(1), tenant.StateActive, []string{RoleTenantAdmin}, []string{VirtualKeyRead, "tenant:read", ModelInvoke}),
@@ -273,7 +279,7 @@ func TestEffective(t *testing.T) {
 		{"unknown role", sa(id(1), tenant.StateActive, []string{"ghost"}, nil), nil},
 		{"role of the other kind", sa(id(1), tenant.StateActive, []string{RolePlatformAdmin}, nil), nil},
 		{"platform role on a platform principal", Principal{Kind: KindPlatform, Roles: []string{RolePlatformAdmin, RoleInference}},
-			[]string{CatalogPrice, CatalogRead, CatalogWrite, IdentityRead, PlatformIssuerDelete, PlatformIssuerRead, PlatformIssuerWrite, PlatformKeyRead, PlatformKeyRevoke, PlatformKeyWrite, TenantRead, TenantSuspend, TenantWrite, TenantCredentialRead, TenantCredentialRevoke}},
+			[]string{CatalogPrice, CatalogRead, CatalogWrite, IdentityRead, PlatformIssuerDelete, PlatformIssuerRead, PlatformIssuerWrite, PlatformKeyRead, PlatformKeyRevoke, PlatformKeyWrite, PlatformLimitDelete, PlatformLimitRead, PlatformLimitWrite, TenantRead, TenantSuspend, TenantWrite, TenantCredentialRead, TenantCredentialRevoke}},
 		{"nil scopes are no restriction", sa(id(1), tenant.StateActive, []string{RoleInference}, nil), []string{CredentialUse, ModelInvoke}},
 		{"empty scopes are a restriction to nothing", sa(id(1), tenant.StateActive, []string{RoleInference}, []string{}), nil},
 		{"duplicate roles", sa(id(1), tenant.StateActive, []string{RoleInference, RoleInference}, nil), []string{CredentialUse, ModelInvoke}},

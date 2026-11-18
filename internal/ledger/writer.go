@@ -237,6 +237,22 @@ func (w *Writer) Ready(ctx context.Context) error {
 	return nil
 }
 
+// OldestPendingStart returns the smallest StartedAt among the records handed to the writer that
+// are neither committed nor rejected: the queue, which also holds the batch being written. It
+// returns false when there is none. Counters that follow the ledger use it to know before which
+// instant the ledger is complete.
+func (w *Writer) OldestPendingStart() (time.Time, bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	var oldest time.Time
+	for i := range w.queue {
+		if t := w.queue[i].StartedAt; i == 0 || t.Before(oldest) {
+			oldest = t
+		}
+	}
+	return oldest, len(w.queue) > 0
+}
+
 // Stats returns the counters.
 func (w *Writer) Stats() Stats {
 	w.mu.Lock()

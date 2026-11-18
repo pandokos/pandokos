@@ -456,7 +456,7 @@ func TestAnthropicErrors(t *testing.T) {
 		})
 	}
 	for _, name := range familycodes.All(t) {
-		if !seen[name] {
+		if !seen[name] && !codesPendingC5[name] {
 			t.Errorf("the code %q is declared in family.go and has no anthropic scenario", name)
 		}
 	}

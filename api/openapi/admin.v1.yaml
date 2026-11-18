@@ -28,6 +28,8 @@ tags:
   - name: token-issuers
   - name: subject-mappings
   - name: platform-issuers
+  - name: limits
+  - name: platform-limits
 paths:
   /v1/me:
     get:
@@ -1592,6 +1594,244 @@ paths:
         "404": {$ref: '#/components/responses/NotFound'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/limits:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: listLimits
+      tags: [limits]
+      summary: List the limit rules of a tenant
+      x-pandokos-permission: limit:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/Sort'}
+        - {name: subject_kind, in: query, description: Only rules of this subject kind., schema: {$ref: '#/components/schemas/LimitSubjectKind'}}
+        - {name: subject_id, in: query, description: Only rules of the subject with this ID., schema: {type: string, minLength: 1, maxLength: 64}}
+        - {name: metric, in: query, description: Only rules of this metric., schema: {$ref: '#/components/schemas/LimitMetric'}}
+        - {name: provider, in: query, description: Only rules scoped to this provider., schema: {$ref: '#/components/schemas/ProviderName'}}
+        - {name: model, in: query, description: Only rules scoped to this model., schema: {$ref: '#/components/schemas/ModelName'}}
+      responses:
+        "200": {$ref: '#/components/responses/LimitRuleList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: createLimit
+      tags: [limits]
+      summary: Create a limit rule of a tenant
+      description: >-
+        One rule per subject, scope and metric. The subject and the scope must exist. A count metric
+        takes limit; a cost metric takes amount and currency. A tenant has at most 5000 rules.
+      x-pandokos-permission: limit:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LimitRuleCreate'}
+      responses:
+        "201": {$ref: '#/components/responses/LimitRuleCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/limits/{rule}:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/LimitRule'}
+    get:
+      operationId: getLimit
+      tags: [limits]
+      summary: Read a limit rule
+      x-pandokos-permission: limit:read
+      responses:
+        "200": {$ref: '#/components/responses/LimitRule'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    patch:
+      operationId: updateLimit
+      tags: [limits]
+      summary: Change the value, the enforcement or the thresholds of a limit rule
+      description: >-
+        At least one member. Subject, scope, metric and currency never change. Counters are not
+        reset by a change.
+      x-pandokos-permission: limit:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LimitRuleUpdate'}
+      responses:
+        "200": {$ref: '#/components/responses/LimitRule'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    delete:
+      operationId: deleteLimit
+      tags: [limits]
+      summary: Delete a limit rule
+      description: >-
+        The response is the rule as it was.
+      x-pandokos-permission: limit:delete
+      responses:
+        "200": {$ref: '#/components/responses/LimitRule'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/platform-limits:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: listTenantPlatformLimits
+      tags: [limits]
+      summary: List the ceilings the platform sets for a tenant
+      description: >-
+        The defaults for every tenant and the rows of this tenant; a row of the tenant replaces the
+        default of the same scope and metric. Read-only.
+      x-pandokos-permission: limit:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        "200": {$ref: '#/components/responses/PlatformLimitRuleList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/limit-events:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: listLimitEvents
+      tags: [limits]
+      summary: List what the tenant's quotas and budgets recorded, newest first
+      x-pandokos-permission: limit:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {name: kind, in: query, description: Only events of this kind., schema: {$ref: '#/components/schemas/LimitEventKind'}}
+        - {name: rule, in: query, description: Only events of the rule with this ID., schema: {$ref: '#/components/schemas/ID'}}
+      responses:
+        "200": {$ref: '#/components/responses/LimitEventList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/platform-limits:
+    get:
+      operationId: listPlatformLimits
+      tags: [platform-limits]
+      summary: List the ceilings the platform sets for tenants
+      x-pandokos-permission: platform_limit:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/Sort'}
+        - {name: applies_to, in: query, description: 'Only the defaults ("default") or the rows of the tenant with this ID.', schema: {type: string, minLength: 1, maxLength: 36}}
+        - {name: metric, in: query, description: Only rules of this metric., schema: {$ref: '#/components/schemas/LimitMetric'}}
+      responses:
+        "200": {$ref: '#/components/responses/PlatformLimitRuleList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: createPlatformLimit
+      tags: [platform-limits]
+      summary: Create a ceiling for every tenant or for one
+      description: >-
+        Without tenant the rule is the default for every tenant; with a tenant it replaces the
+        default of the same scope and metric for that tenant.
+      x-pandokos-permission: platform_limit:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PlatformLimitRuleCreate'}
+      responses:
+        "201": {$ref: '#/components/responses/PlatformLimitRuleCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/platform-limits/{rule}:
+    parameters:
+      - {$ref: '#/components/parameters/PlatformLimitRule'}
+    get:
+      operationId: getPlatformLimit
+      tags: [platform-limits]
+      summary: Read a platform ceiling
+      x-pandokos-permission: platform_limit:read
+      responses:
+        "200": {$ref: '#/components/responses/PlatformLimitRule'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    patch:
+      operationId: updatePlatformLimit
+      tags: [platform-limits]
+      summary: Change the value, the enforcement or the thresholds of a platform ceiling
+      x-pandokos-permission: platform_limit:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LimitRuleUpdate'}
+      responses:
+        "200": {$ref: '#/components/responses/PlatformLimitRule'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    delete:
+      operationId: deletePlatformLimit
+      tags: [platform-limits]
+      summary: Delete a platform ceiling
+      description: >-
+        The response is the rule as it was.
+      x-pandokos-permission: platform_limit:delete
+      responses:
+        "200": {$ref: '#/components/responses/PlatformLimitRule'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
   /v1/platform-issuers:
     parameters:
     get:
@@ -1833,6 +2073,18 @@ components:
       in: path
       required: true
       description: ID of a platform-level token issuer.
+      schema: {$ref: '#/components/schemas/ID'}
+    LimitRule:
+      name: rule
+      in: path
+      required: true
+      description: ID of a limit rule of the tenant.
+      schema: {$ref: '#/components/schemas/ID'}
+    PlatformLimitRule:
+      name: rule
+      in: path
+      required: true
+      description: ID of a platform limit rule.
       schema: {$ref: '#/components/schemas/ID'}
     Limit:
       name: limit
@@ -2166,6 +2418,41 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/PlatformIssuerTenantList'}
+    LimitRule:
+      description: The limit rule.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/LimitRule'}
+    LimitRuleCreated:
+      description: The new limit rule.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/LimitRule'}
+    LimitRuleList:
+      description: One page of limit rules.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/LimitRuleList'}
+    PlatformLimitRule:
+      description: The platform limit rule.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PlatformLimitRule'}
+    PlatformLimitRuleCreated:
+      description: The new platform limit rule.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PlatformLimitRule'}
+    PlatformLimitRuleList:
+      description: One page of platform limit rules.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PlatformLimitRuleList'}
+    LimitEventList:
+      description: One page of limit events, newest first.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/LimitEventList'}
   schemas:
     ApiFamily:
       type: string
@@ -2209,8 +2496,8 @@ components:
       enum: [active, missing, disabled, revoked]
     BudgetAvailability:
       type: string
-      description: not_enforced until limits exist.
-      enum: [not_enforced]
+      description: not_enforced when no enforced quota or budget of the tenant matches; unpriced when a budget matches and the model has no price in its currency; exhausted when a matching quota or budget is used up for the current period.
+      enum: [not_enforced, available, exhausted, unpriced]
     CapabilityChecks:
       type: object
       additionalProperties: false
@@ -2232,7 +2519,7 @@ components:
         callable: {type: boolean}
         reasons:
           type: array
-          description: 'Every failing check, in this order: provider_unavailable, model_not_allowed, no_credential, credential_disabled, credential_revoked. Empty when callable.'
+          description: 'Every failing check, in this order: provider_unavailable, model_not_allowed, no_credential, credential_disabled, credential_revoked, no_price, budget_exhausted. Empty when callable.'
           items: {type: string}
         checks: {$ref: '#/components/schemas/CapabilityChecks'}
         checked_at: {type: string, format: date-time}
@@ -2413,7 +2700,7 @@ components:
     Model:
       type: object
       additionalProperties: false
-      required: [id, provider, api_family, name, ref, upstream_id, display_name, description, status, availability, capabilities, context_window, max_output_tokens, price_override, created_at, updated_at]
+      required: [id, provider, api_family, name, ref, upstream_id, display_name, description, status, availability, capabilities, context_window, max_output_tokens, default_output_tokens, price_override, created_at, updated_at]
       properties:
         id: {$ref: '#/components/schemas/ID'}
         provider: {$ref: '#/components/schemas/ProviderName'}
@@ -2430,6 +2717,7 @@ components:
           items: {type: string}
         context_window: {type: integer, description: In tokens; 0 when not known.}
         max_output_tokens: {type: integer, description: In tokens; 0 when not known.}
+        default_output_tokens: {type: integer, description: In tokens; 0 when not set.}
         price_override: {type: boolean, description: An operator price is in place and imports leave the model alone.}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
@@ -2452,6 +2740,7 @@ components:
           items: {type: string, pattern: '^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$'}
         context_window: {type: integer, minimum: 0, maximum: 100000000}
         max_output_tokens: {type: integer, minimum: 0, maximum: 100000000}
+        default_output_tokens: {type: integer, minimum: 0, maximum: 1000000}
     ModelUpdate:
       type: object
       additionalProperties: false
@@ -2468,6 +2757,7 @@ components:
           items: {type: string, pattern: '^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$'}
         context_window: {type: integer, minimum: 0, maximum: 100000000, description: 0 clears it.}
         max_output_tokens: {type: integer, minimum: 0, maximum: 100000000, description: 0 clears it.}
+        default_output_tokens: {type: integer, minimum: 0, maximum: 1000000, description: 0 clears it.}
     ModelList:
       type: object
       additionalProperties: false
@@ -3287,4 +3577,148 @@ components:
         items:
           type: array
           items: {$ref: '#/components/schemas/PlatformIssuerTenant'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    LimitMetric:
+      type: string
+      enum: [concurrent_requests, requests_per_minute, tokens_per_minute, requests_per_day, requests_per_month,
+             tokens_per_day, tokens_per_month, cost_per_day, cost_per_month]
+    LimitSubjectKind:
+      type: string
+      enum: [tenant, service_account, key]
+    LimitEventKind:
+      type: string
+      enum: [threshold_reached, exhausted]
+    LimitRuleLevel:
+      type: string
+      description: Who owns the rule that recorded the event.
+      enum: [tenant, platform]
+    LimitAmount:
+      type: string
+      description: A decimal amount in the currency of the rule, with at most six fraction digits.
+      pattern: '^(0|[1-9][0-9]{0,9})(\.[0-9]{1,6})?$'
+    Currency:
+      type: string
+      pattern: '^[A-Z]{3}$'
+    LimitRule:
+      type: object
+      additionalProperties: false
+      required: [id, subject_kind, subject_id, provider, model, metric, limit, amount, currency, enforce, thresholds,
+                 created_at, updated_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        subject_kind: {$ref: '#/components/schemas/LimitSubjectKind'}
+        subject_id: {type: string, description: 'Empty for the tenant; a service account ID; a key ID or a subject mapping ID.'}
+        provider: {type: string, description: Empty when the rule is not scoped to a provider.}
+        model: {type: string, description: Empty when the rule is not scoped to a model.}
+        metric: {$ref: '#/components/schemas/LimitMetric'}
+        limit: {type: integer, description: Requests or tokens; 0 for a cost metric.}
+        amount: {type: string, description: The budget as a decimal; empty unless a cost metric.}
+        currency: {type: string, description: Empty unless a cost metric.}
+        enforce: {type: boolean, description: false means the rule never refuses and only records its thresholds.}
+        thresholds: {type: array, description: 'Percentages of the limit at which an event is recorded, ascending.', maxItems: 4, uniqueItems: true, items: {type: integer, minimum: 1, maximum: 100}}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    LimitRuleCreate:
+      type: object
+      additionalProperties: false
+      required: [metric]
+      properties:
+        subject_kind: {$ref: '#/components/schemas/LimitSubjectKind'}
+        subject_id: {type: string, minLength: 1, maxLength: 64}
+        provider: {$ref: '#/components/schemas/ProviderName'}
+        model: {$ref: '#/components/schemas/ModelName'}
+        metric: {$ref: '#/components/schemas/LimitMetric'}
+        limit: {type: integer, minimum: 1, maximum: 1000000000000}
+        amount: {$ref: '#/components/schemas/LimitAmount'}
+        currency: {$ref: '#/components/schemas/Currency'}
+        enforce: {type: boolean, default: true}
+        thresholds: {type: array, description: 'Percentages of the limit at which an event is recorded, ascending.', maxItems: 4, uniqueItems: true, items: {type: integer, minimum: 1, maximum: 100}}
+    LimitRuleUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        limit: {type: integer, minimum: 1, maximum: 1000000000000}
+        amount: {$ref: '#/components/schemas/LimitAmount'}
+        enforce: {type: boolean}
+        thresholds: {type: array, description: 'Percentages of the limit at which an event is recorded, ascending.', maxItems: 4, uniqueItems: true, items: {type: integer, minimum: 1, maximum: 100}}
+    PlatformLimitRule:
+      type: object
+      additionalProperties: false
+      required: [id, tenant, provider, model, metric, limit, amount, currency, enforce, thresholds, created_at, updated_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        tenant: {type: string, description: The tenant the rule is for; empty for the default of every tenant.}
+        provider: {type: string, description: Empty when the rule is not scoped to a provider.}
+        model: {type: string, description: Empty when the rule is not scoped to a model.}
+        metric: {$ref: '#/components/schemas/LimitMetric'}
+        limit: {type: integer, description: Requests or tokens; 0 for a cost metric.}
+        amount: {type: string, description: The budget as a decimal; empty unless a cost metric.}
+        currency: {type: string, description: Empty unless a cost metric.}
+        enforce: {type: boolean, description: false means the rule never refuses and only records its thresholds.}
+        thresholds: {type: array, description: 'Percentages of the limit at which an event is recorded, ascending.', maxItems: 4, uniqueItems: true, items: {type: integer, minimum: 1, maximum: 100}}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    PlatformLimitRuleCreate:
+      type: object
+      additionalProperties: false
+      required: [metric]
+      properties:
+        tenant: {$ref: '#/components/schemas/ID'}
+        provider: {$ref: '#/components/schemas/ProviderName'}
+        model: {$ref: '#/components/schemas/ModelName'}
+        metric: {$ref: '#/components/schemas/LimitMetric'}
+        limit: {type: integer, minimum: 1, maximum: 1000000000000}
+        amount: {$ref: '#/components/schemas/LimitAmount'}
+        currency: {$ref: '#/components/schemas/Currency'}
+        enforce: {type: boolean, default: true}
+        thresholds: {type: array, description: 'Percentages of the limit at which an event is recorded, ascending.', maxItems: 4, uniqueItems: true, items: {type: integer, minimum: 1, maximum: 100}}
+    LimitEvent:
+      type: object
+      additionalProperties: false
+      required: [id, kind, rule_id, rule_level, subject_kind, subject_id, provider, model, metric, currency,
+                 period_start, period_end, percent, limit, amount, observed, occurred_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        kind: {$ref: '#/components/schemas/LimitEventKind'}
+        rule_id: {$ref: '#/components/schemas/ID'}
+        rule_level: {$ref: '#/components/schemas/LimitRuleLevel'}
+        subject_kind: {$ref: '#/components/schemas/LimitSubjectKind'}
+        subject_id: {type: string}
+        provider: {type: string}
+        model: {type: string}
+        metric: {$ref: '#/components/schemas/LimitMetric'}
+        currency: {type: string}
+        period_start: {type: string, format: date-time}
+        period_end: {type: string, format: date-time}
+        percent: {type: integer, description: The threshold reached; 0 for exhausted.}
+        limit: {type: integer, description: The value of the rule in requests or tokens; 0 for a cost metric.}
+        amount: {type: string, description: The value of the rule as a decimal; empty unless a cost metric.}
+        observed: {type: string, description: 'What was used when the event was recorded: a decimal in requests, tokens or the currency.'}
+        occurred_at: {type: string, format: date-time}
+    LimitRuleList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/LimitRule'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    PlatformLimitRuleList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/PlatformLimitRule'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    LimitEventList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/LimitEvent'}
         next_cursor: {type: string, description: Absent on the last page.}

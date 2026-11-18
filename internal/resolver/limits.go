@@ -89,7 +89,7 @@ func (l *Limits) Reserve(ctx context.Context, p authz.Principal, e gateway.Limit
 	if err != nil {
 		return nil, nil, err
 	}
-	ls := rules.For(p.ID, p.KeyID)
+	ls := rules.For(limits.Query{ServiceAccountID: p.ID, KeyID: p.KeyID}, nil)
 	if len(ls) == 0 {
 		return noReservation{}, nil, nil
 	}

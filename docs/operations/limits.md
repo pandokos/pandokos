@@ -250,7 +250,14 @@ principal fields of the request line.
 | A rule that seems ignored | the subject ID (a key ID, a service account ID, or for a token the mapping ID); a rule for a subject that does not exist never matches. A rule lasts at most `cache.limits_ttl` in the gateway cache before it applies |
 | `rejected_limit` in the usage list | the same refusals, as records without usage and without cost ([usage guide](usage.md)) |
 
-## 9. What is not there yet
+## 9. Quotas and budgets (in progress)
+
+Sprint 5.2 adds six metrics counted over a calendar day or month in the zone `limits.time_zone`:
+`requests_per_day`, `requests_per_month`, `tokens_per_day`, `tokens_per_month`, `cost_per_day` and
+`cost_per_month`, and the code `quota_exceeded`. The schema and the specification are in place; the
+counters, the administration API and this guide follow in the sprint.
+
+## 10. What is not there yet
 
 | Missing | Sprint |
 |---|---|

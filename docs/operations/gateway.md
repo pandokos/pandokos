@@ -141,6 +141,8 @@ The provider's request ID (`X-Request-Id` for `openai`, `Request-Id` for `anthro
 | `upstream_timeout` | 504 | the provider did not answer headers within `limits.max_request_duration` |
 | `unavailable` | 503 | the catalogue, the key or the credential could not be verified, the keys of a token's issuer could not be obtained (the answer carries `Retry-After: 5`, as it does whenever authentication is unavailable, the database included), the limit rules of the tenant could not be read and none are cached (the answer carries `Retry-After: 5`; the log line has `limit rules unavailable`), or the usage ledger buffer is full (the log line has `ledger: full`; no usage record is written for that request) |
 | `rate_limited` | 429 | a limit of Pandokos was reached (requests or tokens per minute, or requests in flight); the answer carries `Retry-After` and the `X-Pandokos-Limit*` headers ([limits guide](limits.md)). The usage record has outcome `rejected_limit` |
+| `quota_exceeded` | 429 | a quota or budget of Pandokos was reached (requests, tokens or cost per day or month); the answer carries `Retry-After`, the `X-Pandokos-Limit*` headers and `X-Pandokos-Limit-Scope`, and for a budget `X-Pandokos-Limit-Currency`. The usage record has outcome `rejected_limit` |
+| `no_price` | 409 | a budget applies to the call and the model has no price the budget can be measured with (`limits.on_unknown_price` is `refuse`); there is no `Retry-After`, waiting does not help. The usage record has outcome `rejected_limit` |
 | `internal` | 500 | an unexpected failure |
 
 Anthropic error types. On an `anthropic` route the body is `{"type":"error","error":{"type":<type>,"message":"Pandokos: ..."}}`
@@ -148,14 +150,14 @@ and `type` is the provider's type for the status:
 
 | Code | Anthropic `error.type` |
 |---|---|
-| `invalid_request`, `no_credential` | `invalid_request_error` |
+| `invalid_request`, `no_credential`, `no_price` | `invalid_request_error` |
 | `unauthenticated` | `authentication_error` |
 | `forbidden`, `tenant_suspended`, `model_not_allowed` | `permission_error` |
 | `endpoint_not_supported` | `not_found_error` |
 | `request_timeout`, `upstream_timeout` | `timeout_error` |
 | `request_too_large` | `request_too_large` |
 | `internal`, `upstream_unreachable`, `unavailable` | `api_error` |
-| `rate_limited` | `rate_limit_error` |
+| `rate_limited`, `quota_exceeded` | `rate_limit_error` |
 
 Every Pandokos error carries the headers `X-Pandokos-Error` (the code) and `X-Pandokos-Request-Id`,
 and a body in the family's shape:

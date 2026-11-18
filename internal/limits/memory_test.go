@@ -3,6 +3,7 @@ package limits
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -47,7 +48,7 @@ func TestReserveAtomic(t *testing.T) {
 			before := headrooms(t, m, all[:i])
 			outBefore := m.Outstanding()
 			ref := mustRefuse(t, m, request("r", time.Minute, 10, all...))
-			if ref.Limit != all[i] {
+			if !reflect.DeepEqual(ref.Limit, all[i]) {
 				t.Fatalf("case %d: refused by %+v, want the first without room %+v", i, ref.Limit, all[i])
 			}
 			if m.Outstanding() != outBefore {
@@ -112,7 +113,7 @@ func TestReserveAtomic(t *testing.T) {
 		_ = m.Settle(bg, res, Amounts{Tokens: 100})
 		clk.advance(10 * time.Second) // 40 s after the request, 10 s after the tokens
 		ref := mustRefuse(t, m, request("three", time.Hour, 50, req, tok))
-		if ref.Limit != req {
+		if !reflect.DeepEqual(ref.Limit, req) {
 			t.Fatalf("named %+v, want the request limit first", ref.Limit)
 		}
 		if ref.RetryAfter != 51*time.Second {
@@ -460,7 +461,7 @@ func TestRetryAfter(t *testing.T) {
 		res := mustReserve(t, m, request("fill", time.Hour, 70, toks))
 		_ = m.Settle(bg, res, Amounts{Tokens: 70})
 		ref := mustRefuse(t, m, request("r", time.Hour, 50, toks))
-		if ref.Remaining != 30 || ref.Limit != toks {
+		if ref.Remaining != 30 || !reflect.DeepEqual(ref.Limit, toks) {
 			t.Fatalf("refusal %+v", ref)
 		}
 	})
@@ -482,7 +483,7 @@ func TestRetryAfter(t *testing.T) {
 		m, _ := newMemory(t, clk)
 		mustReserve(t, m, request("a", time.Hour, 0, conc))
 		ref := mustRefuse(t, m, request("b", time.Hour, 0, conc))
-		if ref.RetryAfter != time.Second || ref.Reset != 0 || ref.Remaining != 0 || ref.Limit != conc {
+		if ref.RetryAfter != time.Second || ref.Reset != 0 || ref.Remaining != 0 || !reflect.DeepEqual(ref.Limit, conc) {
 			t.Fatalf("refusal %+v", ref)
 		}
 	})

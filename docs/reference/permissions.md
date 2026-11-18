@@ -43,6 +43,12 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | `platform_issuer:read` | platform | Reading and listing platform-level token issuers and their tenant lists |
 | `platform_issuer:write` | platform | Registering, changing, disabling and enabling a platform-level token issuer; adding and removing the tenants it may act for |
 | `platform_issuer:delete` | platform | Deleting a platform-level token issuer with its tenant list and the subject mappings that name it |
+| `limit:read` | tenant | Reading and listing the tenant's limit rules, the platform ceilings that apply to it and its limit events |
+| `limit:write` | tenant | Creating and changing a limit rule of the tenant |
+| `limit:delete` | tenant | Deleting a limit rule of the tenant |
+| `platform_limit:read` | platform | Reading and listing the ceilings the platform sets for tenants |
+| `platform_limit:write` | platform | Creating and changing the ceilings the platform sets for tenants |
+| `platform_limit:delete` | platform | Deleting a ceiling the platform sets for tenants |
 
 Scope *platform*: held by platform principals only. Scope *tenant*: held by principals of that
 tenant only, and checked against the tenant of the request. Scope *self*: the caller itself.
@@ -53,8 +59,8 @@ Roles are defined in code and cannot be changed; `role_assignment.role` holds a 
 
 | Role | Held by | Permissions |
 |---|---|---|
-| `platform-admin` | platform principals | `catalog:price`, `catalog:read`, `catalog:write`, `identity:read`, `platform_issuer:delete`, `platform_issuer:read`, `platform_issuer:write`, `platform_key:read`, `platform_key:revoke`, `platform_key:write`, `tenant:read`, `tenant:suspend`, `tenant:write`, `tenant_credential:read`, `tenant_credential:revoke` |
-| `tenant-admin` | service accounts | `credential:delete`, `credential:read`, `credential:rotate`, `credential:use`, `credential:write`, `identity:read`, `model:invoke`, `model:read`, `model:restrict`, `service_account:read`, `service_account:write`, `subject_mapping:delete`, `subject_mapping:read`, `subject_mapping:write`, `token_issuer:delete`, `token_issuer:read`, `token_issuer:write`, `usage:read`, `virtual_key:read`, `virtual_key:revoke`, `virtual_key:write` |
+| `platform-admin` | platform principals | `catalog:price`, `catalog:read`, `catalog:write`, `identity:read`, `platform_issuer:delete`, `platform_issuer:read`, `platform_issuer:write`, `platform_key:read`, `platform_key:revoke`, `platform_key:write`, `platform_limit:delete`, `platform_limit:read`, `platform_limit:write`, `tenant:read`, `tenant:suspend`, `tenant:write`, `tenant_credential:read`, `tenant_credential:revoke` |
+| `tenant-admin` | service accounts | `credential:delete`, `credential:read`, `credential:rotate`, `credential:use`, `credential:write`, `identity:read`, `limit:delete`, `limit:read`, `limit:write`, `model:invoke`, `model:read`, `model:restrict`, `service_account:read`, `service_account:write`, `subject_mapping:delete`, `subject_mapping:read`, `subject_mapping:write`, `token_issuer:delete`, `token_issuer:read`, `token_issuer:write`, `usage:read`, `virtual_key:read`, `virtual_key:revoke`, `virtual_key:write` |
 | `inference` | service accounts | `credential:use`, `model:invoke` |
 
 ## Decision

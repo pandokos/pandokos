@@ -97,9 +97,62 @@ func validate(c *Config, purpose Purpose) []Problem {
 		add("limits.default_output_tokens", "must be between 1 and 1000000")
 	}
 
+	ps = append(ps, validateLimits(c)...)
 	ps = append(ps, validateDatabase(c)...)
 
 	return ps
+}
+
+// validateLimits checks the keys of quotas and budgets (sprint 5.2, section 5.14) and parses the
+// time zone into c.Limits.Location.
+func validateLimits(c *Config) []Problem {
+	var ps []Problem
+	add := func(key, msg string) { ps = append(ps, Problem{Key: key, Message: msg}) }
+	l := &c.Limits
+	if loc, msg := parseZone(l.TimeZone); msg != "" {
+		add("limits.time_zone", msg)
+	} else {
+		l.Location = loc
+	}
+	switch l.OnUnknownPrice {
+	case "refuse", "allow":
+	default:
+		add("limits.on_unknown_price", "must be refuse or allow")
+	}
+	switch l.OnStoreFailure {
+	case "refuse", "allow":
+	default:
+		add("limits.on_store_failure", "must be refuse or allow")
+	}
+	if d := time.Duration(l.ReconcileInterval); d < 10*time.Second || d > time.Hour {
+		add("limits.reconcile_interval", "must be between 10s and 1h")
+	}
+	return ps
+}
+
+// parseZone loads an IANA zone and checks that every offset it uses is a whole number of
+// minutes, as the minute buckets of the period counters require.
+func parseZone(name string) (*time.Location, string) {
+	const msg = "must be the name of an IANA time zone, such as UTC or Europe/Rome, whose offsets are whole minutes"
+	if name == "" || name == "Local" {
+		return nil, msg
+	}
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		return nil, msg
+	}
+	t := time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < 10000 && t.Year() < 2200; i++ {
+		if _, off := t.In(loc).Zone(); off%60 != 0 {
+			return nil, msg
+		}
+		_, end := t.In(loc).ZoneBounds()
+		if end.IsZero() {
+			break
+		}
+		t = end
+	}
+	return loc, ""
 }
 
 const maxCAFileBytes = 1048576

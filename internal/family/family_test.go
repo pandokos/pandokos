@@ -28,9 +28,11 @@ var codeTable = []struct {
 	{CodeUnavailable, "unavailable", 503, "Pandokos: the request cannot be verified right now."},
 	{CodeInternal, "internal", 500, "Pandokos: internal error."},
 	{CodeRateLimited, "rate_limited", 429, "Pandokos: a rate limit of Pandokos was reached; retry after the time given in Retry-After."},
+	{CodeQuotaExceeded, "quota_exceeded", 429, "Pandokos: a quota or budget of Pandokos was reached; it resets at the time given in Retry-After."},
+	{CodeNoPrice, "no_price", 409, "Pandokos: a budget applies to this call and the model has no price the budget can be measured with."},
 }
 
-// TestErrorCodes is T-22: the fourteen codes, their statuses and their constant messages. The
+// TestErrorCodes is T-22: the sixteen codes, their statuses and their constant messages. The
 // sweep ranges over the constants of family.go and fails on a code the table does not know.
 func TestErrorCodes(t *testing.T) {
 	known := map[string]bool{}

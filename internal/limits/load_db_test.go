@@ -2,6 +2,7 @@ package limits_test
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 
@@ -36,16 +37,16 @@ func TestLoadRules(t *testing.T) {
 			map[limits.Metric]int64{limits.RequestsPerMinute: 1000, limits.TokensPerMinute: 5000},
 			map[limits.Metric]int64{limits.RequestsPerMinute: 50},
 			[]limits.Rule{
-				{limits.SubjectTenant, "", limits.TokensPerMinute, 3000},
-				{limits.SubjectServiceAccount, "sa-1", limits.RequestsPerMinute, 5},
-				{limits.SubjectKey, "k-1", limits.ConcurrentRequests, 2},
+				{SubjectKind: limits.SubjectTenant, SubjectID: "", Metric: limits.TokensPerMinute, Value: 3000},
+				{SubjectKind: limits.SubjectServiceAccount, SubjectID: "sa-1", Metric: limits.RequestsPerMinute, Value: 5},
+				{SubjectKind: limits.SubjectKey, SubjectID: "k-1", Metric: limits.ConcurrentRequests, Value: 2},
 			})
-		g, w := got.For("sa-1", "k-1"), want.For("sa-1", "k-1")
+		g, w := got.For(limits.Query{ServiceAccountID: "sa-1", KeyID: "k-1"}, nil), want.For(limits.Query{ServiceAccountID: "sa-1", KeyID: "k-1"}, nil)
 		if len(g) != 4 || len(g) != len(w) {
 			t.Fatalf("limits %+v, want %+v", g, w)
 		}
 		for i := range g {
-			if g[i] != w[i] {
+			if !reflect.DeepEqual(g[i], w[i]) {
 				t.Errorf("limit %d: %+v, want %+v", i, g[i], w[i])
 			}
 		}
@@ -56,7 +57,7 @@ func TestLoadRules(t *testing.T) {
 			t.Errorf("the tenant rule below the default: %+v", l)
 		}
 		// Nothing of tenant B: not its rules, not its platform row, not its subjects.
-		for _, l := range got.For("", "k-b") {
+		for _, l := range got.For(limits.Query{ServiceAccountID: "", KeyID: "k-b"}, nil) {
 			if l.Subject != limits.SubjectTenant { // the tenant's own limits apply to every caller
 				t.Errorf("a limit for B's key in A's rules: %+v", l)
 			}
@@ -69,7 +70,7 @@ func TestLoadRules(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		lb, ok := find(gotB.For("", ""), limits.SubjectTenant, "", limits.ConcurrentRequests)
+		lb, ok := find(gotB.For(limits.Query{ServiceAccountID: "", KeyID: ""}, nil), limits.SubjectTenant, "", limits.ConcurrentRequests)
 		if !ok || lb.Max != 1 || lb.Tenant != b {
 			t.Errorf("B's own ceiling and rule: %+v (the smaller, 1, is wanted)", lb)
 		}
@@ -80,7 +81,7 @@ func TestLoadRules(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if ls := set.For("", ""); len(ls) != 2 {
+			if ls := set.For(limits.Query{ServiceAccountID: "", KeyID: ""}, nil); len(ls) != 2 {
 				t.Errorf("limits %+v, want the two defaults", ls)
 			}
 		})
@@ -110,7 +111,7 @@ func TestLoadRules(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%d rules: %v", limits.MaxRulesPerTenant, err)
 			}
-			if _, ok := find(set.For("", "k-5000"), limits.SubjectKey, "k-5000", limits.RequestsPerMinute); !ok {
+			if _, ok := find(set.For(limits.Query{ServiceAccountID: "", KeyID: "k-5000"}, nil), limits.SubjectKey, "k-5000", limits.RequestsPerMinute); !ok {
 				t.Error("the last rule is missing")
 			}
 			insert(limits.MaxRulesPerTenant+1, limits.MaxRulesPerTenant+1)

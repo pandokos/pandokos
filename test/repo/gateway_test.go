@@ -279,7 +279,7 @@ func statusOf(code string) int {
 		return 403
 	case "endpoint_not_supported":
 		return 404
-	case "no_credential":
+	case "no_credential", "no_price":
 		return 409
 	case "invalid_request":
 		return 400
@@ -295,7 +295,7 @@ func statusOf(code string) int {
 		return 503
 	case "internal":
 		return 500
-	case "rate_limited":
+	case "rate_limited", "quota_exceeded":
 		return 429
 	}
 	return -1 // an unknown code: no line can hold it
@@ -464,10 +464,10 @@ func TestGatewayGuideFamilies(t *testing.T) {
 	t.Run("the error type table", func(t *testing.T) {
 		// The table of section 5.2 of the design, owned by this test; the adapter must agree with it.
 		types := map[string]string{
-			"invalid_request": "invalid_request_error", "no_credential": "invalid_request_error", "unauthenticated": "authentication_error",
+			"invalid_request": "invalid_request_error", "no_credential": "invalid_request_error", "no_price": "invalid_request_error", "unauthenticated": "authentication_error",
 			"forbidden": "permission_error", "tenant_suspended": "permission_error", "model_not_allowed": "permission_error",
 			"endpoint_not_supported": "not_found_error", "request_timeout": "timeout_error", "upstream_timeout": "timeout_error",
-			"request_too_large": "request_too_large", "internal": "api_error", "upstream_unreachable": "api_error", "unavailable": "api_error", "rate_limited": "rate_limit_error",
+			"request_too_large": "request_too_large", "internal": "api_error", "upstream_unreachable": "api_error", "unavailable": "api_error", "rate_limited": "rate_limit_error", "quota_exceeded": "rate_limit_error",
 		}
 		lines := strings.Split(doc, "\n")
 		for _, code := range familycodes.All(t) {

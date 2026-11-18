@@ -19,6 +19,7 @@ const shardCount = 64
 type MemoryOptions struct {
 	Logger *slog.Logger     // required
 	Now    func() time.Time // default time.Now
+	Events EventSink        // takes the events of thresholds and exhausted limits; nil records none
 }
 
 type counterKey struct {
@@ -51,6 +52,7 @@ type shard struct {
 type Memory struct {
 	log    *slog.Logger
 	now    func() time.Time
+	events EventSink
 	seq    atomic.Uint64
 	shards [shardCount]shard
 }
@@ -66,7 +68,7 @@ func NewMemory(o MemoryOptions) (*Memory, error) {
 	if now == nil {
 		now = time.Now
 	}
-	m := &Memory{log: o.Logger, now: now}
+	m := &Memory{log: o.Logger, now: now, events: o.Events}
 	for i := range m.shards {
 		m.shards[i].counters = make(map[counterKey]*counter)
 		m.shards[i].held = make(map[string]*held)

@@ -68,6 +68,13 @@ const (
 	PlatformIssuerRead   = "platform_issuer:read"
 	PlatformIssuerWrite  = "platform_issuer:write"
 	PlatformIssuerDelete = "platform_issuer:delete"
+
+	LimitRead           = "limit:read"
+	LimitWrite          = "limit:write"
+	LimitDelete         = "limit:delete"
+	PlatformLimitRead   = "platform_limit:read"
+	PlatformLimitWrite  = "platform_limit:write"
+	PlatformLimitDelete = "platform_limit:delete"
 )
 
 var catalogue = []Permission{
@@ -106,6 +113,12 @@ var catalogue = []Permission{
 	{PlatformIssuerRead, ScopePlatform, "Reading and listing platform-level token issuers and their tenant lists"},
 	{PlatformIssuerWrite, ScopePlatform, "Registering and changing a platform-level token issuer; adding and removing tenants of its list"},
 	{PlatformIssuerDelete, ScopePlatform, "Deleting a platform-level token issuer with its tenant list and subject mappings"},
+	{LimitRead, ScopeTenant, "Reading and listing the tenant's limit rules, the platform ceilings that apply to it and its limit events"},
+	{LimitWrite, ScopeTenant, "Creating and changing a limit rule of the tenant"},
+	{LimitDelete, ScopeTenant, "Deleting a limit rule of the tenant"},
+	{PlatformLimitRead, ScopePlatform, "Reading and listing the ceilings the platform sets for tenants"},
+	{PlatformLimitWrite, ScopePlatform, "Creating and changing the ceilings the platform sets for tenants"},
+	{PlatformLimitDelete, ScopePlatform, "Deleting a ceiling the platform sets for tenants"},
 }
 
 // Catalogue returns the permissions, in a fixed order.
@@ -155,11 +168,11 @@ func sorted(names ...string) []string {
 func Roles() []Role {
 	return []Role{
 		{RolePlatformAdmin, KindPlatform, sorted(IdentityRead, TenantRead, TenantWrite, TenantSuspend, PlatformKeyRead, PlatformKeyWrite, PlatformKeyRevoke, TenantCredentialRead, TenantCredentialRevoke, CatalogRead, CatalogWrite, CatalogPrice,
-			PlatformIssuerRead, PlatformIssuerWrite, PlatformIssuerDelete),
+			PlatformIssuerRead, PlatformIssuerWrite, PlatformIssuerDelete, PlatformLimitRead, PlatformLimitWrite, PlatformLimitDelete),
 			"Administers the installation: tenants and platform keys"},
 		{RoleTenantAdmin, KindServiceAccount, sorted(IdentityRead, ServiceAccountRead, ServiceAccountWrite, VirtualKeyRead, VirtualKeyWrite, VirtualKeyRevoke, ModelInvoke,
 			CredentialRead, CredentialWrite, CredentialRotate, CredentialDelete, CredentialUse, ModelRead, ModelRestrict, UsageRead,
-			TokenIssuerRead, TokenIssuerWrite, TokenIssuerDelete, SubjectMappingRead, SubjectMappingWrite, SubjectMappingDelete),
+			TokenIssuerRead, TokenIssuerWrite, TokenIssuerDelete, SubjectMappingRead, SubjectMappingWrite, SubjectMappingDelete, LimitRead, LimitWrite, LimitDelete),
 			"Administers one tenant: service accounts and virtual keys; may call models"},
 		{RoleInference, KindServiceAccount, sorted(ModelInvoke, CredentialUse), "Calls models through the inference listener"},
 	}

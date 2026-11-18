@@ -259,6 +259,56 @@ func (f *fake) DeletePlatformIssuerTenant(_ context.Context, in adminapi.DeleteP
 	return &adminapi.PlatformIssuerTenant{}, nil
 }
 
+// The limit operations of sprint 5.2.
+func (f *fake) ListLimits(_ context.Context, in adminapi.ListLimitsInput) (*adminapi.LimitRuleList, error) {
+	f.rec("listLimits", in)
+	return &adminapi.LimitRuleList{}, nil
+}
+func (f *fake) CreateLimit(_ context.Context, in adminapi.CreateLimitInput) (*adminapi.LimitRule, error) {
+	f.rec("createLimit", in)
+	return &adminapi.LimitRule{}, nil
+}
+func (f *fake) GetLimit(_ context.Context, in adminapi.GetLimitInput) (*adminapi.LimitRule, error) {
+	f.rec("getLimit", in)
+	return &adminapi.LimitRule{}, nil
+}
+func (f *fake) UpdateLimit(_ context.Context, in adminapi.UpdateLimitInput) (*adminapi.LimitRule, error) {
+	f.rec("updateLimit", in)
+	return &adminapi.LimitRule{}, nil
+}
+func (f *fake) DeleteLimit(_ context.Context, in adminapi.DeleteLimitInput) (*adminapi.LimitRule, error) {
+	f.rec("deleteLimit", in)
+	return &adminapi.LimitRule{}, nil
+}
+func (f *fake) ListTenantPlatformLimits(_ context.Context, in adminapi.ListTenantPlatformLimitsInput) (*adminapi.PlatformLimitRuleList, error) {
+	f.rec("listTenantPlatformLimits", in)
+	return &adminapi.PlatformLimitRuleList{}, nil
+}
+func (f *fake) ListLimitEvents(_ context.Context, in adminapi.ListLimitEventsInput) (*adminapi.LimitEventList, error) {
+	f.rec("listLimitEvents", in)
+	return &adminapi.LimitEventList{}, nil
+}
+func (f *fake) ListPlatformLimits(_ context.Context, in adminapi.ListPlatformLimitsInput) (*adminapi.PlatformLimitRuleList, error) {
+	f.rec("listPlatformLimits", in)
+	return &adminapi.PlatformLimitRuleList{}, nil
+}
+func (f *fake) CreatePlatformLimit(_ context.Context, in adminapi.CreatePlatformLimitInput) (*adminapi.PlatformLimitRule, error) {
+	f.rec("createPlatformLimit", in)
+	return &adminapi.PlatformLimitRule{}, nil
+}
+func (f *fake) GetPlatformLimit(_ context.Context, in adminapi.GetPlatformLimitInput) (*adminapi.PlatformLimitRule, error) {
+	f.rec("getPlatformLimit", in)
+	return &adminapi.PlatformLimitRule{}, nil
+}
+func (f *fake) UpdatePlatformLimit(_ context.Context, in adminapi.UpdatePlatformLimitInput) (*adminapi.PlatformLimitRule, error) {
+	f.rec("updatePlatformLimit", in)
+	return &adminapi.PlatformLimitRule{}, nil
+}
+func (f *fake) DeletePlatformLimit(_ context.Context, in adminapi.DeletePlatformLimitInput) (*adminapi.PlatformLimitRule, error) {
+	f.rec("deletePlatformLimit", in)
+	return &adminapi.PlatformLimitRule{}, nil
+}
+
 // The catalogue operations of sprint 2.2 (the fake used to panic on them).
 func (f *fake) ListProviders(_ context.Context, in adminapi.ListProvidersInput) (*adminapi.ProviderList, error) {
 	f.rec("listProviders", in)
@@ -811,8 +861,58 @@ func TestRouterAndClient(t *testing.T) {
 			in := adminapi.DeletePlatformIssuerTenantInput{Issuer: cid, Tenant: tid}
 			add("deletePlatformIssuerTenant", in, func() error { _, err := c.DeletePlatformIssuerTenant(ctx, in); return err })
 		}
-		if len(adminapi.Operations) != 84 {
-			t.Fatalf("%d operations, want 84 (the 35 of epic 1 and sprint 2.1, the 29 of sprint 2.2, the 2 of sprint 3.3 and the 18 of sprint 4.1)", len(adminapi.Operations))
+		{
+			in := adminapi.ListLimitsInput{Tenant: tid, Limit: 2, Cursor: "abc", Sort: adminapi.SortCreatedAt, SubjectKind: adminapi.LimitSubjectKindKey, SubjectID: "k1",
+				Metric: adminapi.LimitMetricRequestsPerDay, Provider: "openai", Model: "gpt-4o"}
+			add("listLimits", in, func() error { _, err := c.ListLimits(ctx, in); return err })
+		}
+		{
+			in := adminapi.CreateLimitInput{Tenant: tid, Body: adminapi.LimitRuleCreate{SubjectKind: adminapi.LimitSubjectKindTenant, Provider: "openai", Model: "gpt-4o",
+				Metric: adminapi.LimitMetricCostPerMonth, Amount: "250.5", Currency: "EUR", Enforce: false, Thresholds: []int{80, 100}}}
+			add("createLimit", in, func() error { _, err := c.CreateLimit(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetLimitInput{Tenant: tid, Rule: cid}
+			add("getLimit", in, func() error { _, err := c.GetLimit(ctx, in); return err })
+		}
+		{
+			in := adminapi.UpdateLimitInput{Tenant: tid, Rule: cid, Body: adminapi.LimitRuleUpdate{Limit: adminapi.Some(5), Enforce: adminapi.Some(true), Thresholds: adminapi.Some([]int{50})}}
+			add("updateLimit", in, func() error { _, err := c.UpdateLimit(ctx, in); return err })
+		}
+		{
+			in := adminapi.DeleteLimitInput{Tenant: tid, Rule: cid}
+			add("deleteLimit", in, func() error { _, err := c.DeleteLimit(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListTenantPlatformLimitsInput{Tenant: tid, Limit: 2, Cursor: "abc"}
+			add("listTenantPlatformLimits", in, func() error { _, err := c.ListTenantPlatformLimits(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListLimitEventsInput{Tenant: tid, Limit: 2, Cursor: "abc", Kind: adminapi.LimitEventKindExhausted, Rule: cid}
+			add("listLimitEvents", in, func() error { _, err := c.ListLimitEvents(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListPlatformLimitsInput{Limit: 2, Cursor: "abc", Sort: adminapi.SortMinusCreatedAt, AppliesTo: "default", Metric: adminapi.LimitMetricTokensPerDay}
+			add("listPlatformLimits", in, func() error { _, err := c.ListPlatformLimits(ctx, in); return err })
+		}
+		{
+			in := adminapi.CreatePlatformLimitInput{Body: adminapi.PlatformLimitRuleCreate{Tenant: tid, Metric: adminapi.LimitMetricRequestsPerMonth, Limit: 100, Enforce: true}}
+			add("createPlatformLimit", in, func() error { _, err := c.CreatePlatformLimit(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetPlatformLimitInput{Rule: cid}
+			add("getPlatformLimit", in, func() error { _, err := c.GetPlatformLimit(ctx, in); return err })
+		}
+		{
+			in := adminapi.UpdatePlatformLimitInput{Rule: cid, Body: adminapi.LimitRuleUpdate{Limit: adminapi.Some(7)}}
+			add("updatePlatformLimit", in, func() error { _, err := c.UpdatePlatformLimit(ctx, in); return err })
+		}
+		{
+			in := adminapi.DeletePlatformLimitInput{Rule: cid}
+			add("deletePlatformLimit", in, func() error { _, err := c.DeletePlatformLimit(ctx, in); return err })
+		}
+		if len(adminapi.Operations) != 96 {
+			t.Fatalf("%d operations, want 96 (the 35 of epic 1 and sprint 2.1, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1 and the 12 of sprint 5.2)", len(adminapi.Operations))
 		}
 		for _, op := range adminapi.Operations {
 			tc, ok := calls[op.ID]

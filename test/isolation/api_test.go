@@ -123,8 +123,19 @@ func newAPIWorld(t *testing.T) *apiWorld {
 func (s side) params() apitest.Params {
 	return apitest.Params{Tenant: s.tenant.ID, ServiceAccount: s.sa.ID, VirtualKey: s.key.Key.ID, PlatformKey: "pabcdefghijklmnop", Credential: s.cred.ID,
 		Provider: s.provider, Endpoint: s.endpoint, Model: s.model, PriceVersion: s.priceVersion, PriceImport: s.priceImport,
-		TokenIssuer: s.tokenIssuer, SubjectMapping: s.mapping, PlatformIssuer: s.platformIssuer}
+		TokenIssuer: s.tokenIssuer, SubjectMapping: s.mapping, PlatformIssuer: s.platformIssuer,
+		LimitRule: pendingLimitRule, PlatformLimit: pendingLimitRule}
 }
+
+// pendingLimitRule names no row: the handlers of the limit operations arrive with step C6 of
+// sprint 5.2, which seeds a rule for each side and removes pendingLimitOps.
+const pendingLimitRule = "0192f0f0-0000-7000-8000-00000000000a"
+
+// pendingLimitOps are the tenant operations whose handlers sprint 5.2 adds in step C6. Until then
+// the sweeps that need a working handler (the positive control of A, the 404 of B) leave them out;
+// the platform operations answer 403 to a tenant key whatever their handler does.
+var pendingLimitOps = map[string]bool{"listLimits": true, "createLimit": true, "getLimit": true, "updateLimit": true,
+	"deleteLimit": true, "listTenantPlatformLimits": true, "listLimitEvents": true}
 
 // fresh is params with a credential, and a model, of its own when the operation names one: the
 // tests that call every operation in turn would otherwise find the credential deleted, revoked or
@@ -258,6 +269,13 @@ var platformAndSelf = map[string]string{
 	"listPlatformIssuerTenants":  "platform",
 	"putPlatformIssuerTenant":    "platform",
 	"deletePlatformIssuerTenant": "platform",
+
+	// Sprint 5.2: the five platform operations of the platform limits.
+	"listPlatformLimits":  "platform",
+	"createPlatformLimit": "platform",
+	"getPlatformLimit":    "platform",
+	"updatePlatformLimit": "platform",
+	"deletePlatformLimit": "platform",
 }
 
 func scopeOf(t *testing.T, op adminapi.Operation) authz.Scope {
@@ -292,7 +310,8 @@ func TestCrossTenantIndistinguishable(t *testing.T) {
 			real.PlatformKey = "pabcdefghijklmnop"
 			missing := apitest.Params{Tenant: randomUUID(t, w), ServiceAccount: randomUUID(t, w), VirtualKey: randomKeyID(t), PlatformKey: "pabcdefghijklmnoq", Credential: randomUUID(t, w),
 				Provider: "synthetic-missing", Endpoint: "ep-missing", Model: randomUUID(t, w), PriceVersion: randomUUID(t, w), PriceImport: randomUUID(t, w),
-				TokenIssuer: randomUUID(t, w), SubjectMapping: randomUUID(t, w), PlatformIssuer: randomUUID(t, w)}
+				TokenIssuer: randomUUID(t, w), SubjectMapping: randomUUID(t, w), PlatformIssuer: randomUUID(t, w),
+				LimitRule: randomUUID(t, w), PlatformLimit: randomUUID(t, w)}
 			cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
 			if op.ID == "createTenant" {
 				cm.Body = cr.Body
@@ -314,6 +333,9 @@ func TestCrossTenantIndistinguishable(t *testing.T) {
 			continue
 		}
 
+		if pendingLimitOps[op.ID] {
+			continue
+		}
 		if strings.Contains(op.Path, "{tenant}") {
 			real, missing := w.a.params(), w.a.params()
 			real.Tenant, missing.Tenant = w.b.tenant.ID, randomUUID(t, w)
@@ -511,7 +533,7 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 	c := w.api.Client(w.a.adminKey)
 	n := 0
 	for _, op := range adminapi.Operations {
-		if scopeOf(t, op) != authz.ScopeTenant {
+		if scopeOf(t, op) != authz.ScopeTenant || pendingLimitOps[op.ID] {
 			continue
 		}
 		// The positive control: A's key does it in A.
@@ -585,6 +607,9 @@ func TestPlatformKeyHasNoTenantPermission(t *testing.T) {
 func TestTenantAdminIsEnoughAndNoMore(t *testing.T) {
 	w := newAPIWorld(t)
 	for _, op := range adminapi.Operations {
+		if pendingLimitOps[op.ID] {
+			continue
+		}
 		call := apitest.CallFor(t, op, w.fresh(t, w.a, op))
 		r := w.api.Do(t, call.Method, call.Path, w.a.adminKey, call.Body, nil)
 		switch scopeOf(t, op) {

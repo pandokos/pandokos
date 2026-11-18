@@ -20,6 +20,10 @@ func find(ls []Limit, kind SubjectKind, id string, m Metric) (Limit, bool) {
 }
 
 // TestResolve is T-619.
+// rateMetrics are the three metrics that RuleSet resolves in this version of the rule set: the
+// rate and concurrency metrics of sprint 5.1. Metrics returns six more since sprint 5.2.
+var rateMetrics = []Metric{ConcurrentRequests, RequestsPerMinute, TokensPerMinute}
+
 func TestResolve(t *testing.T) {
 	a := tid(1)
 
@@ -40,13 +44,13 @@ func TestResolve(t *testing.T) {
 			},
 			{
 				name: "a tenant rule below the platform default wins",
-				set:  NewRuleSet(a, mm(TokensPerMinute, int64(1000)), nil, []Rule{{SubjectTenant, "", TokensPerMinute, 500}}), wantCnt: 1,
+				set:  NewRuleSet(a, mm(TokensPerMinute, int64(1000)), nil, []Rule{{SubjectKind: SubjectTenant, Metric: TokensPerMinute, Value: 500}}), wantCnt: 1,
 				wantMax:  map[string]int64{"tenant/tokens_per_minute": 500},
 				wantLvls: map[string]string{"tenant/tokens_per_minute": LevelTenant},
 			},
 			{
 				name: "a tenant rule above the platform default has no effect",
-				set:  NewRuleSet(a, mm(TokensPerMinute, int64(1000)), nil, []Rule{{SubjectTenant, "", TokensPerMinute, 2000}}), wantCnt: 1,
+				set:  NewRuleSet(a, mm(TokensPerMinute, int64(1000)), nil, []Rule{{SubjectKind: SubjectTenant, Metric: TokensPerMinute, Value: 2000}}), wantCnt: 1,
 				wantMax:  map[string]int64{"tenant/tokens_per_minute": 1000},
 				wantLvls: map[string]string{"tenant/tokens_per_minute": LevelPlatform},
 			},
@@ -69,24 +73,24 @@ func TestResolve(t *testing.T) {
 			{
 				name: "a service account and a key rule restrict their subjects",
 				set: NewRuleSet(a, nil, nil, []Rule{
-					{SubjectServiceAccount, "sa-1", RequestsPerMinute, 7},
-					{SubjectServiceAccount, "sa-2", RequestsPerMinute, 3},
-					{SubjectKey, "key-1", ConcurrentRequests, 2},
-					{SubjectKey, "key-9", ConcurrentRequests, 1},
+					{SubjectKind: SubjectServiceAccount, SubjectID: "sa-1", Metric: RequestsPerMinute, Value: 7},
+					{SubjectKind: SubjectServiceAccount, SubjectID: "sa-2", Metric: RequestsPerMinute, Value: 3},
+					{SubjectKind: SubjectKey, SubjectID: "key-1", Metric: ConcurrentRequests, Value: 2},
+					{SubjectKind: SubjectKey, SubjectID: "key-9", Metric: ConcurrentRequests, Value: 1},
 				}), wantCnt: 2,
 				wantMax: map[string]int64{"service_account/requests_per_minute": 7, "key/concurrent_requests": 2},
 			},
 			{
 				name: "a key rule above the tenant limit is valid and returned",
 				set: NewRuleSet(a, nil, nil, []Rule{
-					{SubjectTenant, "", RequestsPerMinute, 10},
-					{SubjectKey, "key-1", RequestsPerMinute, 1000},
+					{SubjectKind: SubjectTenant, SubjectID: "", Metric: RequestsPerMinute, Value: 10},
+					{SubjectKind: SubjectKey, SubjectID: "key-1", Metric: RequestsPerMinute, Value: 1000},
 				}), wantCnt: 2,
 				wantMax: map[string]int64{"tenant/requests_per_minute": 10, "key/requests_per_minute": 1000},
 			},
 		} {
 			t.Run(c.name, func(t *testing.T) {
-				got := c.set.For("sa-1", "key-1")
+				got := c.set.For(Query{ServiceAccountID: "sa-1", KeyID: "key-1"}, nil)
 				if len(got) != c.wantCnt {
 					t.Fatalf("%d limits: %+v, want %d", len(got), got, c.wantCnt)
 				}
@@ -122,15 +126,15 @@ func TestResolve(t *testing.T) {
 	t.Run("nine limits in a fixed order", func(t *testing.T) {
 		var rules []Rule
 		for _, m := range []Metric{TokensPerMinute, RequestsPerMinute, ConcurrentRequests} { // shuffled on purpose
-			rules = append(rules, Rule{SubjectKey, "key-1", m, 5}, Rule{SubjectServiceAccount, "sa-1", m, 6}, Rule{SubjectTenant, "", m, 7})
+			rules = append(rules, Rule{SubjectKind: SubjectKey, SubjectID: "key-1", Metric: m, Value: 5}, Rule{SubjectKind: SubjectServiceAccount, SubjectID: "sa-1", Metric: m, Value: 6}, Rule{SubjectKind: SubjectTenant, SubjectID: "", Metric: m, Value: 7})
 		}
-		got := NewRuleSet(a, nil, nil, rules).For("sa-1", "key-1")
+		got := NewRuleSet(a, nil, nil, rules).For(Query{ServiceAccountID: "sa-1", KeyID: "key-1"}, nil)
 		if len(got) != 9 {
 			t.Fatalf("%d limits, want 9", len(got))
 		}
 		i := 0
 		for _, k := range SubjectKinds() {
-			for _, m := range Metrics() {
+			for _, m := range rateMetrics {
 				if got[i].Subject != k || got[i].Metric != m {
 					t.Fatalf("position %d: %s/%s, want %s/%s", i, got[i].Subject, got[i].Metric, k, m)
 				}
@@ -146,7 +150,7 @@ func TestResolve(t *testing.T) {
 			val := func() int64 { return int64(1 + rng.IntN(1000)) }
 			maybe := func() map[Metric]int64 {
 				out := map[Metric]int64{}
-				for _, m := range Metrics() {
+				for _, m := range rateMetrics {
 					if rng.IntN(2) == 0 {
 						out[m] = val()
 					}
@@ -160,11 +164,11 @@ func TestResolve(t *testing.T) {
 				id string
 			}{{SubjectTenant, ""}, {SubjectServiceAccount, "sa-1"}, {SubjectServiceAccount, "sa-2"}, {SubjectKey, "key-1"}, {SubjectKey, "key-2"}} {
 				for m, v := range maybe() {
-					rules = append(rules, Rule{sub.k, sub.id, m, v})
+					rules = append(rules, Rule{SubjectKind: sub.k, SubjectID: sub.id, Metric: m, Value: v})
 				}
 			}
 			set := NewRuleSet(a, pd, pt, rules)
-			got := set.For("sa-1", "key-1")
+			got := set.For(Query{ServiceAccountID: "sa-1", KeyID: "key-1"}, nil)
 			if len(got) > 9 {
 				t.Fatalf("seed %d case %d: %d limits", seed, n, len(got))
 			}
@@ -175,7 +179,7 @@ func TestResolve(t *testing.T) {
 						r = i * 3
 					}
 				}
-				for i, m := range Metrics() {
+				for i, m := range rateMetrics {
 					if m == l.Metric {
 						r += i
 					}
@@ -195,7 +199,7 @@ func TestResolve(t *testing.T) {
 				}
 				return 0, false
 			}
-			for _, m := range Metrics() {
+			for _, m := range rateMetrics {
 				// the tenant: the smaller of the platform ceiling and the tenant's own rule
 				ceil, hasCeil := pd[m]
 				if v, ok := pt[m]; ok {
@@ -235,13 +239,13 @@ func TestResolve(t *testing.T) {
 			// Adding or lowering a service account or key rule never changes a tenant limit.
 			var more []Rule
 			more = append(more, rules...)
-			more = append(more, Rule{SubjectKey, "key-1", RequestsPerMinute, 1})
+			more = append(more, Rule{SubjectKind: SubjectKey, SubjectID: "key-1", Metric: RequestsPerMinute, Value: 1})
 			for i, r := range more {
 				if r.SubjectKind != SubjectTenant {
 					more[i].Value = max(1, r.Value/2)
 				}
 			}
-			after := NewRuleSet(a, pd, pt, dedupe(more)).For("sa-1", "key-1")
+			after := NewRuleSet(a, pd, pt, dedupe(more)).For(Query{ServiceAccountID: "sa-1", KeyID: "key-1"}, nil)
 			for _, l := range got {
 				if l.Subject != SubjectTenant {
 					continue
