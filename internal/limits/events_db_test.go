@@ -238,6 +238,37 @@ func TestEventWriter(t *testing.T) {
 			})
 		})
 
+		t.Run("an event interrupted when Run stops is kept for Close, even with a full queue", func(t *testing.T) {
+			w := newWriter(t)
+			before := countEvents(t, d, a)
+			d.SetAcceptingConnections(t, false)
+			defer d.SetAcceptingConnections(t, true)
+			stop := runWriter(t, w)
+			w.Offer(eventFor(a, ruleUUID(7000), 60, nov))
+			time.Sleep(300 * time.Millisecond) // Run took it and retries against the database that is down
+			for i := range 1024 {
+				if !w.Offer(eventFor(a, ruleUUID(7001+i), 60, nov)) {
+					t.Fatalf("offer %d refused", i+1)
+				}
+			}
+			stop()
+			cctx, cancelClose := context.WithTimeout(ctx, 400*time.Millisecond)
+			defer cancelClose()
+			if left := w.Close(cctx); left != 1025 {
+				t.Errorf("%d events left unwritten, want 1025: the interrupted one and the 1,024 queued", left)
+			}
+			// The database is back: the interrupted event is written first, then the queue.
+			d.SetAcceptingConnections(t, true)
+			wctx, cancelWrite := context.WithTimeout(ctx, 60*time.Second)
+			defer cancelWrite()
+			if left := w.Close(wctx); left != 0 {
+				t.Errorf("%d events left after the database came back", left)
+			}
+			if n := countEvents(t, d, a); n != before+1025 {
+				t.Errorf("%d rows, want %d", n, before+1025)
+			}
+		})
+
 		t.Run("close gives up within its context and reports what it left", func(t *testing.T) {
 			w := newWriter(t)
 			d.SetAcceptingConnections(t, false)

@@ -159,7 +159,9 @@ func (r *Reconciler) Run(ctx context.Context) {
 
 // Tick is one pass of Run, for tests.
 func (r *Reconciler) Tick(ctx context.Context) {
-	for _, t := range r.o.Store.PeriodTenants() {
+	tenants := r.o.Store.PeriodTenants()
+	r.forget(tenants)
+	for _, t := range tenants {
 		if ctx.Err() != nil {
 			return
 		}
@@ -167,6 +169,28 @@ func (r *Reconciler) Tick(ctx context.Context) {
 			r.o.Logger.Warn("limit reconciliation failed", slog.String("tenant", t.String()), slog.String("error_class", errorClass(err)))
 		}
 	}
+}
+
+// forget drops the lock and the last rebase of every tenant the store no longer follows; a
+// lock somebody holds stays.
+func (r *Reconciler) forget(live []tenant.ID) {
+	keep := make(map[tenant.ID]struct{}, len(live))
+	for _, t := range live {
+		keep[t] = struct{}{}
+	}
+	r.locks.Range(func(k, v any) bool {
+		if _, ok := keep[k.(tenant.ID)]; !ok && len(v.(chan struct{})) == 0 {
+			r.locks.Delete(k)
+		}
+		return true
+	})
+	r.mu.Lock()
+	for t := range r.rebased {
+		if _, ok := keep[t]; !ok {
+			delete(r.rebased, t)
+		}
+	}
+	r.mu.Unlock()
 }
 
 // reconcile folds the tenant to the new cut and rebases it when an hour has passed; every query

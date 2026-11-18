@@ -265,6 +265,31 @@ func TestLoadFoldRebase(t *testing.T) {
 		}
 	})
 
+	t.Run("the reconciler: a tick forgets the locks and rebases of tenants the store dropped", func(t *testing.T) {
+		e := newRecEnv(t)
+		l := e.limit(TokensPerDay, utcCal.Of(PerDay, e.clk.now()))
+		if err := e.rec.Ensure(bg, e.tn, []Limit{l}); err != nil {
+			t.Fatal(err)
+		}
+		size := func() (locks, rebased int) {
+			e.rec.locks.Range(func(any, any) bool { locks++; return true })
+			e.rec.mu.Lock()
+			defer e.rec.mu.Unlock()
+			return locks, len(e.rec.rebased)
+		}
+		if lk, rb := size(); lk != 1 || rb != 1 {
+			t.Fatalf("locks %d, rebased %d after a load, want 1 and 1", lk, rb)
+		}
+		e.clk.advance(26 * time.Hour)
+		if e.m.Sweep(e.clk.now()); len(e.m.PeriodTenants()) != 0 {
+			t.Fatalf("the sweep kept the tenant: %v", e.m.PeriodTenants())
+		}
+		e.rec.Tick(bg)
+		if lk, rb := size(); lk != 0 || rb != 0 {
+			t.Errorf("locks %d, rebased %d after a tick, want 0 and 0", lk, rb)
+		}
+	})
+
 	t.Run("the reconciler: the cut stops at a pending record and never moves back", func(t *testing.T) {
 		e := newRecEnv(t)
 		mon := utcCal.Of(PerMonth, e.clk.now())

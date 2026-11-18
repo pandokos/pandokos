@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/pandokos/pandokos/internal/pricing"
@@ -58,6 +59,9 @@ const (
 type EventWriter struct {
 	o EventWriterOptions
 	q chan Event
+
+	mu          sync.Mutex
+	interrupted *Event // the event whose insert Run abandoned when its context ended; Close writes it first
 }
 
 var _ EventSink = (*EventWriter)(nil)
@@ -86,8 +90,8 @@ func (w *EventWriter) Offer(e Event) bool {
 	}
 }
 
-// Run inserts the queued events until ctx is done. An event whose insert was interrupted goes
-// back to the queue for Close.
+// Run inserts the queued events until ctx is done. An event whose insert was interrupted is kept
+// for Close, which writes it before the queue (the queue may be full by then).
 func (w *EventWriter) Run(ctx context.Context) {
 	for {
 		select {
@@ -95,7 +99,9 @@ func (w *EventWriter) Run(ctx context.Context) {
 			return
 		case e := <-w.q:
 			if !w.write(ctx, e) {
-				w.Offer(e)
+				w.mu.Lock()
+				w.interrupted = &e
+				w.mu.Unlock()
 				return
 			}
 		}
@@ -105,10 +111,23 @@ func (w *EventWriter) Run(ctx context.Context) {
 // Close writes what is queued within ctx and returns the number of events left unwritten. Run
 // must have returned.
 func (w *EventWriter) Close(ctx context.Context) (unwritten int) {
+	w.mu.Lock()
+	first := w.interrupted
+	w.interrupted = nil
+	w.mu.Unlock()
+	if first != nil && !w.write(ctx, *first) {
+		w.mu.Lock()
+		w.interrupted = first
+		w.mu.Unlock()
+		return len(w.q) + 1
+	}
 	for {
 		select {
 		case e := <-w.q:
 			if !w.write(ctx, e) {
+				w.mu.Lock()
+				w.interrupted = &e
+				w.mu.Unlock()
 				return len(w.q) + 1
 			}
 		default:
