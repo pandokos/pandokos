@@ -466,8 +466,9 @@ func TestQuotaCanary(t *testing.T) {
 	status, text = p.anthropicCall(t, tn.key) // the token quota of the anthropic provider: its estimate alone is over 30 tokens
 	record("a quota refusal, anthropic", status, text, 429)
 	assertAnthropicPandokosError(t, "the anthropic refusal", status, text, 429, "quota_exceeded", "rate_limit_error")
-	// An unpriced model under a budget: no_price.
+	// An unpriced model under an enforced budget: no_price (a soft budget never refuses).
 	p.mustCLI(t, boot, "model", "create", "--availability", "all", "openai/fake-unpriced")
+	p.mustCLI(t, tn.admin, "limit", "create", "--tenant", tn.idStr, "--metric", "cost_per_month", "--amount", "100", "--currency", "USD", "--provider", "openai", "--model", "fake-unpriced")
 	status, text = p.chatCall(t, tn.key, "fake-unpriced", false)
 	record("no_price", status, text, 409)
 	assertPandokosError(t, "no_price", status, text, 409, "no_price")

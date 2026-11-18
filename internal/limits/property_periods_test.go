@@ -118,7 +118,7 @@ func newProp(t *testing.T, seed uint64, n int, withReconciler bool) *prop {
 // ledger holds the records of the period that began before the process started. The store knows
 // none of them, so every counter must be loaded from the ledger, not created empty.
 func (p *prop) restartAfterBoundary(n int) {
-	rng := rngOf(uint64(p.rng.Uint64()), n+1000)
+	rng := rngOf(p.rng.Uint64(), n+1000)
 	kind := PerDay
 	if rng.IntN(3) == 0 {
 		kind = PerMonth
