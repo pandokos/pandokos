@@ -208,6 +208,7 @@ func TestTenantTimeZone(t *testing.T) {
 				t.Errorf("%s: %+v, want in force %s until %s", zone, z, zone, want)
 			}
 		}
+		newRows(t, api, seen) // the rows of the tenants created above are not what the next subtest looks at
 	})
 
 	t.Run("an unknown zone and a malformed name are refused", func(t *testing.T) {

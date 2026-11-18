@@ -241,7 +241,7 @@ func (f *fixt) steps(t *testing.T) []step {
 			},
 			func(r *apitest.Response) []auditRow {
 				return []auditRow{f.tenantActor(auditRow{Action: "virtual_key.revoke", ResourceType: "virtual_key", ResourceID: newKey.Key.ID, RequestID: rid(r), Reason: "leaked",
-					Detail: map[string]any{"service_account_id": newSA.ID}}, tid)}
+					Detail: map[string]any{"service_account_id": newSA.ID, "limit_rules_deleted": float64(0)}}, tid)}
 			}},
 		// Sprint 2.1: credentials. The first is created with an expiry; a key is pinned to it and
 		// revoked; the secret is replaced; the state goes round; the default moves there and back;
@@ -281,7 +281,7 @@ func (f *fixt) steps(t *testing.T) []step {
 			},
 			func(r *apitest.Response) []auditRow {
 				return []auditRow{f.tenantActor(auditRow{Action: "virtual_key.revoke", ResourceType: "virtual_key", ResourceID: pinnedKey.Key.ID, RequestID: rid(r),
-					Detail: map[string]any{"service_account_id": newSA.ID}}, tid)}
+					Detail: map[string]any{"service_account_id": newSA.ID, "limit_rules_deleted": float64(0)}}, tid)}
 			}},
 		{"updateCredential",
 			func() *apitest.Response {
@@ -402,7 +402,7 @@ func (f *fixt) steps(t *testing.T) []step {
 				nt := newTenant.Tenant.ID
 				return []auditRow{
 					f.platActor(auditRow{Action: "tenant.create", ResourceType: "tenant", ResourceID: nt, RequestID: rid(r),
-						Detail: map[string]any{"name": "audited-new", "display_name": "New Inc", "admin_service_account_id": newTenant.AdminServiceAccount.ID, "admin_key_id": newTenant.AdminKey.Key.ID}}),
+						Detail: map[string]any{"name": "audited-new", "display_name": "New Inc", "time_zone": "", "admin_service_account_id": newTenant.AdminServiceAccount.ID, "admin_key_id": newTenant.AdminKey.Key.ID}}),
 					// The actor of both rows in the tenant's log is the platform principal.
 					func() auditRow {
 						row := f.platActor(auditRow{Action: "service_account.create", ResourceType: "service_account", ResourceID: newTenant.AdminServiceAccount.ID, RequestID: rid(r),

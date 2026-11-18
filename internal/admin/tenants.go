@@ -41,7 +41,7 @@ func (s *server) ListTenants(ctx context.Context, in adminapi.ListTenantsInput) 
 			out.NextCursor = encodeCursor(sortBy, last.Name, last.ID)
 			break
 		}
-		out.Items = append(out.Items, tenantOut(r))
+		out.Items = append(out.Items, s.tenantOut(r))
 	}
 	return out, nil
 }
@@ -68,7 +68,7 @@ func (s *server) GetTenant(ctx context.Context, in adminapi.GetTenantInput) (*ad
 	if err != nil {
 		return nil, err
 	}
-	t := tenantOut(row)
+	t := s.tenantOut(row)
 	return &t, nil
 }
 
@@ -79,6 +79,9 @@ func (s *server) CreateTenant(ctx context.Context, in adminapi.CreateTenantInput
 	b := in.Body
 	if b.AdminKeyExpiresAt != nil && !b.AdminKeyExpiresAt.After(s.now()) {
 		return nil, invalid("admin_key_expires_at", "must be in the future")
+	}
+	if err := s.checkZone(b.TimeZone); err != nil {
+		return nil, err
 	}
 	saName := b.AdminServiceAccountName
 	if saName == "" {
@@ -92,7 +95,7 @@ func (s *server) CreateTenant(ctx context.Context, in adminapi.CreateTenantInput
 		}
 		err = s.db.Provision(ctx, func(ctx context.Context, tx store.Tx, bind func(context.Context, tenant.ID) error) error {
 			q := queries.New(tx)
-			t, err := q.CreateTenant(ctx, queries.CreateTenantParams{Name: b.Name, DisplayName: b.DisplayName, TimeZone: ""})
+			t, err := q.CreateTenant(ctx, queries.CreateTenantParams{Name: b.Name, DisplayName: b.DisplayName, TimeZone: b.TimeZone})
 			if err != nil {
 				return err
 			}
@@ -149,13 +152,13 @@ func (s *server) CreateTenant(ctx context.Context, in adminapi.CreateTenantInput
 				return err
 			}
 			if err := audit.RecordPlatform(ctx, tx, audit.Event{Actor: actor, Action: "tenant.create", ResourceType: "tenant", ResourceID: t.ID,
-				Outcome: "success", RequestID: st.id, Detail: map[string]any{"name": b.Name, "display_name": b.DisplayName,
+				Outcome: "success", RequestID: st.id, Detail: map[string]any{"name": b.Name, "display_name": b.DisplayName, "time_zone": b.TimeZone,
 					"admin_service_account_id": sa.ID, "admin_key_id": keyID}}); err != nil {
 				return err
 			}
 			saOut := saRow{sa.ID, sa.TenantID, sa.Name, sa.Description, sa.State, sa.ValidFrom, sa.ValidUntil, sa.CreatedAt, sa.UpdatedAt, []string{"tenant-admin"}}
 			out = adminapi.TenantCreated{
-				Tenant:              tenantOut(active),
+				Tenant:              s.tenantOut(active),
 				AdminServiceAccount: saOut.out(),
 				AdminKey: adminapi.VirtualKeyCreated{
 					Key:    vkRow{vk.KeyID, vk.TenantID, vk.ServiceAccountID, vk.Description, vk.Scopes, vk.Scoped, vk.ExpiresAt, vk.RevokedAt, vk.CreatedAt, vk.State, vk.CredentialID, vk.Models, vk.ModelsRestricted}.out(),
@@ -179,12 +182,17 @@ func (s *server) CreateTenant(ctx context.Context, in adminapi.CreateTenantInput
 	}
 }
 
-// UpdateTenant changes the name and the display name of a tenant.
+// UpdateTenant changes the name, the display name and the time zone of a tenant.
 func (s *server) UpdateTenant(ctx context.Context, in adminapi.UpdateTenantInput) (*adminapi.Tenant, error) {
 	p := principalOf(ctx)
 	st := stateOf(ctx)
-	if !in.Body.Name.Set && !in.Body.DisplayName.Set {
-		return nil, invalid("body", "must change the name or the display name")
+	if !in.Body.Name.Set && !in.Body.DisplayName.Set && !in.Body.TimeZone.Set {
+		return nil, invalid("body", "must change the name, the display name or the time zone")
+	}
+	if in.Body.TimeZone.Set {
+		if err := s.checkZone(in.Body.TimeZone.Value); err != nil {
+			return nil, err
+		}
 	}
 	var out adminapi.Tenant
 	err := s.db.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
@@ -209,15 +217,30 @@ func (s *server) UpdateTenant(ctx context.Context, in adminapi.UpdateTenantInput
 			par.SetDisplayName, par.DisplayName = true, in.Body.DisplayName.Value
 			detail["display_name"] = change(cur.DisplayName, in.Body.DisplayName.Value)
 		}
+		upd := cur
+		if par.SetName || par.SetDisplayName {
+			if upd, err = q.UpdateTenant(ctx, par); err != nil {
+				return err
+			}
+		}
+		if in.Body.TimeZone.Set {
+			ch, err := s.setTimeZone(ctx, q, cur.ID, in.Body.TimeZone.Value)
+			if err != nil {
+				return err
+			}
+			if ch.Changed {
+				detail["time_zone"] = change(ch.From, ch.To)
+				detail["time_zone_effective_from"] = fmtTime(ch.Effective)
+				if upd, err = q.GetTenantForUpdate(ctx, cur.ID); err != nil {
+					return err
+				}
+			}
+		}
 		if len(detail) == 0 {
-			out = tenantOut(cur)
+			out = s.tenantOut(cur)
 			return nil
 		}
-		upd, err := q.UpdateTenant(ctx, par)
-		if err != nil {
-			return err
-		}
-		out = tenantOut(upd)
+		out = s.tenantOut(upd)
 		return audit.RecordPlatform(ctx, tx, audit.Event{Actor: audit.ActorOf(p), Action: "tenant.update", ResourceType: "tenant", ResourceID: cur.ID,
 			Outcome: "success", RequestID: st.id, Detail: detail})
 	})
@@ -246,7 +269,7 @@ func (s *server) transition(ctx context.Context, id, reason, from, to, action st
 		}
 		switch cur.State {
 		case to:
-			out = tenantOut(cur)
+			out = s.tenantOut(cur)
 			return nil
 		case from:
 		default:
@@ -256,7 +279,7 @@ func (s *server) transition(ctx context.Context, id, reason, from, to, action st
 		if err != nil {
 			return err
 		}
-		out = tenantOut(upd)
+		out = s.tenantOut(upd)
 		return audit.RecordPlatform(ctx, tx, audit.Event{Actor: audit.ActorOf(p), Action: action, ResourceType: "tenant", ResourceID: cur.ID,
 			Outcome: "success", RequestID: st.id, Reason: reason, Detail: map[string]any{"from": from, "to": to}})
 	})

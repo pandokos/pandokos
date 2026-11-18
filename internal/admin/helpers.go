@@ -7,9 +7,6 @@ import (
 	"github.com/pandokos/pandokos/internal/store"
 )
 
-// errNotImplemented is what an operation answers (as a 500) until the sprint step that implements it.
-var errNotImplemented = errors.New("admin: operation not implemented")
-
 func isNoRowsErr(err error) bool { return errors.Is(err, store.ErrNoRows) }
 
 func fmtTime(t *time.Time) any {
