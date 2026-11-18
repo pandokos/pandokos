@@ -415,6 +415,6 @@ SELECT r.id, r.tenant_id,
 
 -- name: DeletePlatformIssuerLimitRules :one
 SELECT pandokos.delete_platform_issuer_limit_rules(sqlc.arg(issuer_id)::uuid,
-           (SELECT COALESCE(array_agg(t.id), ARRAY[]::uuid[]) FROM pandokos.tenant t),
+           (SELECT COALESCE(array_agg(t.id ORDER BY t.id), ARRAY[]::uuid[]) FROM pandokos.tenant t),
            sqlc.arg(actor_id)::text, sqlc.arg(actor_name)::text, sqlc.arg(key_id)::text,
            sqlc.arg(request_id)::text)::bigint AS rules;

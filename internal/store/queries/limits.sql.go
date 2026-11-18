@@ -403,7 +403,7 @@ func (q *Queries) DeleteLimitRulesOfSubject(ctx context.Context, arg DeleteLimit
 const deletePlatformIssuerLimitRules = `-- name: DeletePlatformIssuerLimitRules :one
 
 SELECT pandokos.delete_platform_issuer_limit_rules($1::uuid,
-           (SELECT COALESCE(array_agg(t.id), ARRAY[]::uuid[]) FROM pandokos.tenant t),
+           (SELECT COALESCE(array_agg(t.id ORDER BY t.id), ARRAY[]::uuid[]) FROM pandokos.tenant t),
            $2::text, $3::text, $4::text,
            $5::text)::bigint AS rules
 `

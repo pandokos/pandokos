@@ -367,7 +367,7 @@ BEGIN
        OR p_request_id IS NULL OR p_request_id !~ '^([0-9a-f]{32})?$' THEN
         RAISE EXCEPTION 'invalid audit actor' USING ERRCODE = 'check_violation';
     END IF;
-    FOREACH t IN ARRAY COALESCE(p_tenant_ids, ARRAY[]::uuid[]) LOOP
+    FOREACH t IN ARRAY ARRAY(SELECT DISTINCT x FROM pg_catalog.unnest(COALESCE(p_tenant_ids, ARRAY[]::uuid[])) AS x ORDER BY x) LOOP
         PERFORM pg_catalog.set_config('app.tenant_id', t::text, true);
         -- The lock of createLimit: no rule is created for one of these mappings meanwhile.
         PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('pandokos.limit_rule:' || t::text, 0));

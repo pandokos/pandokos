@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -1064,6 +1065,28 @@ func TestDeletePlatformIssuerLimitRules(t *testing.T) {
 					pandokos.delete_platform_issuer_limit_rules($2::uuid, $3::uuid[], 'a', 'n', 'k', $4) AS n, current_setting('app.tenant_id', true) AS post`, preset, other, []string{b.String(), c.String()}, reqID)
 				if err != nil || rows[0]["post"] != preset {
 					t.Errorf("preset %q: after the call the setting is %v (%v)", preset, rows, err)
+				}
+			}
+		})
+
+		t.Run("two deletions over the same tenants in opposite orders do not deadlock", func(t *testing.T) {
+			// The function takes its locks in the order of the tenant identifiers, whatever the order of the list.
+			orders := [][]string{{a.String(), b.String()}, {b.String(), a.String()}}
+			for i := range 20 {
+				var wg sync.WaitGroup
+				errs := make([]error, 2)
+				for j := range 2 {
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						_, errs[j] = call(platform, "admin", pi, orders[j])
+					}()
+				}
+				wg.Wait()
+				for j, err := range errs {
+					if err != nil {
+						t.Fatalf("round %d, call %d: %v", i, j, err)
+					}
 				}
 			}
 		})
