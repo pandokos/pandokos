@@ -57,11 +57,19 @@ func parseInt(v string) (int, error) {
 	return int(n), nil
 }
 
+func parseInt64(v string) (int64, error) {
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return 0, errNotInteger
+	}
+	return n, nil
+}
+
 func setInt(f func(c *Config) *int) func(*Config, string) error {
 	return func(c *Config, v string) error {
-		n, err := ParseInt(v)
+		n, err := parseInt(v)
 		if err != nil {
-			return errNotInteger
+			return err
 		}
 		*f(c) = n
 		return nil
@@ -98,9 +106,9 @@ var keyTable = []keyDef{
 		setDuration(func(c *Config) *Duration { return &c.Listeners.Inference.IdleTimeout })),
 	def("listeners.inference.max_header_bytes", "integer", "65536", "Maximum size of request headers",
 		func(c *Config, v string) error {
-			n, err := ParseInt(v)
+			n, err := parseInt(v)
 			if err != nil {
-				return errNotInteger
+				return err
 			}
 			c.Listeners.Inference.MaxHeaderBytes = n
 			return nil
@@ -121,7 +129,7 @@ var keyTable = []keyDef{
 		func(c *Config, v string) error {
 			n, err := parseInt(v)
 			if err != nil {
-				return errNotInteger
+				return err
 			}
 			c.Listeners.Admin.MaxHeaderBytes = n
 			return nil
@@ -136,9 +144,9 @@ var keyTable = []keyDef{
 		setBool(func(c *Config) *bool { return &c.Listeners.Admin.AllowPlaintext })),
 	def("limits.max_request_body_bytes", "integer", "10485760", "Larger bodies get 413 request_too_large",
 		func(c *Config, v string) error {
-			n, err := parseInt(v)
+			n, err := parseInt64(v)
 			if err != nil {
-				return errNotInteger
+				return err
 			}
 			c.Limits.MaxRequestBodyBytes = n
 			return nil
@@ -149,9 +157,9 @@ var keyTable = []keyDef{
 		setDuration(func(c *Config) *Duration { return &c.Limits.MaxRequestDuration })),
 	def("limits.default_output_tokens", "integer", "4096", "Output tokens reserved per choice for a request that sets no output limit; capped by the model's max_output_tokens when the catalogue has it; 1 to 1000000",
 		func(c *Config, v string) error {
-			n, err := parseInt(v)
+			n, err := parseInt64(v)
 			if err != nil {
-				return errNotInteger
+				return err
 			}
 			c.Limits.DefaultOutputTokens = n
 			return nil
@@ -202,7 +210,7 @@ var keyTable = []keyDef{
 		func(c *Config, v string) error {
 			n, err := parseInt(v)
 			if err != nil {
-				return errNotInteger
+				return err
 			}
 			c.Database.Gateway.MaxConnections = n
 			return nil
@@ -215,7 +223,7 @@ var keyTable = []keyDef{
 		func(c *Config, v string) error {
 			n, err := parseInt(v)
 			if err != nil {
-				return errNotInteger
+				return err
 			}
 			c.Database.Admin.MaxConnections = n
 			return nil
@@ -228,7 +236,7 @@ var keyTable = []keyDef{
 		func(c *Config, v string) error {
 			n, err := parseInt(v)
 			if err != nil {
-				return errNotInteger
+				return err
 			}
 			c.Database.Worker.MaxConnections = n
 			return nil
