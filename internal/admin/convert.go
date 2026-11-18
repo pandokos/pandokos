@@ -27,6 +27,8 @@ func tenantOut(r queries.PandokosTenant) adminapi.Tenant {
 	return adminapi.Tenant{
 		ID: r.ID, Name: r.Name, DisplayName: r.DisplayName, State: adminapi.TenantState(r.State),
 		CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(), StateChangedAt: r.StateChangedAt.UTC(),
+		TimeZone: r.TimeZone, TimeZoneInForce: r.TimeZone, // C6 resolves the zone in force
+		TimeZoneEffectiveFrom: utcPtr(r.TimeZoneEffectiveFrom),
 	}
 }
 

@@ -93,7 +93,7 @@ func TestImage(t *testing.T) {
 
 	// The image creates the schema with its migrate command.
 	migrateArgs := append(append([]string{"run", "--rm"}, hardened...), dbEnv...)
-	if out := docker(t, append(migrateArgs, image, "migrate")...); !strings.Contains(out, "schema is at version 10") {
+	if out := docker(t, append(migrateArgs, image, "migrate")...); !strings.Contains(out, "schema is at version 11") {
 		t.Fatalf("migrate output: %q", out)
 	}
 

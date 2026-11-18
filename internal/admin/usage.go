@@ -59,15 +59,16 @@ func (s *server) ListUsageRecords(ctx context.Context, in adminapi.ListUsageReco
 	if err := fieldsError(fromErr, toErr, provErr); err != nil {
 		return nil, err
 	}
-	provider := in.Provider
+	provider, limitState := in.Provider, string(in.LimitState)
 	if in.Cursor != "" {
 		cf, ferr := time.Parse(layout, cur.F)
 		ct, terr := time.Parse(layout, cur.T)
 		if ferr != nil || terr != nil ||
-			(in.From != "" && !from.Equal(cf)) || (in.To != "" && !to.Equal(ct)) || (in.Provider != "" && in.Provider != cur.P) {
+			(in.From != "" && !from.Equal(cf)) || (in.To != "" && !to.Equal(ct)) || (in.Provider != "" && in.Provider != cur.P) ||
+			(in.LimitState != "" && string(in.LimitState) != cur.L) {
 			return nil, invalid("cursor", "is not a cursor of this collection and sort")
 		}
-		from, to, provider = cf.UTC(), ct.UTC(), cur.P
+		from, to, provider, limitState = cf.UTC(), ct.UTC(), cur.P, cur.L
 	}
 	switch {
 	case !from.Before(to):
@@ -91,7 +92,7 @@ func (s *server) ListUsageRecords(ctx context.Context, in adminapi.ListUsageReco
 	}
 	limit, ask := limitOf(in.Limit)
 	par := queries.ListUsageRecordsParams{
-		FromAt: from, ToAt: to, Provider: provider, After: after, AfterStartedAt: afterAt, AfterID: afterID(after, cur.I), PageSize: ask,
+		FromAt: from, ToAt: to, Provider: provider, LimitState: limitState, After: after, AfterStartedAt: afterAt, AfterID: afterID(after, cur.I), PageSize: ask,
 	}
 	var rows []queries.ListUsageRecordsRow
 	err = s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
@@ -107,7 +108,7 @@ func (s *server) ListUsageRecords(ctx context.Context, in adminapi.ListUsageReco
 		if i == limit {
 			last := rows[limit-1]
 			out.NextCursor = encodeFullCursor(cursor{S: sortKey, N: last.StartedAt.UTC().Format(layout), I: last.ID,
-				F: from.Format(layout), T: to.Format(layout), P: provider})
+				F: from.Format(layout), T: to.Format(layout), P: provider, L: limitState})
 			break
 		}
 		out.Items = append(out.Items, usageRecordOut(r))
@@ -152,7 +153,7 @@ func usageRecordOut(r queries.ListUsageRecordsRow) adminapi.UsageRecord {
 		OtherUnits: counters(r.OtherUnits), ProviderUsage: counters(r.ProviderUsage),
 		CostStatus: r.CostStatus, CostReason: r.CostReason, Cost: adminapi.Null[string](), Currency: str(r.Currency),
 		PriceVersionID: str(r.PriceVersionID), CostFallbacks: append([]string{}, r.CostFallbacks...),
-		Metadata: metadataEntries(r.Metadata), MetadataDropped: int(r.MetadataDropped),
+		Metadata: metadataEntries(r.Metadata), MetadataDropped: int(r.MetadataDropped), LimitState: r.LimitState,
 	}
 	if r.UpstreamStatus != nil {
 		o.UpstreamStatus = int(*r.UpstreamStatus)

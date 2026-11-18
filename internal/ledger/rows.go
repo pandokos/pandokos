@@ -50,6 +50,7 @@ type row struct {
 	CostFallbacks         []string          `json:"cost_fallbacks"`
 	Metadata              map[string]string `json:"metadata"`
 	MetadataDropped       int               `json:"metadata_dropped"`
+	LimitState            *string           `json:"limit_state"`
 }
 
 func strOrNil(s string) *string {
@@ -98,6 +99,7 @@ func rowOf(r *usage.Record) row {
 		CostFallbacks:   []string{},
 		Metadata:        map[string]string{},
 		MetadataDropped: r.MetadataDropped,
+		LimitState:      strOrNil(r.LimitState),
 	}
 	if r.UpstreamStatus != 0 {
 		s := r.UpstreamStatus

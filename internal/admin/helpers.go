@@ -7,6 +7,9 @@ import (
 	"github.com/pandokos/pandokos/internal/store"
 )
 
+// errNotImplemented is what an operation answers (as a 500) until the sprint step that implements it.
+var errNotImplemented = errors.New("admin: operation not implemented")
+
 func isNoRowsErr(err error) bool { return errors.Is(err, store.ErrNoRows) }
 
 func fmtTime(t *time.Time) any {
@@ -43,4 +46,12 @@ func limitOf(n int) (limit int, ask int32) {
 		n = 50
 	}
 	return n, int32(n + 1) //nolint:gosec // limit is at most 200 by the API document
+}
+
+// nilIfEmpty is the nullable identifier column a resolved identifier is passed as: no value is NULL.
+func nilIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }

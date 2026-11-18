@@ -86,16 +86,17 @@ var ErrNotLoaded = errors.New("limits: period counter is not loaded")
 
 // Limit is one effective limit a request is reserved against.
 type Limit struct {
-	Tenant          tenant.ID
-	Subject         SubjectKind
-	ID              string // "" for the tenant; a service account ID; a key ID or a subject mapping ID
-	Provider, Model string // scope; "" means every
-	Metric          Metric
-	Currency        string // cost metrics
-	Max             int64  // 0: not enforced. Cost metrics: millionths of the currency
-	Level, RuleID   string // the rule that set Max (of the first rule when none is enforced); "platform" or "tenant"
-	Period          Period // zero for the three metrics of 5.1
-	Marks           []Mark // thresholds, ascending by At
+	Tenant              tenant.ID
+	Subject             SubjectKind
+	ID                  string // "" for the tenant; a service account ID; a key ID or a subject mapping ID
+	ProviderID, ModelID string // scope by identifier; "" means every
+	Provider, Model     string // scope by name; "" means every
+	Metric              Metric
+	Currency            string // cost metrics
+	Max                 int64  // 0: not enforced. Cost metrics: millionths of the currency
+	Level, RuleID       string // the rule that set Max (of the first rule when none is enforced); "platform" or "tenant"
+	Period              Period // zero for the three metrics of 5.1
+	Marks               []Mark // thresholds, ascending by At
 }
 
 // Mark is one threshold of one rule, as an absolute value in the unit of Max.

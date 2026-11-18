@@ -38,6 +38,55 @@ func firstOptions(opts []LimitOptions) LimitOptions {
 	return opts[0]
 }
 
+// resolveSubject returns the identifier columns of the subject a rule names, as the session sees
+// them: the service account by ID, a virtual key by its key ID or else a subject mapping by ID.
+// A subject that does not exist is an error: the foreign keys would refuse the rule anyway.
+func resolveSubject(c context.Context, tx store.Tx, kind, subjectID string) (sa, vk, sm any, err error) {
+	switch kind {
+	case "tenant":
+		return nil, nil, nil, nil
+	case "service_account":
+		var v string
+		if err = tx.QueryRow(c, `SELECT id::text FROM pandokos.service_account WHERE id::text = $1`, subjectID).Scan(&v); err != nil {
+			return nil, nil, nil, fmt.Errorf("limit subject: no service account %q: %w", subjectID, err)
+		}
+		return v, nil, nil, nil
+	case "key":
+		var v string
+		if err = tx.QueryRow(c, `SELECT id::text FROM pandokos.virtual_key WHERE key_id = $1`, subjectID).Scan(&v); err == nil {
+			return nil, v, nil, nil
+		}
+		if err = tx.QueryRow(c, `SELECT id::text FROM pandokos.subject_mapping WHERE id::text = $1`, subjectID).Scan(&v); err != nil {
+			return nil, nil, nil, fmt.Errorf("limit subject: no virtual key or subject mapping %q: %w", subjectID, err)
+		}
+		return nil, nil, v, nil
+	}
+	return nil, nil, nil, fmt.Errorf("limit subject: unknown kind %q", kind)
+}
+
+// resolveScope returns the identifiers of the provider and the model a rule names; both nil for
+// no scope. A provider or a model that does not exist is an error.
+func resolveScope(c context.Context, tx store.Tx, provider, model string) (prov, mod any, err error) {
+	if provider == "" {
+		if model != "" {
+			return nil, nil, fmt.Errorf("limit scope: model %q needs a provider", model)
+		}
+		return nil, nil, nil
+	}
+	var p string
+	if err = tx.QueryRow(c, `SELECT id::text FROM pandokos.provider WHERE name = $1`, provider).Scan(&p); err != nil {
+		return nil, nil, fmt.Errorf("limit scope: no provider %q: %w", provider, err)
+	}
+	if model == "" {
+		return p, nil, nil
+	}
+	var m string
+	if err = tx.QueryRow(c, `SELECT id::text FROM pandokos.model WHERE provider_id = $1::uuid AND name = $2`, p, model).Scan(&m); err != nil {
+		return nil, nil, fmt.Errorf("limit scope: no model %q of provider %q: %w", model, provider, err)
+	}
+	return p, m, nil
+}
+
 // SeedLimitRule inserts a rule of a tenant. subjectID is empty for the subject kind "tenant".
 // The optional LimitOptions give the scope, the currency, the enforcement and the thresholds.
 func (d *Database) SeedLimitRule(tb testing.TB, id tenant.ID, subjectKind, subjectID, metric string, value int64, opts ...LimitOptions) {
@@ -47,10 +96,18 @@ func (d *Database) SeedLimitRule(tb testing.TB, id tenant.ID, subjectKind, subje
 	ctx, cancel := ctx30()
 	defer cancel()
 	err := adm.WithTenant(ctx, id, func(c context.Context, tx store.Tx) error {
-		_, err := tx.Exec(c, `INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, subject_id, metric, limit_value,
-				provider, model, currency, enforce, thresholds)
-			VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10::smallint[])`,
-			id.String(), subjectKind, subjectID, metric, value, o.Provider, o.Model, o.Currency, !o.NoEnforce, o.thresholds())
+		sa, vk, sm, err := resolveSubject(c, tx, subjectKind, subjectID)
+		if err != nil {
+			return err
+		}
+		prov, mod, err := resolveScope(c, tx, o.Provider, o.Model)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(c, `INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, service_account_id, virtual_key_id,
+				subject_mapping_id, provider_id, model_id, metric, limit_value, currency, enforce, thresholds)
+			VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6::uuid, $7::uuid, $8, $9, $10, $11, $12::smallint[])`,
+			id.String(), subjectKind, sa, vk, sm, prov, mod, metric, value, o.Currency, !o.NoEnforce, o.thresholds())
 		return err
 	})
 	if err != nil {
@@ -65,8 +122,14 @@ func (d *Database) SetLimitRule(tb testing.TB, id tenant.ID, subjectKind, subjec
 	ctx, cancel := ctx30()
 	defer cancel()
 	err := adm.WithTenant(ctx, id, func(c context.Context, tx store.Tx) error {
-		tag, err := tx.Exec(c, `UPDATE pandokos.limit_rule SET limit_value = $5
-			WHERE tenant_id = $1::uuid AND subject_kind = $2 AND subject_id = $3 AND metric = $4`, id.String(), subjectKind, subjectID, metric, value)
+		sa, vk, sm, err := resolveSubject(c, tx, subjectKind, subjectID)
+		if err != nil {
+			return err
+		}
+		tag, err := tx.Exec(c, `UPDATE pandokos.limit_rule SET limit_value = $7
+			WHERE tenant_id = $1::uuid AND subject_kind = $2 AND metric = $3
+			  AND service_account_id IS NOT DISTINCT FROM $4::uuid AND virtual_key_id IS NOT DISTINCT FROM $5::uuid
+			  AND subject_mapping_id IS NOT DISTINCT FROM $6::uuid`, id.String(), subjectKind, metric, sa, vk, sm, value)
 		if err == nil && tag.RowsAffected() != 1 {
 			tb.Errorf("set limit rule: %d rows changed", tag.RowsAffected())
 		}
@@ -84,8 +147,13 @@ func (d *Database) DeleteLimitRule(tb testing.TB, id tenant.ID, subjectKind, sub
 	ctx, cancel := ctx30()
 	defer cancel()
 	err := adm.WithTenant(ctx, id, func(c context.Context, tx store.Tx) error {
-		_, err := tx.Exec(c, `DELETE FROM pandokos.limit_rule WHERE subject_kind = $1 AND subject_id = $2 AND metric = $3`,
-			subjectKind, subjectID, metric)
+		sa, vk, sm, err := resolveSubject(c, tx, subjectKind, subjectID)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(c, `DELETE FROM pandokos.limit_rule WHERE subject_kind = $1 AND metric = $2
+			  AND service_account_id IS NOT DISTINCT FROM $3::uuid AND virtual_key_id IS NOT DISTINCT FROM $4::uuid
+			  AND subject_mapping_id IS NOT DISTINCT FROM $5::uuid`, subjectKind, metric, sa, vk, sm)
 		return err
 	})
 	if err != nil {
@@ -107,15 +175,20 @@ func (d *Database) SeedPlatformLimit(tb testing.TB, id *tenant.ID, metric string
 		if id != nil {
 			arg = id.String()
 		}
+		prov, mod, err := resolveScope(c, tx, o.Provider, o.Model)
+		if err != nil {
+			return err
+		}
 		tag, err := tx.Exec(c, `UPDATE pandokos.platform_limit_rule SET limit_value = $3, enforce = $7, thresholds = $8::smallint[]
-			WHERE tenant_id IS NOT DISTINCT FROM $1::uuid AND metric = $2 AND provider = $4 AND model = $5 AND currency = $6`,
-			arg, metric, value, o.Provider, o.Model, o.Currency, !o.NoEnforce, o.thresholds())
+			WHERE tenant_id IS NOT DISTINCT FROM $1::uuid AND metric = $2 AND provider_id IS NOT DISTINCT FROM $4::uuid
+			  AND model_id IS NOT DISTINCT FROM $5::uuid AND currency = $6`,
+			arg, metric, value, prov, mod, o.Currency, !o.NoEnforce, o.thresholds())
 		if err != nil || tag.RowsAffected() > 0 {
 			return err
 		}
-		_, err = tx.Exec(c, `INSERT INTO pandokos.platform_limit_rule (tenant_id, metric, limit_value, provider, model, currency, enforce, thresholds)
-			VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8::smallint[])`,
-			arg, metric, value, o.Provider, o.Model, o.Currency, !o.NoEnforce, o.thresholds())
+		_, err = tx.Exec(c, `INSERT INTO pandokos.platform_limit_rule (tenant_id, metric, limit_value, provider_id, model_id, currency, enforce, thresholds)
+			VALUES ($1::uuid, $2, $3, $4::uuid, $5::uuid, $6, $7, $8::smallint[])`,
+			arg, metric, value, prov, mod, o.Currency, !o.NoEnforce, o.thresholds())
 		return err
 	})
 	if err != nil {

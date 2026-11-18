@@ -64,6 +64,10 @@ type Record struct {
 
 	Metadata        map[string]string
 	MetadataDropped int
+
+	// LimitState is how the limits treated the request: limited, unlimited, unverified or
+	// not_evaluated; empty when the gateway did not set it.
+	LimitState string
 }
 
 // Validate checks the constraints of the table in Go. It names the field, never a value.
@@ -139,6 +143,7 @@ func (r *Record) checks() []check {
 		{"cost_fallbacks", len(r.Cost.Fallbacks) <= 8},
 		{"metadata", metadataSize(r.Metadata) <= 4096},
 		{"metadata_dropped", r.MetadataDropped >= 0 && r.MetadataDropped <= 1000},
+		{"limit_state", validLimitState(r.LimitState)},
 	}
 }
 
@@ -187,6 +192,10 @@ func validOutcome(o Outcome) bool {
 
 func validSource(s Source) bool {
 	return s == SourceProvider || s == SourceEstimated || s == SourceNone
+}
+
+func validLimitState(s string) bool {
+	return s == "" || s == "limited" || s == "unlimited" || s == "unverified" || s == "not_evaluated"
 }
 
 func validCostReason(r string) bool {

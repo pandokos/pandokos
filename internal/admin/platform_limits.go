@@ -93,22 +93,22 @@ func (s *server) CreatePlatformLimit(ctx context.Context, in adminapi.CreatePlat
 	}
 	var out adminapi.PlatformLimitRule
 	err := s.inPlatform(ctx, func(ctx context.Context, tx store.Tx, q *queries.Queries) error {
+		var scope queries.ResolveLimitScopeRow
 		if b.Provider != "" {
-			if found, err := q.LimitScopeExists(ctx, queries.LimitScopeExistsParams{Provider: b.Provider}); err != nil {
-				return err
-			} else if !found {
+			var err error
+			scope, err = q.ResolveLimitScope(ctx, queries.ResolveLimitScopeParams{Provider: b.Provider, Model: b.Model})
+			if isNoRowsErr(err) {
 				return invalid("provider", "must name a provider")
 			}
-			if b.Model != "" {
-				if found, err := q.LimitScopeExists(ctx, queries.LimitScopeExistsParams{Provider: b.Provider, Model: b.Model}); err != nil {
-					return err
-				} else if !found {
-					return invalid("model", "must name a model of the provider")
-				}
+			if err != nil {
+				return err
+			}
+			if b.Model != "" && scope.ModelID == "" {
+				return invalid("model", "must name a model of the provider")
 			}
 		}
 		row, err := q.CreatePlatformLimitRule(ctx, queries.CreatePlatformLimitRuleParams{
-			TenantID: forTenant, Provider: b.Provider, Model: b.Model, Metric: string(f.Metric), LimitValue: f.Value, Currency: f.Currency,
+			TenantID: forTenant, ProviderID: nilIfEmpty(scope.ProviderID), ModelID: nilIfEmpty(scope.ModelID), Metric: string(f.Metric), LimitValue: f.Value, Currency: f.Currency,
 			Enforce: f.Enforce, Thresholds: f.Thresholds,
 		})
 		if err != nil {

@@ -37,8 +37,9 @@ var (
 	re16 = regexp.MustCompile("^(0|[1-9][0-9]{0,6})(\\.[0-9]{1,12})?$")
 	re17 = regexp.MustCompile("^[a-z0-9][a-z0-9_.-]{0,62}$")
 	re18 = regexp.MustCompile("^([a-z0-9][a-z0-9_.-]{0,62})?$")
-	re19 = regexp.MustCompile("^t[a-z2-7]{16}$")
-	re20 = regexp.MustCompile("^[a-z_]+:[a-z_]+$")
+	re19 = regexp.MustCompile("^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$")
+	re20 = regexp.MustCompile("^t[a-z2-7]{16}$")
+	re21 = regexp.MustCompile("^[a-z_]+:[a-z_]+$")
 )
 
 // ApiFamily: The wire protocol of a provider.
@@ -748,13 +749,17 @@ func (v LimitMetric) Valid() bool {
 type LimitRule struct {
 	ID          string           `json:"id"`
 	SubjectKind LimitSubjectKind `json:"subject_kind"`
-	// Empty for the tenant; a service account ID; a key ID or a subject mapping ID.
+	// Empty for the tenant; a service account ID; a key ID or a subject mapping ID; a key that is revoked cannot be named.
 	SubjectID string `json:"subject_id"`
 	// Empty when the rule is not scoped to a provider.
 	Provider string `json:"provider"`
+	// Empty when the rule is not scoped to a provider (a model).
+	ProviderID string `json:"provider_id"`
 	// Empty when the rule is not scoped to a model.
-	Model  string      `json:"model"`
-	Metric LimitMetric `json:"metric"`
+	Model string `json:"model"`
+	// Empty when the rule is not scoped to a provider (a model).
+	ModelID string      `json:"model_id"`
+	Metric  LimitMetric `json:"metric"`
 	// Requests or tokens; 0 for a cost metric.
 	Limit int `json:"limit"`
 	// The budget as a decimal; empty unless a cost metric.
@@ -769,7 +774,7 @@ type LimitRule struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
-var requiredLimitRule = []string{"id", "subject_kind", "subject_id", "provider", "model", "metric", "limit", "amount", "currency", "enforce", "thresholds", "created_at", "updated_at"}
+var requiredLimitRule = []string{"id", "subject_kind", "subject_id", "provider", "provider_id", "model", "model_id", "metric", "limit", "amount", "currency", "enforce", "thresholds", "created_at", "updated_at"}
 
 var nestedLimitRule []nestedMember
 
@@ -953,6 +958,26 @@ func (v *LimitRuleUpdate) Validate() []FieldError {
 		}
 	}
 	return errs
+}
+
+// LimitState is an enumeration of the administration API.
+type LimitState string
+
+// Values of LimitState.
+const (
+	LimitStateLimited      LimitState = "limited"
+	LimitStateUnlimited    LimitState = "unlimited"
+	LimitStateUnverified   LimitState = "unverified"
+	LimitStateNotEvaluated LimitState = "not_evaluated"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v LimitState) Valid() bool {
+	switch v {
+	case LimitStateLimited, LimitStateUnlimited, LimitStateUnverified, LimitStateNotEvaluated:
+		return true
+	}
+	return false
 }
 
 // LimitSubjectKind is an enumeration of the administration API.
@@ -1892,9 +1917,13 @@ type PlatformLimitRule struct {
 	Tenant string `json:"tenant"`
 	// Empty when the rule is not scoped to a provider.
 	Provider string `json:"provider"`
+	// Empty when the rule is not scoped to a provider (a model).
+	ProviderID string `json:"provider_id"`
 	// Empty when the rule is not scoped to a model.
-	Model  string      `json:"model"`
-	Metric LimitMetric `json:"metric"`
+	Model string `json:"model"`
+	// Empty when the rule is not scoped to a provider (a model).
+	ModelID string      `json:"model_id"`
+	Metric  LimitMetric `json:"metric"`
 	// Requests or tokens; 0 for a cost metric.
 	Limit int `json:"limit"`
 	// The budget as a decimal; empty unless a cost metric.
@@ -1909,7 +1938,7 @@ type PlatformLimitRule struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
-var requiredPlatformLimitRule = []string{"id", "tenant", "provider", "model", "metric", "limit", "amount", "currency", "enforce", "thresholds", "created_at", "updated_at"}
+var requiredPlatformLimitRule = []string{"id", "tenant", "provider", "provider_id", "model", "model_id", "metric", "limit", "amount", "currency", "enforce", "thresholds", "created_at", "updated_at"}
 
 var nestedPlatformLimitRule []nestedMember
 
@@ -2918,16 +2947,19 @@ func (v *SubjectMappingList) Validate() []FieldError {
 
 // Tenant is a schema of the administration API.
 type Tenant struct {
-	ID             string      `json:"id"`
-	Name           string      `json:"name"`
-	DisplayName    string      `json:"display_name"`
-	State          TenantState `json:"state"`
-	CreatedAt      time.Time   `json:"created_at"`
-	UpdatedAt      time.Time   `json:"updated_at"`
-	StateChangedAt time.Time   `json:"state_changed_at"`
+	ID                    string      `json:"id"`
+	Name                  string      `json:"name"`
+	DisplayName           string      `json:"display_name"`
+	State                 TenantState `json:"state"`
+	CreatedAt             time.Time   `json:"created_at"`
+	UpdatedAt             time.Time   `json:"updated_at"`
+	StateChangedAt        time.Time   `json:"state_changed_at"`
+	TimeZone              string      `json:"time_zone"`
+	TimeZoneInForce       string      `json:"time_zone_in_force"`
+	TimeZoneEffectiveFrom *time.Time  `json:"time_zone_effective_from,omitempty"`
 }
 
-var requiredTenant = []string{"id", "name", "display_name", "state", "created_at", "updated_at", "state_changed_at"}
+var requiredTenant = []string{"id", "name", "display_name", "state", "created_at", "updated_at", "state_changed_at", "time_zone", "time_zone_in_force"}
 
 var nestedTenant []nestedMember
 
@@ -2943,6 +2975,12 @@ func (v *Tenant) Validate() []FieldError {
 	if !v.State.Valid() {
 		errs = append(errs, FieldError{Field: "state", Message: "must be one of provisioning, active, suspended, deleting, deleted"})
 	}
+	if !re19.MatchString(v.TimeZone) {
+		errs = append(errs, FieldError{Field: "time_zone", Message: "must match ^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$"})
+	}
+	if runeCount(v.TimeZone) > 64 {
+		errs = append(errs, FieldError{Field: "time_zone", Message: "length must be at most 64"})
+	}
 	return errs
 }
 
@@ -2950,6 +2988,7 @@ func (v *Tenant) Validate() []FieldError {
 type TenantCreate struct {
 	Name        string `json:"name"`
 	DisplayName string `json:"display_name,omitempty"`
+	TimeZone    string `json:"time_zone,omitempty"`
 	// Name of the first service account. Default admin.
 	AdminServiceAccountName string `json:"admin_service_account_name,omitempty"`
 	// Expiry of the first key. Absent means that it does not expire.
@@ -2968,6 +3007,12 @@ func (v *TenantCreate) Validate() []FieldError {
 	}
 	if runeCount(v.DisplayName) > 200 {
 		errs = append(errs, FieldError{Field: "display_name", Message: "length must be at most 200"})
+	}
+	if v.TimeZone != "" && !re19.MatchString(v.TimeZone) {
+		errs = append(errs, FieldError{Field: "time_zone", Message: "must match ^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$"})
+	}
+	if runeCount(v.TimeZone) > 64 {
+		errs = append(errs, FieldError{Field: "time_zone", Message: "length must be at most 64"})
 	}
 	if v.AdminServiceAccountName != "" && !re3.MatchString(v.AdminServiceAccountName) {
 		errs = append(errs, FieldError{Field: "admin_service_account_name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
@@ -3182,10 +3227,57 @@ func (v TenantState) Valid() bool {
 	return false
 }
 
+// TenantTimeZone is a schema of the administration API.
+type TenantTimeZone struct {
+	TimeZone string `json:"time_zone"`
+	// The name of the zone in force now; the default of the installation resolved.
+	InForce string `json:"in_force"`
+	// Present while a change is pending; the instant from which time_zone is in force.
+	EffectiveFrom *time.Time `json:"effective_from,omitempty"`
+}
+
+var requiredTenantTimeZone = []string{"time_zone", "in_force"}
+
+var nestedTenantTimeZone []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TenantTimeZone) Validate() []FieldError {
+	var errs []FieldError
+	if !re19.MatchString(v.TimeZone) {
+		errs = append(errs, FieldError{Field: "time_zone", Message: "must match ^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$"})
+	}
+	if runeCount(v.TimeZone) > 64 {
+		errs = append(errs, FieldError{Field: "time_zone", Message: "length must be at most 64"})
+	}
+	return errs
+}
+
+// TenantTimeZoneSet is a schema of the administration API.
+type TenantTimeZoneSet struct {
+	TimeZone string `json:"time_zone"`
+}
+
+var requiredTenantTimeZoneSet = []string{"time_zone"}
+
+var nestedTenantTimeZoneSet []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TenantTimeZoneSet) Validate() []FieldError {
+	var errs []FieldError
+	if !re19.MatchString(v.TimeZone) {
+		errs = append(errs, FieldError{Field: "time_zone", Message: "must match ^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$"})
+	}
+	if runeCount(v.TimeZone) > 64 {
+		errs = append(errs, FieldError{Field: "time_zone", Message: "length must be at most 64"})
+	}
+	return errs
+}
+
 // TenantUpdate is a schema of the administration API.
 type TenantUpdate struct {
 	Name        Optional[string] `json:"name,omitzero"`
 	DisplayName Optional[string] `json:"display_name,omitzero"`
+	TimeZone    Optional[string] `json:"time_zone,omitzero"`
 }
 
 var requiredTenantUpdate = []string{}
@@ -3203,6 +3295,14 @@ func (v *TenantUpdate) Validate() []FieldError {
 	if v.DisplayName.Set {
 		if runeCount(v.DisplayName.Value) > 200 {
 			errs = append(errs, FieldError{Field: "display_name", Message: "length must be at most 200"})
+		}
+	}
+	if v.TimeZone.Set {
+		if !re19.MatchString(v.TimeZone.Value) {
+			errs = append(errs, FieldError{Field: "time_zone", Message: "must match ^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$"})
+		}
+		if runeCount(v.TimeZone.Value) > 64 {
+			errs = append(errs, FieldError{Field: "time_zone", Message: "length must be at most 64"})
 		}
 	}
 	return errs
@@ -3555,9 +3655,11 @@ type UsageRecord struct {
 	CostFallbacks   []string         `json:"cost_fallbacks"`
 	Metadata        []MetadataEntry  `json:"metadata"`
 	MetadataDropped int              `json:"metadata_dropped"`
+	// limited, unlimited, unverified or not_evaluated; empty for a record written before the field existed.
+	LimitState string `json:"limit_state"`
 }
 
-var requiredUsageRecord = []string{"id", "request_id", "trace_id", "started_at", "duration_ms", "principal_kind", "principal_id", "key_id", "credential_id", "provider", "api_family", "operation", "endpoint", "model", "model_id", "upstream_model", "stream", "outcome", "error_code", "upstream_status", "ttfb_ms", "request_bytes", "response_bytes", "input_source", "output_source", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens", "estimated_input_tokens", "estimated_output_tokens", "other_units", "provider_usage", "cost_status", "cost_reason", "currency", "price_version_id", "cost_fallbacks", "metadata", "metadata_dropped"}
+var requiredUsageRecord = []string{"id", "request_id", "trace_id", "started_at", "duration_ms", "principal_kind", "principal_id", "key_id", "credential_id", "provider", "api_family", "operation", "endpoint", "model", "model_id", "upstream_model", "stream", "outcome", "error_code", "upstream_status", "ttfb_ms", "request_bytes", "response_bytes", "input_source", "output_source", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens", "estimated_input_tokens", "estimated_output_tokens", "other_units", "provider_usage", "cost_status", "cost_reason", "currency", "price_version_id", "cost_fallbacks", "metadata", "metadata_dropped", "limit_state"}
 
 var nestedUsageRecord = []nestedMember{{Name: "other_units", Many: true, Required: requiredUsageCounter, Nested: nestedUsageCounter}, {Name: "provider_usage", Many: true, Required: requiredUsageCounter, Nested: nestedUsageCounter}, {Name: "metadata", Many: true, Required: requiredMetadataEntry, Nested: nestedMetadataEntry}}
 
@@ -3631,7 +3733,7 @@ var nestedVirtualKey []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *VirtualKey) Validate() []FieldError {
 	var errs []FieldError
-	if !re19.MatchString(v.ID) {
+	if !re20.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^t[a-z2-7]{16}$"})
 	}
 	if !re2.MatchString(v.TenantID) {
@@ -3704,7 +3806,7 @@ func (v *VirtualKeyCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "scopes", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Scopes {
-		if !re20.MatchString(item) {
+		if !re21.MatchString(item) {
 			errs = append(errs, FieldError{Field: "scopes", Message: "must match ^[a-z_]+:[a-z_]+$"})
 		}
 	}
@@ -3841,6 +3943,8 @@ var Operations = []Operation{
 	{ID: "getSubjectMapping", Method: "GET", Path: "/v1/tenants/{tenant}/subject-mappings/{mapping}", Permission: "subject_mapping:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "mapping", Pattern: re2}}},
 	{ID: "deleteSubjectMapping", Method: "DELETE", Path: "/v1/tenants/{tenant}/subject-mappings/{mapping}", Permission: "subject_mapping:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "mapping", Pattern: re2}}},
 	{ID: "suspendTenant", Method: "POST", Path: "/v1/tenants/{tenant}/suspend", Permission: "tenant:suspend", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "getTenantTimeZone", Method: "GET", Path: "/v1/tenants/{tenant}/time-zone", Permission: "limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "setTenantTimeZone", Method: "PUT", Path: "/v1/tenants/{tenant}/time-zone", Permission: "limit:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "listTokenIssuers", Method: "GET", Path: "/v1/tenants/{tenant}/token-issuers", Permission: "token_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "createTokenIssuer", Method: "POST", Path: "/v1/tenants/{tenant}/token-issuers", Permission: "token_issuer:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "getTokenIssuer", Method: "GET", Path: "/v1/tenants/{tenant}/token-issuers/{issuer}", Permission: "token_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "issuer", Pattern: re2}}},
@@ -3849,8 +3953,8 @@ var Operations = []Operation{
 	{ID: "listUsageRecords", Method: "GET", Path: "/v1/tenants/{tenant}/usage-records", Permission: "usage:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "listVirtualKeys", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "createVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "getVirtualKey", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys/{key}", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "key", Pattern: re19}}},
-	{ID: "revokeVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys/{key}/revoke", Permission: "virtual_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "key", Pattern: re19}}},
+	{ID: "getVirtualKey", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys/{key}", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "key", Pattern: re20}}},
+	{ID: "revokeVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys/{key}/revoke", Permission: "virtual_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "key", Pattern: re20}}},
 }
 
 // GetMeInput is the input of getMe.
@@ -4416,6 +4520,17 @@ type SuspendTenantInput struct {
 	Body   Reason
 }
 
+// GetTenantTimeZoneInput is the input of getTenantTimeZone.
+type GetTenantTimeZoneInput struct {
+	Tenant string // path
+}
+
+// SetTenantTimeZoneInput is the input of setTenantTimeZone.
+type SetTenantTimeZoneInput struct {
+	Tenant string // path
+	Body   TenantTimeZoneSet
+}
+
 // ListTokenIssuersInput is the input of listTokenIssuers.
 type ListTokenIssuersInput struct {
 	Tenant  string        // path
@@ -4453,12 +4568,13 @@ type DeleteTokenIssuerInput struct {
 
 // ListUsageRecordsInput is the input of listUsageRecords.
 type ListUsageRecordsInput struct {
-	Tenant   string // path
-	Limit    int    // query; the zero value means absent
-	Cursor   string // query; the zero value means absent
-	From     string // query; the zero value means absent
-	To       string // query; the zero value means absent
-	Provider string // query; the zero value means absent
+	Tenant     string     // path
+	Limit      int        // query; the zero value means absent
+	Cursor     string     // query; the zero value means absent
+	From       string     // query; the zero value means absent
+	To         string     // query; the zero value means absent
+	Provider   string     // query; the zero value means absent
+	LimitState LimitState // query; the zero value means absent
 }
 
 // ListVirtualKeysInput is the input of listVirtualKeys.
@@ -4592,7 +4708,7 @@ type Server interface {
 	CreateTenant(ctx context.Context, in CreateTenantInput) (*TenantCreated, error)
 	// GetTenant: GET /v1/tenants/{tenant}. Read a tenant
 	GetTenant(ctx context.Context, in GetTenantInput) (*Tenant, error)
-	// UpdateTenant: PATCH /v1/tenants/{tenant}. Change the name or the display name of a tenant
+	// UpdateTenant: PATCH /v1/tenants/{tenant}. Change the name, the display name or the time zone of a tenant
 	UpdateTenant(ctx context.Context, in UpdateTenantInput) (*Tenant, error)
 	// GetCapability: GET /v1/tenants/{tenant}/capability. Say whether the tenant can call a provider and model now
 	GetCapability(ctx context.Context, in GetCapabilityInput) (*Capability, error)
@@ -4664,6 +4780,10 @@ type Server interface {
 	DeleteSubjectMapping(ctx context.Context, in DeleteSubjectMappingInput) (*SubjectMapping, error)
 	// SuspendTenant: POST /v1/tenants/{tenant}/suspend. Suspend a tenant
 	SuspendTenant(ctx context.Context, in SuspendTenantInput) (*Tenant, error)
+	// GetTenantTimeZone: GET /v1/tenants/{tenant}/time-zone. Read the time zone in which the tenant's days and months start
+	GetTenantTimeZone(ctx context.Context, in GetTenantTimeZoneInput) (*TenantTimeZone, error)
+	// SetTenantTimeZone: PUT /v1/tenants/{tenant}/time-zone. Set the time zone in which the tenant's days and months start
+	SetTenantTimeZone(ctx context.Context, in SetTenantTimeZoneInput) (*TenantTimeZone, error)
 	// ListTokenIssuers: GET /v1/tenants/{tenant}/token-issuers. List the trusted token issuers of a tenant
 	ListTokenIssuers(ctx context.Context, in ListTokenIssuersInput) (*TokenIssuerList, error)
 	// CreateTokenIssuer: POST /v1/tenants/{tenant}/token-issuers. Register a trusted token issuer
@@ -7123,6 +7243,40 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		writeJSON(w, 200, out)
+	case "getTenantTimeZone":
+		var in GetTenantTimeZoneInput
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GetTenantTimeZone(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "setTenantTimeZone":
+		var in SetTenantTimeZoneInput
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredTenantTimeZoneSet, nestedTenantTimeZoneSet, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.SetTenantTimeZone(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
 	case "listTokenIssuers":
 		var in ListTokenIssuersInput
 		in.Tenant = params["tenant"]
@@ -7266,7 +7420,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 	case "listUsageRecords":
 		var in ListUsageRecordsInput
 		in.Tenant = params["tenant"]
-		q, err := parseQuery(r, "limit", "cursor", "from", "to", "provider")
+		q, err := parseQuery(r, "limit", "cursor", "from", "to", "provider", "limit_state")
 		if err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -7325,6 +7479,12 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 		}
 		if in.Provider != "" && !re0.MatchString(in.Provider) {
 			errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+		}
+		if v, ok := q["limit_state"]; ok {
+			in.LimitState = LimitState(v)
+		}
+		if in.LimitState != "" && !in.LimitState.Valid() {
+			errs = append(errs, FieldError{Field: "limit_state", Message: "must be one of limited, unlimited, unverified, not_evaluated"})
 		}
 		if len(errs) > 0 {
 			h.fail(w, r, op, invalid(errs))
@@ -8099,7 +8259,7 @@ func (c *Client) GetTenant(ctx context.Context, in GetTenantInput) (*Tenant, err
 	return &out, nil
 }
 
-// UpdateTenant calls PATCH /v1/tenants/{tenant}. Change the name or the display name of a tenant
+// UpdateTenant calls PATCH /v1/tenants/{tenant}. Change the name, the display name or the time zone of a tenant
 func (c *Client) UpdateTenant(ctx context.Context, in UpdateTenantInput) (*Tenant, error) {
 	q := url.Values{}
 	var out Tenant
@@ -8573,6 +8733,26 @@ func (c *Client) SuspendTenant(ctx context.Context, in SuspendTenantInput) (*Ten
 	return &out, nil
 }
 
+// GetTenantTimeZone calls GET /v1/tenants/{tenant}/time-zone. Read the time zone in which the tenant's days and months start
+func (c *Client) GetTenantTimeZone(ctx context.Context, in GetTenantTimeZoneInput) (*TenantTimeZone, error) {
+	q := url.Values{}
+	var out TenantTimeZone
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/time-zone", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// SetTenantTimeZone calls PUT /v1/tenants/{tenant}/time-zone. Set the time zone in which the tenant's days and months start
+func (c *Client) SetTenantTimeZone(ctx context.Context, in SetTenantTimeZoneInput) (*TenantTimeZone, error) {
+	q := url.Values{}
+	var out TenantTimeZone
+	if err := c.do(ctx, "PUT", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/time-zone", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // ListTokenIssuers calls GET /v1/tenants/{tenant}/token-issuers. List the trusted token issuers of a tenant
 func (c *Client) ListTokenIssuers(ctx context.Context, in ListTokenIssuersInput) (*TokenIssuerList, error) {
 	q := url.Values{}
@@ -8655,6 +8835,9 @@ func (c *Client) ListUsageRecords(ctx context.Context, in ListUsageRecordsInput)
 	}
 	if in.Provider != "" {
 		q.Set("provider", string(in.Provider))
+	}
+	if in.LimitState != "" {
+		q.Set("limit_state", string(in.LimitState))
 	}
 	var out UsageRecordList
 	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/usage-records", q, nil, 200, &out); err != nil {

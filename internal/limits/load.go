@@ -46,7 +46,7 @@ func loadRules(ctx context.Context, db *store.DB, id tenant.ID) (RuleSet, int, e
 		}
 		var def, own []Rule
 		for _, r := range plat {
-			rule, ok := toRule(Rule{ID: r.ID, SubjectKind: SubjectTenant, Provider: r.Provider, Model: r.Model,
+			rule, ok := toRule(Rule{ID: r.ID, SubjectKind: SubjectTenant, ProviderID: r.ProviderID, ModelID: r.ModelID, Provider: r.Provider, Model: r.Model,
 				Metric: Metric(r.Metric), Value: r.LimitValue, Currency: r.Currency, Enforce: r.Enforce, Thresholds: percents(r.Thresholds)})
 			switch {
 			case !ok:
@@ -59,8 +59,8 @@ func loadRules(ctx context.Context, db *store.DB, id tenant.ID) (RuleSet, int, e
 		}
 		rules := make([]Rule, 0, len(rows))
 		for _, r := range rows {
-			rule, ok := toRule(Rule{ID: r.ID, SubjectKind: SubjectKind(r.SubjectKind), SubjectID: r.SubjectID, Provider: r.Provider,
-				Model: r.Model, Metric: Metric(r.Metric), Value: r.LimitValue, Currency: r.Currency, Enforce: r.Enforce, Thresholds: percents(r.Thresholds)})
+			rule, ok := toRule(Rule{ID: r.ID, SubjectKind: SubjectKind(r.SubjectKind), SubjectID: r.SubjectID, ProviderID: r.ProviderID,
+				ModelID: r.ModelID, Provider: r.Provider, Model: r.Model, Metric: Metric(r.Metric), Value: r.LimitValue, Currency: r.Currency, Enforce: r.Enforce, Thresholds: percents(r.Thresholds)})
 			if !ok || !knownSubject(rule.SubjectKind) {
 				skipped++
 				continue

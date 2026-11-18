@@ -60,19 +60,21 @@ type PandokosLimitEvent struct {
 }
 
 type PandokosLimitRule struct {
-	TenantID    string
-	ID          string
-	SubjectKind string
-	SubjectID   string
-	Metric      string
-	LimitValue  int64
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	Provider    string
-	Model       string
-	Currency    string
-	Enforce     bool
-	Thresholds  []int16
+	TenantID         string
+	ID               string
+	SubjectKind      string
+	Metric           string
+	LimitValue       int64
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	Currency         string
+	Enforce          bool
+	Thresholds       []int16
+	ServiceAccountID *string
+	VirtualKeyID     *string
+	SubjectMappingID *string
+	ProviderID       *string
+	ModelID          *string
 }
 
 type PandokosModel struct {
@@ -158,11 +160,11 @@ type PandokosPlatformLimitRule struct {
 	LimitValue int64
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
-	Provider   string
-	Model      string
 	Currency   string
 	Enforce    bool
 	Thresholds []int16
+	ProviderID *string
+	ModelID    *string
 }
 
 type PandokosPriceImport struct {
@@ -317,13 +319,16 @@ type PandokosSubjectMapping struct {
 }
 
 type PandokosTenant struct {
-	ID             string
-	Name           string
-	DisplayName    string
-	State          string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	StateChangedAt time.Time
+	ID                    string
+	Name                  string
+	DisplayName           string
+	State                 string
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+	StateChangedAt        time.Time
+	TimeZone              string
+	TimeZonePrevious      string
+	TimeZoneEffectiveFrom *time.Time
 }
 
 type PandokosTenantDataKey struct {
@@ -405,6 +410,7 @@ type PandokosUsageRecord struct {
 	CostFallbacks         []string
 	Metadata              string
 	MetadataDropped       int32
+	LimitState            *string
 }
 
 type PandokosUsageRecordDefault struct {

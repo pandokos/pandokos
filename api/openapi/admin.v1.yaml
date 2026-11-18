@@ -109,7 +109,7 @@ paths:
     patch:
       operationId: updateTenant
       tags: [tenants]
-      summary: Change the name or the display name of a tenant
+      summary: Change the name, the display name or the time zone of a tenant
       x-pandokos-permission: tenant:write
       requestBody:
         required: true
@@ -397,7 +397,8 @@ paths:
       summary: Revoke a virtual key
       description: >-
         Takes effect on every instance within the documented bound. A revocation cannot be
-        undone. Revoking a revoked key succeeds and changes nothing.
+        undone. Revoking a revoked key succeeds and changes nothing. The limit rules of the key are
+        deleted with it.
       x-pandokos-permission: virtual_key:revoke
       requestBody:
         required: false
@@ -838,7 +839,7 @@ paths:
       tags: [catalog]
       summary: Delete a provider that nothing references
       description: >-
-        Refused with invalid_state while an endpoint, a model or a credential of any tenant references the provider. The response is the provider as it was.
+        Refused with invalid_state while an endpoint, a model or a credential of any tenant references the provider, or while a limit rule of any tenant or of the platform references it; errors then names limit_rules. The response is the provider as it was.
       x-pandokos-permission: catalog:write
       responses:
         "200": {$ref: '#/components/responses/Provider'}
@@ -1012,7 +1013,7 @@ paths:
       tags: [catalog]
       summary: Delete a model that has no price
       description: >-
-        Refused with invalid_state once a price version exists: retire the model instead. Grants are removed with it. The response is the model as it was.
+        Refused with invalid_state once a price version exists: retire the model instead; also refused while a limit rule of any tenant or of the platform references it, and errors then names limit_rules. Grants are removed with it. The response is the model as it was.
       x-pandokos-permission: catalog:write
       responses:
         "200": {$ref: '#/components/responses/Model'}
@@ -1383,7 +1384,7 @@ paths:
       summary: List the tenant's usage records, newest first
       description: >-
         Records whose started_at is in [from, to). to defaults to now and from to 24 hours before to;
-        the window is at most 31 days. A cursor is valid only with the same from, to and provider.
+        the window is at most 31 days. A cursor is valid only with the same from, to, provider and limit_state.
       x-pandokos-permission: usage:read
       parameters:
         - {$ref: '#/components/parameters/Limit'}
@@ -1391,6 +1392,7 @@ paths:
         - {name: from, in: query, description: 'Start of the window, RFC 3339.', schema: {type: string, maxLength: 64}}
         - {name: to, in: query, description: 'End of the window (excluded), RFC 3339.', schema: {type: string, maxLength: 64}}
         - {name: provider, in: query, description: Only records of this provider., schema: {$ref: '#/components/schemas/ProviderName'}}
+        - {name: limit_state, in: query, description: Only records with this limit state., schema: {$ref: '#/components/schemas/LimitState'}}
       responses:
         "200": {$ref: '#/components/responses/UsageRecordList'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
@@ -1489,7 +1491,7 @@ paths:
       tags: [token-issuers]
       summary: Delete a trusted token issuer with its subject mappings
       description: >-
-        The response is the registration as it was.
+        The limit rules of its mappings are deleted with it. The response is the registration as it was.
       x-pandokos-permission: token_issuer:delete
       responses:
         "200": {$ref: '#/components/responses/TokenIssuer'}
@@ -1585,7 +1587,7 @@ paths:
       tags: [subject-mappings]
       summary: Delete a subject mapping
       description: >-
-        The response is the mapping as it was.
+        The limit rules of the mapping are deleted with it. The response is the mapping as it was.
       x-pandokos-permission: subject_mapping:delete
       responses:
         "200": {$ref: '#/components/responses/SubjectMapping'}
@@ -1625,7 +1627,7 @@ paths:
       summary: Create a limit rule of a tenant
       description: >-
         One rule per subject, scope and metric. The subject and the scope must exist. A count metric
-        takes limit; a cost metric takes amount and currency. A tenant has at most 5000 rules.
+        takes limit; a cost metric takes amount and currency. A tenant has at most 5000 rules. The currency of a cost rule is checked against the currencies the scope can be priced in.
       x-pandokos-permission: limit:write
       requestBody:
         required: true
@@ -1665,7 +1667,7 @@ paths:
       summary: Change the value, the enforcement or the thresholds of a limit rule
       description: >-
         At least one member. Subject, scope, metric and currency never change. Counters are not
-        reset by a change.
+        reset by a change. The currency of a cost rule is checked against the currencies the scope can be priced in.
       x-pandokos-permission: limit:write
       requestBody:
         required: true
@@ -1740,6 +1742,45 @@ paths:
         "404": {$ref: '#/components/responses/NotFound'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/time-zone:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: getTenantTimeZone
+      tags: [limits]
+      summary: Read the time zone in which the tenant's days and months start
+      x-pandokos-permission: limit:read
+      responses:
+        "200": {$ref: '#/components/responses/TenantTimeZone'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    put:
+      operationId: setTenantTimeZone
+      tags: [limits]
+      summary: Set the time zone in which the tenant's days and months start
+      description: >-
+        The change takes effect at the start of the next month in the zone in force; until then
+        effective_from says when. Setting the zone in force again withdraws a pending change. An
+        empty time_zone is the default of the installation.
+      x-pandokos-permission: limit:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TenantTimeZoneSet'}
+      responses:
+        "200": {$ref: '#/components/responses/TenantTimeZone'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
   /v1/platform-limits:
     get:
       operationId: listPlatformLimits
@@ -1765,7 +1806,7 @@ paths:
       summary: Create a ceiling for every tenant or for one
       description: >-
         Without tenant the rule is the default for every tenant; with a tenant it replaces the
-        default of the same scope and metric for that tenant.
+        default of the same scope and metric for that tenant. The currency of a cost rule is checked against the currencies the scope can be priced in.
       x-pandokos-permission: platform_limit:write
       requestBody:
         required: true
@@ -1801,6 +1842,8 @@ paths:
       operationId: updatePlatformLimit
       tags: [platform-limits]
       summary: Change the value, the enforcement or the thresholds of a platform ceiling
+      description: >-
+        The currency of a cost rule is checked against the currencies the scope can be priced in.
       x-pandokos-permission: platform_limit:write
       requestBody:
         required: true
@@ -1919,7 +1962,7 @@ paths:
       tags: [platform-issuers]
       summary: Delete a platform-level token issuer with its tenant list and subject mappings
       description: >-
-        The response is the registration as it was.
+        The limit rules of its mappings are deleted with it. The response is the registration as it was.
       x-pandokos-permission: platform_issuer:delete
       responses:
         "200": {$ref: '#/components/responses/PlatformIssuer'}
@@ -2418,6 +2461,11 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/PlatformIssuerTenantList'}
+    TenantTimeZone:
+      description: The time zone of the tenant.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/TenantTimeZone'}
     LimitRule:
       description: The limit rule.
       content:
@@ -2545,7 +2593,7 @@ components:
                  error_code, upstream_status, ttfb_ms, request_bytes, response_bytes, input_source, output_source,
                  input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
                  estimated_input_tokens, estimated_output_tokens, other_units, provider_usage, cost_status, cost_reason,
-                 currency, price_version_id, cost_fallbacks, metadata, metadata_dropped]
+                 currency, price_version_id, cost_fallbacks, metadata, metadata_dropped, limit_state]
       properties:
         id: {$ref: '#/components/schemas/ID'}
         request_id: {type: string}
@@ -2598,6 +2646,7 @@ components:
           type: array
           items: {$ref: '#/components/schemas/MetadataEntry'}
         metadata_dropped: {type: integer}
+        limit_state: {type: string, description: 'limited, unlimited, unverified or not_evaluated; empty for a record written before the field existed.'}
     UsageRecordList:
       type: object
       additionalProperties: false
@@ -3120,7 +3169,7 @@ components:
     Tenant:
       type: object
       additionalProperties: false
-      required: [id, name, display_name, state, created_at, updated_at, state_changed_at]
+      required: [id, name, display_name, state, created_at, updated_at, state_changed_at, time_zone, time_zone_in_force]
       properties:
         id: {$ref: '#/components/schemas/ID'}
         name: {$ref: '#/components/schemas/Name'}
@@ -3129,6 +3178,9 @@ components:
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
         state_changed_at: {type: string, format: date-time}
+        time_zone: {$ref: '#/components/schemas/TimeZoneName'}
+        time_zone_in_force: {type: string}
+        time_zone_effective_from: {type: string, format: date-time}
     TenantCreate:
       type: object
       additionalProperties: false
@@ -3136,6 +3188,7 @@ components:
       properties:
         name: {$ref: '#/components/schemas/Name'}
         display_name: {type: string, maxLength: 200}
+        time_zone: {$ref: '#/components/schemas/TimeZoneName'}
         admin_service_account_name:
           description: Name of the first service account. Default admin.
           $ref: '#/components/schemas/Name'
@@ -3157,6 +3210,7 @@ components:
       properties:
         name: {$ref: '#/components/schemas/Name'}
         display_name: {type: string, maxLength: 200}
+        time_zone: {$ref: '#/components/schemas/TimeZoneName'}
     TenantList:
       type: object
       additionalProperties: false
@@ -3599,17 +3653,41 @@ components:
     Currency:
       type: string
       pattern: '^[A-Z]{3}$'
+    TimeZoneName:
+      type: string
+      maxLength: 64
+      pattern: '^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$'
+      description: An IANA time zone name; empty for the default of the installation.
+    TenantTimeZone:
+      type: object
+      additionalProperties: false
+      required: [time_zone, in_force]
+      properties:
+        time_zone: {$ref: '#/components/schemas/TimeZoneName'}
+        in_force: {type: string, description: The name of the zone in force now; the default of the installation resolved.}
+        effective_from: {type: string, format: date-time, description: Present while a change is pending; the instant from which time_zone is in force.}
+    TenantTimeZoneSet:
+      type: object
+      additionalProperties: false
+      required: [time_zone]
+      properties:
+        time_zone: {$ref: '#/components/schemas/TimeZoneName'}
+    LimitState:
+      type: string
+      enum: [limited, unlimited, unverified, not_evaluated]
     LimitRule:
       type: object
       additionalProperties: false
-      required: [id, subject_kind, subject_id, provider, model, metric, limit, amount, currency, enforce, thresholds,
+      required: [id, subject_kind, subject_id, provider, provider_id, model, model_id, metric, limit, amount, currency, enforce, thresholds,
                  created_at, updated_at]
       properties:
         id: {$ref: '#/components/schemas/ID'}
         subject_kind: {$ref: '#/components/schemas/LimitSubjectKind'}
-        subject_id: {type: string, description: 'Empty for the tenant; a service account ID; a key ID or a subject mapping ID.'}
+        subject_id: {type: string, description: 'Empty for the tenant; a service account ID; a key ID or a subject mapping ID; a key that is revoked cannot be named.'}
         provider: {type: string, description: Empty when the rule is not scoped to a provider.}
+        provider_id: {type: string, description: 'Empty when the rule is not scoped to a provider (a model).'}
         model: {type: string, description: Empty when the rule is not scoped to a model.}
+        model_id: {type: string, description: 'Empty when the rule is not scoped to a provider (a model).'}
         metric: {$ref: '#/components/schemas/LimitMetric'}
         limit: {type: integer, description: Requests or tokens; 0 for a cost metric.}
         amount: {type: string, description: The budget as a decimal; empty unless a cost metric.}
@@ -3644,12 +3722,14 @@ components:
     PlatformLimitRule:
       type: object
       additionalProperties: false
-      required: [id, tenant, provider, model, metric, limit, amount, currency, enforce, thresholds, created_at, updated_at]
+      required: [id, tenant, provider, provider_id, model, model_id, metric, limit, amount, currency, enforce, thresholds, created_at, updated_at]
       properties:
         id: {$ref: '#/components/schemas/ID'}
         tenant: {type: string, description: The tenant the rule is for; empty for the default of every tenant.}
         provider: {type: string, description: Empty when the rule is not scoped to a provider.}
+        provider_id: {type: string, description: 'Empty when the rule is not scoped to a provider (a model).'}
         model: {type: string, description: Empty when the rule is not scoped to a model.}
+        model_id: {type: string, description: 'Empty when the rule is not scoped to a provider (a model).'}
         metric: {$ref: '#/components/schemas/LimitMetric'}
         limit: {type: integer, description: Requests or tokens; 0 for a cost metric.}
         amount: {type: string, description: The budget as a decimal; empty unless a cost metric.}

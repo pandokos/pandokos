@@ -92,7 +92,7 @@ func (s *server) CreateTenant(ctx context.Context, in adminapi.CreateTenantInput
 		}
 		err = s.db.Provision(ctx, func(ctx context.Context, tx store.Tx, bind func(context.Context, tenant.ID) error) error {
 			q := queries.New(tx)
-			t, err := q.CreateTenant(ctx, queries.CreateTenantParams{Name: b.Name, DisplayName: b.DisplayName})
+			t, err := q.CreateTenant(ctx, queries.CreateTenantParams{Name: b.Name, DisplayName: b.DisplayName, TimeZone: ""})
 			if err != nil {
 				return err
 			}

@@ -113,6 +113,7 @@ func expectedRow(r usage.Record) map[string]any {
 		"estimated_input_tokens": num(estIn, r.Estimated.InputTokens), "estimated_output_tokens": num(estOut, r.Estimated.OutputTokens),
 		"cost_status": r.CostStatus, "cost_reason": reason, "currency": nilIf(r.Cost.Currency), "price_version_id": nilIf(r.Cost.VersionID),
 		"cost_fallbacks": fallbacks, "metadata": stringMap(r.Metadata), "metadata_dropped": float64(r.MetadataDropped),
+		"limit_state": nilIf(r.LimitState),
 	}
 }
 

@@ -129,6 +129,9 @@ func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 		body = map[string]any{"metric": "requests_per_day", "limit": 1000}
 	case "updateLimit", "updatePlatformLimit":
 		body = map[string]any{"limit": 2000}
+	case "getTenantTimeZone":
+	case "setTenantTimeZone":
+		body = map[string]any{"time_zone": ""}
 	default:
 		tb.Fatalf("apitest.CallFor does not know the operation %s: add it", op.ID)
 	}

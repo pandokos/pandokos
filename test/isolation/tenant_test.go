@@ -80,16 +80,15 @@ func TestTenantTablePolicies(t *testing.T) {
 			denied(role, platform, `UPDATE pandokos.tenant SET display_name = 'x'`)
 			denied(role, sessA, `DELETE FROM pandokos.tenant`)
 		}
-		// In a tenant's own session the admin role may read the tenant row but not change it.
+		// In a tenant's own session the admin role may read the tenant row but not change it; since
+		// sprint 5.3 the row of the tenant is updatable there for its time zone, so the guard trigger
+		// refuses any other column.
 		err = inSession(t, admin, sessA, func(c context.Context, tx pgx.Tx) error {
-			tag, err := tx.Exec(c, `UPDATE pandokos.tenant SET display_name = 'x'`)
-			if err != nil || tag.RowsAffected() != 0 {
-				t.Errorf("admin update in a tenant session: %v, %d rows, want 0", err, tag.RowsAffected())
-			}
-			return nil
+			_, err := tx.Exec(c, `UPDATE pandokos.tenant SET display_name = 'x'`)
+			return err
 		})
-		if err != nil {
-			t.Fatal(err)
+		if sqlstate(err) != insufficientPrivilege {
+			t.Errorf("admin update in a tenant session: %v, want SQLSTATE %s", err, insufficientPrivilege)
 		}
 	})
 }

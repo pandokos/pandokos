@@ -9,20 +9,22 @@ import (
 
 // Rule is one row of limit_rule or platform_limit_rule.
 type Rule struct {
-	ID              string
-	SubjectKind     SubjectKind
-	SubjectID       string
-	Provider, Model string // scope; "" means every
-	Metric          Metric
-	Value           int64 // requests or tokens; millionths of the currency for a cost metric
-	Currency        string
-	Enforce         bool
-	Thresholds      []int // percentages of Value
+	ID                  string
+	SubjectKind         SubjectKind
+	SubjectID           string
+	ProviderID, ModelID string // scope by identifier; "" means every
+	Provider, Model     string // scope by name; "" means every (names matter until C1)
+	Metric              Metric
+	Value               int64 // requests or tokens; millionths of the currency for a cost metric
+	Currency            string
+	Enforce             bool
+	Thresholds          []int // percentages of Value
 }
 
 // Query is what a request is, for the resolution of its limits.
 type Query struct {
 	ServiceAccountID, KeyID string
+	ProviderID, ModelID     string    // identifiers of the target (filled from C1 on)
 	Provider, Model         string    // names of the target
 	Start                   time.Time // start of the request
 }
@@ -250,6 +252,7 @@ func (s RuleSet) counters(sub subjectRef, sc scopeKey, m Metric, sl *ruleSlot) [
 // a tie), the marks are those of every rule.
 func (s RuleSet) counter(sub subjectRef, sc scopeKey, m Metric, currency string, rules []leveled) Limit {
 	l := Limit{Tenant: s.Tenant, Subject: sub.kind, ID: sub.id, Provider: sc.provider, Model: sc.model,
+		ProviderID: rules[0].r.ProviderID, ModelID: rules[0].r.ModelID,
 		Metric: m, Currency: currency, Level: rules[0].level, RuleID: rules[0].r.ID}
 	_, periodic := m.Period()
 	for _, lr := range rules {

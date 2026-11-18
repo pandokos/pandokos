@@ -174,6 +174,21 @@ func (d *Database) Migrate(tb testing.TB) {
 	}
 }
 
+// MigrateTo applies the first n embedded migrations with the owner user, for tests of an upgrade
+// that need the schema as it was before the last ones.
+func (d *Database) MigrateTo(tb testing.TB, n int) {
+	tb.Helper()
+	ms := embedded(tb)
+	if n < 0 || n > len(ms) {
+		tb.Fatalf("MigrateTo(%d): there are %d migrations", n, len(ms))
+	}
+	ctx, cancel := ctx30()
+	defer cancel()
+	if _, err := store.Migrate(ctx, d.ConnOptions("owner"), ms[:n], "test"); err != nil {
+		tb.Fatalf("migrate to %d: %v", n, err)
+	}
+}
+
 // Pooled returns a view of the same database reached through PgBouncer. It fails or skips the
 // test according to the pooler gate.
 func (d *Database) Pooled(tb testing.TB) *Database {

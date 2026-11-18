@@ -17,10 +17,12 @@ import (
 
 // UsageGroup is what the ledger holds for requests that share the dimensions a rule can name.
 type UsageGroup struct {
-	Minute                                        int64 // 0: before the live part
-	PrincipalID, KeyID, Provider, Model, Currency string
-	Requests, Tokens                              int64
-	Cost                                          pricing.Decimal
+	Minute                       int64 // 0: before the live part
+	PrincipalID, KeyID, Currency string
+	ProviderID, ModelID          string // what the ledger reader fills
+	Provider, Model              string // names; set by callers that know them
+	Requests, Tokens             int64
+	Cost                         pricing.Decimal
 }
 
 // Amount is what a counter holds: N for requests and tokens, Cost for the cost metrics.
@@ -43,7 +45,20 @@ func groupMatches(l Limit, g *UsageGroup) bool {
 			return false
 		}
 	}
-	return (l.Provider == "" || l.Provider == g.Provider) && (l.Model == "" || l.Model == g.Model)
+	return scopeMatches(l.ProviderID, l.Provider, g.ProviderID, g.Provider) &&
+		scopeMatches(l.ModelID, l.Model, g.ModelID, g.Model)
+}
+
+// scopeMatches compares one scope dimension: an empty scope matches everything; identifiers are
+// compared when both sides have one (the ledger reader fills only identifiers), names otherwise.
+func scopeMatches(limitID, limitName, groupID, groupName string) bool {
+	if limitID == "" && limitName == "" {
+		return true
+	}
+	if limitID != "" && groupID != "" {
+		return limitID == groupID
+	}
+	return limitName == groupName
 }
 
 // groupAmount is what the counter of l counts of a group: requests, tokens or, in the currency of
@@ -123,8 +138,8 @@ func (l *dbLedger) Usage(ctx context.Context, t tenant.ID, from, liveFrom, to ti
 			if err != nil {
 				return fmt.Errorf("limits: usage cost %q: %w", r.Cost, err)
 			}
-			out = append(out, UsageGroup{Minute: r.Minute, PrincipalID: r.PrincipalID, KeyID: r.KeyID, Provider: r.Provider,
-				Model: r.Model, Currency: r.Currency, Requests: r.Requests, Tokens: tokens, Cost: cost})
+			out = append(out, UsageGroup{Minute: r.Minute, PrincipalID: r.PrincipalID, KeyID: r.KeyID, ProviderID: r.ProviderID,
+				ModelID: r.ModelID, Currency: r.Currency, Requests: r.Requests, Tokens: tokens, Cost: cost})
 		}
 		return nil
 	})

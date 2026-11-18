@@ -479,7 +479,10 @@ func TestEveryStatement(t *testing.T) {
 		// Sprint 5.2: the administration of limit rules, the limit events and the ledger aggregate.
 		quotaStatements(c, t, admin, gateway, tid, called)
 
-		// The 147 statements, and nothing was prepared on the server.
+		// Sprint 5.3: the time zone of a tenant, the rules of a subject that goes away, unlimited traffic.
+		integrityStatements(c, t, admin, gateway, tid, called)
+
+		// The 154 statements, and nothing was prepared on the server.
 		var names []string
 		typ := reflect.TypeOf(&queries.Queries{})
 		for i := 0; i < typ.NumMethod(); i++ {
@@ -488,8 +491,8 @@ func TestEveryStatement(t *testing.T) {
 			}
 		}
 		sort.Strings(names)
-		if len(names) != 147 {
-			t.Errorf("the generated package has %d statements, want 147: %v", len(names), names)
+		if len(names) != 154 {
+			t.Errorf("the generated package has %d statements, want 154: %v", len(names), names)
 		}
 		for _, name := range names {
 			if !called[name] {
@@ -1140,7 +1143,7 @@ func TestListUsageRecords(t *testing.T) {
 		})
 		t.Run("the plan scans only the partitions of the window", func(t *testing.T) {
 			sql, names := listQuery(t)
-			args := map[string]any{"from_at": from, "to_at": to, "provider": "", "after": false, "after_started_at": time.Time{}, "after_id": zeroID, "page_size": int32(50)}
+			args := map[string]any{"from_at": from, "to_at": to, "provider": "", "limit_state": "", "after": false, "after_started_at": time.Time{}, "after_id": zeroID, "page_size": int32(50)}
 			var params []any
 			for _, n := range names {
 				v, ok := args[n]

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"flag"
+	"slices"
 	"strconv"
 
 	"github.com/pandokos/pandokos/internal/adminapi"
@@ -321,6 +322,56 @@ var limitCommands = []command{
 			}
 			return toAny(out.Items), out.NextCursor, nil
 		}, itemsOf)
+	}},
+
+	{[]string{"limit", "time-zone", "get"}, "getTenantTimeZone", func(a *app, args []string) error {
+		fs := a.flags("limit time-zone get")
+		tenantFlag := fs.String("tenant", "", "tenant ID or name")
+		if _, err := a.begin(fs, args, 0); err != nil {
+			return err
+		}
+		tid, err := a.resolveTenant(*tenantFlag)
+		if err != nil {
+			return err
+		}
+		out, err := a.client.GetTenantTimeZone(a.ctx, adminapi.GetTenantTimeZoneInput{Tenant: tid})
+		if err != nil {
+			return err
+		}
+		return a.printResource(out)
+	}},
+
+	{[]string{"limit", "time-zone", "set"}, "setTenantTimeZone", func(a *app, args []string) error {
+		fs := a.flags("limit time-zone set")
+		tenantFlag := fs.String("tenant", "", "tenant ID or name")
+		def := fs.Bool("default", false, "use the time zone of the installation (limits.time_zone)")
+		want := 1
+		if slices.Contains(args, "--default") || slices.Contains(args, "-default") {
+			want = 0
+		}
+		pos, err := parse(fs, args, want)
+		if err != nil {
+			return err
+		}
+		if *def != (want == 0) {
+			return usagef("limit time-zone set takes exactly one of a zone and --default")
+		}
+		zone := ""
+		if len(pos) == 1 {
+			zone = pos[0]
+		}
+		if err := a.connect(); err != nil {
+			return err
+		}
+		tid, err := a.resolveTenant(*tenantFlag)
+		if err != nil {
+			return err
+		}
+		out, err := a.client.SetTenantTimeZone(a.ctx, adminapi.SetTenantTimeZoneInput{Tenant: tid, Body: adminapi.TenantTimeZoneSet{TimeZone: zone}})
+		if err != nil {
+			return err
+		}
+		return a.printResource(out)
 	}},
 
 	{[]string{"platform-limit", "list"}, "listPlatformLimits", func(a *app, args []string) error {
