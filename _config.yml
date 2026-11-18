@@ -1,0 +1,20 @@
+# The site is the documentation: the README, CONTRIBUTING.md, SECURITY.md and docs/.
+#
+# GitHub Pages builds every Markdown file with Jekyll, which reads "{{" and "{%" as Liquid. The
+# design records and the plan quote Go and shell templates ("{{.Dir}}", "{{words: ...}}"), and one
+# of them stops the build. Jekyll also copies every other file of the repository as a static file.
+# Neither the plan, the design records, the source, the tests nor the build files belong on the site,
+# so they are left out. Files and folders that start with a dot are already left out by Jekyll.
+exclude:
+  - planning
+  - docs/history
+  - api
+  - cmd
+  - deploy
+  - internal
+  - test
+  - Dockerfile
+  - Makefile
+  - go.mod
+  - go.sum
+  - sqlc.yaml
