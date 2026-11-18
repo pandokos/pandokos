@@ -49,7 +49,15 @@ func setBool(f func(c *Config) *bool) func(*Config, string) error {
 	}
 }
 
-func parseInt(v string) (int64, error) {
+func parseInt(v string) (int, error) {
+	n, err := strconv.ParseInt(v, 10, strconv.IntSize)
+	if err != nil {
+		return 0, errNotInteger
+	}
+	return int(n), nil
+}
+
+func parseInt64(v string) (int64, error) {
 	n, err := strconv.ParseInt(v, 10, 64)
 	if err != nil {
 		return 0, errNotInteger
@@ -63,7 +71,7 @@ func setInt(f func(c *Config) *int) func(*Config, string) error {
 		if err != nil {
 			return err
 		}
-		*f(c) = int(n)
+		*f(c) = n
 		return nil
 	}
 }
@@ -102,7 +110,7 @@ var keyTable = []keyDef{
 			if err != nil {
 				return err
 			}
-			c.Listeners.Inference.MaxHeaderBytes = int(n)
+			c.Listeners.Inference.MaxHeaderBytes = n
 			return nil
 		}),
 	def("listeners.inference.tls.cert_file", "path", "", "PEM file with the server certificate and any intermediate certificates; with key_file, turns TLS on",
@@ -123,7 +131,7 @@ var keyTable = []keyDef{
 			if err != nil {
 				return err
 			}
-			c.Listeners.Admin.MaxHeaderBytes = int(n)
+			c.Listeners.Admin.MaxHeaderBytes = n
 			return nil
 		}),
 	def("listeners.admin.tls.cert_file", "path", "", "PEM file with the server certificate and any intermediate certificates; with key_file, turns TLS on",
@@ -136,7 +144,7 @@ var keyTable = []keyDef{
 		setBool(func(c *Config) *bool { return &c.Listeners.Admin.AllowPlaintext })),
 	def("limits.max_request_body_bytes", "integer", "10485760", "Larger bodies get 413 request_too_large",
 		func(c *Config, v string) error {
-			n, err := parseInt(v)
+			n, err := parseInt64(v)
 			if err != nil {
 				return err
 			}
@@ -149,7 +157,7 @@ var keyTable = []keyDef{
 		setDuration(func(c *Config) *Duration { return &c.Limits.MaxRequestDuration })),
 	def("limits.default_output_tokens", "integer", "4096", "Output tokens reserved per choice for a request that sets no output limit; capped by the model's max_output_tokens when the catalogue has it; 1 to 1000000",
 		func(c *Config, v string) error {
-			n, err := parseInt(v)
+			n, err := parseInt64(v)
 			if err != nil {
 				return err
 			}
@@ -204,7 +212,7 @@ var keyTable = []keyDef{
 			if err != nil {
 				return err
 			}
-			c.Database.Gateway.MaxConnections = int(n)
+			c.Database.Gateway.MaxConnections = n
 			return nil
 		}),
 	def("database.admin.user", "name", "pandokos_admin", "Database user of the admin role",
@@ -217,7 +225,7 @@ var keyTable = []keyDef{
 			if err != nil {
 				return err
 			}
-			c.Database.Admin.MaxConnections = int(n)
+			c.Database.Admin.MaxConnections = n
 			return nil
 		}),
 	def("database.worker.user", "name", "pandokos_worker", "Database user of the worker role",
@@ -230,7 +238,7 @@ var keyTable = []keyDef{
 			if err != nil {
 				return err
 			}
-			c.Database.Worker.MaxConnections = int(n)
+			c.Database.Worker.MaxConnections = n
 			return nil
 		}),
 	def("database.owner.user", "name", "pandokos_owner", "Database user of pandokos migrate",
