@@ -38,8 +38,12 @@ var capabilityCommands = []command{
 		from := fs.String("from", "", "start of the window (RFC 3339; default 24 hours before --to)")
 		to := fs.String("to", "", "end of the window, excluded (RFC 3339; default now)")
 		provider := fs.String("provider", "", "only records of this provider")
+		state := fs.String("limit-state", "", "only records with this limit state: limited, unlimited, unverified or not_evaluated")
 		if _, err := a.begin(fs, args, 0); err != nil {
 			return err
+		}
+		if *state != "" && !adminapi.LimitState(*state).Valid() {
+			return usagef("--limit-state must be limited, unlimited, unverified or not_evaluated")
 		}
 		tid, err := a.resolveTenant(*tenantFlag)
 		if err != nil {
@@ -47,7 +51,7 @@ var capabilityCommands = []command{
 		}
 		return a.paged(&l, func(cursor string) ([]any, string, error) {
 			out, err := a.client.ListUsageRecords(a.ctx, adminapi.ListUsageRecordsInput{
-				Tenant: tid, From: *from, To: *to, Provider: *provider, Limit: l.limit, Cursor: cursor})
+				Tenant: tid, From: *from, To: *to, Provider: *provider, LimitState: adminapi.LimitState(*state), Limit: l.limit, Cursor: cursor})
 			if err != nil {
 				return nil, "", err
 			}

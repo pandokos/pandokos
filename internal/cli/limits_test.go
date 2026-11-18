@@ -322,7 +322,7 @@ func TestIntegrityCommands(t *testing.T) {
 	t.Run("tenant create --time-zone", func(t *testing.T) {
 		r := newRig(t)
 		r.f.out["createTenant"] = &adminapi.TenantCreated{Tenant: tenant}
-		mustRun(t, r, "tenant", "create", "--name", "acme", "--time-zone", "Europe/Rome")
+		mustRun(t, r, "tenant", "create", "--time-zone", "Europe/Rome", "acme")
 		in, ok := r.f.only(t, "createTenant").(adminapi.CreateTenantInput)
 		if !ok || in.Body.TimeZone != "Europe/Rome" || in.Body.Name != "acme" {
 			t.Errorf("create: %+v", in)

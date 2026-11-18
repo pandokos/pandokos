@@ -114,6 +114,7 @@ var commands = []command{
 		adminName := fs.String("admin-name", "", "name of the first service account")
 		expires := fs.String("admin-key-expires-at", "", "expiry of the first key (RFC 3339)")
 		keyFile := fs.String("admin-key-out", "", "write the first key to this new file")
+		zone := fs.String("time-zone", "", "IANA time zone of the tenant's days and months (default: the installation's)")
 		pos, err := parse(fs, args, 1)
 		if err != nil {
 			return err
@@ -130,7 +131,7 @@ var commands = []command{
 			return err
 		}
 		res, err := a.client.CreateTenant(a.ctx, adminapi.CreateTenantInput{Body: adminapi.TenantCreate{
-			Name: pos[0], DisplayName: *display, AdminServiceAccountName: *adminName, AdminKeyExpiresAt: exp}})
+			Name: pos[0], DisplayName: *display, TimeZone: *zone, AdminServiceAccountName: *adminName, AdminKeyExpiresAt: exp}})
 		if err != nil {
 			out.abandon()
 			return err
@@ -164,18 +165,23 @@ var commands = []command{
 		fs := a.flags("tenant update")
 		name := fs.String("name", "", "new name")
 		display := fs.String("display-name", "", "new display name")
+		zone := fs.String("time-zone", "", "new IANA time zone; empty is the installation's default (takes effect at the start of the next month)")
 		pos, err := a.begin(fs, args, 1)
 		if err != nil {
 			return err
 		}
-		if *name == "" && *display == "" {
-			return usagef("tenant update needs --name or --display-name")
+		if *name == "" && *display == "" && !given(fs, "time-zone") {
+			return usagef("tenant update needs --name, --display-name or --time-zone")
+		}
+		body := adminapi.TenantUpdate{Name: nonEmpty(*name), DisplayName: nonEmpty(*display)}
+		if given(fs, "time-zone") {
+			body.TimeZone = adminapi.Some(*zone)
 		}
 		id, err := a.resolveTenant(pos[0])
 		if err != nil {
 			return err
 		}
-		t, err := a.client.UpdateTenant(a.ctx, adminapi.UpdateTenantInput{Tenant: id, Body: adminapi.TenantUpdate{Name: nonEmpty(*name), DisplayName: nonEmpty(*display)}})
+		t, err := a.client.UpdateTenant(a.ctx, adminapi.UpdateTenantInput{Tenant: id, Body: body})
 		if err != nil {
 			return err
 		}

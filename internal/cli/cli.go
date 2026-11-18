@@ -339,12 +339,20 @@ func (a *app) printResource(v any) error {
 }
 
 // printTable prints items as a table with a header.
+// columnName is the heading of a member in a table: the long names keep tables narrow.
+func columnName(k string) string {
+	if k == "limit_state" {
+		return "limits"
+	}
+	return k
+}
+
 func (a *app) printTable(items []any) {
 	tw := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
 	if len(items) > 0 {
 		var head []string
 		for _, p := range fields(items[0]) {
-			head = append(head, strings.ToUpper(p.k))
+			head = append(head, strings.ToUpper(columnName(p.k)))
 		}
 		fmt.Fprintln(tw, strings.Join(head, "\t"))
 	}
