@@ -4,6 +4,13 @@ The administration API is described by `api/openapi/admin.v1.yaml`, the source o
 attached to every release. The Go package `internal/adminapi` (types, router, validation and
 client) is generated from it by `make generate`; never edit a generated file.
 
+`info.version` of the document is the version of the release it is attached to. It is set by hand in
+`api/openapi/admin.v1.yaml`, in the pull request that adds the release page (see
+[CONTRIBUTING.md](../../CONTRIBUTING.md#releasing)); during the development of a release it already
+carries that release's version. It is not the `/v1` of the base path, which changes only when the API
+breaks, and it is not the version the binary reports (`internal/buildinfo`, set from the tag at build
+time).
+
 ## Conventions
 
 - Base path `/v1`. Platform resources at the top (`/v1/tenants`, `/v1/platform-keys`), tenant
