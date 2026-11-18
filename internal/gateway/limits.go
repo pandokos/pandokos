@@ -23,7 +23,10 @@ func (h *Handler) reserve(st *reqState, bound family.OutputBound) bool {
 	}
 	e := estimateOf(st.adapter, st.op, bound, int64(st.requestBytes), st.target, h.defaultOut, st.start)
 	e.RequestID = st.id
-	res, ref, _, err := h.limits.Reserve(st.callerCx, *st.principal, e)
+	res, ref, state, err := h.limits.Reserve(st.callerCx, *st.principal, e)
+	if state != "" {
+		st.limitState = state
+	}
 	switch {
 	case err != nil:
 		if st.callerCx.Err() == nil {
@@ -109,7 +112,7 @@ func (h *Handler) settleLimit(st *reqState) {
 
 // limitAttrs are the log fields of sprint.md section 5.9.
 func (st *reqState) limitAttrs() []any {
-	var attrs []any
+	attrs := []any{"limit_state", string(st.limitState)}
 	if st.reservation != nil || st.reservedTokens > 0 {
 		attrs = append(attrs, "reserved_tokens", st.reservedTokens)
 	}
@@ -131,6 +134,9 @@ func (st *reqState) limitAttrs() []any {
 		}
 		if r.Currency != "" {
 			attrs = append(attrs, "limit_currency", r.Currency)
+		}
+		if r.PriceCurrency != "" {
+			attrs = append(attrs, "price_currency", r.PriceCurrency)
 		}
 		if r.OverLimit {
 			attrs = append(attrs, "estimate_over_limit", true)

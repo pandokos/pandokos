@@ -3,6 +3,7 @@ package gateway_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -216,6 +217,23 @@ func TestUnlimitedTrafficAudit(t *testing.T) {
 		row := unlimitedRows(t, d, false, c.String())[0]
 		if row.detail["day"] != dayIn(t, "Pacific/Auckland", now) || row.detail["time_zone"] != "Pacific/Auckland" {
 			t.Errorf("detail %v, want the day of %s in Pacific/Auckland", row.detail, now)
+		}
+	})
+
+	t.Run("the rows and the log hold no content, header or credential", func(t *testing.T) {
+		// Every request above carried the canary prompt; the rows, the request lines and the new
+		// fields (limit_state, limit_currency, price_currency) hold identifiers and names only.
+		for _, platform := range []bool{false, true} {
+			id := a.String()
+			for _, r := range unlimitedRows(t, d, platform, id) {
+				testutil.AssertNoCanary(t, "the audit row", fmt.Sprintf("%+v", r))
+			}
+		}
+		testutil.AssertNoCanary(t, "the request log", g1.h.logs.String())
+		for _, l := range g1.h.logs.Find(t, "request") {
+			if l["limit_state"] == nil {
+				t.Errorf("a request line without limit_state: %v", l)
+			}
 		}
 	})
 

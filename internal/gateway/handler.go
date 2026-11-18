@@ -216,7 +216,8 @@ type reqState struct {
 	reservation    Reservation
 	reservedTokens int64
 	refusal        *LimitRefusal
-	counted        bool // the credential was opened: the request counts (sprint 5.2 D-2)
+	counted        bool       // the credential was opened: the request counts (sprint 5.2 D-2)
+	limitState     LimitState // how the limits treated the request (sprint 5.3, 5.5); not_evaluated until step 7b says
 
 	streamBody *streamBody
 	teeBody    *teeBody
@@ -260,7 +261,7 @@ func providerName(s string) bool {
 
 // ServeHTTP handles one request: the steps of sprint.md section 5.1, in that order.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	st := &reqState{start: time.Now(), id: NewRequestID(), callerCx: r.Context(), method: logMethod(r.Method), adapter: h.def}
+	st := &reqState{start: time.Now(), id: NewRequestID(), callerCx: r.Context(), method: logMethod(r.Method), adapter: h.def, limitState: LimitStateNotEvaluated}
 	st.sw = &statusWriter{ResponseWriter: w, requestID: st.id}
 	w.Header().Set(family.HeaderRequestID, st.id)
 	defer func() { h.finish(st, recover()) }()

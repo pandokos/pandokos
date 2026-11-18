@@ -1162,7 +1162,7 @@ func union(sets ...map[string]bool) map[string]bool {
 
 // TestRequestLogFields is T-438: the field set of section 5.9.
 func TestRequestLogFields(t *testing.T) {
-	base := setOf("time", "level", "msg", "request_id", "method", "route", "status", "outcome", "duration_ms")
+	base := setOf("time", "level", "msg", "request_id", "method", "route", "status", "outcome", "duration_ms", "limit_state")
 	op := setOf("provider", "api_family", "operation")
 	who := setOf("tenant_id", "service_account_id", "key_id")
 	resolved := setOf("model", "model_id", "endpoint")
