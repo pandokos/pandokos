@@ -110,9 +110,6 @@ func (s *server) CreateLimit(ctx context.Context, in adminapi.CreateLimitInput) 
 				return invalid("model", "must name a model available to this tenant")
 			}
 		}
-		if err := checkBudgetCurrency(ctx, q, string(f.Metric), f.Currency, scope.ProviderID, scope.ModelID, true); err != nil {
-			return err
-		}
 		if b.Model != "" {
 			// A model counts when the tenant can use it: the same answer for one that is granted to
 			// nobody, one of another tenant and one that does not exist.
@@ -123,6 +120,10 @@ func (s *server) CreateLimit(ctx context.Context, in adminapi.CreateLimitInput) 
 			if !visible[b.Provider+"/"+b.Model] {
 				return invalid("model", "must name a model available to this tenant")
 			}
+		}
+		// After the visibility check: a model granted elsewhere or nowhere must not answer differently on currency.
+		if err := checkBudgetCurrency(ctx, q, string(f.Metric), f.Currency, scope.ProviderID, scope.ModelID, true); err != nil {
+			return err
 		}
 		row, err := q.CreateLimitRule(ctx, queries.CreateLimitRuleParams{
 			SubjectKind: string(kind), ServiceAccountID: nilIfEmpty(subj.ServiceAccountID), VirtualKeyID: nilIfEmpty(subj.VirtualKeyID),

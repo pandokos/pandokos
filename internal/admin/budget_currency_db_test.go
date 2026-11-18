@@ -129,7 +129,19 @@ func TestBudgetCurrency(t *testing.T) {
 		w.api.DB.SeedPrice(t, p, open.Name, "EUR", time.Time{})
 		w.api.DB.SeedPrice(t, p, closed.Name, "JPY", time.Time{})
 		refusedWith(t, "a currency of a model the tenant cannot be given", tenantPost(budget(p, "", "JPY", nil)), "EUR")
-		refusedWith(t, "the model itself", tenantPost(budget(p, closed.Name, "JPY", nil)), "") // not visible: no priced model in its scope
+		// The model itself: not visible, so the answer is the one of a model that does not exist (no oracle),
+		// whatever the currency; the visibility check comes before the currency check.
+		missing := tenantPost(budget(p, apitest.UniqueName("nomodel"), "JPY", nil))
+		hidden := tenantPost(budget(p, closed.Name, "JPY", nil))
+		for what, r := range map[string]*apitest.Response{"a model that does not exist": missing, "a model not granted": hidden} {
+			pr := expect(t, r, 400, adminapi.ProblemCodeInvalidRequest)
+			if len(pr.Errors) != 1 || pr.Errors[0].Field != "model" || pr.Errors[0].Message != "must name a model available to this tenant" {
+				t.Errorf("%s: errors %+v, want the one on model", what, pr.Errors)
+			}
+		}
+		if missing.Status != hidden.Status {
+			t.Errorf("a missing model and a non-granted one differ: %d vs %d", missing.Status, hidden.Status)
+		}
 		// The platform sees every model.
 		if r := platPost(budget(p, "", "JPY", nil)); r.Status != 201 {
 			t.Errorf("the platform in the currency of a selected model: %d\n%s", r.Status, r.Body)
