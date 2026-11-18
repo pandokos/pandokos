@@ -223,7 +223,7 @@ func NewWith(tb testing.TB, o Options) *Real {
 	if interval == 0 {
 		interval = 5 * time.Minute
 	}
-	r.Reconciler, err = limits.NewReconciler(limits.ReconcilerOptions{Store: r.Mem, Ledger: r.Ledger, Calendar: r.Calendar,
+	r.Reconciler, err = limits.NewReconciler(limits.ReconcilerOptions{Store: r.Mem, Ledger: r.Ledger,
 		Pending: o.Pending, Horizon: horizon, Interval: interval, Logger: log, Now: r.now})
 	if err != nil {
 		tb.Fatal(err)
@@ -244,7 +244,7 @@ func NewWith(tb testing.TB, o Options) *Real {
 		ensurer = o.Ensurer
 	}
 	r.Limits, err = resolver.NewLimits(resolver.LimitsOptions{Rules: cache, Store: r.Mem, TTL: time.Hour, Logger: log,
-		Calendar: r.Calendar, Reconciler: ensurer, OnUnknownPrice: o.OnUnknownPrice, OnStoreFailure: o.OnStoreFailure,
+		Reconciler: ensurer, OnUnknownPrice: o.OnUnknownPrice, OnStoreFailure: o.OnStoreFailure,
 		Unlimited: o.Unlimited})
 	if err != nil {
 		tb.Fatal(err)

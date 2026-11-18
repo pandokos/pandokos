@@ -31,7 +31,7 @@ func newRecEnv(t *testing.T) *recEnv {
 	e.m = newMemoryWith(t, clk, e.sink)
 	e.led = &fakeLedger{model: e.model, clk: clk}
 	rec, err := NewReconciler(ReconcilerOptions{
-		Store: e.m, Ledger: e.led, Calendar: utcCal, Horizon: testHorizon, Interval: testInterval, Logger: quietLogger(), Now: clk.now,
+		Store: e.m, Ledger: e.led, Horizon: testHorizon, Interval: testInterval, Logger: quietLogger(), Now: clk.now,
 		Pending: func() (time.Time, bool) { return e.pending, !e.pending.IsZero() },
 	})
 	if err != nil {
@@ -75,10 +75,10 @@ func TestLoadFoldRebase(t *testing.T) {
 		l := perLimit(e.tn, SubjectTenant, "", TokensPerMonth, 100_000, e.mon)
 		lk := perLimit(e.tn, SubjectKey, "k1", TokensPerMonth, 100_000, e.mon)
 		rows := []UsageGroup{
-			{PrincipalID: "sa1", KeyID: "k1", Provider: "openai", Model: "gpt", Requests: 3, Tokens: 300},
-			{PrincipalID: "sa2", KeyID: "k2", Provider: "openai", Model: "gpt", Requests: 1, Tokens: 20},
-			{Minute: cut.Unix() / 60, PrincipalID: "sa1", KeyID: "k1", Provider: "openai", Model: "gpt", Requests: 1, Tokens: 40},
-			{Minute: cut.Unix()/60 + 5, PrincipalID: "sa2", KeyID: "k2", Provider: "openai", Model: "gpt", Requests: 1, Tokens: 4},
+			{PrincipalID: "sa1", KeyID: "k1", ProviderID: "openai", ModelID: "gpt", Requests: 3, Tokens: 300},
+			{PrincipalID: "sa2", KeyID: "k2", ProviderID: "openai", ModelID: "gpt", Requests: 1, Tokens: 20},
+			{Minute: cut.Unix() / 60, PrincipalID: "sa1", KeyID: "k1", ProviderID: "openai", ModelID: "gpt", Requests: 1, Tokens: 40},
+			{Minute: cut.Unix()/60 + 5, PrincipalID: "sa2", KeyID: "k2", ProviderID: "openai", ModelID: "gpt", Requests: 1, Tokens: 4},
 		}
 		e.m.Load(e.tn, e.mon, []Limit{l, lk}, rows)
 		if c := counted(t, e.m, l); c.N != 364 {

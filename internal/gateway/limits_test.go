@@ -957,7 +957,13 @@ func (m *mutableRules) load(_ context.Context, id tenant.ID) (limits.RuleSet, er
 	if m.err != nil {
 		return limits.RuleSet{}, m.err
 	}
-	return limits.NewScopedRuleSet(id, nil, nil, m.rules), nil
+	set := limits.NewScopedRuleSet(id, nil, nil, m.rules)
+	cal, err := limits.NewCalendar(time.UTC)
+	if err != nil {
+		return limits.RuleSet{}, err
+	}
+	set.Calendar = limits.TenantCalendar{Current: cal}
+	return set, nil
 }
 
 // TestStoreFailure is T-668: counters that cannot be verified, with each value of

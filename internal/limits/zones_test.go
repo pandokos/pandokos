@@ -135,6 +135,17 @@ func TestTenantCalendar(t *testing.T) {
 		if def, err := rome2.Calendar(""); err != nil || def.Zone() != "Europe/Rome" {
 			t.Errorf("a default that is not UTC: %v %v", def, err)
 		}
+		// An offset with seconds (a zone of a few seconds from UTC) is refused as a default and, through
+		// NewCalendar, never becomes a calendar: period boundaries lie on whole minutes.
+		if _, err := NewZones(time.FixedZone("UTC+0:01:30", 90)); err == nil {
+			t.Error("NewZones accepted a default zone whose offset is 90 seconds")
+		}
+		if _, err := NewZones(time.FixedZone("UTC-0:00:30", -30)); err == nil {
+			t.Error("NewZones accepted a default zone whose offset is -30 seconds")
+		}
+		if z, err := NewZones(time.FixedZone("UTC+1", 3600)); err != nil || z == nil {
+			t.Errorf("a fixed zone of a whole hour: %v", err)
+		}
 		if _, err := NewZones(nil); err == nil {
 			t.Error("NewZones without a default accepted nil")
 		}

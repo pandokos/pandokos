@@ -2,6 +2,7 @@ package limits
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/pandokos/pandokos/internal/store"
@@ -17,15 +18,15 @@ const MaxRulesPerTenant = 5000
 // subject kind this version does not know (a newer schema during an upgrade) is skipped; the
 // rule cache logs how many in one debug line.
 //
-// The zones that give the calendar of the tenant are optional until step C2 makes them required.
-func LoadRules(ctx context.Context, db *store.DB, id tenant.ID, zones ...*Zones) (RuleSet, error) {
-	_ = zones
-	set, _, err := loadRules(ctx, db, id)
+// The set carries the calendar of the tenant, read in the same transaction: its zone, and while a
+// change is pending the zone in force until then. A zone this binary cannot load is an error.
+func LoadRules(ctx context.Context, db *store.DB, id tenant.ID, zones *Zones) (RuleSet, error) {
+	set, _, err := loadRules(ctx, db, id, zones)
 	return set, err
 }
 
 // loadRules is LoadRules that also returns the number of rules skipped.
-func loadRules(ctx context.Context, db *store.DB, id tenant.ID) (RuleSet, int, error) {
+func loadRules(ctx context.Context, db *store.DB, id tenant.ID, zones *Zones) (RuleSet, int, error) {
 	var set RuleSet
 	skipped := 0
 	err := db.WithTenant(ctx, id, func(ctx context.Context, tx store.Tx) error {
@@ -70,13 +71,42 @@ func loadRules(ctx context.Context, db *store.DB, id tenant.ID) (RuleSet, int, e
 			}
 			rules = append(rules, rule)
 		}
+		tz, err := q.GetTenantTimeZone(ctx)
+		if err != nil {
+			return err
+		}
+		cal, err := tenantCalendar(zones, tz)
+		if err != nil {
+			return err
+		}
 		set = NewScopedRuleSet(id, def, own, rules)
+		set.Calendar = cal
 		return nil
 	})
 	if err != nil {
 		return RuleSet{}, 0, fmt.Errorf("limits: load rules: %w", err)
 	}
 	return set, skipped, nil
+}
+
+// tenantCalendar builds the calendar of a tenant from the three columns: Current from time_zone;
+// while a change is pending, Previous from time_zone_previous and From.
+func tenantCalendar(zones *Zones, tz queries.GetTenantTimeZoneRow) (TenantCalendar, error) {
+	if zones == nil {
+		return TenantCalendar{}, errors.New("no zones")
+	}
+	cur, err := zones.Calendar(tz.TimeZone)
+	if err != nil {
+		return TenantCalendar{}, err
+	}
+	c := TenantCalendar{Current: cur}
+	if tz.TimeZoneEffectiveFrom != nil {
+		if c.Previous, err = zones.Calendar(tz.TimeZonePrevious); err != nil {
+			return TenantCalendar{}, err
+		}
+		c.From = *tz.TimeZoneEffectiveFrom
+	}
+	return c, nil
 }
 
 func percents(in []int16) []int {

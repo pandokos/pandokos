@@ -65,8 +65,11 @@ func NewRuleCache(o RuleCacheOptions) (*RuleCache, error) {
 	if o.DB == nil {
 		return nil, errors.New("limits: the rule cache needs a database")
 	}
+	if o.Zones == nil {
+		return nil, errors.New("limits: the rule cache needs the zones of the installation")
+	}
 	return newCountingRuleCache(func(ctx context.Context, id tenant.ID) (RuleSet, int, error) {
-		return loadRules(ctx, o.DB, id)
+		return loadRules(ctx, o.DB, id, o.Zones)
 	}, o)
 }
 

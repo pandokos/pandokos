@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -20,9 +21,8 @@ const (
 
 // ReconcilerOptions configure a Reconciler.
 type ReconcilerOptions struct {
-	Store    *Memory
-	Ledger   Ledger
-	Calendar *Calendar
+	Store  *Memory
+	Ledger Ledger
 	// Pending returns the start time of the oldest usage record handed to the ledger writer and
 	// not yet committed; false when there is none.
 	Pending  func() (time.Time, bool)
@@ -44,8 +44,8 @@ type Reconciler struct {
 
 // NewReconciler returns a Reconciler.
 func NewReconciler(o ReconcilerOptions) (*Reconciler, error) {
-	if o.Store == nil || o.Ledger == nil || o.Calendar == nil {
-		return nil, errors.New("limits: the reconciler needs a store, a ledger and a calendar")
+	if o.Store == nil || o.Ledger == nil {
+		return nil, errors.New("limits: the reconciler needs a store and a ledger")
 	}
 	if o.Horizon <= 0 {
 		o.Horizon = defaultHorizon
@@ -221,9 +221,15 @@ func (r *Reconciler) reconcile(ctx context.Context, t tenant.ID) error {
 	}
 	now := r.o.Now()
 	if next := r.cut(now); next.After(cut) {
+		// Pieces are cut at every start and end of a period the store holds for the tenant, so that a
+		// piece lies inside every counter it is added to, whatever zones the tenant had (sprint 5.3).
 		var pieces []Piece
+		points := r.cutPoints(t, cut, next)
 		for from := cut; from.Before(next); {
-			to := earlier(r.o.Calendar.Of(PerDay, from).End, next)
+			to := next
+			if len(points) > 0 {
+				to, points = points[0], points[1:]
+			}
 			rows, err := r.o.Ledger.Usage(ctx, t, from, to, to)
 			if err != nil {
 				return err
@@ -260,6 +266,21 @@ func (r *Reconciler) reconcile(ctx context.Context, t tenant.ID) error {
 	r.rebased[t] = now
 	r.mu.Unlock()
 	return nil
+}
+
+// cutPoints returns, ascending and without duplicates, the starts and ends of the periods the store
+// holds for t that lie strictly inside (from, to).
+func (r *Reconciler) cutPoints(t tenant.ID, from, to time.Time) []time.Time {
+	var pts []time.Time
+	for _, p := range r.o.Store.Periods(t) {
+		for _, x := range [2]time.Time{p.Start, p.End} {
+			if x.After(from) && x.Before(to) {
+				pts = append(pts, x)
+			}
+		}
+	}
+	slices.SortFunc(pts, func(a, b time.Time) int { return a.Compare(b) })
+	return slices.CompactFunc(pts, func(a, b time.Time) bool { return a.Equal(b) })
 }
 
 // errorClass names the kind of an error without its text.

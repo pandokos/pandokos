@@ -43,14 +43,12 @@ type Options struct {
 	// Refresh configures the download of the price dataset; an import with source remote is
 	// refused unless Refresh.Enabled.
 	Refresh RefreshOptions
-	// Limits are the settings of the capability check of sprint 5.2: the calendar that says when
-	// the current day and month start (nil: UTC) and limits.on_unknown_price ("refuse", the
-	// default, or "allow").
+	// Limits are the settings of the capability check: limits.on_unknown_price ("refuse", the
+	// default, or "allow") and the zones that give the calendar of each tenant.
 	Limits struct {
-		Calendar       *limits.Calendar
 		OnUnknownPrice string
-		// Zones gives the calendar of each tenant's zone: it validates a time zone and computes the
-		// instant of a change (sprint 5.3, C6). Required from C6 on.
+		// Zones gives the calendar of each tenant's zone: it validates a time zone, computes the
+		// instant of a change and gives the capability check the periods of the tenant. Required.
 		Zones *limits.Zones
 		// Ledger reads the usage of the current periods for the capability check; cmd/pandokos
 		// builds it (T-R43). Required.
@@ -79,7 +77,6 @@ type server struct {
 	snapshot  []byte
 	refresh   RefreshOptions
 	limits    struct {
-		Calendar       *limits.Calendar
 		OnUnknownPrice string
 		Zones          *limits.Zones
 		Ledger         limits.Ledger
@@ -123,7 +120,7 @@ func New(o Options) (http.Handler, error) {
 	}
 	s := &server{log: o.Logger, db: o.DB, auth: o.Authenticator, now: o.Now, sealer: o.Sealer, validator: o.Validator,
 		snapshot: o.Snapshot, refresh: o.Refresh}
-	s.limits.Calendar, s.limits.OnUnknownPrice, s.limits.Ledger = o.Limits.Calendar, o.Limits.OnUnknownPrice, o.Limits.Ledger
+	s.limits.OnUnknownPrice, s.limits.Ledger = o.Limits.OnUnknownPrice, o.Limits.Ledger
 	s.limits.Zones = o.Limits.Zones
 	if s.now == nil {
 		s.now = time.Now

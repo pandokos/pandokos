@@ -34,7 +34,7 @@ func TestLoadRules(t *testing.T) {
 		d.SeedLimitRule(t, b, "key", kb, "concurrent_requests", 9)
 		d.SeedLimitRule(t, b, "tenant", "", "concurrent_requests", 4)
 
-		got, err := limits.LoadRules(ctx, gw, a)
+		got, err := limits.LoadRules(ctx, gw, a, zonesOf(t))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -46,7 +46,7 @@ func TestLoadRules(t *testing.T) {
 				{SubjectKind: limits.SubjectServiceAccount, SubjectID: sa1, Metric: limits.RequestsPerMinute, Value: 5},
 				{SubjectKind: limits.SubjectKey, SubjectID: k1, Metric: limits.ConcurrentRequests, Value: 2},
 			})
-		g, w := got.For(limits.Query{ServiceAccountID: sa1, KeyID: k1}, nil), want.For(limits.Query{ServiceAccountID: sa1, KeyID: k1}, nil)
+		g, w := got.For(limits.Query{ServiceAccountID: sa1, KeyID: k1}), want.For(limits.Query{ServiceAccountID: sa1, KeyID: k1})
 		if len(g) != 4 || len(g) != len(w) {
 			t.Fatalf("limits %+v, want %+v", g, w)
 		}
@@ -63,7 +63,7 @@ func TestLoadRules(t *testing.T) {
 			t.Errorf("the tenant rule below the default: %+v", l)
 		}
 		// Nothing of tenant B: not its rules, not its platform row, not its subjects.
-		for _, l := range got.For(limits.Query{ServiceAccountID: "", KeyID: kb}, nil) {
+		for _, l := range got.For(limits.Query{ServiceAccountID: "", KeyID: kb}) {
 			if l.Subject != limits.SubjectTenant { // the tenant's own limits apply to every caller
 				t.Errorf("a limit for B's key in A's rules: %+v", l)
 			}
@@ -72,28 +72,28 @@ func TestLoadRules(t *testing.T) {
 			t.Error("B's platform row or tenant rule is in A's rules")
 		}
 
-		gotB, err := limits.LoadRules(ctx, gw, b)
+		gotB, err := limits.LoadRules(ctx, gw, b, zonesOf(t))
 		if err != nil {
 			t.Fatal(err)
 		}
-		lb, ok := find(gotB.For(limits.Query{ServiceAccountID: "", KeyID: ""}, nil), limits.SubjectTenant, "", limits.ConcurrentRequests)
+		lb, ok := find(gotB.For(limits.Query{ServiceAccountID: "", KeyID: ""}), limits.SubjectTenant, "", limits.ConcurrentRequests)
 		if !ok || lb.Max != 1 || lb.Tenant != b {
 			t.Errorf("B's own ceiling and rule: %+v (the smaller, 1, is wanted)", lb)
 		}
 
 		t.Run("a tenant without rules gets the defaults", func(t *testing.T) {
 			c := d.SeedTenant(t, "load-c")
-			set, err := limits.LoadRules(ctx, gw, c)
+			set, err := limits.LoadRules(ctx, gw, c, zonesOf(t))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if ls := set.For(limits.Query{ServiceAccountID: "", KeyID: ""}, nil); len(ls) != 2 {
+			if ls := set.For(limits.Query{ServiceAccountID: "", KeyID: ""}); len(ls) != 2 {
 				t.Errorf("limits %+v, want the two defaults", ls)
 			}
 		})
 
 		t.Run("the load runs as the gateway role, in the tenant's session", func(t *testing.T) {
-			if _, err := limits.LoadRules(ctx, d.Open(t, store.RoleWorker), a); err == nil {
+			if _, err := limits.LoadRules(ctx, d.Open(t, store.RoleWorker), a, zonesOf(t)); err == nil {
 				t.Error("the worker role loaded rules: the load does not depend on the grants of the gateway role")
 			}
 		})
@@ -120,16 +120,16 @@ func TestLoadRules(t *testing.T) {
 				}
 			}
 			insert(1, limits.MaxRulesPerTenant)
-			set, err := limits.LoadRules(ctx, gw, c)
+			set, err := limits.LoadRules(ctx, gw, c, zonesOf(t))
 			if err != nil {
 				t.Fatalf("%d rules: %v", limits.MaxRulesPerTenant, err)
 			}
 			last := "t" + "aaaaaaaaaaaa" + "faaa" // the key of g = 5000: 5 -> f, 0 -> a
-			if _, ok := find(set.For(limits.Query{ServiceAccountID: "", KeyID: last}, nil), limits.SubjectKey, last, limits.RequestsPerMinute); !ok {
+			if _, ok := find(set.For(limits.Query{ServiceAccountID: "", KeyID: last}), limits.SubjectKey, last, limits.RequestsPerMinute); !ok {
 				t.Error("the last rule is missing")
 			}
 			insert(limits.MaxRulesPerTenant+1, limits.MaxRulesPerTenant+1)
-			if _, err := limits.LoadRules(ctx, gw, c); err == nil {
+			if _, err := limits.LoadRules(ctx, gw, c, zonesOf(t)); err == nil {
 				t.Errorf("%d rules loaded", limits.MaxRulesPerTenant+1)
 			}
 		})
@@ -163,6 +163,7 @@ func TestLoadRulesColumns(t *testing.T) {
 		d.SeedPlatformLimit(t, nil, "tokens_per_day", 5_000_000, dbtest.LimitOptions{Provider: "openai"})
 		d.SeedPlatformLimit(t, &a, "tokens_per_day", 1_000_000, dbtest.LimitOptions{Provider: "openai"}) // replaces the default of that scope
 		d.SeedModel(t, "openai", "gpt-4")
+		prov, model, anthID := d.ProviderID(t, "openai"), d.ModelID(t, "openai", "gpt-4"), d.ProviderID(t, "anthropic")
 		sa1 := d.SeedServiceAccount(t, a, "sa-1")
 		k1, _ := d.SeedVirtualKey(t, a, sa1)
 		d.SeedLimitRule(t, a, "tenant", "", "tokens_per_day", 400_000, dbtest.LimitOptions{Provider: "openai", Model: "gpt-4", Thresholds: []int{50, 80}})
@@ -170,11 +171,11 @@ func TestLoadRulesColumns(t *testing.T) {
 		d.SeedLimitRule(t, a, "key", k1, "requests_per_day", 7, dbtest.LimitOptions{Provider: "anthropic"})
 		d.SeedLimitRule(t, a, "service_account", sa1, "requests_per_month", 70)
 
-		set, err := limits.LoadRules(ctx, gw, a)
+		set, err := limits.LoadRules(ctx, gw, a, zonesOf(t))
 		if err != nil {
 			t.Fatal(err)
 		}
-		got := set.For(limits.Query{ServiceAccountID: sa1, KeyID: k1, Provider: "openai", Model: "gpt-4", Start: start}, cal)
+		got := set.For(limits.Query{ServiceAccountID: sa1, KeyID: k1, ProviderID: prov, ModelID: model, Provider: "openai", Model: "gpt-4", Start: start})
 		byKey := map[string]limits.Limit{}
 		for _, l := range got {
 			byKey[fmt.Sprintf("%s/%s/%s/%s", l.Subject, l.Provider, l.Model, l.Metric)] = l
@@ -198,7 +199,7 @@ func TestLoadRulesColumns(t *testing.T) {
 		if l := byKey["service_account///requests_per_month"]; l.Max != 70 || l.ID != sa1 {
 			t.Errorf("service account rule %+v", l)
 		}
-		anth := set.For(limits.Query{KeyID: k1, Provider: "anthropic", Model: "claude", Start: start}, cal)
+		anth := set.For(limits.Query{KeyID: k1, ProviderID: anthID, Provider: "anthropic", Start: start})
 		found := false
 		for _, l := range anth {
 			if l.Subject == limits.SubjectKey && l.Provider == "anthropic" && l.Metric == limits.RequestsPerDay && l.Max == 7 {
@@ -222,12 +223,12 @@ func TestLoadRulesColumns(t *testing.T) {
 			}
 			d.SeedLimitRule(t, c, "tenant", "", "tokens_per_hour", 10)
 			d.SeedLimitRule(t, c, "tenant", "", "tokens_per_day", 20)
-			set, err := limits.LoadRules(ctx, gw, c)
+			set, err := limits.LoadRules(ctx, gw, c, zonesOf(t))
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}
 			var ls []limits.Limit
-			for _, l := range set.For(limits.Query{Start: start}, cal) {
+			for _, l := range set.For(limits.Query{Start: start}) {
 				if l.Level == limits.LevelTenant { // the platform default seeded above applies to every tenant
 					ls = append(ls, l)
 				}
@@ -275,7 +276,7 @@ func TestLoadRulesTyped(t *testing.T) {
 			}
 			cal := mustUTC(t)
 			set.Calendar = limits.TenantCalendar{Current: cal} // the scopes below do not depend on the calendar
-			got := set.For(limits.Query{ServiceAccountID: sa, KeyID: keyID, ProviderID: prov, ModelID: model, Provider: "openai", Model: "typed-model", Start: start}, cal)
+			got := set.For(limits.Query{ServiceAccountID: sa, KeyID: keyID, ProviderID: prov, ModelID: model, Provider: "openai", Model: "typed-model", Start: start})
 			byKey := map[string]limits.Limit{}
 			for _, l := range got {
 				byKey[fmt.Sprintf("%s/%s/%s", l.Subject, l.ID, l.Metric)] = l
@@ -290,7 +291,7 @@ func TestLoadRulesTyped(t *testing.T) {
 				t.Errorf("the platform default with a scope: %+v", l)
 			}
 			// The mapping ID is what a token's principal carries as KeyID.
-			tok := set.For(limits.Query{KeyID: mapping, ProviderID: anth, Provider: "anthropic", Start: start}, cal)
+			tok := set.For(limits.Query{KeyID: mapping, ProviderID: anth, Provider: "anthropic", Start: start})
 			var found, platform bool
 			for _, l := range tok {
 				found = found || (l.Subject == limits.SubjectKey && l.ID == mapping && l.Max == 77 && l.ProviderID == anth)
@@ -302,7 +303,7 @@ func TestLoadRulesTyped(t *testing.T) {
 			// Another tenant's loader sees none of it.
 			b := d.SeedTenant(t, "typed-b")
 			other, err := limits.LoadRules(ctx, gw, b, zones)
-			if err != nil || len(other.For(limits.Query{KeyID: keyID, ServiceAccountID: sa, ProviderID: prov, ModelID: model, Start: start}, cal)) > 1 {
+			if err != nil || len(other.For(limits.Query{KeyID: keyID, ServiceAccountID: sa, ProviderID: prov, ModelID: model, Start: start})) > 1 {
 				t.Errorf("tenant B's rules: %v %v", other, err)
 			}
 		})
@@ -376,4 +377,14 @@ func mustUTC(tb testing.TB) *limits.Calendar {
 		tb.Fatal(err)
 	}
 	return c
+}
+
+// zonesOf returns the zones of an installation whose default zone is UTC.
+func zonesOf(tb testing.TB) *limits.Zones {
+	tb.Helper()
+	z, err := limits.NewZones(time.UTC)
+	if err != nil {
+		tb.Fatalf("NewZones: %v", err)
+	}
+	return z
 }
