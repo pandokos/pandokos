@@ -59,9 +59,9 @@ func parseInt(v string) (int64, error) {
 
 func setInt(f func(c *Config) *int) func(*Config, string) error {
 	return func(c *Config, v string) error {
-		n, err := parseInt(v)
+		n, err := strconv.ParseInt(v, 10, strconv.IntSize)
 		if err != nil {
-			return err
+			return errNotInteger
 		}
 		*f(c) = int(n)
 		return nil
@@ -98,9 +98,9 @@ var keyTable = []keyDef{
 		setDuration(func(c *Config) *Duration { return &c.Listeners.Inference.IdleTimeout })),
 	def("listeners.inference.max_header_bytes", "integer", "65536", "Maximum size of request headers",
 		func(c *Config, v string) error {
-			n, err := parseInt(v)
+			n, err := strconv.ParseInt(v, 10, strconv.IntSize)
 			if err != nil {
-				return err
+				return errNotInteger
 			}
 			c.Listeners.Inference.MaxHeaderBytes = int(n)
 			return nil
