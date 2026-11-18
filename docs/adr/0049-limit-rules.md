@@ -1,6 +1,6 @@
 # 0049. Limit rules: levels, subjects and resolution
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-17
 
 Refines [ADR 0012](0012-limits-and-budget-reservation.md).
@@ -49,3 +49,4 @@ policy on the actor, not on the scope.
 ## History
 
 - 2026-11-18: sprint 5.2 adds the columns (scope, currency, enforcement, thresholds) and the administration API ([ADR 0052](0052-administration-of-limits.md)).
+- 2026-11-18: accepted by the maintainer after review. Amendments planned in sprint 5.3: typed subject columns with foreign keys (`ON DELETE RESTRICT`), the scope by identifier, rules deleted with audit when their subject is deleted or a key revoked, deletion of a referenced provider or model refused, unlimited traffic traced in the usage record and once a day per tenant in the audit log.

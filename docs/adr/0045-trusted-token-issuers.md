@@ -1,6 +1,6 @@
 # 0045. Trusted token issuers: registration, selection and validation
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-16
 
 Refines [ADR 0005](0005-data-plane-authentication.md).
@@ -92,3 +92,4 @@ have nothing to map to there; deferred to sprint 4.2.
 Sprint 4.1. Maintainer decisions of 2026-11-16: tokens on the inference listener only; a token is
 accepted wherever the family reads a credential; a free audience, unique installation-wide; exact
 subject match only.
+- 2026-11-18: accepted by the maintainer after review.

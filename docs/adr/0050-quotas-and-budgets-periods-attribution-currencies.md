@@ -1,6 +1,6 @@
 # 0050. Quotas and budgets: periods, attribution, currencies and unknown prices
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-18
 
 Refines [ADR 0012](0012-limits-and-budget-reservation.md) and [ADR 0048](0048-reserve-and-settle.md).
@@ -62,3 +62,4 @@ without a price.
 ## History
 
 - 2026-11: `limits.on_unknown_price`, `limits.time_zone` and the code `no_price` are added in sprint 5.2.
+- 2026-11-18: accepted by the maintainer after review. Amendments planned in sprint 5.3 (a time zone per tenant, effective from the next period; a budget refused on write when no price of its scope is in its currency) and sprint 5.4 (price lists per tenant, issue #48).

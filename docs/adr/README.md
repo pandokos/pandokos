@@ -3,7 +3,7 @@
 Each record states one decision, its context, its consequences and the alternatives that were
 rejected. A decision is changed by a new record that supersedes the old one.
 
-A record is *proposed* until its pull request is merged by the maintainer, then *accepted*.
+A record is *proposed* until the maintainer accepts it, by merging its pull request or after a review recorded in its History section; it is then *accepted*.
 
 | No. | Decision | Status |
 |---|---|---|
@@ -42,22 +42,22 @@ A record is *proposed* until its pull request is merged by the maintainer, then 
 | [0034](0034-credential-model-and-platform-oversight.md) | Credential model and platform oversight | proposed |
 | [0035](0035-catalogue-and-model-access.md) | Catalogue and model access | proposed |
 | [0036](0036-prices-costs-and-importer.md) | Prices, costs and the price importer | proposed |
-| [0037](0037-request-pipeline-and-resolution.md) | Request pipeline and resolution | proposed |
-| [0038](0038-egress-guard-upstream-tls-and-proxy.md) | Egress guard, upstream TLS and proxy | proposed |
-| [0039](0039-usage-record-admission-and-ledger-writer.md) | Usage record, admission and the ledger writer | proposed |
-| [0040](0040-traces.md) | Traces: SDK, span model, sampling and propagation | proposed |
-| [0041](0041-anthropic-api-family.md) | The anthropic API family | proposed |
-| [0042](0042-openai-compatible-providers-and-stream-usage-option.md) | OpenAI-compatible providers and the per-provider stream usage option | proposed |
-| [0043](0043-tenant-capability-check-and-usage-list.md) | The tenant capability check and the minimal usage list | proposed |
-| [0044](0044-sdk-compatibility-suite-python-typescript.md) | The SDK compatibility suite in Python and TypeScript | proposed |
-| [0045](0045-trusted-token-issuers.md) | Trusted token issuers: registration, selection and validation | proposed |
-| [0046](0046-issuer-key-retrieval-and-caching.md) | Retrieval and caching of issuer keys | proposed |
-| [0047](0047-identity-providers-in-the-test-suite.md) | Identity providers in the test suite | proposed |
-| [0048](0048-reserve-and-settle.md) | Reserve and settle in the pipeline: estimate, counters, guarantees and the 429 contract | proposed |
-| [0049](0049-limit-rules.md) | Limit rules: levels, subjects and resolution | proposed |
-| [0050](0050-quotas-and-budgets-periods-attribution-currencies.md) | Quotas and budgets: periods, attribution, currencies and unknown prices | proposed |
-| [0051](0051-period-counters-and-the-ledger.md) | Period counters and the ledger: load, cut, reconciliation, the failing store | proposed |
-| [0052](0052-administration-of-limits.md) | Administration of limits: scopes, thresholds, events, API and permissions | proposed |
+| [0037](0037-request-pipeline-and-resolution.md) | Request pipeline and resolution | accepted |
+| [0038](0038-egress-guard-upstream-tls-and-proxy.md) | Egress guard, upstream TLS and proxy | accepted |
+| [0039](0039-usage-record-admission-and-ledger-writer.md) | Usage record, admission and the ledger writer | accepted |
+| [0040](0040-traces.md) | Traces: SDK, span model, sampling and propagation | accepted |
+| [0041](0041-anthropic-api-family.md) | The anthropic API family | accepted |
+| [0042](0042-openai-compatible-providers-and-stream-usage-option.md) | OpenAI-compatible providers and the per-provider stream usage option | accepted |
+| [0043](0043-tenant-capability-check-and-usage-list.md) | The tenant capability check and the minimal usage list | accepted |
+| [0044](0044-sdk-compatibility-suite-python-typescript.md) | The SDK compatibility suite in Python and TypeScript | accepted |
+| [0045](0045-trusted-token-issuers.md) | Trusted token issuers: registration, selection and validation | accepted |
+| [0046](0046-issuer-key-retrieval-and-caching.md) | Retrieval and caching of issuer keys | accepted |
+| [0047](0047-identity-providers-in-the-test-suite.md) | Identity providers in the test suite | accepted |
+| [0048](0048-reserve-and-settle.md) | Reserve and settle in the pipeline: estimate, counters, guarantees and the 429 contract | accepted |
+| [0049](0049-limit-rules.md) | Limit rules: levels, subjects and resolution | accepted |
+| [0050](0050-quotas-and-budgets-periods-attribution-currencies.md) | Quotas and budgets: periods, attribution, currencies and unknown prices | accepted |
+| [0051](0051-period-counters-and-the-ledger.md) | Period counters and the ledger: load, cut, reconciliation, the failing store | accepted |
+| [0052](0052-administration-of-limits.md) | Administration of limits: scopes, thresholds, events, API and permissions | accepted |
 
 ## Questions from SOW 0.1 and where they were decided
 

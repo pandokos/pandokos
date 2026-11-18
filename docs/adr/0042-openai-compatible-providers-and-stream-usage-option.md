@@ -1,6 +1,6 @@
 # 0042. OpenAI-compatible providers and the per-provider stream usage option
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-14
 
 Amends [ADR 0024](0024-openai-stream-usage-option.md); refines [ADR 0009](0009-native-passthrough-by-api-family.md).
@@ -35,3 +35,7 @@ for usage. CI can reach no provider and holds no key.
 **One global switch.** Costs every other provider its exact stream usage.
 **Per endpoint.** Splits one server's behaviour across its addresses for no gain.
 **Retrying without the option after a refusal.** A retry (GW-11) and a second request the caller did not make.
+
+## History
+
+- 2026-11-18: accepted by the maintainer after review.

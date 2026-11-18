@@ -1,6 +1,6 @@
 # 0052. Administration of limits: scopes, thresholds, events, API and permissions
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-18
 
 Refines [ADR 0049](0049-limit-rules.md); implements the first half of [ADR 0014](0014-events-outbox.md)
@@ -41,3 +41,7 @@ provider and model scopes, LIM-05 for soft thresholds.
 **Events detected by the worker from ledger aggregates.** Minutes late, and blind to a refusal.
 
 **Writing the outbox now.** Its schema belongs to 6.4.
+
+## History
+
+- 2026-11-18: accepted by the maintainer after review. Amendments planned in sprint 5.3: existence checks of subject and scope become foreign keys; automatic deletions of rules are audited as `limit.delete` with the actor and the reason.
