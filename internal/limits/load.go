@@ -16,7 +16,10 @@ const MaxRulesPerTenant = 5000
 // platform rules (the defaults and the tenant's own row), then the tenant's rules. A metric or
 // subject kind this version does not know (a newer schema during an upgrade) is skipped; the
 // rule cache logs how many in one debug line.
-func LoadRules(ctx context.Context, db *store.DB, id tenant.ID) (RuleSet, error) {
+//
+// The zones that give the calendar of the tenant are optional until step C2 makes them required.
+func LoadRules(ctx context.Context, db *store.DB, id tenant.ID, zones ...*Zones) (RuleSet, error) {
+	_ = zones
 	set, _, err := loadRules(ctx, db, id)
 	return set, err
 }

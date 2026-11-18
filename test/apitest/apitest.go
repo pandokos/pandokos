@@ -87,6 +87,11 @@ func NewOn(tb testing.TB, d *dbtest.Database, mutate ...func(*admin.Options)) *A
 	}
 	o := admin.Options{Logger: logger, DB: a.Admin, Authenticator: auth, Sealer: a.Sealer, Snapshot: genaiprices.Snapshot()}
 	o.Limits.Ledger = limits.NewLedger(a.Admin)
+	// The zones of the tenants (sprint 5.3). Until step C2 places NewZones it answers an error and
+	// the handlers that need the zones are the ones that fail.
+	if zones, err := limits.NewZones(time.UTC); err == nil {
+		o.Limits.Zones = zones
+	}
 	for _, m := range mutate {
 		m(&o)
 	}

@@ -37,6 +37,7 @@ type shared struct {
 	root      testing.TB
 	kekFile   string // made by the first call of Env, for the life of the database
 	mu        sync.Mutex
+	helper    *pgx.Conn // the connection of Count, made by its first call
 }
 
 // Database is one test database with its four login users.

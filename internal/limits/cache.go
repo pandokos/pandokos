@@ -27,6 +27,8 @@ type RuleCacheOptions struct {
 	Logger *slog.Logger
 	TTL    time.Duration // cache.limits_ttl, 1 s to 5 m
 	Now    func() time.Time
+	// Zones gives the calendar of each tenant's zone (sprint 5.3, C2).
+	Zones *Zones
 }
 
 type ruleEntry struct {

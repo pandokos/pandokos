@@ -44,7 +44,10 @@ type scopeLimits [metricCount][]Limit
 // RuleSet is the rules in force for one tenant, resolved into the limits of each subject and
 // scope, so that For does a fixed number of map lookups and never scans the rules.
 type RuleSet struct {
-	Tenant   tenant.ID
+	Tenant tenant.ID
+	// Calendar is the calendar of the tenant (sprint 5.3, C2): the loader sets it; For uses it from
+	// step C2 on.
+	Calendar TenantCalendar
 	subjects map[subjectRef]map[scopeKey]*scopeLimits
 }
 

@@ -137,12 +137,12 @@ func TestLimitsAdapter(t *testing.T) {
 	t.Run("no applicable rule: no store call and a reservation that does nothing", func(t *testing.T) {
 		st := &fakeStore{}
 		l, _ := adapter(t, nil, st, nil)
-		res, ref, err := l.Reserve(context.Background(), limitPrincipal(a, "sa-1", "key-1", ""), est)
+		res, ref, _, err := l.Reserve(context.Background(), limitPrincipal(a, "sa-1", "key-1", ""), est)
 		if err != nil || ref != nil || res == nil {
 			t.Fatalf("%v %v %v: want an admission with a reservation", res, ref, err)
 		}
 		res.Settle(gateway.LimitUsage{Tokens: 5})
-		res2, _, err2 := l.Reserve(context.Background(), limitPrincipal(a, "sa-1", "key-1", ""), est)
+		res2, _, _, err2 := l.Reserve(context.Background(), limitPrincipal(a, "sa-1", "key-1", ""), est)
 		if err2 != nil || res2 == nil {
 			t.Fatalf("second reserve: %v %v", res2, err2)
 		}
@@ -158,7 +158,7 @@ func TestLimitsAdapter(t *testing.T) {
 			{SubjectKind: limits.SubjectServiceAccount, SubjectID: "sa-other", Metric: limits.RequestsPerMinute, Value: 1},
 			{SubjectKind: limits.SubjectKey, SubjectID: "key-other", Metric: limits.RequestsPerMinute, Value: 1},
 		}, st, nil)
-		if _, ref, err := l.Reserve(context.Background(), limitPrincipal(a, "sa-1", "key-1", ""), est); err != nil || ref != nil {
+		if _, ref, _, err := l.Reserve(context.Background(), limitPrincipal(a, "sa-1", "key-1", ""), est); err != nil || ref != nil {
 			t.Fatalf("%v %v", ref, err)
 		}
 		if len(st.reserves) != 0 {
@@ -173,7 +173,7 @@ func TestLimitsAdapter(t *testing.T) {
 			{SubjectKind: limits.SubjectServiceAccount, SubjectID: "sa-1", Metric: limits.RequestsPerMinute, Value: 60},
 			{SubjectKind: limits.SubjectKey, SubjectID: "key-1", Metric: limits.ConcurrentRequests, Value: 2},
 		}, st, nil)
-		res, ref, err := l.Reserve(context.Background(), limitPrincipal(a, "sa-1", "key-1", ""), est)
+		res, ref, _, err := l.Reserve(context.Background(), limitPrincipal(a, "sa-1", "key-1", ""), est)
 		if err != nil || ref != nil || res == nil {
 			t.Fatalf("%v %v %v", res, ref, err)
 		}
@@ -204,7 +204,7 @@ func TestLimitsAdapter(t *testing.T) {
 		}, st, nil)
 		tok := limitPrincipal(a, "sa-1", "mapping-1", "issuer-1")
 		tok.Subject = "user-42"
-		if _, _, err := l.Reserve(context.Background(), tok, est); err != nil {
+		if _, _, _, err := l.Reserve(context.Background(), tok, est); err != nil {
 			t.Fatal(err)
 		}
 		if len(st.reserves) != 1 || len(st.reserves[0].Limits) != 2 {
@@ -227,7 +227,7 @@ func TestLimitsAdapter(t *testing.T) {
 			OverLimit:  true,
 		}}
 		l, _ := adapter(t, []limits.Rule{{SubjectKind: limits.SubjectServiceAccount, SubjectID: "sa-1", Metric: limits.TokensPerMinute, Value: 1000}}, st, nil)
-		res, ref, err := l.Reserve(context.Background(), limitPrincipal(a, "sa-1", "key-1", ""), est)
+		res, ref, _, err := l.Reserve(context.Background(), limitPrincipal(a, "sa-1", "key-1", ""), est)
 		if err != nil || res != nil || ref == nil {
 			t.Fatalf("%v %v %v: want a refusal", res, ref, err)
 		}
@@ -243,7 +243,7 @@ func TestLimitsAdapter(t *testing.T) {
 		l, _ := adapter(t, []limits.Rule{{SubjectKind: limits.SubjectTenant, Metric: limits.RequestsPerMinute, Value: 5}}, st, nil)
 		e := est
 		e.Cost = pricing.Cost{Known: true, Currency: "USD", VersionID: "v1"}
-		if _, _, err := l.Reserve(context.Background(), limitPrincipal(a, "sa-1", "key-1", ""), e); err != nil {
+		if _, _, _, err := l.Reserve(context.Background(), limitPrincipal(a, "sa-1", "key-1", ""), e); err != nil {
 			t.Fatal(err)
 		}
 		if got := st.reserves[0].Estimate.Cost; !got.Known || got.VersionID != "v1" {
@@ -256,7 +256,7 @@ func TestLimitsAdapter(t *testing.T) {
 		l, _ := adapter(t, []limits.Rule{{SubjectKind: limits.SubjectTenant, Metric: limits.RequestsPerMinute, Value: 5}}, st, nil)
 		for _, end := range []string{"settle", "release"} {
 			ctx, cancel := context.WithCancel(context.Background())
-			res, _, err := l.Reserve(ctx, limitPrincipal(a, "sa-1", "key-1", ""), est)
+			res, _, _, err := l.Reserve(ctx, limitPrincipal(a, "sa-1", "key-1", ""), est)
 			if err != nil || res == nil {
 				t.Fatal(err)
 			}
@@ -279,7 +279,7 @@ func TestLimitsAdapter(t *testing.T) {
 		for _, end := range []string{"settle", "release"} {
 			st := &fakeStore{settleErr: limits.ErrNotOutstanding, releaseErr: limits.ErrNotOutstanding}
 			l, sink := adapter(t, []limits.Rule{{SubjectKind: limits.SubjectTenant, Metric: limits.RequestsPerMinute, Value: 5}}, st, nil)
-			res, _, err := l.Reserve(context.Background(), limitPrincipal(a, "sa-1", "key-1", ""), est)
+			res, _, _, err := l.Reserve(context.Background(), limitPrincipal(a, "sa-1", "key-1", ""), est)
 			if err != nil || res == nil {
 				t.Fatalf("%s: reserve: %v %v", end, res, err)
 			}
@@ -298,7 +298,7 @@ func TestLimitsAdapter(t *testing.T) {
 	t.Run("rules that cannot be loaded are an error, not an admission", func(t *testing.T) {
 		st := &fakeStore{}
 		l, _ := adapter(t, nil, st, errors.New("synthetic load failure"))
-		res, ref, err := l.Reserve(context.Background(), limitPrincipal(a, "sa-1", "key-1", ""), est)
+		res, ref, _, err := l.Reserve(context.Background(), limitPrincipal(a, "sa-1", "key-1", ""), est)
 		if err == nil || res != nil || ref != nil {
 			t.Fatalf("%v %v %v: want an error", res, ref, err)
 		}
@@ -318,7 +318,7 @@ func TestLimitsAdapter(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res, ref, err := l.Reserve(context.Background(), limitPrincipal(a, "sa-1", "key-1", ""), est); err == nil || res != nil || ref != nil {
+		if res, ref, _, err := l.Reserve(context.Background(), limitPrincipal(a, "sa-1", "key-1", ""), est); err == nil || res != nil || ref != nil {
 			t.Fatalf("%v %v %v: want an error", res, ref, err)
 		}
 	})
@@ -439,7 +439,7 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 			periodRule("r-other", limits.RequestsPerDay, 1, "anthropic", "", ""),
 			periodRule("r-model-other", limits.RequestsPerDay, 1, "openai", "gpt-3", ""),
 		}, st, &fakeEnsurer{}, "", "")
-		if _, ref, err := l.Reserve(bg, p, est); err != nil || ref != nil {
+		if _, ref, _, err := l.Reserve(bg, p, est); err != nil || ref != nil {
 			t.Fatalf("%v %v", ref, err)
 		}
 		if len(st.reserves) != 1 {
@@ -470,7 +470,7 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 	t.Run("the counters are loaded only when a period limit applies", func(t *testing.T) {
 		ens := &fakeEnsurer{}
 		l, _ := periodAdapter(t, []limits.Rule{{ID: "r", SubjectKind: limits.SubjectTenant, Metric: limits.RequestsPerMinute, Value: 5, Enforce: true}}, &fakeStore{}, ens, "", "")
-		if _, _, err := l.Reserve(bg, p, est); err != nil {
+		if _, _, _, err := l.Reserve(bg, p, est); err != nil {
 			t.Fatal(err)
 		}
 		if ens.n() != 0 {
@@ -481,7 +481,7 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 			{ID: "r", SubjectKind: limits.SubjectTenant, Metric: limits.RequestsPerMinute, Value: 5, Enforce: true},
 			periodRule("q", limits.RequestsPerDay, 5, "", "", ""),
 		}, &fakeStore{}, ens2, "", "")
-		if _, _, err := l.Reserve(bg, p, est); err != nil {
+		if _, _, _, err := l.Reserve(bg, p, est); err != nil {
 			t.Fatal(err)
 		}
 		if ens2.n() != 1 || ens2.calls[0].tenant != a {
@@ -500,7 +500,7 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 		ens3 := &fakeEnsurer{}
 		st3 := &fakeStore{}
 		l, _ = periodAdapter(t, []limits.Rule{periodRule("q", limits.RequestsPerDay, 5, "anthropic", "", "")}, st3, ens3, "", "")
-		if res, _, err := l.Reserve(bg, p, est); err != nil || res == nil || ens3.n() != 0 || len(st3.reserves) != 0 {
+		if res, _, _, err := l.Reserve(bg, p, est); err != nil || res == nil || ens3.n() != 0 || len(st3.reserves) != 0 {
 			t.Errorf("a rule of another provider: loads %d, reserves %d, %v", ens3.n(), len(st3.reserves), err)
 		}
 	})
@@ -519,7 +519,7 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 			for _, setting := range []string{"", "refuse"} {
 				st := &fakeStore{}
 				l, _ := periodAdapter(t, []limits.Rule{budget}, st, &fakeEnsurer{}, setting, "")
-				res, ref, err := l.Reserve(bg, p, e)
+				res, ref, _, err := l.Reserve(bg, p, e)
 				if err != nil || res != nil || ref == nil {
 					t.Fatalf("%s/%q: %v %v %v, want a refusal", name, setting, res, ref, err)
 				}
@@ -540,7 +540,7 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 		for _, setting := range []string{"", "refuse"} {
 			st := &fakeStore{}
 			l, _ := periodAdapter(t, []limits.Rule{soft, periodRule("q", limits.RequestsPerDay, 5, "", "", "")}, st, &fakeEnsurer{}, setting, "")
-			res, ref, err := l.Reserve(bg, p, est) // the estimate is in USD, the budget in EUR
+			res, ref, _, err := l.Reserve(bg, p, est) // the estimate is in USD, the budget in EUR
 			if err != nil || ref != nil || res == nil {
 				t.Fatalf("%q: %v %v %v, want an admission: enforce false never refuses", setting, res, ref, err)
 			}
@@ -553,7 +553,7 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 		}
 		// An enforced budget beside it still refuses.
 		l, _ := periodAdapter(t, []limits.Rule{soft, budget}, &fakeStore{}, &fakeEnsurer{}, "refuse", "")
-		if _, ref, err := l.Reserve(bg, p, est); err != nil || ref == nil || ref.Code != "no_price" {
+		if _, ref, _, err := l.Reserve(bg, p, est); err != nil || ref == nil || ref.Code != "no_price" {
 			t.Errorf("an enforced budget: %v %v, want no_price", ref, err)
 		}
 	})
@@ -562,7 +562,7 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 		st := &fakeStore{}
 		usd := periodRule("b", limits.CostPerMonth, 100_000_000, "", "", "USD")
 		l, _ := periodAdapter(t, []limits.Rule{usd}, st, &fakeEnsurer{}, "refuse", "")
-		if _, ref, err := l.Reserve(bg, p, est); err != nil || ref != nil || len(st.reserves) != 1 {
+		if _, ref, _, err := l.Reserve(bg, p, est); err != nil || ref != nil || len(st.reserves) != 1 {
 			t.Fatalf("%v %v, %d reserves", ref, err, len(st.reserves))
 		}
 	})
@@ -572,7 +572,7 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 		e := est
 		e.Cost = pricing.Cost{Reason: pricing.ReasonNoPrice}
 		l, _ := periodAdapter(t, []limits.Rule{periodRule("q", limits.RequestsPerDay, 5, "", "", "")}, st, &fakeEnsurer{}, "refuse", "")
-		if _, ref, err := l.Reserve(bg, p, e); err != nil || ref != nil || len(st.reserves) != 1 {
+		if _, ref, _, err := l.Reserve(bg, p, e); err != nil || ref != nil || len(st.reserves) != 1 {
 			t.Fatalf("%v %v, %d reserves", ref, err, len(st.reserves))
 		}
 	})
@@ -580,7 +580,7 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 	t.Run("on_unknown_price allow: admitted against every other limit, the budget not counted", func(t *testing.T) {
 		st := &fakeStore{}
 		l, _ := periodAdapter(t, []limits.Rule{budget, periodRule("q", limits.RequestsPerDay, 5, "", "", "")}, st, &fakeEnsurer{}, "allow", "")
-		res, ref, err := l.Reserve(bg, p, est)
+		res, ref, _, err := l.Reserve(bg, p, est)
 		if err != nil || ref != nil || res == nil {
 			t.Fatalf("%v %v %v", res, ref, err)
 		}
@@ -608,7 +608,7 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 		} {
 			st := &fakeStore{refuse: &limits.Refusal{Limit: c.limit, Remaining: 0, RetryAfter: 90 * time.Second, Reset: 90 * time.Second}}
 			l, _ := periodAdapter(t, []limits.Rule{periodRule("q", limits.RequestsPerDay, 5, "", "", "")}, st, &fakeEnsurer{}, "", "")
-			_, ref, err := l.Reserve(bg, p, est)
+			_, ref, _, err := l.Reserve(bg, p, est)
 			if err != nil || ref == nil {
 				t.Fatalf("%v %v", ref, err)
 			}
@@ -624,7 +624,7 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 		for _, setting := range []string{"", "refuse"} {
 			st := &fakeStore{}
 			l, _ := periodAdapter(t, []limits.Rule{periodRule("q", limits.RequestsPerDay, 5, "", "", "")}, st, &fakeEnsurer{err: errors.New("synthetic ledger failure")}, "", setting)
-			res, ref, err := l.Reserve(bg, p, est)
+			res, ref, _, err := l.Reserve(bg, p, est)
 			if err == nil || res != nil || ref != nil {
 				t.Errorf("%q: %v %v %v, want an error", setting, res, ref, err)
 			}
@@ -649,7 +649,7 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 			st := &notLoadedStore{fakeStore: &fakeStore{}, failures: c.failures}
 			ens := &fakeEnsurer{}
 			l, _ := periodAdapter(t, []limits.Rule{periodRule("q", limits.RequestsPerDay, 5, "", "", "")}, st, ens, "", c.setting)
-			res, ref, err := l.Reserve(bg, p, est)
+			res, ref, _, err := l.Reserve(bg, p, est)
 			if (err != nil) != c.wantErr || ref != nil || (err == nil && res == nil) {
 				t.Fatalf("%s: %v %v %v", c.name, res, ref, err)
 			}
@@ -670,7 +670,7 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 	t.Run("on_store_failure refuse: a failing Reserve is an error", func(t *testing.T) {
 		st := &fakeStore{reserveErr: errors.New("synthetic store failure")}
 		l, _ := periodAdapter(t, []limits.Rule{periodRule("q", limits.RequestsPerDay, 5, "", "", "")}, st, &fakeEnsurer{}, "refuse", "refuse")
-		if res, ref, err := l.Reserve(bg, p, est); err == nil || res != nil || ref != nil {
+		if res, ref, _, err := l.Reserve(bg, p, est); err == nil || res != nil || ref != nil {
 			t.Errorf("%v %v %v, want an error", res, ref, err)
 		}
 	})
@@ -678,7 +678,7 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 	t.Run("on_store_failure allow: a failing Reserve admits without a reservation", func(t *testing.T) {
 		st := &fakeStore{reserveErr: errors.New("synthetic store failure")}
 		l, _ := periodAdapter(t, []limits.Rule{periodRule("q", limits.RequestsPerDay, 5, "", "", "")}, st, &fakeEnsurer{}, "", "allow")
-		res, ref, err := l.Reserve(bg, p, est)
+		res, ref, _, err := l.Reserve(bg, p, est)
 		if err != nil || ref != nil || res == nil {
 			t.Fatalf("%v %v %v: want an admission", res, ref, err)
 		}
@@ -706,7 +706,7 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 		est.Start = now
 		// The cut is the start of today: today's counters need no load; the month started before it.
 		real.Mem.SetCut(a, real.Calendar.Of(limits.PerDay, now).Start)
-		res, ref, err := real.Reserve(bg, p, est)
+		res, ref, _, err := real.Reserve(bg, p, est)
 		if err != nil || ref != nil || res == nil {
 			t.Fatalf("%v %v %v: want an admission", res, ref, err)
 		}
@@ -728,7 +728,7 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 			}
 		}
 		// The rate limit still refuses the second request.
-		_, ref, err = real.Reserve(bg, p, est)
+		_, ref, _, err = real.Reserve(bg, p, est)
 		if err != nil || ref == nil || ref.Code != "rate_limited" {
 			t.Errorf("second reserve: %v %v, want the rate limit", ref, err)
 		}
@@ -749,7 +749,7 @@ func TestLimitsAdapterPeriods(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if res, ref, err := l.Reserve(bg, p, est); err == nil || res != nil || ref != nil {
+			if res, ref, _, err := l.Reserve(bg, p, est); err == nil || res != nil || ref != nil {
 				t.Errorf("%s: %v %v %v, want an error", setting, res, ref, err)
 			}
 		}
@@ -763,4 +763,116 @@ func dec(t *testing.T, s string) pricing.Decimal {
 		t.Fatal(err)
 	}
 	return d
+}
+
+// TestLimitState is T-706: the table of section 5.5, each row, with both values of both settings.
+func TestLimitState(t *testing.T) {
+	a := limitTenantID(7)
+	start := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	priced := gateway.LimitEstimate{RequestID: "req-7", InputTokens: 100, OutputTokens: 400, Provider: "openai", Model: "gpt-4o", Start: start,
+		Cost: pricing.Cost{Known: true, Amount: dec(t, "0.5"), Currency: "USD", VersionID: "v1"}}
+	unpriced := priced
+	unpriced.Cost = pricing.Cost{}
+	p := limitPrincipal(a, "sa-1", "key-1", "")
+	bg := context.Background()
+	count := periodRule("r-count", limits.RequestsPerDay, 100, "", "", "")
+	rate := periodRule("r-rate", limits.RequestsPerMinute, 100, "", "", "")
+	budget := periodRule("r-budget", limits.CostPerDay, 100_000_000, "", "", "USD")
+
+	type row struct {
+		name      string
+		rules     []limits.Rule
+		est       gateway.LimitEstimate
+		store     func() *fakeStore
+		ensurer   *fakeEnsurer
+		loadError error
+		// the expectation by (on_unknown_price, on_store_failure)
+		want func(price, failure string) (state gateway.LimitState, admitted, refused, errored bool)
+	}
+	always := func(state gateway.LimitState, admitted, refused, errored bool) func(string, string) (gateway.LimitState, bool, bool, bool) {
+		return func(string, string) (gateway.LimitState, bool, bool, bool) { return state, admitted, refused, errored }
+	}
+	rows := []row{
+		{name: "no rule: unlimited", est: priced, want: always(gateway.LimitStateUnlimited, true, false, false)},
+		{name: "a rule of another scope only: unlimited", rules: []limits.Rule{periodRule("r-other", limits.RequestsPerDay, 1, "anthropic", "", "")}, est: priced,
+			want: always(gateway.LimitStateUnlimited, true, false, false)},
+		{name: "a rate rule that admits: limited", rules: []limits.Rule{rate}, est: priced, want: always(gateway.LimitStateLimited, true, false, false)},
+		{name: "a period rule that admits: limited", rules: []limits.Rule{count}, est: priced, want: always(gateway.LimitStateLimited, true, false, false)},
+		{name: "a refusal by a limit: limited", rules: []limits.Rule{count}, est: priced,
+			store: func() *fakeStore {
+				return &fakeStore{refuse: &limits.Refusal{Limit: limits.Limit{Metric: limits.RequestsPerDay, Max: 100, Level: limits.LevelTenant, Subject: limits.SubjectTenant}, RetryAfter: time.Hour}}
+			},
+			want: always(gateway.LimitStateLimited, false, true, false)},
+		{name: "a budget that cannot be measured: refused 409 or left out, limited", rules: []limits.Rule{budget}, est: unpriced,
+			want: func(price, _ string) (gateway.LimitState, bool, bool, bool) {
+				return gateway.LimitStateLimited, price == "allow", price != "allow", false
+			}},
+		{name: "a budget left out and a count rule that applies: limited", rules: []limits.Rule{budget, count}, est: unpriced,
+			want: func(price, _ string) (gateway.LimitState, bool, bool, bool) {
+				return gateway.LimitStateLimited, price == "allow", price != "allow", false
+			}},
+		{name: "a budget that is measured: limited", rules: []limits.Rule{budget}, est: priced, want: always(gateway.LimitStateLimited, true, false, false)},
+		{name: "the rules cannot be read: unverified, whatever the settings", loadError: errors.New("the database is down"), est: priced,
+			want: always(gateway.LimitStateUnverified, false, false, true)},
+		{name: "the counters cannot be loaded: unverified, refused or admitted without them", rules: []limits.Rule{count}, est: priced,
+			ensurer: &fakeEnsurer{err: errors.New("the ledger cannot be read")},
+			want: func(_, failure string) (gateway.LimitState, bool, bool, bool) {
+				return gateway.LimitStateUnverified, failure == "allow", false, failure != "allow"
+			}},
+		{name: "the store fails: unverified, refused or admitted without the counters", rules: []limits.Rule{rate}, est: priced,
+			store: func() *fakeStore { return &fakeStore{reserveErr: errors.New("the store fails")} },
+			want: func(_, failure string) (gateway.LimitState, bool, bool, bool) {
+				return gateway.LimitStateUnverified, failure == "allow", false, failure != "allow"
+			}},
+		{name: "a principal that is not a service account: an error, unverified", rules: []limits.Rule{rate}, est: priced,
+			want: always(gateway.LimitStateUnverified, false, false, true)},
+	}
+	for _, price := range []string{"refuse", "allow"} {
+		for _, failure := range []string{"refuse", "allow"} {
+			for _, r := range rows {
+				t.Run(price+"/"+failure+"/"+r.name, func(t *testing.T) {
+					st := &fakeStore{}
+					if r.store != nil {
+						st = r.store()
+					}
+					var ens resolver.Ensurer = &fakeEnsurer{}
+					if r.ensurer != nil {
+						ens = r.ensurer
+					}
+					var l *resolver.Limits
+					if r.loadError != nil {
+						sink := &logSink{}
+						cache, err := limits.NewRuleCacheFunc(func(context.Context, tenant.ID) (limits.RuleSet, error) { return limits.RuleSet{}, r.loadError },
+							limits.RuleCacheOptions{Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), TTL: time.Minute})
+						if err != nil {
+							t.Fatal(err)
+						}
+						cal, _ := limits.NewCalendar(time.UTC)
+						l, err = resolver.NewLimits(resolver.LimitsOptions{Rules: cache, Store: st, TTL: time.Minute, Logger: slog.New(slog.NewJSONHandler(sink, nil)),
+							Calendar: cal, Reconciler: ens, OnUnknownPrice: price, OnStoreFailure: failure})
+						if err != nil {
+							t.Fatal(err)
+						}
+					} else {
+						l, _ = periodAdapter(t, r.rules, st, ens, price, failure)
+					}
+					who := p
+					if strings.Contains(r.name, "not a service account") {
+						who.Kind = authz.KindPlatform
+					}
+					res, ref, state, err := l.Reserve(bg, who, r.est)
+					wantState, admitted, refused, errored := r.want(price, failure)
+					if state != wantState {
+						t.Errorf("state %q, want %q (reservation %v, refusal %v, error %v)", state, wantState, res != nil, ref, err)
+					}
+					if admitted != (res != nil && err == nil && ref == nil) || refused != (ref != nil) || errored != (err != nil) {
+						t.Errorf("admitted %v refused %v error %v; want admitted %v refused %v error %v", res != nil, ref != nil, err, admitted, refused, errored)
+					}
+					if res != nil {
+						res.Release()
+					}
+				})
+			}
+		}
+	}
 }

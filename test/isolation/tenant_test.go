@@ -245,3 +245,192 @@ func TestTenantLifecycle(t *testing.T) {
 		}
 	})
 }
+
+// notifications returns the payloads received on conn until nothing arrives for quiet.
+func notifications(conn *pgx.Conn, quiet time.Duration) []string {
+	var got []string
+	for {
+		c, cancel := context.WithTimeout(context.Background(), quiet)
+		n, err := conn.WaitForNotification(c)
+		cancel()
+		if err != nil {
+			return got
+		}
+		got = append(got, n.Payload)
+	}
+}
+
+// TestTenantTimeZonePolicies is T-697: the admin role in a tenant session changes the three time
+// zone columns of its own row and nothing else; the trigger of section 5.7 (4) refuses every shape
+// that would move a boundary that has not been reached; the platform scope changes any tenant; the
+// gateway and worker roles cannot; a change notifies limits:<tenant>.
+func TestTenantTimeZonePolicies(t *testing.T) {
+	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
+		super := d.Super(t)
+		a, b := d.SeedTenant(t, "zone-a"), d.SeedTenant(t, "zone-b")
+		sessA := sessions(a)[0]
+		platform := session{name: "platform", setting: "app.scope", value: "platform"}
+		ad := d.Connect(t, "admin")
+		listener := d.Super(t)
+		if _, err := listener.Exec(ctx(t), "LISTEN pandokos_cache"); err != nil {
+			t.Fatal(err)
+		}
+		notifications(listener, 200*time.Millisecond)
+
+		set := func(s session, id tenant.ID, zone, previous string, from any) (int64, error) {
+			return execIn(t, ad, s, `UPDATE pandokos.tenant SET time_zone = $2, time_zone_previous = $3, time_zone_effective_from = $4::timestamptz WHERE id = $1::uuid`,
+				id.String(), zone, previous, from)
+		}
+		in := func(days float64) any { return time.Now().UTC().Add(time.Duration(days * 24 * float64(time.Hour))) }
+		zone := func(id tenant.ID) string {
+			return scalar(t, super, `SELECT time_zone || '|' || time_zone_previous || '|' || COALESCE(time_zone_effective_from::text, '') FROM pandokos.tenant WHERE id = $1::uuid`, id.String())
+		}
+		expect := func(what, want string, err error) {
+			t.Helper()
+			if got := sqlstate(err); got != want {
+				t.Errorf("%s: SQLSTATE %q (%v), want %q", what, got, err, want)
+			}
+		}
+
+		t.Run("a tenant session changes its own zone", func(t *testing.T) {
+			n, err := set(sessA, a, "Europe/Rome", "", in(10))
+			if err != nil || n != 1 {
+				t.Fatalf("a pending change: %d %v", n, err)
+			}
+			if got := notifications(listener, 400*time.Millisecond); len(got) != 1 || got[0] != "limits:"+a.String() {
+				t.Errorf("notifications %v, want limits:%s", got, a)
+			}
+			// Withdrawn: the zone in force is the previous one again.
+			if n, err := set(sessA, a, "", "", nil); err != nil || n != 1 {
+				t.Errorf("a pending change withdrawn: %d %v", n, err)
+			}
+			if got := zone(a); got != "||" {
+				t.Errorf("zone after the withdrawal %q", got)
+			}
+		})
+
+		t.Run("name, display name and state are refused; another tenant's row is not reached", func(t *testing.T) {
+			for what, sql := range map[string]string{
+				"name":         `UPDATE pandokos.tenant SET name = 'renamed' WHERE id = $1::uuid`,
+				"display name": `UPDATE pandokos.tenant SET display_name = 'x' WHERE id = $1::uuid`,
+				"state":        `UPDATE pandokos.tenant SET state = 'suspended' WHERE id = $1::uuid`,
+			} {
+				_, err := execIn(t, ad, sessA, sql, a.String())
+				expect(what, insufficientPrivilege, err)
+			}
+			// A statement that changes the zone and the display name together is refused as a whole.
+			_, err := execIn(t, ad, sessA, `UPDATE pandokos.tenant SET display_name = 'x', time_zone = 'Europe/Rome', time_zone_previous = '', time_zone_effective_from = $2::timestamptz WHERE id = $1::uuid`, a.String(), in(5))
+			expect("zone and display name together", insufficientPrivilege, err)
+			if got := zone(a); got != "||" {
+				t.Errorf("zone %q after a refused statement", got)
+			}
+			if n, err := set(sessA, b, "Europe/Rome", "", in(10)); err != nil || n != 0 {
+				t.Errorf("A's session changed B's row: %d %v", n, err)
+			}
+			if got := zone(b); got != "||" {
+				t.Errorf("B's zone %q", got)
+			}
+			if n, err := execIn(t, ad, noSession, `UPDATE pandokos.tenant SET time_zone = 'Europe/Rome'`); err == nil && n != 0 {
+				t.Errorf("a session without a tenant changed %d rows", n)
+			}
+		})
+
+		t.Run("every refusal of the trigger", func(t *testing.T) {
+			expect("a zone in force changed without a pending instant", checkViolation, errOf(set(sessA, a, "Europe/Rome", "", nil)))
+			expect("a previous zone that is not the one in force", checkViolation, errOf(set(sessA, a, "Europe/Rome", "Asia/Tokyo", in(5))))
+			expect("an instant in the past", checkViolation, errOf(set(sessA, a, "Europe/Rome", "", in(-0.5))))
+			expect("an instant now", checkViolation, errOf(set(sessA, a, "Europe/Rome", "", time.Now().UTC())))
+			expect("an instant 33 days away", checkViolation, errOf(set(sessA, a, "Europe/Rome", "", in(33))))
+			expect("a pending change whose previous equals the zone", checkViolation, errOf(set(sessA, a, "", "", in(5))))
+			expect("a malformed zone name", checkViolation, errOf(set(sessA, a, "Europe Rome", "", in(5))))
+			if got := zone(a); got != "||" {
+				t.Fatalf("zone %q after refusals", got)
+			}
+			if n, err := set(sessA, a, "Europe/Rome", "", in(31)); err != nil || n != 1 {
+				t.Fatalf("an instant 31 days away: %d %v", n, err)
+			}
+			pending := scalar(t, super, `SELECT time_zone_effective_from::text FROM pandokos.tenant WHERE id = $1::uuid`, a.String())
+			// A replacement keeps the instant; one that moves it is refused.
+			expect("a replacement that moves the instant", checkViolation, errOf(set(sessA, a, "Asia/Tokyo", "", in(5))))
+			expect("a replacement with another previous", checkViolation, errOf(set(sessA, a, "Asia/Tokyo", "Europe/Rome", pending)))
+			if n, err := execIn(t, ad, sessA, `UPDATE pandokos.tenant SET time_zone = 'Asia/Tokyo' WHERE id = $1::uuid`, a.String()); err != nil || n != 1 {
+				t.Errorf("a replacement that keeps the instant: %d %v", n, err)
+			}
+			if got := scalar(t, super, `SELECT time_zone || '|' || time_zone_previous || '|' || (time_zone_effective_from::text = $2)::text FROM pandokos.tenant WHERE id = $1::uuid`, a.String(), pending); got != "Asia/Tokyo||true" {
+				t.Errorf("after the replacement: %q", got)
+			}
+			// A pending zone that is the previous one again withdraws the change.
+			if n, err := set(sessA, a, "", "", nil); err != nil || n != 1 {
+				t.Errorf("withdrawal: %d %v", n, err)
+			}
+			// A tenant is created with a zone and without a pending change.
+			expect("a tenant inserted with a pending change", checkViolation,
+				errOf(execIn(t, super0(t, d), noSession, `INSERT INTO pandokos.tenant (name, time_zone, time_zone_previous, time_zone_effective_from) VALUES ('zone-ins', 'Asia/Tokyo', 'Europe/Rome', now() + interval '1 day')`)))
+			expect("a tenant inserted with a previous zone", checkViolation,
+				errOf(execIn(t, super0(t, d), noSession, `INSERT INTO pandokos.tenant (name, time_zone_previous, time_zone_effective_from) VALUES ('zone-ins', 'Europe/Rome', now() + interval '1 day')`)))
+		})
+
+		t.Run("after the instant the next change is a new pending one", func(t *testing.T) {
+			// A change that took effect: the instant lies in the past. Only a superuser with the triggers off can write it.
+			c := d.SeedTenant(t, "zone-c")
+			if _, err := super.Exec(ctx(t), `SET session_replication_role = replica`); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := super.Exec(ctx(t), `UPDATE pandokos.tenant SET time_zone = 'Europe/Rome', time_zone_previous = '', time_zone_effective_from = now() - interval '1 day' WHERE id = $1::uuid`, c.String()); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := super.Exec(ctx(t), `SET session_replication_role = origin`); err != nil {
+				t.Fatal(err)
+			}
+			sessC := sessions(c)[0]
+			expect("the zone in force is Europe/Rome: changing it without a pending instant", checkViolation, errOf(set(sessC, c, "Asia/Tokyo", "", nil)))
+			expect("a previous zone that is the old one", checkViolation, errOf(set(sessC, c, "Asia/Tokyo", "", in(5))))
+			if n, err := set(sessC, c, "Asia/Tokyo", "Europe/Rome", in(5)); err != nil || n != 1 {
+				t.Errorf("a new pending change after the instant: %d %v", n, err)
+			}
+			if n, err := set(sessC, c, "Europe/Rome", "", nil); err == nil && n == 1 {
+				t.Log("withdrawn to the zone in force")
+			} else {
+				t.Errorf("a withdrawal: %d %v", n, err)
+			}
+		})
+
+		t.Run("the platform scope changes any tenant", func(t *testing.T) {
+			notifications(listener, 300*time.Millisecond) // what the subtests above sent
+			if n, err := set(platform, b, "America/New_York", "", in(7)); err != nil || n != 1 {
+				t.Errorf("platform scope, tenant B: %d %v", n, err)
+			}
+			if n, err := execIn(t, ad, platform, `UPDATE pandokos.tenant SET display_name = 'Tenant B' WHERE id = $1::uuid`, b.String()); err != nil || n != 1 {
+				t.Errorf("platform scope, display name: %d %v", n, err)
+			}
+			// Only a change of the zone notifies; the display name does not.
+			got := notifications(listener, 400*time.Millisecond)
+			if len(got) != 1 || got[0] != "limits:"+b.String() {
+				t.Errorf("notifications %v, want limits:%s once", got, b)
+			}
+		})
+
+		t.Run("the gateway and the worker cannot", func(t *testing.T) {
+			for _, role := range []string{"gateway", "worker"} {
+				for _, s := range []session{sessA, platform} {
+					_, err := execIn(t, d.Connect(t, role), s, `UPDATE pandokos.tenant SET time_zone = 'Europe/Rome'`)
+					expect(role+" in session "+s.name, insufficientPrivilege, err)
+				}
+			}
+		})
+
+		t.Run("a tenant is created with a zone and without a pending change", func(t *testing.T) {
+			rows, err := query(t, ad, platform, `INSERT INTO pandokos.tenant (name, time_zone) VALUES ('zone-new', 'Europe/Rome') RETURNING time_zone, time_zone_previous, time_zone_effective_from::text AS at`)
+			if err != nil || len(rows) != 1 || rows[0]["time_zone"] != "Europe/Rome" || rows[0]["time_zone_previous"] != "" || rows[0]["at"] != nil {
+				t.Errorf("created: %v %v", rows, err)
+			}
+			_, err = execIn(t, ad, platform, `INSERT INTO pandokos.tenant (name, time_zone_previous, time_zone_effective_from) VALUES ('zone-new-2', 'Europe/Rome', now() + interval '1 day')`)
+			if sqlstate(err) != insufficientPrivilege && sqlstate(err) != checkViolation {
+				t.Errorf("created with a pending change: %v", err)
+			}
+		})
+	})
+}
+
+// super0 is a fresh superuser connection, for statements that run in a session of their own.
+func super0(t *testing.T, d *dbtest.Database) *pgx.Conn { t.Helper(); return d.Super(t) }

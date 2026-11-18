@@ -89,7 +89,7 @@ func (s *server) GetCapability(ctx context.Context, in adminapi.GetCapabilityInp
 	} else {
 		out.Reasons = append(out.Reasons, "no_credential")
 	}
-	now := time.Now().UTC()
+	now := s.now().UTC()
 	budget, reasons, err := s.budgetCheck(ctx, tid, snap, model, rerr == nil, in.Provider, in.Model, now)
 	if err != nil {
 		return nil, err

@@ -448,6 +448,20 @@ func (f *fixt) steps(t *testing.T) []step {
 				return []auditRow{f.platActor(auditRow{Action: "tenant.reactivate", ResourceType: "tenant", ResourceID: tid, RequestID: rid(r),
 					Detail: map[string]any{"from": "suspended", "to": "active"}})}
 			}},
+		{"setTenantTimeZone", // sprint 5.3: the tenant changes its own time zone; the change is pending, the zone in force is the default
+			func() *apitest.Response {
+				return w.api.Do(t, "PUT", "/v1/tenants/"+tid+"/time-zone", w.adminKey, map[string]any{"time_zone": "Europe/Rome"}, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				var z adminapi.TenantTimeZone
+				decode(r, &z)
+				var effective any
+				if z.EffectiveFrom != nil {
+					effective = rfc(z.EffectiveFrom.UTC())
+				}
+				return []auditRow{f.tenantActor(auditRow{Action: "tenant.time_zone_update", ResourceType: "tenant", ResourceID: tid, RequestID: rid(r),
+					Detail: map[string]any{"from": "", "to": "Europe/Rome", "in_force": z.InForce, "effective_from": effective}}, tid)}
+			}},
 	}
 }
 
@@ -597,6 +611,9 @@ func TestAuditIsAtomic(t *testing.T) {
 		},
 		"reactivateTenant": func() *apitest.Response {
 			return api.Do(t, "POST", "/v1/tenants/"+f.frozen.ID+"/reactivate", api.PlatformKey(), nil, nil)
+		},
+		"setTenantTimeZone": func() *apitest.Response {
+			return api.Do(t, "PUT", "/v1/tenants/"+tid+"/time-zone", f.w.adminKey, map[string]any{"time_zone": "Asia/Tokyo"}, nil)
 		},
 		"createServiceAccount": func() *apitest.Response {
 			return api.Do(t, "POST", "/v1/tenants/"+tid+"/service-accounts", f.w.adminKey, map[string]any{"name": "atomic-sa", "roles": []string{"inference"}}, nil)

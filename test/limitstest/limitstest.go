@@ -6,6 +6,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -34,6 +35,45 @@ type Real struct {
 	origin     time.Time // the instant the clock showed when Real was built; zero: the real time
 	realOrigin time.Time // the real time at that instant
 	withPeriod bool      // built by NewWith: Reserve gives the request the start time of this clock
+
+	zmu   sync.Mutex
+	zones map[tenant.ID]limits.TenantCalendar // by tenant, for the rules kept in memory (sprint 5.3)
+}
+
+// TenantCalendar is the calendar of a tenant whose rules are kept in memory: the zone of Real until
+// SetZone says another (sprint 5.3, section 5.7).
+func (r *Real) TenantCalendar(id tenant.ID) limits.TenantCalendar {
+	r.zmu.Lock()
+	defer r.zmu.Unlock()
+	if c, ok := r.zones[id]; ok {
+		return c
+	}
+	return limits.TenantCalendar{Current: r.Calendar}
+}
+
+// SetZone gives a tenant whose rules are kept in memory another zone, taking effect at the instant
+// at (a test that wants the change rule of section 5.7 passes the instant limits.NextChange gives).
+// The rule set of the tenant is built again at its next load.
+func (r *Real) SetZone(tb testing.TB, id tenant.ID, zone string, at time.Time) {
+	tb.Helper()
+	loc, err := time.LoadLocation(zone)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	cal, err := limits.NewCalendar(loc)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	r.zmu.Lock()
+	defer r.zmu.Unlock()
+	if r.zones == nil {
+		r.zones = map[tenant.ID]limits.TenantCalendar{}
+	}
+	prev := r.Calendar
+	if c, ok := r.zones[id]; ok {
+		prev = c.At(at)
+	}
+	r.zones[id] = limits.TenantCalendar{Current: cal, Previous: prev, From: at}
 }
 
 // New returns limits that enforce rules for the tenant of the given principal.
@@ -125,6 +165,10 @@ type Options struct {
 	OnUnknownPrice string // "refuse" (default) or "allow"
 	OnStoreFailure string // "refuse" (default) or "allow"
 
+	// Unlimited is told of the first unlimited request of a tenant in a day of the tenant (sprint
+	// 5.3); nobody when nil.
+	Unlimited resolver.UnlimitedNoter
+
 	Horizon  time.Duration // default 12m30s
 	Interval time.Duration // default 5m
 	// Start is the instant the clock of the store, of the reconciler and of every request shows
@@ -187,7 +231,9 @@ func NewWith(tb testing.TB, o Options) *Real {
 	cache := o.Cache
 	if cache == nil {
 		cache, err = limits.NewRuleCacheFunc(func(_ context.Context, id tenant.ID) (limits.RuleSet, error) {
-			return limits.NewScopedRuleSet(id, o.PlatformDefault, o.Platform[id], o.Rules[id]), nil
+			rs := limits.NewScopedRuleSet(id, o.PlatformDefault, o.Platform[id], o.Rules[id])
+			rs.Calendar = r.TenantCalendar(id)
+			return rs, nil
 		}, limits.RuleCacheOptions{Logger: quiet, TTL: 5 * time.Minute})
 		if err != nil {
 			tb.Fatal(err)
@@ -198,7 +244,8 @@ func NewWith(tb testing.TB, o Options) *Real {
 		ensurer = o.Ensurer
 	}
 	r.Limits, err = resolver.NewLimits(resolver.LimitsOptions{Rules: cache, Store: r.Mem, TTL: time.Hour, Logger: log,
-		Calendar: r.Calendar, Reconciler: ensurer, OnUnknownPrice: o.OnUnknownPrice, OnStoreFailure: o.OnStoreFailure})
+		Calendar: r.Calendar, Reconciler: ensurer, OnUnknownPrice: o.OnUnknownPrice, OnStoreFailure: o.OnStoreFailure,
+		Unlimited: o.Unlimited})
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -216,7 +263,7 @@ func (r *Real) Shift() time.Duration {
 // Reserve reserves at the clock of Real: the start time of the request is the one the gateway took
 // moved by Shift, so that a test that starts the clock elsewhere or advances it moves the periods
 // the request belongs to; with a Shift of 0 it is the very instant of the usage record.
-func (r *Real) Reserve(ctx context.Context, p authz.Principal, e gateway.LimitEstimate) (gateway.Reservation, *gateway.LimitRefusal, error) {
+func (r *Real) Reserve(ctx context.Context, p authz.Principal, e gateway.LimitEstimate) (gateway.Reservation, *gateway.LimitRefusal, gateway.LimitState, error) {
 	if r.withPeriod {
 		e.Start = e.Start.Add(r.Shift())
 	}

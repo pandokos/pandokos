@@ -612,3 +612,132 @@ func TestResolveScopes(t *testing.T) {
 		}
 	})
 }
+
+// TestResolveByIdentifier is T-701: a rule matches a request by the identifiers of its provider and
+// model and by the key ID or mapping ID of its subject; names are for events and headers and never
+// decide.
+func TestResolveByIdentifier(t *testing.T) {
+	a := tid(1)
+	cal := mustCalendar(t, "UTC")
+	start := at(2026, 11, 17, 12, 0, 0)
+	rule := func(r Rule) Rule {
+		r.Enforce = true
+		if r.Metric == "" {
+			r.Metric = RequestsPerDay
+		}
+		if r.Value == 0 {
+			r.Value = 10
+		}
+		return r
+	}
+	scoped := func(prov, mod string) Rule {
+		return rule(Rule{SubjectKind: SubjectTenant, ProviderID: prov, ModelID: mod, Provider: "openai", Model: "gpt-4"})
+	}
+	forQuery := func(rs []Rule, q Query) []Limit {
+		q.Start = start
+		return NewScopedRuleSet(a, nil, nil, rs).For(q, cal)
+	}
+
+	t.Run("a rule on a model ID does not match a target with the same name and another ID", func(t *testing.T) {
+		rs := []Rule{scoped("p1", "m1")}
+		if got := forQuery(rs, Query{ProviderID: "p1", ModelID: "m1", Provider: "openai", Model: "gpt-4"}); len(got) != 1 {
+			t.Fatalf("the model itself: %+v", got)
+		}
+		if got := forQuery(rs, Query{ProviderID: "p1", ModelID: "m2", Provider: "openai", Model: "gpt-4"}); len(got) != 0 {
+			t.Errorf("a model of the same name and another ID matched: %+v", got)
+		}
+		if got := forQuery(rs, Query{ProviderID: "p2", ModelID: "m1", Provider: "openai", Model: "gpt-4"}); len(got) != 0 {
+			t.Errorf("a model ID under another provider matched: %+v", got)
+		}
+	})
+
+	t.Run("names never decide", func(t *testing.T) {
+		rs := []Rule{scoped("p1", "")}
+		if got := forQuery(rs, Query{ProviderID: "", Provider: "openai"}); len(got) != 0 {
+			t.Errorf("a target without identifiers matched by name: %+v", got)
+		}
+		if got := forQuery(rs, Query{ProviderID: "p1", Provider: "something-else"}); len(got) != 1 {
+			t.Errorf("a target with the provider's ID and another name: %+v, want the rule", got)
+		}
+		if got := forQuery(rs, Query{ProviderID: "p2", Provider: "openai"}); len(got) != 0 {
+			t.Errorf("the name of the rule's provider with another ID matched: %+v", got)
+		}
+	})
+
+	t.Run("the scopes are all, provider ID, provider ID and model ID", func(t *testing.T) {
+		rs := []Rule{
+			rule(Rule{SubjectKind: SubjectTenant, ID: "all", Value: 100}),
+			rule(Rule{SubjectKind: SubjectTenant, ProviderID: "p1", Value: 50}),
+			rule(Rule{SubjectKind: SubjectTenant, ProviderID: "p1", ModelID: "m1", Value: 20}),
+			rule(Rule{SubjectKind: SubjectTenant, ProviderID: "p2", Value: 7}),
+		}
+		got := forQuery(rs, Query{ProviderID: "p1", ModelID: "m1"})
+		var maxes []int64
+		for _, l := range got {
+			maxes = append(maxes, l.Max)
+		}
+		if !reflect.DeepEqual(maxes, []int64{100, 50, 20}) {
+			t.Errorf("limits %v, want all, provider, model in order of resolution", maxes)
+		}
+		if got := forQuery(rs, Query{ProviderID: "p1", ModelID: "m9"}); len(got) != 2 {
+			t.Errorf("another model of the provider: %d limits, want all and provider", len(got))
+		}
+		if got := forQuery(rs, Query{}); len(got) != 1 {
+			t.Errorf("a request without a target: %d limits, want the rule of every provider", len(got))
+		}
+		l := got[0]
+		if l.ProviderID != "" || l.ModelID != "" {
+			t.Errorf("a rule for every provider carries identifiers: %+v", l)
+		}
+		for _, l := range forQuery(rs, Query{ProviderID: "p1", ModelID: "m1", Provider: "x", Model: "y"}) {
+			if l.ProviderID != "" && l.ProviderID != "p1" || l.ModelID != "" && l.ModelID != "m1" {
+				t.Errorf("the limit carries other identifiers: %+v", l)
+			}
+		}
+	})
+
+	t.Run("the key subject by key ID and by mapping ID", func(t *testing.T) {
+		rs := []Rule{
+			rule(Rule{SubjectKind: SubjectKey, SubjectID: "tkey000000000000a", Value: 3}),
+			rule(Rule{SubjectKind: SubjectKey, SubjectID: "0192f0f0-0000-7000-8000-0000000000aa", Value: 4}),
+			rule(Rule{SubjectKind: SubjectServiceAccount, SubjectID: "0192f0f0-0000-7000-8000-0000000000bb", Value: 5}),
+		}
+		got := forQuery(rs, Query{KeyID: "tkey000000000000a", ServiceAccountID: "0192f0f0-0000-7000-8000-0000000000bb"})
+		if len(got) != 2 || got[0].Subject != SubjectServiceAccount || got[1].Subject != SubjectKey || got[1].Max != 3 {
+			t.Errorf("a virtual key: %+v", got)
+		}
+		got = forQuery(rs, Query{KeyID: "0192f0f0-0000-7000-8000-0000000000aa"}) // what a token's principal carries
+		if len(got) != 1 || got[0].Subject != SubjectKey || got[0].Max != 4 {
+			t.Errorf("a mapping: %+v", got)
+		}
+		if got := forQuery(rs, Query{KeyID: "tkey000000000000b"}); len(got) != 0 {
+			t.Errorf("another key: %+v", got)
+		}
+	})
+
+	t.Run("at most one limit per counter", func(t *testing.T) {
+		rs := []Rule{scoped("p1", "m1"), scoped("p1", "m1")}
+		rs[1].Value = 5
+		got := forQuery(rs, Query{ProviderID: "p1", ModelID: "m1"})
+		if len(got) != 1 {
+			t.Fatalf("two rules of one counter gave %d limits: %+v", len(got), got)
+		}
+		// Two models of one name and different IDs are two counters.
+		rs = []Rule{scoped("p1", "m1"), scoped("p1", "m2")}
+		if got := forQuery(rs, Query{ProviderID: "p1", ModelID: "m1"}); len(got) != 1 {
+			t.Errorf("a model: %d limits", len(got))
+		}
+		l1 := forQuery(rs, Query{ProviderID: "p1", ModelID: "m1"})[0]
+		l2 := forQuery(rs, Query{ProviderID: "p1", ModelID: "m2"})[0]
+		if l1.ModelID == l2.ModelID || l1.Model != l2.Model {
+			t.Errorf("two models of one name: %+v and %+v: the identifiers must differ, the names are the same", l1, l2)
+		}
+	})
+
+	t.Run("a model ID without a provider ID is not a rule", func(t *testing.T) {
+		rs := []Rule{rule(Rule{SubjectKind: SubjectTenant, ModelID: "m1"})}
+		if got := forQuery(rs, Query{ProviderID: "p1", ModelID: "m1"}); len(got) != 0 {
+			t.Errorf("%+v", got)
+		}
+	})
+}

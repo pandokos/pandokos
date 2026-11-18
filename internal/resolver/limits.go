@@ -32,6 +32,9 @@ type LimitsOptions struct {
 	Reconciler     Ensurer
 	OnUnknownPrice string
 	OnStoreFailure string
+	// Unlimited is told of the first unlimited request of a tenant in a day (sprint 5.3, C3); nil:
+	// nobody.
+	Unlimited UnlimitedNoter
 }
 
 // Limits implements gateway.Limits over the rule cache and a store of counters.
@@ -179,7 +182,14 @@ func scopeOf(l limits.Limit) string {
 
 // Reserve reserves the estimate against the limits of the principal's service account, key and
 // tenant. A principal no limit applies to gets a reservation that does nothing.
-func (l *Limits) Reserve(ctx context.Context, p authz.Principal, e gateway.LimitEstimate) (gateway.Reservation, *gateway.LimitRefusal, error) {
+//
+// The state is not decided yet (sprint 5.3, C3): it is empty.
+func (l *Limits) Reserve(ctx context.Context, p authz.Principal, e gateway.LimitEstimate) (gateway.Reservation, *gateway.LimitRefusal, gateway.LimitState, error) {
+	res, ref, err := l.reserve(ctx, p, e)
+	return res, ref, "", err
+}
+
+func (l *Limits) reserve(ctx context.Context, p authz.Principal, e gateway.LimitEstimate) (gateway.Reservation, *gateway.LimitRefusal, error) {
 	if p.Kind != authz.KindServiceAccount || p.TenantID == (tenant.ID{}) {
 		return nil, nil, errors.New("resolver: limits need a service account principal with a tenant")
 	}

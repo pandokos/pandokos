@@ -12,6 +12,11 @@ import (
 	"github.com/pandokos/pandokos/internal/tenant"
 )
 
+// afterRuleDeletion is a test seam (T-714): when set, the handlers that delete the rules of a
+// subject call it right after the deletion and fail with its error, so that a test can check that
+// the subject and its rules stay together. Nil in production.
+var afterRuleDeletion func() error
+
 // Bounds of a rule (sprint 5.2, section 5.11): a count in requests or tokens, a budget in millionths
 // of its currency, at most four thresholds of 1 to 100 percent.
 const (

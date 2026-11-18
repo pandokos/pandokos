@@ -23,7 +23,7 @@ func (h *Handler) reserve(st *reqState, bound family.OutputBound) bool {
 	}
 	e := estimateOf(st.adapter, st.op, bound, int64(st.requestBytes), st.target, h.defaultOut, st.start)
 	e.RequestID = st.id
-	res, ref, err := h.limits.Reserve(st.callerCx, *st.principal, e)
+	res, ref, _, err := h.limits.Reserve(st.callerCx, *st.principal, e)
 	switch {
 	case err != nil:
 		if st.callerCx.Err() == nil {

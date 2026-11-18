@@ -49,6 +49,9 @@ type Options struct {
 	Limits struct {
 		Calendar       *limits.Calendar
 		OnUnknownPrice string
+		// Zones gives the calendar of each tenant's zone: it validates a time zone and computes the
+		// instant of a change (sprint 5.3, C6). Required from C6 on.
+		Zones *limits.Zones
 		// Ledger reads the usage of the current periods for the capability check; cmd/pandokos
 		// builds it (T-R43). Required.
 		Ledger limits.Ledger
@@ -78,6 +81,7 @@ type server struct {
 	limits    struct {
 		Calendar       *limits.Calendar
 		OnUnknownPrice string
+		Zones          *limits.Zones
 		Ledger         limits.Ledger
 	}
 }
@@ -120,6 +124,7 @@ func New(o Options) (http.Handler, error) {
 	s := &server{log: o.Logger, db: o.DB, auth: o.Authenticator, now: o.Now, sealer: o.Sealer, validator: o.Validator,
 		snapshot: o.Snapshot, refresh: o.Refresh}
 	s.limits.Calendar, s.limits.OnUnknownPrice, s.limits.Ledger = o.Limits.Calendar, o.Limits.OnUnknownPrice, o.Limits.Ledger
+	s.limits.Zones = o.Limits.Zones
 	if s.now == nil {
 		s.now = time.Now
 	}

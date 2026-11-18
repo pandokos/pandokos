@@ -474,7 +474,7 @@ func TestEveryStatement(t *testing.T) {
 		issuerStatements(c, t, admin, gateway, tid, ten.ID, sa.ID, called)
 
 		// Sprint 5.1: the limit rules and the platform ceilings.
-		limitStatements(c, t, admin, gateway, tid, ten.ID, called)
+		limitStatements(c, t, admin, gateway, tid, ten.ID, keyUnscoped, called)
 
 		// Sprint 5.2: the administration of limit rules, the limit events and the ledger aggregate.
 		quotaStatements(c, t, admin, gateway, tid, called)

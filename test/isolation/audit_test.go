@@ -2,8 +2,12 @@ package isolation
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -310,5 +314,178 @@ func TestRecordAuthFailure(t *testing.T) {
 		if len(findings) != 0 {
 			t.Errorf("findings: %v", findings)
 		}
+	})
+}
+
+// TestRecordUnlimitedTraffic is T-696: pandokos.record_unlimited_traffic runs for the gateway role
+// in a tenant session only; however many calls, instances and repetitions there are, one row per
+// tenant and day is left in each log; arguments are checked; the gateway role still has no
+// privilege on either log; the owner's policy on the platform log admits this one action only.
+func TestRecordUnlimitedTraffic(t *testing.T) {
+	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
+		super := d.Super(t)
+		a, b := d.SeedTenant(t, "unl-a"), d.SeedTenant(t, "unl-b")
+		sessA, sessB := sessions(a)[0], session{name: "tenant-b", setting: "app.tenant_id", value: b.String()}
+		platform := session{name: "platform", setting: "app.scope", value: "platform"}
+		today := time.Now().UTC().Format("2006-01-02")
+		day := func(offset int) string { return time.Now().UTC().AddDate(0, 0, offset).Format("2006-01-02") }
+		const reqID = "0123456789abcdef0123456789abcdef"
+
+		call := func(conn *pgx.Conn, s session, day, zone, provider, model, request string) (bool, error) {
+			rows, err := query(t, conn, s, `SELECT pandokos.record_unlimited_traffic($1::date, $2, $3, $4, $5) AS first`, day, zone, provider, model, request)
+			if err != nil {
+				return false, err
+			}
+			return rows[0]["first"].(bool), nil
+		}
+		count := func(tbl, where string, args ...any) string {
+			return scalar(t, super, `SELECT count(*)::text FROM pandokos.`+tbl+` WHERE action = 'limit.unlimited_traffic' `+where, args...)
+		}
+
+		t.Run("the first call writes a row in each log, a repeated call none", func(t *testing.T) {
+			gw := d.Connect(t, "gateway")
+			if first, err := call(gw, sessA, today, "Europe/Rome", "openai", "gpt-4o", reqID); err != nil || !first {
+				t.Fatalf("the first call: %v %v", first, err)
+			}
+			if first, err := call(gw, sessA, today, "Europe/Rome", "anthropic", "claude", "fedcba9876543210fedcba9876543210"); err != nil || first {
+				t.Errorf("a repeated call wrote a row: %v %v", first, err)
+			}
+			if n := count("audit_event", `AND tenant_id = $1::uuid`, a.String()); n != "1" {
+				t.Errorf("%s rows in the tenant's log, want 1", n)
+			}
+			if n := count("platform_audit_event", `AND resource_id = $1`, a.String()); n != "1" {
+				t.Errorf("%s rows in the platform log, want 1", n)
+			}
+			var actor, name, resource, request string
+			var detail []byte
+			if err := super.QueryRow(ctx(t), `SELECT actor_type, actor_name, resource_type, request_id, detail FROM pandokos.audit_event WHERE action = 'limit.unlimited_traffic' AND tenant_id = $1::uuid`,
+				a.String()).Scan(&actor, &name, &resource, &request, &detail); err != nil {
+				t.Fatal(err)
+			}
+			var det map[string]any
+			if err := json.Unmarshal(detail, &det); err != nil {
+				t.Fatal(err)
+			}
+			if actor != "platform" || name != "gateway" || resource != "tenant" || request != reqID ||
+				det["day"] != today || det["time_zone"] != "Europe/Rome" || det["provider"] != "openai" || det["model"] != "gpt-4o" || len(det) != 4 {
+				t.Errorf("row: %s %s %s %s %s", actor, name, resource, request, detail)
+			}
+			if n := scalar(t, super, `SELECT resource_id FROM pandokos.platform_audit_event WHERE action = 'limit.unlimited_traffic' AND resource_id = $1`, a.String()); n != a.String() {
+				t.Errorf("the platform row names %s", n)
+			}
+		})
+
+		t.Run("two tenants do not collide, two days do not either", func(t *testing.T) {
+			gw := d.Connect(t, "gateway")
+			if first, err := call(gw, sessB, today, "UTC", "openai", "gpt-4o", reqID); err != nil || !first {
+				t.Errorf("tenant B, same day: %v %v", first, err)
+			}
+			if first, err := call(gw, sessA, day(1), "UTC", "openai", "gpt-4o", reqID); err != nil || !first {
+				t.Errorf("tenant A, next day: %v %v", first, err)
+			}
+			if n := count("audit_event", ""); n != "3" {
+				t.Errorf("%s rows in the tenants' logs, want 3", n)
+			}
+			if n := count("platform_audit_event", ""); n != "3" {
+				t.Errorf("%s rows in the platform log, want 3", n)
+			}
+		})
+
+		t.Run("sixteen concurrent calls leave one row", func(t *testing.T) {
+			c := d.SeedTenant(t, "unl-c")
+			var wg sync.WaitGroup
+			var firsts atomic.Int32
+			for i := 0; i < 16; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					conn := d.Connect(t, "gateway")
+					if first, err := call(conn, sessions(c)[0], today, "UTC", "openai", "gpt-4o", reqID); err != nil {
+						t.Errorf("concurrent call: %v", err)
+					} else if first {
+						firsts.Add(1)
+					}
+				}()
+			}
+			wg.Wait()
+			if firsts.Load() != 1 {
+				t.Errorf("%d calls say they wrote the row, want 1", firsts.Load())
+			}
+			if n := count("audit_event", `AND tenant_id = $1::uuid`, c.String()); n != "1" {
+				t.Errorf("%s rows in the tenant's log", n)
+			}
+			if n := count("platform_audit_event", `AND resource_id = $1`, c.String()); n != "1" {
+				t.Errorf("%s rows in the platform log", n)
+			}
+		})
+
+		t.Run("a day outside the window and malformed arguments are refused", func(t *testing.T) {
+			gw := d.Connect(t, "gateway")
+			for what, args := range map[string][5]string{
+				"three days ago":           {day(-3), "UTC", "openai", "gpt-4o", reqID},
+				"three days ahead":         {day(3), "UTC", "openai", "gpt-4o", reqID},
+				"a zone with a space":      {today, "Europe Rome", "openai", "gpt-4o", reqID},
+				"an empty zone":            {today, "", "openai", "gpt-4o", reqID},
+				"an upper-case provider":   {today, "UTC", "OpenAI", "gpt-4o", reqID},
+				"an empty provider":        {today, "UTC", "", "gpt-4o", reqID},
+				"a model with a space":     {today, "UTC", "openai", "gpt 4", reqID},
+				"a request ID of 31":       {today, "UTC", "openai", "gpt-4o", reqID[:31]},
+				"a request ID in capitals": {today, "UTC", "openai", "gpt-4o", strings.ToUpper(reqID)},
+			} {
+				if _, err := call(gw, sessA, args[0], args[1], args[2], args[3], args[4]); sqlstate(err) != checkViolation {
+					t.Errorf("%s: %v, want SQLSTATE %s", what, err, checkViolation)
+				}
+			}
+			// An empty model is the one that is allowed: a request without one.
+			if first, err := call(gw, sessA, day(2), "UTC", "openai", "", reqID); err != nil || !first {
+				t.Errorf("a request without a model: %v %v", first, err)
+			}
+		})
+
+		t.Run("only in a tenant session, only for the gateway role", func(t *testing.T) {
+			for _, s := range []session{noSession, platform, {name: "empty", setting: "app.tenant_id", value: ""}} {
+				if _, err := call(d.Connect(t, "gateway"), s, today, "UTC", "openai", "gpt-4o", reqID); sqlstate(err) != checkViolation {
+					t.Errorf("gateway in session %s: %v, want SQLSTATE %s", s.name, err, checkViolation)
+				}
+			}
+			for _, role := range []string{"admin", "worker"} {
+				if _, err := call(d.Connect(t, role), sessA, day(1), "UTC", "openai", "gpt-4o", reqID); sqlstate(err) != insufficientPrivilege {
+					t.Errorf("%s: %v, want SQLSTATE %s", role, err, insufficientPrivilege)
+				}
+			}
+		})
+
+		t.Run("the gateway role has no privilege on either log", func(t *testing.T) {
+			gw := d.Connect(t, "gateway")
+			for _, tbl := range []string{"audit_event", "platform_audit_event"} {
+				for _, s := range []session{sessA, platform, noSession} {
+					if _, err := query(t, gw, s, `SELECT count(*) FROM pandokos.`+tbl); sqlstate(err) != insufficientPrivilege {
+						t.Errorf("SELECT %s in session %s: %v", tbl, s.name, err)
+					}
+					if _, err := execIn(t, gw, s, `INSERT INTO pandokos.`+tbl+` (actor_type, action, resource_type, outcome, request_id) VALUES ('platform', 'limit.unlimited_traffic', 'tenant', 'success', 'x')`); sqlstate(err) != insufficientPrivilege {
+						t.Errorf("INSERT into %s in session %s: %v", tbl, s.name, err)
+					}
+				}
+			}
+		})
+
+		t.Run("the owner's policy on the platform log admits this action only", func(t *testing.T) {
+			owner := d.Connect(t, "owner")
+			if _, err := owner.Exec(ctx(t), "SET ROLE pandokos_owner"); err != nil {
+				t.Fatal(err)
+			}
+			const ins = `INSERT INTO pandokos.platform_audit_event (actor_type, actor_name, action, resource_type, resource_id, outcome, request_id, detail)
+				VALUES ('platform', 'gateway', $1, 'tenant', 'x', 'success', 'r', '{}')`
+			if _, err := execIn(t, owner, noSession, ins, "tenant.create"); sqlstate(err) != insufficientPrivilege {
+				t.Errorf("the owner inserted another action: %v, want SQLSTATE %s", err, insufficientPrivilege)
+			}
+			if _, err := execIn(t, owner, noSession, ins, "limit.unlimited_traffic"); err != nil {
+				t.Errorf("the owner's insert of this action: %v", err)
+			}
+			rows, err := query(t, owner, noSession, `SELECT DISTINCT action FROM pandokos.platform_audit_event`)
+			if err != nil || len(rows) != 1 || rows[0]["action"] != "limit.unlimited_traffic" {
+				t.Errorf("the owner sees %v (%v), want this action only", rows, err)
+			}
+		})
 	})
 }

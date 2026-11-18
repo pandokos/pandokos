@@ -18,7 +18,7 @@ import (
 // limitStatements covers the two statements of sprint 5.1: the limit rules of a tenant and the
 // platform ceilings a tenant's session sees (its own and the defaults), read in the session of the
 // tenant by the gateway role. The rows are written by the admin role and removed again.
-func limitStatements(c context.Context, t *testing.T, admin, gateway *store.DB, tid tenant.ID, tenantID string, called map[string]bool) {
+func limitStatements(c context.Context, t *testing.T, admin, gateway *store.DB, tid tenant.ID, tenantID, keyID string, called map[string]bool) {
 	t.Helper()
 	must := func(what string, err error) {
 		t.Helper()
@@ -27,16 +27,18 @@ func limitStatements(c context.Context, t *testing.T, admin, gateway *store.DB, 
 		}
 	}
 	must("limit rules written", admin.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
+		// A rule of a key names the key by foreign key (migration 0011): keyID is a live virtual key of the tenant.
 		for _, r := range []struct {
-			kind, id, metric string
-			value            int64
+			kind, metric string
+			value        int64
 		}{
-			{"tenant", "", "tokens_per_minute", 1000000},
-			{"key", "k1", "requests_per_minute", 60},
-			{"key", "k1", "concurrent_requests", 4},
+			{"tenant", "tokens_per_minute", 1000000},
+			{"key", "requests_per_minute", 60},
+			{"key", "concurrent_requests", 4},
 		} {
-			if _, err := tx.Exec(c, `INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, subject_id, metric, limit_value) VALUES ($1::uuid, $2, $3, $4, $5)`,
-				tenantID, r.kind, r.id, r.metric, r.value); err != nil {
+			if _, err := tx.Exec(c, `INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, virtual_key_id, metric, limit_value)
+				VALUES ($1::uuid, $2, (SELECT id FROM pandokos.virtual_key WHERE key_id = CASE WHEN $2 = 'key' THEN $5 END), $3, $4)`,
+				tenantID, r.kind, r.metric, r.value, keyID); err != nil {
 				return err
 			}
 		}
@@ -71,13 +73,13 @@ func limitStatements(c context.Context, t *testing.T, admin, gateway *store.DB, 
 		if err != nil {
 			return err
 		}
-		// The identifiers are generated: the want carries those that were read. Since sprint 5.2 a
+		// The identifiers are generated (and the statement orders by them, so by insertion): the want carries those that were read. Since sprint 5.2 a
 		// rule also has a scope, a currency, an enforcement and thresholds; the rows above leave
 		// them at their defaults.
 		want := []queries.ListLimitRulesRow{
-			{SubjectKind: "key", SubjectID: "k1", Metric: "concurrent_requests", LimitValue: 4, Enforce: true, Thresholds: []int16{}},
-			{SubjectKind: "key", SubjectID: "k1", Metric: "requests_per_minute", LimitValue: 60, Enforce: true, Thresholds: []int16{}},
 			{SubjectKind: "tenant", SubjectID: "", Metric: "tokens_per_minute", LimitValue: 1000000, Enforce: true, Thresholds: []int16{}},
+			{SubjectKind: "key", SubjectID: keyID, Metric: "requests_per_minute", LimitValue: 60, Enforce: true, Thresholds: []int16{}},
+			{SubjectKind: "key", SubjectID: keyID, Metric: "concurrent_requests", LimitValue: 4, Enforce: true, Thresholds: []int16{}},
 		}
 		for i := range want {
 			if i < len(rules) {

@@ -202,7 +202,7 @@ type UsageRow struct {
 	StartedAt             time.Time
 	PrincipalID           string // a service account ID; a random one when empty
 	KeyID                 string
-	Provider, Model       string // "openai" and "" when empty
+	Provider, Model       string // "openai" and "" when empty; the model ID is that of the catalogue entry of the name, NULL when there is none
 	NoCredential          bool   // no credential was opened for the request: it is not counted
 	InputTokens           int64  // reported by the provider; both zero: no token figure
 	OutputTokens          int64
@@ -255,12 +255,13 @@ func (d *Database) SeedUsage(tb testing.TB, id tenant.ID, rows ...UsageRow) {
 				eout, outSource = r.EstimatedOutputTokens, "estimated"
 			}
 			_, err := tx.Exec(c, `INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind,
-					principal_id, key_id, credential_id, provider, api_family, operation, model, outcome, duration_ms,
+					principal_id, key_id, credential_id, provider, api_family, operation, model, model_id, outcome, duration_ms,
 					input_source, output_source, input_tokens, output_tokens, estimated_input_tokens, estimated_output_tokens,
 					cost_status, cost, currency, price_version_id)
 				VALUES ($1::uuid, pandokos.uuid_v7(), $2, md5(random()::text), 'service_account',
 					COALESCE($3::text, gen_random_uuid()::text), $4, CASE WHEN $5 THEN NULL ELSE gen_random_uuid() END,
-					$6, $6, 'chat.completions', $7, $8, 1, $9, $10, $11::bigint, $12::bigint, $13::bigint, $14::bigint,
+					$6, $6, 'chat.completions', $7, (SELECT m.id FROM pandokos.model m JOIN pandokos.provider p ON p.id = m.provider_id WHERE p.name = $6 AND m.name = $7),
+					$8, 1, $9, $10, $11::bigint, $12::bigint, $13::bigint, $14::bigint,
 					CASE WHEN $15::numeric IS NULL THEN 'none' ELSE 'known' END, $15::numeric, $16::text,
 					CASE WHEN $15::numeric IS NULL THEN NULL ELSE gen_random_uuid() END)`,
 				id.String(), r.StartedAt.UTC(), principal, r.KeyID, r.NoCredential, provider, r.Model, outcome,

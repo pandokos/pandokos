@@ -16,6 +16,7 @@ import (
 // Target is where an authorized call goes. Every field comes from the catalogue.
 type Target struct {
 	Provider, Endpoint string // names
+	ProviderID         string // catalogue ID of the provider (sprint 5.3, C3)
 	ModelID, Model     string // catalogue ID and public name
 	UpstreamModel      string // what the provider receives as model
 	BaseURL            *url.URL
@@ -54,6 +55,7 @@ type LimitEstimate struct {
 	InputTokens, OutputTokens int64
 	Cost                      pricing.Cost
 	Provider, Model           string    // names of the target
+	ProviderID, ModelID       string    // identifiers of the target (sprint 5.3, C3)
 	Start                     time.Time // start of the request: the period its amounts belong to
 }
 
@@ -68,16 +70,30 @@ type LimitRefusal struct {
 	Code                   string // "rate_limited", "quota_exceeded" or "no_price"
 	Level, Subject, Metric string
 	Scope, Currency        string // how narrow the rule is (all, provider, model); the currency of a budget
+	PriceCurrency          string // with code no_price: the currency of the estimate's price, empty without one (sprint 5.3, C3)
 	Limit, Remaining       int64
 	RetryAfter, Reset      time.Duration
 	OverLimit              bool
 }
 
+// LimitState is how the limits treated a request (sprint 5.3, section 5.5): the value of
+// usage_record.limit_state.
+type LimitState string
+
+// The states of a request.
+const (
+	LimitStateNotEvaluated LimitState = "not_evaluated" // the request ended before the limits, or there is no limiter
+	LimitStateUnlimited    LimitState = "unlimited"     // no rule matched the request
+	LimitStateLimited      LimitState = "limited"       // every matching limit was evaluated
+	LimitStateUnverified   LimitState = "unverified"    // a matching limit could not be evaluated
+)
+
 // Limits reserves capacity for a call. A nil Limits enforces nothing.
 type Limits interface {
 	// Reserve returns the reservation of an admitted call (never nil then), a refusal, or an
-	// error when the limits of the tenant cannot be verified now.
-	Reserve(ctx context.Context, p authz.Principal, e LimitEstimate) (Reservation, *LimitRefusal, error)
+	// error when the limits of the tenant cannot be verified now; with each the state the limits
+	// found the request in.
+	Reserve(ctx context.Context, p authz.Principal, e LimitEstimate) (Reservation, *LimitRefusal, LimitState, error)
 }
 
 // Reservation is settled or released exactly once by the gateway. Neither method blocks or

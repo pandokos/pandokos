@@ -929,3 +929,164 @@ func expect403Op(t *testing.T, r *apitest.Response) {
 		t.Errorf("status %d, want 403 forbidden\n%s", r.Status, r.Body)
 	}
 }
+
+// TestDeletePlatformIssuerLimitRules is T-695: pandokos.delete_platform_issuer_limit_rules runs for
+// the admin role in the platform scope only, deletes the rules of the mappings of the given issuer
+// in the named tenants and nothing else, writes one audit row per rule in the log of its tenant,
+// restores the tenant setting and returns a number.
+func TestDeletePlatformIssuerLimitRules(t *testing.T) {
+	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
+		super := d.Super(t)
+		a, b, c := d.SeedTenant(t, "dpi-a"), d.SeedTenant(t, "dpi-b"), d.SeedTenant(t, "dpi-c")
+		pi := d.SeedPlatformIssuer(t, "dpi-p", a, b, c)
+		other := d.SeedPlatformIssuer(t, "dpi-q", a)
+		type fx struct{ sa, mapping, rule string }
+		world := map[string]fx{}
+		for name, t0 := range map[string]struct {
+			tenant tenant.ID
+			issuer string
+		}{"a/p": {a, pi}, "b/p": {b, pi}, "c/p": {c, pi}, "a/q": {a, other}} {
+			sa := d.SeedServiceAccount(t, t0.tenant, "sa-"+strings.ReplaceAll(name, "/", "-"))
+			sm := d.SeedSubjectMapping(t, t0.tenant, t0.issuer, true, sa, "subject-"+strings.ReplaceAll(name, "/", "-"))
+			d.SeedLimitRule(t, t0.tenant, "key", sm, "requests_per_day", 5)
+			world[name] = fx{sa, sm, scalar(t, super, `SELECT id::text FROM pandokos.limit_rule WHERE subject_mapping_id = $1::uuid`, sm)}
+		}
+		// A rule of the tenant itself, of the same tenant: never touched.
+		d.SeedLimitRule(t, a, "tenant", "", "requests_per_day", 9)
+
+		const reqID = "0123456789abcdef0123456789abcdef"
+		call := func(sess session, role string, issuer string, tenants []string) (int64, error) {
+			t.Helper()
+			rows, err := query(t, d.Connect(t, role), sess, `SELECT pandokos.delete_platform_issuer_limit_rules($1::uuid, $2::uuid[], 'actor-1', 'the actor', 'pabcdefghijklmnop', $3) AS n`,
+				issuer, tenants, reqID)
+			if err != nil {
+				return 0, err
+			}
+			return rows[0]["n"].(int64), nil
+		}
+		platform := session{name: "platform", setting: "app.scope", value: "platform"}
+		all := []string{a.String(), b.String(), c.String()}
+
+		t.Run("only the admin role, only in the platform scope", func(t *testing.T) {
+			for _, role := range []string{"gateway", "worker"} {
+				if _, err := call(platform, role, pi, all); sqlstate(err) != insufficientPrivilege {
+					t.Errorf("%s: %v, want SQLSTATE %s", role, err, insufficientPrivilege)
+				}
+			}
+			for _, sess := range []session{noSession, sessions(a)[0], {name: "empty", setting: "app.tenant_id", value: ""}} {
+				if _, err := call(sess, "admin", pi, all); sqlstate(err) != insufficientPrivilege {
+					t.Errorf("admin in session %s: %v, want SQLSTATE %s", sess.name, err, insufficientPrivilege)
+				}
+			}
+			if n := scalar(t, super, `SELECT count(*)::text FROM pandokos.limit_rule WHERE subject_mapping_id IS NOT NULL`); n != "4" {
+				t.Errorf("%s rules after the refused calls, want 4", n)
+			}
+		})
+
+		t.Run("malformed actor arguments are refused", func(t *testing.T) {
+			for what, args := range map[string][]any{
+				"an actor ID with a space":   {pi, all, "a b", "name", "k", reqID},
+				"a NULL actor ID":            {pi, all, nil, "name", "k", reqID},
+				"an actor name of 201":       {pi, all, "a", strings.Repeat("n", 201), "k", reqID},
+				"an actor name with control": {pi, all, "a", "na\nme", "k", reqID},
+				"a key ID with a space":      {pi, all, "a", "name", "k k", reqID},
+				"a request ID of 31":         {pi, all, "a", "name", "k", reqID[:31]},
+				"a request ID in capitals":   {pi, all, "a", "name", "k", strings.ToUpper(reqID)},
+				"a NULL request ID":          {pi, all, "a", "name", "k", nil},
+				"a NULL issuer":              {nil, all, "a", "name", "k", reqID},
+			} {
+				_, err := query(t, d.Connect(t, "admin"), platform, `SELECT pandokos.delete_platform_issuer_limit_rules($1::uuid, $2::uuid[], $3, $4, $5, $6)`, args...)
+				if sqlstate(err) != checkViolation {
+					t.Errorf("%s: %v, want SQLSTATE %s", what, err, checkViolation)
+				}
+			}
+		})
+
+		t.Run("the rules of the issuer's mappings in the named tenants go, others stay", func(t *testing.T) {
+			// Named: A and B only. C's rule stays, so does the other issuer's rule in A and the tenant's own rule.
+			rows, err := query(t, d.Connect(t, "admin"), platform, `SELECT pg_typeof(pandokos.delete_platform_issuer_limit_rules($1::uuid, $2::uuid[], 'actor-1', 'the actor', 'pabcdefghijklmnop', $3))::text AS typ,
+				current_setting('app.tenant_id', true) AS before`, pi, []string{a.String(), b.String()}, reqID)
+			if err != nil || len(rows) != 1 || rows[0]["typ"] != "bigint" {
+				t.Fatalf("the result: %v %v", rows, err)
+			}
+			if n := scalar(t, super, `SELECT count(*)::text FROM pandokos.limit_rule WHERE id = ANY($1::uuid[])`, []string{world["a/p"].rule, world["b/p"].rule}); n != "0" {
+				t.Errorf("%s of the named rules are still there", n)
+			}
+			for _, k := range []string{"c/p", "a/q"} {
+				if n := scalar(t, super, `SELECT count(*)::text FROM pandokos.limit_rule WHERE id = $1::uuid`, world[k].rule); n != "1" {
+					t.Errorf("the rule %s was deleted", k)
+				}
+			}
+			if n := scalar(t, super, `SELECT count(*)::text FROM pandokos.limit_rule WHERE subject_kind = 'tenant'`); n != "1" {
+				t.Errorf("the tenant's own rule: %s rows", n)
+			}
+			// One audit row per rule, in the log of its tenant, with the actor given.
+			for k, tn := range map[string]tenant.ID{"a/p": a, "b/p": b} {
+				rows, err := super.Query(ctx(t), `SELECT tenant_id::text, actor_type, actor_id, actor_name, key_id, request_id, outcome, resource_type, detail::text
+					FROM pandokos.audit_event WHERE action = 'limit.delete' AND resource_id = $1`, world[k].rule)
+				if err != nil {
+					t.Fatal(err)
+				}
+				n := 0
+				for rows.Next() {
+					n++
+					var tid, at, aid, an, kid, rid, outcome, rt, detail string
+					if err := rows.Scan(&tid, &at, &aid, &an, &kid, &rid, &outcome, &rt, &detail); err != nil {
+						t.Fatal(err)
+					}
+					if tid != tn.String() || at != "platform" || aid != "actor-1" || an != "the actor" || kid != "pabcdefghijklmnop" || rid != reqID || outcome != "success" || rt != "limit_rule" {
+						t.Errorf("%s: audit row %s %s %s %s %s %s %s %s", k, tid, at, aid, an, kid, rid, outcome, rt)
+					}
+					var det map[string]any
+					if err := json.Unmarshal([]byte(detail), &det); err != nil {
+						t.Fatal(err)
+					}
+					if det["cause"] != "platform_issuer_deleted" || det["cause_id"] != pi || det["subject_kind"] != "key" || det["subject_id"] != world[k].mapping || det["metric"] != "requests_per_day" || det["limit"] != float64(5) {
+						t.Errorf("%s: detail %v", k, det)
+					}
+				}
+				rows.Close()
+				if n != 1 {
+					t.Errorf("%s: %d audit rows, want one", k, n)
+				}
+			}
+			if n := scalar(t, super, `SELECT count(*)::text FROM pandokos.audit_event WHERE action = 'limit.delete'`); n != "2" {
+				t.Errorf("%s audit rows in all, want 2 (nothing for the rules that stay)", n)
+			}
+			if n := scalar(t, super, `SELECT count(*)::text FROM pandokos.platform_audit_event WHERE action = 'limit.delete'`); n != "0" {
+				t.Errorf("%s rows in the platform log", n)
+			}
+		})
+
+		t.Run("the tenant setting is restored", func(t *testing.T) {
+			for _, preset := range []string{"", c.String()} {
+				rows, err := query(t, d.Connect(t, "admin"), session{name: "platform", setting: "app.scope", value: "platform"}, `SELECT set_config('app.tenant_id', $1, true) AS pre,
+					pandokos.delete_platform_issuer_limit_rules($2::uuid, $3::uuid[], 'a', 'n', 'k', $4) AS n, current_setting('app.tenant_id', true) AS post`, preset, other, []string{b.String(), c.String()}, reqID)
+				if err != nil || rows[0]["post"] != preset {
+					t.Errorf("preset %q: after the call the setting is %v (%v)", preset, rows, err)
+				}
+			}
+		})
+
+		t.Run("an issuer with a rule that stays cannot be deleted; without one it can", func(t *testing.T) {
+			// The other issuer's rule in A was not part of the calls above: the issuer cannot go.
+			if _, err := execIn(t, d.Connect(t, "admin"), platform, `DELETE FROM pandokos.platform_issuer WHERE id = $1::uuid`, other); sqlstate(err) != foreignKey {
+				t.Errorf("delete of an issuer whose mapping has a rule: %v, want SQLSTATE %s", err, foreignKey)
+			}
+			n, err := call(platform, "admin", other, []string{a.String()})
+			if err != nil || n != 1 {
+				t.Fatalf("the call for the other issuer: %d %v", n, err)
+			}
+			if _, err := execIn(t, d.Connect(t, "admin"), platform, `DELETE FROM pandokos.platform_issuer WHERE id = $1::uuid`, other); err != nil {
+				t.Errorf("delete of the issuer after its rules went: %v", err)
+			}
+			// A tenant that is not named keeps its rule, which keeps its mapping (and so the issuer).
+			if _, err := execIn(t, d.Connect(t, "admin"), platform, `DELETE FROM pandokos.platform_issuer WHERE id = $1::uuid`, pi); sqlstate(err) != foreignKey {
+				t.Errorf("delete of the issuer while C's rule stays: %v, want SQLSTATE %s", err, foreignKey)
+			}
+			if n, err := call(platform, "admin", pi, nil); err != nil || n != 0 {
+				t.Errorf("no tenant named: %d %v", n, err)
+			}
+		})
+	})
+}

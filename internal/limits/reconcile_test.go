@@ -430,3 +430,98 @@ func TestLoadFoldRebase(t *testing.T) {
 		}
 	})
 }
+
+// TestReconcilerTwoZones is T-705: with the periods of two zones held at once, the pieces the
+// reconciler folds are cut at every start and end of a period the store holds, so that every piece
+// lies inside every counter it is added to; after a change of zone the counters of the old and of
+// the new zone both equal the ledger over their ranges; the reconciler takes no calendar.
+func TestReconcilerTwoZones(t *testing.T) {
+	clk := newClock()
+	clk.t = at(2026, 11, 30, 15, 30, 30)
+	model := &refModel{}
+	m := newMemoryWith(t, clk, nil)
+	led := &fakeLedger{model: model, clk: clk}
+	rec, err := NewReconciler(ReconcilerOptions{Store: m, Ledger: led, Horizon: testHorizon, Interval: testInterval, Logger: quietLogger(), Now: clk.now})
+	if err != nil {
+		t.Fatalf("the reconciler takes no calendar (sprint 5.3): %v", err)
+	}
+	tn := tid(1)
+	utc, tokyo := mustCalendar(t, "UTC"), mustCalendar(t, "Asia/Tokyo")
+	// 2026-11-30T15:00Z is midnight of December 1st in Tokyo and 15:00 in UTC: the boundaries of the
+	// two zones, a day and a month, fall inside the piece the reconciler is about to fold.
+	cut := at(2026, 11, 30, 14, 30, 0)
+	m.SetCut(tn, cut)
+	probe := at(2026, 11, 30, 14, 45, 0)
+	periods := map[string]Period{
+		"utc day": utc.Of(PerDay, probe), "utc month": utc.Of(PerMonth, probe),
+		"tokyo day (old)": tokyo.Of(PerDay, probe), "tokyo month (old)": tokyo.Of(PerMonth, probe),
+		"tokyo day (new)": tokyo.Of(PerDay, at(2026, 11, 30, 15, 10, 0)), "tokyo month (new)": tokyo.Of(PerMonth, at(2026, 11, 30, 15, 10, 0)),
+	}
+	add := func(start time.Time, key string, tokens int64) {
+		model.add(&refReq{tn: tn, sa: "sa1", key: key, start: start, end: refSettled, admitted: true, actTokens: tokens, commitAt: start, resolveAt: start})
+	}
+	add(at(2026, 11, 30, 3, 0, 0), "k1", 1)
+	add(at(2026, 11, 30, 14, 31, 0), "k1", 10)
+	add(at(2026, 11, 30, 14, 45, 0), "k1", 100)
+	add(at(2026, 11, 30, 14, 59, 59), "k1", 1000)
+	add(at(2026, 11, 30, 15, 0, 0), "k1", 10_000)
+	add(at(2026, 11, 30, 15, 10, 0), "k1", 100_000)
+	add(at(2026, 11, 30, 15, 17, 0), "k1", 1_000_000)
+	add(at(2026, 11, 29, 16, 0, 0), "k1", 7) // Tokyo's November 30th, UTC's November 29th
+
+	limitOf := func(name string) Limit {
+		p := periods[name]
+		metric := TokensPerDay
+		if p.End.Sub(p.Start) > 32*time.Hour {
+			metric = TokensPerMonth
+		}
+		return perLimit(tn, SubjectTenant, "", metric, 1e12, p)
+	}
+	held := map[string]Limit{}
+	for name, p := range periods {
+		l := limitOf(name)
+		held[name] = l
+		m.Load(tn, p, []Limit{l}, model.Ledger(clk.now(), tn, p.Start, cut, earlier(p.End, cut.Add(time.Hour))))
+	}
+	before := len(led.callLog())
+
+	rec.Tick(context.Background())
+
+	next, ok := m.Cut(tn)
+	if !ok || !next.After(cut) {
+		t.Fatalf("the cut did not move: %v %v", next, ok)
+	}
+	// Every piece lies inside every period the store holds.
+	boundaries := map[time.Time]bool{}
+	for _, p := range periods {
+		boundaries[p.Start], boundaries[p.End] = true, true
+	}
+	pieces := 0
+	for _, c := range led.callLog()[before:] {
+		pieces++
+		for x := range boundaries {
+			if c.from.Before(x) && x.Before(c.to) {
+				t.Errorf("the piece [%s, %s) straddles the boundary %s of a held period", c.from.Format("15:04:05"), c.to.Format("15:04:05"), x.Format("01-02 15:04:05"))
+			}
+		}
+	}
+	if pieces < 2 {
+		t.Errorf("%d ledger reads for a range that holds a boundary: the range was not cut", pieces)
+	}
+	// Every counter equals the ledger over its range, up to the new cut.
+	for name, l := range held {
+		end := earlier(l.Period.End, next)
+		want := Sum(l, model.Ledger(clk.now(), tn, l.Period.Start, end, end))
+		got, ok := m.Counted(l)
+		if !ok || got.N != want.N {
+			t.Errorf("%s %v: counted %d (present %v), the ledger holds %d", name, l.Period, got.N, ok, want.N)
+		}
+	}
+	// A year of this: the same boundaries a day later, with the clock moved on.
+	clk.advance(25 * time.Hour)
+	add(at(2026, 12, 1, 10, 0, 0), "k1", 5)
+	rec.Tick(context.Background())
+	if c2, _ := m.Cut(tn); !c2.After(next) {
+		t.Errorf("the second tick left the cut at %s", c2)
+	}
+}
