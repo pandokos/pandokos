@@ -27,8 +27,8 @@ audit actions, and the capability check's `budget` field now reads `available`, 
 
 | Sprint | Design and plan | Delivered | Review |
 |---|---|---|---|
-| 5.1 Reserve and settle | [sprint](5.1-reserve-and-settle/sprint.md), [plan](5.1-reserve-and-settle/plan.md) | PR #39, merged as f680d9d | 3 rounds (8 minor findings, then 1 minor, then none) and one CI fix (the container test expected schema version 9) |
-| 5.2 Quotas and budgets | [sprint](5.2-quotas-and-budgets/sprint.md), [plan](5.2-quotas-and-budgets/plan.md) | PR #TBD | 3 rounds (1 major, the period counters of a tenant's first load near a period boundary were not loaded from the ledger, and 5 minor; then 1 minor, a race in the pruning of the reconciler's lock; then none) |
+| 5.1 Reserve and settle | [sprint](5.1-reserve-and-settle/sprint.md), [plan](5.1-reserve-and-settle/plan.md) | [#39](https://github.com/pandokos/pandokos/pull/39), merged as f680d9d | 3 rounds (8 minor findings, then 1 minor, then none) and one CI fix (the container test expected schema version 9) |
+| 5.2 Quotas and budgets | [sprint](5.2-quotas-and-budgets/sprint.md), [plan](5.2-quotas-and-budgets/plan.md) | [#40](https://github.com/pandokos/pandokos/pull/40) | 3 rounds (1 major, the period counters of a tenant's first load near a period boundary were not loaded from the ledger, and 5 minor; then 1 minor, a race in the pruning of the reconciler's lock; then none) |
 
 Each sprint followed the cycle of the earlier epics: a frozen design, tests committed failing before
 the implementation, a review against the design repeated until it reported no findings, a pull
