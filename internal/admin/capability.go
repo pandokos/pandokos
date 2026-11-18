@@ -8,6 +8,8 @@ import (
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/catalog"
+	"github.com/pandokos/pandokos/internal/limits" //nolint:depguard // the capability check reads the ledger with the limiter's own sum (sprint 5.2, D-18)
+	"github.com/pandokos/pandokos/internal/pricing"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/queries"
 	"github.com/pandokos/pandokos/internal/tenant"
@@ -51,7 +53,7 @@ func (s *server) GetCapability(ctx context.Context, in adminapi.GetCapabilityInp
 		return nil, err
 	}
 	p := authz.Principal{Kind: authz.KindServiceAccount, TenantID: tid}
-	_, _, rerr := snap.Resolve(p, ta, in.Provider, in.Model)
+	model, _, rerr := snap.Resolve(p, ta, in.Provider, in.Model)
 
 	out := &adminapi.Capability{Provider: in.Provider, Model: in.Model, Reasons: []string{}}
 	out.Checks.ProviderAvailable = !errors.Is(rerr, catalog.ErrProviderUnavailable)
@@ -87,9 +89,84 @@ func (s *server) GetCapability(ctx context.Context, in adminapi.GetCapabilityInp
 	} else {
 		out.Reasons = append(out.Reasons, "no_credential")
 	}
+	now := time.Now().UTC()
+	budget, reasons, err := s.budgetCheck(ctx, tid, snap, model, rerr == nil, in.Provider, in.Model, now)
+	if err != nil {
+		return nil, err
+	}
+	out.Checks.Budget = budget
+	out.Reasons = append(out.Reasons, reasons...)
 	out.Callable = len(out.Reasons) == 0
-	out.CheckedAt = time.Now().UTC()
+	out.CheckedAt = now
 	return out, nil
+}
+
+// budgetCheck is checks.budget (sprint 5.2, section 5.13): the enforced period limits of the tenant
+// that match the provider and the model, read from the ledger by the admin role, never from the
+// counters of the gateway. As the rest of the check it describes a key of the tenant without pin
+// and model list, so the rules of service accounts and keys, soft rules and rate limits take no
+// part; requests in flight are not counted.
+func (s *server) budgetCheck(ctx context.Context, tid tenant.ID, snap *catalog.Snapshot, m catalog.Model, resolved bool,
+	provider, model string, now time.Time) (adminapi.BudgetAvailability, []string, error) {
+	rules, err := limits.LoadRules(ctx, s.db, tid)
+	if err != nil {
+		return "", nil, err
+	}
+	cal := s.limits.Calendar
+	if cal == nil {
+		if cal, err = limits.NewCalendar(time.UTC); err != nil {
+			return "", nil, err
+		}
+	}
+	var matching []limits.Limit
+	for _, l := range rules.For(limits.Query{Provider: provider, Model: model, Start: now}, cal) {
+		if _, period := l.Metric.Period(); period && l.Max > 0 && l.Subject == limits.SubjectTenant {
+			matching = append(matching, l)
+		}
+	}
+	if len(matching) == 0 {
+		return adminapi.BudgetAvailabilityNotEnforced, nil, nil
+	}
+
+	unpriced := false
+	if s.limits.OnUnknownPrice != "allow" && resolved {
+		version, found := pricing.VersionAt(snap.Versions(m.ID), now)
+		for _, l := range matching {
+			if l.Metric.Cost() && (!found || version.Currency != l.Currency) {
+				unpriced = true
+			}
+		}
+	}
+	exhausted := false
+	ledger := limits.NewLedger(s.db)
+	byPeriod := map[limits.Period][]limits.UsageGroup{}
+	for _, l := range matching {
+		rows, read := byPeriod[l.Period]
+		if !read {
+			if rows, err = ledger.Usage(ctx, tid, l.Period.Start, now, now); err != nil {
+				return "", nil, err
+			}
+			byPeriod[l.Period] = rows
+		}
+		used := limits.Sum(l, rows)
+		if l.Metric.Cost() {
+			exhausted = exhausted || used.Cost.Cmp(amountDecimal(l.Max)) >= 0
+		} else {
+			exhausted = exhausted || used.N >= l.Max
+		}
+	}
+	var reasons []string
+	value := adminapi.BudgetAvailabilityAvailable
+	if unpriced {
+		value, reasons = adminapi.BudgetAvailabilityUnpriced, append(reasons, "no_price")
+	}
+	if exhausted {
+		if !unpriced {
+			value = adminapi.BudgetAvailabilityExhausted
+		}
+		reasons = append(reasons, "budget_exhausted")
+	}
+	return value, reasons, nil
 }
 
 // defaultCredential returns the metadata of the tenant's default credential of a provider, read

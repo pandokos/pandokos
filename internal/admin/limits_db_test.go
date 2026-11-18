@@ -221,8 +221,8 @@ func TestLimits(t *testing.T) {
 				t.Errorf("%v: %d\n%s", b, r.Status, r.Body)
 			}
 		}
-		w.create(t, map[string]any{"metric": "cost_per_day", "amount": "5", "currency": "EUR", "provider": w.cat.Provider.Name})
-		expect(t, w.do(t, w.ka, "POST", w.baseA, map[string]any{"metric": "cost_per_day", "amount": "7", "currency": "USD", "provider": w.cat.Provider.Name}), 409, adminapi.ProblemCodeConflict)
+		w.create(t, map[string]any{"metric": "cost_per_day", "amount": "5", "currency": "EUR", "provider": w.cat.Provider.Name, "model": w.cat.All.Name})
+		expect(t, w.do(t, w.ka, "POST", w.baseA, map[string]any{"metric": "cost_per_day", "amount": "7", "currency": "USD", "provider": w.cat.Provider.Name, "model": w.cat.All.Name}), 409, adminapi.ProblemCodeConflict)
 		// The same rule in another tenant is fine.
 		if r := w.do(t, w.kb, "POST", "/v1/tenants/"+w.b.ID+"/limits", map[string]any{"metric": "tokens_per_day", "limit": 5}); r.Status != 201 {
 			t.Errorf("the same rule in tenant B: %d\n%s", r.Status, r.Body)
@@ -380,14 +380,14 @@ func TestLimits(t *testing.T) {
 	})
 
 	t.Run("delete returns the rule as it was", func(t *testing.T) {
-		rule := w.create(t, map[string]any{"metric": "tokens_per_month", "limit": 77, "provider": w.cat.Provider.Name})
+		rule := w.create(t, map[string]any{"metric": "requests_per_month", "limit": 77, "provider": w.cat.Provider.Name})
 		gone := decodeInto[adminapi.LimitRule](t, w.do(t, w.ka, "DELETE", w.baseA+"/"+rule.ID, nil), 200)
 		if !reflect.DeepEqual(gone, rule) {
 			t.Errorf("delete returned\n%+v\nwant\n%+v", gone, rule)
 		}
 		expect(t, w.do(t, w.ka, "GET", w.baseA+"/"+rule.ID, nil), 404, adminapi.ProblemCodeNotFound)
 		expect(t, w.do(t, w.ka, "DELETE", w.baseA+"/"+rule.ID, nil), 404, adminapi.ProblemCodeNotFound)
-		if r := w.do(t, w.ka, "POST", w.baseA, map[string]any{"metric": "tokens_per_month", "limit": 78, "provider": w.cat.Provider.Name}); r.Status != 201 {
+		if r := w.do(t, w.ka, "POST", w.baseA, map[string]any{"metric": "requests_per_month", "limit": 78, "provider": w.cat.Provider.Name}); r.Status != 201 {
 			t.Errorf("the scope of a deleted rule cannot be used again: %d", r.Status)
 		}
 		other := w.create(t, map[string]any{"metric": "requests_per_minute", "limit": 7, "provider": w.cat.Provider.Name})
@@ -671,7 +671,7 @@ func TestLimitEvents(t *testing.T) {
 		t.Helper()
 		time.Sleep(3 * time.Millisecond) // the identifiers are time-ordered: one event a millisecond
 		if _, err := super.Exec(ctx(t), `INSERT INTO pandokos.limit_event (tenant_id, kind, rule_id, rule_level, subject_kind, metric, currency, period_start, period_end, percent, limit_value, observed)
-			VALUES ($1::uuid, $2, $3::uuid, 'tenant', 'tenant', $4, $5, $6, $6 + interval '1 day', $7, 100, 81.5)`, tenantID, kind, ruleID, metric, currency, period, percent); err != nil {
+			VALUES ($1::uuid, $2, $3::uuid, 'tenant', 'tenant', $4, $5, $6::timestamptz, $6::timestamptz + interval '1 day', $7, 100, 81.5)`, tenantID, kind, ruleID, metric, currency, period, percent); err != nil {
 			t.Fatal(err)
 		}
 	}

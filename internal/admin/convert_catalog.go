@@ -80,7 +80,7 @@ func modelOut[R modelRow](r R) adminapi.Model {
 		ID: m.ID, Provider: m.Provider, ApiFamily: adminapi.ApiFamily(m.ApiFamily), Name: m.Name, Ref: m.Provider + "/" + m.Name,
 		UpstreamID: m.UpstreamID, DisplayName: m.DisplayName, Description: m.Description, Status: adminapi.ModelStatus(m.Status),
 		Availability: adminapi.ModelAvailability(m.Availability), Capabilities: nonNil(m.Capabilities),
-		ContextWindow: bound(m.ContextWindow), MaxOutputTokens: bound(m.MaxOutputTokens), PriceOverride: m.PriceOverride,
+		ContextWindow: bound(m.ContextWindow), MaxOutputTokens: bound(m.MaxOutputTokens), DefaultOutputTokens: bound(m.DefaultOutputTokens), PriceOverride: m.PriceOverride,
 		CreatedAt: m.CreatedAt.UTC(), UpdatedAt: m.UpdatedAt.UTC(),
 	}
 	return m2

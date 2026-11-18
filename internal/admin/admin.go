@@ -17,7 +17,7 @@ import (
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/catalog"
-	"github.com/pandokos/pandokos/internal/limits" //nolint:depguard // sprint 5.2 scaffolding: part D of the plan lets the capability check name the calendar
+	"github.com/pandokos/pandokos/internal/limits" //nolint:depguard // the capability check names the calendar and reads the ledger with the limiter's own sum (sprint 5.2, D-18)
 	"github.com/pandokos/pandokos/internal/requestid"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/tenant"
@@ -45,7 +45,7 @@ type Options struct {
 	Refresh RefreshOptions
 	// Limits are the settings of the capability check of sprint 5.2: the calendar that says when
 	// the current day and month start (nil: UTC) and limits.on_unknown_price ("refuse", the
-	// default, or "allow"). Scaffolding: part C6 gives them their effect.
+	// default, or "allow").
 	Limits struct {
 		Calendar       *limits.Calendar
 		OnUnknownPrice string
@@ -72,6 +72,10 @@ type server struct {
 	validator vault.Validator
 	snapshot  []byte
 	refresh   RefreshOptions
+	limits    struct {
+		Calendar       *limits.Calendar
+		OnUnknownPrice string
+	}
 }
 
 // reqState is the state of one request, shared by the outer handler and the hooks.
@@ -111,6 +115,7 @@ func New(o Options) (http.Handler, error) {
 	}
 	s := &server{log: o.Logger, db: o.DB, auth: o.Authenticator, now: o.Now, sealer: o.Sealer, validator: o.Validator,
 		snapshot: o.Snapshot, refresh: o.Refresh}
+	s.limits.Calendar, s.limits.OnUnknownPrice = o.Limits.Calendar, o.Limits.OnUnknownPrice
 	if s.now == nil {
 		s.now = time.Now
 	}

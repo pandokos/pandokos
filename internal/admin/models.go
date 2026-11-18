@@ -94,6 +94,7 @@ func (s *server) CreateModel(ctx context.Context, in adminapi.CreateModelInput) 
 		id, err := q.CreateModel(ctx, queries.CreateModelParams{
 			ProviderID: p.ID, Name: b.Name, UpstreamID: upstream, DisplayName: b.DisplayName, Description: b.Description, Status: status,
 			Availability: availability, Capabilities: nonNil(b.Capabilities), ContextWindow: boundParam(b.ContextWindow), MaxOutputTokens: boundParam(b.MaxOutputTokens),
+			DefaultOutputTokens: boundParam(b.DefaultOutputTokens),
 		})
 		if err != nil {
 			return err
@@ -104,7 +105,8 @@ func (s *server) CreateModel(ctx context.Context, in adminapi.CreateModelInput) 
 		}
 		out = modelOut(row)
 		return audit.RecordPlatform(ctx, tx, s.platformEvent(ctx, "model.create", "model", id, map[string]any{
-			"provider": p.Name, "name": row.Name, "upstream_id": row.UpstreamID, "status": row.Status, "availability": row.Availability}))
+			"provider": p.Name, "name": row.Name, "upstream_id": row.UpstreamID, "status": row.Status, "availability": row.Availability,
+			"default_output_tokens": bound(row.DefaultOutputTokens)}))
 	})
 	if err != nil {
 		return nil, mapCatalogError(err)
@@ -165,6 +167,10 @@ func (s *server) UpdateModel(ctx context.Context, in adminapi.UpdateModelInput) 
 		if b.MaxOutputTokens.Set && b.MaxOutputTokens.Value != bound(cur.MaxOutputTokens) {
 			par.SetMaxOutputTokens, par.MaxOutputTokens = true, boundParam(b.MaxOutputTokens.Value)
 			detail["max_output_tokens"] = change(bound(cur.MaxOutputTokens), b.MaxOutputTokens.Value)
+		}
+		if b.DefaultOutputTokens.Set && b.DefaultOutputTokens.Value != bound(cur.DefaultOutputTokens) {
+			par.SetDefaultOutputTokens, par.DefaultOutputTokens = true, boundParam(b.DefaultOutputTokens.Value)
+			detail["default_output_tokens"] = change(bound(cur.DefaultOutputTokens), b.DefaultOutputTokens.Value)
 		}
 		if len(detail) == 0 {
 			out = modelOut(cur)

@@ -26,7 +26,7 @@ type Model struct {
 	ID, Provider, Name, UpstreamID, Status, Availability string
 	ContextWindow, MaxOutputTokens                       int64 // 0: unknown
 	// DefaultOutputTokens is the output reservation per choice of a request to the model that sets
-	// no limit; 0: the configured default. Scaffolding of sprint 5.2: part C6 fills it.
+	// no limit; 0: the configured default.
 	DefaultOutputTokens int64
 }
 
