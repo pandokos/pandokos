@@ -3,7 +3,7 @@ id: SPRINT-5.2
 title: Quotas and budgets
 epic: EPIC-5
 release: v0.2
-status: in-progress
+status: done
 design: draft 2026-11-18
 ---
 
