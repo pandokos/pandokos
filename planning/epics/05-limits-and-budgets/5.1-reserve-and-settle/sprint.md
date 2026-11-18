@@ -3,7 +3,7 @@ id: SPRINT-5.1
 title: Reserve and settle
 epic: EPIC-5
 release: v0.2
-status: in-progress
+status: done
 design: draft 2026-11-17
 ---
 
