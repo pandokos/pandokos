@@ -17,7 +17,7 @@ import (
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/catalog"
-	"github.com/pandokos/pandokos/internal/limits" //nolint:depguard // the capability check names the calendar and reads the ledger with the limiter's own sum (sprint 5.2, D-18)
+	"github.com/pandokos/pandokos/internal/limits"
 	"github.com/pandokos/pandokos/internal/requestid"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/tenant"
