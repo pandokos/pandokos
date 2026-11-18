@@ -66,10 +66,10 @@ published on `127.0.0.1` only.
 
 https://github.com/user-attachments/assets/eb59d47f-a988-45dd-bb48-637374107999
 
-**1. Get the deployment files.**
+**1. Get the deployment files of the latest release.**
 
 ```bash
-git clone --depth 1 https://github.com/pandokos/pandokos.git && cd pandokos/deploy/compose
+git clone --depth 1 --branch v0.1.1 https://github.com/pandokos/pandokos.git && cd pandokos/deploy/compose
 ```
 
 **2. Run the guided setup.** It starts Pandokos and PostgreSQL with the published image

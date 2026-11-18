@@ -29,6 +29,38 @@ Significant design choices are recorded as short Architecture Decision Records i
 - **Maintenance branches.** When a minor version is released, `release/0.1` (and so on) is created from its `v0.1.0` tag. A fix for a released version is merged into `main` first, then cherry-picked onto the maintenance branch through a pull request, and tagged `v0.1.1`.
 - **Protection.** `main`, `release/*` and `v*` tags cannot be pushed to, force-pushed or deleted; changes enter only through pull requests.
 
+### Releasing
+
+The documents are aligned with a release **before** its tag exists, because a tag is never moved and
+the tagged commit is the one the release workflow builds and the readers clone. The same steps serve a
+minor release (from `main`) and a patch release (from the maintenance branch, after the fix is on
+`main`):
+
+1. **The fix or the content is on the branch to tag**: `main` for a new minor version, `release/X.Y`
+   for a patch, reached through a pull request (a fix is merged into `main` first and cherry-picked,
+   `git cherry-pick -x -s`, without anything else from `main`).
+2. **Write the release page `docs/releases/vX.Y.Z.md`**: what is in, what was verified and where, the
+   known limits, the upgrade notes and the maintainer actions. It is the text of the release.
+3. **Align the documents in the same pull request**: the README (the status paragraph and the quick
+   start, which clones the tag `vX.Y.Z` and names the image), `docs/operations/compose.md`,
+   `SECURITY.md` (supported versions) and, for a new minor version, the Compose default image
+   (`ghcr.io/pandokos/pandokos:X.Y`, the moving tag of the minor version, so that a patch release
+   reaches an installation without a change of the files). `TestLatestReleaseIsPinned`
+   (`test/repo/release_test.go`) compares them with the newest page of `docs/releases` and fails
+   when one still names another version. Open the same change against `main`, so that it does not
+   lose the page.
+4. **Merge, then tag immediately.** Check that the CI and the code scanning of the branch are green,
+   then, on the commit that holds the page: `git tag -s -a vX.Y.Z -m "vX.Y.Z"` and
+   `git push origin vX.Y.Z`. Between the merge and the push the quick start names a tag that does not
+   exist yet, so the two are done together.
+5. **The release workflow does the rest** (`release.yml`): it checks the tag and runs the CI, then
+   builds and signs the image, attaches the SBOM and the provenance, verifies them, and creates the
+   GitHub release with the SBOM and the administration API description. Verify the image with the
+   commands of [docs/operations/container.md](docs/operations/container.md#verifying-a-release) and
+   paste or link the release page as the release text.
+6. **A release that fails is not retried with the same tag**: fix forward with the next patch
+   (`v0.1.2`), or the next candidate (`v0.2.0-rc.2`).
+
 ## Sign-off
 
 By contributing you agree that your contribution is licensed under the [Apache License 2.0](LICENSE). Please sign off your commits (`git commit -s`) to certify the [Developer Certificate of Origin](https://developercertificate.org/).
