@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -878,6 +879,99 @@ func TestLimitRuleIntegrity(t *testing.T) {
 			}
 			vkX = vkY
 			expect("key revoked, then rule deleted", "", run(revoke, drop))
+		})
+
+		t.Run("a rule and a revocation in two sessions never both commit", func(t *testing.T) {
+			// Without the advisory lock of the handlers (any role, any caller): the rule insert takes a
+			// share lock of the key row, so the revocation waits for it, or the insert sees the revocation.
+			begin := func(conn *pgx.Conn) pgx.Tx {
+				c := ctx(t)
+				tx, err := conn.Begin(c)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := tx.Exec(c, "SELECT pg_catalog.set_config('app.tenant_id', $1, true)", a.String()); err != nil {
+					t.Fatal(err)
+				}
+				return tx
+			}
+			insert := func(tx pgx.Tx, vk string) error {
+				_, err := tx.Exec(ctx(t), `INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, virtual_key_id, metric, limit_value)
+					VALUES ($1::uuid, 'key', $2::uuid, 'tokens_per_month', 10)`, a.String(), vk)
+				return err
+			}
+			revoke := func(tx pgx.Tx, vk string) error {
+				_, err := tx.Exec(ctx(t), `UPDATE pandokos.virtual_key SET revoked_at = now() WHERE id = $1::uuid`, vk)
+				return err
+			}
+			// blocked reports whether fn is still running after a while (waiting for a lock).
+			blocked := func(fn func() error) (wait func() error, isBlocked bool) {
+				done := make(chan error, 1)
+				go func() { done <- fn() }()
+				select {
+				case err := <-done:
+					return func() error { return err }, false
+				case <-time.After(500 * time.Millisecond):
+					return func() error { return <-done }, true
+				}
+			}
+			other := d.Connect(t, "admin")
+			final := func(vk string) (revoked bool, rules string) {
+				return scalar(t, super, `SELECT (revoked_at IS NOT NULL)::text FROM pandokos.virtual_key WHERE id = $1::uuid`, vk) == "true",
+					scalar(t, super, `SELECT count(*)::text FROM pandokos.limit_rule WHERE virtual_key_id = $1::uuid`, vk)
+			}
+
+			t.Run("the rule first", func(t *testing.T) {
+				sa := d.SeedServiceAccount(t, a, "sa-race-1")
+				_, vk := d.SeedVirtualKey(t, a, sa)
+				tx1, tx2 := begin(ad), begin(other)
+				if err := insert(tx1, vk); err != nil {
+					t.Fatal(err)
+				}
+				wait, isBlocked := blocked(func() error { return revoke(tx2, vk) })
+				if !isBlocked {
+					t.Error("the revocation did not wait for the transaction that inserts a rule of the key")
+				}
+				err1 := tx1.Commit(ctx(t))
+				errRevoke := wait()
+				var err2 error
+				if errRevoke == nil {
+					err2 = tx2.Commit(ctx(t))
+				} else {
+					_ = tx2.Rollback(ctx(t))
+				}
+				revoked, rules := final(vk)
+				if err1 != nil || (errRevoke == nil && err2 == nil) || (revoked && rules != "0") {
+					t.Errorf("rule commit %v, revoke %v, revoke commit %v: revoked %v with %s rules", err1, errRevoke, err2, revoked, rules)
+				}
+				if sqlstate(err2) != restrictViolation {
+					t.Errorf("the revoking transaction: %v, want SQLSTATE %s at the commit", err2, restrictViolation)
+				}
+			})
+
+			t.Run("the revocation first", func(t *testing.T) {
+				sa := d.SeedServiceAccount(t, a, "sa-race-2")
+				_, vk := d.SeedVirtualKey(t, a, sa)
+				tx1, tx2 := begin(ad), begin(other)
+				if err := revoke(tx2, vk); err != nil {
+					t.Fatal(err)
+				}
+				wait, isBlocked := blocked(func() error { return insert(tx1, vk) })
+				if !isBlocked {
+					t.Error("the insert did not wait for the transaction that revokes the key")
+				}
+				if err := tx2.Commit(ctx(t)); err != nil {
+					t.Fatal(err)
+				}
+				errInsert := wait()
+				_ = tx1.Rollback(ctx(t))
+				if sqlstate(errInsert) != checkViolation {
+					t.Errorf("the insert after the revocation: %v, want SQLSTATE %s", errInsert, checkViolation)
+				}
+				if revoked, rules := final(vk); !revoked || rules != "0" {
+					t.Errorf("revoked %v with %s rules, want revoked with none", revoked, rules)
+				}
+			})
 		})
 
 		t.Run("a subject, a provider or a model that a rule names cannot be deleted", func(t *testing.T) {

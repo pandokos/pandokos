@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -1088,6 +1089,46 @@ func TestDeletePlatformIssuerLimitRules(t *testing.T) {
 						t.Fatalf("round %d, call %d: %v", i, j, err)
 					}
 				}
+			}
+		})
+
+		t.Run("a tenant without a mapping of the issuer is neither locked nor touched", func(t *testing.T) {
+			// The caller may name every tenant of the installation. The lock of createLimit on a tenant
+			// with nothing to delete is not taken: another transaction holding it does not block the call.
+			e, idle := d.SeedTenant(t, "dpi-e"), d.SeedTenant(t, "dpi-idle")
+			pe := d.SeedPlatformIssuer(t, "dpi-r", e)
+			sa := d.SeedServiceAccount(t, e, "sa-dpi-e")
+			sm := d.SeedSubjectMapping(t, e, pe, true, sa, "subject-dpi-e")
+			d.SeedLimitRule(t, e, "key", sm, "requests_per_day", 5)
+			holder := d.Super(t)
+			c := ctx(t)
+			tx, err := holder.Begin(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = tx.Rollback(c) }()
+			if _, err := tx.Exec(c, `SELECT pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('pandokos.limit_rule:' || $1::text, 0))`, idle.String()); err != nil {
+				t.Fatal(err)
+			}
+			type result struct {
+				n   int64
+				err error
+			}
+			done := make(chan result, 1)
+			go func() {
+				n, err := call(platform, "admin", pe, []string{idle.String(), e.String()})
+				done <- result{n, err}
+			}()
+			select {
+			case r := <-done:
+				if r.err != nil || r.n != 1 {
+					t.Errorf("the call: %d rules, %v, want 1", r.n, r.err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("the call waits for the lock of a tenant that has no mapping of the issuer")
+			}
+			if n := scalar(t, super, `SELECT count(*)::text FROM pandokos.audit_event WHERE action = 'limit.delete' AND tenant_id = $1::uuid`, idle.String()); n != "0" {
+				t.Errorf("%s audit rows in the log of the tenant that was only named", n)
 			}
 		})
 

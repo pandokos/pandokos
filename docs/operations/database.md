@@ -519,7 +519,10 @@ cross the tenant boundary ([limits guide](limits.md),
 - Two triggers hold "a revoked key has no rule", since a key is never deleted and its foreign key
   never fires: `limit_rule_key_guard` refuses a rule for a revoked key, and the deferred constraint
   trigger `virtual_key_revoke_guard` fails the commit of a transaction that revokes a key and leaves a
-  rule of it.
+  rule of it. The first takes a share lock of the key row before it looks at `revoked_at`, so the pair
+  is race-free for every role and caller, with or without the advisory lock of the handlers: a
+  revocation waits for a transaction that inserts a rule, and an insert that waited for a revocation
+  sees it and is refused.
 - `tenant` gains `time_zone`, `time_zone_previous` and `time_zone_effective_from`. The trigger
   `tenant_time_zone_guard` checks the shape of every change: the zone in force changes only through a
   pending change whose instant is in the future and at most 32 days away, a pending change that is
@@ -544,7 +547,9 @@ cross the tenant boundary ([limits guide](limits.md),
   executable by the admin role. Deleting a platform-level issuer cascades to the subject mappings of
   its tenants, and a mapping that a rule names cannot go. The platform session sees neither the
   tenants' rules nor their audit logs, so the function refuses a session outside the platform scope,
-  goes tenant by tenant in a fixed order as that tenant's session, takes the tenant's rule lock,
+  goes tenant by tenant in a fixed order as that tenant's session, skips a tenant that has no mapping
+  of the issuer (no lock, nothing touched, so the caller may name every tenant), takes the lock of the
+  others' rules,
   deletes the rules of that issuer's mappings, writes one `limit.delete` audit row for each in the
   log of the tenant (`cause` `platform_issuer_deleted`, actor type `platform`), restores the caller's
   tenant setting and returns the number. It can delete nothing but rules of mappings of the issuer it

@@ -304,6 +304,12 @@ CREATE FUNCTION pandokos.limit_rule_key_guard() RETURNS trigger
     SET search_path = pg_catalog, pg_temp
 AS $$
 BEGIN
+    IF NEW.virtual_key_id IS NOT NULL THEN
+        -- The share lock makes the pair of triggers race-free for every role, whatever advisory lock a
+        -- caller took: a transaction that revokes the key waits for this one to commit (and then finds
+        -- the rule when it commits), one that has revoked it first is seen here once it commits.
+        PERFORM 1 FROM pandokos.virtual_key k WHERE k.tenant_id = NEW.tenant_id AND k.id = NEW.virtual_key_id FOR SHARE;
+    END IF;
     IF NEW.virtual_key_id IS NOT NULL
        AND EXISTS (SELECT 1 FROM pandokos.virtual_key k
                     WHERE k.tenant_id = NEW.tenant_id AND k.id = NEW.virtual_key_id AND k.revoked_at IS NOT NULL) THEN
@@ -369,6 +375,12 @@ BEGIN
     END IF;
     FOREACH t IN ARRAY ARRAY(SELECT DISTINCT x FROM pg_catalog.unnest(COALESCE(p_tenant_ids, ARRAY[]::uuid[])) AS x ORDER BY x) LOOP
         PERFORM pg_catalog.set_config('app.tenant_id', t::text, true);
+        -- A tenant with no mapping of this issuer has nothing to delete: it is neither locked nor
+        -- touched (the caller may name every tenant of the installation). Safe without the lock: the
+        -- handler holds the row of the issuer, so no mapping of it is created meanwhile.
+        IF NOT EXISTS (SELECT 1 FROM pandokos.subject_mapping m WHERE m.tenant_id = t AND m.platform_issuer_id = p_issuer_id) THEN
+            CONTINUE;
+        END IF;
         -- The lock of createLimit: no rule is created for one of these mappings meanwhile.
         PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('pandokos.limit_rule:' || t::text, 0));
         WITH gone AS (
