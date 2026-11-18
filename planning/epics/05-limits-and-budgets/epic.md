@@ -1,7 +1,7 @@
 ---
 id: EPIC-5
 title: Limits and budgets
-status: todo
+status: in-progress
 release: v0.2
 depends_on: [EPIC-3]
 ---
@@ -47,7 +47,11 @@ reserved.
 - Soft thresholds that record an event (delivery to external systems comes with sprint 6.4).
 - Counters rebuilt from ledger aggregates at start; periodic reconciliation by the worker.
 - Behaviour when the counter store fails; configuration of the default.
-- Administration API and CLI for limits; documentation of what is strict and what is best effort.
+- The `budget` field of the capability check (carried from epic 3, with the read of a counter it needs).
+- A default output reservation per model (carried from 5.1: sprint 5.1 reserves one configured default).
+- Python and TypeScript SDK tests of a Pandokos 429, once the CLI can write a rule.
+- Administration API and CLI for limits, with permissions and audit records for limit rules and
+  existence checks of the subject on write; documentation of what is strict and what is best effort.
 
 Requirements: LIM-02, LIM-03, LIM-05, LIM-11, LIM-12.
 

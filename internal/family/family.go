@@ -147,6 +147,7 @@ const (
 	CodeNoCredential         ErrorCode = "no_credential"          //nolint:gosec // 409; an error code, not a credential
 	CodeInvalidRequest       ErrorCode = "invalid_request"        // 400
 	CodeRequestTimeout       ErrorCode = "request_timeout"        // 408
+	CodeRateLimited          ErrorCode = "rate_limited"           // 429
 )
 
 // Status returns the HTTP status of the code.
@@ -170,6 +171,8 @@ func (c ErrorCode) Status() int {
 		return 400
 	case CodeRequestTimeout:
 		return 408
+	case CodeRateLimited:
+		return 429
 	case CodeUnavailable:
 		return 503
 	default:
@@ -204,6 +207,8 @@ func (c ErrorCode) Message() string {
 		return `Pandokos: the request body is not accepted: it must be a JSON object with one string member "model", and must not ask for background processing.`
 	case CodeRequestTimeout:
 		return "Pandokos: the request body was not received in time."
+	case CodeRateLimited:
+		return "Pandokos: a rate limit of Pandokos was reached; retry after the time given in Retry-After."
 	default:
 		return "Pandokos: internal error."
 	}
@@ -215,4 +220,14 @@ const (
 	HeaderRequestID = "X-Pandokos-Request-Id"
 	// HeaderMetadataDropped tells the caller how many metadata headers were not kept.
 	HeaderMetadataDropped = "X-Pandokos-Metadata-Dropped"
+)
+
+// Headers set on a refusal because a limit was reached (sprint 5.1 section 5.8). They name a
+// subject kind, never an identifier.
+const (
+	HeaderLimitSubject   = "X-Pandokos-Limit-Subject"
+	HeaderLimitMetric    = "X-Pandokos-Limit-Metric"
+	HeaderLimit          = "X-Pandokos-Limit"
+	HeaderLimitRemaining = "X-Pandokos-Limit-Remaining"
+	HeaderLimitReset     = "X-Pandokos-Limit-Reset"
 )

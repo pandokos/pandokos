@@ -14,7 +14,7 @@ Tier 1 (requirement CAT-02), seeded in every installation:
 | `openai` | `openai` | `chat.completions`, `responses`, `embeddings` | `https://<host>/openai/v1` |
 | `anthropic` | `anthropic` | `messages`, `messages.count_tokens` | `https://<host>/anthropic` |
 
-The [gateway guide](gateway.md) lists the headers, errors and limits of each family.
+The [gateway guide](gateway.md) lists the headers, errors and limits of each family. Limits that Pandokos itself enforces (requests, tokens and requests in flight) apply to a caller whatever the provider; they are described in the [limits guide](limits.md).
 
 ## 2. An OpenAI-compatible provider
 

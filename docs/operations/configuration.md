@@ -48,6 +48,7 @@ replaced by `_`.
 | `limits.max_request_body_bytes` | `PANDOKOS_LIMITS_MAX_REQUEST_BODY_BYTES` | integer | `10485760` | Larger bodies get 413 `request_too_large` |
 | `limits.request_body_read_timeout` | `PANDOKOS_LIMITS_REQUEST_BODY_READ_TIMEOUT` | duration | `30s` | Time allowed to read the request body |
 | `limits.max_request_duration` | `PANDOKOS_LIMITS_MAX_REQUEST_DURATION` | duration | `10m` | Total time for one proxied request, stream included, measured from the end of the body read |
+| `limits.default_output_tokens` | `PANDOKOS_LIMITS_DEFAULT_OUTPUT_TOKENS` | integer | `4096` | Output tokens reserved per choice for a request that sets no output limit; capped by the model's `max_output_tokens` when the catalogue has it (1 to 1000000) |
 | `upstream.connect_timeout` | `PANDOKOS_UPSTREAM_CONNECT_TIMEOUT` | duration | `10s` | TCP connect timeout, and separately TLS handshake timeout, towards the provider |
 | `upstream.tls.ca_file` | `PANDOKOS_UPSTREAM_TLS_CA_FILE` | path | none | PEM file whose certificates are added to the system roots for every outbound TLS connection of the server (providers, validation, price download, an `https` proxy); read by `serve` only |
 | `upstream.proxy.url` | `PANDOKOS_UPSTREAM_PROXY_URL` | URL | none | Proxy for provider calls to public endpoints, credential validation and the price download; private endpoints go direct; `HTTPS_PROXY` and similar variables are never read; read by `serve` only |
@@ -56,6 +57,7 @@ replaced by `_`.
 | `cache.credential_ttl` | `PANDOKOS_CACHE_CREDENTIAL_TTL` | duration | `30s` | Lifetime of a cached provider credential in the gateway: the upper bound on the time a disable, revocation or replacement takes to reach the inference listener when notifications are not delivered (1s to 60s) |
 | `cache.data_key_ttl` | `PANDOKOS_CACHE_DATA_KEY_TTL` | duration | `5m` | Lifetime of an unwrapped data key in the gateway (1s to 15m) |
 | `cache.catalog_ttl` | `PANDOKOS_CACHE_CATALOG_TTL` | duration | `30s` | Lifetime of the cached catalogue and of a tenant's model access in the gateway: the upper bound on the time a catalogue, price or model-access change takes to reach the inference listener when notifications are not delivered (1s to 5m); see the [catalogue guide](catalogue.md) |
+| `cache.limits_ttl` | `PANDOKOS_CACHE_LIMITS_TTL` | duration | `30s` | Lifetime of a tenant's cached limit rules in the gateway: the upper bound on the time a changed rule takes to apply when no notification arrives (1s to 5m) |
 | `tokens.enabled` | `PANDOKOS_TOKENS_ENABLED` | boolean | `true` | Accept tokens of trusted issuers on the inference listener. `false`: every credential that is not a virtual key is malformed and no key of an issuer is ever fetched; read by `serve` only. See the [tokens guide](tokens.md) |
 | `tokens.max_token_bytes` | `PANDOKOS_TOKENS_MAX_TOKEN_BYTES` | integer | `8192` | Largest token accepted (1024 to 16384, and at most half of `listeners.inference.max_header_bytes`) |
 | `tokens.clock_skew` | `PANDOKOS_TOKENS_CLOCK_SKEW` | duration | `60s` | Tolerance on `exp`, `nbf` and `iat` of a token (0 to 5m) |
@@ -156,6 +158,8 @@ All problems are reported together, not only the first. Each is attached to a ke
 | every duration | greater than zero |
 | `listeners.inference.max_header_bytes` | 4096 to 1048576 |
 | `limits.max_request_body_bytes` | 1 to 104857600 |
+| `limits.default_output_tokens` | 1 to 1000000 |
+| `cache.limits_ttl` | greater than zero, at most 5m (and at least 1s) |
 | `database.address` | set; `host:port`; the port is an integer 1 to 65535; the host is an IP address or a host name |
 | `database.name`, `database.gateway.user`, `database.admin.user`, `database.worker.user`, `database.owner.user` | 1 to 63 characters: letters, digits, underscore, dot, hyphen; not starting with a dot or a hyphen |
 | `database.tls.mode` | `verify-full` or `disable` |

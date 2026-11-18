@@ -53,6 +53,8 @@ A record is *proposed* until its pull request is merged by the maintainer, then 
 | [0045](0045-trusted-token-issuers.md) | Trusted token issuers: registration, selection and validation | proposed |
 | [0046](0046-issuer-key-retrieval-and-caching.md) | Retrieval and caching of issuer keys | proposed |
 | [0047](0047-identity-providers-in-the-test-suite.md) | Identity providers in the test suite | proposed |
+| [0048](0048-reserve-and-settle.md) | Reserve and settle in the pipeline: estimate, counters, guarantees and the 429 contract | proposed |
+| [0049](0049-limit-rules.md) | Limit rules: levels, subjects and resolution | proposed |
 
 ## Questions from SOW 0.1 and where they were decided
 

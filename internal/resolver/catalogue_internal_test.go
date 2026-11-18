@@ -126,3 +126,30 @@ func TestCatalogueEndpointUnusable(t *testing.T) {
 		}
 	})
 }
+
+// TestCatalogueLimitsValues is T-629: the two values the estimate needs come from the catalogue
+// model, 0 when it has none.
+func TestCatalogueLimitsValues(t *testing.T) {
+	snap := catalog.NewSnapshot(catalog.SnapshotData{
+		Providers: []catalog.Provider{{ID: "p1", Name: "synth", Family: "openai", Enabled: true}},
+		Endpoints: map[string][]catalog.Endpoint{"synth": {{Name: "main", BaseURL: "http://10.0.0.5:8000/v1", Private: true, Enabled: true, Default: true}}},
+		Models: []catalog.Model{
+			{ID: "m-both", Provider: "synth", Name: "both", UpstreamID: "both", Status: "active", Availability: "all", ContextWindow: 200000, MaxOutputTokens: 8192},
+			{ID: "m-window", Provider: "synth", Name: "window", UpstreamID: "window", Status: "active", Availability: "all", ContextWindow: 32000},
+			{ID: "m-output", Provider: "synth", Name: "output", UpstreamID: "output", Status: "active", Availability: "all", MaxOutputTokens: 4096},
+			{ID: "m-none", Provider: "synth", Name: "none", UpstreamID: "none", Status: "active", Availability: "all"},
+		},
+	})
+	cat := newCatalogue(fakeSource{snap: snap}, telemetry.NewLogger(&testutil.LogBuffer{}, "debug"))
+	for name, want := range map[string][2]int64{
+		"both": {8192, 200000}, "window": {0, 32000}, "output": {4096, 0}, "none": {0, 0},
+	} {
+		got, err := cat.Resolve(context.Background(), testPrincipal(), "synth", name)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got.MaxOutputTokens != want[0] || got.ContextWindow != want[1] {
+			t.Errorf("%s: MaxOutputTokens %d ContextWindow %d, want %d and %d", name, got.MaxOutputTokens, got.ContextWindow, want[0], want[1])
+		}
+	}
+}

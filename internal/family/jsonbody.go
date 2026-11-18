@@ -87,6 +87,32 @@ func ParseModel(body []byte, ms []Member) (model string, m Member, err error) {
 	return model, m, nil
 }
 
+// PositiveInt reads the last top-level member key as a plain positive integer: a JSON number
+// written with decimal digits alone (no sign, fraction or exponent), of at least 1 and at most
+// maxDigits digits. Anything else, a missing member included, is "not set" (0, false). The last
+// occurrence of a repeated member decides, as in encoding/json.
+func PositiveInt(body []byte, ms []Member, key string, maxDigits int) (int64, bool) {
+	m, ok := LastMember(ms, key)
+	if !ok {
+		return 0, false
+	}
+	raw := body[m.Start:m.End]
+	if len(raw) == 0 || len(raw) > maxDigits {
+		return 0, false
+	}
+	var n int64
+	for _, c := range raw {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+		n = n*10 + int64(c-'0')
+	}
+	if n < 1 {
+		return 0, false
+	}
+	return n, true
+}
+
 // IsLiteral reports whether the value of m is exactly the literal lit (such as "true").
 func IsLiteral(body []byte, m Member, lit string) bool {
 	return bytes.Equal(body[m.Start:m.End], []byte(lit))

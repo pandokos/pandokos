@@ -77,6 +77,9 @@ func validate(c *Config, purpose Purpose) []Problem {
 	if d := time.Duration(c.Cache.CatalogTTL); d < time.Second || d > 5*time.Minute {
 		add("cache.catalog_ttl", "must be between 1s and 5m")
 	}
+	if d := time.Duration(c.Cache.LimitsTTL); d < time.Second || d > 5*time.Minute {
+		add("cache.limits_ttl", "must be between 1s and 5m")
+	}
 	if purpose == PurposeServe {
 		ps = append(ps, validatePricing(c)...)
 		ps = append(ps, validateUpstream(c)...)
@@ -89,6 +92,9 @@ func validate(c *Config, purpose Purpose) []Problem {
 	}
 	if n := c.Limits.MaxRequestBodyBytes; n < 1 || n > 104857600 {
 		add("limits.max_request_body_bytes", "must be between 1 and 104857600")
+	}
+	if n := c.Limits.DefaultOutputTokens; n < 1 || n > 1000000 {
+		add("limits.default_output_tokens", "must be between 1 and 1000000")
 	}
 
 	ps = append(ps, validateDatabase(c)...)

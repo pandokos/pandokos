@@ -319,7 +319,7 @@ func (o *Opener) opened(u Use, op Opened, pinned, hit bool) Opened {
 // Invalidate applies a notification payload of the channel pandokos_cache (section 5.6).
 func (o *Opener) Invalidate(payload string) {
 	switch {
-	case payload == "platform", payload == "issuers", strings.HasPrefix(payload, "probe:"), payload == "catalog", strings.HasPrefix(payload, "catalog:"):
+	case payload == "platform", payload == "issuers", strings.HasPrefix(payload, "probe:"), payload == "catalog", strings.HasPrefix(payload, "catalog:"), payload == "limits", strings.HasPrefix(payload, "limits:"):
 		return
 	case strings.HasPrefix(payload, "vault:"), strings.HasPrefix(payload, "tenant:"):
 		_, id, _ := strings.Cut(payload, ":")

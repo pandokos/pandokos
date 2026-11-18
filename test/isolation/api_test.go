@@ -465,7 +465,8 @@ func inferenceHandler(t *testing.T, w *apiWorld) (*httptest.Server, *testutil.Lo
 	up := fakeprovider.New(t)
 	guard := testutil.TestGuard(t)
 	h, err := gateway.New(gateway.Options{
-		Logger: logger, Authenticator: auth,
+		DefaultOutputTokens: 4096,
+		Logger:              logger, Authenticator: auth,
 		Catalogue:     testutil.StaticCatalogue(map[string]string{"openai": "openai"}, map[string]gateway.Target{"openai/fake-basic": testutil.TargetFor(up, "openai", "fake-basic")}),
 		Credentials:   testutil.StaticCredentials(map[string]string{"openai": fixtures.CanaryProviderKey}),
 		Families:      map[string]family.Adapter{"openai": openai.Adapter()},

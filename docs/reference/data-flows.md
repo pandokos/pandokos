@@ -30,6 +30,10 @@ logged or returned to anyone. The administration API makes no such request. Beca
 supplied by a tenant administrator (or a platform administrator), the egress controls and the
 operator's host list, not the registration, decide where the gateway may connect.
 
+## Limits
+
+Limits add no outbound connection. The counters are in the memory of each instance, and the rules are read from the database, which the gateway already uses. Nothing of a request, a header or a credential is passed to the limiter: it sees tenant, service account and key identifiers, metric names and token counts ([limits guide](../operations/limits.md)).
+
 ## The collector
 
 Nothing is sent without an endpoint. The connection is made with the egress guard: certificates

@@ -23,6 +23,8 @@ func ErrorType(code family.ErrorCode) string {
 		return "timeout_error"
 	case family.CodeRequestTooLarge:
 		return "request_too_large"
+	case family.CodeRateLimited:
+		return "rate_limit_error"
 	default:
 		return "api_error"
 	}

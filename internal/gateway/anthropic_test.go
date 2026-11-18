@@ -112,8 +112,8 @@ func anthropicErrorBody(code family.ErrorCode) string {
 		family.CodeForbidden:       "permission_error", family.CodeTenantSuspended: "permission_error", family.CodeModelNotAllowed: "permission_error",
 		family.CodeEndpointNotSupported: "not_found_error",
 		family.CodeRequestTimeout:       "timeout_error", family.CodeUpstreamTimeout: "timeout_error",
-		family.CodeRequestTooLarge: "request_too_large",
-		family.CodeInternal:        "api_error", family.CodeUpstreamUnreachable: "api_error", family.CodeUnavailable: "api_error",
+		family.CodeRequestTooLarge: "request_too_large", family.CodeRateLimited: "rate_limit_error",
+		family.CodeInternal: "api_error", family.CodeUpstreamUnreachable: "api_error", family.CodeUnavailable: "api_error",
 	}[code]
 	msg := strings.ReplaceAll(code.Message(), `"`, `\"`)
 	return `{"type":"error","error":{"type":"` + typ + `","message":"` + msg + `"}}`
@@ -430,6 +430,11 @@ func anthropicScenarios() []scenario {
 		}},
 		{family.CodeInternal, func(t *testing.T) (captured, *harness) {
 			h := basic(t, func(o *gateway.Options) { o.Private = panicTransport{} })
+			return h.sendA(t, anthropicRoute, messages("fake-basic", false), anthropicHdr()), h
+		}},
+		{family.CodeRateLimited, func(t *testing.T) (captured, *harness) {
+			lim := testutil.NewStaticLimits().Refuse(refusalOf("tokens_per_minute"))
+			h := basic(t, func(o *gateway.Options) { o.Limits = lim })
 			return h.sendA(t, anthropicRoute, messages("fake-basic", false), anthropicHdr()), h
 		}},
 	}
@@ -1123,6 +1128,8 @@ func TestAnthropicPipelineOrder(t *testing.T) {
 		wantAuth     int64
 		wantResolve  int64
 		wantOpen     int
+		refuse       bool
+		wantReserve  int
 	}
 	cases := []tc{
 		{name: "step 2: a path that is not served", method: "POST", path: "/anthropic/v1/models", auth: fixedAuth{p: active}, wantCode: family.CodeEndpointNotSupported},
@@ -1136,7 +1143,8 @@ func TestAnthropicPipelineOrder(t *testing.T) {
 		{name: "step 6: a body that is not an object", method: "POST", path: anthropicRoute, auth: fixedAuth{p: active}, body: bytes.NewReader([]byte(`{}`)), contentLen: 2, wantCode: family.CodeInvalidRequest, wantAuth: 1},
 		{name: "step 7: a model that is not allowed", method: "POST", path: anthropicRoute, auth: fixedAuth{p: active}, body: bytes.NewReader([]byte(`{"model":"nope"}`)), contentLen: 16, wantCode: family.CodeModelNotAllowed, wantAuth: 1, wantResolve: 1},
 		{name: "step 7: a decision that cannot be taken", method: "POST", path: countRoute, auth: fixedAuth{p: active}, body: bytes.NewReader(good), contentLen: int64(len(good)), resolveErr: errors.New("synthetic"), wantCode: family.CodeUnavailable, wantAuth: 1, wantResolve: 1},
-		{name: "step 8: no credential", method: "POST", path: anthropicRoute, auth: fixedAuth{p: active}, body: bytes.NewReader(good), contentLen: int64(len(good)), noCredential: true, wantCode: family.CodeNoCredential, wantAuth: 1, wantResolve: 1, wantOpen: 1},
+		{name: "step 7b: a limit refuses", method: "POST", path: anthropicRoute, auth: fixedAuth{p: active}, body: bytes.NewReader(good), contentLen: int64(len(good)), refuse: true, wantCode: family.CodeRateLimited, wantAuth: 1, wantResolve: 1, wantReserve: 1},
+		{name: "step 8: no credential", method: "POST", path: anthropicRoute, auth: fixedAuth{p: active}, body: bytes.NewReader(good), contentLen: int64(len(good)), noCredential: true, wantCode: family.CodeNoCredential, wantAuth: 1, wantResolve: 1, wantOpen: 1, wantReserve: 1},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -1145,9 +1153,14 @@ func TestAnthropicPipelineOrder(t *testing.T) {
 			if c.noCredential {
 				creds = testutil.StaticCredentials(nil)
 			}
+			lim := testutil.NewStaticLimits()
+			if c.refuse {
+				lim.Refuse(refusalOf("requests_per_minute"))
+			}
 			h := newFamilies(t, func(o *gateway.Options) {
 				o.Authenticator = auth
 				o.Credentials = creds
+				o.Limits = lim
 				if c.maxBody > 0 {
 					o.MaxRequestBodyBytes = c.maxBody
 				}
@@ -1167,6 +1180,9 @@ func TestAnthropicPipelineOrder(t *testing.T) {
 			res := rec.Result()
 			b, _ := io.ReadAll(res.Body)
 			assertAnthropicContract(t, c.name, captured{status: res.StatusCode, header: res.Header, body: b}, c.wantCode)
+			if got := len(lim.Of("reserve")); got != c.wantReserve {
+				t.Errorf("Reserve called %d times, want %d", got, c.wantReserve)
+			}
 			if got := auth.n.Load(); got != c.wantAuth {
 				t.Errorf("Authenticate called %d times, want %d", got, c.wantAuth)
 			}

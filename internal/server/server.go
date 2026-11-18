@@ -36,6 +36,7 @@ type Options struct {
 	Egress        *egress.Guard           // required: the only way out of the process
 	Recorder      gateway.Recorder        // required: receives the usage record of every admitted request
 	Tracer        trace.TracerProvider    // required: the trace provider of the gateway
+	Limits        gateway.Limits          // optional: reserves capacity before the credential is opened; nil enforces nothing
 }
 
 // listener is one HTTP listener with its server.
@@ -108,6 +109,8 @@ func New(o Options) (*Server, error) {
 		Recorder:               o.Recorder,
 		Tracer:                 o.Tracer,
 		PropagateTrace:         cfg.Telemetry.Traces.Propagate,
+		Limits:                 o.Limits,
+		DefaultOutputTokens:    cfg.Limits.DefaultOutputTokens,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("server: %w", err)

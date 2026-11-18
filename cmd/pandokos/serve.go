@@ -23,6 +23,7 @@ import (
 	"github.com/pandokos/pandokos/internal/egress"
 	"github.com/pandokos/pandokos/internal/jwks"
 	"github.com/pandokos/pandokos/internal/ledger"
+	"github.com/pandokos/pandokos/internal/limits"
 	"github.com/pandokos/pandokos/internal/pricing/genaiprices"
 	"github.com/pandokos/pandokos/internal/resolver"
 	"github.com/pandokos/pandokos/internal/server"
@@ -205,12 +206,35 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
+	ruleCache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: gatewayDB, Logger: logger, TTL: time.Duration(cfg.Cache.LimitsTTL)})
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
+	memory, err := limits.NewMemory(limits.MemoryOptions{Logger: logger})
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
+	limitsPort, err := resolver.NewLimits(resolver.LimitsOptions{
+		Rules: ruleCache, Store: memory, Logger: logger,
+		TTL: time.Duration(cfg.Limits.MaxRequestDuration) + time.Minute,
+	})
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
 	listenConn := connOptions(cfg, cfg.Database.Gateway.User, cfg.Database.Gateway.Password)
 	listenConn.Host, listenConn.Port = cfg.Database.DirectHost, cfg.Database.DirectPort
 	listener, err := store.NewListener(store.ListenerOptions{
 		Conn: listenConn, Role: store.RoleGateway, Logger: logger, Direct: cfg.Database.DirectAddress != "",
-		OnNotify: func(p string) { gatewayAuth.Invalidate(p); opener.Invalidate(p); catalogCache.Invalidate(p) },
-		OnReset:  func() { gatewayAuth.Flush(); opener.Flush(); catalogCache.Flush() },
+		OnNotify: func(p string) {
+			gatewayAuth.Invalidate(p)
+			opener.Invalidate(p)
+			catalogCache.Invalidate(p)
+			ruleCache.Invalidate(p)
+		},
+		OnReset: func() { gatewayAuth.Flush(); opener.Flush(); catalogCache.Flush(); ruleCache.Flush() },
 	})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
@@ -276,6 +300,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		Egress:      guard,
 		Recorder:    writer,
 		Tracer:      traces.Provider(),
+		Limits:      limitsPort,
 	})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
@@ -298,10 +323,11 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	background, stopBackground := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	defer func() { stopBackground(); wg.Wait() }()
-	wg.Add(3)
+	wg.Add(4)
 	go func() { defer wg.Done(); listener.Run(background) }()
 	go func() { defer wg.Done(); warnBootstrap(background, logger, adminDB) }()
 	go func() { defer wg.Done(); partitioner.Run(background) }()
+	go func() { defer wg.Done(); memory.Run(background) }()
 	// The writer is not stopped by the signal: it runs until Close has returned.
 	writerCtx, stopWriter := context.WithCancel(context.WithoutCancel(ctx))
 	var writerDone sync.WaitGroup

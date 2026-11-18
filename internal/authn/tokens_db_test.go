@@ -634,7 +634,7 @@ func TestTokenCacheInvalidation(t *testing.T) {
 		_ = failed(t, "tenant-bound after tenant:<id>", func() error { _, err := kv.Authenticate(ctx(t), tokT); return err }(), "subject_not_mapped")
 		_ = failed(t, "key after tenant:<id>", func() error { _, err := kv.Authenticate(ctx(t), key); return err }(), "revoked")
 		// Payloads of the other caches change nothing.
-		for _, p := range []string{"vault:" + g.tenant.String(), "catalog", "catalog:" + g.tenant.String(), "something-new"} {
+		for _, p := range []string{"vault:" + g.tenant.String(), "catalog", "catalog:" + g.tenant.String(), "limits", "limits:" + g.tenant.String(), "something-new"} {
 			kv.Invalidate(p)
 		}
 	})

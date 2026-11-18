@@ -155,6 +155,7 @@ type Cache struct {
 	CredentialTTL Duration `yaml:"credential_ttl"`
 	DataKeyTTL    Duration `yaml:"data_key_ttl"`
 	CatalogTTL    Duration `yaml:"catalog_ttl"`
+	LimitsTTL     Duration `yaml:"limits_ttl"`
 }
 
 // Pricing configures the price list: the import of the embedded snapshot at start and the
@@ -199,6 +200,7 @@ type Limits struct {
 	MaxRequestBodyBytes    int64    `yaml:"max_request_body_bytes"`
 	RequestBodyReadTimeout Duration `yaml:"request_body_read_timeout"`
 	MaxRequestDuration     Duration `yaml:"max_request_duration"`
+	DefaultOutputTokens    int64    `yaml:"default_output_tokens"`
 }
 
 // Upstream configures the connection to providers.
@@ -332,6 +334,7 @@ func Defaults() *Config {
 			MaxRequestBodyBytes:    10485760,
 			RequestBodyReadTimeout: Duration(30 * time.Second),
 			MaxRequestDuration:     Duration(10 * time.Minute),
+			DefaultOutputTokens:    4096,
 		},
 		Upstream: Upstream{ConnectTimeout: Duration(10 * time.Second)},
 		Shutdown: Shutdown{DrainTimeout: Duration(30 * time.Second)},
@@ -340,6 +343,7 @@ func Defaults() *Config {
 			CredentialTTL: Duration(30 * time.Second),
 			DataKeyTTL:    Duration(5 * time.Minute),
 			CatalogTTL:    Duration(30 * time.Second),
+			LimitsTTL:     Duration(30 * time.Second),
 		},
 		Pricing: Pricing{
 			ImportAtStart: true,

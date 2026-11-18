@@ -578,3 +578,24 @@ func TestBasePathAndNewOn(t *testing.T) {
 		}
 	})
 }
+
+// TestReportTokens: the usage of an answer that is not a stream reports the tokens a test asks for.
+func TestReportTokens(t *testing.T) {
+	s := New(t)
+	key := fixtures.CanaryProviderKey
+	body := `{"model":"fake-basic","messages":[]}`
+	if _, b := post(t, s, key, body); !bytes.Contains(b, []byte(`"total_tokens": 21`)) {
+		t.Fatalf("by default the fixture is served: %s", b)
+	}
+	s.ReportTokens(500)
+	_, b := post(t, s, key, body)
+	for _, want := range []string{`"prompt_tokens":1`, `"completion_tokens":499`, `"total_tokens":500`} {
+		if !bytes.Contains(b, []byte(want)) {
+			t.Errorf("the answer lacks %s: %s", want, b)
+		}
+	}
+	s.ReportTokens(0)
+	if _, b := post(t, s, key, body); !bytes.Contains(b, []byte(`"total_tokens": 21`)) {
+		t.Errorf("zero restores the fixture: %s", b)
+	}
+}

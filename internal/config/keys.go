@@ -147,6 +147,15 @@ var keyTable = []keyDef{
 		setDuration(func(c *Config) *Duration { return &c.Limits.RequestBodyReadTimeout })),
 	def("limits.max_request_duration", "duration", "10m", "Total time for one proxied request, stream included, measured from the end of the body read",
 		setDuration(func(c *Config) *Duration { return &c.Limits.MaxRequestDuration })),
+	def("limits.default_output_tokens", "integer", "4096", "Output tokens reserved per choice for a request that sets no output limit; capped by the model's max_output_tokens when the catalogue has it; 1 to 1000000",
+		func(c *Config, v string) error {
+			n, err := parseInt(v)
+			if err != nil {
+				return err
+			}
+			c.Limits.DefaultOutputTokens = n
+			return nil
+		}),
 	def("upstream.connect_timeout", "duration", "10s", "TCP connect timeout, and separately TLS handshake timeout, towards the provider",
 		setDuration(func(c *Config) *Duration { return &c.Upstream.ConnectTimeout })),
 	def("upstream.tls.ca_file", "path", "", "PEM file with certificate authorities added to the system roots for every outbound TLS connection (providers, validation, price download)",
@@ -163,6 +172,8 @@ var keyTable = []keyDef{
 		setDuration(func(c *Config) *Duration { return &c.Cache.DataKeyTTL })),
 	def("cache.catalog_ttl", "duration", "30s", "Lifetime of the cached catalogue in the gateway: the upper bound on the time a catalogue or price change takes to reach the inference listener when notifications are not delivered; 1s to 5m",
 		setDuration(func(c *Config) *Duration { return &c.Cache.CatalogTTL })),
+	def("cache.limits_ttl", "duration", "30s", "Lifetime of a tenant's cached limit rules in the gateway: the upper bound on the time a changed rule takes to apply when no notification arrives; 1s to 5m",
+		setDuration(func(c *Config) *Duration { return &c.Cache.LimitsTTL })),
 	def("database.address", "host:port", "", "Address of PostgreSQL, or of the connection pooler in front of it (required)",
 		setString(func(c *Config) *string { return &c.Database.Address })),
 	def("database.direct_address", "host:port", "", "Address of PostgreSQL itself, used only by the notification listener; set it when database.address is a pooler in transaction mode",

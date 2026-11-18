@@ -473,7 +473,10 @@ func TestEveryStatement(t *testing.T) {
 		// Sprint 4.1: the registrations of trusted issuers, the mappings and the authentication statements.
 		issuerStatements(c, t, admin, gateway, tid, ten.ID, sa.ID, called)
 
-		// The 125 statements, and nothing was prepared on the server.
+		// Sprint 5.1: the limit rules and the platform ceilings.
+		limitStatements(c, t, admin, gateway, tid, ten.ID, called)
+
+		// The 127 statements, and nothing was prepared on the server.
 		var names []string
 		typ := reflect.TypeOf(&queries.Queries{})
 		for i := 0; i < typ.NumMethod(); i++ {
@@ -482,8 +485,8 @@ func TestEveryStatement(t *testing.T) {
 			}
 		}
 		sort.Strings(names)
-		if len(names) != 125 {
-			t.Errorf("the generated package has %d statements, want 125: %v", len(names), names)
+		if len(names) != 127 {
+			t.Errorf("the generated package has %d statements, want 127: %v", len(names), names)
 		}
 		for _, name := range names {
 			if !called[name] {

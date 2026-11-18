@@ -53,6 +53,7 @@ func DefaultSpec() Spec {
 			"platform_issuer":        {Reason: "platform-level token issuers; read by the gateway and the admin role, written in platform scope", Restricted: true},
 			"platform_issuer_tenant": {Reason: "the tenants a platform-level token issuer may act for; a tenant's session sees its own rows, the platform scope all of them; protected by its own policies", Restricted: true},
 			"issuer_directory":       {Reason: "which registration an issuer and audience select, for the lookup function; no runtime role has any privilege on it"},
+			"platform_limit_rule":    {Reason: "ceilings the platform sets for tenants; a tenant's session sees the defaults and its own rows, the platform scope all of them; protected by its own policies", Restricted: true},
 		},
 		Grants: map[string]map[string][]string{
 			"schema_migration": {
@@ -202,6 +203,14 @@ func DefaultSpec() Spec {
 				"pandokos_gateway": {"SELECT"},
 				"pandokos_admin":   {"DELETE", "INSERT(description,platform_issuer_id,service_account_id,subject,tenant_id,trusted_issuer_id)", "SELECT"},
 			},
+			"limit_rule": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin":   {"DELETE", "INSERT(limit_value,metric,subject_id,subject_kind,tenant_id)", "SELECT", "UPDATE(limit_value)"},
+			},
+			"platform_limit_rule": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin":   {"DELETE", "INSERT(limit_value,metric,tenant_id)", "SELECT", "UPDATE(limit_value)"},
+			},
 		},
 		Fixtures: map[string]Fixture{
 			"service_account": {
@@ -266,6 +275,11 @@ SELECT $1::uuid, ti.id, 'sub-' || substr(md5(random()::text), 1, 12), sa.id FROM
 			"tenant_model_restriction": {
 				Insert: `INSERT INTO pandokos.tenant_model_restriction (tenant_id, models) VALUES ($1::uuid, ARRAY['openai/gpt-4o']) RETURNING id::text`,
 				Update: `models = ARRAY['openai/gpt-4o-mini']`,
+			},
+			"limit_rule": {
+				Insert: `INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, subject_id, metric, limit_value)
+VALUES ($1::uuid, 'key', 't' || substr(md5(random()::text), 1, 16), 'requests_per_minute', 10) RETURNING id::text`,
+				Update: `limit_value = 11`,
 			},
 		},
 		SecurityDefiner: []string{"virtual_key_lookup", "virtual_key_directory_add", "record_auth_failure", "ensure_usage_partitions",

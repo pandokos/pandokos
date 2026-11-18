@@ -19,7 +19,7 @@ const (
 	OutcomeUpstreamError  Outcome = "upstream_error"
 	OutcomeCancelled      Outcome = "cancelled"
 	OutcomeTimeout        Outcome = "timeout"
-	OutcomeRejectedLimit  Outcome = "rejected_limit" // unused until a later sprint
+	OutcomeRejectedLimit  Outcome = "rejected_limit"
 	OutcomeRejectedPolicy Outcome = "rejected_policy"
 	OutcomeInternalError  Outcome = "internal_error"
 )

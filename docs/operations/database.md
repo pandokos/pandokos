@@ -443,3 +443,28 @@ policy), `platform_issuer` and `platform_issuer_tenant` (global, explicit polici
   `platform_issuer` or `platform_issuer_tenant` sends `issuers`. The gateway empties its registration
   and token-principal caches on them; the vault and catalogue caches ignore `issuers`.
 - `required_claims` is limited to 4096 bytes of stored size by a check constraint.
+
+## 14. Grants of migration 0009
+
+Migration `0009_limit_rules` adds the two tables of the limit rules ([limits guide](limits.md),
+[ADR 0049](../adr/0049-limit-rules.md)) and one trigger function.
+
+- `limit_rule` is tenant-scoped (canonical `tenant_isolation` policy). A row names a subject: the
+  tenant (`subject_kind` `tenant`, empty `subject_id`), a service account by its ID, or a key by its
+  key ID (a virtual key) or by the ID of its subject mapping (a caller with a token), a metric
+  (`requests_per_minute`, `tokens_per_minute` or `concurrent_requests`) and a `limit_value` from 1 to
+  1,000,000,000,000. The combination of tenant, subject and metric is unique. There is no foreign key
+  to the subject: a rule whose subject does not exist never matches.
+- `platform_limit_rule` is global: a row without a tenant is the default ceiling of every tenant,
+  a row with a tenant replaces the default of that metric for it (unique per tenant and metric, nulls
+  not distinct). A tenant's session sees the defaults and its own rows; writes need the platform scope.
+- Who reads and writes. **The gateway role reads both and writes neither**; it reads a tenant's rules
+  with two queries inside that tenant's session. The admin role reads both and holds column-level
+  `INSERT` and `DELETE`, and `UPDATE` on `limit_value` only (a rule changes its value, never its
+  subject or metric). The worker role holds nothing. Until sprint 5.2 no role writes a rule in a
+  running installation; the tables are empty and nothing is seeded.
+- Notifications on `pandokos_cache`: a change to `limit_rule`, or to a row of `platform_limit_rule`
+  that has a tenant, sends `limits:<tenant id>`; a change to a platform default (a row without a
+  tenant) sends `limits`. The gateway's rule cache drops that tenant on `limits:<id>` and on
+  `tenant:<id>`, and every tenant on `limits`; the other caches ignore both payloads. The cache
+  lifetime is `cache.limits_ttl`, the bound on how long a change takes when no notification arrives.

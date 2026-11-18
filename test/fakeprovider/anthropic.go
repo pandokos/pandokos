@@ -136,7 +136,7 @@ func (s *Server) anthropicCount(w http.ResponseWriter, r *http.Request, model st
 // anthropicAnswer answers the usual JSON document or its stream.
 func (s *Server) anthropicAnswer(w http.ResponseWriter, r *http.Request, stream bool, jsonName, streamName string, gated bool) {
 	if !stream {
-		writeJSON(w, http.StatusOK, fixtures.ReadAnthropic(jsonName))
+		writeJSON(w, http.StatusOK, s.report(fixtures.ReadAnthropic(jsonName)))
 		return
 	}
 	s.stream(w, r, fixtures.ReadAnthropic(streamName), gated)

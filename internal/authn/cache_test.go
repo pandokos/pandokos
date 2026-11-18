@@ -113,7 +113,7 @@ func TestCache(t *testing.T) {
 		c, _ := newTestCache(time.Minute)
 		c.put("ta1", tenantA, &entry{})
 		c.putNegative("tunknown")
-		for _, p := range []string{"platform", "probe:0123456789abcdef", "probe:", "vault:" + tenantA, "vault:" + tenantB, "vault:", "issuers"} {
+		for _, p := range []string{"platform", "probe:0123456789abcdef", "probe:", "vault:" + tenantA, "vault:" + tenantB, "vault:", "issuers", "limits", "limits:" + tenantA, "limits:" + tenantB, "limits:"} {
 			c.invalidate(p)
 		}
 		if pos, neg := c.sizes(); pos != 1 || neg != 1 {
@@ -180,6 +180,13 @@ func TestCache(t *testing.T) {
 		for _, k := range []string{"ta1", "tb1"} {
 			if _, ok := c.get(k); !ok {
 				t.Errorf("%s was removed by a catalogue payload", k)
+			}
+		}
+		// The limit rules of sprint 5.1 are not about principals either.
+		for _, p := range []string{"limits", "limits:" + tenantA, "limits:" + tenantB, "limits:"} {
+			c.invalidate(p)
+			if pos, neg := c.sizes(); pos != 2 || neg != 1 {
+				t.Fatalf("sizes %d/%d after %q", pos, neg, p)
 			}
 		}
 		// "catalogue" and other look-alikes are payloads nobody knows: they flush (ADR 0030).

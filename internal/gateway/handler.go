@@ -56,6 +56,8 @@ type Options struct {
 	Recorder               Recorder                  // required: receives the usage record of every admitted request
 	Tracer                 trace.TracerProvider      // required
 	PropagateTrace         bool                      // send traceparent and tracestate to the provider
+	Limits                 Limits                    // optional: nil enforces no limit
+	DefaultOutputTokens    int64                     // output tokens reserved per choice when the caller sets no limit; positive
 }
 
 // Handler is the inference handler.
@@ -76,6 +78,8 @@ type Handler struct {
 	tracer      trace.Tracer
 	propagator  propagation.TextMapPropagator
 	propagate   bool
+	limits      Limits
+	defaultOut  int64
 }
 
 // New validates the options and returns a Handler.
@@ -105,6 +109,8 @@ func New(o Options) (*Handler, error) {
 		return nil, errors.New("gateway: Recorder is required")
 	case o.Tracer == nil:
 		return nil, errors.New("gateway: Tracer is required")
+	case o.DefaultOutputTokens <= 0:
+		return nil, errors.New("gateway: DefaultOutputTokens must be positive")
 	}
 	families := make(map[string]family.Adapter, len(o.Families))
 	for name, a := range o.Families {
@@ -138,6 +144,8 @@ func New(o Options) (*Handler, error) {
 		tracer:      o.Tracer.Tracer(instrumentationScope, trace.WithInstrumentationVersion(buildinfo.Version)),
 		propagator:  propagation.TraceContext{},
 		propagate:   o.PropagateTrace,
+		limits:      o.Limits,
+		defaultOut:  o.DefaultOutputTokens,
 	}
 	h.proxy = h.newProxy(&classTransport{public: o.Public, private: o.Private})
 	return h, nil
@@ -203,6 +211,12 @@ type reqState struct {
 	deltas          int64
 	costUsage       family.Usage // the figures the cost was computed on
 	rec             *usage.Record
+
+	// Sprint 5.1: the reservation of step 7b.
+	reservation    Reservation
+	reservedTokens int64
+	refusal        *LimitRefusal
+	forwarded      bool
 
 	streamBody *streamBody
 	teeBody    *teeBody
@@ -307,6 +321,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	st.target, st.resolved = target, true
 
+	// Step 7b: the limits.
+	if !h.reserve(st, parsed.OutputBound()) {
+		return
+	}
+
 	// Step 8: the credential.
 	cred, err := h.credentials.Open(r.Context(), *st.principal, st.id, st.provider)
 	switch {
@@ -338,6 +357,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	req.ContentLength = int64(len(prepared))
 	req.TransferEncoding = nil
 	req.GetBody = nil
+	st.forwarded = true
 	h.proxy.ServeHTTP(st.sw, req)
 }
 
@@ -559,6 +579,9 @@ func (h *Handler) finish(st *reqState, rec any) {
 		st.errCode = family.CodeInternal
 		outcome = "pandokos_error"
 	}
+	// The reservation ends whatever the record, the client or the server end do: a panic in
+	// any of them must not leave the slot and the tokens held until they expire.
+	defer h.settleLimit(st)
 	if st.admitted {
 		h.finishRecord(st, outcome)
 	}
@@ -583,6 +606,7 @@ func (h *Handler) logRequest(st *reqState, outcome string) {
 	if st.errCode != "" {
 		attrs = append(attrs, "error_code", string(st.errCode))
 	}
+	attrs = append(attrs, st.limitAttrs()...)
 	if st.invalidReason != "" {
 		attrs = append(attrs, "invalid_reason", st.invalidReason)
 	}

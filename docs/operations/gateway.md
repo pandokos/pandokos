@@ -3,7 +3,7 @@
 The inference listener forwards requests of a provider's own API to that provider, on behalf of a
 tenant, with the tenant's stored credential. This page says what a caller sends, what a call needs,
 what Pandokos changes in a request, which errors it answers with, and how outbound connections are
-controlled. It applies from sprint 3.1; sprint 3.2 adds two operations, streaming details, caller metadata and the usage record; sprint 3.3 adds the `anthropic` family and OpenAI-compatible providers; sprint 4.1 adds tokens of trusted issuers as a second credential.
+controlled. It applies from sprint 3.1; sprint 3.2 adds two operations, streaming details, caller metadata and the usage record; sprint 3.3 adds the `anthropic` family and OpenAI-compatible providers; sprint 4.1 adds tokens of trusted issuers as a second credential; sprint 5.1 adds limits (step 7b).
 
 ## 1. Base URLs
 
@@ -139,7 +139,8 @@ The provider's request ID (`X-Request-Id` for `openai`, `Request-Id` for `anthro
 | `request_too_large` | 413 | the body is over `limits.max_request_body_bytes` |
 | `upstream_unreachable` | 502 | the provider could not be reached, the egress guard refused the connection, or the provider answered with a redirect |
 | `upstream_timeout` | 504 | the provider did not answer headers within `limits.max_request_duration` |
-| `unavailable` | 503 | the catalogue, the key or the credential could not be verified, the keys of a token's issuer could not be obtained (the answer carries `Retry-After: 5`, as it does whenever authentication is unavailable, the database included), or the usage ledger buffer is full (the log line has `ledger: full`; no usage record is written for that request) |
+| `unavailable` | 503 | the catalogue, the key or the credential could not be verified, the keys of a token's issuer could not be obtained (the answer carries `Retry-After: 5`, as it does whenever authentication is unavailable, the database included), the limit rules of the tenant could not be read and none are cached (the answer carries `Retry-After: 5`; the log line has `limit rules unavailable`), or the usage ledger buffer is full (the log line has `ledger: full`; no usage record is written for that request) |
+| `rate_limited` | 429 | a limit of Pandokos was reached (requests or tokens per minute, or requests in flight); the answer carries `Retry-After` and the `X-Pandokos-Limit*` headers ([limits guide](limits.md)). The usage record has outcome `rejected_limit` |
 | `internal` | 500 | an unexpected failure |
 
 Anthropic error types. On an `anthropic` route the body is `{"type":"error","error":{"type":<type>,"message":"Pandokos: ..."}}`
@@ -154,6 +155,7 @@ and `type` is the provider's type for the status:
 | `request_timeout`, `upstream_timeout` | `timeout_error` |
 | `request_too_large` | `request_too_large` |
 | `internal`, `upstream_unreachable`, `unavailable` | `api_error` |
+| `rate_limited` | `rate_limit_error` |
 
 Every Pandokos error carries the headers `X-Pandokos-Error` (the code) and `X-Pandokos-Request-Id`,
 and a body in the family's shape:
@@ -173,8 +175,10 @@ recognizes the paths of its operations; otherwise the `openai` shape is used. On
 depends on this: the status, the code and the message do not, so a caller still cannot tell an
 unknown provider from an unsupported path ([ADR 0041](../adr/0041-anthropic-api-family.md)).
 
-SDKs retry 408 and 409 by default. `request_timeout` and `no_credential` can therefore be retried
-by the client; the second one will keep failing until a credential exists.
+SDKs retry 408, 409 and 429 by default. `request_timeout` and `no_credential` can therefore be retried
+by the client; the second one will keep failing until a credential exists. A `rate_limited` answer
+is retried after the time in `Retry-After`; a request whose estimate is larger than the limit itself
+keeps failing ([limits guide](limits.md)).
 
 ## 4a. Streaming
 
@@ -236,6 +240,15 @@ under `ledger.shutdown_flush_timeout` ([usage guide](usage.md)).
 When the ledger buffer (`ledger.buffer_size`) is full, the instance answers 503 `unavailable` to new
 authenticated requests and `/readyz` fails with the check `ledger`, until the slots in use fall to half
 of the buffer.
+
+### Step 7b: limits
+
+After the model check and before the credential is opened, the request is reserved against every
+limit that applies to its key, service account and tenant, in one atomic step. A refusal ends the
+request there: no credential is opened and no provider is reached. With no rule for the caller the
+step does nothing. When the request finishes the reservation is settled with the figures of its
+usage record, or released if the request was never sent. The estimate, the guarantees, the 429
+and the headers are in the [limits guide](limits.md).
 
 ## 6. Outbound connections
 
@@ -324,5 +337,8 @@ The `request` line of the [container guide](container.md) gains these fields fro
 | `usage_reader` | the reader gave up | `failed` |
 | `issuer_id` | the credential was a token | the ID of the registration that accepted it; `key_id` is then the ID of the subject mapping |
 | `ledger` | step 3a refused the request | `full` (written `ledger: full` in this guide) |
+| `reserved_tokens` | a reservation was made (sprint 5.1) | input plus output tokens reserved by the estimate |
+| `limit_subject`, `limit_metric`, `limit_level`, `limit`, `retry_after_s` | step 7b refused the request | the subject kind (`tenant`, `service_account`, `key`), the metric, who set the value (`platform` or `tenant`), the value in force and the `Retry-After` sent |
+| `estimate_over_limit` | the estimate alone exceeds the limit | `true`: waiting cannot help |
 
 `ttfb_ms` now means the first body byte (section 4a).

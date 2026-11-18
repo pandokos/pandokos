@@ -76,3 +76,7 @@ not for a hard budget on someone else's money.
 
 **A gossip-based or approximate distributed limiter.** Removes the dependency, at the cost of
 guarantees that are hard to state and test.
+
+## History
+
+- 2026-11: sprint 5.1 fixes the pipeline step, the estimate, the window and the bound, which names input and output ([ADR 0048](0048-reserve-and-settle.md)), and the rules ([ADR 0049](0049-limit-rules.md)); quotas, budgets and the behaviour of a failing store follow in 5.2.
