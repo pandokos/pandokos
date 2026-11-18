@@ -1,7 +1,7 @@
 ---
 id: EPIC-5
 title: Limits and budgets
-status: done
+status: in-progress
 release: v0.2
 depends_on: [EPIC-3]
 ---
@@ -59,6 +59,40 @@ Requirements: LIM-02, LIM-03, LIM-05, LIM-11, LIM-12.
 
 Exit: a tenant with a monthly budget is refused once reservations reach it and admitted again
 after the period resets; after a restart counters match the ledger.
+
+### 5.3 Integrity of limit rules
+
+Added after the review of ADR 0049 by the maintainer (2026-11-18). Content still being collected.
+
+- Typed subject columns on `limit_rule` (`service_account_id`, `virtual_key_id`,
+  `subject_mapping_id`) with composite foreign keys `(tenant_id, id)` and `ON DELETE RESTRICT`, in
+  place of the text `subject_id`; a check that exactly the column of `subject_kind` is set; the
+  existing rows migrated.
+- The scope of a rule by identifier (`provider_id`, `model_id`, with foreign keys) in both rule
+  tables, in place of names; the API keeps accepting names and resolves them on write. A model
+  created later with the name of a deleted one is not matched by an old rule.
+- Deleting a subject mapping, deleting an issuer with its mappings and revoking a virtual key delete
+  the rules of those subjects in the same transaction, each with an audit row `limit.delete` naming
+  the actor of the deletion and the reason. A disabled service account keeps its rules.
+- Deleting a provider or a model that a rule of any tenant or of the platform references is refused
+  with 409; the documentation says to disable the model or remove its grants instead.
+- No periodic job looks for orphan rules: integrity is structural, and a schema test checks that
+  every subject and scope column of the rule tables has its foreign key.
+- The usage record states how limits treated the request: `limited` (at least one rule applied and
+  was verified), `unlimited` (no rule applied) or `unverified` (rules or counters could not be
+  verified and `limits.on_store_failure` is `allow`).
+- The first request of a tenant in a day that no rule covers writes one audit row
+  `limit.unlimited_traffic` in the tenant's log and in the platform log, through a restricted
+  function as for authentication failures.
+- An amendment to ADR 0049 records these decisions.
+
+Requirements: LIM-04, AUD-01.
+
+Exit: deleting a mapping or an issuer, or revoking a key, removes the rules of those subjects in the
+same transaction with one audit row each; a provider or model that a rule references cannot be
+deleted; no statement can leave a rule whose subject or scope does not exist; every usage record
+says whether the request was limited, unlimited or unverified; a tenant's first unlimited request
+of a day writes exactly one audit row.
 
 ## Risks
 
