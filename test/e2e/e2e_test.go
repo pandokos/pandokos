@@ -1161,14 +1161,15 @@ func TestExitScenario(t *testing.T) {
 	if status != 404 || !strings.Contains(text, "not_found") {
 		t.Errorf("API across tenants: %d %s", status, text)
 	}
-	// Every step is in the audit logs, in order.
-	got := auditActions(t, p.db, "SELECT action FROM pandokos.platform_audit_event ORDER BY occurred_at, action")
+	// Every step is in the audit logs, in order. The rows of unlimited traffic (one per tenant and day, written
+	// in the background) are not steps of this scenario.
+	got := auditActions(t, p.db, "SELECT action FROM pandokos.platform_audit_event WHERE action <> 'limit.unlimited_traffic' ORDER BY occurred_at, action")
 	want := "platform_key.bootstrap,platform_key.create,tenant.create,endpoint.update," + strings.Repeat("model.create,", len(fakeModels)) + "tenant.create"
 	if strings.Join(got, ",") != want {
 		t.Errorf("platform log: %v, want %s", got, want)
 	}
 	for _, x := range ts {
-		got := auditActions(t, p.db, "SELECT action FROM pandokos.audit_event WHERE tenant_id = $1::uuid ORDER BY occurred_at, action", x.id)
+		got := auditActions(t, p.db, "SELECT action FROM pandokos.audit_event WHERE tenant_id = $1::uuid AND action <> 'limit.unlimited_traffic' ORDER BY occurred_at, action", x.id)
 		if want := "data_key.create,service_account.create,virtual_key.create,service_account.create,virtual_key.create,credential.create"; strings.Join(got, ",") != want {
 			t.Errorf("tenant log: %v, want %s", got, want)
 		}

@@ -80,7 +80,7 @@ func TestRuleIntegrity(t *testing.T) {
 		if ids, _ := p.listedRules(t, tn.admin, tn.idStr); contains(ids, rule) {
 			t.Errorf("the rule of a revoked key is still listed: %v", ids)
 		}
-		got := auditActions(t, p.db, `SELECT action || '/' || (detail ->> 'cause') FROM pandokos.audit_event WHERE tenant_id = $1::uuid AND resource_id = $2`, tn.idStr, rule)
+		got := auditActions(t, p.db, `SELECT action || '/' || COALESCE(detail ->> 'cause', '') FROM pandokos.audit_event WHERE tenant_id = $1::uuid AND resource_id = $2`, tn.idStr, rule)
 		if !contains(got, "limit.delete/key_revoked") {
 			t.Errorf("audit rows %v", got)
 		}
@@ -99,7 +99,7 @@ func TestRuleIntegrity(t *testing.T) {
 		if ids, _ := p.listedRules(t, tn.admin, tn.idStr); contains(ids, rule) {
 			t.Errorf("the rule of a deleted mapping is still listed")
 		}
-		got := auditActions(t, p.db, `SELECT action || '/' || (detail ->> 'cause') FROM pandokos.audit_event WHERE tenant_id = $1::uuid AND resource_id = $2`, tn.idStr, rule)
+		got := auditActions(t, p.db, `SELECT action || '/' || COALESCE(detail ->> 'cause', '') FROM pandokos.audit_event WHERE tenant_id = $1::uuid AND resource_id = $2`, tn.idStr, rule)
 		if !contains(got, "limit.delete/subject_mapping_deleted") {
 			t.Errorf("audit rows %v", got)
 		}

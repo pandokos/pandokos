@@ -302,10 +302,12 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
+	unlimited := resolver.NewUnlimitedAuditor(gatewayDB, logger, nil)
 	limitsPort, err := resolver.NewLimits(resolver.LimitsOptions{
 		Rules: ruleCache, Store: memory, Logger: logger,
 		TTL:            time.Duration(cfg.Limits.MaxRequestDuration) + time.Minute,
 		Reconciler:     reconciler,
+		Unlimited:      unlimited,
 		OnUnknownPrice: cfg.Limits.OnUnknownPrice, OnStoreFailure: cfg.Limits.OnStoreFailure,
 	})
 	if err != nil {
@@ -369,6 +371,12 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	eventsDone.Add(1)
 	go func() { defer eventsDone.Done(); events.Run(eventsCtx) }()
 	defer func() { stopEvents(); eventsDone.Wait() }()
+	// The unlimited-traffic recorder runs with the background context and is closed with the event writer.
+	unlimitedCtx, stopUnlimited := context.WithCancel(context.WithoutCancel(ctx))
+	var unlimitedDone sync.WaitGroup
+	unlimitedDone.Add(1)
+	go func() { defer unlimitedDone.Done(); unlimited.Run(unlimitedCtx) }()
+	defer func() { stopUnlimited(); unlimitedDone.Wait() }()
 	if cfg.Pricing.Refresh.Enabled {
 		refresher := &catalog.Refresher{
 			DB: workerDB, Logger: logger, URL: cfg.Pricing.Refresh.ParsedURL.String(),
@@ -405,6 +413,9 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	if n := events.Close(eventsFlush); n > 0 {
 		logger.Warn("limit events not recorded", "unwritten", n)
 	}
+	stopUnlimited()
+	unlimitedDone.Wait()
+	unlimited.Close(eventsFlush)
 	eventsCancel()
 	flushCancel()
 	logger.Info("ledger flushed", "unwritten", unwritten)
