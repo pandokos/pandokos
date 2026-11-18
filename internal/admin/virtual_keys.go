@@ -186,6 +186,10 @@ func (s *server) RevokeVirtualKey(ctx context.Context, in adminapi.RevokeVirtual
 	var out adminapi.VirtualKey
 	err = s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
 		q := queries.New(tx)
+		// The lock of createLimit: no rule is created for the key between its revocation and the commit.
+		if err := q.LockLimitRules(ctx); err != nil {
+			return err
+		}
 		n, err := q.RevokeVirtualKey(ctx, in.Key)
 		if err != nil {
 			return err
@@ -201,8 +205,13 @@ func (s *server) RevokeVirtualKey(ctx context.Context, in adminapi.RevokeVirtual
 		if n == 0 {
 			return nil
 		}
+		rules, err := deleteSubjectRules(ctx, tx, q, tid, subjectOfRules{keyID: in.Key}, causeKeyRevoked, in.Key, in.Body.Reason)
+		if err != nil {
+			return err
+		}
 		return audit.RecordTenant(ctx, tx, tid, audit.Event{Actor: audit.ActorOf(p), Action: "virtual_key.revoke", ResourceType: "virtual_key",
-			ResourceID: in.Key, Outcome: "success", RequestID: st.id, Reason: in.Body.Reason, Detail: map[string]any{"service_account_id": row.ServiceAccountID}})
+			ResourceID: in.Key, Outcome: "success", RequestID: st.id, Reason: in.Body.Reason,
+			Detail: map[string]any{"service_account_id": row.ServiceAccountID, "limit_rules_deleted": rules}})
 	})
 	if err != nil {
 		return nil, err
