@@ -110,22 +110,43 @@ of a day writes exactly one audit row.
 
 ### 5.4 Tenant price lists
 
-Added after the review of ADR 0050 by the maintainer (2026-11-18); the need and the proposal are in
-issue #48.
+Added after the review of ADR 0050 by the maintainer (2026-11-18); the need is in issue #48. Scope
+revised by the maintainer on 2026-11-18. Scope closed.
 
-- Price versions held by a tenant for the models it can see, in any currency, with the rules of the
-  catalogue prices (ADR 0036): immutable, never backdated, exact decimals, tiers and fallbacks.
-- For that tenant they take precedence over the catalogue price; the usage record states the price
-  version and its source (`catalogue` or `tenant`).
-- Tenant-scoped storage under row-level security with isolation tests; administration API and CLI
-  with permissions of their own, separate from catalogue permissions; audit records.
-- The budget write check of 5.3, the reservation and the capability check use tenant prices.
-- A new requirement for tenant price lists (proposed CAT-11).
+- **Written and seen by the tenant only.** A tenant holds as many price lists as it wants, at most
+  one per currency, with the rules of the catalogue prices (ADR 0036): versioned, immutable, never
+  backdated, exact decimals, tiers and fallbacks. Only the tenant writes and reads them; the
+  platform can neither write, change nor read them (tenant-scoped, row-level security).
+- **The active currency of the tenant** (one per tenant, the catalogue currency by default) selects
+  the list used for every cost of the tenant: the tenant's list in that currency when it prices the
+  model, otherwise the catalogue price in that currency; a model priced in neither has an unknown
+  cost (`limits.on_unknown_price` applies). Lists in other currencies are kept and unused. Nothing
+  is converted. The usage record states the price version and its source (`catalogue` or `tenant`).
+- **Changing the active currency** is allowed only when a list in that currency exists (the
+  tenant's or the catalogue's), and takes effect at the start of the next month of the tenant's
+  zone, like a zone change, so that a change never frees a budget.
+- **Budgets and ceilings.** Only budgets and platform ceilings in the active currency apply to the
+  tenant; those in another currency are inactive (they never refuse) and are listed in the answer of
+  a currency change. A budget may be written in any currency that has a list, to prepare a change.
+  One cost per request: a platform ceiling in the active currency measures the tenant's price.
+- **The tenant's usage data is reserved to the tenant.** Through the product the platform sees no
+  usage record, limit event or price list of a tenant (negative tests for platform sessions). The
+  request log no longer carries cost, currency and tokens (a configuration key, off by default,
+  brings them back, with a start-up warning). Requirements and plan change accordingly: the
+  platform sees only operational indicators of the installation, with no tenant and no cost
+  (USE-06, USE-07, AZ-06; notes on sprints 6.1 and 6.2). Confidentiality against whoever
+  administers the database or the hosts is out of scope (issue #33) and stated in the security
+  model.
+- A new requirement for tenant price lists (proposed CAT-11); a new ADR on tenant price lists and
+  the active currency, and one on the confidentiality of usage data towards the platform;
+  amendments of ADR 0050 and others where needed.
 
-Requirements: CAT-08, CAT-09, LIM-03, new CAT-11.
+Requirements: CAT-08, LIM-03, USE-06, USE-07, AZ-06, new CAT-11.
 
-Exit: a tenant with a EUR price list and a EUR budget is refused once its reservations reach the
-budget, while another tenant on the same models keeps the catalogue USD price and its USD budget.
+Exit: a tenant with a EUR price list and a EUR budget, after switching its active currency to EUR,
+is refused once its reservations reach the budget, while another tenant on the same models keeps
+the catalogue USD price and its USD budget; a platform session reads none of the first tenant's
+prices, usage records or limit events.
 
 ## Risks
 
