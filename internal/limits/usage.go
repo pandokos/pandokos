@@ -2,10 +2,16 @@ package limits
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"math"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/pandokos/pandokos/internal/pricing"
 	"github.com/pandokos/pandokos/internal/store"
+	"github.com/pandokos/pandokos/internal/store/queries"
 	"github.com/pandokos/pandokos/internal/tenant"
 )
 
@@ -93,6 +99,55 @@ type dbLedger struct{ db *store.DB }
 // the capability check).
 func NewLedger(db *store.DB) Ledger { return &dbLedger{db: db} }
 
-func (l *dbLedger) Usage(context.Context, tenant.ID, time.Time, time.Time, time.Time) ([]UsageGroup, error) {
-	return nil, errNotImplemented
+// usageTimeout bounds one ledger read.
+const usageTimeout = 5 * time.Second
+
+// Usage runs AggregateUsageForLimits in the session of the tenant.
+func (l *dbLedger) Usage(ctx context.Context, t tenant.ID, from, liveFrom, to time.Time) ([]UsageGroup, error) {
+	ctx, cancel := context.WithTimeout(ctx, usageTimeout)
+	defer cancel()
+	var out []UsageGroup
+	err := l.db.WithTenant(ctx, t, func(ctx context.Context, tx store.Tx) error {
+		rows, err := queries.New(tx).AggregateUsageForLimits(ctx, queries.AggregateUsageForLimitsParams{
+			LiveFrom: liveFrom, FromTime: from, ToTime: to})
+		if err != nil {
+			return err
+		}
+		out = make([]UsageGroup, 0, len(rows))
+		for _, r := range rows {
+			tokens, err := parseTokens(r.Tokens)
+			if err != nil {
+				return err
+			}
+			cost, err := pricing.ParseDecimal(r.Cost)
+			if err != nil {
+				return fmt.Errorf("limits: usage cost %q: %w", r.Cost, err)
+			}
+			out = append(out, UsageGroup{Minute: r.Minute, PrincipalID: r.PrincipalID, KeyID: r.KeyID, Provider: r.Provider,
+				Model: r.Model, Currency: r.Currency, Requests: r.Requests, Tokens: tokens, Cost: cost})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("limits: read usage: %w", err)
+	}
+	return out, nil
+}
+
+// parseTokens reads the numeric text of a token sum as an integer, saturating at MaxInt64.
+func parseTokens(s string) (int64, error) {
+	if i := strings.IndexByte(s, '.'); i >= 0 {
+		s = s[:i]
+	}
+	if s == "" {
+		return 0, nil
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		if errors.Is(err, strconv.ErrRange) && !strings.HasPrefix(s, "-") {
+			return math.MaxInt64, nil
+		}
+		return 0, fmt.Errorf("limits: usage tokens %q: %w", s, err)
+	}
+	return n, nil
 }

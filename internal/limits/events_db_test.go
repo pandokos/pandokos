@@ -218,14 +218,23 @@ func TestEventWriter(t *testing.T) {
 			stop := runWriter(t, w)
 			defer stop()
 			before := countEvents(t, d, a)
+			// The reader is opened now and tolerates errors while it recovers: behind the pooler the
+			// failed logins are cached for a while after the database accepts connections again.
+			admin := d.Open(t, store.RoleAdmin)
 			d.SetAcceptingConnections(t, false)
 			for i := range 3 {
 				w.Offer(eventFor(a, ruleUUID(3000+i), 70, nov))
 			}
 			time.Sleep(400 * time.Millisecond)
 			d.SetAcceptingConnections(t, true)
-			testutil.Eventually(t, 20*time.Second, "the events to be written once the database is back", func() bool {
-				return countEvents(t, d, a) == before+3
+			testutil.Eventually(t, 30*time.Second, "the events to be written once the database is back", func() bool {
+				rctx, stop := context.WithTimeout(ctx, 5*time.Second)
+				defer stop()
+				var n int
+				err := admin.WithTenant(rctx, a, func(ctx context.Context, tx store.Tx) error {
+					return tx.QueryRow(ctx, `SELECT count(*) FROM pandokos.limit_event`).Scan(&n)
+				})
+				return err == nil && n == before+3
 			})
 		})
 

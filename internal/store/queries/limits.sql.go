@@ -17,8 +17,9 @@ SELECT (CASE WHEN u.started_at >= $1::timestamptz
        u.principal_id, u.key_id, u.provider, u.model, COALESCE(u.currency, '')::text AS currency,
        count(*) FILTER (WHERE u.credential_id IS NOT NULL)::bigint AS requests,
        COALESCE(sum(COALESCE(u.input_tokens, u.estimated_input_tokens, 0)
-                    + COALESCE(u.output_tokens, u.estimated_output_tokens, 0)), 0)::numeric AS tokens,
-       COALESCE(sum(u.cost), 0)::numeric AS cost
+                    + COALESCE(u.output_tokens, u.estimated_output_tokens, 0))
+                FILTER (WHERE u.credential_id IS NOT NULL), 0)::numeric AS tokens,
+       COALESCE(sum(u.cost) FILTER (WHERE u.credential_id IS NOT NULL), 0)::numeric AS cost
   FROM pandokos.usage_record u
  WHERE u.started_at >= $2::timestamptz
    AND u.started_at < $3::timestamptz

@@ -321,6 +321,14 @@ func TestReconciler(t *testing.T) {
 
 		t.Run("every query runs in the session of its tenant", func(t *testing.T) {
 			f := newReconcilerFixture(t, d, time.Minute)
+			// Tenant A of the sibling subtests has gained rows since the seed above: this one gets a
+			// tenant with the original rows.
+			a := d.SeedTenant(t, "rec-c")
+			d.SeedUsage(t, a,
+				dbtest.UsageRow{StartedAt: utc(2026, 11, 3, 9, 0, 0), InputTokens: 100, OutputTokens: 20},
+				dbtest.UsageRow{StartedAt: utc(2026, 11, 17, 11, 50, 0), InputTokens: 5},
+				dbtest.UsageRow{StartedAt: utc(2026, 11, 17, 11, 59, 0), InputTokens: 6},
+			)
 			la, lb := f.limit(a, limits.TokensPerMonth, limits.PerMonth), f.limit(b, limits.TokensPerMonth, limits.PerMonth)
 			if err := f.rec.Ensure(ctx, a, []limits.Limit{la}); err != nil {
 				t.Fatal(err)

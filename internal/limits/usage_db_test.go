@@ -69,25 +69,25 @@ func TestLedgerUsage(t *testing.T) {
 
 		d.SeedUsage(t, a,
 			// before the live part: one group, minute 0
-			dbtest.UsageRow{StartedAt: utc(2026, 11, 3, 9, 0, 0), PrincipalID: "sa-1", KeyID: "k1", Provider: "openai", Model: "gpt-4", InputTokens: 10, OutputTokens: 5, Cost: "0.25", Currency: "EUR"},
-			dbtest.UsageRow{StartedAt: utc(2026, 11, 4, 9, 0, 0), PrincipalID: "sa-1", KeyID: "k1", Provider: "openai", Model: "gpt-4", InputTokens: 1, OutputTokens: 1, Cost: "0.5", Currency: "EUR"},
+			dbtest.UsageRow{StartedAt: utc(2026, 11, 3, 9, 0, 0), PrincipalID: "00000000-0000-4000-8000-000000000001", KeyID: "k1", Provider: "openai", Model: "gpt-4", InputTokens: 10, OutputTokens: 5, Cost: "0.25", Currency: "EUR"},
+			dbtest.UsageRow{StartedAt: utc(2026, 11, 4, 9, 0, 0), PrincipalID: "00000000-0000-4000-8000-000000000001", KeyID: "k1", Provider: "openai", Model: "gpt-4", InputTokens: 1, OutputTokens: 1, Cost: "0.5", Currency: "EUR"},
 			// estimated tokens (the provider reported nothing) and an unknown cost
-			dbtest.UsageRow{StartedAt: utc(2026, 11, 5, 9, 0, 0), PrincipalID: "sa-2", KeyID: "k2", Provider: "anthropic", Model: "claude", EstimatedInputTokens: 30, EstimatedOutputTokens: 70},
+			dbtest.UsageRow{StartedAt: utc(2026, 11, 5, 9, 0, 0), PrincipalID: "00000000-0000-4000-8000-000000000002", KeyID: "k2", Provider: "anthropic", Model: "claude", EstimatedInputTokens: 30, EstimatedOutputTokens: 70},
 			// a request for which no credential was opened: not counted
-			dbtest.UsageRow{StartedAt: utc(2026, 11, 6, 9, 0, 0), PrincipalID: "sa-1", KeyID: "k1", Provider: "openai", Model: "gpt-4", NoCredential: true, InputTokens: 999, Cost: "9", Currency: "EUR"},
+			dbtest.UsageRow{StartedAt: utc(2026, 11, 6, 9, 0, 0), PrincipalID: "00000000-0000-4000-8000-000000000001", KeyID: "k1", Provider: "openai", Model: "gpt-4", NoCredential: true, InputTokens: 999, Cost: "9", Currency: "EUR"},
 			// refused by a limit: counts nothing
-			dbtest.UsageRow{StartedAt: utc(2026, 11, 7, 9, 0, 0), PrincipalID: "sa-1", KeyID: "k1", Provider: "openai", Model: "gpt-4", NoCredential: true, Outcome: "rejected_limit", EstimatedInputTokens: 500},
+			dbtest.UsageRow{StartedAt: utc(2026, 11, 7, 9, 0, 0), PrincipalID: "00000000-0000-4000-8000-000000000001", KeyID: "k1", Provider: "openai", Model: "gpt-4", NoCredential: true, Outcome: "rejected_limit", EstimatedInputTokens: 500},
 			// the live part, by minute
-			dbtest.UsageRow{StartedAt: utc(2026, 11, 17, 11, 47, 5), PrincipalID: "sa-1", KeyID: "k1", Provider: "openai", Model: "gpt-4", InputTokens: 7, Cost: "0.1", Currency: "EUR"},
-			dbtest.UsageRow{StartedAt: utc(2026, 11, 17, 11, 47, 50), PrincipalID: "sa-1", KeyID: "k1", Provider: "openai", Model: "gpt-4", InputTokens: 3, Cost: "0.2", Currency: "EUR"},
-			dbtest.UsageRow{StartedAt: utc(2026, 11, 17, 11, 59, 0), PrincipalID: "sa-1", KeyID: "k1", Provider: "openai", Model: "gpt-4", InputTokens: 1},
+			dbtest.UsageRow{StartedAt: utc(2026, 11, 17, 11, 47, 5), PrincipalID: "00000000-0000-4000-8000-000000000001", KeyID: "k1", Provider: "openai", Model: "gpt-4", InputTokens: 7, Cost: "0.1", Currency: "EUR"},
+			dbtest.UsageRow{StartedAt: utc(2026, 11, 17, 11, 47, 50), PrincipalID: "00000000-0000-4000-8000-000000000001", KeyID: "k1", Provider: "openai", Model: "gpt-4", InputTokens: 3, Cost: "0.2", Currency: "EUR"},
+			dbtest.UsageRow{StartedAt: utc(2026, 11, 17, 11, 59, 0), PrincipalID: "00000000-0000-4000-8000-000000000001", KeyID: "k1", Provider: "openai", Model: "gpt-4", InputTokens: 1},
 			// the boundaries: one microsecond before liveFrom is in the part before, one before `to` is in, `to` is out
-			dbtest.UsageRow{StartedAt: liveFrom.Add(-time.Microsecond), PrincipalID: "sa-3", KeyID: "k3", Provider: "openai", Model: "edge", InputTokens: 11},
-			dbtest.UsageRow{StartedAt: to.Add(-time.Microsecond), PrincipalID: "sa-3", KeyID: "k3", Provider: "openai", Model: "edge-end", InputTokens: 13},
-			dbtest.UsageRow{StartedAt: to, PrincipalID: "sa-3", KeyID: "k3", Provider: "openai", Model: "edge-out", InputTokens: 17},
-			dbtest.UsageRow{StartedAt: from.Add(-time.Microsecond), PrincipalID: "sa-3", KeyID: "k3", Provider: "openai", Model: "edge-before", InputTokens: 19},
+			dbtest.UsageRow{StartedAt: liveFrom.Add(-time.Microsecond), PrincipalID: "00000000-0000-4000-8000-000000000003", KeyID: "k3", Provider: "openai", Model: "edge", InputTokens: 11},
+			dbtest.UsageRow{StartedAt: to.Add(-time.Microsecond), PrincipalID: "00000000-0000-4000-8000-000000000003", KeyID: "k3", Provider: "openai", Model: "edge-end", InputTokens: 13},
+			dbtest.UsageRow{StartedAt: to, PrincipalID: "00000000-0000-4000-8000-000000000003", KeyID: "k3", Provider: "openai", Model: "edge-out", InputTokens: 17},
+			dbtest.UsageRow{StartedAt: from.Add(-time.Microsecond), PrincipalID: "00000000-0000-4000-8000-000000000003", KeyID: "k3", Provider: "openai", Model: "edge-before", InputTokens: 19},
 		)
-		d.SeedUsage(t, b, dbtest.UsageRow{StartedAt: utc(2026, 11, 3, 9, 0, 0), PrincipalID: "sa-1", KeyID: "k1", Provider: "openai", Model: "gpt-4", InputTokens: 4000, Cost: "40", Currency: "EUR"})
+		d.SeedUsage(t, b, dbtest.UsageRow{StartedAt: utc(2026, 11, 3, 9, 0, 0), PrincipalID: "00000000-0000-4000-8000-000000000001", KeyID: "k1", Provider: "openai", Model: "gpt-4", InputTokens: 4000, Cost: "40", Currency: "EUR"})
 
 		gs, err := reader.Usage(ctx, a, from, liveFrom, to)
 		if err != nil {
@@ -95,26 +95,26 @@ func TestLedgerUsage(t *testing.T) {
 		}
 		got := groupsByKey(t, gs)
 
-		g := got[groupKey{0, "sa-1", "k1", "openai", "gpt-4", "EUR"}]
+		g := got[groupKey{0, "00000000-0000-4000-8000-000000000001", "k1", "openai", "gpt-4", "EUR"}]
 		if g.Requests != 2 || g.Tokens != 17 || g.Cost.String() != "0.75" {
 			t.Errorf("credential rule and sums: %+v, want 2 requests, 17 tokens, cost 0.75 (the row without credential counts nothing)", g)
 		}
-		g = got[groupKey{0, "sa-2", "k2", "anthropic", "claude", ""}]
+		g = got[groupKey{0, "00000000-0000-4000-8000-000000000002", "k2", "anthropic", "claude", ""}]
 		if g.Requests != 1 || g.Tokens != 100 || g.Cost.String() != "0" {
 			t.Errorf("estimated tokens and unknown cost: %+v, want 1 request, 100 tokens, cost 0", g)
 		}
-		g = got[groupKey{minute(utc(2026, 11, 17, 11, 47, 0)), "sa-1", "k1", "openai", "gpt-4", "EUR"}]
+		g = got[groupKey{minute(utc(2026, 11, 17, 11, 47, 0)), "00000000-0000-4000-8000-000000000001", "k1", "openai", "gpt-4", "EUR"}]
 		if g.Requests != 2 || g.Tokens != 10 || g.Cost.String() != "0.3" {
 			t.Errorf("minute 11:47: %+v, want 2 requests, 10 tokens, cost 0.3", g)
 		}
-		g = got[groupKey{minute(utc(2026, 11, 17, 11, 59, 0)), "sa-1", "k1", "openai", "gpt-4", ""}]
+		g = got[groupKey{minute(utc(2026, 11, 17, 11, 59, 0)), "00000000-0000-4000-8000-000000000001", "k1", "openai", "gpt-4", ""}]
 		if g.Requests != 1 || g.Tokens != 1 {
 			t.Errorf("minute 11:59 without a cost: %+v", g)
 		}
-		if g := got[groupKey{0, "sa-3", "k3", "openai", "edge", ""}]; g.Requests != 1 || g.Tokens != 11 {
+		if g := got[groupKey{0, "00000000-0000-4000-8000-000000000003", "k3", "openai", "edge", ""}]; g.Requests != 1 || g.Tokens != 11 {
 			t.Errorf("a row one microsecond before liveFrom: %+v, want it in the part before (minute 0)", g)
 		}
-		if g := got[groupKey{minute(to.Add(-time.Minute)), "sa-3", "k3", "openai", "edge-end", ""}]; g.Requests != 1 || g.Tokens != 13 {
+		if g := got[groupKey{minute(to.Add(-time.Minute)), "00000000-0000-4000-8000-000000000003", "k3", "openai", "edge-end", ""}]; g.Requests != 1 || g.Tokens != 13 {
 			t.Errorf("a row one microsecond before `to`: %+v, want it in", g)
 		}
 		for k, g := range got {
