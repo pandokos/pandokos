@@ -65,7 +65,7 @@ flowchart LR
 | **4** | **[Identity federation and RBAC](epics/04-identity-and-rbac/epic.md)** | | |
 | 4.1 | Trusted token issuers | JWTs from registered issuers authenticate calls; the tenant comes from the registration or from a claim | done |
 | | **v0.2.0 — Governance** | | |
-| **5** | **[Limits and budgets](epics/05-limits-and-budgets/epic.md)** | | in progress |
+| **5** | **[Limits and budgets](epics/05-limits-and-budgets/epic.md)** | | |
 | 5.1 | Reserve and settle | The limiter interface with in-process counters; request and token rate limits; concurrency; the 429 contract | done |
 | 5.2 | Quotas and budgets | Periodic quotas and monetary budgets with reservation; scopes; soft thresholds; reconciliation from the ledger | |
 | **4** | **Identity federation and RBAC** (continued) | | |
