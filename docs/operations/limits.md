@@ -155,7 +155,8 @@ A budget is a `cost_per_day` or `cost_per_month` rule: an amount in one currency
   rates of the price in force, minus what was reserved.
 - **The capability check.** `checks.budget` of the tenant's capability check ([administration API
   reference](../reference/admin-api.md)) says whether a call would find a budget exhausted, computed
-  from the ledger: `not_enforced`, `unpriced`, `exhausted` or `available`. `available` means "not
+  from the ledger, which it reads with the worker database role inside the tenant's session, under
+  row-level security (not with the admin role): `not_enforced`, `unpriced`, `exhausted` or `available`. `available` means "not
   exhausted"; a call whose estimate exceeds what is left is still refused. Requests in flight are
   not in that total.
 
@@ -567,3 +568,4 @@ credential or a subject ID other than the principal fields of the request line.
 | Delivery of limit events to other systems (webhook, outbox) | 6.4 |
 | Limit metrics for dashboards | 6.1 |
 | A "used against limit" report, and a usage rollup that makes the ledger reads cheap | 6.2 |
+| A cheaper path for budgets: a request with budget limits makes about 105 allocations per reserve and settle, against 4 for rate limits (measured by benchmark T-622); revisited with the 6.1 metrics and epic 8 | 6.1, epic 8 |

@@ -30,8 +30,9 @@ happens when the ledger cannot be read.
    loaded always refuse.
 6. The capability check computes `checks.budget` from the ledger, with the same matching function.
    It reads the ledger through the reader that `serve` builds on the worker pool, so that only the
-   command composes it; the check sits in the administration plane, which is told the reader and
-   never builds it.
+   command composes it, with the worker database role inside the tenant's session under row-level
+   security; the check sits in the administration plane, which is told the reader and never builds
+   it.
 
 ## Consequences
 
@@ -56,3 +57,4 @@ limiter for the sake of minutes.
 ## History
 
 - 2026-11: `limits.on_store_failure` and `limits.reconcile_interval` are added in sprint 5.2.
+- 2026-11-18: after review of sprint 5.2: a tenant without a cut loads every period that began before the process followed it, also one that starts inside the horizon (a restart just after midnight), and the cut and the loads are installed together.
