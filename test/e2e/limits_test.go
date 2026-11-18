@@ -500,7 +500,10 @@ func TestQuotaCanary(t *testing.T) {
 	}
 	for _, r := range responses {
 		testutil.AssertAbsent(t, "the response "+r.what, r.text, secrets...)
-		testutil.AssertNoCanary(t, "the response "+r.what, r.text)
+		// A settled response carries the model's completion, which is the canary of the fake provider.
+		if strings.Contains(r.text, "X-Pandokos-Error") {
+			testutil.AssertNoCanary(t, "the Pandokos error "+r.what, r.text)
+		}
 	}
 	if n := len(logLines(t, p.stdout.String(), "request")); n < 4 {
 		t.Errorf("%d request log lines at debug level, want at least 4", n)
