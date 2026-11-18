@@ -461,8 +461,8 @@ Migration `0009_limit_rules` adds the two tables of the limit rules ([limits gui
 - Who reads and writes. **The gateway role reads both and writes neither**; it reads a tenant's rules
   with two queries inside that tenant's session. The admin role reads both and holds column-level
   `INSERT` and `DELETE`, and `UPDATE` on `limit_value` only (a rule changes its value, never its
-  subject or metric). The worker role holds nothing. Until sprint 5.2 no role writes a rule in a
-  running installation; the tables are empty and nothing is seeded.
+  subject or metric). The worker role holds nothing. Rules are written through the administration API
+  and the CLI (migration 0010 and [limits guide](limits.md)); nothing is seeded.
 - Notifications on `pandokos_cache`: a change to `limit_rule`, or to a row of `platform_limit_rule`
   that has a tenant, sends `limits:<tenant id>`; a change to a platform default (a row without a
   tenant) sends `limits`. The gateway's rule cache drops that tenant on `limits:<id>` and on

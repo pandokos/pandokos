@@ -199,7 +199,7 @@ sequenceDiagram
    whatever happens.
 4. **Authorize.** Both `model:invoke` and `credential:use` are decided from the principal before
    the body is read. Then the body is read up to a size limit and only the fields Pandokos needs are
-   parsed: model, stream flag (and, in later sprints, the output-token limit). The model must be
+   parsed: model, stream flag and the output-token limit. The model must be
    available to the tenant and allowed by the key.
 5. **Reserve.** An estimate of the request's tokens (and cost) is reserved against every applicable
    limit, in one atomic step, after the counters of the periods it falls in are known. If any limit
@@ -230,7 +230,7 @@ write happens after the response has been delivered.
 | Store | Required | Holds | Notes |
 |---|---|---|---|
 | PostgreSQL 16+ | always | Everything durable: tenants, identities, roles, catalogue, encrypted credentials, limits, usage ledger, audit log, outbox | System of record. Row-level security on every tenant table ([ADR 0004](../adr/0004-postgresql-and-rls.md)) |
-| Valkey (Redis protocol) | with more than one gateway instance | Rate-limit windows, budget reservations | Never the source of truth: counters are rebuilt from the ledger ([ADR 0012](../adr/0012-limits-and-budget-reservation.md)) |
+| Valkey (Redis protocol) | with more than one gateway instance | Rate-limit windows, budget reservations (planned, epic 8: counters are in process today) | Never the source of truth: counters are rebuilt from the ledger ([ADR 0012](../adr/0012-limits-and-budget-reservation.md)) |
 | KEK provider | always | The key-encryption key | A local key file by default; KMS or transit service optionally |
 | Process memory | — | Caches of principals, catalogue, data keys, decrypted credentials | Bounded lifetime; see below |
 

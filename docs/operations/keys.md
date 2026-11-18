@@ -140,7 +140,7 @@ Suspending a tenant refuses every key of the tenant, on both listeners, with `te
 
 ## Limits per key
 
-A virtual key can be the subject of a limit rule (requests or tokens per minute, requests in flight), next to the rules of its service account and its tenant; the key ID is what the rule names ([limits guide](limits.md)). Rules are written through the administration API from sprint 5.2.
+A virtual key can be the subject of a limit rule (requests or tokens per minute, requests in flight), next to the rules of its service account and its tenant; the key ID is what the rule names ([limits guide](limits.md)). Rules are written through the administration API and the CLI.
 
 ## Things to know
 
