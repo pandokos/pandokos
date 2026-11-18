@@ -135,8 +135,8 @@ type Reservation struct {
 type Refusal struct {
 	Limit      Limit         // the first limit, in the order of resolution, that had no room
 	Remaining  int64         // Max minus what is counted, never negative
-	RetryAfter time.Duration // 1 s to 61 s, the longest over every limit that had no room
-	Reset      time.Duration // until the refused counter is empty if nothing is admitted; 0 for concurrency
+	RetryAfter time.Duration // at least 1 s, the longest over every limit that had no room: up to 61 s for a rate limit, the time to the end of the period for a period limit
+	Reset      time.Duration // until the refused counter is empty if nothing is admitted (the end of the period for a period limit); 0 for concurrency
 	OverLimit  bool          // the estimate alone exceeds Limit.Max: waiting does not help
 }
 

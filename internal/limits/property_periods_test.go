@@ -69,7 +69,8 @@ type prop struct {
 	seen       map[string]Limit
 	trace      []string
 	lastTick   time.Time
-	laggy      bool // records are committed after a delay, may be lost, others write too
+	admitting  *refReq // the request being admitted: it left pend but its start bounds the cut
+	laggy      bool    // records are committed after a delay, may be lost, others write too
 }
 
 func newProp(t *testing.T, seed uint64, n int, withReconciler bool) *prop {
@@ -171,7 +172,10 @@ func (p *prop) ensure(ls []Limit) error {
 	now := p.clk.now()
 	if _, ok := p.m.Cut(p.tn); !ok {
 		oldest := now
-		for _, q := range append(append([]*refReq(nil), p.pend...), p.open...) {
+		for _, q := range append(append([]*refReq{p.admitting}, p.pend...), p.open...) {
+			if q == nil {
+				continue
+			}
 			if q.start.Before(oldest) {
 				oldest = q.start
 			}
@@ -232,6 +236,7 @@ func (p *prop) admit() {
 	}
 	i := p.rng.IntN(len(p.pend))
 	q := p.pend[i]
+	p.admitting = q
 	p.pend = append(p.pend[:i], p.pend[i+1:]...)
 	if p.clk.now().Sub(q.start) > 60*time.Second {
 		q.end = refReleased
@@ -442,8 +447,16 @@ func (p *prop) run(ops int) {
 // TestPropertyPeriods is T-650.
 func TestPropertyPeriods(t *testing.T) {
 	seed := seedOf(t)
+	total := 0
+	var last *prop
+	defer func() {
+		if total == 0 && last != nil && !t.Failed() {
+			last.fail("no counter was used in any schedule")
+		}
+	}()
 	for n := range max(1, schedules()/10) {
 		p := newProp(t, seed, n, false)
+		last = p
 		p.run(80)
 		if got := p.m.Outstanding(); got != 0 {
 			p.fail("%d reservations outstanding after everything ended", got)
@@ -466,17 +479,23 @@ func TestPropertyPeriods(t *testing.T) {
 			}
 			checked++
 		}
-		if checked == 0 {
-			p.fail("no counter was used")
-		}
+		total += checked // a schedule can end without an admission; some must have had one
 	}
 }
 
 // TestPropertyReconcile is T-652.
 func TestPropertyReconcile(t *testing.T) {
 	seed := seedOf(t)
+	totalCompared := 0
+	var last *prop
+	defer func() {
+		if totalCompared == 0 && last != nil && !t.Failed() {
+			last.fail("no counter was left to compare in any schedule")
+		}
+	}()
 	for n := range max(1, schedules()/20) {
 		p := newProp(t, seed, n, true)
+		last = p
 		p.run(90)
 		// H + the interval after the last request, and one more tick: every counter is the ledger.
 		p.advance(testHorizon + testInterval + 2*time.Minute)
@@ -493,9 +512,7 @@ func TestPropertyReconcile(t *testing.T) {
 			}
 			compared++
 		}
-		if compared == 0 {
-			p.fail("no counter was left to compare")
-		}
+		totalCompared += compared
 		if got := p.m.Outstanding(); got != 0 {
 			p.fail("%d reservations outstanding", got)
 		}

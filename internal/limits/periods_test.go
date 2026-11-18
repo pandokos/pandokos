@@ -541,7 +541,7 @@ func TestMarks(t *testing.T) {
 		e := newPeriodsEnv(t)
 		l := testMarkLimit(e, 100, m80)
 		settleTokens(t, e, l, 50, 50)
-		lowered := testMarkLimit(e, 40, Mark{At: 32, Percent: 80, RuleID: "r-ten", Level: LevelTenant, Value: 40})
+		lowered := testMarkLimit(e, 100, Mark{At: 32, Percent: 80, RuleID: "r-ten", Level: LevelTenant, Value: 40})
 		settleTokens(t, e, lowered, 1, 1) // used is 51, above the new mark at 32
 		evs := e.sink.taken()
 		if len(evs) != 1 || evs[0].Value != 40 {
