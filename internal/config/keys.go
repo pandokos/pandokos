@@ -49,21 +49,21 @@ func setBool(f func(c *Config) *bool) func(*Config, string) error {
 	}
 }
 
-func parseInt(v string) (int64, error) {
+func parseInt(v string) (int, error) {
 	n, err := strconv.ParseInt(v, 10, strconv.IntSize)
 	if err != nil {
 		return 0, errNotInteger
 	}
-	return n, nil
+	return int(n), nil
 }
 
 func setInt(f func(c *Config) *int) func(*Config, string) error {
 	return func(c *Config, v string) error {
-		n, err := strconv.ParseInt(v, 10, strconv.IntSize)
+		n, err := ParseInt(v)
 		if err != nil {
 			return errNotInteger
 		}
-		*f(c) = int(n)
+		*f(c) = n
 		return nil
 	}
 }
@@ -98,11 +98,11 @@ var keyTable = []keyDef{
 		setDuration(func(c *Config) *Duration { return &c.Listeners.Inference.IdleTimeout })),
 	def("listeners.inference.max_header_bytes", "integer", "65536", "Maximum size of request headers",
 		func(c *Config, v string) error {
-			n, err := strconv.ParseInt(v, 10, strconv.IntSize)
+			n, err := ParseInt(v)
 			if err != nil {
 				return errNotInteger
 			}
-			c.Listeners.Inference.MaxHeaderBytes = int(n)
+			c.Listeners.Inference.MaxHeaderBytes = n
 			return nil
 		}),
 	def("listeners.inference.tls.cert_file", "path", "", "PEM file with the server certificate and any intermediate certificates; with key_file, turns TLS on",
@@ -121,9 +121,9 @@ var keyTable = []keyDef{
 		func(c *Config, v string) error {
 			n, err := parseInt(v)
 			if err != nil {
-				return err
+				return errNotInteger
 			}
-			c.Listeners.Admin.MaxHeaderBytes = int(n)
+			c.Listeners.Admin.MaxHeaderBytes = n
 			return nil
 		}),
 	def("listeners.admin.tls.cert_file", "path", "", "PEM file with the server certificate and any intermediate certificates; with key_file, turns TLS on",
@@ -138,7 +138,7 @@ var keyTable = []keyDef{
 		func(c *Config, v string) error {
 			n, err := parseInt(v)
 			if err != nil {
-				return err
+				return errNotInteger
 			}
 			c.Limits.MaxRequestBodyBytes = n
 			return nil
@@ -151,7 +151,7 @@ var keyTable = []keyDef{
 		func(c *Config, v string) error {
 			n, err := parseInt(v)
 			if err != nil {
-				return err
+				return errNotInteger
 			}
 			c.Limits.DefaultOutputTokens = n
 			return nil
@@ -202,9 +202,9 @@ var keyTable = []keyDef{
 		func(c *Config, v string) error {
 			n, err := parseInt(v)
 			if err != nil {
-				return err
+				return errNotInteger
 			}
-			c.Database.Gateway.MaxConnections = int(n)
+			c.Database.Gateway.MaxConnections = n
 			return nil
 		}),
 	def("database.admin.user", "name", "pandokos_admin", "Database user of the admin role",
@@ -215,9 +215,9 @@ var keyTable = []keyDef{
 		func(c *Config, v string) error {
 			n, err := parseInt(v)
 			if err != nil {
-				return err
+				return errNotInteger
 			}
-			c.Database.Admin.MaxConnections = int(n)
+			c.Database.Admin.MaxConnections = n
 			return nil
 		}),
 	def("database.worker.user", "name", "pandokos_worker", "Database user of the worker role",
@@ -228,9 +228,9 @@ var keyTable = []keyDef{
 		func(c *Config, v string) error {
 			n, err := parseInt(v)
 			if err != nil {
-				return err
+				return errNotInteger
 			}
-			c.Database.Worker.MaxConnections = int(n)
+			c.Database.Worker.MaxConnections = n
 			return nil
 		}),
 	def("database.owner.user", "name", "pandokos_owner", "Database user of pandokos migrate",
