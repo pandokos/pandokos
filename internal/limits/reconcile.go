@@ -62,15 +62,21 @@ func NewReconciler(o ReconcilerOptions) (*Reconciler, error) {
 	return &Reconciler{o: o, rebased: map[tenant.ID]time.Time{}}, nil
 }
 
-// lock takes the mutex of a tenant; waiting gives up with ctx.
+// lock takes the mutex of a tenant; waiting gives up with ctx. A channel that forget removed
+// while it was being taken is an orphan: the lock is given back and taken again on the current one.
 func (r *Reconciler) lock(ctx context.Context, t tenant.ID) (unlock func(), err error) {
-	v, _ := r.locks.LoadOrStore(t, make(chan struct{}, 1))
-	ch := v.(chan struct{})
-	select {
-	case ch <- struct{}{}:
-		return func() { <-ch }, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	for {
+		v, _ := r.locks.LoadOrStore(t, make(chan struct{}, 1))
+		ch := v.(chan struct{})
+		select {
+		case ch <- struct{}{}:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		if cur, ok := r.locks.Load(t); ok && cur.(chan struct{}) == ch {
+			return func() { <-ch }, nil
+		}
+		<-ch
 	}
 }
 
@@ -179,8 +185,16 @@ func (r *Reconciler) forget(live []tenant.ID) {
 		keep[t] = struct{}{}
 	}
 	r.locks.Range(func(k, v any) bool {
-		if _, ok := keep[k.(tenant.ID)]; !ok && len(v.(chan struct{})) == 0 {
-			r.locks.Delete(k)
+		if _, ok := keep[k.(tenant.ID)]; ok {
+			return true
+		}
+		// Delete only while holding the lock, so nobody holds the channel being removed.
+		ch := v.(chan struct{})
+		select {
+		case ch <- struct{}{}:
+			r.locks.CompareAndDelete(k, v)
+			<-ch
+		default:
 		}
 		return true
 	})

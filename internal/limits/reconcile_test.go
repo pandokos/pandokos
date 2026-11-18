@@ -2,6 +2,9 @@ package limits
 
 import (
 	"context"
+	"runtime"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -287,6 +290,44 @@ func TestLoadFoldRebase(t *testing.T) {
 		e.rec.Tick(bg)
 		if lk, rb := size(); lk != 0 || rb != 0 {
 			t.Errorf("locks %d, rebased %d after a tick, want 0 and 0", lk, rb)
+		}
+	})
+
+	t.Run("the reconciler: lock and forget never let two holders into one tenant", func(t *testing.T) {
+		e := newRecEnv(t)
+		var inside, bad atomic.Int32
+		stop := make(chan struct{})
+		var wg sync.WaitGroup
+		for range 8 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for {
+					select {
+					case <-stop:
+						return
+					default:
+					}
+					unlock, err := e.rec.lock(bg, e.tn)
+					if err != nil {
+						return
+					}
+					if inside.Add(1) != 1 {
+						bad.Add(1)
+					}
+					runtime.Gosched()
+					inside.Add(-1)
+					unlock()
+				}
+			}()
+		}
+		for range 20000 {
+			e.rec.forget(nil)
+		}
+		close(stop)
+		wg.Wait()
+		if n := bad.Load(); n != 0 {
+			t.Errorf("%d times two holders were inside the critical section of one tenant", n)
 		}
 	})
 
