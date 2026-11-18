@@ -59,7 +59,26 @@ on a moving number.
 **Counting unpriced requests at zero silently.** A budget would be bypassed by choosing a model
 without a price.
 
+## Amendment (sprint 5.3)
+
+Decided in the review of 2026-11-18; replaces "one time zone per installation" of decision 1, the
+alternative "a zone per tenant or per rule" and the consequence "changing the zone ... takes effect at
+restart" for tenants that have a zone of their own.
+
+1. A tenant has a time zone (`tenant.time_zone`); `limits.time_zone` is the zone of the tenants that
+   have none. The platform sets it (`tenant:write`), and so does the tenant (`limit:write`); both are
+   audited.
+2. A change takes effect at the start of the next month in the zone in force, for days and months
+   alike. A period is always a whole civil period of the zone in force at the request's start, and its
+   counter counts the whole range, so the first periods of a new zone include what was used in their
+   hours before the change took effect: moving a boundary never frees a quota. Platform and tenant
+   rules of one tenant still share one calendar.
+3. A budget is refused on write (400 on `currency`, naming the currencies in use) when no catalogue
+   price that can be in force for its scope is in its currency. Nothing is converted. Sprint 5.4 adds
+   the tenant's own prices to that set.
+
 ## History
 
 - 2026-11: `limits.on_unknown_price`, `limits.time_zone` and the code `no_price` are added in sprint 5.2.
 - 2026-11-18: accepted by the maintainer after review. Amendments planned in sprint 5.3 (a time zone per tenant, effective from the next period; a budget refused on write when no price of its scope is in its currency) and sprint 5.4 (price lists per tenant, issue #48).
+- 2026-11-18: amended by sprint 5.3 (see Amendment); tenant price lists remain planned for sprint 5.4.

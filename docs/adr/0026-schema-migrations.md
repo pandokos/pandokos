@@ -47,3 +47,4 @@ with forced row-level security, which hides rows from the owner too.
 ## History
 
 - 2026-11-18: recorded as accepted by the maintainer.
+- 2026-11-18: sprint 5.3: migration 0011 is a data migration that lifts forced row-level security on the tables it touches, inside its transaction, and puts it back before it ends ([ADR 0049](0049-limit-rules.md)).

@@ -93,3 +93,4 @@ Sprint 4.1. Maintainer decisions of 2026-11-16: tokens on the inference listener
 accepted wherever the family reads a credential; a free audience, unique installation-wide; exact
 subject match only.
 - 2026-11-18: accepted by the maintainer after review.
+- 2026-11-18: sprint 5.3: deleting a mapping or an issuer (tenant-bound or platform-level) deletes the limit rules of its mappings, audited ([ADR 0049](0049-limit-rules.md), [ADR 0052](0052-administration-of-limits.md)).

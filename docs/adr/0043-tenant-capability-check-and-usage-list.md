@@ -43,3 +43,4 @@ credential to answer a question.
 - 2026-11-18: sprint 5.2: `checks.budget` takes the values `not_enforced`, `unpriced`, `exhausted` and `available`, with the reasons `no_price` and `budget_exhausted` ([ADR 0051](0051-period-counters-and-the-ledger.md)).
 - 2026-11-18: the budget check reads the ledger with the worker database role, inside the tenant's session under row-level security, not with the admin role: the reader is built by `serve` on the worker pool and handed to the administration plane ([ADR 0051](0051-period-counters-and-the-ledger.md)). The `SELECT` of the admin role on the ledger is still used by the usage list.
 - 2026-11-18: accepted by the maintainer after review.
+- 2026-11-18: sprint 5.3: `checks.budget` uses the tenant's time zone and matches rules by identifier; the usage list shows and filters on `limit_state`.

@@ -7,7 +7,9 @@ before it is sent, what the limits guarantee and what they only bound, what the 
 is reached, how the counters relate to the usage ledger, how to write rules and how to choose
 values. It applies from sprint 5.1 ([ADR 0048](../adr/0048-reserve-and-settle.md),
 [ADR 0049](../adr/0049-limit-rules.md)) and sprint 5.2 ([ADR 0050](../adr/0050-quotas-and-budgets-periods-attribution-currencies.md),
-[ADR 0051](../adr/0051-period-counters-and-the-ledger.md), [ADR 0052](../adr/0052-administration-of-limits.md)).
+[ADR 0051](../adr/0051-period-counters-and-the-ledger.md), [ADR 0052](../adr/0052-administration-of-limits.md)),
+and sprint 5.3 (the amendments of ADR 0049, 0050 and 0052): rules that reference their subject and
+scope, the time zone of a tenant, the currency check of budgets, `limit_state`.
 
 > **Limits are per gateway instance until the Valkey store exists.** Each instance counts alone, in
 > memory: with *N* instances a limit admits up to *N* times its value. A restart empties the rate
@@ -23,7 +25,7 @@ values. It applies from sprint 5.1 ([ADR 0048](../adr/0048-reserve-and-settle.md
 | `concurrent_requests` | requests in flight: admitted and not yet finished | none (a gauge) |
 | `requests_per_minute` | requests that Pandokos tried to send | sliding, 60 to 61 s |
 | `tokens_per_minute` | input plus output tokens, reserved at the start and corrected at the end | sliding, 60 to 61 s |
-| `requests_per_day`, `requests_per_month` | requests that started in the calendar day or month | the period, in the zone `limits.time_zone` |
+| `requests_per_day`, `requests_per_month` | requests that started in the calendar day or month | the period, in the time zone of the tenant ([section 4](#4-periods-and-the-time-zone)) |
 | `tokens_per_day`, `tokens_per_month` | input plus output tokens of the requests that started in the period | the period |
 | `cost_per_day`, `cost_per_month` | the cost of the requests that started in the period, in one currency | the period |
 
@@ -53,8 +55,14 @@ limit must admit it: a rule can take room away and never add it.
 | `service_account` | one service account of the tenant | the service account's ID | the tenant's rule for that service account |
 | `key` | one virtual key, or, for a caller that presents a token, its subject mapping | the key ID, or the mapping ID for a token | the tenant's rule for that key |
 
-Limits of a service account apply to its keys and to its tokens alike. A rule whose subject does
-not exist, or a key rule above the tenant's limit, is valid and has no effect. The platform can
+Limits of a service account apply to its keys and to its tokens alike. A subject mapping, which is what
+a token's caller is identified by, can be the subject of a rule of kind `key` (its mapping ID is the
+`--key`; [tokens guide](tokens.md)). A rule names a subject that exists: the database refuses one for a
+subject that does not, for a subject of another tenant and for a revoked key, and it refuses to delete a
+subject while a rule names it. Whoever removes a subject removes its rules first: revoking a key, deleting
+a subject mapping, a registration or a platform-level registration deletes the rules of those subjects in
+the same transaction, each with an audit row ([section 13](#13-managing-rules)). A disabled service
+account keeps its rules. A key rule above the tenant's limit is valid and has no effect. The platform can
 raise a tenant's ceiling with a row for that tenant that replaces the default; a tenant cannot
 loosen what the platform set. A platform ceiling counts each tenant on its own: a limit on the sum
 over all tenants cannot be expressed. The platform ceiling and the tenant's own rule share one
@@ -76,6 +84,57 @@ between them; the batch key can never use more than 30000 in a minute, and what 
 counts against the tenant's 200000. A request of the batch key is refused when either counter has
 no room, and the answer says which one (`X-Pandokos-Limit-Subject`).
 
+## 2a. Two quotas
+
+Two different quotas stand between a caller and a model, and only one of them is Pandokos's.
+
+| | The quota decided in Pandokos | The quota a provider grants to a credential |
+|---|---|---|
+| Who sets it | you, with the rules of this guide | the provider, for the account that owns the credential: rate tiers (requests and tokens per minute), spend limits, daily caps |
+| What it counts | what passes through this Pandokos installation, by tenant, service account, key, provider and model | everything the credential is used for, by anyone, anywhere, including other Pandokos tenants or instances that hold the same account |
+| Visible to Pandokos | yes: it is the rule | **no**: Pandokos does not know the tier of a credential, does not read the provider's headers to learn it and has no number to compare |
+| What the caller sees | 429 `rate_limited` or `quota_exceeded`, 409 `no_price`, from Pandokos | the provider's own 429 (or 5xx), forwarded as the provider sent it; Pandokos only records it in the usage record |
+
+A Pandokos rule never raises what a provider allows, and nothing in Pandokos reduces itself when the
+provider refuses. What you can do is set Pandokos's rules so that the provider's quota is not reached,
+or is shared the way you want. Two recipes, with the rule that a tenant has **one default credential
+per provider** (a key can be pinned to another credential of the tenant, and only then does it stop
+using the default one: [keys guide](keys.md)).
+
+**Protect a provider tier.** The tenant's credential for `openai` has a tier of 300,000 tokens a minute
+at the provider. Put a rule of the tenant scoped to the provider below it, so that the tenant's callers
+together are refused by Pandokos (a 429 with `X-Pandokos-Limit-Scope: provider`) before the provider
+refuses them:
+
+```
+pandokos limit create --tenant acme --metric tokens_per_minute --limit 250000 --provider openai
+```
+
+Leave a margin for what the tier also counts that Pandokos does not (other users of the same account,
+other instances: limits are per instance, [section 10](#10-what-is-strict-bounded-and-best-effort)), and
+for the estimate of a request being only an estimate. A tier on requests, or on a daily spend, takes
+the same recipe with `requests_per_minute` or a budget (`cost_per_day`).
+
+**Keep a batch key from starving an interactive one.** A tenant runs an interactive application and a
+nightly batch, each with its own virtual key, and both use the default credential of `openai`, so both
+draw on its tier. A rule of the tenant alone (250,000) does not help: the batch can use all of it. Give
+the batch key a rule of subject `key`, scoped to the provider, that leaves the room the interactive keys
+need:
+
+```
+pandokos limit create --tenant acme --subject key --key 7f3a... --metric tokens_per_minute \
+    --limit 100000 --provider openai
+pandokos limit create --tenant acme --metric tokens_per_minute --limit 250000 --provider openai
+```
+
+The batch key can never use more than 100,000 a minute of the tier, and what it uses also counts against
+the tenant's 250,000: the interactive keys keep at least 150,000. A request of the batch key is refused
+when either counter has no room, and `X-Pandokos-Limit-Subject` says which. The rule is on the provider
+because the default credential is the provider's: a request of the same key to another provider is
+another counter. A key **pinned** to another credential of the tenant draws on that credential's tier,
+not on the default one: do not count its requests against the default credential's rule, and give it its
+own rule if its credential has a tier to protect.
+
 ## 3. Scopes
 
 A rule can be narrowed to what is called, with the two members `provider` and `model` (names of
@@ -87,31 +146,43 @@ the catalogue):
 | `provider` | `provider` | requests to that provider |
 | `model` | `provider` and `model` | requests to that model of that provider |
 
-A model needs its provider. A request is checked against the rules of every scope that matches it,
+A model needs its provider. A rule holds the **identifiers** of its provider and model, not their names:
+the API takes and shows names (and, in a rule, the identifiers `provider_id` and `model_id`, empty when
+the rule is not scoped), the gateway and the counters match by identifier. A model created with the name
+of a deleted one is another model, which no earlier rule matches. A request is checked against the rules of every scope that matches it,
 each with its own counter, so a narrower rule can only restrict: a tenant with 5,000,000
 `tokens_per_month` for all and 1,000,000 for `openai` / `gpt-4o` can spend the 5,000,000 across
 everything, and no more than 1,000,000 of it on that model. There is one rule per subject, scope
-and metric. The names are not checked against the catalogue when a rule is read: a rule whose scope
-names nothing never matches. When it is written the provider must exist and the model must be one
-the tenant can see. Rate metrics can be scoped too.
+and metric. When a rule is written the provider must exist and the model must be one
+the tenant can see (the answer is the same whether it is elsewhere or nowhere), and the database holds
+the reference from then on: a provider or a model that a rule of any tenant or of the platform names
+cannot be deleted (409 `invalid_state`; [catalogue guide](catalogue.md)). Rate metrics can be scoped too.
+A provider that is deleted and created again with the same name inside one period is the one exception:
+the ledger stores the provider by name, so the rows of the old provider count for a rule on the new one,
+which errs towards restricting.
 
 ## 4. Periods and the time zone
 
-`limits.time_zone` names one IANA zone for the whole installation (`UTC` by default). The binary
-carries its own zone database, so the answer does not depend on the container image. A day is a
-civil date in that zone and a month is a civil month; a day is as long as the zone makes it, 23 or
-25 hours on the days when the clocks change (daylight saving time), and starts at the first instant
-of the civil date even if local midnight does not exist or exists twice. The zone must have offsets
-that are whole minutes: a zone that does not is refused at start-up with an error naming
-`limits.time_zone`. All instances of one installation must use the same value.
+Every tenant has a time zone, in which its days and months start. `limits.time_zone` names an IANA zone
+(`UTC` by default): it is the zone of **the tenants that have none of their own**, and the zone a tenant
+gets when it is set to the default. The binary carries its own zone database, so the answer does not
+depend on the container image. A day is a civil date in the zone and a month is a civil month; a day is
+as long as the zone makes it, 23 or 25 hours on the days when the clocks change (daylight saving time),
+and starts at the first instant of the civil date even if local midnight does not exist or exists twice.
+A zone must have offsets that are whole minutes: `limits.time_zone` is refused at start-up with an error
+naming it, and a tenant's zone with a 400 on `time_zone`. All instances of one installation must use the
+same `limits.time_zone`. Changing `limits.time_zone` takes effect at the next restart, for the tenants
+that have no zone of their own; it is an operator's decision about every such tenant, and the periods
+of the new default count the whole usage of their range.
 
 **A request belongs to the period it started in.** The period is that of the *start time* of the
 request (`started_at` of its usage record), not of its admission and not of its end. A request that
 starts at 23:59:50 and ends after midnight is reserved against, and settled into, the day it
 started in. This is what makes a counter and a ledger total over the same period the same number.
-(The two rates of per-minute limits keep counting by admission second.)
+(The two rates of per-minute limits keep counting by admission second.) Platform rules and the tenant's
+own rules of one tenant share one calendar: the tenant's.
 
-**Worked example: a 23-hour day.** With `limits.time_zone: Europe/Rome`, the clocks move forward on
+**Worked example: a 23-hour day.** With the zone `Europe/Rome`, the clocks move forward on
 Sunday 28 March 2027. That day starts at 00:00 CET, which is 23:00 UTC on the 27th, and ends at
 00:00 CEST, which is 22:00 UTC on the 28th: it lasts 23 hours. A `requests_per_day` rule of 1,000
 refuses the 1,001st request that *started* between those two instants. A request that is refused at
@@ -119,9 +190,50 @@ refuses the 1,001st request that *started* between those two instants. A request
 the day as the zone's clock sees it, not 14. A day of the other kind (25 hours, in October) works the
 same way. A month starts where its first day starts.
 
-Changing the zone takes effect at the next restart: the counters are loaded again with the new
-boundaries. An event of the period in which the zone changed can be recorded once more
-([section 9](#9-thresholds-and-events)).
+**Setting the zone of a tenant.** A zone given when the tenant is created is in force at once.
+Afterwards:
+
+```
+pandokos tenant create acme --time-zone Europe/Rome
+pandokos limit time-zone get --tenant acme
+pandokos limit time-zone set --tenant acme Asia/Tokyo         # or: --default
+pandokos tenant update acme --time-zone ""                    # the platform: "" is the default
+```
+
+The platform sets it with `tenant:write` (`createTenant`, `updateTenant`), the tenant's administrator
+with `limit:write` (`setTenantTimeZone`, `limit time-zone set`; `limit:read` reads it with
+`getTenantTimeZone`). Every change is audited: `tenant.time_zone_update` in the tenant's log (detail
+`from`, `to`, `in_force`, `effective_from`) and `tenant.update` in the platform's log. The resource has
+`time_zone` (as set; empty for the default), `in_force` (the name of the zone in force now, the default
+resolved) and `effective_from` (present while a change is pending); the tenant resource shows
+`time_zone`, `time_zone_in_force` and `time_zone_effective_from`. Setting the value that is already set
+changes and audits nothing.
+
+**The change rule.** A zone does not change on the spot. A change made at time *t₀* takes effect at the
+**start of the next month in the zone in force at *t₀***, for days and months alike. Until then nothing
+changes. A second change before then replaces the pending zone and keeps the instant; setting the zone
+in force again withdraws the pending change. A period is always a **whole** civil period of the zone in
+force at the request's start, and its counter counts the whole range, including what was used in its
+hours before the change took effect. So a change never frees a quota: it only moves where the next
+boundaries fall. The database holds the shape of this (a change without a pending instant, an instant
+in the past or more than 32 days away, or a replacement that moves the instant is refused).
+
+The four consequences:
+
+1. **A change waits** up to a month: until `effective_from` the old zone's days and months apply.
+2. **The day in which the new zone takes over can refuse at once**, because its range began before the
+   change and the usage of those hours counts.
+3. **A `Retry-After` given just before the change** points at the instant of the change, where the new
+   zone's period is tested afresh (the same holds for `X-Pandokos-Limit-Reset`).
+4. **Threshold events** of both zones' periods can appear for the hours they share.
+
+**Worked example: UTC to `Asia/Tokyo` on the 10th.** A tenant in UTC sets `Asia/Tokyo` on 10 November.
+The change takes effect where the UTC month ends, at 1 December 00:00 UTC, which is 09:00 in Tokyo. Until
+then days and months are UTC days and months and nothing changes. From that instant a `requests_per_day`
+rule counts the Tokyo day of 1 December, which began at 15:00 UTC on 30 November, so the day **counts its
+nine earlier hours** (15:00 to 24:00 UTC on 30 November, used under the old zone) and can be exhausted
+by traffic of those hours; the next day, 2 December, begins at 15:00 UTC on 1 December and starts
+empty. The monthly counter of December in Tokyo counts from the same 15:00 UTC.
 
 ## 5. Budgets
 
@@ -132,6 +244,28 @@ A budget is a `cost_per_day` or `cost_per_month` rule: an amount in one currency
   they were computed and are never converted. For a budget, a request priced in another currency is
   in the same position as a request with no price. Several currencies need one budget each, on
   narrower scopes (a provider, a model) or subjects.
+- **The currency is checked when the rule is written.** A budget is refused, on create and on update, with
+  400 on `currency` when no catalogue price that can be in force for its scope is in its currency: a
+  version in force now, or one that starts later (a replaced version cannot come back), of any model of
+  the scope (for a tenant rule, the models the tenant can be given). The answer names the currencies in
+  use, sorted (`must be a currency the prices of this scope use: EUR, USD`), or says
+  `no model of this scope has a price` when there is none. Nothing is converted. Count metrics are not checked. The check
+  is about the moment of the write: prices change afterwards, and a request that a budget cannot measure
+  still meets `limits.on_unknown_price`. Sprint 5.4 (tenant price lists) adds the tenant's own prices
+  to the set for tenant rules.
+- **Prices are set by the platform, for every tenant.** The catalogue prices, imported or overridden, are
+  the platform's: a tenant cannot set one for itself, and a price in force is the same for every tenant
+  that can use the model. A tenant that wants a budget in a currency no price uses has to ask for a
+  price in it, or wait for tenant price lists (sprint 5.4).
+- **When a price override in another currency makes sense.** An override in another currency
+  ([catalogue guide](catalogue.md), section 6) is right when the provider or the contract is really
+  billed in that currency: a European contract in EUR for a model the dataset prices in USD. The model then
+  has a price in the currency you pay in, costs are computed in it, and budgets in it are accepted. It is
+  **not a shortcut for one tenant's budget**: the override changes the price of the model for every tenant
+  that uses it (their costs and their budgets switch currency with it, and a budget in the old currency
+  can no longer measure the model: 409 `no_price` or `limits.on_unknown_price`), and it marks the model so
+  that imports stop updating it. If only one tenant wants a different currency, set the budget in a
+  currency the model's price uses, or wait for tenant price lists.
 - **Amounts.** An amount has at most six fraction digits and is at most 1,000,000,000. It is stored
   in millionths of the currency and counted with exact decimals. The `X-Pandokos-Limit` and
   `X-Pandokos-Limit-Remaining` headers of a budget are decimals with no trailing zeros (`250.5`, `0`).
@@ -493,9 +627,28 @@ pandokos limit events --tenant acme --kind threshold_reached
 ```
 
 Rules are validated when written: a count metric takes `--limit` and no currency, a cost metric an
-amount and a currency; a subject must exist in the tenant (the answer is the same whether an ID is
-elsewhere or nowhere); a tenant holds at most 5,000 rules (the 5,001st is refused with 409
-`invalid_state`). A rule whose subject or scope disappears later stays and matches nothing.
+amount and a currency (and the currency must be one a price of the scope uses, section 5); a subject must
+exist in the tenant and must not be a revoked key (the answer is the same whether an ID is elsewhere or
+nowhere); a tenant holds at most 5,000 rules (the 5,001st is refused with 409 `invalid_state`).
+A rule is never left without its subject or its scope.
+
+**Rules deleted with their subject.** The administration API deletes the rules of a subject before it
+removes the subject, in one transaction, and writes one audit row `limit.delete` for each, in the
+tenant's log, with the actor of that operation, the request ID, the `reason` when there is one, every
+field of the rule and in `detail` the `cause` and the `cause_id`:
+
+| Operation | `cause` | `cause_id` |
+|---|---|---|
+| revoke a virtual key | `key_revoked` | the key ID |
+| delete a subject mapping | `subject_mapping_deleted` | the mapping ID |
+| delete a trusted issuer (with its mappings) | `token_issuer_deleted` | the issuer ID |
+| delete a platform-level issuer (every tenant) | `platform_issuer_deleted` | the issuer ID |
+
+The row of the operation itself (`virtual_key.revoke`, `subject_mapping.delete`, `token_issuer.delete`,
+`platform_issuer.delete`) gains `limit_rules_deleted`, the number. Rules deleted by the upgrade to
+sprint 5.3 carry the actor name `migration 0011` and a `cause` that starts with `migration_`
+([database guide](database.md), section 16). A service account that is disabled keeps its rules. The
+deleted rules reach the gateway through the same notification as any deleted rule.
 
 ## 14. Choosing values
 
@@ -515,8 +668,9 @@ elsewhere or nowhere); a tenant holds at most 5,000 rules (the 5,001st is refuse
   exists: divide by the number of instances you run.
 - A limit that is changed applies to the counts already held. Lowering it below the current count
   refuses new requests until the window has moved on, or the period has ended.
-- Choose `limits.time_zone` once, where days and months should turn; changing it moves every
-  boundary. Keep `limits.on_unknown_price` at `refuse` unless unpriced models are expected to be
+- Choose the zone of a tenant once, where its days and months should turn; a change moves every
+  boundary after it takes effect at the start of the next month (section 4). Leave `limits.time_zone` where the
+  tenants without a zone of their own should turn. Keep `limits.on_unknown_price` at `refuse` unless unpriced models are expected to be
   called under a budget.
 
 ## 15. Logs and troubleshooting
@@ -535,14 +689,16 @@ The `request` line ([gateway guide](gateway.md), section 10) gains these fields:
 | `estimate_over_limit` | the estimate alone exceeds the limit | `true`: waiting will not help |
 | `budget_unpriced` | admitted with `limits.on_unknown_price` `allow` | `true`: a budget could not measure the request |
 | `limits_unverified` | admitted with `limits.on_store_failure` `allow` | `true`: counters could not be verified |
+| `limit_state` | every request line | how limits treated the request: `limited`, `unlimited`, `unverified` or `not_evaluated`, the same value as the usage record |
+| `price_currency` | refused with `no_price` | the currency of the price in force, absent when the model has none (next to `limit_currency`, the budget's) |
 
 Other lines: `limit reservation expired` (error: `request_id`, `tenant_id`), `limit settle failed`
 (error: `request_id`, and the panic type or the error), `limit rules unavailable` (warning:
 `tenant_id`), `limit counters unavailable` (warning: `tenant_id`, `error_class`; once per tenant
 every ten seconds), `limit reconciliation failed` (warning: tenant, `error_class`), `limit event
 recorded` (info: tenant, kind, metric, subject kind, scope, percent), `limit event not recorded`
-(error) and `limit events not recorded` at shutdown (warning: the number left). At start-up
-`limits ready` states the zone and the two settings. No line holds a body, a header value, a
+(error) and `limit events not recorded` at shutdown (warning: the number left). `unlimited traffic recorded` (info: tenant, day) and `unlimited traffic not recorded` (debug) tell
+what the recorder below did. At start-up `limits ready` states the default zone and the two settings. No line holds a body, a header value, a
 credential or a subject ID other than the principal fields of the request line.
 
 | You see | Look at |
@@ -551,21 +707,51 @@ credential or a subject ID other than the principal fields of the request line.
 | 429 `rate_limited` with `limit_metric` `tokens_per_minute` and `estimate_over_limit: true` | the largest `reserved_tokens`; raise the limit or ask the caller for a lower output limit or a smaller input |
 | 429 `rate_limited` with `limit_metric` `tokens_per_minute` and a small `Remaining` | the output limit the callers set: without one every request reserves the default |
 | 429 `rate_limited` with `limit_metric` `concurrent_requests` | slow or hanging requests; `limits.max_request_duration` ends them |
-| 429 `quota_exceeded` | the metric, scope and `Retry-After`: the quota or budget resets at the end of the period in `limits.time_zone`; raise the rule or wait. `limit events --kind exhausted` shows when it was first reached |
-| 409 `no_price` | the model has no price in the budget's currency: add a price, move the budget to a narrower scope, or set `limits.on_unknown_price` to `allow` |
+| 429 `quota_exceeded` | the metric, scope and `Retry-After`: the quota or budget resets at the end of the period in the tenant's time zone; raise the rule or wait. `limit events --kind exhausted` shows when it was first reached |
+| 409 `no_price` | the model has no price in the budget's currency (`limit_currency` against `price_currency` in the log): add a price, move the budget to a narrower scope, or set `limits.on_unknown_price` to `allow`; see the override in section 5 before changing a price for one tenant |
 | 503 `unavailable` and `limit rules unavailable` | the database: the rules of that tenant could not be read and none were cached |
 | 503 `unavailable` and `limit counters unavailable` | the usage ledger could not be read to load a counter and `limits.on_store_failure` is `refuse` |
 | `limit reservation expired` | a defect: report it with the request ID |
-| A rule that seems ignored | the subject ID (a key ID, a service account ID, or for a token the mapping ID) and the scope names; a rule whose subject or scope names nothing never matches. A rule lasts at most `cache.limits_ttl` in the gateway cache before it applies |
+| A rule that seems ignored | the subject ID (a key ID, a service account ID, or for a token the mapping ID) and the scope, which the rule holds by identifier: a model recreated with the same name is another model. A rule lasts at most `cache.limits_ttl` in the gateway cache before it applies. A rule that has vanished: look for its `limit.delete` row and its `cause` |
+| Quotas turn at the wrong hour | the tenant's time zone and a pending change: `pandokos limit time-zone get --tenant T` shows `in_force` and `effective_from` |
+| `unlimited` in the usage list (`--limit-state unlimited`) | no rule matched that request: see the row of unlimited traffic below |
 | A counter that seems too high or low after a restart | section 11: it equals the ledger; records that were never written are not counted |
+| One `limit.unlimited_traffic` row | the first request of a tenant in a day that no rule covered: see below |
 | `rejected_limit` in the usage list | the same refusals, as records without usage and without cost, with `error_code` `rate_limited`, `quota_exceeded` or `no_price` ([usage guide](usage.md)) |
+
+**How a request was treated: `limit_state`.** Every usage record, and every `request` log line, says how
+limits treated the request:
+
+| `limit_state` | Meaning |
+|---|---|
+| `limited` | at least one rule matched and every matching limit was evaluated: the request was reserved against them or refused by one (429, or 409 `no_price`). A budget that `limits.on_unknown_price: allow` leaves out of the count was evaluated |
+| `unlimited` | no rule of the platform, the tenant, the service account or the key matched the request for its provider and model |
+| `unverified` | at least one matching limit could not be evaluated: the rules could not be read (503), or counters could not be loaded or reserved, so the request was refused (503) or, with `limits.on_store_failure: allow`, admitted without them |
+| `not_evaluated` | the request ended before the limits were consulted (refused for its body, its model or a policy), or the gateway runs without a limiter |
+
+Rows written before sprint 5.3 have none. `pandokos usage list --limit-state unlimited` lists the
+requests nothing limited ([usage guide](usage.md)).
+
+**Traffic nothing limited: `limit.unlimited_traffic`.** The first request of a tenant in a day of the
+tenant (in its time zone) whose state is `unlimited` writes one audit row in the tenant's log and one in
+the platform's, with `actor_type` `platform`, `actor_name` `gateway`, `resource_type` `tenant`, the tenant
+as the resource and, in `detail`, `day` (`2026-11-18`), `time_zone`, and the `provider` and `model` of
+that request. The row says that a tenant sent traffic that no rule limited, not how much: the usage
+records say that. It is written once per tenant and day, whatever the number of instances, restarts or
+repetitions (two unique indexes), by a database function the gateway role may execute, **off the request
+path**: the request costs one map lookup, and a bounded queue and one writer do the rest. A write that
+fails is tried again by a later request, at most once per tenant every ten seconds; the row of a day is
+missing only if the database could not be written from the first unlimited request to the end of the
+day. After a restart the first unlimited request of each tenant costs one call that inserts nothing.
+Seeing the row for a tenant you meant to limit is the signal to write a rule.
 
 ## 16. What is not there yet
 
 | Missing | Sprint |
 |---|---|
+| Tenant price lists, so that a tenant can price a model for itself (and set a budget in its currency); the price source in the usage record | 5.4 |
 | Counters shared by several instances, kept in Valkey and rebuilt from the ledger | epic 8 |
 | Delivery of limit events to other systems (webhook, outbox) | 6.4 |
 | Limit metrics for dashboards | 6.1 |
 | A "used against limit" report, and a usage rollup that makes the ledger reads cheap | 6.2 |
-| A cheaper path for budgets: a request with budget limits makes about 105 allocations per reserve and settle, against 4 for rate limits (measured by benchmark T-622); revisited with the 6.1 metrics and epic 8 | 6.1, epic 8 |
+| A cheaper path for budgets: a request with budget limits makes about 105 allocations per reserve and settle, against 4 for rate limits (measured by benchmark T-622; sprint 5.3 did not change the count); revisited with the 6.1 metrics and epic 8 | 6.1, epic 8 |

@@ -64,6 +64,8 @@ after the period resets; after a restart counters match the ledger.
 
 Added after the review of ADR 0049 by the maintainer (2026-11-18). Scope closed on 2026-11-18.
 
+Designed and delivered as [5.3-integrity-of-limit-rules/sprint.md](5.3-integrity-of-limit-rules/sprint.md).
+
 - Typed subject columns on `limit_rule` (`service_account_id`, `virtual_key_id`,
   `subject_mapping_id`) with composite foreign keys `(tenant_id, id)` and `ON DELETE RESTRICT`, in
   place of the text `subject_id`; a check that exactly the column of `subject_kind` is set; the

@@ -42,6 +42,24 @@ provider and model scopes, LIM-05 for soft thresholds.
 
 **Writing the outbox now.** Its schema belongs to 6.4.
 
+## Amendment (sprint 5.3)
+
+Decided in the review of 2026-11-18; replaces the consequence "a rule whose subject or scope later
+disappears stays and matches nothing".
+
+1. The existence of a rule's subject and scope is held by foreign keys; the checks on write remain, to
+   answer 400 with one message for "elsewhere" and "nowhere", and a revoked key is not a subject.
+2. Rules deleted with their subject are audited as `limit.delete` with the actor of that operation and,
+   in the detail, `cause` (`key_revoked`, `subject_mapping_deleted`, `token_issuer_deleted`,
+   `platform_issuer_deleted`) and `cause_id`. For a platform-level issuer a definer function deletes
+   and audits them in each tenant.
+3. Two audit actions are added: `limit.unlimited_traffic` (tenant and platform log, written by a
+   definer function the gateway role may execute, once per tenant and day) and
+   `tenant.time_zone_update`.
+4. Two operations are added, `getTenantTimeZone` and `setTenantTimeZone`, under `limit:read` and
+   `limit:write`.
+
 ## History
 
 - 2026-11-18: accepted by the maintainer after review. Amendments planned in sprint 5.3: existence checks of subject and scope become foreign keys; automatic deletions of rules are audited as `limit.delete` with the actor and the reason.
+- 2026-11-18: amended by sprint 5.3 (see Amendment).
