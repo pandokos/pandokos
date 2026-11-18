@@ -43,11 +43,13 @@ minor release (from `main`) and a patch release (from the maintenance branch, af
    known limits, the upgrade notes and the maintainer actions. It is the text of the release.
 3. **Align the documents in the same pull request**: the README (the status paragraph and the quick
    start, which clones the tag `vX.Y.Z` and names the image), `docs/operations/compose.md`,
-   `SECURITY.md` (supported versions) and, for a new minor version, the Compose default image
+   `SECURITY.md` (supported versions), `info.version` of `api/openapi/admin.v1.yaml` (the version of
+   the release; the file is attached to it) and, for a new minor version, the Compose default image
    (`ghcr.io/pandokos/pandokos:X.Y`, the moving tag of the minor version, so that a patch release
    reaches an installation without a change of the files). `TestLatestReleaseIsPinned`
    (`test/repo/release_test.go`) compares them with the newest page of `docs/releases` and fails
-   when one still names another version. Open the same change against `main`, so that it does not
+   when one still names another version (`info.version` may be ahead of the newest page while the
+   next release is in development, never behind it). Open the same change against `main`, so that it does not
    lose the page.
 4. **Merge, then tag immediately.** Check that the CI and the code scanning of the branch are green,
    then, on the commit that holds the page: `git tag -s -a vX.Y.Z -m "vX.Y.Z"` and
