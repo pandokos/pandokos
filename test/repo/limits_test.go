@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/pandokos/pandokos/internal/family"
+	"github.com/pandokos/pandokos/internal/gateway"
 	"github.com/pandokos/pandokos/internal/limits"
 )
 
@@ -375,6 +376,50 @@ func TestLimitsReference(t *testing.T) {
 		re := regexp.MustCompile("`" + regexp.QuoteMeta(prefix) + `\.[a-z|]*\b` + verb + `\b[a-z|]*` + "`")
 		if !re.MatchString(api) {
 			t.Errorf("docs/reference/admin-api.md does not list the audit action %s", action)
+		}
+	}
+}
+
+// TestLimitStateConstants is part of T-R40 (sprint 5.3): the four states of the usage record are the
+// same in the gateway, the schema check of migration 0011 and the specification.
+func TestLimitStateConstants(t *testing.T) {
+	states := []string{string(gateway.LimitStateNotEvaluated), string(gateway.LimitStateUnlimited), string(gateway.LimitStateLimited), string(gateway.LimitStateUnverified)}
+	migration := read(t, "internal/store/migrations/sql/0011_limit_integrity.sql")
+	spec := read(t, "api/openapi/admin.v1.yaml")
+	check := regexp.MustCompile(`(?s)usage_record_limit_state_valid\s+CHECK \(limit_state IS NULL OR limit_state IN \(([^)]*)\)`).FindStringSubmatch(migration)
+	if check == nil {
+		t.Fatal("migration 0011 has no check usage_record_limit_state_valid")
+	}
+	enum := regexp.MustCompile(`(?s)\n    LimitState:.*?\n    \w`).FindString(spec)
+	if enum == "" {
+		t.Fatal("the specification has no schema LimitState")
+	}
+	for _, s := range states {
+		if !strings.Contains(check[1], "'"+s+"'") {
+			t.Errorf("the check of migration 0011 does not list %s", s)
+		}
+		if !strings.Contains(enum, s) {
+			t.Errorf("the schema LimitState does not list %s", s)
+		}
+	}
+	if n := strings.Count(check[1], "'") / 2; n != len(states) {
+		t.Errorf("the check lists %d states, the gateway defines %d", n, len(states))
+	}
+}
+
+// TestResolverImports is part of T-R43 (sprint 5.3): the resolver may use the audit package, as it
+// does for failures; it never imports the administration API.
+func TestResolverImports(t *testing.T) {
+	files := nonTestGoFiles(t, []string{"internal/resolver"})
+	if len(files) < 4 {
+		t.Fatalf("%d files in internal/resolver", len(files))
+	}
+	for _, rel := range files {
+		paths, _, _ := importsAndNames(t, rel)
+		for _, p := range paths {
+			if p == modulePath+"/internal/admin" || p == modulePath+"/internal/adminapi" {
+				t.Errorf("%s imports %s", rel, p)
+			}
 		}
 	}
 }

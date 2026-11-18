@@ -96,6 +96,7 @@ fuzz: ## Run each fuzz target for FUZZTIME
 bench: ## Usage reader and limits benchmarks
 	go test ./internal/family/openai/ -run '^$$' -bench . -benchmem
 	go test ./internal/limits/ -run '^$$' -bench . -benchmem
+	go test ./internal/resolver/ -run '^$$' -bench . -benchmem
 
 fmt: ## Format the code
 	gofmt -w cmd internal test
