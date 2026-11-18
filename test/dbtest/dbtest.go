@@ -37,6 +37,7 @@ type shared struct {
 	root      testing.TB
 	kekFile   string // made by the first call of Env, for the life of the database
 	mu        sync.Mutex
+	helper    *pgx.Conn // the connection of Count, made by its first call
 }
 
 // Database is one test database with its four login users.
@@ -171,6 +172,21 @@ func (d *Database) Migrate(tb testing.TB) {
 	defer cancel()
 	if _, err := store.Migrate(ctx, d.ConnOptions("owner"), embedded(tb), "test"); err != nil {
 		tb.Fatalf("migrate: %v", err)
+	}
+}
+
+// MigrateTo applies the first n embedded migrations with the owner user, for tests of an upgrade
+// that need the schema as it was before the last ones.
+func (d *Database) MigrateTo(tb testing.TB, n int) {
+	tb.Helper()
+	ms := embedded(tb)
+	if n < 0 || n > len(ms) {
+		tb.Fatalf("MigrateTo(%d): there are %d migrations", n, len(ms))
+	}
+	ctx, cancel := ctx30()
+	defer cancel()
+	if _, err := store.Migrate(ctx, d.ConnOptions("owner"), ms[:n], "test"); err != nil {
+		tb.Fatalf("migrate to %d: %v", n, err)
 	}
 }
 

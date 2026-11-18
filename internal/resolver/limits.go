@@ -28,10 +28,12 @@ type LimitsOptions struct {
 	// Sprint 5.2: the calendar of the period limits (nil: they do not apply, as in 5.1), what loads
 	// their counters, and the two settings that say what a request that cannot be measured or
 	// verified meets: "refuse" (the default) or "allow".
-	Calendar       *limits.Calendar
 	Reconciler     Ensurer
 	OnUnknownPrice string
 	OnStoreFailure string
+	// Unlimited is told of the first unlimited request of a tenant in a day (sprint 5.3, C3); nil:
+	// nobody.
+	Unlimited UnlimitedNoter
 }
 
 // Limits implements gateway.Limits over the rule cache and a store of counters.
@@ -40,10 +42,10 @@ type Limits struct {
 	store       limits.Store
 	ttl         time.Duration
 	log         *slog.Logger
-	cal         *limits.Calendar
 	ensurer     Ensurer
 	refusePrice bool // on_unknown_price is "refuse" (the default)
 	refuseStore bool // on_store_failure is "refuse" (the default)
+	unlimited   UnlimitedNoter
 
 	mu      sync.Mutex
 	noticed map[tenant.ID]time.Time
@@ -63,9 +65,9 @@ func NewLimits(o LimitsOptions) (*Limits, error) {
 		return nil, errors.New("resolver: limits need a logger")
 	}
 	return &Limits{
-		rules: o.Rules, store: o.Store, ttl: o.TTL, log: o.Logger, cal: o.Calendar, ensurer: o.Reconciler,
+		rules: o.Rules, store: o.Store, ttl: o.TTL, log: o.Logger, ensurer: o.Reconciler,
 		refusePrice: o.OnUnknownPrice != "allow", refuseStore: o.OnStoreFailure != "allow",
-		noticed: map[tenant.ID]time.Time{},
+		noticed: map[tenant.ID]time.Time{}, unlimited: o.Unlimited,
 	}, nil
 }
 
@@ -169,9 +171,9 @@ func errorClass(err error) string {
 // scopeOf says how narrow a limit is.
 func scopeOf(l limits.Limit) string {
 	switch {
-	case l.Model != "":
+	case l.ModelID != "":
 		return "model"
-	case l.Provider != "":
+	case l.ProviderID != "":
 		return "provider"
 	}
 	return "all"
@@ -179,31 +181,48 @@ func scopeOf(l limits.Limit) string {
 
 // Reserve reserves the estimate against the limits of the principal's service account, key and
 // tenant. A principal no limit applies to gets a reservation that does nothing.
-func (l *Limits) Reserve(ctx context.Context, p authz.Principal, e gateway.LimitEstimate) (gateway.Reservation, *gateway.LimitRefusal, error) {
+//
+// The state is that of sprint 5.3, section 5.5: unlimited when no rule matches the request,
+// unverified with every error and whenever a matching limit was left out because counters could
+// not be loaded or reserved, limited otherwise (refusals included).
+func (l *Limits) Reserve(ctx context.Context, p authz.Principal, e gateway.LimitEstimate) (gateway.Reservation, *gateway.LimitRefusal, gateway.LimitState, error) {
+	res, ref, state, err := l.reserve(ctx, p, e)
+	if err != nil {
+		state = gateway.LimitStateUnverified
+	}
+	return res, ref, state, err
+}
+
+func (l *Limits) reserve(ctx context.Context, p authz.Principal, e gateway.LimitEstimate) (gateway.Reservation, *gateway.LimitRefusal, gateway.LimitState, error) {
 	if p.Kind != authz.KindServiceAccount || p.TenantID == (tenant.ID{}) {
-		return nil, nil, errors.New("resolver: limits need a service account principal with a tenant")
+		return nil, nil, gateway.LimitStateUnverified, errors.New("resolver: limits need a service account principal with a tenant")
 	}
 	rules, err := l.rules.Rules(ctx, p.TenantID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, gateway.LimitStateUnverified, err
 	}
-	ls := rules.For(limits.Query{ServiceAccountID: p.ID, KeyID: p.KeyID, Provider: e.Provider, Model: e.Model, Start: e.Start}, l.cal)
+	ls := rules.For(limits.Query{ServiceAccountID: p.ID, KeyID: p.KeyID, ProviderID: e.ProviderID, ModelID: e.ModelID, Provider: e.Provider, Model: e.Model, Start: e.Start})
 	if len(ls) == 0 {
-		return noReservation{}, nil, nil
+		l.noteUnlimited(p.TenantID, rules, e)
+		return noReservation{}, nil, gateway.LimitStateUnlimited, nil
 	}
 
 	// Unpriced: a cost limit whose currency the estimate cannot be priced in.
 	var unpriced, enforced bool
+	var budgetCurrency string
 	for _, x := range ls {
 		if cannotMeasure(x, e) {
 			unpriced = true
 			// An unenforced budget (threshold events only) never refuses: enforce false.
+			if x.Max > 0 && !enforced {
+				budgetCurrency = x.Currency
+			}
 			enforced = enforced || x.Max > 0
 		}
 	}
 	if unpriced {
 		if l.refusePrice && enforced {
-			return nil, &gateway.LimitRefusal{Code: string(family.CodeNoPrice)}, nil
+			return nil, &gateway.LimitRefusal{Code: string(family.CodeNoPrice), Currency: budgetCurrency, PriceCurrency: e.Cost.Currency}, gateway.LimitStateLimited, nil
 		}
 		kept := make([]limits.Limit, 0, len(ls))
 		for _, x := range ls {
@@ -225,7 +244,7 @@ func (l *Limits) Reserve(ctx context.Context, p authz.Principal, e gateway.Limit
 	if hasPeriod && l.ensurer != nil {
 		if err := l.ensurer.Ensure(ctx, p.TenantID, ls); err != nil {
 			if l.refuseStore || ctx.Err() != nil {
-				return nil, nil, err
+				return nil, nil, gateway.LimitStateUnverified, err
 			}
 			l.unavailable(p.TenantID, err)
 			unverified = true
@@ -234,8 +253,12 @@ func (l *Limits) Reserve(ctx context.Context, p authz.Principal, e gateway.Limit
 			}
 		}
 	}
+	state := gateway.LimitStateLimited
+	if unverified {
+		state = gateway.LimitStateUnverified
+	}
 	if len(ls) == 0 {
-		return wrap(noReservation{}, unpriced, unverified), nil, nil
+		return wrap(noReservation{}, unpriced, unverified), nil, state, nil
 	}
 
 	req := limits.Request{
@@ -256,10 +279,10 @@ func (l *Limits) Reserve(ctx context.Context, p authz.Principal, e gateway.Limit
 	switch {
 	case err != nil:
 		if l.refuseStore || ctx.Err() != nil {
-			return nil, nil, err
+			return nil, nil, gateway.LimitStateUnverified, err
 		}
 		l.unavailable(p.TenantID, err)
-		return wrap(noReservation{}, unpriced, true), nil, nil
+		return wrap(noReservation{}, unpriced, true), nil, gateway.LimitStateUnverified, nil
 	case ref != nil:
 		out := &gateway.LimitRefusal{
 			Code:  string(family.CodeRateLimited),
@@ -274,9 +297,23 @@ func (l *Limits) Reserve(ctx context.Context, p authz.Principal, e gateway.Limit
 		if ref.Limit.Metric.Cost() {
 			out.Currency = ref.Limit.Currency
 		}
-		return nil, out, nil
+		return nil, out, state, nil
 	}
-	return wrap(&reservation{l: l, id: e.RequestID, res: res}, unpriced, unverified), nil, nil
+	return wrap(&reservation{l: l, id: e.RequestID, res: res}, unpriced, unverified), nil, state, nil
+}
+
+// noteUnlimited tells the unlimited-traffic recorder, if there is one, that the request met no
+// rule: the day is the civil date of the request in the calendar of the tenant, in force at the
+// request's start.
+func (l *Limits) noteUnlimited(t tenant.ID, rules limits.RuleSet, e gateway.LimitEstimate) {
+	if l.unlimited == nil {
+		return
+	}
+	cal := rules.Calendar.At(e.Start)
+	if cal == nil {
+		return
+	}
+	l.unlimited.Note(t, rules.Calendar.Day(e.Start), cal.Zone(), e.Provider, e.Model, e.RequestID)
 }
 
 // cannotMeasure reports whether x is a cost limit the estimate has no price in the currency of.
@@ -294,7 +331,7 @@ next:
 	for _, x := range ls {
 		for _, d := range drop {
 			if x.RuleID == d.RuleID && x.Subject == d.Subject && x.ID == d.ID && x.Metric == d.Metric &&
-				x.Provider == d.Provider && x.Model == d.Model && x.Period == d.Period {
+				x.ProviderID == d.ProviderID && x.ModelID == d.ModelID && x.Period == d.Period {
 				continue next
 			}
 		}

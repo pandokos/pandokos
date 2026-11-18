@@ -374,7 +374,7 @@ func (q *refReq) matches(l Limit) bool {
 			return false
 		}
 	}
-	return (l.Provider == "" || l.Provider == q.provider) && (l.Model == "" || l.Model == q.model)
+	return (l.ProviderID == "" || l.ProviderID == q.provider) && (l.ModelID == "" || l.ModelID == q.model)
 }
 
 // amount is what the request counts against a metric: reserved while it is open, actual once
@@ -476,7 +476,7 @@ func (r *refModel) Ledger(asOf time.Time, t tenant.ID, from, liveFrom, to time.T
 		}
 		g := groups[k]
 		if g == nil {
-			g = &UsageGroup{Minute: k.minute, PrincipalID: q.sa, KeyID: q.key, Provider: q.provider, Model: q.model, Currency: k.curr}
+			g = &UsageGroup{Minute: k.minute, PrincipalID: q.sa, KeyID: q.key, ProviderID: q.provider, ModelID: q.model, Currency: k.curr}
 			groups[k] = g
 		}
 		g.Requests++
@@ -494,7 +494,7 @@ func (r *refModel) Ledger(asOf time.Time, t tenant.ID, from, liveFrom, to time.T
 		if a.Minute != b.Minute {
 			return a.Minute < b.Minute
 		}
-		return a.PrincipalID+a.KeyID+a.Provider+a.Model+a.Currency < b.PrincipalID+b.KeyID+b.Provider+b.Model+b.Currency
+		return a.PrincipalID+a.KeyID+a.ProviderID+a.ModelID+a.Currency < b.PrincipalID+b.KeyID+b.ProviderID+b.ModelID+b.Currency
 	})
 	return out
 }
@@ -547,6 +547,8 @@ type fakeLedger struct {
 	mu    sync.Mutex
 	err   error
 	calls []ledgerCall
+	// onUsage, when set, runs at the start of every Usage call with its index (from 0), outside the lock.
+	onUsage func(n int)
 }
 
 type ledgerCall struct {
@@ -568,9 +570,14 @@ func (f *fakeLedger) callLog() []ledgerCall {
 
 func (f *fakeLedger) Usage(_ context.Context, t tenant.ID, from, liveFrom, to time.Time) ([]UsageGroup, error) {
 	f.mu.Lock()
+	n := len(f.calls)
 	f.calls = append(f.calls, ledgerCall{t, from, liveFrom, to})
 	err := f.err
+	hook := f.onUsage
 	f.mu.Unlock()
+	if hook != nil {
+		hook(n)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -580,4 +587,11 @@ func (f *fakeLedger) Usage(_ context.Context, t tenant.ID, from, liveFrom, to ti
 func quietLogger() *slog.Logger {
 	l, _ := newLogger()
 	return l
+}
+
+// forCal resolves the limits of q for a rule set that has the calendar cal for every instant; a nil
+// calendar leaves the set without one (no period limit).
+func (s RuleSet) forCal(q Query, cal *Calendar) []Limit {
+	s.Calendar = TenantCalendar{Current: cal}
+	return s.For(q)
 }

@@ -164,7 +164,7 @@ var keyTable = []keyDef{
 			c.Limits.DefaultOutputTokens = n
 			return nil
 		}),
-	def("limits.time_zone", "IANA zone name", "UTC", "The zone in which the days and months of quotas and budgets start; a name known to the embedded time zone database whose offsets are whole minutes",
+	def("limits.time_zone", "IANA zone name", "UTC", "The zone in which the days and months of quotas and budgets start for the tenants that have no time zone of their own (a tenant's zone is set through the administration API); a name known to the embedded time zone database whose offsets are whole minutes",
 		setString(func(c *Config) *string { return &c.Limits.TimeZone })),
 	def("limits.on_unknown_price", "refuse, allow", "refuse", "What happens to a request that a budget applies to and cannot measure because the model has no price in the budget's currency: refused with 409 no_price, or admitted",
 		setString(func(c *Config) *string { return &c.Limits.OnUnknownPrice })),

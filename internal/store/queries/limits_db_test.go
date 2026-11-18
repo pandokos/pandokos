@@ -2,9 +2,13 @@ package queries_test
 
 import (
 	"context"
+	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/queries"
@@ -14,7 +18,7 @@ import (
 // limitStatements covers the two statements of sprint 5.1: the limit rules of a tenant and the
 // platform ceilings a tenant's session sees (its own and the defaults), read in the session of the
 // tenant by the gateway role. The rows are written by the admin role and removed again.
-func limitStatements(c context.Context, t *testing.T, admin, gateway *store.DB, tid tenant.ID, tenantID string, called map[string]bool) {
+func limitStatements(c context.Context, t *testing.T, admin, gateway *store.DB, tid tenant.ID, tenantID, keyID string, called map[string]bool) {
 	t.Helper()
 	must := func(what string, err error) {
 		t.Helper()
@@ -23,16 +27,18 @@ func limitStatements(c context.Context, t *testing.T, admin, gateway *store.DB, 
 		}
 	}
 	must("limit rules written", admin.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
+		// A rule of a key names the key by foreign key (migration 0011): keyID is a live virtual key of the tenant.
 		for _, r := range []struct {
-			kind, id, metric string
-			value            int64
+			kind, metric string
+			value        int64
 		}{
-			{"tenant", "", "tokens_per_minute", 1000000},
-			{"key", "k1", "requests_per_minute", 60},
-			{"key", "k1", "concurrent_requests", 4},
+			{"tenant", "tokens_per_minute", 1000000},
+			{"key", "requests_per_minute", 60},
+			{"key", "concurrent_requests", 4},
 		} {
-			if _, err := tx.Exec(c, `INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, subject_id, metric, limit_value) VALUES ($1::uuid, $2, $3, $4, $5)`,
-				tenantID, r.kind, r.id, r.metric, r.value); err != nil {
+			if _, err := tx.Exec(c, `INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, virtual_key_id, metric, limit_value)
+				VALUES ($1::uuid, $2, (SELECT id FROM pandokos.virtual_key WHERE key_id = CASE WHEN $2 = 'key' THEN $5 END), $3, $4)`,
+				tenantID, r.kind, r.metric, r.value, keyID); err != nil {
 				return err
 			}
 		}
@@ -67,13 +73,13 @@ func limitStatements(c context.Context, t *testing.T, admin, gateway *store.DB, 
 		if err != nil {
 			return err
 		}
-		// The identifiers are generated: the want carries those that were read. Since sprint 5.2 a
+		// The identifiers are generated (and the statement orders by them, so by insertion): the want carries those that were read. Since sprint 5.2 a
 		// rule also has a scope, a currency, an enforcement and thresholds; the rows above leave
 		// them at their defaults.
 		want := []queries.ListLimitRulesRow{
-			{SubjectKind: "key", SubjectID: "k1", Metric: "concurrent_requests", LimitValue: 4, Enforce: true, Thresholds: []int16{}},
-			{SubjectKind: "key", SubjectID: "k1", Metric: "requests_per_minute", LimitValue: 60, Enforce: true, Thresholds: []int16{}},
 			{SubjectKind: "tenant", SubjectID: "", Metric: "tokens_per_minute", LimitValue: 1000000, Enforce: true, Thresholds: []int16{}},
+			{SubjectKind: "key", SubjectID: keyID, Metric: "requests_per_minute", LimitValue: 60, Enforce: true, Thresholds: []int16{}},
+			{SubjectKind: "key", SubjectID: keyID, Metric: "concurrent_requests", LimitValue: 4, Enforce: true, Thresholds: []int16{}},
 		}
 		for i := range want {
 			if i < len(rules) {
@@ -133,19 +139,19 @@ func quotaStatements(c context.Context, t *testing.T, admin, gateway *store.DB, 
 		if before, err = q.CountLimitRules(c); err != nil {
 			return err
 		}
-		called["LimitSubjectExists"] = true
-		if ok, err := q.LimitSubjectExists(c, queries.LimitSubjectExistsParams{SubjectKind: "tenant"}); err != nil || !ok {
-			fail("the tenant subject: %v %v", ok, err)
+		called["ResolveLimitSubject"] = true
+		if r, err := q.ResolveLimitSubject(c, queries.ResolveLimitSubjectParams{SubjectKind: "tenant"}); err != nil || r != (queries.ResolveLimitSubjectRow{}) {
+			fail("the tenant subject: %+v %v", r, err)
 		}
-		if ok, err := q.LimitSubjectExists(c, queries.LimitSubjectExistsParams{SubjectKind: "service_account", SubjectID: "0192f0f0-0000-7000-8000-000000000001"}); err != nil || ok {
-			fail("a missing service account: %v %v", ok, err)
+		if r, err := q.ResolveLimitSubject(c, queries.ResolveLimitSubjectParams{SubjectKind: "service_account", SubjectID: "0192f0f0-0000-7000-8000-000000000001"}); err != nil || r != (queries.ResolveLimitSubjectRow{}) {
+			fail("a missing service account: %+v %v", r, err)
 		}
-		if ok, err := q.LimitSubjectExists(c, queries.LimitSubjectExistsParams{SubjectKind: "key", SubjectID: "tmissingkeyid00000"}); err != nil || ok {
-			fail("a missing key: %v %v", ok, err)
+		if r, err := q.ResolveLimitSubject(c, queries.ResolveLimitSubjectParams{SubjectKind: "key", SubjectID: "tmissingkeyid00000"}); err != nil || r != (queries.ResolveLimitSubjectRow{}) {
+			fail("a missing key: %+v %v", r, err)
 		}
-		called["LimitScopeExists"] = true
-		if ok, err := q.LimitScopeExists(c, queries.LimitScopeExistsParams{Provider: "no-such-provider", Model: ""}); err != nil || ok {
-			fail("a missing provider: %v %v", ok, err)
+		called["ResolveLimitScope"] = true
+		if _, err := q.ResolveLimitScope(c, queries.ResolveLimitScopeParams{Provider: "no-such-provider", Model: ""}); !errors.Is(err, store.ErrNoRows) {
+			fail("a missing provider: %v", err)
 		}
 		called["CreateLimitRule"] = true
 		rule, err = q.CreateLimitRule(c, queries.CreateLimitRuleParams{SubjectKind: "tenant", Metric: "cost_per_day", LimitValue: 250500000,
@@ -268,6 +274,67 @@ func quotaStatements(c context.Context, t *testing.T, admin, gateway *store.DB, 
 		del, err := q.DeletePlatformLimitRule(c, platform.ID)
 		if err != nil || del.ID != platform.ID {
 			fail("DeletePlatformLimitRule: %+v %v", del, err)
+		}
+		return nil
+	}))
+}
+
+// integrityStatements covers the statements of sprint 5.3: the time zone of a tenant, the rules of
+// a subject that goes away, the unlimited-traffic record and the currencies of a scope. Each is
+// called once on rows that do not exist or on the tenant itself; what they do is the subject of
+// the tests of the sprint.
+func integrityStatements(c context.Context, t *testing.T, admin, gateway *store.DB, tid tenant.ID, called map[string]bool) {
+	t.Helper()
+	must := func(what string, err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatalf("%s: %v", what, err)
+		}
+	}
+	must("time zone and rules of a subject", admin.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
+		q := queries.New(tx)
+		called["GetTenantTimeZone"] = true
+		z, err := q.GetTenantTimeZone(c)
+		if err != nil || z.TimeZone != "" || z.TimeZonePrevious != "" || z.TimeZoneEffectiveFrom != nil {
+			t.Errorf("GetTenantTimeZone: %+v %v", z, err)
+		}
+		called["LockTenantTimeZone"] = true
+		lock, err := q.LockTenantTimeZone(c, tid.String())
+		if err != nil || lock.ID != tid.String() || lock.DbNow.IsZero() {
+			t.Errorf("LockTenantTimeZone: %+v %v", lock, err)
+		}
+		called["SetTenantTimeZone"] = true
+		set, err := q.SetTenantTimeZone(c, queries.SetTenantTimeZoneParams{ID: tid.String(), TimeZone: "", TimeZonePrevious: ""})
+		if err != nil || set.TimeZone != "" {
+			t.Errorf("SetTenantTimeZone: %+v %v", set, err)
+		}
+		called["DeleteLimitRulesOfSubject"] = true
+		gone, err := q.DeleteLimitRulesOfSubject(c, queries.DeleteLimitRulesOfSubjectParams{KeyID: "tnosuchkeyid000000"})
+		if err != nil || len(gone) != 0 {
+			t.Errorf("DeleteLimitRulesOfSubject: %+v %v", gone, err)
+		}
+		called["ListPriceCurrenciesForScope"] = true
+		if _, err := q.ListPriceCurrenciesForScope(c, queries.ListPriceCurrenciesForScopeParams{VisibleOnly: true}); err != nil {
+			t.Errorf("ListPriceCurrenciesForScope: %v", err)
+		}
+		return nil
+	}))
+	must("platform issuer rules", admin.Platform(c, func(c context.Context, tx store.Tx) error {
+		called["DeletePlatformIssuerLimitRules"] = true
+		n, err := queries.New(tx).DeletePlatformIssuerLimitRules(c, queries.DeletePlatformIssuerLimitRulesParams{
+			IssuerID: "0192f0f0-0000-7000-8000-0000000000ff", ActorID: "a", ActorName: "a", KeyID: "k", RequestID: strings.Repeat("0", 32)})
+		if err != nil || n != 0 {
+			t.Errorf("DeletePlatformIssuerLimitRules: %d %v", n, err)
+		}
+		return nil
+	}))
+	must("unlimited traffic", gateway.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
+		called["RecordUnlimitedTraffic"] = true
+		day := pgtype.Date{Time: time.Now().UTC().Truncate(24 * time.Hour), Valid: true}
+		first, err := queries.New(tx).RecordUnlimitedTraffic(c, queries.RecordUnlimitedTrafficParams{
+			Day: day, TimeZone: "UTC", Provider: "openai", Model: "gpt-4o", RequestID: strings.Repeat("1", 32)})
+		if err != nil || !first {
+			t.Errorf("RecordUnlimitedTraffic: %v %v", first, err)
 		}
 		return nil
 	}))

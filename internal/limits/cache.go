@@ -27,6 +27,8 @@ type RuleCacheOptions struct {
 	Logger *slog.Logger
 	TTL    time.Duration // cache.limits_ttl, 1 s to 5 m
 	Now    func() time.Time
+	// Zones gives the calendar of each tenant's zone (sprint 5.3, C2).
+	Zones *Zones
 }
 
 type ruleEntry struct {
@@ -63,8 +65,11 @@ func NewRuleCache(o RuleCacheOptions) (*RuleCache, error) {
 	if o.DB == nil {
 		return nil, errors.New("limits: the rule cache needs a database")
 	}
+	if o.Zones == nil {
+		return nil, errors.New("limits: the rule cache needs the zones of the installation")
+	}
 	return newCountingRuleCache(func(ctx context.Context, id tenant.ID) (RuleSet, int, error) {
-		return loadRules(ctx, o.DB, id)
+		return loadRules(ctx, o.DB, id, o.Zones)
 	}, o)
 }
 

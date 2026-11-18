@@ -610,3 +610,103 @@ func ids2(recs []usage.Record) string {
 	}
 	return strings.Join(out, ",")
 }
+
+// TestUsageLimitState is T-721: listUsageRecords shows the limit state of a record, empty for a row
+// written before the column, and filters on each value.
+func TestUsageLimitState(t *testing.T) {
+	u := newUsageWorld(t)
+	c := u.c
+	now := time.Now()
+	tn := tenantID(t, c.a.ID)
+	mk := func(minutes int, state string) usage.Record {
+		r := testutil.ValidRecord(tn)
+		r.StartedAt = now.Add(-time.Duration(minutes) * time.Minute).UTC().Truncate(time.Microsecond)
+		r.ID = usage.NewID(r.StartedAt)
+		r.LimitState = state
+		return r
+	}
+	states := []string{"limited", "unlimited", "unverified", "not_evaluated", ""}
+	var recs []usage.Record
+	for i, s := range states {
+		recs = append(recs, mk(10*(i+1), s))
+	}
+	u.write(t, recs...)
+	q := url.Values{"from": {now.Add(-48 * time.Hour).Format(time.RFC3339Nano)}, "to": {now.Add(time.Minute).Format(time.RFC3339Nano)}}
+
+	t.Run("each record shows its state; a row without one shows an empty string", func(t *testing.T) {
+		page := usagePage(t, c, c.ka, c.a.ID, q)
+		if len(page.Items) != len(states) {
+			t.Fatalf("%d items", len(page.Items))
+		}
+		for i, it := range page.Items {
+			if it.LimitState != states[i] {
+				t.Errorf("item %d: limit_state %q, want %q", i, it.LimitState, states[i])
+			}
+		}
+		raw := listUsage(t, c, c.ka, c.a.ID, q)
+		if !strings.Contains(string(raw.Body), `"limit_state":""`) || !strings.Contains(string(raw.Body), `"limit_state":"unlimited"`) {
+			t.Errorf("the wire form has no limit_state member: %.300s", raw.Body)
+		}
+	})
+
+	t.Run("the filter keeps the records of one value", func(t *testing.T) {
+		for _, s := range states[:4] {
+			f := url.Values{"limit_state": {s}}
+			for k, v := range q {
+				f[k] = v
+			}
+			page := usagePage(t, c, c.ka, c.a.ID, f)
+			if len(page.Items) != 1 || page.Items[0].LimitState != s {
+				t.Errorf("limit_state=%s: %+v", s, page.Items)
+			}
+		}
+	})
+
+	t.Run("a value outside the enumeration is refused", func(t *testing.T) {
+		f := url.Values{"limit_state": {"unknown"}}
+		for k, v := range q {
+			f[k] = v
+		}
+		expect(t, listUsage(t, c, c.ka, c.a.ID, f), 400, adminapi.ProblemCodeInvalidRequest)
+	})
+
+	t.Run("pages keep the filter", func(t *testing.T) {
+		u.write(t, mk(70, "limited"), mk(80, "limited"))
+		f := url.Values{"limit_state": {"limited"}, "limit": {"2"}}
+		for k, v := range q {
+			f[k] = v
+		}
+		var got int
+		for pages := 0; pages < 5; pages++ {
+			page := usagePage(t, c, c.ka, c.a.ID, f)
+			for _, it := range page.Items {
+				if it.LimitState != "limited" {
+					t.Errorf("a record of another state on a filtered page: %q", it.LimitState)
+				}
+			}
+			got += len(page.Items)
+			if page.NextCursor == "" {
+				break
+			}
+			f.Set("cursor", page.NextCursor)
+		}
+		if got != 3 {
+			t.Errorf("%d limited records over the pages, want 3", got)
+		}
+		// The cursor of a filtered list does not serve another filter.
+		page := usagePage(t, c, c.ka, c.a.ID, func() url.Values {
+			g := url.Values{"limit_state": {"limited"}, "limit": {"1"}}
+			for k, v := range q {
+				g[k] = v
+			}
+			return g
+		}())
+		if page.NextCursor != "" {
+			g := url.Values{"limit_state": {"unlimited"}, "limit": {"1"}, "cursor": {page.NextCursor}}
+			for k, v := range q {
+				g[k] = v
+			}
+			expect(t, listUsage(t, c, c.ka, c.a.ID, g), 400, adminapi.ProblemCodeInvalidRequest)
+		}
+	})
+}

@@ -67,7 +67,7 @@ func (c *Catalogue) Resolve(ctx context.Context, p authz.Principal, provider, mo
 	prov, _ := snap.Provider(provider)
 	return gateway.Target{
 		StreamUsage: prov.StreamUsageOption != "omit",
-		Provider:    provider, Endpoint: ep.Name, ModelID: m.ID, Model: m.Name, UpstreamModel: m.UpstreamID,
+		Provider:    provider, ProviderID: prov.ID, Endpoint: ep.Name, ModelID: m.ID, Model: m.Name, UpstreamModel: m.UpstreamID,
 		BaseURL: base, Private: ep.Private, Prices: snap.Versions(m.ID),
 		MaxOutputTokens: m.MaxOutputTokens, ContextWindow: m.ContextWindow, DefaultOutputTokens: m.DefaultOutputTokens,
 	}, nil

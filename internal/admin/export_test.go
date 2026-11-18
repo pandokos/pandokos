@@ -7,3 +7,11 @@ func SetMaxLimitRules(n int) (restore func()) {
 	maxLimitRules = n
 	return func() { maxLimitRules = old }
 }
+
+// SetAfterRuleDeletion sets the seam that fails a transaction after the rules of a subject are
+// deleted (T-714) and returns the function that clears it.
+func SetAfterRuleDeletion(f func() error) (restore func()) {
+	old := afterRuleDeletion
+	afterRuleDeletion = f
+	return func() { afterRuleDeletion = old }
+}

@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pandokos/pandokos/internal/adminapi"
 )
@@ -236,6 +237,132 @@ func TestLimitCommands(t *testing.T) {
 		var list struct{ Items []adminapi.LimitRule }
 		if err := json.Unmarshal([]byte(out), &list); err != nil || len(list.Items) != 1 || !reflect.DeepEqual(list.Items[0], limitRule) {
 			t.Errorf("limit list: %v\n%s", err, out)
+		}
+	})
+}
+
+// The operations of sprint 5.3 on the fake.
+
+func (f *fakeAPI) GetTenantTimeZone(_ context.Context, in adminapi.GetTenantTimeZoneInput) (*adminapi.TenantTimeZone, error) {
+	return pick[adminapi.TenantTimeZone](f, "getTenantTimeZone"), f.rec("getTenantTimeZone", in)
+}
+func (f *fakeAPI) SetTenantTimeZone(_ context.Context, in adminapi.SetTenantTimeZoneInput) (*adminapi.TenantTimeZone, error) {
+	return pick[adminapi.TenantTimeZone](f, "setTenantTimeZone"), f.rec("setTenantTimeZone", in)
+}
+
+// TestIntegrityCommands is T-723: the commands of section 5.11 call their operations, with the
+// members of the body their flags give; a zone and --default exclude each other.
+func TestIntegrityCommands(t *testing.T) {
+	effective := t0.Add(72 * time.Hour)
+	call := func(t *testing.T, id string, args ...string) (any, string) {
+		t.Helper()
+		r := newRig(t)
+		r.f.out["getTenantTimeZone"] = &adminapi.TenantTimeZone{TimeZone: "Europe/Rome", InForce: "UTC", EffectiveFrom: &effective}
+		r.f.out["setTenantTimeZone"] = &adminapi.TenantTimeZone{TimeZone: "Europe/Rome", InForce: "UTC", EffectiveFrom: &effective}
+		r.f.out["updateTenant"], r.f.out["listUsageRecords"] = &tenant, &adminapi.UsageRecordList{Items: []adminapi.UsageRecord{usageRecord(usageID(31))}}
+		out, _ := mustRun(t, r, args...)
+		return r.f.only(t, id), out
+	}
+
+	t.Run("limit time-zone get and set", func(t *testing.T) {
+		got, out := call(t, "getTenantTimeZone", "limit", "time-zone", "get", "--tenant", tid)
+		if !reflect.DeepEqual(got, adminapi.GetTenantTimeZoneInput{Tenant: tid}) {
+			t.Errorf("get: %+v", got)
+		}
+		for _, want := range []string{"time_zone: Europe/Rome", "in_force: UTC", "effective_from: "} {
+			if !lineWith(out, want) {
+				t.Errorf("the resource lacks the line %q:\n%s", want, out)
+			}
+		}
+		got, _ = call(t, "setTenantTimeZone", "limit", "time-zone", "set", "--tenant", tid, "Europe/Rome")
+		if !reflect.DeepEqual(got, adminapi.SetTenantTimeZoneInput{Tenant: tid, Body: adminapi.TenantTimeZoneSet{TimeZone: "Europe/Rome"}}) {
+			t.Errorf("set: %+v", got)
+		}
+		got, _ = call(t, "setTenantTimeZone", "limit", "time-zone", "set", "--tenant", tid, "--default")
+		if !reflect.DeepEqual(got, adminapi.SetTenantTimeZoneInput{Tenant: tid, Body: adminapi.TenantTimeZoneSet{TimeZone: ""}}) {
+			t.Errorf("set --default: %+v", got)
+		}
+		r := newRig(t)
+		for name, args := range map[string][]string{
+			"a zone and --default": {"limit", "time-zone", "set", "--tenant", tid, "--default", "Europe/Rome"},
+			"neither":              {"limit", "time-zone", "set", "--tenant", tid},
+			"two zones":            {"limit", "time-zone", "set", "--tenant", tid, "Europe/Rome", "Asia/Tokyo"},
+			"get with an argument": {"limit", "time-zone", "get", "--tenant", tid, "Europe/Rome"},
+		} {
+			if code, out, errs := r.run(t, args...); code != 2 || out != "" || errs == "" {
+				t.Errorf("%s: exit %d, stdout %q, stderr %q, want 2", name, code, out, errs)
+			}
+		}
+		if n := len(r.f.calls("setTenantTimeZone")) + len(r.f.calls("getTenantTimeZone")); n != 0 {
+			t.Errorf("a refused command reached the API %d times", n)
+		}
+	})
+
+	t.Run("tenant update accepts --time-zone alone", func(t *testing.T) {
+		got, _ := call(t, "updateTenant", "tenant", "update", "--time-zone", "Asia/Tokyo", tid)
+		if !reflect.DeepEqual(got, adminapi.UpdateTenantInput{Tenant: tid, Body: adminapi.TenantUpdate{TimeZone: adminapi.Some("Asia/Tokyo")}}) {
+			t.Errorf("update: %+v", got)
+		}
+		r := newRig(t)
+		r.f.out["updateTenant"] = &tenant
+		mustRun(t, r, "tenant", "update", "--time-zone", "", tid)
+		if r.f.patchBody != `{"time_zone":""}` {
+			t.Errorf("an empty zone is the default: the body is %s", r.f.patchBody)
+		}
+		r = newRig(t)
+		mustRun(t, r, "tenant", "update", "--name", "acme3", "--time-zone", "Europe/Rome", tid)
+		if r.f.patchBody != `{"name":"acme3","time_zone":"Europe/Rome"}` {
+			t.Errorf("body %s", r.f.patchBody)
+		}
+		if code, _, errs := r.run(t, "tenant", "update", tid); code != 2 || errs == "" {
+			t.Errorf("an update with nothing to change: exit %d %q", code, errs)
+		}
+	})
+
+	t.Run("tenant create --time-zone", func(t *testing.T) {
+		r := newRig(t)
+		r.f.out["createTenant"] = &adminapi.TenantCreated{Tenant: tenant}
+		mustRun(t, r, "tenant", "create", "--time-zone", "Europe/Rome", "acme")
+		in, ok := r.f.only(t, "createTenant").(adminapi.CreateTenantInput)
+		if !ok || in.Body.TimeZone != "Europe/Rome" || in.Body.Name != "acme" {
+			t.Errorf("create: %+v", in)
+		}
+	})
+
+	t.Run("usage list --limit-state", func(t *testing.T) {
+		got, out := call(t, "listUsageRecords", "usage", "list", "--tenant", tid, "--limit-state", "unlimited")
+		in, ok := got.(adminapi.ListUsageRecordsInput)
+		if !ok || in.LimitState != adminapi.LimitStateUnlimited || in.Tenant != tid {
+			t.Errorf("usage list: %+v", got)
+		}
+		if !strings.Contains(out, "LIMITS") {
+			t.Errorf("the table has no LIMITS column:\n%s", out)
+		}
+		r := newRig(t)
+		if code, _, errs := r.run(t, "usage", "list", "--tenant", tid, "--limit-state", "sometimes"); code != 2 || errs == "" {
+			t.Errorf("an unknown state: exit %d %q", code, errs)
+		}
+		if n := len(r.f.calls("listUsageRecords")); n != 0 {
+			t.Errorf("an unknown state reached the API")
+		}
+		for _, s := range []string{"limited", "unlimited", "unverified", "not_evaluated"} {
+			r := newRig(t)
+			mustRun(t, r, "usage", "list", "--tenant", tid, "--limit-state", s)
+			if in := r.f.only(t, "listUsageRecords").(adminapi.ListUsageRecordsInput); string(in.LimitState) != s {
+				t.Errorf("%s: %+v", s, in)
+			}
+		}
+	})
+
+	t.Run("the tenant table shows the zone", func(t *testing.T) {
+		r := newRig(t)
+		tn := tenant
+		tn.TimeZone, tn.TimeZoneInForce = "Europe/Rome", "UTC"
+		tn.TimeZoneEffectiveFrom = &effective
+		r.f.pages = map[string]adminapi.TenantList{"": {Items: []adminapi.Tenant{tn}}}
+		out, _ := mustRun(t, r, "tenant", "list")
+		if !strings.Contains(out, "Europe/Rome") {
+			t.Errorf("the tenant list does not show the time zone:\n%s", out)
 		}
 	})
 }

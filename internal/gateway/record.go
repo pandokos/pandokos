@@ -113,6 +113,7 @@ func (h *Handler) recordOf(st *reqState, logOutcome string) usage.Record {
 		InputSource:   usage.SourceNone,
 		OutputSource:  usage.SourceNone,
 		CostStatus:    "none",
+		LimitState:    string(st.limitState),
 		Metadata:      st.metadata,
 
 		MetadataDropped: st.metadataDropped,
@@ -209,7 +210,7 @@ func (st *reqState) minimalRecord() usage.Record {
 		Provider: st.provider, APIFamily: st.family, Operation: st.op.Name,
 		Outcome: usage.OutcomeInternalError, ErrorCode: string(family.CodeInternal),
 		InputSource: usage.SourceNone, OutputSource: usage.SourceNone, CostStatus: "none",
-		Duration: time.Since(st.start),
+		LimitState: string(st.limitState), Duration: time.Since(st.start),
 	}
 }
 

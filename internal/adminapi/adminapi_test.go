@@ -288,6 +288,14 @@ func (f *fake) ListLimitEvents(_ context.Context, in adminapi.ListLimitEventsInp
 	f.rec("listLimitEvents", in)
 	return &adminapi.LimitEventList{}, nil
 }
+func (f *fake) GetTenantTimeZone(_ context.Context, in adminapi.GetTenantTimeZoneInput) (*adminapi.TenantTimeZone, error) {
+	f.rec("getTenantTimeZone", in)
+	return &adminapi.TenantTimeZone{}, nil
+}
+func (f *fake) SetTenantTimeZone(_ context.Context, in adminapi.SetTenantTimeZoneInput) (*adminapi.TenantTimeZone, error) {
+	f.rec("setTenantTimeZone", in)
+	return &adminapi.TenantTimeZone{}, nil
+}
 func (f *fake) ListPlatformLimits(_ context.Context, in adminapi.ListPlatformLimitsInput) (*adminapi.PlatformLimitRuleList, error) {
 	f.rec("listPlatformLimits", in)
 	return &adminapi.PlatformLimitRuleList{}, nil
@@ -911,8 +919,16 @@ func TestRouterAndClient(t *testing.T) {
 			in := adminapi.DeletePlatformLimitInput{Rule: cid}
 			add("deletePlatformLimit", in, func() error { _, err := c.DeletePlatformLimit(ctx, in); return err })
 		}
-		if len(adminapi.Operations) != 96 {
-			t.Fatalf("%d operations, want 96 (the 35 of epic 1 and sprint 2.1, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1 and the 12 of sprint 5.2)", len(adminapi.Operations))
+		{
+			in := adminapi.GetTenantTimeZoneInput{Tenant: tid}
+			add("getTenantTimeZone", in, func() error { _, err := c.GetTenantTimeZone(ctx, in); return err })
+		}
+		{
+			in := adminapi.SetTenantTimeZoneInput{Tenant: tid, Body: adminapi.TenantTimeZoneSet{TimeZone: "Europe/Rome"}}
+			add("setTenantTimeZone", in, func() error { _, err := c.SetTenantTimeZone(ctx, in); return err })
+		}
+		if len(adminapi.Operations) != 98 {
+			t.Fatalf("%d operations, want 98 (the 35 of epic 1 and sprint 2.1, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1, the 12 of sprint 5.2 and the 2 of sprint 5.3)", len(adminapi.Operations))
 		}
 		for _, op := range adminapi.Operations {
 			tc, ok := calls[op.ID]

@@ -453,8 +453,9 @@ Migration `0009_limit_rules` adds the two tables of the limit rules ([limits gui
   tenant (`subject_kind` `tenant`, empty `subject_id`), a service account by its ID, or a key by its
   key ID (a virtual key) or by the ID of its subject mapping (a caller with a token), a metric
   (`requests_per_minute`, `tokens_per_minute` or `concurrent_requests`) and a `limit_value` from 1 to
-  1,000,000,000,000. The combination of tenant, subject and metric is unique. There is no foreign key
-  to the subject: a rule whose subject does not exist never matches.
+  1,000,000,000,000. The combination of tenant, subject and metric is unique. Migration 0009 had no
+  foreign key to the subject; migration 0011 replaced the names by identifiers with foreign keys
+  (section 16).
 - `platform_limit_rule` is global: a row without a tenant is the default ceiling of every tenant,
   a row with a tenant replaces the default of that metric for it (unique per tenant and metric, nulls
   not distinct). A tenant's session sees the defaults and its own rows; writes need the platform scope.
@@ -493,3 +494,99 @@ Migration `0010_quotas_budgets` adds quotas and budgets to the limit rules ([lim
   one debug line), so rules written for quotas and budgets are not enforced until the new binary runs.
 - The usage ledger reads for the counters (`AggregateUsageForLimits`) run on the worker role in the
   tenant's session; the gateway role still reads no usage record.
+
+## 16. Grants of migration 0011
+
+Migration `0011_limit_integrity` makes the limit rules reference their subject and their scope by
+identifier, adds a time zone to the tenant and a state to the usage record, and adds two functions that
+cross the tenant boundary ([limits guide](limits.md),
+[ADR 0049](../adr/0049-limit-rules.md), [ADR 0050](../adr/0050-quotas-and-budgets-periods-attribution-currencies.md),
+[ADR 0052](../adr/0052-administration-of-limits.md)). It runs in one transaction as the owner role.
+
+**What changes.**
+
+- `limit_rule` loses `subject_id`, `provider` and `model` and gains `service_account_id`,
+  `virtual_key_id`, `subject_mapping_id`, `provider_id` and `model_id` (all `uuid`, nullable);
+  `platform_limit_rule` gains `provider_id` and `model_id`. Composite foreign keys
+  `(tenant_id, x_id)` reference the service account, the virtual key and the subject mapping of the
+  rule's own tenant; `provider_id` references `provider`, and `(provider_id, model_id)` references
+  `model`, which gains the unique key `model_provider_id_key`. All are `ON DELETE RESTRICT`: nothing
+  cascades, because deletions are audited by the application. Checks tie the subject columns to
+  `subject_kind` (`tenant`: none; `service_account`: the account; `key`: exactly one of the virtual
+  key and the subject mapping) and a model to its provider. The unique key is over the typed columns and
+  the metric. The admin role gets `INSERT` on the new columns and still no `UPDATE` on subject, scope,
+  metric or currency. `limit_event` is unchanged and has no foreign key: it is history.
+- Two triggers hold "a revoked key has no rule", since a key is never deleted and its foreign key
+  never fires: `limit_rule_key_guard` refuses a rule for a revoked key, and the deferred constraint
+  trigger `virtual_key_revoke_guard` fails the commit of a transaction that revokes a key and leaves a
+  rule of it. The first takes a share lock of the key row before it looks at `revoked_at`, so the pair
+  is race-free for every role and caller, with or without the advisory lock of the handlers: a
+  revocation waits for a transaction that inserts a rule, and an insert that waited for a revocation
+  sees it and is refused.
+- `tenant` gains `time_zone`, `time_zone_previous` and `time_zone_effective_from`. The trigger
+  `tenant_time_zone_guard` checks the shape of every change: the zone in force changes only through a
+  pending change whose instant is in the future and at most 32 days away, a pending change that is
+  replaced keeps its instant, and a tenant session changes nothing of its row but the zone. The policy
+  `tenant_self_update` lets a tenant's own session update its row (the guard leaves it the zone);
+  `tenant_time_zone_notify` sends `limits:<tenant id>` on a change. The admin role holds `INSERT` on
+  `time_zone` and `UPDATE` on the three columns.
+- `usage_record` gains the nullable column `limit_state` and the check
+  `usage_record_limit_state_valid`, created `NOT VALID`: new rows are checked, existing rows hold NULL,
+  and no partition is rewritten or scanned. The gateway role holds `INSERT` on the column.
+- Two partial unique indexes, `audit_event_unlimited_traffic_key` on `(tenant_id, detail ->> 'day')`
+  and `platform_audit_event_unlimited_traffic_key` on `(resource_id, detail ->> 'day')`, both for the
+  action `limit.unlimited_traffic`, make that row once per tenant and day in each log.
+- Five policies: `tenant_self_update`, `provider_owner_read` and `model_owner_read` (the owner role,
+  for the first function below) and `platform_audit_event_unlimited_traffic_insert` and
+  `..._select` (the owner role, limited to the one action, for the second).
+
+**The two functions, and why each crosses the boundary.** Both are `SECURITY DEFINER` with a fixed
+`search_path`, `REVOKE`d from `PUBLIC` and executable by one role.
+
+- `delete_platform_issuer_limit_rules(issuer, tenants, actor ID, actor name, key ID, request ID)`,
+  executable by the admin role. Deleting a platform-level issuer cascades to the subject mappings of
+  its tenants, and a mapping that a rule names cannot go. The platform session sees neither the
+  tenants' rules nor their audit logs, so the function refuses a session outside the platform scope,
+  goes tenant by tenant in a fixed order as that tenant's session, skips a tenant that has no mapping
+  of the issuer (no lock, nothing touched, so the caller may name every tenant), takes the lock of the
+  others' rules,
+  deletes the rules of that issuer's mappings, writes one `limit.delete` audit row for each in the
+  log of the tenant (`cause` `platform_issuer_deleted`, actor type `platform`), restores the caller's
+  tenant setting and returns the number. It can delete nothing but rules of mappings of the issuer it
+  is given.
+- `record_unlimited_traffic(day, time zone, provider, model, request ID)`, executable by the gateway
+  role, which holds no privilege on either audit log. It writes the row `limit.unlimited_traffic` in
+  the tenant's log (the tenant of the session) and in the platform's, `ON CONFLICT DO NOTHING` on the
+  two indexes above, with fixed columns (actor type `platform`, actor name `gateway`), after checking
+  every argument; the day must lie within two days of the database's date.
+
+**Locks and duration.** The migration takes `ACCESS EXCLUSIVE` locks on the two rule tables,
+`service_account`, `virtual_key`, `subject_mapping`, `provider`, `model` and the two audit logs, and on
+`tenant` and `usage_record`, for the length of the transaction. The rule tables are small (at most 5,000
+rules per tenant); the two audit indexes scan the audit logs once, which is the only step that grows
+with the installation. To read and write the rows of every tenant, the data migration lifts forced
+row-level security on the nine tables it touches and puts it back before the transaction ends; the
+row triggers of the two rule tables are off meanwhile, so `updated_at` keeps its value. A failure
+rolls everything back to the schema of 0010.
+
+**What happens to existing rules.** Names become identifiers by what they designate now, which is what
+the rule matched until now. A rule whose subject is gone, whose key is revoked, or whose provider or
+model names nothing matched no request: it is deleted, and one audit row keeps every field. Tenant rules
+write `limit.delete` in the tenant's log, ceilings write `platform_limit.delete` in the platform log; the
+actor name is `migration 0011` and `detail.cause` is `migration_subject_missing`,
+`migration_key_revoked` or `migration_scope_missing`. To list what the migration deleted of a tenant:
+
+```sql
+SELECT occurred_at, resource_id, detail FROM pandokos.audit_event
+ WHERE action = 'limit.delete' AND actor_name = 'migration 0011';   -- in a tenant session
+```
+
+(ceilings: the same on `pandokos.platform_audit_event` with `action = 'platform_limit.delete'`, in the
+platform scope). No rule is lost silently and none makes the migration fail.
+
+**Upgrade: stop, migrate, start.** The migration is **not compatible with the binary of sprint 5.2**.
+Stop every instance, run `pandokos migrate`, start the new binary. An old binary that is still running
+turns not ready, because the ledger of migrations no longer matches, and a request it still takes is
+refused with 503: its rule query names columns that are gone, so it fails closed and enforces nothing
+wrongly. A new binary against the schema of 0010 does not start. The migration changes nothing that was
+enforced. There is no down migration; to go back, restore the database from a backup taken before.

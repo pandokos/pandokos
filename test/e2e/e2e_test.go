@@ -674,20 +674,20 @@ func TestMigrateCommand(t *testing.T) { // T-160
 	}
 
 	code, out, errs := runBinary(t, env, "migrate", "status")
-	if code != 1 || errs != "" || out != "0001_init  pending\n0002_identity_audit  pending\n0003_vault  pending\n0004_catalogue  pending\n0005_gateway_auth_failures  pending\n0006_usage_ledger  pending\n0007_provider_stream_usage  pending\n0008_trusted_issuers  pending\n0009_limit_rules  pending\n0010_quotas_budgets  pending\nschema is at version 0; this binary needs version 10\n" {
+	if code != 1 || errs != "" || out != "0001_init  pending\n0002_identity_audit  pending\n0003_vault  pending\n0004_catalogue  pending\n0005_gateway_auth_failures  pending\n0006_usage_ledger  pending\n0007_provider_stream_usage  pending\n0008_trusted_issuers  pending\n0009_limit_rules  pending\n0010_quotas_budgets  pending\n0011_limit_integrity  pending\nschema is at version 0; this binary needs version 11\n" {
 		t.Fatalf("status before: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate")
-	if code != 0 || errs != "" || out != "applied 0001_init\napplied 0002_identity_audit\napplied 0003_vault\napplied 0004_catalogue\napplied 0005_gateway_auth_failures\napplied 0006_usage_ledger\napplied 0007_provider_stream_usage\napplied 0008_trusted_issuers\napplied 0009_limit_rules\napplied 0010_quotas_budgets\nschema is at version 10\n" {
+	if code != 0 || errs != "" || out != "applied 0001_init\napplied 0002_identity_audit\napplied 0003_vault\napplied 0004_catalogue\napplied 0005_gateway_auth_failures\napplied 0006_usage_ledger\napplied 0007_provider_stream_usage\napplied 0008_trusted_issuers\napplied 0009_limit_rules\napplied 0010_quotas_budgets\napplied 0011_limit_integrity\nschema is at version 11\n" {
 		t.Fatalf("migrate: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate")
-	if code != 0 || errs != "" || out != "schema is at version 10\n" {
+	if code != 0 || errs != "" || out != "schema is at version 11\n" {
 		t.Fatalf("second migrate: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate", "status")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if code != 0 || errs != "" || len(lines) != 11 || !applied("0001_init").MatchString(lines[0]) || !applied("0002_identity_audit").MatchString(lines[1]) || !applied("0003_vault").MatchString(lines[2]) || !applied("0004_catalogue").MatchString(lines[3]) || !applied("0005_gateway_auth_failures").MatchString(lines[4]) || !applied("0006_usage_ledger").MatchString(lines[5]) || !applied("0007_provider_stream_usage").MatchString(lines[6]) || !applied("0008_trusted_issuers").MatchString(lines[7]) || !applied("0009_limit_rules").MatchString(lines[8]) || !applied("0010_quotas_budgets").MatchString(lines[9]) || lines[10] != "schema is at version 10; this binary needs version 10" {
+	if code != 0 || errs != "" || len(lines) != 12 || !applied("0001_init").MatchString(lines[0]) || !applied("0002_identity_audit").MatchString(lines[1]) || !applied("0003_vault").MatchString(lines[2]) || !applied("0004_catalogue").MatchString(lines[3]) || !applied("0005_gateway_auth_failures").MatchString(lines[4]) || !applied("0006_usage_ledger").MatchString(lines[5]) || !applied("0007_provider_stream_usage").MatchString(lines[6]) || !applied("0008_trusted_issuers").MatchString(lines[7]) || !applied("0009_limit_rules").MatchString(lines[8]) || !applied("0010_quotas_budgets").MatchString(lines[9]) || !applied("0011_limit_integrity").MatchString(lines[10]) || lines[11] != "schema is at version 11; this binary needs version 11" {
 		t.Fatalf("status after: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	testutil.AssertAbsent(t, "migrate output", out+errs, d.Passwords()...)
@@ -709,7 +709,7 @@ func TestServeRefusesUnmigratedDatabase(t *testing.T) { // T-161
 	}
 
 	d.Migrate(t)
-	if _, err := d.Super(t).Exec(context.Background(), "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (11, 'future', repeat('0', 64), 'x')"); err != nil {
+	if _, err := d.Super(t).Exec(context.Background(), "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (12, 'future', repeat('0', 64), 'x')"); err != nil {
 		t.Fatal(err)
 	}
 	code, out, errs = runBinary(t, serveEnv(t, d), "serve", "--config", writeConfig(t, "info"))
@@ -765,7 +765,7 @@ func TestServeBehindPooler(t *testing.T) { // T-163
 	d := dbtest.New(t)
 	pooled := d.Pooled(t)
 	code, out, errs := runBinary(t, pooled.Env(t), "migrate")
-	if code != 0 || !strings.Contains(out, "schema is at version 10") {
+	if code != 0 || !strings.Contains(out, "schema is at version 11") {
 		t.Fatalf("migrate through the pooler: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	up := fakeprovider.New(t)
@@ -1161,14 +1161,15 @@ func TestExitScenario(t *testing.T) {
 	if status != 404 || !strings.Contains(text, "not_found") {
 		t.Errorf("API across tenants: %d %s", status, text)
 	}
-	// Every step is in the audit logs, in order.
-	got := auditActions(t, p.db, "SELECT action FROM pandokos.platform_audit_event ORDER BY occurred_at, action")
+	// Every step is in the audit logs, in order. The rows of unlimited traffic (one per tenant and day, written
+	// in the background) are not steps of this scenario.
+	got := auditActions(t, p.db, "SELECT action FROM pandokos.platform_audit_event WHERE action <> 'limit.unlimited_traffic' ORDER BY occurred_at, action")
 	want := "platform_key.bootstrap,platform_key.create,tenant.create,endpoint.update," + strings.Repeat("model.create,", len(fakeModels)) + "tenant.create"
 	if strings.Join(got, ",") != want {
 		t.Errorf("platform log: %v, want %s", got, want)
 	}
 	for _, x := range ts {
-		got := auditActions(t, p.db, "SELECT action FROM pandokos.audit_event WHERE tenant_id = $1::uuid ORDER BY occurred_at, action", x.id)
+		got := auditActions(t, p.db, "SELECT action FROM pandokos.audit_event WHERE tenant_id = $1::uuid AND action <> 'limit.unlimited_traffic' ORDER BY occurred_at, action", x.id)
 		if want := "data_key.create,service_account.create,virtual_key.create,service_account.create,virtual_key.create,credential.create"; strings.Join(got, ",") != want {
 			t.Errorf("tenant log: %v, want %s", got, want)
 		}

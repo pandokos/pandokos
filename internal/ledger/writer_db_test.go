@@ -113,6 +113,7 @@ func expectedRow(r usage.Record) map[string]any {
 		"estimated_input_tokens": num(estIn, r.Estimated.InputTokens), "estimated_output_tokens": num(estOut, r.Estimated.OutputTokens),
 		"cost_status": r.CostStatus, "cost_reason": reason, "currency": nilIf(r.Cost.Currency), "price_version_id": nilIf(r.Cost.VersionID),
 		"cost_fallbacks": fallbacks, "metadata": stringMap(r.Metadata), "metadata_dropped": float64(r.MetadataDropped),
+		"limit_state": nilIf(r.LimitState),
 	}
 }
 
@@ -654,5 +655,64 @@ func TestClose(t *testing.T) {
 			}
 		}
 		testutil.AssertNoCanary(t, "the log", logs.String())
+	})
+}
+
+// TestWriterLimitState is T-722: the writer stores the limit state of each record, and NULL for a
+// record that has none.
+func TestWriterLimitState(t *testing.T) {
+	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
+		tid := d.SeedTenant(t, "ledger-state")
+		states := []string{"limited", "unlimited", "unverified", "not_evaluated", ""}
+		base := time.Now().UTC().Add(-time.Minute)
+		var recs []usage.Record
+		for i, s := range states {
+			r := testutil.ValidRecord(tid)
+			r.StartedAt = base.Add(time.Duration(i) * time.Second).Truncate(time.Microsecond)
+			r.ID = usage.NewID(r.StartedAt)
+			r.LimitState = s
+			recs = append(recs, r)
+		}
+		w, err := New(Options{DB: d.Open(t, store.RoleGateway), Logger: telemetry.NewLogger(&testutil.LogBuffer{}, "debug"), BufferSize: 16, BatchSize: 16, FlushInterval: 10 * time.Millisecond})
+		if err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan struct{})
+		go func() { w.Run(context.Background()); close(done) }()
+		for _, r := range recs {
+			if !w.Admit() {
+				t.Fatal("Admit refused")
+			}
+			w.Record(r)
+		}
+		testutil.Eventually(t, 10*time.Second, "every record is written", func() bool { return w.Stats().Written == int64(len(recs)) })
+		cctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		w.Close(cctx)
+		<-done
+
+		var got []string
+		rows, err := d.Super(t).Query(context.Background(), `SELECT COALESCE(limit_state, '<null>') FROM pandokos.usage_record WHERE tenant_id = $1::uuid ORDER BY started_at`, tid.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for rows.Next() {
+			var s string
+			if err := rows.Scan(&s); err != nil {
+				t.Fatal(err)
+			}
+			got = append(got, s)
+		}
+		rows.Close()
+		want := []string{"limited", "unlimited", "unverified", "not_evaluated", "<null>"}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("stored states %v, want %v", got, want)
+		}
+		// A value outside the four is refused by the record before it is queued or by the database: it is not stored.
+		bad := testutil.ValidRecord(tid)
+		bad.LimitState = "sometimes"
+		if err := bad.Validate(); err == nil {
+			t.Error("a record with an unknown limit state is valid")
+		}
 	})
 }

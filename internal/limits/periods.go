@@ -445,8 +445,12 @@ func (m *Memory) loadLocked(sh *shard, t tenant.ID, p Period, ls []Limit, rows [
 
 // Fold adds the pieces to the base of every counter of t whose period contains them, drops the
 // live minutes before cut and sets the cut. A cut that is not after the current one changes
-// nothing.
-func (m *Memory) Fold(t tenant.ID, pieces []Piece, cut time.Time) {
+// nothing. The pieces were cut at the boundaries of the periods the store held when they were read:
+// if a counter has a period that starts or ends strictly inside a piece (it was created since, by a
+// Reserve), nothing is changed and Fold returns false, so that the caller reads the pieces again with
+// the boundaries of that counter; otherwise the piece would be skipped for it and the cut would pass
+// its usage.
+func (m *Memory) Fold(t tenant.ID, pieces []Piece, cut time.Time) bool {
 	sh := m.shardOf(t)
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
@@ -455,7 +459,15 @@ func (m *Memory) Fold(t tenant.ID, pieces []Piece, cut time.Time) {
 		ts = &tenantPeriods{cut: cut, setAt: m.now(), pcs: map[counterKey]*counter{}}
 		sh.ten[t] = ts
 	} else if !cut.After(ts.cut) {
-		return
+		return true
+	}
+	for _, c := range ts.pcs {
+		p := c.per.lim.Period
+		for _, pi := range pieces {
+			if (pi.From.Before(p.Start) && p.Start.Before(pi.To)) || (pi.From.Before(p.End) && p.End.Before(pi.To)) {
+				return false
+			}
+		}
 	}
 	cutMinute := cut.Unix() / 60
 	for _, c := range ts.pcs {
@@ -478,6 +490,7 @@ func (m *Memory) Fold(t tenant.ID, pieces []Piece, cut time.Time) {
 	for _, c := range ts.pcs {
 		m.testMarks(c, c.per.lim.Marks)
 	}
+	return true
 }
 
 // Rebase replaces the base of every counter of t with period p by the sum of rows.

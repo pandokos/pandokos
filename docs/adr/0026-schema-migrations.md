@@ -1,6 +1,6 @@
 # 0026. Schema migrations: in-house, forward-only, exact match at start
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-12
 
 Refines [ADR 0004](0004-postgresql-and-rls.md); does not supersede it.
@@ -43,3 +43,8 @@ with forced row-level security, which hides rows from the owner too.
   first.
 - Applying migrations at `serve` start: gives every instance owner credentials, against
   [ADR 0003](0003-single-binary-with-roles.md).
+
+## History
+
+- 2026-11-18: recorded as accepted by the maintainer.
+- 2026-11-18: sprint 5.3: migration 0011 is a data migration that lifts forced row-level security on the tables it touches, inside its transaction, and puts it back before it ends ([ADR 0049](0049-limit-rules.md)).

@@ -73,7 +73,7 @@ func newTestRuleCache(t *testing.T, ttl time.Duration) (*RuleCache, *ruleLoader,
 // version returns the number of the load that produced the rule set.
 func version(t *testing.T, s RuleSet) int64 {
 	t.Helper()
-	got := s.For(Query{}, nil)
+	got := s.forCal(Query{}, nil)
 	if len(got) != 1 {
 		t.Fatalf("rule set %+v: %d limits, want 1", s, len(got))
 	}

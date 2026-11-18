@@ -48,7 +48,7 @@ func (l recordLedger) Usage(_ context.Context, t tenant.ID, from, liveFrom, to t
 		}
 		g := groups[k]
 		if g == nil {
-			g = &limits.UsageGroup{Minute: k.minute, PrincipalID: k.principal, KeyID: k.key, Provider: k.provider, Model: k.model, Currency: k.curr}
+			g = &limits.UsageGroup{Minute: k.minute, PrincipalID: k.principal, KeyID: k.key, Provider: k.provider, Model: k.model, ModelID: r.ModelID, Currency: k.curr}
 			groups[k] = g
 		}
 		g.Requests++
@@ -217,7 +217,8 @@ func countRule(id string, m limits.Metric, n int64) limits.Rule {
 func limitsOf(t *testing.T, r *limitstest.Real, o limitstest.Options, provider, model string) []limits.Limit {
 	t.Helper()
 	set := limits.NewScopedRuleSet(testPrincipal.TenantID, o.PlatformDefault, o.Platform[testPrincipal.TenantID], o.Rules[testPrincipal.TenantID])
-	return set.For(limits.Query{ServiceAccountID: testPrincipal.ID, KeyID: testPrincipal.KeyID, Provider: provider, Model: model, Start: r.Now()}, r.Calendar)
+	set.Calendar = r.TenantCalendar(testPrincipal.TenantID)
+	return set.For(limits.Query{ServiceAccountID: testPrincipal.ID, KeyID: testPrincipal.KeyID, Provider: provider, Model: model, Start: r.Now()})
 }
 
 // TestNoPrice is T-666: a budget applies and the model has no price it can be measured with.

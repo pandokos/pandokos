@@ -75,6 +75,12 @@ The caller's own `model` string is stored only once it has resolved to a catalog
 | `other_units` | other units the provider bills, as the family reports them (a flat map of numbers) |
 | `provider_usage` | the integer members of the provider's `usage` object keyed by their path (`prompt_tokens`, `prompt_tokens_details.cached_tokens`): at most 32 entries, nothing but non-negative integers, so the provider cannot put text into the ledger |
 
+**How limits treated the request**
+
+| Column | Meaning |
+|---|---|
+| `limit_state` | `limited`: at least one rule matched and every matching limit was evaluated, whether the request was reserved against them or refused by one (429, or 409 `no_price`). `unlimited`: no rule of the platform, the tenant, the service account or the key matched the request for its provider and model. `unverified`: a matching limit could not be evaluated: the rules could not be read (503), or counters could not be loaded or reserved, so the request was refused (503) or, with `limits.on_store_failure: allow`, admitted without them. `not_evaluated`: the request ended before the limits were consulted (refused for its body, its model or a policy), or the gateway runs without a limiter. Empty (NULL): the row was written before sprint 5.3 ([limits guide](limits.md), section 15) |
+
 **Estimated by Pandokos** (empty unless the source is `estimated`)
 
 | Column | Meaning |
@@ -263,7 +269,8 @@ A tenant administrator lists the tenant's records, newest first, through the adm
 (`listUsageRecords`, permission `usage:read`, held by `tenant-admin`) or the CLI:
 
 ```sh
-pandokos usage list --tenant demo [--from 2026-11-19T00:00:00Z] [--to 2026-11-20T00:00:00Z] [--provider anthropic]
+pandokos usage list --tenant demo [--from 2026-11-19T00:00:00Z] [--to 2026-11-20T00:00:00Z] [--provider anthropic] \
+    [--limit-state limited|unlimited|unverified|not_evaluated]
 ```
 
 `to` defaults to now and `from` to 24 hours before `to`; the window is at most 31 days and `from`
@@ -271,7 +278,8 @@ must be before `to` (otherwise `invalid_request` on `from`). The records are tho
 `from` <= `started_at` < `to`. Pages hold 1 to 200 records (default 50); the cursor carries the
 resolved window and the filter (so a list without `to` pages over the window of its first page),
 and a cursor used with an explicit `from`, `to` or `provider` that differs from them is
-`invalid_request` on `cursor`. The
+`invalid_request` on `cursor`. `limit_state` filters on one of the four values (the cursor carries it too); a
+record written before sprint 5.3 has none and shows an empty string. The
 list is read as the admin role under the tenant's row-level security policy and is not audited. In
 the answer `other_units` and `provider_usage` are arrays of `{name, value}` sorted by name, `metadata` is an
 array of `{key, value}` (the caller's own labels), a token figure is 0 when its source is not

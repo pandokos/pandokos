@@ -1,6 +1,6 @@
 # 0025. Go toolchain: language floor and release toolchain
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-12
 
 Refines [ADR 0002](0002-implementation-language-go.md) ("current stable release").
@@ -44,3 +44,4 @@ the pull request fail until both agree.
 
 - 2026-11: the language floor is raised to Go 1.25.0, required by the PostgreSQL driver (sprint 1.2, decision D-1).
 - 2026-11: the language floor is raised to Go 1.26.0: the OpenTelemetry exporter of sprint 3.2 brings `golang.org/x/net`, whose fixed release needs Go 1.26, and Go 1.25 is out of support (sprint 3.2, O-1).
+- 2026-11-18: recorded as accepted by the maintainer.

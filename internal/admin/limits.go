@@ -90,33 +90,44 @@ func (s *server) CreateLimit(ctx context.Context, in adminapi.CreateLimitInput) 
 		if n >= int64(maxLimitRules) {
 			return errInvalidState
 		}
-		found, err := q.LimitSubjectExists(ctx, queries.LimitSubjectExistsParams{SubjectKind: string(kind), SubjectID: b.SubjectID})
+		subj, err := q.ResolveLimitSubject(ctx, queries.ResolveLimitSubjectParams{SubjectKind: string(kind), SubjectID: b.SubjectID})
 		if err != nil {
 			return err
 		}
-		if !found {
+		if kind != adminapi.LimitSubjectKindTenant && subj.ServiceAccountID == "" && subj.VirtualKeyID == "" && subj.SubjectMappingID == "" {
 			return invalid("subject_id", noSuchRuleSubj)
 		}
+		var scope queries.ResolveLimitScopeRow
 		if b.Provider != "" {
-			if found, err = q.LimitScopeExists(ctx, queries.LimitScopeExistsParams{Provider: b.Provider}); err != nil {
-				return err
-			} else if !found {
+			scope, err = q.ResolveLimitScope(ctx, queries.ResolveLimitScopeParams{Provider: b.Provider, Model: b.Model})
+			if isNoRowsErr(err) {
 				return invalid("provider", "must name a provider")
 			}
-			if b.Model != "" {
-				// A model counts when the tenant can use it: the same answer for one that is granted to
-				// nobody, one of another tenant and one that does not exist.
-				visible, err := visibleRefs(ctx, q)
-				if err != nil {
-					return err
-				}
-				if !visible[b.Provider+"/"+b.Model] {
-					return invalid("model", "must name a model available to this tenant")
-				}
+			if err != nil {
+				return err
+			}
+			if b.Model != "" && scope.ModelID == "" {
+				return invalid("model", "must name a model available to this tenant")
 			}
 		}
+		if b.Model != "" {
+			// A model counts when the tenant can use it: the same answer for one that is granted to
+			// nobody, one of another tenant and one that does not exist.
+			visible, err := visibleRefs(ctx, q)
+			if err != nil {
+				return err
+			}
+			if !visible[b.Provider+"/"+b.Model] {
+				return invalid("model", "must name a model available to this tenant")
+			}
+		}
+		// After the visibility check: a model granted elsewhere or nowhere must not answer differently on currency.
+		if err := checkBudgetCurrency(ctx, q, string(f.Metric), f.Currency, scope.ProviderID, scope.ModelID, true); err != nil {
+			return err
+		}
 		row, err := q.CreateLimitRule(ctx, queries.CreateLimitRuleParams{
-			SubjectKind: string(kind), SubjectID: b.SubjectID, Provider: b.Provider, Model: b.Model, Metric: string(f.Metric),
+			SubjectKind: string(kind), ServiceAccountID: nilIfEmpty(subj.ServiceAccountID), VirtualKeyID: nilIfEmpty(subj.VirtualKeyID),
+			SubjectMappingID: nilIfEmpty(subj.SubjectMappingID), ProviderID: nilIfEmpty(scope.ProviderID), ModelID: nilIfEmpty(scope.ModelID), Metric: string(f.Metric),
 			LimitValue: f.Value, Currency: f.Currency, Enforce: f.Enforce, Thresholds: f.Thresholds,
 		})
 		if err != nil {
@@ -125,7 +136,7 @@ func (s *server) CreateLimit(ctx context.Context, in adminapi.CreateLimitInput) 
 		out = limitRuleOut(queries.GetLimitRuleRow(row))
 		detail := map[string]any{"subject_kind": row.SubjectKind, "subject_id": row.SubjectID, "provider": row.Provider, "model": row.Model}
 		return audit.RecordTenant(ctx, tx, tid, tenantEvent(ctx, "limit.create", "limit_rule", row.ID,
-			ruleDetail(detail, row.Metric, row.LimitValue, row.Currency, row.Enforce, row.Thresholds)))
+			ruleDetail(detail, row.ProviderID, row.ModelID, row.Metric, row.LimitValue, row.Currency, row.Enforce, row.Thresholds)))
 	})
 	if err != nil {
 		return nil, mapLimitError(err)
@@ -179,6 +190,9 @@ func (s *server) UpdateLimit(ctx context.Context, in adminapi.UpdateLimitInput) 
 			out = limitRuleOut(queries.GetLimitRuleRow(cur))
 			return nil
 		}
+		if err := checkBudgetCurrency(ctx, q, cur.Metric, cur.Currency, cur.ProviderID, cur.ModelID, true); err != nil {
+			return err
+		}
 		row, err := q.UpdateLimitRule(ctx, queries.UpdateLimitRuleParams{ID: cur.ID, LimitValue: next.Value, Enforce: next.Enforce, Thresholds: next.Thresholds})
 		if err != nil {
 			return err
@@ -211,7 +225,7 @@ func (s *server) DeleteLimit(ctx context.Context, in adminapi.DeleteLimitInput) 
 		out = limitRuleOut(queries.GetLimitRuleRow(row))
 		detail := map[string]any{"subject_kind": row.SubjectKind, "subject_id": row.SubjectID, "provider": row.Provider, "model": row.Model}
 		return audit.RecordTenant(ctx, tx, tid, tenantEvent(ctx, "limit.delete", "limit_rule", row.ID,
-			ruleDetail(detail, row.Metric, row.LimitValue, row.Currency, row.Enforce, row.Thresholds)))
+			ruleDetail(detail, row.ProviderID, row.ModelID, row.Metric, row.LimitValue, row.Currency, row.Enforce, row.Thresholds)))
 	})
 	if isNoRowsErr(err) {
 		return nil, errNotFound
@@ -247,7 +261,7 @@ func (s *server) ListTenantPlatformLimits(ctx context.Context, in adminapi.ListT
 			break
 		}
 		l, amount := valueOut(r.Metric, r.LimitValue)
-		item := adminapi.PlatformLimitRule{ID: r.ID, Provider: r.Provider, Model: r.Model, Metric: adminapi.LimitMetric(r.Metric), Limit: l, Amount: amount,
+		item := adminapi.PlatformLimitRule{ID: r.ID, Provider: r.Provider, ProviderID: r.ProviderID, Model: r.Model, ModelID: r.ModelID, Metric: adminapi.LimitMetric(r.Metric), Limit: l, Amount: amount,
 			Currency: r.Currency, Enforce: r.Enforce, Thresholds: thresholdsOut(r.Thresholds), CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC()}
 		if !r.IsDefault {
 			item.Tenant = in.Tenant

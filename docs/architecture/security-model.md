@@ -73,6 +73,19 @@ runs in the administration plane and reads only catalogue state and credential m
 (`provider_credential_metadata`); it never opens a credential, holds no vault or key material and
 audits nothing.
 
+**The two functions that cross the tenant boundary** (sprint 5.3, [database guide](../operations/database.md),
+section 16) are the only places where a database role acts across tenants for limit rules, and neither
+reads a rule across tenants. `delete_platform_issuer_limit_rules`, executable by the admin role, is what the
+platform session needs to delete a platform-level issuer: it refuses a session outside the platform scope,
+works tenant by tenant as that tenant's session, can delete nothing but rules of mappings of the issuer
+it is given, and writes the audit row of each in the tenant's log. `record_unlimited_traffic`, executable
+by the gateway role, which has no privilege on either audit log, writes one fixed kind of row
+(`limit.unlimited_traffic`) for the tenant of its session, with every argument checked. A tenant's
+session may also update its own tenant row (policy `tenant_self_update`), and a trigger leaves it the time
+zone and nothing else. Limit rules reference their subject, provider and model with foreign keys that
+ignore row-level security, so the deletion of a provider or a model is refused for a rule of any tenant
+without the deleting session seeing it, and without a function that reads rules across tenants.
+
 **The Compose reference** ([guide](../operations/compose.md)) makes these trust choices: both listeners
 use TLS from a self-signed certificate that `setup.sh` generates; ports are published on the host's
 loopback only; PostgreSQL is on a network with no route out and is not published, and the server

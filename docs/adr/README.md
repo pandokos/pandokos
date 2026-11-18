@@ -3,7 +3,7 @@
 Each record states one decision, its context, its consequences and the alternatives that were
 rejected. A decision is changed by a new record that supersedes the old one.
 
-A record is *proposed* until its pull request is merged by the maintainer, then *accepted*.
+A record is *proposed* until the maintainer accepts it, by merging its pull request or after a review recorded in its History section; it is then *accepted*.
 
 | No. | Decision | Status |
 |---|---|---|
@@ -28,36 +28,36 @@ A record is *proposed* until its pull request is merged by the maintainer, then 
 | [0019](0019-configuration.md) | Configuration: static settings in a file, dynamic state in the database | accepted |
 | [0020](0020-error-contract.md) | Error contract: the shape of the API being called | accepted |
 | [0022](0022-local-accounts-and-sessions.md) | Local accounts and sessions | accepted |
-| [0023](0023-test-dependencies-in-nested-modules.md) | Test-only dependencies live in nested modules | proposed |
-| [0024](0024-openai-stream-usage-option.md) | OpenAI chat streams: how usage is requested and what is removed | proposed |
-| [0025](0025-go-toolchain.md) | Go toolchain: language floor and release toolchain | proposed |
-| [0026](0026-schema-migrations.md) | Schema migrations: in-house, forward-only, exact match at start | proposed |
-| [0027](0027-database-roles-and-session-context.md) | Database roles, session context and pooler safety | proposed |
-| [0028](0028-admin-api-generator.md) | Administration API: in-repository generator and conventions | proposed |
-| [0029](0029-static-sql-sqlc.md) | Static SQL: `sqlc`, text-mode rules, and a test against built SQL | proposed |
-| [0030](0030-keys-format-storage-lookup.md) | Keys: format, storage, lookup, platform keys, revocation bound | proposed |
-| [0031](0031-authorization-core-and-provisioning.md) | Authorization core and tenant provisioning | proposed |
-| [0032](0032-audit-log-first-version.md) | Audit log, first version | proposed |
-| [0033](0033-vault-formats-and-key-identifiers.md) | Vault: formats, derived keys, key identifiers, caches | proposed |
-| [0034](0034-credential-model-and-platform-oversight.md) | Credential model and platform oversight | proposed |
-| [0035](0035-catalogue-and-model-access.md) | Catalogue and model access | proposed |
-| [0036](0036-prices-costs-and-importer.md) | Prices, costs and the price importer | proposed |
-| [0037](0037-request-pipeline-and-resolution.md) | Request pipeline and resolution | proposed |
-| [0038](0038-egress-guard-upstream-tls-and-proxy.md) | Egress guard, upstream TLS and proxy | proposed |
-| [0039](0039-usage-record-admission-and-ledger-writer.md) | Usage record, admission and the ledger writer | proposed |
-| [0040](0040-traces.md) | Traces: SDK, span model, sampling and propagation | proposed |
-| [0041](0041-anthropic-api-family.md) | The anthropic API family | proposed |
-| [0042](0042-openai-compatible-providers-and-stream-usage-option.md) | OpenAI-compatible providers and the per-provider stream usage option | proposed |
-| [0043](0043-tenant-capability-check-and-usage-list.md) | The tenant capability check and the minimal usage list | proposed |
-| [0044](0044-sdk-compatibility-suite-python-typescript.md) | The SDK compatibility suite in Python and TypeScript | proposed |
-| [0045](0045-trusted-token-issuers.md) | Trusted token issuers: registration, selection and validation | proposed |
-| [0046](0046-issuer-key-retrieval-and-caching.md) | Retrieval and caching of issuer keys | proposed |
-| [0047](0047-identity-providers-in-the-test-suite.md) | Identity providers in the test suite | proposed |
-| [0048](0048-reserve-and-settle.md) | Reserve and settle in the pipeline: estimate, counters, guarantees and the 429 contract | proposed |
-| [0049](0049-limit-rules.md) | Limit rules: levels, subjects and resolution | proposed |
-| [0050](0050-quotas-and-budgets-periods-attribution-currencies.md) | Quotas and budgets: periods, attribution, currencies and unknown prices | proposed |
-| [0051](0051-period-counters-and-the-ledger.md) | Period counters and the ledger: load, cut, reconciliation, the failing store | proposed |
-| [0052](0052-administration-of-limits.md) | Administration of limits: scopes, thresholds, events, API and permissions | proposed |
+| [0023](0023-test-dependencies-in-nested-modules.md) | Test-only dependencies live in nested modules | accepted |
+| [0024](0024-openai-stream-usage-option.md) | OpenAI chat streams: how usage is requested and what is removed | accepted |
+| [0025](0025-go-toolchain.md) | Go toolchain: language floor and release toolchain | accepted |
+| [0026](0026-schema-migrations.md) | Schema migrations: in-house, forward-only, exact match at start | accepted |
+| [0027](0027-database-roles-and-session-context.md) | Database roles, session context and pooler safety | accepted |
+| [0028](0028-admin-api-generator.md) | Administration API: in-repository generator and conventions | accepted |
+| [0029](0029-static-sql-sqlc.md) | Static SQL: `sqlc`, text-mode rules, and a test against built SQL | accepted |
+| [0030](0030-keys-format-storage-lookup.md) | Keys: format, storage, lookup, platform keys, revocation bound | accepted |
+| [0031](0031-authorization-core-and-provisioning.md) | Authorization core and tenant provisioning | accepted |
+| [0032](0032-audit-log-first-version.md) | Audit log, first version | accepted |
+| [0033](0033-vault-formats-and-key-identifiers.md) | Vault: formats, derived keys, key identifiers, caches | accepted |
+| [0034](0034-credential-model-and-platform-oversight.md) | Credential model and platform oversight | accepted |
+| [0035](0035-catalogue-and-model-access.md) | Catalogue and model access | accepted |
+| [0036](0036-prices-costs-and-importer.md) | Prices, costs and the price importer | accepted |
+| [0037](0037-request-pipeline-and-resolution.md) | Request pipeline and resolution | accepted |
+| [0038](0038-egress-guard-upstream-tls-and-proxy.md) | Egress guard, upstream TLS and proxy | accepted |
+| [0039](0039-usage-record-admission-and-ledger-writer.md) | Usage record, admission and the ledger writer | accepted |
+| [0040](0040-traces.md) | Traces: SDK, span model, sampling and propagation | accepted |
+| [0041](0041-anthropic-api-family.md) | The anthropic API family | accepted |
+| [0042](0042-openai-compatible-providers-and-stream-usage-option.md) | OpenAI-compatible providers and the per-provider stream usage option | accepted |
+| [0043](0043-tenant-capability-check-and-usage-list.md) | The tenant capability check and the minimal usage list | accepted |
+| [0044](0044-sdk-compatibility-suite-python-typescript.md) | The SDK compatibility suite in Python and TypeScript | accepted |
+| [0045](0045-trusted-token-issuers.md) | Trusted token issuers: registration, selection and validation | accepted |
+| [0046](0046-issuer-key-retrieval-and-caching.md) | Retrieval and caching of issuer keys | accepted |
+| [0047](0047-identity-providers-in-the-test-suite.md) | Identity providers in the test suite | accepted |
+| [0048](0048-reserve-and-settle.md) | Reserve and settle in the pipeline: estimate, counters, guarantees and the 429 contract | accepted |
+| [0049](0049-limit-rules.md) | Limit rules: levels, subjects and resolution | accepted |
+| [0050](0050-quotas-and-budgets-periods-attribution-currencies.md) | Quotas and budgets: periods, attribution, currencies and unknown prices | accepted |
+| [0051](0051-period-counters-and-the-ledger.md) | Period counters and the ledger: load, cut, reconciliation, the failing store | accepted |
+| [0052](0052-administration-of-limits.md) | Administration of limits: scopes, thresholds, events, API and permissions | accepted |
 
 ## Questions from SOW 0.1 and where they were decided
 

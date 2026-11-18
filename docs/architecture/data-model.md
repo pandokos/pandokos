@@ -196,17 +196,15 @@ Two tables hold the rules that the gateway enforces ([limits guide](../operation
 tenant, a service account, or a key: a virtual key by its key ID, a caller with a token by its subject
 mapping), a metric and a value. `platform_limit_rule` is global: a row without a tenant is the
 default ceiling of every tenant, a row with a tenant replaces it for that tenant, and only the
-platform scope writes it. **No foreign key points to the subject** of a rule, so a key, a service
-account or a mapping can be deleted without touching its rules, and a rule for a subject that does
-not exist is idle and never matches. The gateway role only reads them; both tables notify
-`pandokos_cache`.
+platform scope writes it. The gateway role only reads them; both tables notify `pandokos_cache`.
+*Sprint 5.3 replaced the subject by typed identifiers with foreign keys: see "Integrity of limit rules".*
 
 ## Quotas, budgets and limit events (sprint 5.2)
 
 Migration 0010 gives both rule tables the same new columns ([database guide](../operations/database.md),
 [ADR 0050](../adr/0050-quotas-and-budgets-periods-attribution-currencies.md),
 [ADR 0052](../adr/0052-administration-of-limits.md)): `provider` and `model` (the scope: names of the
-catalogue, empty meaning all; no foreign key, so a rule whose scope names nothing never matches),
+catalogue, empty meaning all; replaced by `provider_id` and `model_id` in sprint 5.3),
 `currency` (three capital letters for a cost metric, empty otherwise), `enforce` (false: the rule never
 refuses and only records its thresholds) and `thresholds` (up to four percentages). The metrics
 include six per period, and `limit_value` of a cost metric is in **millionths** of the currency. The
@@ -303,3 +301,29 @@ The isolation suite (TEN-07) runs against a real PostgreSQL in CI and has three 
    transaction-mode pooler.
 3. **API-level tests.** For each route: a principal of tenant A addressing a resource of tenant B
    by ID receives the same response as for a resource that does not exist.
+
+## Integrity of limit rules (sprint 5.3)
+
+Migration 0011 ([database guide](../operations/database.md), section 16;
+[ADR 0049](../adr/0049-limit-rules.md), [ADR 0050](../adr/0050-quotas-and-budgets-periods-attribution-currencies.md),
+[ADR 0052](../adr/0052-administration-of-limits.md), each with an amendment of this sprint).
+
+- **A rule references its subject and scope.** `limit_rule` holds `service_account_id`, `virtual_key_id`
+  and `subject_mapping_id` (a `key` rule has exactly one of the last two; `subject_kind` is unchanged)
+  with composite foreign keys `(tenant_id, id)`, so a subject of another tenant cannot be named, and
+  `provider_id` and `model_id`; `platform_limit_rule` holds the last two. Every key is `ON DELETE
+  RESTRICT`: the deletions are audited by the application, so nothing cascades, and a subject, provider
+  or model that a rule names cannot be deleted by any role. A revoked key has no rule (two triggers,
+  since keys are never deleted). Subject, scope, metric and currency never change. `limit_event` keeps
+  its names and has no foreign key: it is history.
+- **Matching is by identifier** in the gateway and the counters; names are for display. A model created
+  later with the name of a deleted one is another model.
+- **A time zone per tenant.** `tenant.time_zone`, `time_zone_previous` and `time_zone_effective_from`;
+  the zone in force changes only through a pending change that takes effect at the start of the next month
+  in the zone in force. A tenant's own session may update its row (policy `tenant_self_update`); a guard
+  trigger leaves it the three columns.
+- **`usage_record.limit_state`** (`limited`, `unlimited`, `unverified`, `not_evaluated`; NULL before this
+  sprint), added without rewriting a partition; the check is `NOT VALID`.
+- **Two functions cross the tenant boundary** (see the security model): one for the rules of a
+  platform-level issuer's mappings, one for the audit row of unlimited traffic. Two partial unique indexes
+  on the audit logs make that row once per tenant and day.

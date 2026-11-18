@@ -24,10 +24,32 @@ type lw struct {
 	baseA      string
 }
 
-func newLW(t *testing.T) *lw {
+func newLW(t *testing.T) *lw { return newLWWith(t, true) }
+
+// newLWWith builds the world of the tests of limit rules; priced says whether its models carry
+// prices (the budgets of most tests need one).
+func newLWWith(t *testing.T, priced bool) *lw {
 	t.Helper()
 	w := &lw{iw: newIW(t)}
 	w.cat = w.api.Catalog(t)
+	if priced {
+		w.price(t)
+	}
+	return w.finish(t)
+}
+
+// price gives the models of the world prices. The budgets of these tests name a currency, and
+// since sprint 5.3 a budget is refused when no price that can be in force for its scope is in its
+// currency: one model of the world is priced in EUR and another in USD.
+func (w *lw) price(t *testing.T) {
+	t.Helper()
+	usd := decodeInto[adminapi.Model](t, w.do(t, w.plat, "POST", "/v1/models", map[string]any{"provider": w.cat.Provider.Name, "name": apitest.UniqueName("synthetic-usd"), "availability": "all"}), 201)
+	w.api.DB.SeedPrice(t, w.cat.Provider.Name, w.cat.All.Name, "EUR", time.Time{})
+	w.api.DB.SeedPrice(t, w.cat.Provider.Name, usd.Name, "USD", time.Time{})
+}
+
+func (w *lw) finish(t *testing.T) *lw {
+	t.Helper()
 	mk := func(tenantID, sa, key string) string {
 		k := decodeInto[adminapi.VirtualKeyCreated](t, w.do(t, key, "POST", "/v1/tenants/"+tenantID+"/virtual-keys", map[string]any{"service_account_id": sa}), 201)
 		return k.Key.ID
@@ -221,6 +243,9 @@ func TestLimits(t *testing.T) {
 				t.Errorf("%v: %d\n%s", b, r.Status, r.Body)
 			}
 		}
+		// The model has a price in both currencies (the second starts later, which counts), so that the second budget passes the currency check
+		// of 5.8 and meets the conflict (a budget has one currency).
+		w.api.DB.SeedPrice(t, w.cat.Provider.Name, w.cat.All.Name, "USD", time.Now().Add(24*time.Hour))
 		w.create(t, map[string]any{"metric": "cost_per_day", "amount": "5", "currency": "EUR", "provider": w.cat.Provider.Name, "model": w.cat.All.Name})
 		expect(t, w.do(t, w.ka, "POST", w.baseA, map[string]any{"metric": "cost_per_day", "amount": "7", "currency": "USD", "provider": w.cat.Provider.Name, "model": w.cat.All.Name}), 409, adminapi.ProblemCodeConflict)
 		// The same rule in another tenant is fine.
@@ -752,4 +777,155 @@ func ruleIDsOfEvents(l adminapi.LimitEventList) []string {
 		out = append(out, e.ID)
 	}
 	return out
+}
+
+// ruleRow is a limit rule as the database holds it, by the typed columns.
+type ruleRow struct {
+	kind                        string
+	sa, vk, sm, provider, model string
+}
+
+func ruleRows(t *testing.T, w *lw, id string) ruleRow {
+	t.Helper()
+	var r ruleRow
+	err := w.api.Super(t).QueryRow(ctx(t), `SELECT subject_kind, COALESCE(service_account_id::text, ''), COALESCE(virtual_key_id::text, ''),
+			COALESCE(subject_mapping_id::text, ''), COALESCE(provider_id::text, ''), COALESCE(model_id::text, '') FROM pandokos.limit_rule WHERE id = $1::uuid`, id).
+		Scan(&r.kind, &r.sa, &r.vk, &r.sm, &r.provider, &r.model)
+	if err != nil {
+		t.Fatalf("rule %s: %v", id, err)
+	}
+	return r
+}
+
+// TestLimitSubjectsTyped is T-713: creation with each kind of subject stores the typed column; a
+// revoked key, a subject of another tenant and a missing one get one and the same 400; scope names
+// resolve to identifiers and a model of another provider is refused; the resource shows the names
+// and the identifiers; the list filters by subject, provider and model.
+func TestLimitSubjectsTyped(t *testing.T) {
+	w := newLW(t)
+	super := w.api.Super(t)
+	scalar := func(sql string, args ...any) string {
+		t.Helper()
+		var s string
+		if err := super.QueryRow(ctx(t), sql, args...).Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	keyRow := scalar(`SELECT id::text FROM pandokos.virtual_key WHERE key_id = $1`, w.keyA)
+	providerID := scalar(`SELECT id::text FROM pandokos.provider WHERE name = $1`, w.cat.Provider.Name)
+	modelID := scalar(`SELECT id::text FROM pandokos.model WHERE id = $1::uuid`, w.cat.All.ID)
+
+	t.Run("each kind of subject stores its typed column", func(t *testing.T) {
+		tn := w.create(t, map[string]any{"metric": "requests_per_day", "limit": 5})
+		if got := ruleRows(t, w, tn.ID); got != (ruleRow{kind: "tenant"}) {
+			t.Errorf("tenant rule: %+v", got)
+		}
+		sa := w.create(t, map[string]any{"metric": "requests_per_day", "limit": 5, "subject_kind": "service_account", "subject_id": w.saA.ID})
+		if got := ruleRows(t, w, sa.ID); got != (ruleRow{kind: "service_account", sa: w.saA.ID}) {
+			t.Errorf("service account rule: %+v", got)
+		}
+		vk := w.create(t, map[string]any{"metric": "requests_per_day", "limit": 5, "subject_kind": "key", "subject_id": w.keyA})
+		if got := ruleRows(t, w, vk.ID); got != (ruleRow{kind: "key", vk: keyRow}) {
+			t.Errorf("virtual key rule: %+v (the row ID of the key, not its key ID)", got)
+		}
+		sm := w.create(t, map[string]any{"metric": "requests_per_day", "limit": 5, "subject_kind": "key", "subject_id": w.mappingA})
+		if got := ruleRows(t, w, sm.ID); got != (ruleRow{kind: "key", sm: w.mappingA}) {
+			t.Errorf("subject mapping rule: %+v", got)
+		}
+		for _, r := range []adminapi.LimitRule{sa, vk, sm} {
+			if r.SubjectID == "" {
+				t.Errorf("the resource shows no subject: %+v", r)
+			}
+		}
+		if vk.SubjectID != w.keyA || sm.SubjectID != w.mappingA || sa.SubjectID != w.saA.ID {
+			t.Errorf("the resources show %q %q %q, want the key ID, the mapping ID and the service account ID", vk.SubjectID, sm.SubjectID, sa.SubjectID)
+		}
+	})
+
+	t.Run("a revoked key, a subject of another tenant and a missing one get the same 400", func(t *testing.T) {
+		saX := decodeInto[adminapi.ServiceAccount](t, w.do(t, w.ka, "POST", "/v1/tenants/"+w.a.ID+"/service-accounts", map[string]any{"name": "to-revoke", "roles": []string{"inference"}}), 201)
+		k := decodeInto[adminapi.VirtualKeyCreated](t, w.do(t, w.ka, "POST", "/v1/tenants/"+w.a.ID+"/virtual-keys", map[string]any{"service_account_id": saX.ID}), 201)
+		if r := w.do(t, w.ka, "POST", "/v1/tenants/"+w.a.ID+"/virtual-keys/"+k.Key.ID+"/revoke", map[string]any{}); r.Status != 200 {
+			t.Fatalf("revoke: %d\n%s", r.Status, r.Body)
+		}
+		body := func(id string) map[string]any {
+			return map[string]any{"metric": "tokens_per_day", "limit": 5, "subject_kind": "key", "subject_id": id}
+		}
+		revoked := w.do(t, w.ka, "POST", w.baseA, body(k.Key.ID))
+		elsewhere := w.do(t, w.ka, "POST", w.baseA, body(w.keyB))
+		nowhere := w.do(t, w.ka, "POST", w.baseA, body("tnosuchkeyid000000"))
+		p := expect(t, revoked, 400, adminapi.ProblemCodeInvalidRequest)
+		if !namesMember(p, "subject_id") {
+			t.Errorf("the 400 for a revoked key does not name subject_id: %+v", p)
+		}
+		sameProblem(t, "a revoked key and a key of another tenant", revoked, elsewhere)
+		sameProblem(t, "a revoked key and a key that does not exist", revoked, nowhere)
+		if n := scalar(`SELECT count(*)::text FROM pandokos.limit_rule WHERE tenant_id = $1::uuid AND metric = 'tokens_per_day'`, w.a.ID); n != "0" {
+			t.Errorf("%s rules were written by the refused requests", n)
+		}
+	})
+
+	t.Run("scope names resolve to identifiers, a model of another provider is refused", func(t *testing.T) {
+		prov := w.create(t, map[string]any{"metric": "tokens_per_month", "limit": 9, "provider": w.cat.Provider.Name})
+		if got := ruleRows(t, w, prov.ID); got.provider != providerID || got.model != "" {
+			t.Errorf("provider scope: %+v, want %s", got, providerID)
+		}
+		mod := w.create(t, map[string]any{"metric": "tokens_per_month", "limit": 9, "provider": w.cat.Provider.Name, "model": w.cat.All.Name, "subject_kind": "service_account", "subject_id": w.saA.ID})
+		if got := ruleRows(t, w, mod.ID); got.provider != providerID || got.model != modelID {
+			t.Errorf("model scope: %+v, want %s and %s", got, providerID, modelID)
+		}
+		// The resource shows the names and the identifiers.
+		if prov.Provider != w.cat.Provider.Name || prov.ProviderID != providerID || prov.Model != "" || prov.ModelID != "" {
+			t.Errorf("provider rule: %+v", prov)
+		}
+		if mod.Provider != w.cat.Provider.Name || mod.ProviderID != providerID || mod.Model != w.cat.All.Name || mod.ModelID != modelID {
+			t.Errorf("model rule: %+v", mod)
+		}
+		if got := decodeInto[adminapi.LimitRule](t, w.do(t, w.ka, "GET", w.baseA+"/"+mod.ID, nil), 200); got.ProviderID != mod.ProviderID || got.ModelID != mod.ModelID || got.Provider != mod.Provider {
+			t.Errorf("get: %+v", got)
+		}
+		// A model of another provider.
+		other := w.api.Catalog(t)
+		r := w.do(t, w.ka, "POST", w.baseA, map[string]any{"metric": "requests_per_day", "limit": 1, "provider": w.cat.Provider.Name, "model": other.All.Name})
+		p := expect(t, r, 400, adminapi.ProblemCodeInvalidRequest)
+		if !namesMember(p, "model") {
+			t.Errorf("a model of another provider: %+v", p)
+		}
+		// The platform's rules have identifiers too.
+		pl := decodeInto[adminapi.PlatformLimitRule](t, w.do(t, w.plat, "POST", "/v1/platform-limits", map[string]any{"metric": "tokens_per_month", "limit": 7, "provider": w.cat.Provider.Name, "model": w.cat.All.Name}), 201)
+		if pl.ProviderID != providerID || pl.ModelID != modelID {
+			t.Errorf("platform rule: %+v", pl)
+		}
+		var pp, pm string
+		if err := super.QueryRow(ctx(t), `SELECT provider_id::text, model_id::text FROM pandokos.platform_limit_rule WHERE id = $1::uuid`, pl.ID).Scan(&pp, &pm); err != nil || pp != providerID || pm != modelID {
+			t.Errorf("platform row %s %s %v", pp, pm, err)
+		}
+		r = w.do(t, w.plat, "POST", "/v1/platform-limits", map[string]any{"metric": "tokens_per_month", "limit": 7, "provider": w.cat.Provider.Name, "model": other.All.Name})
+		expect(t, r, 400, adminapi.ProblemCodeInvalidRequest)
+	})
+
+	t.Run("the list filters by subject_id, provider and model", func(t *testing.T) {
+		list := func(q string) adminapi.LimitRuleList {
+			return decodeInto[adminapi.LimitRuleList](t, w.do(t, w.ka, "GET", w.baseA+q, nil), 200)
+		}
+		if l := list("?subject_kind=key&subject_id=" + w.keyA); len(l.Items) != 1 || l.Items[0].SubjectID != w.keyA {
+			t.Errorf("by key ID: %+v", l.Items)
+		}
+		if l := list("?subject_kind=key&subject_id=" + w.mappingA); len(l.Items) != 1 || l.Items[0].SubjectID != w.mappingA {
+			t.Errorf("by mapping ID: %+v", l.Items)
+		}
+		if l := list("?subject_kind=service_account&subject_id=" + w.saA.ID); len(l.Items) < 2 {
+			t.Errorf("by service account: %d rules", len(l.Items))
+		}
+		if l := list("?provider=" + w.cat.Provider.Name + "&model=" + w.cat.All.Name); len(l.Items) != 1 || l.Items[0].ModelID != modelID {
+			t.Errorf("by model: %+v", l.Items)
+		}
+		if l := list("?provider=" + w.cat.Provider.Name); len(l.Items) < 2 {
+			t.Errorf("by provider: %d rules", len(l.Items))
+		}
+		if l := list("?provider=no-such-provider"); len(l.Items) != 0 {
+			t.Errorf("by a provider that is not there: %+v", l.Items)
+		}
+	})
 }

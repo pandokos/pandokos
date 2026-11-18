@@ -89,7 +89,7 @@ func (s *server) GetCapability(ctx context.Context, in adminapi.GetCapabilityInp
 	} else {
 		out.Reasons = append(out.Reasons, "no_credential")
 	}
-	now := time.Now().UTC()
+	now := s.now().UTC()
 	budget, reasons, err := s.budgetCheck(ctx, tid, snap, model, rerr == nil, in.Provider, in.Model, now)
 	if err != nil {
 		return nil, err
@@ -108,18 +108,25 @@ func (s *server) GetCapability(ctx context.Context, in adminapi.GetCapabilityInp
 // part; requests in flight are not counted.
 func (s *server) budgetCheck(ctx context.Context, tid tenant.ID, snap *catalog.Snapshot, m catalog.Model, resolved bool,
 	provider, model string, now time.Time) (adminapi.BudgetAvailability, []string, error) {
-	rules, err := limits.LoadRules(ctx, s.db, tid)
+	zones := s.limits.Zones
+	if zones == nil {
+		return "", nil, errors.New("admin: the capability check needs the zones of the installation")
+	}
+	rules, err := limits.LoadRules(ctx, s.db, tid, zones)
 	if err != nil {
 		return "", nil, err
 	}
-	cal := s.limits.Calendar
-	if cal == nil {
-		if cal, err = limits.NewCalendar(time.UTC); err != nil {
-			return "", nil, err
+	// The rules are matched by identifier: the provider is looked up by name in the snapshot, the
+	// model is the one the snapshot resolved (none when it did not).
+	q := limits.Query{Provider: provider, Model: model, Start: now}
+	if prov, ok := snap.Provider(provider); ok {
+		q.ProviderID = prov.ID
+		if resolved {
+			q.ModelID = m.ID
 		}
 	}
 	var matching []limits.Limit
-	for _, l := range rules.For(limits.Query{Provider: provider, Model: model, Start: now}, cal) {
+	for _, l := range rules.For(q) {
 		if _, period := l.Metric.Period(); period && l.Max > 0 && l.Subject == limits.SubjectTenant {
 			matching = append(matching, l)
 		}

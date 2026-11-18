@@ -69,6 +69,16 @@ Pandokos add the usage option to a chat stream whose caller did not ask for usag
   needs `catalog:write` and is audited with the model ([limits guide](limits.md), section 6).
 - A provider is deleted only when no endpoint, model or credential references it. A model with price
   versions cannot be deleted: set its status to `retired` instead.
+- **A provider or a model that a limit rule names cannot be deleted** (409 `invalid_state`), whichever
+  tenant or the platform owns the rule: limit rules reference the entry by identifier, and the database
+  refuses the deletion. The problem's `errors` entry has the field `limit_rules` and says what to do
+  instead: *limit rules reference this provider; disable the provider instead*, or *limit rules reference
+  this model; retire the model or remove its grants instead*. Disable the provider, retire the model or
+  remove its grants, which change no rule. The platform administrator can list and delete platform
+  ceilings; the rules of a tenant belong to the tenant, and the platform session learns only that some
+  rule references the entry. Once the rules are gone the entry can be deleted; a provider or model
+  created afterwards with the same name is another entry, which no earlier rule matches
+  ([limits guide](limits.md), section 3).
 - A disabled provider still accepts credentials, so a tenant can prepare one before the provider is
   enabled.
 - `--dataset-provider ID` on a provider tells the price importer which provider of the price dataset
@@ -245,6 +255,8 @@ version is recorded with the cost, so the record is self-consistent.
 - Price variants (service tiers, batch discounts, regions) and time-of-day prices are not represented;
   they are priced at the standard rate and reported.
 - Currencies are not converted and amounts in different currencies are never added.
+- A price override in another currency changes the price of the model for every tenant: see the
+  [limits guide](limits.md), section 5, before using it for one tenant's budget.
 - The dataset is third-party data under the MIT licence; its accuracy is not guaranteed.
 - A model the dataset does not match has no price until you set an override; its cost is unknown, not
   zero.

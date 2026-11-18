@@ -142,6 +142,16 @@ Suspending a tenant refuses every key of the tenant, on both listeners, with `te
 
 A virtual key can be the subject of a limit rule (requests or tokens per minute, requests in flight), next to the rules of its service account and its tenant; the key ID is what the rule names ([limits guide](limits.md)). Rules are written through the administration API and the CLI.
 
+**Revoking a key deletes its limit rules.** A revoked key can never be used again, so a rule that names
+it would do nothing for ever; the database refuses to keep one (a rule is not created for a revoked key,
+and a transaction that revokes a key while a rule of it remains fails at commit). `revokeVirtualKey`
+deletes the key's rules in the same transaction, under the tenant's rule lock, and writes one
+`limit.delete` audit row for each, with the actor that revoked the key, the request ID, the `reason`
+when one was given, every field of the rule and, in `detail`, `cause` `key_revoked` and `cause_id` the
+key ID. The `virtual_key.revoke` row gains `limit_rules_deleted`, the number of rules. Revoking a key that
+is already revoked changes and audits nothing. Disabling a service account deletes no rule: its rules
+wait for it to be enabled again.
+
 ## Things to know
 
 - The first administrator key of a tenant is created by the platform administrator and passes

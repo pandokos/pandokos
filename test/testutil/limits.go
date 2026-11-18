@@ -38,6 +38,9 @@ type StaticLimits struct {
 	// PanicOnSettle and PanicOnRelease make the settle or the release of every reservation panic
 	// (after the call is logged).
 	PanicOnSettle, PanicOnRelease bool
+	// State is the limit state Reserve returns with an admission or a refusal (sprint 5.3); empty
+	// by default.
+	State gateway.LimitState
 
 	mu       sync.Mutex
 	queue    []limitAnswer
@@ -73,7 +76,7 @@ func (s *StaticLimits) Admit() *StaticLimits {
 }
 
 // Reserve implements gateway.Limits.
-func (s *StaticLimits) Reserve(_ context.Context, p authz.Principal, e gateway.LimitEstimate) (gateway.Reservation, *gateway.LimitRefusal, error) {
+func (s *StaticLimits) Reserve(_ context.Context, p authz.Principal, e gateway.LimitEstimate) (gateway.Reservation, *gateway.LimitRefusal, gateway.LimitState, error) {
 	if s.OnReserve != nil {
 		s.OnReserve(p, e)
 	}
@@ -88,16 +91,16 @@ func (s *StaticLimits) Reserve(_ context.Context, p authz.Principal, e gateway.L
 	case a.err != nil:
 		call.Answer = "error"
 		s.calls = append(s.calls, call)
-		return nil, nil, a.err
+		return nil, nil, "", a.err
 	case a.refusal != nil:
 		call.Answer = "refuse"
 		s.calls = append(s.calls, call)
-		return nil, a.refusal, nil
+		return nil, a.refusal, s.State, nil
 	}
 	s.admitted++
 	call.N, call.Answer = s.admitted, "admit"
 	s.calls = append(s.calls, call)
-	return &staticReservation{s: s, n: s.admitted}, nil, nil
+	return &staticReservation{s: s, n: s.admitted}, nil, s.State, nil
 }
 
 type staticReservation struct {

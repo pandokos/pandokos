@@ -1,6 +1,6 @@
 # 0036. Prices, costs and the price importer
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-14
 
 Refines [ADR 0011](0011-pricing-source.md).
@@ -50,3 +50,4 @@ them).
 ## History
 
 - 2026-11: sprint 3.1 sends the download through the egress guard: it obeys upstream.proxy.url and upstream.tls.ca_file; "without proxy" in point 4 now means "without a proxy from the environment".
+- 2026-11-18: recorded as accepted by the maintainer.

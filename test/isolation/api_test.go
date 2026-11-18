@@ -545,8 +545,8 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 		}
 		n++
 	}
-	if n != 43 {
-		t.Errorf("%d tenant operations, want 43 (24, the two of sprint 3.3, the ten of sprint 4.1 and the seven of sprint 5.2)", n)
+	if n != 45 {
+		t.Errorf("%d tenant operations, want 45 (24, the two of sprint 3.3, the ten of sprint 4.1, the seven of sprint 5.2 and the two of sprint 5.3)", n)
 	}
 	if _, err := c.GetTenant(ctx(t), adminapi.GetTenantInput{Tenant: w.b.tenant.ID}); err == nil {
 		t.Error("a tenant key read a tenant")
@@ -703,4 +703,48 @@ func TestCallerCannotNameTheTenant(t *testing.T) {
 			t.Errorf("a request line names tenant %v", l["tenant_id"])
 		}
 	}
+}
+
+// TestTimeZoneAPI is T-719: a key of tenant B asking for the time zone of tenant A, on both methods,
+// gets the 404 of a tenant that does not exist, and changes nothing of A; its own zone it reads and
+// sets.
+func TestTimeZoneAPI(t *testing.T) {
+	w := newAPIWorld(t)
+	before := w.api.SnapshotTenant(t, w.a.tenant.ID)
+	missing := randomUUID(t, w)
+	for _, m := range []struct {
+		method string
+		body   any
+	}{{"GET", nil}, {"PUT", map[string]any{"time_zone": "Europe/Rome"}}} {
+		other := w.api.Do(t, m.method, "/v1/tenants/"+w.a.tenant.ID+"/time-zone", w.b.adminKey, m.body, nil)
+		none := w.api.Do(t, m.method, "/v1/tenants/"+missing+"/time-zone", w.b.adminKey, m.body, nil)
+		if other.Status != 404 || none.Status != 404 || normalize(t, other) != normalize(t, none) {
+			t.Errorf("%s: another tenant's zone %d, a missing tenant's %d\n%s\n%s", m.method, other.Status, none.Status, normalize(t, other), normalize(t, none))
+		}
+		if strings.Contains(string(other.Body), w.a.tenant.ID) {
+			t.Errorf("%s: the answer names the tenant: %s", m.method, other.Body)
+		}
+	}
+	if w.api.SnapshotTenant(t, w.a.tenant.ID) != before {
+		t.Error("a key of B changed the rows of A")
+	}
+	if got := scalarOf(t, w.api, `SELECT time_zone FROM pandokos.tenant WHERE id = $1::uuid`, w.a.tenant.ID); got != "" {
+		t.Errorf("A's zone is %q after B's attempts", got)
+	}
+	// The positive control: B reads and sets its own.
+	if r := w.api.Do(t, "GET", "/v1/tenants/"+w.b.tenant.ID+"/time-zone", w.b.adminKey, nil, nil); r.Status != 200 {
+		t.Errorf("B reads its own zone: %d\n%s", r.Status, r.Body)
+	}
+	if r := w.api.Do(t, "PUT", "/v1/tenants/"+w.b.tenant.ID+"/time-zone", w.b.adminKey, map[string]any{"time_zone": "Europe/Rome"}, nil); r.Status != 200 {
+		t.Errorf("B sets its own zone: %d\n%s", r.Status, r.Body)
+	}
+}
+
+func scalarOf(t *testing.T, api *apitest.API, sql string, args ...any) string {
+	t.Helper()
+	var s string
+	if err := api.Super(t).QueryRow(ctx(t), sql, args...).Scan(&s); err != nil {
+		t.Fatalf("%s: %v", sql, err)
+	}
+	return s
 }

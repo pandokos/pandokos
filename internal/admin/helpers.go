@@ -44,3 +44,11 @@ func limitOf(n int) (limit int, ask int32) {
 	}
 	return n, int32(n + 1) //nolint:gosec // limit is at most 200 by the API document
 }
+
+// nilIfEmpty is the nullable identifier column a resolved identifier is passed as: no value is NULL.
+func nilIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}

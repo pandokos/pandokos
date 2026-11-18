@@ -1,6 +1,6 @@
 # 0030. Keys: format, storage, lookup, platform keys, revocation bound
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-12
 
 Refines [ADR 0005](0005-data-plane-authentication.md), [ADR 0004](0004-postgresql-and-rls.md) and [ADR 0003](0003-single-binary-with-roles.md).
@@ -36,3 +36,4 @@ The tenant ID inside the key (no directory, longer key, tenant visible in the ke
 - 2026-11: sprint 2.2 adds the payloads `catalog` and `catalog:<tenant>`, which the principal cache ignores.
 - 2026-11: sprint 3.2: the notification listener no longer empties the caches when its connection is lost, only when it connects again, so that calls continue from the caches while the database is stopped; the bound on revocation stays the cache lifetimes (`cache.principal_ttl`, at most 60 s).
 - 2026-11: sprint 4.1: a credential that does not start with `pdk_` may be a token of a trusted issuer ([ADR 0045](0045-trusted-token-issuers.md)); it is never retried as a key, and a value that starts with `pdk_` is never tried as a token. The notification payload `issuers` (a platform-level registration or its tenant list changed) is ignored by the key cache, the vault opener and the catalogue cache, and drops the registration and token-principal caches.
+- 2026-11-18: recorded as accepted by the maintainer.

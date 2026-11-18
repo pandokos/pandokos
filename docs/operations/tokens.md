@@ -16,12 +16,21 @@ listener only; the administration API takes virtual keys and platform keys.
 | Rotation | create a second key, deploy, revoke the first | none for you: the provider rotates its signing keys |
 | Revoking one credential | revoke the key | not possible for one token: delete the mapping, or wait for `exp` (section 9) |
 | Needs | nothing | an identity provider whose key set Pandokos can reach |
-| Limits and pins per credential | scopes, model list, pin to a provider credential | none: the principal is the service account with its roles |
+| Limits per credential | a limit rule can name the key; the limits of its service account and tenant apply too | a limit rule can name the **subject mapping** (`--subject key --key MAPPING_ID`); the limits of the mapped service account and of the tenant apply to its tokens as to its keys |
+| Scopes, model list, pin to a provider credential | per key | none: the principal is the service account with its roles |
 
 Prefer a token when the workload already runs under an identity (a Kubernetes service account, a CI
 system, a company-wide realm) and you do not want a long-lived secret in its configuration. Prefer a
 key when there is no identity provider, or when you need a scope list, a model list or a pinned
 credential per caller. Both can be used in one tenant, for the same service account.
+
+A subject mapping can be the subject of a limit rule, so that one workload identity is limited apart
+from the others that map to the same service account; the rule names the mapping ID, which is what a
+token's principal carries as its key ID ([limits guide](limits.md)). Limits of the service account
+apply to its tokens too. Deleting a mapping, a registration or a platform-level registration deletes
+the limit rules of the mappings it removes, in the same transaction, and each deleted rule leaves a
+`limit.delete` audit row in the tenant's log with `cause` `subject_mapping_deleted`,
+`token_issuer_deleted` or `platform_issuer_deleted` (section 13).
 
 ## 2. The two kinds of registration
 
@@ -332,7 +341,9 @@ Sender-constrained tokens (mutual TLS, DPoP) are not built.
   logged with `issuer_id` and not audited: the tenant is not yet known.
 - Changes to registrations and mappings are audited: `token_issuer.create|update|delete`,
   `subject_mapping.create|delete` in the tenant's log, and
-  `platform_issuer.create|update|delete|tenant_add|tenant_remove` in the platform log.
+  `platform_issuer.create|update|delete|tenant_add|tenant_remove` in the platform log. The deletion of a
+  mapping or a registration also writes one `limit.delete` row per limit rule that named the mapping
+  (section 13).
 - A successful call is recorded with `principal_kind` `token`, `principal_id` the service account and
   `key_id` the ID of the mapping ([usage guide](usage.md)); the `request` log line carries `issuer_id`.
 
@@ -378,3 +389,16 @@ Stop the workloads that use it first, or switch them to another audience (sectio
 Deleting a registration deletes its subject mappings. Deleting a platform-level registration also
 deletes the mappings of every tenant; its audit row records in `mappings_deleted` how many, counted
 across all tenants by a database function that returns only the number. `enabled: false` is the reversible switch and keeps the mappings.
+
+**Limit rules go with the mappings.** A limit rule that names a mapping cannot outlive it. Deleting a
+mapping (`DELETE .../subject-mappings/{id}`), a registration or a platform-level registration deletes the
+rules of every mapping it removes, in the same transaction and under the tenant's rule lock, so no rule
+can be created for a mapping that is going away. Each rule leaves one `limit.delete` row in the audit
+log of its tenant, with the actor that deleted the mapping or the registration (for a platform-level
+registration, the platform actor, written by a database function that works tenant by tenant), the
+request ID, the `reason` when one was given, every field of the rule, and in `detail` the `cause`
+(`subject_mapping_deleted`, `token_issuer_deleted` or `platform_issuer_deleted`) and the `cause_id` (the
+mapping or the registration). The audit row of the deletion itself gains `limit_rules_deleted`, the
+number of rules. The responses do not change. Disabling a registration or a service account deletes no
+rule: the rules wait. To keep a rule, do not delete the mapping; list the rules first with
+`pandokos limit list --tenant T --subject key` and read `subject_id`.

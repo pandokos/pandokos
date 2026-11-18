@@ -65,9 +65,11 @@ flowchart LR
 | **4** | **[Identity federation and RBAC](epics/04-identity-and-rbac/epic.md)** | | |
 | 4.1 | Trusted token issuers | JWTs from registered issuers authenticate calls; the tenant comes from the registration or from a claim | done |
 | | **v0.2.0 — Governance** | | |
-| **5** | **[Limits and budgets](epics/05-limits-and-budgets/epic.md)** | | done |
+| **5** | **[Limits and budgets](epics/05-limits-and-budgets/epic.md)** | | |
 | 5.1 | Reserve and settle | The limiter interface with in-process counters; request and token rate limits; concurrency; the 429 contract | done |
 | 5.2 | Quotas and budgets | Periodic quotas and monetary budgets with reservation; scopes; soft thresholds; reconciliation from the ledger | done |
+| 5.3 | Integrity of limit rules | Rules tied to their subjects and scopes by foreign keys, cleaned up with audit on deletion; unlimited traffic traced in the ledger and the audit log | done |
+| 5.4 | Tenant price lists | Price versions per tenant in its own currency, taking precedence over the catalogue price for that tenant; budgets in the tenant currency | |
 | **4** | **Identity federation and RBAC** (continued) | | |
 | 4.2 | Users, local accounts and sessions | People sign in to the administration API with a local account or through an external OIDC provider and obtain a session; memberships in several tenants; local disable | |
 | 4.3 | Roles | All built-in roles, custom roles, platform roles, support actions with reason; the API reports a user's effective permissions | |
@@ -99,7 +101,9 @@ flowchart LR
 
 Not planned in detail: Bedrock, Vertex AI and Cohere; batch and file endpoints; identity providers
 configured per tenant for interactive sign-in; a Kubernetes operator for cells; certificate-bound
-tokens; sealing credentials with public keys.
+tokens; sealing credentials with public keys; limit rules scoped to a pinned provider credential
+(issue #32); time-boxed budget exceptions (issue #31); limits and usage per end user from a verified
+token claim (issue #36).
 
 ## What can change this plan
 

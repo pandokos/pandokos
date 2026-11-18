@@ -83,7 +83,7 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 			},
 			"tenant": {
 				"pandokos_gateway": {"SELECT"},
-				"pandokos_admin":   {"INSERT(display_name,name)", "SELECT", "UPDATE(display_name,name,state)"},
+				"pandokos_admin":   {"INSERT(display_name,name,time_zone)", "SELECT", "UPDATE(display_name,name,state,time_zone,time_zone_effective_from,time_zone_previous)"},
 				"pandokos_worker":  {"SELECT"},
 			},
 			"service_account": {
@@ -155,12 +155,12 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 			},
 			"limit_rule": {
 				"pandokos_gateway": {"SELECT"},
-				"pandokos_admin": {"DELETE", "INSERT(currency,enforce,limit_value,metric,model,provider,subject_id,subject_kind,tenant_id,thresholds)",
+				"pandokos_admin": {"DELETE", "INSERT(currency,enforce,limit_value,metric,model_id,provider_id,service_account_id,subject_kind,subject_mapping_id,tenant_id,thresholds,virtual_key_id)",
 					"SELECT", "UPDATE(enforce,limit_value,thresholds)"},
 			},
 			"platform_limit_rule": {
 				"pandokos_gateway": {"SELECT"},
-				"pandokos_admin": {"DELETE", "INSERT(currency,enforce,limit_value,metric,model,provider,tenant_id,thresholds)",
+				"pandokos_admin": {"DELETE", "INSERT(currency,enforce,limit_value,metric,model_id,provider_id,tenant_id,thresholds)",
 					"SELECT", "UPDATE(enforce,limit_value,thresholds)"},
 			},
 			"limit_event": {
@@ -181,7 +181,7 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 				"pandokos_worker":  {"INSERT(currency,import_id,model_id,note,source,valid_from)", "SELECT"},
 			},
 			"usage_record": {
-				"pandokos_gateway": {"INSERT(api_family,cache_read_tokens,cache_write_tokens,cost,cost_fallbacks,cost_reason,cost_status,credential_id,currency,duration_ms,endpoint,error_code,estimated_input_tokens,estimated_output_tokens,id,input_source,input_tokens,key_id,metadata,metadata_dropped,model,model_id,operation,other_units,outcome,output_source,output_tokens,price_version_id,principal_id,principal_kind,provider,provider_usage,reasoning_tokens,request_bytes,request_id,response_bytes,started_at,stream,tenant_id,trace_id,ttfb_ms,upstream_model,upstream_status)"},
+				"pandokos_gateway": {"INSERT(api_family,cache_read_tokens,cache_write_tokens,cost,cost_fallbacks,cost_reason,cost_status,credential_id,currency,duration_ms,endpoint,error_code,estimated_input_tokens,estimated_output_tokens,id,input_source,input_tokens,key_id,limit_state,metadata,metadata_dropped,model,model_id,operation,other_units,outcome,output_source,output_tokens,price_version_id,principal_id,principal_kind,provider,provider_usage,reasoning_tokens,request_bytes,request_id,response_bytes,started_at,stream,tenant_id,trace_id,ttfb_ms,upstream_model,upstream_status)"},
 				"pandokos_admin":   {"SELECT"},
 				"pandokos_worker":  {"SELECT"},
 			},
@@ -278,8 +278,8 @@ SELECT $1::uuid, ti.id, 'sub-' || substr(md5(random()::text), 1, 12), sa.id FROM
 				Update: `subject = 'changed'`,
 			},
 			"limit_rule": {
-				Insert: `INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, subject_id, metric, limit_value)
-VALUES ($1::uuid, 'key', 't' || substr(md5(random()::text), 1, 16), 'requests_per_minute', 10) RETURNING id::text`,
+				Insert: `INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, metric, limit_value)
+VALUES ($1::uuid, 'tenant', 'requests_per_minute', 10) RETURNING id::text`,
 				Update: `limit_value = 11`,
 			},
 			"limit_event": {
@@ -293,7 +293,8 @@ VALUES ($1::uuid, 'threshold_reached', pandokos.uuid_v7(), 'tenant', 'tenant', '
 			},
 		},
 		SecurityDefiner: []string{"virtual_key_lookup", "virtual_key_directory_add", "record_auth_failure", "ensure_usage_partitions",
-			"issuer_lookup", "platform_issuer_tenant_lookup", "record_token_auth_failure", "issuer_directory_sync", "platform_issuer_mapping_count"},
+			"issuer_lookup", "platform_issuer_tenant_lookup", "record_token_auth_failure", "issuer_directory_sync", "platform_issuer_mapping_count",
+			"delete_platform_issuer_limit_rules", "record_unlimited_traffic"},
 		Views:      []string{"provider_credential_metadata"},
 		AppendOnly: []string{"audit_event", "platform_audit_event", "price_import", "usage_record", "limit_event"},
 	}

@@ -29,7 +29,7 @@ type counterKey struct {
 	tenant          tenant.ID
 	kind            SubjectKind
 	id              string
-	provider, model string
+	provider, model string // identifiers of the scope
 	metric          Metric
 	currency        string
 	periodStart     int64 // Unix seconds; 0 for the metrics of sprint 5.1
@@ -114,7 +114,7 @@ func (m *Memory) shardOf(t tenant.ID) *shard {
 }
 
 func keyOf(l Limit) counterKey {
-	k := counterKey{tenant: l.Tenant, kind: l.Subject, id: l.ID, provider: l.Provider, model: l.Model, metric: l.Metric, currency: l.Currency}
+	k := counterKey{tenant: l.Tenant, kind: l.Subject, id: l.ID, provider: l.ProviderID, model: l.ModelID, metric: l.Metric, currency: l.Currency}
 	if _, ok := l.Metric.Period(); ok {
 		k.periodStart = l.Period.Start.Unix()
 	}

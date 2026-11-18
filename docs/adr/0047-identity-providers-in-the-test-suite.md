@@ -1,6 +1,6 @@
 # 0047. Identity providers in the test suite
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-16
 
 Refines [ADR 0018](0018-supply-chain.md). [ADR 0023](0023-test-dependencies-in-nested-modules.md) does not
@@ -101,3 +101,4 @@ be produced by a real provider, and tokens and keys must not be stored in the re
 ## History
 
 Sprint 4.1. Authentik 2026.8.5 added after the sprint (tests T-606 to T-608).
+- 2026-11-18: accepted by the maintainer after review.

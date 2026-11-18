@@ -33,6 +33,9 @@ func TestLimitNotifications(t *testing.T) {
 	d := dbtest.NewMigrated(t)
 	a, b := d.SeedTenant(t, "notify-a"), d.SeedTenant(t, "notify-b")
 	super := d.Super(t)
+	// A rule of a key names the key by foreign key; the subject is written before the listening starts.
+	saB := d.SeedServiceAccount(t, b, "notify-sa")
+	_, keyB := d.SeedVirtualKey(t, b, saB)
 	listener := d.Super(t)
 	if _, err := listener.Exec(ctx(t), "LISTEN pandokos_cache"); err != nil {
 		t.Fatal(err)
@@ -61,11 +64,11 @@ func TestLimitNotifications(t *testing.T) {
 		}
 	}
 
-	exec(`INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, subject_id, metric, limit_value) VALUES ($1::uuid, 'tenant', '', 'requests_per_minute', 10)`, a.String())
+	exec(`INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, metric, limit_value) VALUES ($1::uuid, 'tenant', 'requests_per_minute', 10)`, a.String())
 	check("a rule of A is inserted", "limits:"+a.String())
 	exec(`UPDATE pandokos.limit_rule SET limit_value = 20 WHERE tenant_id = $1::uuid`, a.String())
 	check("a rule of A is updated", "limits:"+a.String())
-	exec(`INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, subject_id, metric, limit_value) VALUES ($1::uuid, 'key', 'k-1', 'tokens_per_minute', 10)`, b.String())
+	exec(`INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, virtual_key_id, metric, limit_value) VALUES ($1::uuid, 'key', $2::uuid, 'tokens_per_minute', 10)`, b.String(), keyB)
 	check("a rule of B is inserted", "limits:"+b.String())
 	exec(`DELETE FROM pandokos.limit_rule WHERE tenant_id = $1::uuid`, a.String())
 	check("a rule of A is deleted", "limits:"+a.String())

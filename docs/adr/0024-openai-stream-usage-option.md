@@ -1,6 +1,6 @@
 # 0024. OpenAI chat streams: how usage is requested and what is removed
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-12
 
 Refines [ADR 0010](0010-usage-extraction.md); does not supersede it.
@@ -61,3 +61,4 @@ would see `"usage":null`; the official SDK does not mind.
 
 - 2026-11: sprint 3.2 confirms the decision for chat streams; the responses and embeddings operations need no option.
 - 2026-11: amended by [ADR 0042](0042-openai-compatible-providers-and-stream-usage-option.md): a provider can set stream_usage_option omit.
+- 2026-11-18: recorded as accepted by the maintainer.

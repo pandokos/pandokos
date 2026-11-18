@@ -1,6 +1,6 @@
 # 0041. The anthropic API family
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-14
 
 Refines [ADR 0009](0009-native-passthrough-by-api-family.md), [ADR 0010](0010-usage-extraction.md)
@@ -48,3 +48,7 @@ and a request that reaches no provider must still get an error its SDK can parse
 **`X-Api-Key` only.** What the API documented first; refuses the current SDKs' default.
 **Estimating the whole record when the stream is cut.** Simpler, and discards an exact input figure.
 **Always the OpenAI shape for unrouted requests.** An Anthropic SDK would report a parse failure.
+
+## History
+
+- 2026-11-18: accepted by the maintainer after review.

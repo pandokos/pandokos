@@ -69,26 +69,35 @@ func seedCtx(tb testing.TB) context.Context {
 	return c
 }
 
-// SeedLimitRule inserts a limit rule of the tenant, as superuser, and returns its ID: a requests
-// quota of a key that is unique in the process, so that the call can be repeated for a tenant.
+// SeedLimitRule inserts a limit rule of the tenant, as superuser, and returns its ID: a daily
+// tokens quota of the tenant itself, which needs no subject row (a rule names a service account,
+// a key or a mapping by a foreign key, and creating one would change the counts of other tests).
+// A tenant has one such rule: the call is made once per tenant.
 func (a *API) SeedLimitRule(tb testing.TB, tenantID string) string {
 	tb.Helper()
 	var id string
-	err := a.Super(tb).QueryRow(seedCtx(tb), `INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, subject_id, metric, limit_value)
-		VALUES ($1::uuid, 'key', $2, 'requests_per_day', 1000) RETURNING id::text`, tenantID, fmt.Sprintf("seedkey%d", unique.Add(1))).Scan(&id)
+	err := a.Super(tb).QueryRow(seedCtx(tb), `INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, metric, limit_value)
+		VALUES ($1::uuid, 'tenant', 'tokens_per_day', 1000000) RETURNING id::text`, tenantID).Scan(&id)
 	if err != nil {
 		tb.Fatalf("seed limit rule: %v", err)
 	}
 	return id
 }
 
+// seedCurrency is a currency code that is unique in the process.
+func seedCurrency() string {
+	n := int(unique.Add(1))
+	return string([]byte{byte('A' + n/676%26), byte('A' + n/26%26), byte('A' + n%26)})
+}
+
 // SeedPlatformLimit inserts a platform limit rule for the tenant, as superuser, and returns its ID;
-// the scope is unique in the process, so that the call can be repeated for a tenant.
+// the currency of its budget is unique in the process, so that the call can be repeated for a
+// tenant (a scope would need a provider of the catalogue, which is not the tenant's to create).
 func (a *API) SeedPlatformLimit(tb testing.TB, tenantID string) string {
 	tb.Helper()
 	var id string
-	err := a.Super(tb).QueryRow(seedCtx(tb), `INSERT INTO pandokos.platform_limit_rule (tenant_id, provider, metric, limit_value)
-		VALUES ($1::uuid, $2, 'tokens_per_day', 1000000) RETURNING id::text`, tenantID, fmt.Sprintf("seed-%d", unique.Add(1))).Scan(&id)
+	err := a.Super(tb).QueryRow(seedCtx(tb), `INSERT INTO pandokos.platform_limit_rule (tenant_id, metric, limit_value, currency)
+		VALUES ($1::uuid, 'cost_per_day', 1000000, $2) RETURNING id::text`, tenantID, seedCurrency()).Scan(&id)
 	if err != nil {
 		tb.Fatalf("seed platform limit: %v", err)
 	}

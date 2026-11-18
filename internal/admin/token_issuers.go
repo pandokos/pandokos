@@ -186,11 +186,18 @@ func derefStrings(p *[]string) []string {
 func (s *server) DeleteTokenIssuer(ctx context.Context, in adminapi.DeleteTokenIssuerInput) (*adminapi.TokenIssuer, error) {
 	var out adminapi.TokenIssuer
 	err := s.inTenantPath(ctx, in.Tenant, func(ctx context.Context, tx store.Tx, q *queries.Queries, tid tenant.ID) error {
+		if err := q.LockLimitRules(ctx); err != nil {
+			return err
+		}
 		// The lock keeps a mapping from being added between the count and the deletion.
 		if _, err := q.LockTrustedIssuer(ctx, in.Issuer); err != nil {
 			return err
 		}
 		n, err := q.CountSubjectMappingsOfIssuer(ctx, in.Issuer)
+		if err != nil {
+			return err
+		}
+		rules, err := deleteSubjectRules(ctx, tx, q, tid, subjectOfRules{issuerID: in.Issuer}, causeTokenIssuerDeleted, in.Issuer, "")
 		if err != nil {
 			return err
 		}
@@ -200,7 +207,7 @@ func (s *server) DeleteTokenIssuer(ctx context.Context, in adminapi.DeleteTokenI
 		}
 		out = tiRow(row).out()
 		return audit.RecordTenant(ctx, tx, tid, tenantEvent(ctx, "token_issuer.delete", "token_issuer", row.ID,
-			map[string]any{"name": row.Name, "mappings_deleted": n}))
+			map[string]any{"name": row.Name, "mappings_deleted": n, "limit_rules_deleted": rules}))
 	})
 	if isNoRowsErr(err) {
 		return nil, errNotFound

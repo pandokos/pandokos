@@ -1,6 +1,6 @@
 # 0044. The SDK compatibility suite in Python and TypeScript
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-14
 
 Refines [ADR 0018](0018-supply-chain.md) and [ADR 0023](0023-test-dependencies-in-nested-modules.md).
@@ -31,3 +31,7 @@ Anthropic, which a Go test cannot import. Running them brings two package ecosys
 **Go SDKs only.** Misses the clients most callers use and their header behaviour (the Anthropic SDKs'
 switch to Bearer was found this way).
 **A container per language.** More to maintain than a pinned interpreter on the runner.
+
+## History
+
+- 2026-11-18: accepted by the maintainer after review.

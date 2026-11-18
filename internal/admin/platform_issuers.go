@@ -144,13 +144,27 @@ func (s *server) DeletePlatformIssuer(ctx context.Context, in adminapi.DeletePla
 		if err != nil {
 			return err
 		}
+		// The rules of the mappings are the tenants': a definer function deletes them tenant by
+		// tenant, each with its audit row in the log of its tenant, before the registration goes.
+		actor := audit.ActorOf(principalOf(ctx))
+		rules, err := q.DeletePlatformIssuerLimitRules(ctx, queries.DeletePlatformIssuerLimitRulesParams{
+			IssuerID: in.Issuer, ActorID: actor.ID, ActorName: actor.Name, KeyID: actor.KeyID, RequestID: stateOf(ctx).id,
+		})
+		if err != nil {
+			return err
+		}
+		if afterRuleDeletion != nil {
+			if err := afterRuleDeletion(); err != nil {
+				return err
+			}
+		}
 		row, err := q.DeletePlatformIssuer(ctx, in.Issuer)
 		if err != nil {
 			return err
 		}
 		out = piRow(row).out()
 		return audit.RecordPlatform(ctx, tx, s.platformEvent(ctx, "platform_issuer.delete", "platform_issuer", row.ID,
-			map[string]any{"name": row.Name, "mappings_deleted": n}))
+			map[string]any{"name": row.Name, "mappings_deleted": n, "limit_rules_deleted": rules}))
 	})
 	if isNoRowsErr(err) {
 		return nil, errNotFound

@@ -478,3 +478,83 @@ func TestUsageAppendOnly(t *testing.T) {
 		}
 	}
 }
+
+// TestUsageLimitState is T-698: the gateway role inserts each of the four values of limit_state and
+// NULL; any other value is refused in an existing partition and in a partition created later; the
+// row is still append-only.
+func TestUsageLimitState(t *testing.T) {
+	d := dbtest.NewMigrated(t)
+	a := d.SeedTenant(t, "state-a")
+	super := d.Super(t)
+	gateway := d.Connect(t, "gateway")
+	sessA := sessions(a)[0]
+
+	insert := func(started time.Time, state any) error {
+		_, err := execIn(t, gateway, sessA, `INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind, principal_id,
+				provider, api_family, operation, outcome, duration_ms, input_source, output_source, cost_status, limit_state)
+			VALUES ($1::uuid, pandokos.uuid_v7(), $2, md5(random()::text), 'service_account', '0192f0f0-0000-7000-8000-0000000000a2',
+				'openai', 'openai', 'chat.completions', 'ok', 1, 'none', 'none', 'none', $3)`, a.String(), started, state)
+		return err
+	}
+	now := time.Now().UTC()
+
+	t.Run("each value and NULL are accepted", func(t *testing.T) {
+		for _, v := range []any{"limited", "unlimited", "unverified", "not_evaluated", nil} {
+			if err := insert(now, v); err != nil {
+				t.Errorf("limit_state %v: %v", v, err)
+			}
+		}
+		if n := countUsage(t, super, `WHERE tenant_id = $1::uuid AND limit_state IS NULL`, a.String()); n != 1 {
+			t.Errorf("%d rows with NULL", n)
+		}
+		for _, v := range []string{"limited", "unlimited", "unverified", "not_evaluated"} {
+			if n := countUsage(t, super, `WHERE tenant_id = $1::uuid AND limit_state = $2`, a.String(), v); n != 1 {
+				t.Errorf("%d rows with %s", n, v)
+			}
+		}
+	})
+
+	t.Run("another value is refused in an existing partition", func(t *testing.T) {
+		for _, v := range []string{"", "Limited", "limited ", "unknown", "none"} {
+			if err := insert(now, v); sqlstate(err) != checkViolation {
+				t.Errorf("limit_state %q: %v, want SQLSTATE %s", v, err, checkViolation)
+			}
+		}
+	})
+
+	t.Run("and in a partition created later", func(t *testing.T) {
+		// The worker role is the caller of ensure_usage_partitions: ask for the longest horizon, so that a
+		// partition that did not exist when the migration ran is there.
+		if _, err := execIn(t, d.Connect(t, "worker"), noSession, `SELECT pandokos.ensure_usage_partitions(9)`); err != nil {
+			t.Fatal(err)
+		}
+		far := now.AddDate(0, 8, 0)
+		if err := insert(far, "unverified"); err != nil {
+			t.Fatalf("a valid value in the new partition: %v", err)
+		}
+		if got := scalar(t, super, `SELECT tableoid::regclass::text FROM pandokos.usage_record WHERE started_at = $1`, far); got == "pandokos.usage_record_default" || got == "<null>" {
+			t.Errorf("the row is in %s: the partition was not created", got)
+		}
+		if err := insert(far, "unknown"); sqlstate(err) != checkViolation {
+			t.Errorf("a bad value in the new partition: %v, want SQLSTATE %s", err, checkViolation)
+		}
+	})
+
+	t.Run("the row is still append-only", func(t *testing.T) {
+		for _, role := range runtimeRoles {
+			for _, sql := range []string{
+				`UPDATE pandokos.usage_record SET limit_state = 'limited'`,
+				`UPDATE pandokos.usage_record SET limit_state = NULL`,
+				`DELETE FROM pandokos.usage_record`,
+				`TRUNCATE pandokos.usage_record`,
+			} {
+				if _, err := execIn(t, d.Connect(t, role), sessA, sql); sqlstate(err) != insufficientPrivilege {
+					t.Errorf("%s: %q: %v, want SQLSTATE %s", role, sql, err, insufficientPrivilege)
+				}
+			}
+		}
+		if _, err := super.Exec(ctx(t), `UPDATE pandokos.usage_record SET limit_state = 'limited' WHERE tenant_id = $1::uuid`, a.String()); err == nil {
+			t.Error("the owner updated a usage record")
+		}
+	})
+}

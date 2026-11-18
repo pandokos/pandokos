@@ -87,6 +87,11 @@ func NewOn(tb testing.TB, d *dbtest.Database, mutate ...func(*admin.Options)) *A
 	}
 	o := admin.Options{Logger: logger, DB: a.Admin, Authenticator: auth, Sealer: a.Sealer, Snapshot: genaiprices.Snapshot()}
 	o.Limits.Ledger = limits.NewLedger(a.Admin)
+	zones, err := limits.NewZones(time.UTC)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	o.Limits.Zones = zones
 	for _, m := range mutate {
 		m(&o)
 	}

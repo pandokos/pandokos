@@ -1,6 +1,6 @@
 # 0048. Reserve and settle in the pipeline: estimate, counters, guarantees and the 429 contract
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-17
 
 Refines [ADR 0012](0012-limits-and-budget-reservation.md); refines [ADR 0020](0020-error-contract.md),
@@ -69,3 +69,4 @@ which nothing was admitted, and the bound could not be stated per interval.
 ## History
 
 - 2026-11-18: sprint 5.2: a request counts when its credential was opened (its usage record carries a credential ID), replacing "forwarded"; a model can carry its own default output reservation ([ADR 0050](0050-quotas-and-budgets-periods-attribution-currencies.md)).
+- 2026-11-18: accepted by the maintainer after review.

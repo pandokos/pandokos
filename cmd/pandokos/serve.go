@@ -206,12 +206,12 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	ruleCache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: gatewayDB, Logger: logger, TTL: time.Duration(cfg.Cache.LimitsTTL)})
+	zones, err := limits.NewZones(cfg.Limits.Location)
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	calendar, err := limits.NewCalendar(cfg.Limits.Location)
+	ruleCache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: gatewayDB, Logger: logger, TTL: time.Duration(cfg.Cache.LimitsTTL), Zones: zones})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
@@ -257,7 +257,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		Snapshot:  genaiprices.Snapshot(),
 		Refresh:   refresh,
 	}
-	adminOpts.Limits.Calendar, adminOpts.Limits.OnUnknownPrice = calendar, cfg.Limits.OnUnknownPrice
+	adminOpts.Limits.Zones, adminOpts.Limits.OnUnknownPrice = zones, cfg.Limits.OnUnknownPrice
 	adminOpts.Limits.Ledger = limits.NewLedger(workerDB)
 	adminHandler, err := admin.New(adminOpts)
 	if err != nil {
@@ -294,7 +294,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		return 1
 	}
 	reconciler, err := limits.NewReconciler(limits.ReconcilerOptions{
-		Store: memory, Ledger: limits.NewLedger(workerDB), Calendar: calendar,
+		Store: memory, Ledger: limits.NewLedger(workerDB),
 		Pending: writer.OldestPendingStart, Horizon: horizon,
 		Interval: time.Duration(cfg.Limits.ReconcileInterval), Logger: logger,
 	})
@@ -302,10 +302,12 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
+	unlimited := resolver.NewUnlimitedAuditor(gatewayDB, logger, nil)
 	limitsPort, err := resolver.NewLimits(resolver.LimitsOptions{
 		Rules: ruleCache, Store: memory, Logger: logger,
-		TTL:      time.Duration(cfg.Limits.MaxRequestDuration) + time.Minute,
-		Calendar: calendar, Reconciler: reconciler,
+		TTL:            time.Duration(cfg.Limits.MaxRequestDuration) + time.Minute,
+		Reconciler:     reconciler,
+		Unlimited:      unlimited,
 		OnUnknownPrice: cfg.Limits.OnUnknownPrice, OnStoreFailure: cfg.Limits.OnStoreFailure,
 	})
 	if err != nil {
@@ -369,6 +371,12 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	eventsDone.Add(1)
 	go func() { defer eventsDone.Done(); events.Run(eventsCtx) }()
 	defer func() { stopEvents(); eventsDone.Wait() }()
+	// The unlimited-traffic recorder runs with the background context and is closed with the event writer.
+	unlimitedCtx, stopUnlimited := context.WithCancel(context.WithoutCancel(ctx))
+	var unlimitedDone sync.WaitGroup
+	unlimitedDone.Add(1)
+	go func() { defer unlimitedDone.Done(); unlimited.Run(unlimitedCtx) }()
+	defer func() { stopUnlimited(); unlimitedDone.Wait() }()
 	if cfg.Pricing.Refresh.Enabled {
 		refresher := &catalog.Refresher{
 			DB: workerDB, Logger: logger, URL: cfg.Pricing.Refresh.ParsedURL.String(),
@@ -405,6 +413,9 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	if n := events.Close(eventsFlush); n > 0 {
 		logger.Warn("limit events not recorded", "unwritten", n)
 	}
+	stopUnlimited()
+	unlimitedDone.Wait()
+	unlimited.Close(eventsFlush)
 	eventsCancel()
 	flushCancel()
 	logger.Info("ledger flushed", "unwritten", unwritten)

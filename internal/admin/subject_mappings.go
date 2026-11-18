@@ -127,13 +127,22 @@ func (s *server) GetSubjectMapping(ctx context.Context, in adminapi.GetSubjectMa
 func (s *server) DeleteSubjectMapping(ctx context.Context, in adminapi.DeleteSubjectMappingInput) (*adminapi.SubjectMapping, error) {
 	var out adminapi.SubjectMapping
 	err := s.inTenantPath(ctx, in.Tenant, func(ctx context.Context, tx store.Tx, q *queries.Queries, tid tenant.ID) error {
+		if err := q.LockLimitRules(ctx); err != nil {
+			return err
+		}
+		rules, err := deleteSubjectRules(ctx, tx, q, tid, subjectOfRules{mappingID: in.Mapping}, causeMappingDeleted, in.Mapping, "")
+		if err != nil {
+			return err
+		}
 		row, err := q.DeleteSubjectMapping(ctx, in.Mapping)
 		if err != nil {
 			return err
 		}
 		m := mappingRow(row)
 		out = m.out()
-		return audit.RecordTenant(ctx, tx, tid, tenantEvent(ctx, "subject_mapping.delete", "subject_mapping", row.ID, m.detail()))
+		detail := m.detail()
+		detail["limit_rules_deleted"] = rules
+		return audit.RecordTenant(ctx, tx, tid, tenantEvent(ctx, "subject_mapping.delete", "subject_mapping", row.ID, detail))
 	})
 	if isNoRowsErr(err) {
 		return nil, errNotFound

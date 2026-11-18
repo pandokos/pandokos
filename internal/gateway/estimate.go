@@ -52,5 +52,5 @@ func estimateOf(a family.Adapter, op family.Operation, bound family.OutputBound,
 	if cost.Known && !usage.CostFits(cost.Amount) {
 		cost = pricing.Cost{Reason: pricing.ReasonInconsistentUsage, Currency: v.Currency, VersionID: v.ID}
 	}
-	return LimitEstimate{InputTokens: input, OutputTokens: output, Cost: cost, Provider: t.Provider, Model: t.Model, Start: start}
+	return LimitEstimate{InputTokens: input, OutputTokens: output, Cost: cost, Provider: t.Provider, Model: t.Model, ProviderID: t.ProviderID, ModelID: t.ModelID, Start: start}
 }

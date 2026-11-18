@@ -1,6 +1,6 @@
 # 0040. Traces: SDK, span model, sampling and propagation
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-14
 
 Refines [ADR 0015](0015-observability.md), [ADR 0018](0018-supply-chain.md) and
@@ -55,3 +55,4 @@ environment configuration (settings outside ADR 0019).
 ## History
 
 - 2026-11: sprint 3.3 adds the span attribute pandokos.usage.output_source.
+- 2026-11-18: accepted by the maintainer after review.

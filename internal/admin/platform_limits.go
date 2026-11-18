@@ -93,22 +93,25 @@ func (s *server) CreatePlatformLimit(ctx context.Context, in adminapi.CreatePlat
 	}
 	var out adminapi.PlatformLimitRule
 	err := s.inPlatform(ctx, func(ctx context.Context, tx store.Tx, q *queries.Queries) error {
+		var scope queries.ResolveLimitScopeRow
 		if b.Provider != "" {
-			if found, err := q.LimitScopeExists(ctx, queries.LimitScopeExistsParams{Provider: b.Provider}); err != nil {
-				return err
-			} else if !found {
+			var err error
+			scope, err = q.ResolveLimitScope(ctx, queries.ResolveLimitScopeParams{Provider: b.Provider, Model: b.Model})
+			if isNoRowsErr(err) {
 				return invalid("provider", "must name a provider")
 			}
-			if b.Model != "" {
-				if found, err := q.LimitScopeExists(ctx, queries.LimitScopeExistsParams{Provider: b.Provider, Model: b.Model}); err != nil {
-					return err
-				} else if !found {
-					return invalid("model", "must name a model of the provider")
-				}
+			if err != nil {
+				return err
+			}
+			if b.Model != "" && scope.ModelID == "" {
+				return invalid("model", "must name a model of the provider")
 			}
 		}
+		if err := checkBudgetCurrency(ctx, q, string(f.Metric), f.Currency, scope.ProviderID, scope.ModelID, false); err != nil {
+			return err
+		}
 		row, err := q.CreatePlatformLimitRule(ctx, queries.CreatePlatformLimitRuleParams{
-			TenantID: forTenant, Provider: b.Provider, Model: b.Model, Metric: string(f.Metric), LimitValue: f.Value, Currency: f.Currency,
+			TenantID: forTenant, ProviderID: nilIfEmpty(scope.ProviderID), ModelID: nilIfEmpty(scope.ModelID), Metric: string(f.Metric), LimitValue: f.Value, Currency: f.Currency,
 			Enforce: f.Enforce, Thresholds: f.Thresholds,
 		})
 		if err != nil {
@@ -117,7 +120,7 @@ func (s *server) CreatePlatformLimit(ctx context.Context, in adminapi.CreatePlat
 		out = platformRuleOut(queries.GetPlatformLimitRuleRow(row))
 		detail := map[string]any{"tenant": tenantOfRule(row.TenantID), "provider": row.Provider, "model": row.Model}
 		return audit.RecordPlatform(ctx, tx, s.platformEvent(ctx, "platform_limit.create", "platform_limit_rule", row.ID,
-			ruleDetail(detail, row.Metric, row.LimitValue, row.Currency, row.Enforce, row.Thresholds)))
+			ruleDetail(detail, row.ProviderID, row.ModelID, row.Metric, row.LimitValue, row.Currency, row.Enforce, row.Thresholds)))
 	})
 	if err != nil {
 		return nil, mapLimitError(err)
@@ -171,6 +174,9 @@ func (s *server) UpdatePlatformLimit(ctx context.Context, in adminapi.UpdatePlat
 			out = platformRuleOut(queries.GetPlatformLimitRuleRow(cur))
 			return nil
 		}
+		if err := checkBudgetCurrency(ctx, q, cur.Metric, cur.Currency, cur.ProviderID, cur.ModelID, false); err != nil {
+			return err
+		}
 		row, err := q.UpdatePlatformLimitRule(ctx, queries.UpdatePlatformLimitRuleParams{ID: cur.ID, LimitValue: next.Value, Enforce: next.Enforce, Thresholds: next.Thresholds})
 		if err != nil {
 			return err
@@ -202,7 +208,7 @@ func (s *server) DeletePlatformLimit(ctx context.Context, in adminapi.DeletePlat
 		out = platformRuleOut(queries.GetPlatformLimitRuleRow(row))
 		detail := map[string]any{"tenant": tenantOfRule(row.TenantID), "provider": row.Provider, "model": row.Model}
 		return audit.RecordPlatform(ctx, tx, s.platformEvent(ctx, "platform_limit.delete", "platform_limit_rule", row.ID,
-			ruleDetail(detail, row.Metric, row.LimitValue, row.Currency, row.Enforce, row.Thresholds)))
+			ruleDetail(detail, row.ProviderID, row.ModelID, row.Metric, row.LimitValue, row.Currency, row.Enforce, row.Thresholds)))
 	})
 	if isNoRowsErr(err) {
 		return nil, errNotFound

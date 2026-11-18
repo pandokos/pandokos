@@ -111,7 +111,7 @@ func newReconcilerFixture(t *testing.T, d *dbtest.Database, interval time.Durati
 	}
 	f.led = &watchedLedger{inner: limits.NewLedger(d.Open(t, store.RoleWorker))}
 	f.rec, err = limits.NewReconciler(limits.ReconcilerOptions{
-		Store: f.mem, Ledger: f.led, Calendar: f.cal, Horizon: 12*time.Minute + 30*time.Second, Interval: interval,
+		Store: f.mem, Ledger: f.led, Horizon: 12*time.Minute + 30*time.Second, Interval: interval,
 		Logger: logger, Now: f.clk.now,
 		Pending: func() (time.Time, bool) {
 			if p := f.oldest.Load(); p != nil {

@@ -2,23 +2,27 @@
 -- GetTenantSelf, which runs in the tenant's own session.
 
 -- name: CreateTenant :one
-INSERT INTO pandokos.tenant (name, display_name)
-VALUES (sqlc.arg(name)::text, sqlc.arg(display_name)::text)
-RETURNING id, name, display_name, state, created_at, updated_at, state_changed_at;
+INSERT INTO pandokos.tenant (name, display_name, time_zone)
+VALUES (sqlc.arg(name)::text, sqlc.arg(display_name)::text, sqlc.arg(time_zone)::text)
+RETURNING id, name, display_name, state, created_at, updated_at, state_changed_at,
+          time_zone, time_zone_previous, time_zone_effective_from;
 
 -- name: GetTenant :one
-SELECT id, name, display_name, state, created_at, updated_at, state_changed_at
+SELECT id, name, display_name, state, created_at, updated_at, state_changed_at,
+       time_zone, time_zone_previous, time_zone_effective_from
   FROM pandokos.tenant
  WHERE id = sqlc.arg(id)::uuid;
 
 -- name: GetTenantForUpdate :one
-SELECT id, name, display_name, state, created_at, updated_at, state_changed_at
+SELECT id, name, display_name, state, created_at, updated_at, state_changed_at,
+       time_zone, time_zone_previous, time_zone_effective_from
   FROM pandokos.tenant
  WHERE id = sqlc.arg(id)::uuid
    FOR UPDATE;
 
 -- name: ListTenants :many
-SELECT t.id, t.name, t.display_name, t.state, t.created_at, t.updated_at, t.state_changed_at
+SELECT t.id, t.name, t.display_name, t.state, t.created_at, t.updated_at, t.state_changed_at,
+       t.time_zone, t.time_zone_previous, t.time_zone_effective_from
   FROM pandokos.tenant t
  WHERE (sqlc.arg(state)::text = '' OR t.state = sqlc.arg(state)::text)
    AND (sqlc.arg(name)::text = '' OR t.name = sqlc.arg(name)::text)
@@ -41,10 +45,12 @@ UPDATE pandokos.tenant
    SET name         = CASE WHEN sqlc.arg(set_name)::boolean THEN sqlc.arg(name)::text ELSE name END,
        display_name = CASE WHEN sqlc.arg(set_display_name)::boolean THEN sqlc.arg(display_name)::text ELSE display_name END
  WHERE id = sqlc.arg(id)::uuid
-RETURNING id, name, display_name, state, created_at, updated_at, state_changed_at;
+RETURNING id, name, display_name, state, created_at, updated_at, state_changed_at,
+          time_zone, time_zone_previous, time_zone_effective_from;
 
 -- name: SetTenantState :one
 UPDATE pandokos.tenant
    SET state = sqlc.arg(state)::text
  WHERE id = sqlc.arg(id)::uuid
-RETURNING id, name, display_name, state, created_at, updated_at, state_changed_at;
+RETURNING id, name, display_name, state, created_at, updated_at, state_changed_at,
+          time_zone, time_zone_previous, time_zone_effective_from;

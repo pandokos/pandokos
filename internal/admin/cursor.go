@@ -16,6 +16,8 @@ type cursor struct {
 	F string `json:"f,omitempty"`
 	T string `json:"t,omitempty"`
 	P string `json:"p,omitempty"`
+	// L is the limit_state filter of a usage list.
+	L string `json:"l,omitempty"`
 }
 
 func encodeCursor(sort, name, id string) string {

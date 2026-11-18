@@ -43,8 +43,8 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | `platform_issuer:read` | platform | Reading and listing platform-level token issuers and their tenant lists |
 | `platform_issuer:write` | platform | Registering, changing, disabling and enabling a platform-level token issuer; adding and removing the tenants it may act for |
 | `platform_issuer:delete` | platform | Deleting a platform-level token issuer with its tenant list and the subject mappings that name it |
-| `limit:read` | tenant | Reading and listing the tenant's limit rules, the platform ceilings that apply to it and its limit events |
-| `limit:write` | tenant | Creating and changing a limit rule of the tenant |
+| `limit:read` | tenant | Reading and listing the tenant's limit rules, the platform ceilings that apply to it and its limit events, and reading the tenant's time zone (`getTenantTimeZone`) |
+| `limit:write` | tenant | Creating and changing a limit rule of the tenant, and setting the tenant's time zone (`setTenantTimeZone`: it decides when quotas and budgets reset, and a principal that may write rules may already remove them) |
 | `limit:delete` | tenant | Deleting a limit rule of the tenant |
 | `platform_limit:read` | platform | Reading and listing the ceilings the platform sets for tenants |
 | `platform_limit:write` | platform | Creating and changing the ceilings the platform sets for tenants |
@@ -55,7 +55,7 @@ The six limit permissions are held by two roles: `tenant-admin` has `limit:read`
 `platform_limit:delete`. The role `inference` has none. A platform principal cannot write a tenant's own
 rules and a tenant principal can neither read nor write platform rules beyond the ceilings that apply to
 its own tenant (`listTenantPlatformLimits`, under `limit:read`). Custom roles are not yet possible
-(sprint 4.3), so these are the only holders ([limits guide](../operations/limits.md)).
+(sprint 4.3), so these are the only holders ([limits guide](../operations/limits.md)). The platform sets a tenant's time zone with `tenant:write` (`createTenant`, `updateTenant`). No permission was added in sprint 5.3.
 
 Scope *platform*: held by platform principals only. Scope *tenant*: held by principals of that
 tenant only, and checked against the tenant of the request. Scope *self*: the caller itself.

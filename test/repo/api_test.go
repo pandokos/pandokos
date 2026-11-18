@@ -640,8 +640,8 @@ func TestOpenAPIDocument(t *testing.T) {
 	}
 	// Sprint 2.2: 64 operations (66 with the two of sprint 3.3), and money is never a JSON number: no schema of the document has a
 	// number type, and a rate is a string with a pattern.
-	if n != 96 {
-		t.Errorf("the document has %d operations, want 96 (35, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1 and the 12 of sprint 5.2)", n)
+	if n != 98 {
+		t.Errorf("the document has %d operations, want 98 (35, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1, the 12 of sprint 5.2 and the 2 of sprint 5.3)", n)
 	}
 	if regexp.MustCompile(`(?m)type:\s*(number|\[[^\]]*number)`).MatchString(raw) || regexp.MustCompile(`format:\s*(float|double)`).MatchString(raw) {
 		t.Error("the document uses a floating-point type: prices travel as decimal strings")

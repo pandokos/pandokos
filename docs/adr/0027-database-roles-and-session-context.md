@@ -1,6 +1,6 @@
 # 0027. Database roles, session context and pooler safety
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-12
 
 Refines [ADR 0004](0004-postgresql-and-rls.md); does not supersede it.
@@ -58,3 +58,5 @@ direct connection.
 - 2026-11: sprint 2.2 adds restricted global catalogue tables read in any session, and insert grants for the worker on prices and the platform audit log ([ADR 0035](0035-catalogue-and-model-access.md)).
 - 2026-11: sprint 3.1 adds the definer function record_auth_failure, executable by the gateway role only; the role still holds no privilege on the audit tables.
 - 2026-11: sprint 3.2 adds the definer function ensure_usage_partitions, executable by the worker role only, and lint rule L-20 for partitions.
+- 2026-11-18: recorded as accepted by the maintainer.
+- 2026-11-18: sprint 5.3: two definer functions, `delete_platform_issuer_limit_rules` (admin role) and `record_unlimited_traffic` (gateway role); a tenant's session may update the time zone of its own tenant row ([ADR 0052](0052-administration-of-limits.md)).

@@ -410,6 +410,12 @@ func TestCapabilityBudget(t *testing.T) {
 		}
 		return rows
 	}
+	// seedBudget writes a budget the administration API now refuses (sprint 5.3): one in a currency
+	// that no price of its scope uses. It is written as a row, the way a price that went away leaves it.
+	seedBudget := func(t *testing.T, db *dbtest.Database, id tenant.ID, metric string, value int64, provider, currency string) {
+		t.Helper()
+		db.SeedLimitRule(t, id, "tenant", "", metric, value, dbtest.LimitOptions{Provider: provider, Currency: currency})
+	}
 	want := func(t *testing.T, got adminapi.Capability, budget adminapi.BudgetAvailability, callable bool, reasons ...string) {
 		t.Helper()
 		if got.Checks.Budget != budget || got.Callable != callable || strings.Join(got.Reasons, ",") != strings.Join(reasons, ",") {
@@ -454,10 +460,10 @@ func TestCapabilityBudget(t *testing.T) {
 
 	t.Run("unpriced: no price in the currency of the budget", func(t *testing.T) {
 		p, m := newModel(t, false)
-		rule(t, map[string]any{"metric": "cost_per_month", "amount": "10", "currency": "USD", "provider": p})
+		seedBudget(t, c.api.DB, tn, "cost_per_month", 10_000_000, p, "USD")
 		want(t, budget(t, p, m), adminapi.BudgetAvailabilityUnpriced, false, "no_price")
 		q, priced := newModel(t, true)
-		rule(t, map[string]any{"metric": "cost_per_month", "amount": "10", "currency": "EUR", "provider": q}) // priced in USD only
+		seedBudget(t, c.api.DB, tn, "cost_per_month", 10_000_000, q, "EUR") // priced in USD only
 		want(t, budget(t, q, priced), adminapi.BudgetAvailabilityUnpriced, false, "no_price")
 	})
 
@@ -468,7 +474,7 @@ func TestCapabilityBudget(t *testing.T) {
 		ac.createEndpoint(t, p.Name, nil)
 		m := ac.createModel(t, p.Name, map[string]any{"availability": "all"})
 		credentialFor(t, ac, p.Name, "main")
-		decode[adminapi.LimitRule](t, ac.do(t, "POST", "/v1/tenants/"+ac.a.ID+"/limits", ac.ka, map[string]any{"metric": "cost_per_month", "amount": "10", "currency": "USD", "provider": p.Name}), 201)
+		seedBudget(t, ac.api.DB, atn, "cost_per_month", 10_000_000, p.Name, "USD") // the model has no price
 		got := capabilityOf(t, ac, ac.a.ID, ac.ka, p.Name, m.Name)
 		want(t, got, adminapi.BudgetAvailabilityAvailable, true)
 		decode[adminapi.LimitRule](t, ac.do(t, "POST", "/v1/tenants/"+ac.a.ID+"/limits", ac.ka, map[string]any{"metric": "requests_per_month", "limit": 1, "provider": p.Name}), 201)
@@ -521,7 +527,7 @@ func TestCapabilityBudget(t *testing.T) {
 		if r := c.do(t, "GET", "/v1/tenants/"+c.a.ID+"/credentials?provider="+p, c.ka, nil); r.Status != 200 {
 			t.Fatal(r.Status)
 		}
-		rule(t, map[string]any{"metric": "cost_per_month", "amount": "10", "currency": "USD", "provider": p})
+		seedBudget(t, c.api.DB, tn, "cost_per_month", 10_000_000, p, "USD")
 		rule(t, map[string]any{"metric": "requests_per_month", "limit": 1, "provider": p})
 		c.api.DB.SeedUsage(t, tn, usageRows(p, m.Name, 1, 1, "", "")...)
 		want(t, budget(t, p, m), adminapi.BudgetAvailabilityUnpriced, false, "no_price", "budget_exhausted")
@@ -550,5 +556,85 @@ func TestCapabilityBudget(t *testing.T) {
 		}
 		// B's key asking about A's tenant sees the same 404 as for a tenant that does not exist.
 		expect(t, capCall(t, c, c.kb, c.a.ID, p, m.Name), 404, adminapi.ProblemCodeNotFound)
+	})
+}
+
+// TestCapabilityTenantZone is T-720: the budget check of the capability endpoint counts in the
+// periods of the tenant's zone and matches the rules by identifier: a daily quota exhausted in the
+// tenant's day, a rule of a model, and a change that is pending.
+func TestCapabilityTenantZone(t *testing.T) {
+	// The clock of the check: 22:00 UTC on November 17th, which is 12:00 of the 18th on Kiritimati and 11:00 of the 17th in Pago Pago.
+	now := time.Date(2026, 11, 17, 22, 0, 0, 0, time.UTC)
+	c := newCat(t, func(o *admin.Options) { o.Now = func() time.Time { return now } })
+	tn, err := tenant.ParseID(c.a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := c.createProvider(t, nil)
+	c.createEndpoint(t, p.Name, nil)
+	m := c.createModel(t, p.Name, map[string]any{"availability": "all"})
+	other := c.createModel(t, p.Name, map[string]any{"availability": "all"})
+	credentialFor(t, c, p.Name, "main")
+	check := func(t *testing.T, model string) adminapi.Capability {
+		t.Helper()
+		return capabilityOf(t, c, c.a.ID, c.ka, p.Name, model)
+	}
+	wantBudget := func(t *testing.T, what string, got adminapi.Capability, b adminapi.BudgetAvailability) {
+		t.Helper()
+		if got.Checks.Budget != b || got.Callable != (b != adminapi.BudgetAvailabilityExhausted) {
+			t.Errorf("%s: budget %q, callable %v, reasons %v; want %q", what, got.Checks.Budget, got.Callable, got.Reasons, b)
+		}
+	}
+	rule := func(body map[string]any) adminapi.LimitRule {
+		t.Helper()
+		return decode[adminapi.LimitRule](t, c.do(t, "POST", "/v1/tenants/"+c.a.ID+"/limits", c.ka, body), 201)
+	}
+
+	// Two requests of the 17th, at 08:00 UTC: in the UTC day, in neither the Kiritimati day (from 10:00 UTC) nor the Pago Pago day (from 11:00 UTC).
+	rows := []dbtest.UsageRow{
+		{StartedAt: time.Date(2026, 11, 17, 8, 0, 0, 0, time.UTC), Provider: p.Name, Model: m.Name, InputTokens: 1},
+		{StartedAt: time.Date(2026, 11, 17, 8, 1, 0, 0, time.UTC), Provider: p.Name, Model: m.Name, InputTokens: 1},
+	}
+	c.api.DB.SeedUsage(t, tn, rows...)
+	rule(map[string]any{"metric": "requests_per_day", "limit": 2, "provider": p.Name})
+
+	t.Run("a daily quota exhausted in the day of the default zone", func(t *testing.T) {
+		wantBudget(t, "UTC", check(t, m.Name), adminapi.BudgetAvailabilityExhausted)
+	})
+	t.Run("the same usage is another day in the tenant's zone", func(t *testing.T) {
+		c.api.DB.SetTenantZone(t, tn, "Pacific/Kiritimati", "", time.Time{})
+		wantBudget(t, "Kiritimati", check(t, m.Name), adminapi.BudgetAvailabilityAvailable)
+		c.api.DB.SetTenantZone(t, tn, "Pacific/Pago_Pago", "", time.Time{})
+		wantBudget(t, "Pago Pago", check(t, m.Name), adminapi.BudgetAvailabilityAvailable)
+		c.api.DB.SetTenantZone(t, tn, "Pacific/Honolulu", "", time.Time{}) // -10: the day started at 10:00 UTC
+		wantBudget(t, "Honolulu", check(t, m.Name), adminapi.BudgetAvailabilityAvailable)
+		c.api.DB.SetTenantZone(t, tn, "", "", time.Time{})
+		wantBudget(t, "the default again", check(t, m.Name), adminapi.BudgetAvailabilityExhausted)
+	})
+	t.Run("a pending change leaves the zone in force until its instant", func(t *testing.T) {
+		later := now.Add(10 * 24 * time.Hour)
+		c.api.DB.SetTenantZone(t, tn, "Pacific/Kiritimati", "", later)
+		wantBudget(t, "pending", check(t, m.Name), adminapi.BudgetAvailabilityExhausted)
+		c.api.DB.SetTenantZone(t, tn, "Pacific/Kiritimati", "", now.Add(-time.Hour)) // the instant has passed
+		wantBudget(t, "taken effect", check(t, m.Name), adminapi.BudgetAvailabilityAvailable)
+		c.api.DB.SetTenantZone(t, tn, "", "", time.Time{})
+	})
+	t.Run("a rule of a model limits that model by identifier", func(t *testing.T) {
+		rule(map[string]any{"metric": "requests_per_month", "limit": 1, "provider": p.Name, "model": other.Name})
+		c.api.DB.SeedUsage(t, tn, dbtest.UsageRow{StartedAt: now.Add(-time.Hour), Provider: p.Name, Model: other.Name, InputTokens: 1})
+		wantBudget(t, "the model of the rule", check(t, other.Name), adminapi.BudgetAvailabilityExhausted)
+		// The first model is not the rule's model: its usage does not count for it, and the provider's rule governs it.
+		got := check(t, m.Name)
+		for _, r := range got.Reasons {
+			if r == "budget_exhausted" && got.Checks.Budget != adminapi.BudgetAvailabilityExhausted {
+				t.Errorf("inconsistent: %+v", got)
+			}
+		}
+		// The same name under another provider is another model: the rule of this one does not limit it.
+		p2 := c.createProvider(t, nil)
+		c.createEndpoint(t, p2.Name, nil)
+		credentialFor(t, c, p2.Name, "main")
+		twin := c.createModel(t, p2.Name, map[string]any{"name": other.Name, "availability": "all"})
+		wantBudget(t, "a model of the same name of another provider", capabilityOf(t, c, c.a.ID, c.ka, p2.Name, twin.Name), adminapi.BudgetAvailabilityNotEnforced)
 	})
 }

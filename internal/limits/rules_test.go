@@ -94,7 +94,7 @@ func TestResolve(t *testing.T) {
 			},
 		} {
 			t.Run(c.name, func(t *testing.T) {
-				got := c.set.For(Query{ServiceAccountID: "sa-1", KeyID: "key-1"}, nil)
+				got := c.set.forCal(Query{ServiceAccountID: "sa-1", KeyID: "key-1"}, nil)
 				if len(got) != c.wantCnt {
 					t.Fatalf("%d limits: %+v, want %d", len(got), got, c.wantCnt)
 				}
@@ -132,7 +132,7 @@ func TestResolve(t *testing.T) {
 		for _, m := range []Metric{TokensPerMinute, RequestsPerMinute, ConcurrentRequests} { // shuffled on purpose
 			rules = append(rules, Rule{SubjectKind: SubjectKey, SubjectID: "key-1", Metric: m, Value: 5}, Rule{SubjectKind: SubjectServiceAccount, SubjectID: "sa-1", Metric: m, Value: 6}, Rule{SubjectKind: SubjectTenant, SubjectID: "", Metric: m, Value: 7})
 		}
-		got := NewRuleSet(a, nil, nil, rules).For(Query{ServiceAccountID: "sa-1", KeyID: "key-1"}, nil)
+		got := NewRuleSet(a, nil, nil, rules).forCal(Query{ServiceAccountID: "sa-1", KeyID: "key-1"}, nil)
 		if len(got) != 9 {
 			t.Fatalf("%d limits, want 9", len(got))
 		}
@@ -172,7 +172,7 @@ func TestResolve(t *testing.T) {
 				}
 			}
 			set := NewRuleSet(a, pd, pt, rules)
-			got := set.For(Query{ServiceAccountID: "sa-1", KeyID: "key-1"}, nil)
+			got := set.forCal(Query{ServiceAccountID: "sa-1", KeyID: "key-1"}, nil)
 			if len(got) > 9 {
 				t.Fatalf("seed %d case %d: %d limits", seed, n, len(got))
 			}
@@ -249,7 +249,7 @@ func TestResolve(t *testing.T) {
 					more[i].Value = max(1, r.Value/2)
 				}
 			}
-			after := NewRuleSet(a, pd, pt, dedupe(more)).For(Query{ServiceAccountID: "sa-1", KeyID: "key-1"}, nil)
+			after := NewRuleSet(a, pd, pt, dedupe(more)).forCal(Query{ServiceAccountID: "sa-1", KeyID: "key-1"}, nil)
 			for _, l := range got {
 				if l.Subject != SubjectTenant {
 					continue
@@ -297,7 +297,7 @@ func ckeyOf(l Limit) ckey {
 }
 
 func scoped(id string, kind SubjectKind, sid, prov, model string, m Metric, v int64, enforce bool, thr ...int) Rule {
-	r := Rule{ID: id, SubjectKind: kind, SubjectID: sid, Provider: prov, Model: model, Metric: m, Value: v, Enforce: enforce, Thresholds: thr}
+	r := Rule{ID: id, SubjectKind: kind, SubjectID: sid, ProviderID: prov, ModelID: model, Provider: prov, Model: model, Metric: m, Value: v, Enforce: enforce, Thresholds: thr}
 	if m.Cost() {
 		r.Currency = "EUR"
 	}
@@ -343,7 +343,7 @@ func mustOne(t *testing.T, ls []Limit) Limit {
 // TestResolveScopes is T-654.
 func TestResolveScopes(t *testing.T) {
 	a := tid(1)
-	q := Query{ServiceAccountID: "sa-1", KeyID: "key-1", Provider: "openai", Model: "gpt-4", Start: at(2026, 11, 17, 12, 0, 0)}
+	q := Query{ServiceAccountID: "sa-1", KeyID: "key-1", ProviderID: "openai", ModelID: "gpt-4", Start: at(2026, 11, 17, 12, 0, 0)}
 
 	t.Run("the order of section 5.3", func(t *testing.T) {
 		var rules []Rule
@@ -360,7 +360,7 @@ func TestResolveScopes(t *testing.T) {
 				}
 			}
 		}
-		got := NewScopedRuleSet(a, nil, nil, rules).For(q, utcCal)
+		got := NewScopedRuleSet(a, nil, nil, rules).forCal(q, utcCal)
 		if len(got) != 81 {
 			t.Fatalf("%d limits, want 81 (three subjects, three scopes, nine metrics)", len(got))
 		}
@@ -391,7 +391,7 @@ func TestResolveScopes(t *testing.T) {
 			scoped("k", SubjectKey, "key-1", "openai", "gpt-4", RequestsPerMinute, 5, true),
 			scoped("k2", SubjectKey, "key-2", "openai", "gpt-4", RequestsPerMinute, 6, true),
 		})
-		got := set.For(q, utcCal)
+		got := set.forCal(q, utcCal)
 		var ids []string
 		for _, l := range got {
 			ids = append(ids, l.RuleID)
@@ -407,7 +407,7 @@ func TestResolveScopes(t *testing.T) {
 		if l := got[1]; l.Provider != "openai" || l.Model != "gpt-4" || l.Max != 20 || l.Level != LevelTenant || l.Subject != SubjectTenant {
 			t.Errorf("the model limit is %+v", l)
 		}
-		if other := set.For(Query{Provider: "anthropic", Model: "claude", Start: q.Start}, utcCal); len(other) != 1 || other[0].RuleID != "pa" {
+		if other := set.forCal(Query{ProviderID: "anthropic", ModelID: "claude", Start: q.Start}, utcCal); len(other) != 1 || other[0].RuleID != "pa" {
 			t.Errorf("limits for another provider %+v", other)
 		}
 	})
@@ -418,7 +418,7 @@ func TestResolveScopes(t *testing.T) {
 			scoped("mo", SubjectTenant, "", "", "", TokensPerMonth, 10, true),
 			scoped("rate", SubjectTenant, "", "", "", RequestsPerMinute, 10, true),
 		})
-		got := set.For(q, utcCal)
+		got := set.forCal(q, utcCal)
 		if len(got) != 3 {
 			t.Fatalf("%d limits", len(got))
 		}
@@ -431,7 +431,7 @@ func TestResolveScopes(t *testing.T) {
 		if want := utcCal.Of(PerMonth, q.Start); got[2].Period != want {
 			t.Errorf("month period %v, want %v", got[2].Period, want)
 		}
-		if nocal := set.For(q, nil); len(nocal) != 1 || nocal[0].Metric != RequestsPerMinute {
+		if nocal := set.forCal(q, nil); len(nocal) != 1 || nocal[0].Metric != RequestsPerMinute {
 			t.Errorf("without a calendar: %+v, want the rate limit only", nocal)
 		}
 	})
@@ -439,7 +439,7 @@ func TestResolveScopes(t *testing.T) {
 	t.Run("a platform and a tenant rule share one counter", func(t *testing.T) {
 		plat := []Rule{scoped("pl", SubjectTenant, "", "", "", TokensPerDay, 1000, true, 80)}
 		ten := []Rule{scoped("te", SubjectTenant, "", "", "", TokensPerDay, 600, true, 50)}
-		got := NewScopedRuleSet(a, plat, nil, ten).For(q, utcCal)
+		got := NewScopedRuleSet(a, plat, nil, ten).forCal(q, utcCal)
 		if len(got) != 1 {
 			t.Fatalf("%d limits, want one counter", len(got))
 		}
@@ -456,7 +456,7 @@ func TestResolveScopes(t *testing.T) {
 		}
 		// The tenant's rule above the ceiling: the ceiling stays, both sets of marks are kept.
 		ten[0].Value = 2000
-		l = mustOne(t, NewScopedRuleSet(a, plat, nil, ten).For(q, utcCal))
+		l = mustOne(t, NewScopedRuleSet(a, plat, nil, ten).forCal(q, utcCal))
 		if l.Max != 1000 || l.Level != LevelPlatform || l.RuleID != "pl" {
 			t.Errorf("limit %+v, want the ceiling of 1000", l)
 		}
@@ -468,11 +468,11 @@ func TestResolveScopes(t *testing.T) {
 	t.Run("the minimum of the enforced values; an unenforced rule only marks", func(t *testing.T) {
 		plat := []Rule{scoped("pl", SubjectTenant, "", "", "", TokensPerMonth, 1000, true)}
 		soft := []Rule{scoped("so", SubjectTenant, "", "", "", TokensPerMonth, 500, false, 100)}
-		l := mustOne(t, NewScopedRuleSet(a, plat, nil, soft).For(q, utcCal))
+		l := mustOne(t, NewScopedRuleSet(a, plat, nil, soft).forCal(q, utcCal))
 		if l.Max != 1000 || l.RuleID != "pl" || len(l.Marks) != 1 || l.Marks[0].At != 500 || l.Marks[0].Percent != 100 || l.Marks[0].RuleID != "so" {
 			t.Errorf("limit %+v", l)
 		}
-		bothSoft := NewScopedRuleSet(a, []Rule{scoped("ps", SubjectTenant, "", "", "", TokensPerMonth, 1000, false, 90)}, nil, soft).For(q, utcCal)
+		bothSoft := NewScopedRuleSet(a, []Rule{scoped("ps", SubjectTenant, "", "", "", TokensPerMonth, 1000, false, 90)}, nil, soft).forCal(q, utcCal)
 		if len(bothSoft) != 1 || bothSoft[0].Max != 0 || len(bothSoft[0].Marks) != 2 {
 			t.Errorf("two unenforced rules: %+v, want Max 0 and two marks", bothSoft)
 		}
@@ -481,7 +481,7 @@ func TestResolveScopes(t *testing.T) {
 	t.Run("the platform row of a tenant replaces the default of its scope and metric", func(t *testing.T) {
 		def := []Rule{scoped("d1", SubjectTenant, "", "", "", RequestsPerDay, 100, true), scoped("d2", SubjectTenant, "", "openai", "", RequestsPerDay, 50, true)}
 		own := []Rule{scoped("o1", SubjectTenant, "", "", "", RequestsPerDay, 500, true)}
-		got := NewScopedRuleSet(a, def, own, nil).For(q, utcCal)
+		got := NewScopedRuleSet(a, def, own, nil).forCal(q, utcCal)
 		if len(got) != 2 || got[0].Max != 500 || got[0].RuleID != "o1" || got[1].Max != 50 || got[1].RuleID != "d2" {
 			t.Errorf("limits %+v", got)
 		}
@@ -491,7 +491,7 @@ func TestResolveScopes(t *testing.T) {
 		plat := []Rule{scoped("pl", SubjectTenant, "", "", "", CostPerDay, 5_000_000, true)}
 		ten := scoped("te", SubjectTenant, "", "", "", CostPerDay, 3_000_000, true)
 		ten.Currency = "USD"
-		got := NewScopedRuleSet(a, plat, nil, []Rule{ten}).For(q, utcCal)
+		got := NewScopedRuleSet(a, plat, nil, []Rule{ten}).forCal(q, utcCal)
 		if len(got) != 2 {
 			t.Fatalf("%d limits, want 2: %+v", len(got), got)
 		}
@@ -503,14 +503,14 @@ func TestResolveScopes(t *testing.T) {
 			t.Errorf("limits by currency %v", cur)
 		}
 		same := scoped("te2", SubjectTenant, "", "", "", CostPerDay, 3_000_000, true) // EUR, as the ceiling
-		got = NewScopedRuleSet(a, plat, nil, []Rule{same}).For(q, utcCal)
+		got = NewScopedRuleSet(a, plat, nil, []Rule{same}).forCal(q, utcCal)
 		if len(got) != 1 || got[0].Max != 3_000_000 || got[0].Currency != "EUR" {
 			t.Errorf("same currency: %+v", got)
 		}
 	})
 
 	t.Run("a mark is the value times the percentage, rounded up", func(t *testing.T) {
-		got := mustOne(t, NewScopedRuleSet(a, nil, nil, []Rule{scoped("r", SubjectTenant, "", "", "", TokensPerDay, 1001, true, 33, 100, 1)}).For(q, utcCal))
+		got := mustOne(t, NewScopedRuleSet(a, nil, nil, []Rule{scoped("r", SubjectTenant, "", "", "", TokensPerDay, 1001, true, 33, 100, 1)}).forCal(q, utcCal))
 		var at []int64
 		for _, m := range got.Marks {
 			at = append(at, m.At)
@@ -518,7 +518,7 @@ func TestResolveScopes(t *testing.T) {
 		if want := []int64{11, 331, 1001}; !reflect.DeepEqual(at, want) {
 			t.Errorf("marks at %v, want %v", at, want)
 		}
-		big := mustOne(t, NewScopedRuleSet(a, nil, nil, []Rule{scoped("r", SubjectTenant, "", "", "", CostPerMonth, 1_000_000_000_000_000, true, 99)}).For(q, utcCal))
+		big := mustOne(t, NewScopedRuleSet(a, nil, nil, []Rule{scoped("r", SubjectTenant, "", "", "", CostPerMonth, 1_000_000_000_000_000, true, 99)}).forCal(q, utcCal))
 		if len(big.Marks) != 1 || big.Marks[0].At != 990_000_000_000_000 {
 			t.Errorf("marks %+v of 10^15 at 99%%", big.Marks)
 		}
@@ -580,7 +580,7 @@ func TestResolveScopes(t *testing.T) {
 				return out
 			}
 			plat, rules = dedupeRules(plat), dedupeRules(rules)
-			before := NewScopedRuleSet(a, plat, nil, rules).For(q, utcCal)
+			before := NewScopedRuleSet(a, plat, nil, rules).forCal(q, utcCal)
 			seen := map[ckey]bool{}
 			for _, l := range before {
 				if seen[ckeyOf(l)] {
@@ -592,9 +592,9 @@ func TestResolveScopes(t *testing.T) {
 			var after []Limit
 			if rng.IntN(2) == 0 {
 				extra.SubjectKind, extra.SubjectID = SubjectTenant, ""
-				after = NewScopedRuleSet(a, dedupeRules(append(append([]Rule(nil), plat...), extra)), nil, rules).For(q, utcCal)
+				after = NewScopedRuleSet(a, dedupeRules(append(append([]Rule(nil), plat...), extra)), nil, rules).forCal(q, utcCal)
 			} else {
-				after = NewScopedRuleSet(a, plat, nil, dedupeRules(append(append([]Rule(nil), rules...), extra))).For(q, utcCal)
+				after = NewScopedRuleSet(a, plat, nil, dedupeRules(append(append([]Rule(nil), rules...), extra))).forCal(q, utcCal)
 			}
 			byKey := map[ckey]Limit{}
 			for _, l := range after {
@@ -609,6 +609,135 @@ func TestResolveScopes(t *testing.T) {
 					t.Fatalf("seed %d case %d: adding %+v raised %+v to %d", seed, n, extra, b, l.Max)
 				}
 			}
+		}
+	})
+}
+
+// TestResolveByIdentifier is T-701: a rule matches a request by the identifiers of its provider and
+// model and by the key ID or mapping ID of its subject; names are for events and headers and never
+// decide.
+func TestResolveByIdentifier(t *testing.T) {
+	a := tid(1)
+	cal := mustCalendar(t, "UTC")
+	start := at(2026, 11, 17, 12, 0, 0)
+	rule := func(r Rule) Rule {
+		r.Enforce = true
+		if r.Metric == "" {
+			r.Metric = RequestsPerDay
+		}
+		if r.Value == 0 {
+			r.Value = 10
+		}
+		return r
+	}
+	scoped := func(prov, mod string) Rule {
+		return rule(Rule{SubjectKind: SubjectTenant, ProviderID: prov, ModelID: mod, Provider: "openai", Model: "gpt-4"})
+	}
+	forQuery := func(rs []Rule, q Query) []Limit {
+		q.Start = start
+		return NewScopedRuleSet(a, nil, nil, rs).forCal(q, cal)
+	}
+
+	t.Run("a rule on a model ID does not match a target with the same name and another ID", func(t *testing.T) {
+		rs := []Rule{scoped("p1", "m1")}
+		if got := forQuery(rs, Query{ProviderID: "p1", ModelID: "m1", Provider: "openai", Model: "gpt-4"}); len(got) != 1 {
+			t.Fatalf("the model itself: %+v", got)
+		}
+		if got := forQuery(rs, Query{ProviderID: "p1", ModelID: "m2", Provider: "openai", Model: "gpt-4"}); len(got) != 0 {
+			t.Errorf("a model of the same name and another ID matched: %+v", got)
+		}
+		if got := forQuery(rs, Query{ProviderID: "p2", ModelID: "m1", Provider: "openai", Model: "gpt-4"}); len(got) != 0 {
+			t.Errorf("a model ID under another provider matched: %+v", got)
+		}
+	})
+
+	t.Run("names never decide", func(t *testing.T) {
+		rs := []Rule{scoped("p1", "")}
+		if got := forQuery(rs, Query{ProviderID: "", Provider: "openai"}); len(got) != 0 {
+			t.Errorf("a target without identifiers matched by name: %+v", got)
+		}
+		if got := forQuery(rs, Query{ProviderID: "p1", Provider: "something-else"}); len(got) != 1 {
+			t.Errorf("a target with the provider's ID and another name: %+v, want the rule", got)
+		}
+		if got := forQuery(rs, Query{ProviderID: "p2", Provider: "openai"}); len(got) != 0 {
+			t.Errorf("the name of the rule's provider with another ID matched: %+v", got)
+		}
+	})
+
+	t.Run("the scopes are all, provider ID, provider ID and model ID", func(t *testing.T) {
+		rs := []Rule{
+			rule(Rule{SubjectKind: SubjectTenant, ID: "all", Value: 100}),
+			rule(Rule{SubjectKind: SubjectTenant, ProviderID: "p1", Value: 50}),
+			rule(Rule{SubjectKind: SubjectTenant, ProviderID: "p1", ModelID: "m1", Value: 20}),
+			rule(Rule{SubjectKind: SubjectTenant, ProviderID: "p2", Value: 7}),
+		}
+		got := forQuery(rs, Query{ProviderID: "p1", ModelID: "m1"})
+		var maxes []int64
+		for _, l := range got {
+			maxes = append(maxes, l.Max)
+		}
+		if !reflect.DeepEqual(maxes, []int64{100, 50, 20}) {
+			t.Errorf("limits %v, want all, provider, model in order of resolution", maxes)
+		}
+		if got := forQuery(rs, Query{ProviderID: "p1", ModelID: "m9"}); len(got) != 2 {
+			t.Errorf("another model of the provider: %d limits, want all and provider", len(got))
+		}
+		if got := forQuery(rs, Query{}); len(got) != 1 {
+			t.Errorf("a request without a target: %d limits, want the rule of every provider", len(got))
+		}
+		l := got[0]
+		if l.ProviderID != "" || l.ModelID != "" {
+			t.Errorf("a rule for every provider carries identifiers: %+v", l)
+		}
+		for _, l := range forQuery(rs, Query{ProviderID: "p1", ModelID: "m1", Provider: "x", Model: "y"}) {
+			if l.ProviderID != "" && l.ProviderID != "p1" || l.ModelID != "" && l.ModelID != "m1" {
+				t.Errorf("the limit carries other identifiers: %+v", l)
+			}
+		}
+	})
+
+	t.Run("the key subject by key ID and by mapping ID", func(t *testing.T) {
+		rs := []Rule{
+			rule(Rule{SubjectKind: SubjectKey, SubjectID: "tkey000000000000a", Value: 3}),
+			rule(Rule{SubjectKind: SubjectKey, SubjectID: "0192f0f0-0000-7000-8000-0000000000aa", Value: 4}),
+			rule(Rule{SubjectKind: SubjectServiceAccount, SubjectID: "0192f0f0-0000-7000-8000-0000000000bb", Value: 5}),
+		}
+		got := forQuery(rs, Query{KeyID: "tkey000000000000a", ServiceAccountID: "0192f0f0-0000-7000-8000-0000000000bb"})
+		if len(got) != 2 || got[0].Subject != SubjectServiceAccount || got[1].Subject != SubjectKey || got[1].Max != 3 {
+			t.Errorf("a virtual key: %+v", got)
+		}
+		got = forQuery(rs, Query{KeyID: "0192f0f0-0000-7000-8000-0000000000aa"}) // what a token's principal carries
+		if len(got) != 1 || got[0].Subject != SubjectKey || got[0].Max != 4 {
+			t.Errorf("a mapping: %+v", got)
+		}
+		if got := forQuery(rs, Query{KeyID: "tkey000000000000b"}); len(got) != 0 {
+			t.Errorf("another key: %+v", got)
+		}
+	})
+
+	t.Run("at most one limit per counter", func(t *testing.T) {
+		rs := []Rule{scoped("p1", "m1"), scoped("p1", "m1")}
+		rs[1].Value = 5
+		got := forQuery(rs, Query{ProviderID: "p1", ModelID: "m1"})
+		if len(got) != 1 {
+			t.Fatalf("two rules of one counter gave %d limits: %+v", len(got), got)
+		}
+		// Two models of one name and different IDs are two counters.
+		rs = []Rule{scoped("p1", "m1"), scoped("p1", "m2")}
+		if got := forQuery(rs, Query{ProviderID: "p1", ModelID: "m1"}); len(got) != 1 {
+			t.Errorf("a model: %d limits", len(got))
+		}
+		l1 := forQuery(rs, Query{ProviderID: "p1", ModelID: "m1"})[0]
+		l2 := forQuery(rs, Query{ProviderID: "p1", ModelID: "m2"})[0]
+		if l1.ModelID == l2.ModelID || l1.Model != l2.Model {
+			t.Errorf("two models of one name: %+v and %+v: the identifiers must differ, the names are the same", l1, l2)
+		}
+	})
+
+	t.Run("a model ID without a provider ID is not a rule", func(t *testing.T) {
+		rs := []Rule{rule(Rule{SubjectKind: SubjectTenant, ModelID: "m1"})}
+		if got := forQuery(rs, Query{ProviderID: "p1", ModelID: "m1"}); len(got) != 0 {
+			t.Errorf("%+v", got)
 		}
 	})
 }

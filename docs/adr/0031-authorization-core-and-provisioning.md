@@ -1,6 +1,6 @@
 # 0031. Authorization core and tenant provisioning
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-12
 
 Refines [ADR 0007](0007-authorization-rbac.md) and [ADR 0027](0027-database-roles-and-session-context.md).
@@ -20,3 +20,7 @@ The platform administrator sees the first key of a tenant; a platform administra
 ## Alternatives considered
 
 A platform permission inside tenants; provisioning in several transactions; self-registration of tenants (excluded by IAM-01).
+
+## History
+
+- 2026-11-18: recorded as accepted by the maintainer.

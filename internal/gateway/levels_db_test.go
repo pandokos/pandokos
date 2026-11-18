@@ -6,8 +6,10 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -35,6 +37,8 @@ type levelsEnv struct {
 	d      *dbtest.Database
 	tenant tenant.ID
 	hdrs   map[string]http.Header // by caller name
+	keyOf  map[string]string      // the key ID a caller carries (the mapping ID for the token), by caller name
+	sa1    string                 // the ID of the service account of key-1, key-2 and the token
 }
 
 func newLevelsEnv(t *testing.T, d *dbtest.Database) *levelsEnv {
@@ -42,7 +46,11 @@ func newLevelsEnv(t *testing.T, d *dbtest.Database) *levelsEnv {
 	tn := d.SeedTenant(t, "levels-"+testutil.RandomUUID()[:8])
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
 	logs := &testutil.LogBuffer{}
-	cache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: d.Open(t, store.RoleGateway), Logger: quiet, TTL: 5 * time.Minute})
+	zones, err := limits.NewZones(time.UTC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: d.Open(t, store.RoleGateway), Logger: quiet, TTL: 5 * time.Minute, Zones: zones})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,8 +68,12 @@ func newLevelsEnv(t *testing.T, d *dbtest.Database) *levelsEnv {
 		return strings.Contains(logs.String(), `"msg":"cache listener connected"`)
 	})
 
+	// The subjects exist: a rule names them by foreign key (migration 0011).
+	sa1, sa2 := d.SeedServiceAccount(t, tn, "sa-1"), d.SeedServiceAccount(t, tn, "sa-2")
+	issuer := d.SeedTrustedIssuer(t, tn, "issuer-1")
 	principals := map[string]authz.Principal{}
 	hdrs := map[string]http.Header{}
+	keyOf := map[string]string{}
 	add := func(name, sa, key, issuer string) {
 		p := testutil.InferencePrincipal()
 		p.TenantID, p.ID, p.KeyID, p.IssuerID = tn, sa, key, issuer
@@ -71,17 +83,19 @@ func newLevelsEnv(t *testing.T, d *dbtest.Database) *levelsEnv {
 		k := testutil.NewKey(t)
 		principals[k] = p
 		hdrs[name] = http.Header{"Authorization": {"Bearer " + k}, "Content-Type": {"application/json"}}
+		keyOf[name] = key
 	}
-	add("key-1", "sa-1", "key-1", "")
-	add("key-2", "sa-1", "key-2", "")
-	add("other-sa", "sa-2", "key-3", "")
-	add("token", "sa-1", "mapping-1", "issuer-1")
+	key := func(sa string) string { id, _ := d.SeedVirtualKey(t, tn, sa); return id }
+	add("key-1", sa1, key(sa1), "")
+	add("key-2", sa1, key(sa1), "")
+	add("other-sa", sa2, key(sa2), "")
+	add("token", sa1, d.SeedSubjectMapping(t, tn, issuer, false, sa1, "user-token"), issuer)
 
 	h := newHarness(t, func(o *gateway.Options) {
 		o.Authenticator = testutil.StaticAuthenticator(principals)
 		o.Limits = l
 	})
-	return &levelsEnv{h: h, d: d, tenant: tn, hdrs: hdrs}
+	return &levelsEnv{h: h, d: d, tenant: tn, hdrs: hdrs, keyOf: keyOf, sa1: sa1}
 }
 
 func (e *levelsEnv) call(t *testing.T, who string) captured {
@@ -143,7 +157,7 @@ func TestLevels(t *testing.T) {
 	t.Run("a key rule above the tenant limit has no effect", func(t *testing.T) {
 		e := newLevelsEnv(t, d)
 		d.SeedLimitRule(t, e.tenant, "tenant", "", "requests_per_minute", 2)
-		d.SeedLimitRule(t, e.tenant, "key", "key-1", "requests_per_minute", 100)
+		d.SeedLimitRule(t, e.tenant, "key", e.keyOf["key-1"], "requests_per_minute", 100)
 		if n, ref := e.admits(t, "key-1", 10); n != 2 || ref == nil || ref.header.Get("X-Pandokos-Limit-Subject") != "tenant" {
 			t.Fatalf("%d admitted, refusal %v", n, ref)
 		}
@@ -151,7 +165,7 @@ func TestLevels(t *testing.T) {
 
 	t.Run("a key rule restricts that key only", func(t *testing.T) {
 		e := newLevelsEnv(t, d)
-		d.SeedLimitRule(t, e.tenant, "key", "key-1", "requests_per_minute", 1)
+		d.SeedLimitRule(t, e.tenant, "key", e.keyOf["key-1"], "requests_per_minute", 1)
 		n, ref := e.admits(t, "key-1", 5)
 		if n != 1 || ref == nil || ref.header.Get("X-Pandokos-Limit-Subject") != "key" {
 			t.Fatalf("key-1: %d admitted, refusal %v", n, ref)
@@ -165,7 +179,7 @@ func TestLevels(t *testing.T) {
 
 	t.Run("a service account rule spans two keys and a token of that account", func(t *testing.T) {
 		e := newLevelsEnv(t, d)
-		d.SeedLimitRule(t, e.tenant, "service_account", "sa-1", "requests_per_minute", 3)
+		d.SeedLimitRule(t, e.tenant, "service_account", e.sa1, "requests_per_minute", 3)
 		for _, who := range []string{"key-1", "key-2", "token"} {
 			if c := e.call(t, who); c.status != 200 {
 				t.Fatalf("%s: %d %s", who, c.status, c.body)
@@ -184,7 +198,7 @@ func TestLevels(t *testing.T) {
 
 	t.Run("a token is limited by a key rule on its mapping ID", func(t *testing.T) {
 		e := newLevelsEnv(t, d)
-		d.SeedLimitRule(t, e.tenant, "key", "mapping-1", "requests_per_minute", 1)
+		d.SeedLimitRule(t, e.tenant, "key", e.keyOf["token"], "requests_per_minute", 1)
 		n, ref := e.admits(t, "token", 5)
 		if n != 1 || ref == nil || ref.header.Get("X-Pandokos-Limit-Subject") != "key" {
 			t.Fatalf("token: %d admitted, refusal %v", n, ref)
@@ -252,6 +266,7 @@ type stackOptions struct {
 	callers       []string
 	newH          func(t *testing.T, mutate func(*gateway.Options)) *harness
 	unknownPrice  string
+	start         time.Time // the instant the clock of the limits shows when the stack is built; the real time when zero
 }
 
 // quotaStack is a gateway with the period limits of sprint 5.2 over the test database: the rules
@@ -267,6 +282,27 @@ type quotaStack struct {
 	keys       map[string]string
 	principals map[string]authz.Principal
 	gw, worker *store.DB
+	cache      *limits.RuleCache // the rules of the tenants, to be flushed after a change made by hand
+}
+
+// stackCallers are the service account and the keys that seedCallers wrote for a tenant: a rule
+// names its subject by foreign key, so the key a rule is written for must exist before the rule.
+var stackCallers sync.Map // tenant ID -> map[string]stackCaller
+
+type stackCaller struct{ sa, key string }
+
+// seedCallers writes a service account and one key per caller name for the tenant and returns the
+// key IDs by name; newQuotaStack gives its principals these.
+func seedCallers(t *testing.T, d *dbtest.Database, tn tenant.ID, names ...string) map[string]string {
+	t.Helper()
+	sa := d.SeedServiceAccount(t, tn, "stack-sa")
+	callers, keys := map[string]stackCaller{}, map[string]string{}
+	for _, n := range names {
+		k, _ := d.SeedVirtualKey(t, tn, sa)
+		callers[n], keys[n] = stackCaller{sa, k}, k
+	}
+	stackCallers.Store(tn.String(), callers)
+	return keys
 }
 
 func newQuotaStack(t *testing.T, d *dbtest.Database, tn tenant.ID, o stackOptions) *quotaStack {
@@ -282,13 +318,23 @@ func newQuotaStack(t *testing.T, d *dbtest.Database, tn tenant.ID, o stackOption
 	for _, name := range callers {
 		p := testutil.InferencePrincipal()
 		p.TenantID, p.KeyID = tn, "tk-"+name
+		if v, ok := stackCallers.Load(tn.String()); ok {
+			if c, ok := v.(map[string]stackCaller)[name]; ok {
+				p.ID, p.KeyID = c.sa, c.key
+			}
+		}
 		k := testutil.NewKey(t)
 		s.keys[name], s.principals[name], auth[k] = k, p, p
 	}
-	cache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: s.gw, Logger: quiet, TTL: time.Minute})
+	zones, err := limits.NewZones(time.UTC)
 	if err != nil {
 		t.Fatal(err)
 	}
+	cache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: s.gw, Logger: quiet, TTL: time.Minute, Zones: zones})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.cache = cache
 	s.events, err = limits.NewEventWriter(limits.EventWriterOptions{DB: s.gw, Logger: quiet, Now: time.Now})
 	if err != nil {
 		t.Fatal(err)
@@ -296,7 +342,7 @@ func newQuotaStack(t *testing.T, d *dbtest.Database, tn tenant.ID, o stackOption
 	evDone := make(chan struct{})
 	go func() { s.events.Run(ctx); close(evDone) }()
 
-	lo := limitstest.Options{Cache: cache, Events: s.events, Zone: o.zone, OnUnknownPrice: o.unknownPrice}
+	lo := limitstest.Options{Cache: cache, Events: s.events, Zone: o.zone, OnUnknownPrice: o.unknownPrice, Start: o.start}
 	var rec gateway.Recorder
 	if o.ledger {
 		s.writer, err = ledger.New(ledger.Options{DB: s.gw, Logger: quiet, BufferSize: 4096, BatchSize: 64, FlushInterval: 10 * time.Millisecond})
@@ -339,6 +385,7 @@ func newQuotaStack(t *testing.T, d *dbtest.Database, tn tenant.ID, o stackOption
 			g.Catalogue = uuidCatalogue{g.Catalogue}
 		}
 	})
+	s.catalogueIDs(t)
 	t.Cleanup(func() {
 		cancel()
 		<-evDone
@@ -347,6 +394,37 @@ func newQuotaStack(t *testing.T, d *dbtest.Database, tn tenant.ID, o stackOption
 		s.events.Close(cctx)
 	})
 	return s
+}
+
+// catalogueID returns the IDs of a provider and a model of the catalogue; empty for what the
+// catalogue does not hold.
+func catalogueID(t testing.TB, d *dbtest.Database, provider, model string) (providerID, modelID string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	row := d.Super(t).QueryRow(ctx, `SELECT p.id::text, COALESCE((SELECT m.id::text FROM pandokos.model m WHERE m.provider_id = p.id AND m.name = $2), '')
+		FROM pandokos.provider p WHERE p.name = $1`, provider, model)
+	if err := row.Scan(&providerID, &modelID); err != nil {
+		return "", ""
+	}
+	return providerID, modelID
+}
+
+// catalogueIDs gives the targets of the harness the identifiers of the catalogue entries of the
+// test database that they name: rules are matched by identifier, and the gateway takes the
+// identifiers from the target as it does from the catalogue. A target the catalogue does not hold
+// keeps none.
+func (s *quotaStack) catalogueIDs(t testing.TB) {
+	t.Helper()
+	for key, tgt := range s.h.targets {
+		if pid, mid := catalogueID(t, s.d, tgt.Provider, tgt.Model); pid != "" {
+			tgt.ProviderID, tgt.ModelID = pid, mid
+			if mid == "" {
+				tgt.ModelID = "synthetic-model-" + tgt.Model
+			}
+			s.h.targets[key] = tgt
+		}
+	}
 }
 
 // uuidCredentials gives the credentials of the harness the UUID ID that the ledger can hold.
@@ -366,7 +444,9 @@ type uuidCatalogue struct{ gateway.Catalogue }
 func (u uuidCatalogue) Resolve(ctx context.Context, p authz.Principal, provider, model string) (gateway.Target, error) {
 	t, err := u.Catalogue.Resolve(ctx, p, provider, model)
 	if err == nil {
-		t.ModelID = "5a1c0000-0000-4000-8000-000000000002"
+		if !uuidShaped(t.ModelID) { // a test that gives the target a real catalogue ID keeps it
+			t.ModelID = "5a1c0000-0000-4000-8000-000000000002"
+		}
 		prices := append([]pricing.Version(nil), t.Prices...)
 		for i := range prices {
 			prices[i].ID = fmt.Sprintf("5a1c0000-0000-4000-8000-%012d", i+3)
@@ -375,6 +455,10 @@ func (u uuidCatalogue) Resolve(ctx context.Context, p authz.Principal, provider,
 	}
 	return t, err
 }
+
+var reUUID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+func uuidShaped(s string) bool { return reUUID.MatchString(s) }
 
 func (s *quotaStack) hdr(who string) http.Header {
 	return http.Header{"Authorization": {"Bearer " + s.keys[who]}, "Content-Type": {"application/json"}}
@@ -465,12 +549,18 @@ func (s *quotaStack) limitsFor(t *testing.T, who, provider, model string, at tim
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	set, err := limits.LoadRules(ctx, s.gw, s.tn)
+	zones, err := limits.NewZones(time.UTC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := limits.LoadRules(ctx, s.gw, s.tn, zones)
 	if err != nil {
 		t.Fatal(err)
 	}
 	p := s.principals[who]
-	return set.For(limits.Query{ServiceAccountID: p.ID, KeyID: p.KeyID, Provider: provider, Model: model, Start: at}, s.real.Calendar)
+	q := limits.Query{ServiceAccountID: p.ID, KeyID: p.KeyID, Provider: provider, Model: model, Start: at}
+	q.ProviderID, q.ModelID = catalogueID(t, s.d, provider, model)
+	return set.For(q)
 }
 
 func findLimit(ls []limits.Limit, m limits.Metric) (limits.Limit, bool) {
@@ -588,6 +678,8 @@ func TestMonthlyBudget(t *testing.T) {
 // TestRestartMatchesLedger is T-670: after a restart the counters hold what the ledger holds.
 func TestRestartMatchesLedger(t *testing.T) {
 	d := dbtest.NewMigrated(t)
+	d.SeedModel(t, "openai", "fake-basic") // a rule names its scope by foreign key
+	d.SeedModel(t, "openai", "fake-details")
 	const out = 100
 	body := chat("fake-basic", false)
 	est := estimateMicro(body, out)
@@ -600,7 +692,7 @@ func TestRestartMatchesLedger(t *testing.T) {
 		budget := 14*99 + est + est/2
 		d.SeedLimitRule(t, tn, "tenant", "", "cost_per_month", budget, dbtest.LimitOptions{Currency: "USD"})
 		d.SeedLimitRule(t, tn, "tenant", "", "requests_per_month", 1000)
-		d.SeedLimitRule(t, tn, "key", "tk-a", "tokens_per_month", 1_000_000)
+		d.SeedLimitRule(t, tn, "key", seedCallers(t, d, tn, "a", "b")["a"], "tokens_per_month", 1_000_000)
 		d.SeedLimitRule(t, tn, "tenant", "", "requests_per_day", 500, dbtest.LimitOptions{Provider: "openai", Model: "fake-details"})
 		s := newQuotaStack(t, d, tn, stackOptions{ledger: true, defaultOutput: out, dropEvery: dropEvery})
 		admitted, refused := 0, false
@@ -710,12 +802,17 @@ func TestRestartMatchesLedger(t *testing.T) {
 // TestScopedRules is T-672: rules with a scope, behind the gateway.
 func TestScopedRules(t *testing.T) {
 	d := dbtest.NewMigrated(t)
+	d.SeedModel(t, "openai", "fake-basic") // a rule names its scope by foreign key
+	d.SeedModel(t, "openai", "fake-details")
+	var keys map[string]string
 	envFor := func(t *testing.T, name string) *quotaStack {
 		tn := d.SeedTenant(t, "scoped-"+name)
+		keys = seedCallers(t, d, tn, "a", "b")
 		s := newQuotaStack(t, d, tn, stackOptions{newH: newFamilies})
 		for _, m := range []string{"fake-basic", "fake-details"} {
 			s.h.targets["compat/"+m] = testutil.TargetFor(s.h.up, "compat", m)
 		}
+		s.catalogueIDs(t)
 		return s
 	}
 	refused := func(t *testing.T, c captured, code family.ErrorCode, scope, metric string) {
@@ -763,7 +860,7 @@ func TestScopedRules(t *testing.T) {
 
 	t.Run("a key rule with a model scope", func(t *testing.T) {
 		s := envFor(t, "key")
-		d.SeedLimitRule(t, s.tn, "key", "tk-a", "requests_per_day", 1, dbtest.LimitOptions{Provider: "openai", Model: "fake-basic"})
+		d.SeedLimitRule(t, s.tn, "key", keys["a"], "requests_per_day", 1, dbtest.LimitOptions{Provider: "openai", Model: "fake-basic"})
 		s.ok(t, "a", "fake-basic")
 		c := s.call(t, "a", "openai", "fake-basic")
 		refused(t, c, family.CodeQuotaExceeded, "model", "requests_per_day")

@@ -1,6 +1,6 @@
 # 0046. Retrieval and caching of issuer keys
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-16
 
 Amends [ADR 0038](0038-egress-guard-upstream-tls-and-proxy.md) (rule 7). Refines
@@ -67,3 +67,4 @@ outbound path and a way to probe addresses with an answer.
 ## History
 
 Sprint 4.1.
+- 2026-11-18: accepted by the maintainer after review.

@@ -1,6 +1,6 @@
 # 0038. Egress guard, upstream TLS and proxy
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-14
 
 Refines [ADR 0009](0009-native-passthrough-by-api-family.md),
@@ -58,3 +58,4 @@ without a validated key); a per-endpoint CA (a schema change nobody asked for).
 ## History
 
 - 2026-11: sprint 4.1 amends rule 7: credential validation, the price download and the retrieval of the keys of trusted issuers use the same transports ([ADR 0046](0046-issuer-key-retrieval-and-caching.md)); the public transport is used unless the operator lists the host in `tokens.private_hosts`.
+- 2026-11-18: accepted by the maintainer after review.

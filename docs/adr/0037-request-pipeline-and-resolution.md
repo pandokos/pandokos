@@ -1,6 +1,6 @@
 # 0037. Request pipeline and resolution
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-14
 
 Refines [ADR 0009](0009-native-passthrough-by-api-family.md), [ADR 0020](0020-error-contract.md),
@@ -64,3 +64,4 @@ through; a pinned key limited to its credential's provider.
 - 2026-11: sprint 3.2 adds admission and attribution after authentication, and the usage record and spans at the end of every admitted request ([ADR 0039](0039-usage-record-admission-and-ledger-writer.md), [ADR 0040](0040-traces.md)).
 - 2026-11: sprint 3.3: the shape of an unrouted request comes from the family that recognizes it; the upstream request ID comes from the adapter ([ADR 0041](0041-anthropic-api-family.md)).
 - 2026-11: sprint 5.1 adds the reservation between the model check and the credential and the settlement in the handler's finish ([ADR 0048](0048-reserve-and-settle.md)).
+- 2026-11-18: accepted by the maintainer after review.

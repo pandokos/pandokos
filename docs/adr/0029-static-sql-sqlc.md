@@ -1,6 +1,6 @@
 # 0029. Static SQL: `sqlc`, text-mode rules, and a test against built SQL
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-12
 
 Refines [ADR 0004](0004-postgresql-and-rls.md) and [ADR 0027](0027-database-roles-and-session-context.md).
@@ -20,3 +20,7 @@ A parameter without a cast fails at run time, so every statement has a database 
 ## Alternatives considered
 
 Hand-written query functions; a query builder (it builds strings).
+
+## History
+
+- 2026-11-18: recorded as accepted by the maintainer.

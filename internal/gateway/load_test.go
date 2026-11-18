@@ -335,7 +335,7 @@ type trackedLimits struct {
 	shift func() time.Duration
 }
 
-func (l trackedLimits) Reserve(ctx context.Context, p authz.Principal, e gateway.LimitEstimate) (gateway.Reservation, *gateway.LimitRefusal, error) {
+func (l trackedLimits) Reserve(ctx context.Context, p authz.Principal, e gateway.LimitEstimate) (gateway.Reservation, *gateway.LimitRefusal, gateway.LimitState, error) {
 	l.t.mu.Lock()
 	l.t.start[e.RequestID] = e.Start.Add(l.shift()) // before the reserve: the cut cannot pass the request
 	l.t.mu.Unlock()

@@ -799,7 +799,7 @@ func TestReserveManyLimits(t *testing.T) {
 		for _, scope := range [][2]string{{"", ""}, {"openai", ""}, {"openai", "gpt-4"}} {
 			for _, m := range Metrics() {
 				l := lim(e.tn, k, id, m, 1_000_000)
-				l.Provider, l.Model = scope[0], scope[1]
+				l.ProviderID, l.ModelID = scope[0], scope[1]
 				if kind, ok := m.Period(); ok {
 					l.Period = utcCal.Of(kind, e.clk.now())
 				}
@@ -827,7 +827,7 @@ func TestReserveManyLimits(t *testing.T) {
 	for _, l := range ls {
 		if k, ok := l.Metric.Period(); ok && k == PerDay && l.Metric == RequestsPerDay {
 			if c := counted(t, e.m, l); c.N != 1 {
-				t.Errorf("%s %s/%s counts %d, want 1", l.Subject, l.Provider, l.Model, c.N)
+				t.Errorf("%s %s/%s counts %d, want 1", l.Subject, l.ProviderID, l.ModelID, c.N)
 			}
 		}
 	}

@@ -1,6 +1,6 @@
 # 0035. Catalogue and model access
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-14
 
 Refines [ADR 0009](0009-native-passthrough-by-api-family.md) and
@@ -51,3 +51,4 @@ second invalidation path).
 
 - 2026-11: sprint 3.3: providers gain stream_usage_option; the capability check reuses the access rule ([ADR 0042](0042-openai-compatible-providers-and-stream-usage-option.md), [ADR 0043](0043-tenant-capability-check-and-usage-list.md)).
 - 2026-11-18: sprint 5.2: models gain `default_output_tokens`, the output reserved for a request that sets no limit ([ADR 0050](0050-quotas-and-budgets-periods-attribution-currencies.md)).
+- 2026-11-18: recorded as accepted by the maintainer.

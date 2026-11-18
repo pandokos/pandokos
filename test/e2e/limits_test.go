@@ -468,10 +468,30 @@ func TestQuotaCanary(t *testing.T) {
 	assertAnthropicPandokosError(t, "the anthropic refusal", status, text, 429, "quota_exceeded", "rate_limit_error")
 	// An unpriced model under an enforced budget: no_price (a soft budget never refuses).
 	p.mustCLI(t, boot, "model", "create", "--availability", "all", "openai/fake-unpriced")
-	p.mustCLI(t, tn.admin, "limit", "create", "--tenant", tn.idStr, "--metric", "cost_per_month", "--amount", "100", "--currency", "USD", "--provider", "openai", "--model", "fake-unpriced")
+	// The budget is on the provider, whose other models have a price (a budget on a scope without any is refused).
+	p.mustCLI(t, tn.admin, "limit", "create", "--tenant", tn.idStr, "--metric", "cost_per_day", "--amount", "100", "--currency", "USD", "--provider", "openai")
 	status, text = p.chatCall(t, tn.key, "fake-unpriced", false)
 	record("no_price", status, text, 409)
 	assertPandokosError(t, "no_price", status, text, 409, "no_price")
+
+	// The rows of sprint 5.3: a rule deleted with its cause, a zone change, and (the tenant has rules,
+	// so the second tenant) one day of unlimited traffic; the dumps below hold them and no secret.
+	revoked, revokedKey := p.newInferenceKey(t, tn.admin, tn.idStr)
+	p.mustCLI(t, tn.admin, "limit", "create", "--tenant", tn.idStr, "--metric", "requests_per_day", "--limit", "9", "--subject", "key", "--key", revoked)
+	p.mustCLI(t, tn.admin, "key", "revoke", "--tenant", tn.idStr, "--reason", "leaked", revoked)
+	p.mustCLI(t, tn.admin, "limit", "time-zone", "set", "--tenant", tn.idStr, "Europe/Rome")
+	free := p.newLimitsTenant(t, boot, "quota-canary-free")
+	if status, text := p.openaiCall(t, free.key); status != 200 {
+		t.Fatalf("unlimited call: %d\n%s", status, text)
+	}
+	for _, c := range []struct{ what, tenant, action string }{
+		{"limit.delete", tn.idStr, "limit.delete"}, {"tenant.time_zone_update", tn.idStr, "tenant.time_zone_update"},
+		{"limit.unlimited_traffic", free.idStr, "limit.unlimited_traffic"},
+	} {
+		testutil.Eventually(t, 10*time.Second, "the audit row "+c.what, func() bool {
+			return len(auditActions(t, p.db, `SELECT action FROM pandokos.audit_event WHERE tenant_id = $1::uuid AND action = $2`, c.tenant, c.action)) > 0
+		})
+	}
 
 	waitRows(t, p.db, tn.idStr, 4)
 	testutil.Eventually(t, 5*time.Second, "an event row", func() bool {
@@ -482,6 +502,9 @@ func TestQuotaCanary(t *testing.T) {
 	if code := p.stop(t); code != 0 {
 		t.Fatalf("exit code %d", code)
 	}
+	if !strings.Contains(p.stdout.String()+p.stderr.String(), "limit_state") {
+		t.Error("the request log lines carry no limit_state")
+	}
 	outputs := []response{{"stdout", p.stdout.String()}, {"stderr", p.stderr.String()}}
 	for _, table := range []string{"usage_record", "audit_event", "platform_audit_event", "limit_rule", "platform_limit_rule", "limit_event"} {
 		var dump string
@@ -491,6 +514,8 @@ func TestQuotaCanary(t *testing.T) {
 		outputs = append(outputs, response{table, dump})
 	}
 	secrets := testutil.KeyForms(tn.key)
+	secrets = append(secrets, testutil.KeyForms(revokedKey)...)
+	secrets = append(secrets, testutil.KeyForms(free.key)...)
 	secrets = append(secrets, testutil.SecretForms(fixtures.CanaryCredential)...)
 	secrets = append(secrets, testutil.SecretForms(anthropicLimitsSecret)...)
 	secrets = append(secrets, testutil.SecretForms(fixtures.CanaryProviderKey)...)

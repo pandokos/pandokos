@@ -9,24 +9,27 @@ import (
 
 // Rule is one row of limit_rule or platform_limit_rule.
 type Rule struct {
-	ID              string
-	SubjectKind     SubjectKind
-	SubjectID       string
-	Provider, Model string // scope; "" means every
-	Metric          Metric
-	Value           int64 // requests or tokens; millionths of the currency for a cost metric
-	Currency        string
-	Enforce         bool
-	Thresholds      []int // percentages of Value
+	ID                  string
+	SubjectKind         SubjectKind
+	SubjectID           string
+	ProviderID, ModelID string // scope by identifier; "" means every
+	Provider, Model     string // names of the scope, for events, headers and logs only; they never decide
+	Metric              Metric
+	Value               int64 // requests or tokens; millionths of the currency for a cost metric
+	Currency            string
+	Enforce             bool
+	Thresholds          []int // percentages of Value
 }
 
 // Query is what a request is, for the resolution of its limits.
 type Query struct {
 	ServiceAccountID, KeyID string
-	Provider, Model         string    // names of the target
+	ProviderID, ModelID     string    // identifiers of the target: the only fields that decide
+	Provider, Model         string    // names of the target, for display; never decide
 	Start                   time.Time // start of the request
 }
 
+// scopeKey is a scope by identifier: the provider ID and the model ID ("" means every).
 type scopeKey struct{ provider, model string }
 
 type subjectRef struct {
@@ -42,7 +45,10 @@ type scopeLimits [metricCount][]Limit
 // RuleSet is the rules in force for one tenant, resolved into the limits of each subject and
 // scope, so that For does a fixed number of map lookups and never scans the rules.
 type RuleSet struct {
-	Tenant   tenant.ID
+	Tenant tenant.ID
+	// Calendar is the calendar of the tenant: the loader sets it; For takes the period of a limit
+	// from it. A zero calendar yields no period limit.
+	Calendar TenantCalendar
 	subjects map[subjectRef]map[scopeKey]*scopeLimits
 }
 
@@ -89,7 +95,7 @@ func knownSubject(k SubjectKind) bool {
 }
 
 // validRule reports whether a rule can be put to work: a known metric, a value of at least 1, a
-// currency for a cost metric, thresholds from 1 to 100, a provider for a model, and for the
+// currency for a cost metric, thresholds from 1 to 100, a provider ID for a model ID, and for the
 // metrics of 5.1 enforcement and no thresholds.
 func validRule(r Rule) bool {
 	if !knownMetric(r.Metric) || r.Value < 1 {
@@ -98,7 +104,7 @@ func validRule(r Rule) bool {
 	if r.Metric.Cost() && r.Currency == "" {
 		return false
 	}
-	if r.Model != "" && r.Provider == "" {
+	if r.ModelID != "" && r.ProviderID == "" {
 		return false
 	}
 	for _, p := range r.Thresholds {
@@ -173,7 +179,7 @@ func NewScopedRuleSet(t tenant.ID, platformDefault, platformTenant, rules []Rule
 			if !r.Metric.Cost() {
 				r.Currency = ""
 			}
-			slot(slotKey{platRef, scopeKey{r.Provider, r.Model}, metricIndex9(r.Metric)}).plat = &r
+			slot(slotKey{platRef, scopeKey{r.ProviderID, r.ModelID}, metricIndex9(r.Metric)}).plat = &r
 		}
 	}
 	for _, r := range rules {
@@ -190,7 +196,7 @@ func NewScopedRuleSet(t tenant.ID, platformDefault, platformTenant, rules []Rule
 			r.Currency = ""
 		}
 		ref := subjectRef{r.SubjectKind, r.SubjectID}
-		slot(slotKey{ref, scopeKey{r.Provider, r.Model}, metricIndex9(r.Metric)}).own = &r
+		slot(slotKey{ref, scopeKey{r.ProviderID, r.ModelID}, metricIndex9(r.Metric)}).own = &r
 	}
 	s := RuleSet{Tenant: t}
 	for k, sl := range slots {
@@ -249,7 +255,8 @@ func (s RuleSet) counters(sub subjectRef, sc scopeKey, m Metric, sl *ruleSlot) [
 // counter merges the rules of one counter: Max is the smallest enforced value (the platform's on
 // a tie), the marks are those of every rule.
 func (s RuleSet) counter(sub subjectRef, sc scopeKey, m Metric, currency string, rules []leveled) Limit {
-	l := Limit{Tenant: s.Tenant, Subject: sub.kind, ID: sub.id, Provider: sc.provider, Model: sc.model,
+	l := Limit{Tenant: s.Tenant, Subject: sub.kind, ID: sub.id, ProviderID: sc.provider, ModelID: sc.model,
+		Provider: rules[0].r.Provider, Model: rules[0].r.Model,
 		Metric: m, Currency: currency, Level: rules[0].level, RuleID: rules[0].r.ID}
 	_, periodic := m.Period()
 	for _, lr := range rules {
@@ -293,22 +300,24 @@ func cmpInt(a, b int64) int {
 // resolution: the subject (the tenant, then the service account, then the key), within a subject
 // the scope (all, then the provider, then the model), within a scope the metrics in the order of
 // Metrics. An empty ID yields no limit for that subject. A subject without a rule yields no limit.
-// Period limits are returned only with a calendar; their period is the one that contains q.Start.
-func (s RuleSet) For(q Query, cal *Calendar) []Limit {
+// Period limits are returned only when the set has a calendar; their period is the one of the calendar in
+// force at q.Start that contains it.
+func (s RuleSet) For(q Query) []Limit {
 	if len(s.subjects) == 0 {
 		return nil
 	}
 	var scopes [3]scopeKey
 	ns := 1
-	if q.Provider != "" {
-		scopes[ns] = scopeKey{provider: q.Provider}
+	if q.ProviderID != "" {
+		scopes[ns] = scopeKey{provider: q.ProviderID}
 		ns++
-		if q.Model != "" {
-			scopes[ns] = scopeKey{q.Provider, q.Model}
+		if q.ModelID != "" {
+			scopes[ns] = scopeKey{q.ProviderID, q.ModelID}
 			ns++
 		}
 	}
 	var out []Limit
+	cal := s.Calendar.At(q.Start)
 	var days, months Period
 	var haveDay, haveMonth bool
 	emit := func(ref subjectRef) {
