@@ -101,6 +101,25 @@ deleted; no statement can leave a rule whose subject or scope does not exist; ev
 says whether the request was limited, unlimited or unverified; a tenant's first unlimited request
 of a day writes exactly one audit row.
 
+### 5.4 Tenant price lists
+
+Added after the review of ADR 0050 by the maintainer (2026-11-18); the need and the proposal are in
+issue #48.
+
+- Price versions held by a tenant for the models it can see, in any currency, with the rules of the
+  catalogue prices (ADR 0036): immutable, never backdated, exact decimals, tiers and fallbacks.
+- For that tenant they take precedence over the catalogue price; the usage record states the price
+  version and its source (`catalogue` or `tenant`).
+- Tenant-scoped storage under row-level security with isolation tests; administration API and CLI
+  with permissions of their own, separate from catalogue permissions; audit records.
+- The budget write check of 5.3, the reservation and the capability check use tenant prices.
+- A new requirement for tenant price lists (proposed CAT-11).
+
+Requirements: CAT-08, CAT-09, LIM-03, new CAT-11.
+
+Exit: a tenant with a EUR price list and a EUR budget is refused once its reservations reach the
+budget, while another tenant on the same models keeps the catalogue USD price and its USD budget.
+
 ## Risks
 
 - Estimating output tokens when the caller sets no limit forces a conservative default that may
