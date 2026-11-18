@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"strconv"
 	"testing"
 )
@@ -33,14 +34,14 @@ func TestParseIntWidth(t *testing.T) {
 		}
 		n, err := parseInt(beyondInt32)
 		if strconv.IntSize == 32 {
-			if err != errNotInteger {
+			if !errors.Is(err, errNotInteger) {
 				t.Errorf("%s on a 32-bit int: %d %v, want errNotInteger", beyondInt32, n, err)
 			}
 		} else if err != nil || int64(n) != 3000000000 {
 			t.Errorf("%s on a 64-bit int: %d %v", beyondInt32, n, err)
 		}
 		for _, bad := range []string{"", "x", "1.5", "99999999999999999999"} {
-			if _, err := parseInt(bad); err != errNotInteger {
+			if _, err := parseInt(bad); !errors.Is(err, errNotInteger) {
 				t.Errorf("%q: %v, want errNotInteger", bad, err)
 			}
 		}
@@ -58,7 +59,7 @@ func TestParseIntWidth(t *testing.T) {
 			}
 		}
 		for _, bad := range []string{"", "x", "1.5", "9223372036854775808"} {
-			if _, err := parseInt64(bad); err != errNotInteger {
+			if _, err := parseInt64(bad); !errors.Is(err, errNotInteger) {
 				t.Errorf("%q: %v, want errNotInteger", bad, err)
 			}
 		}
@@ -76,7 +77,7 @@ func TestParseIntWidth(t *testing.T) {
 				t.Errorf("%s: 12345: %v", name, err)
 			}
 			_, err := setKey(t, name, beyondInt32)
-			if strconv.IntSize == 32 && err != errNotInteger {
+			if strconv.IntSize == 32 && !errors.Is(err, errNotInteger) {
 				t.Errorf("%s: %s on a 32-bit int: %v, want errNotInteger", name, beyondInt32, err)
 			}
 			if strconv.IntSize == 64 && err != nil {
