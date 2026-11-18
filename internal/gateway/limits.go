@@ -3,6 +3,7 @@ package gateway
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/pandokos/pandokos/internal/family"
@@ -32,24 +33,56 @@ func (h *Handler) reserve(st *reqState, bound family.OutputBound) bool {
 		return false
 	case ref != nil:
 		st.refusal = ref
-		hd := st.sw.Header()
-		hd.Set("Retry-After", strconv.FormatInt(seconds(ref.RetryAfter), 10))
-		hd.Set(family.HeaderLimitSubject, ref.Subject)
-		hd.Set(family.HeaderLimitMetric, ref.Metric)
-		hd.Set(family.HeaderLimit, strconv.FormatInt(ref.Limit, 10))
-		hd.Set(family.HeaderLimitRemaining, strconv.FormatInt(ref.Remaining, 10))
-		if s := seconds(ref.Reset); s > 0 {
-			hd.Set(family.HeaderLimitReset, strconv.FormatInt(s, 10))
+		code := family.ErrorCode(ref.Code)
+		if code == "" {
+			code = family.CodeRateLimited
 		}
-		h.fail(st, family.CodeRateLimited)
+		if code != family.CodeNoPrice {
+			hd := st.sw.Header()
+			hd.Set("Retry-After", strconv.FormatInt(seconds(ref.RetryAfter), 10))
+			hd.Set(family.HeaderLimitSubject, ref.Subject)
+			hd.Set(family.HeaderLimitMetric, ref.Metric)
+			if ref.Currency != "" {
+				hd.Set(family.HeaderLimit, millionths(ref.Limit))
+				hd.Set(family.HeaderLimitRemaining, millionths(ref.Remaining))
+				hd.Set(family.HeaderLimitCurrency, ref.Currency)
+			} else {
+				hd.Set(family.HeaderLimit, strconv.FormatInt(ref.Limit, 10))
+				hd.Set(family.HeaderLimitRemaining, strconv.FormatInt(ref.Remaining, 10))
+			}
+			if ref.Scope != "" {
+				hd.Set(family.HeaderLimitScope, ref.Scope)
+			}
+			if s := seconds(ref.Reset); s > 0 {
+				hd.Set(family.HeaderLimitReset, strconv.FormatInt(s, 10))
+			}
+		}
+		h.fail(st, code)
 		return false
 	}
 	st.reservation, st.reservedTokens = res, e.InputTokens+e.OutputTokens
 	return true
 }
 
+// millionths formats an amount of millionths of a currency as a decimal with at most six fraction
+// digits and no trailing zeros: 250500000 is "250.5", 0 is "0".
+func millionths(v int64) string {
+	neg := v < 0
+	if neg {
+		v = -v
+	}
+	s := strconv.FormatInt(v/1_000_000, 10)
+	if f := v % 1_000_000; f != 0 {
+		s += "." + strings.TrimRight(fmt.Sprintf("%06d", f), "0")
+	}
+	if neg {
+		s = "-" + s
+	}
+	return s
+}
+
 // settleLimit ends the reservation, if one is held: settle with the figures of the usage record
-// when the request was forwarded, release otherwise. It never panics.
+// when the request counts (its credential was opened), release otherwise. It never panics.
 func (h *Handler) settleLimit(st *reqState) {
 	if st.reservation == nil {
 		return
@@ -60,7 +93,7 @@ func (h *Handler) settleLimit(st *reqState) {
 			h.logger.Error("limit settle failed", "request_id", st.id, "panic_type", fmt.Sprintf("%T", v))
 		}
 	}()
-	if !st.forwarded {
+	if !st.counted {
 		res.Release()
 		return
 	}
@@ -80,9 +113,25 @@ func (st *reqState) limitAttrs() []any {
 	if st.reservation != nil || st.reservedTokens > 0 {
 		attrs = append(attrs, "reserved_tokens", st.reservedTokens)
 	}
+	if m, ok := st.reservation.(interface{ Unpriced() bool }); ok && m.Unpriced() {
+		attrs = append(attrs, "budget_unpriced", true)
+	}
+	if m, ok := st.reservation.(interface{ Unverified() bool }); ok && m.Unverified() {
+		attrs = append(attrs, "limits_unverified", true)
+	}
 	if r := st.refusal; r != nil {
+		var limit any = r.Limit
+		if r.Currency != "" {
+			limit = millionths(r.Limit)
+		}
 		attrs = append(attrs, "limit_subject", r.Subject, "limit_metric", r.Metric, "limit_level", r.Level,
-			"limit", r.Limit, "retry_after_s", seconds(r.RetryAfter))
+			"limit", limit, "retry_after_s", seconds(r.RetryAfter))
+		if r.Scope != "" {
+			attrs = append(attrs, "limit_scope", r.Scope)
+		}
+		if r.Currency != "" {
+			attrs = append(attrs, "limit_currency", r.Currency)
+		}
 		if r.OverLimit {
 			attrs = append(attrs, "estimate_over_limit", true)
 		}

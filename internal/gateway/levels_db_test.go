@@ -333,6 +333,11 @@ func newQuotaStack(t *testing.T, d *dbtest.Database, tn tenant.ID, o stackOption
 		if o.defaultOutput > 0 {
 			g.DefaultOutputTokens = o.defaultOutput
 		}
+		if o.ledger {
+			// The ledger's credential_id is a UUID: the credentials of the stack have one.
+			g.Credentials = uuidCredentials{g.Credentials}
+			g.Catalogue = uuidCatalogue{g.Catalogue}
+		}
 	})
 	t.Cleanup(func() {
 		cancel()
@@ -342,6 +347,33 @@ func newQuotaStack(t *testing.T, d *dbtest.Database, tn tenant.ID, o stackOption
 		s.events.Close(cctx)
 	})
 	return s
+}
+
+// uuidCredentials gives the credentials of the harness the UUID ID that the ledger can hold.
+type uuidCredentials struct{ gateway.Credentials }
+
+func (u uuidCredentials) Open(ctx context.Context, p authz.Principal, requestID, provider string) (gateway.Credential, error) {
+	c, err := u.Credentials.Open(ctx, p, requestID, provider)
+	if err == nil {
+		c.ID = "5a1c0000-0000-4000-8000-000000000001"
+	}
+	return c, err
+}
+
+// uuidCatalogue gives the targets of the harness the UUID model and price version IDs that the ledger can hold.
+type uuidCatalogue struct{ gateway.Catalogue }
+
+func (u uuidCatalogue) Resolve(ctx context.Context, p authz.Principal, provider, model string) (gateway.Target, error) {
+	t, err := u.Catalogue.Resolve(ctx, p, provider, model)
+	if err == nil {
+		t.ModelID = "5a1c0000-0000-4000-8000-000000000002"
+		prices := append([]pricing.Version(nil), t.Prices...)
+		for i := range prices {
+			prices[i].ID = fmt.Sprintf("5a1c0000-0000-4000-8000-%012d", i+3)
+		}
+		t.Prices = prices
+	}
+	return t, err
 }
 
 func (s *quotaStack) hdr(who string) http.Header {

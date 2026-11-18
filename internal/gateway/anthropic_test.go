@@ -113,6 +113,7 @@ func anthropicErrorBody(code family.ErrorCode) string {
 		family.CodeEndpointNotSupported: "not_found_error",
 		family.CodeRequestTimeout:       "timeout_error", family.CodeUpstreamTimeout: "timeout_error",
 		family.CodeRequestTooLarge: "request_too_large", family.CodeRateLimited: "rate_limit_error",
+		family.CodeQuotaExceeded: "rate_limit_error", family.CodeNoPrice: "invalid_request_error",
 		family.CodeInternal: "api_error", family.CodeUpstreamUnreachable: "api_error", family.CodeUnavailable: "api_error",
 	}[code]
 	msg := strings.ReplaceAll(code.Message(), `"`, `\"`)
