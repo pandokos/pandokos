@@ -96,32 +96,49 @@ func TestRecordPriceSource(t *testing.T) {
 	})
 
 	t.Run("a version that starts while a request runs does not change that request", func(t *testing.T) {
-		h := newHarness(t, nil)
-		tgt := h.targets["openai/"+fakeprovider.ModelGatedStream]
-		start := time.Now()
-		tgt.Currency = eur
-		tgt.TenantPrices = []pricing.Version{
-			listVersion(t, "tenant-old", "EUR", pricing.SourceTenant, hourAgo, "1", "2"),
-			listVersion(t, "tenant-new", "EUR", pricing.SourceTenant, start.Add(400*time.Millisecond), "100", "200"),
-		}
-		h.targets["openai/"+fakeprovider.ModelGatedStream] = tgt
-		resp, err := h.request(ctx5(t), t, http.MethodPost, route, chat(fakeprovider.ModelGatedStream, true), authed())
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer resp.Body.Close()
-		br := bufio.NewReader(resp.Body)
-		if _, err := testutil.ReadEvent(br); err != nil {
-			t.Fatal(err)
-		}
-		time.Sleep(time.Until(start.Add(600 * time.Millisecond))) // the new version has started when the request ends
-		h.up.Release()
-		if _, err := io.ReadAll(br); err != nil {
-			t.Fatal(err)
-		}
-		r := h.oneRecord(t)
-		if r.Cost.VersionID != "tenant-old" || r.Cost.Source != pricing.SourceTenant || r.Cost.Currency != "EUR" {
-			t.Errorf("the record is priced with %+v: the version in force at the start of the request is the one that prices it", r.Cost)
+		// The new version starts margin after the request was sent. Under load the request can be slow to
+		// reach the handler: when the version had started before the first event arrived, the situation
+		// the test is about did not occur and it is tried again with a larger margin, never asserted on.
+		for margin := 400 * time.Millisecond; ; margin *= 2 {
+			if margin > 10*time.Second {
+				t.Fatal("the machine is too slow: the request never began before the new version started")
+			}
+			h := newHarness(t, nil)
+			tgt := h.targets["openai/"+fakeprovider.ModelGatedStream]
+			newStart := time.Now().Add(margin)
+			tgt.Currency = eur
+			tgt.TenantPrices = []pricing.Version{
+				listVersion(t, "tenant-old", "EUR", pricing.SourceTenant, hourAgo, "1", "2"),
+				listVersion(t, "tenant-new", "EUR", pricing.SourceTenant, newStart, "100", "200"),
+			}
+			h.targets["openai/"+fakeprovider.ModelGatedStream] = tgt
+			resp, err := h.request(ctx5(t), t, http.MethodPost, route, chat(fakeprovider.ModelGatedStream, true), authed())
+			if err != nil {
+				t.Fatal(err)
+			}
+			br := bufio.NewReader(resp.Body)
+			if _, err := testutil.ReadEvent(br); err != nil {
+				t.Fatal(err)
+			}
+			if !time.Now().Before(newStart) {
+				// The request was already running (it answered its first event), but the version has started
+				// before we could be sure it began first: the start of the request is not known to precede it.
+				h.up.Release()
+				_, _ = io.ReadAll(br)
+				_ = resp.Body.Close()
+				continue
+			}
+			time.Sleep(time.Until(newStart.Add(100 * time.Millisecond))) // the new version has started when the request ends
+			h.up.Release()
+			if _, err := io.ReadAll(br); err != nil {
+				t.Fatal(err)
+			}
+			_ = resp.Body.Close()
+			r := h.oneRecord(t)
+			if r.Cost.VersionID != "tenant-old" || r.Cost.Source != pricing.SourceTenant || r.Cost.Currency != "EUR" {
+				t.Errorf("the record is priced with %+v: the version in force at the start of the request is the one that prices it", r.Cost)
+			}
+			return
 		}
 	})
 }

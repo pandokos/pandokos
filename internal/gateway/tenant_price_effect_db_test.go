@@ -1,6 +1,7 @@
 package gateway_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -65,36 +66,51 @@ func TestTenantPriceTakesEffect(t *testing.T) {
 		s.becomes(t, 2*time.Second, "the end to give the catalogue's price back", "catalogue", "USD")
 	})
 
-	t.Run("a scheduled version applies from its instant with no notification", func(t *testing.T) {
-		tn := d.SeedTenant(t, "effect-scheduled")
-		d.SeedTenantPrice(t, tn, "USD", "openai", "fake-basic", time.Now().Add(1200*time.Millisecond))
-		s := w.stack(t, tn, priceOptions{}) // no listener: nothing is notified of anything
-		if src, cur := s.lastSource(t); src != "catalogue" || cur != "USD" {
-			t.Fatalf("before its instant: %s %s", src, cur)
+	// scheduled sets a tenant up with an instant ahead of the real clock, builds a stack with no
+	// notification and asks once: the answer is the one before the instant. When the machine is so busy
+	// that the instant came before that answer, the situation did not occur: it is tried again with a
+	// tenant and an instant further ahead, never asserted on.
+	scheduled := func(t *testing.T, name string, setup func(tn tenant.ID, at time.Time), wantSource, wantCurrency string) *priceStack {
+		t.Helper()
+		for margin, i := 1500*time.Millisecond, 0; margin <= 30*time.Second; margin, i = margin*2, i+1 {
+			tn := d.SeedTenant(t, fmt.Sprintf("%s-%d", name, i))
+			at := time.Now().Add(margin)
+			setup(tn, at)
+			s := w.stack(t, tn, priceOptions{}) // no listener: nothing is notified of anything
+			src, cur := s.lastSource(t)
+			if !time.Now().Before(at) {
+				continue
+			}
+			if src != wantSource || cur != wantCurrency {
+				t.Fatalf("before its instant: %s %s, want %s %s", src, cur, wantSource, wantCurrency)
+			}
+			return s
 		}
-		s.becomes(t, 4*time.Second, "the scheduled version to apply", "tenant", "USD")
+		t.Fatal("the machine is too slow: no request was answered before the instant")
+		return nil
+	}
+
+	t.Run("a scheduled version applies from its instant with no notification", func(t *testing.T) {
+		s := scheduled(t, "effect-scheduled", func(tn tenant.ID, at time.Time) {
+			d.SeedTenantPrice(t, tn, "USD", "openai", "fake-basic", at)
+		}, "catalogue", "USD")
+		s.becomes(t, 60*time.Second, "the scheduled version to apply", "tenant", "USD")
 	})
 
 	t.Run("a scheduled end applies from its instant with no notification", func(t *testing.T) {
-		tn := d.SeedTenant(t, "effect-scheduled-end")
-		d.SeedTenantPrice(t, tn, "USD", "openai", "fake-basic", time.Time{})
-		d.SeedTenantPriceEnd(t, tn, "USD", "openai", "fake-basic", time.Now().Add(1200*time.Millisecond))
-		s := w.stack(t, tn, priceOptions{})
-		if src, cur := s.lastSource(t); src != "tenant" || cur != "USD" {
-			t.Fatalf("before the end: %s %s", src, cur)
-		}
-		s.becomes(t, 4*time.Second, "the end to apply", "catalogue", "USD")
+		s := scheduled(t, "effect-scheduled-end", func(tn tenant.ID, at time.Time) {
+			d.SeedTenantPrice(t, tn, "USD", "openai", "fake-basic", time.Time{})
+			d.SeedTenantPriceEnd(t, tn, "USD", "openai", "fake-basic", at)
+		}, "tenant", "USD")
+		s.becomes(t, 60*time.Second, "the end to apply", "catalogue", "USD")
 	})
 
 	t.Run("a pending currency applies from its instant with no notification", func(t *testing.T) {
-		tn := d.SeedTenant(t, "effect-pending")
-		d.SeedTenantPrice(t, tn, "EUR", "openai", "fake-basic", time.Time{})
-		d.SetTenantCurrency(t, tn, "EUR", "USD", time.Now().Add(1200*time.Millisecond))
-		s := w.stack(t, tn, priceOptions{})
-		if src, cur := s.lastSource(t); src != "catalogue" || cur != "USD" {
-			t.Fatalf("before the instant: %s %s", src, cur)
-		}
-		s.becomes(t, 4*time.Second, "the new currency to apply", "tenant", "EUR")
+		s := scheduled(t, "effect-pending", func(tn tenant.ID, at time.Time) {
+			d.SeedTenantPrice(t, tn, "EUR", "openai", "fake-basic", time.Time{})
+			d.SetTenantCurrency(t, tn, "EUR", "USD", at)
+		}, "catalogue", "USD")
+		s.becomes(t, 60*time.Second, "the new currency to apply", "tenant", "EUR")
 	})
 
 	t.Run("with the notifications cut a change reaches the gateway within the cache lifetimes", func(t *testing.T) {
