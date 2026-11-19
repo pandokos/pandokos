@@ -1,6 +1,7 @@
 # Epic 5 — Limits and budgets: record
 
-Completed 2026-11-18. Epic file as closed: [epic.md](epic.md).
+Completed 2026-11-18 after sprint 5.2, reopened for sprints 5.3 and 5.4 and completed again
+2026-11-19. Epic file as closed: [epic.md](epic.md).
 
 ## Outcome
 
@@ -23,12 +24,31 @@ audit actions, and the capability check's `budget` field now reads `available`, 
 `unpriced`. Counters are per gateway instance; the bound on the overshoot is documented in the
 [limits guide](../../operations/limits.md).
 
+Sprint 5.3 made the rules sound. A rule's subject and scope are typed columns with foreign keys, so
+a rule can no longer point at something that does not exist; rules are deleted, with an audit
+record and a cause, when their subject is deleted or a key is revoked, and the deletion of a
+provider or model that a rule references is refused. Each tenant has its own time zone for its
+periods, effective from the next period. A budget is refused on write when no price of its scope is
+in its currency. Traffic that no rule limits is marked in the usage record and traced once a day per
+tenant in the audit log.
+
+Sprint 5.4 gave each tenant price lists of its own, one per currency, and an active currency
+(default `pricing.default_currency`, changed only by the tenant, from the start of the next month of
+its zone). Every cost of the tenant is computed in the active currency, with the tenant's list or
+else the catalogue price when that is in the currency, and nothing is converted or added across
+currencies; only budgets and ceilings in the active currency apply. The usage record names the
+price source (`catalogue` or `tenant`). Usage records, limit events and price lists are the
+tenant's: through the product the platform reads none of them, and the request log and the traces
+carry no cost, currency or token count unless `telemetry.tenant_usage_details` is on.
+
 ## Sprints
 
 | Sprint | Design and plan | Delivered | Review |
 |---|---|---|---|
 | 5.1 Reserve and settle | [sprint](5.1-reserve-and-settle/sprint.md), [plan](5.1-reserve-and-settle/plan.md) | [#39](https://github.com/pandokos/pandokos/pull/39), merged as f680d9d | 3 rounds (8 minor findings, then 1 minor, then none) and one CI fix (the container test expected schema version 9) |
 | 5.2 Quotas and budgets | [sprint](5.2-quotas-and-budgets/sprint.md), [plan](5.2-quotas-and-budgets/plan.md) | [#40](https://github.com/pandokos/pandokos/pull/40) | 3 rounds (1 major, the period counters of a tenant's first load near a period boundary were not loaded from the ledger, and 5 minor; then 1 minor, a race in the pruning of the reconciler's lock; then none) |
+| 5.3 Integrity of limit rules | [sprint](5.3-integrity-of-limit-rules/sprint.md), [plan](5.3-integrity-of-limit-rules/plan.md) | [#49](https://github.com/pandokos/pandokos/pull/49), merged as d1642a0 | 2 rounds: round 1, 1 major (an existence oracle on non-granted models through the order of the currency check) and 3 minor (a fold missing the usage of a counter created during it; the issuer deletion locking every tenant; the revoked-key guard not race-free without the advisory lock); round 2, none |
+| 5.4 Tenant price lists | [sprint](5.4-tenant-price-lists/sprint.md), [plan](5.4-tenant-price-lists/plan.md) | #TBD | 2 rounds: round 1, 2 major (the scheduled-price test could pass via a cache reload, now on an injected clock; tenant usage in the ledger-writer and limit-event log lines with the key off) and 7 minor; round 2, none. The maintainer revised the scope during design |
 
 Each sprint followed the cycle of the earlier epics: a frozen design, tests committed failing before
 the implementation, a review against the design repeated until it reported no findings, a pull
@@ -38,7 +58,10 @@ and under "Amendments" in section 12.
 
 ## Decisions recorded
 
-ADR 0048–0049 (sprint 5.1: reserve and settle, the estimate, counters, guarantees and the 429
+ADR 0053 (tenant price lists and the active currency) and 0054 (usage data is the tenant's), both
+proposed for the maintainer's review; amendments of ADR 0049, 0050 and 0052 (sprints 5.3 and 5.4)
+and history lines on ADR 0013, 0026, 0027, 0032, 0036, 0039, 0043, 0045 and 0051, among others.
+Earlier: ADR 0048–0049 (sprint 5.1: reserve and settle, the estimate, counters, guarantees and the 429
 contract; limit rules, levels, subjects and resolution), ADR 0050–0052 (sprint 5.2: periods,
 attribution, currencies and unknown prices; period counters and the ledger; administration of
 limits), with history lines on ADR 0012, 0014, 0020, 0032, 0035, 0037, 0039 and 0043. See the
@@ -77,8 +100,24 @@ limits), with history lines on ADR 0012, 0014, 0020, 0032, 0035, 0037, 0039 and 
   role is a candidate.
 - Release R4 (unified endpoint): the estimate and the scopes of rules name the resolved provider and
   model; the output bound is per family.
-- Not scheduled: allowance headers on admitted responses (5.1 O-7); a time zone per tenant (5.2 O-2);
-  several budgets per scope in other currencies (5.2 O-5); a raise of the bound of six fraction
+- From sprints 5.3 and 5.4 (section 11 of each design):
+  - Sprint 6.2: reports, rollups and usage export are the tenant's; they use the tenant's day and
+    month (`limits.TenantCalendar`) and show costs in the tenant's currency with the price source,
+    never converted or added; there are no platform aggregates per tenant and no platform usage
+    viewer. The rollup keeps `model_id`, currency and `price_source`.
+  - Sprint 6.1: no tenant label on cost and token metrics; cost metrics carry a currency dimension;
+    requests by `limit_state`, unlimited-traffic rows written, skipped and failed.
+  - Sprint 6.3: tenant deletion in the order the foreign keys impose, with the guards on started
+    price versions solved by one mechanism for all append-only tables; the deletion job removes a
+    tenant's usage without the platform reading it; the tenant data export includes price lists.
+  - CAT-10 (export and apply of rules and price lists, 6.2): a tenant's export holds its lists and
+    its active currency; `apply` adds versions, never rewrites history.
+  - Sprint 6.4: a change of active currency as an event; `limit.unlimited_traffic` as an event.
+  - Epic 8: `pricing.default_currency` and `limits.time_zone` equal on every instance; sprint 8.2
+    (split roles): the worker-role ledger reader.
+  - After 1.0: issue #31, #32 (credential scope with pins), #36 and #33 (confidentiality against
+    the operator of the database).
+- Not scheduled: allowance headers on admitted responses (5.1 O-7); several budgets per scope in other currencies (5.2 O-5); a raise of the bound of six fraction
   digits and 10⁹ units of a budget amount (5.2 O-11) when someone needs it.
 
 ## Maintainer actions
@@ -99,3 +138,13 @@ limits), with history lines on ADR 0012, 0014, 0020, 0032, 0035, 0037, 0039 and 
   to `allow`.
 - Run more than one instance only knowing that each counts alone until epic 8.
 - The container and compose tests run only in CI, not in the sandbox of the implementation.
+- Sprints 5.3 and 5.4: migration `0011` (5.3) is applied with the instances stopped: stop, run
+  `pandokos migrate`, start the new binary. Migration `0012` (5.4, price lists, the active currency
+  and four trigger functions) is applied by `pandokos migrate` before the new binary starts.
+- New configuration keys, optional: `pricing.default_currency` (`USD`, the active currency of a
+  tenant that has not chosen one, equal on every instance) and `telemetry.tenant_usage_details`
+  (off). See the [configuration reference](../../operations/configuration.md).
+- Behaviour changes at upgrade: cost budgets and ceilings apply only in the tenant's active
+  currency; logs and spans lose cost, currency and tokens unless `telemetry.tenant_usage_details`
+  is on; records lost at shutdown cannot be rebuilt from the log with the key off.
+- Review ADR 0053 and 0054, proposed.
