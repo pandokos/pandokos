@@ -545,7 +545,11 @@ func (w *Writer) withRow(attrs []any, r *usage.Record, omit ...string) []any {
 // rowJSON is the record as the insert statement reads it, with the metadata values removed and
 // the columns named in omit left out.
 func rowJSON(r *usage.Record, omit ...string) string {
-	rw := rowOf(r)
+	// The caller's metadata comes from request headers: the row is built from a copy that never
+	// holds it, so no value of it can reach a log line.
+	c := *r
+	c.Metadata = nil
+	rw := rowOf(&c)
 	rw.Metadata = map[string]string{}
 	b, err := json.Marshal(rw)
 	if err != nil || len(omit) == 0 {
