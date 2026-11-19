@@ -20,6 +20,7 @@ Commands:
   model list|create|get|update|delete|grants|grant|revoke-grant
   price list|override|delete|clear-override
   price-import list|get|run
+  price-list lists|list|get|set|delete|currency get|currency set
   tenant-model list
   model-restriction get|set|clear
   capability check --provider P --model M

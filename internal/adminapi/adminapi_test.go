@@ -280,9 +280,9 @@ func (f *fake) DeleteLimit(_ context.Context, in adminapi.DeleteLimitInput) (*ad
 	f.rec("deleteLimit", in)
 	return &adminapi.LimitRule{}, nil
 }
-func (f *fake) ListTenantPlatformLimits(_ context.Context, in adminapi.ListTenantPlatformLimitsInput) (*adminapi.PlatformLimitRuleList, error) {
+func (f *fake) ListTenantPlatformLimits(_ context.Context, in adminapi.ListTenantPlatformLimitsInput) (*adminapi.TenantPlatformLimitRuleList, error) {
 	f.rec("listTenantPlatformLimits", in)
-	return &adminapi.PlatformLimitRuleList{}, nil
+	return &adminapi.TenantPlatformLimitRuleList{}, nil
 }
 func (f *fake) ListLimitEvents(_ context.Context, in adminapi.ListLimitEventsInput) (*adminapi.LimitEventList, error) {
 	f.rec("listLimitEvents", in)
@@ -295,6 +295,34 @@ func (f *fake) GetTenantTimeZone(_ context.Context, in adminapi.GetTenantTimeZon
 func (f *fake) SetTenantTimeZone(_ context.Context, in adminapi.SetTenantTimeZoneInput) (*adminapi.TenantTimeZone, error) {
 	f.rec("setTenantTimeZone", in)
 	return &adminapi.TenantTimeZone{}, nil
+}
+func (f *fake) GetActiveCurrency(_ context.Context, in adminapi.GetActiveCurrencyInput) (*adminapi.ActiveCurrency, error) {
+	f.rec("getActiveCurrency", in)
+	return &adminapi.ActiveCurrency{}, nil
+}
+func (f *fake) SetActiveCurrency(_ context.Context, in adminapi.SetActiveCurrencyInput) (*adminapi.ActiveCurrency, error) {
+	f.rec("setActiveCurrency", in)
+	return &adminapi.ActiveCurrency{}, nil
+}
+func (f *fake) ListPriceLists(_ context.Context, in adminapi.ListPriceListsInput) (*adminapi.TenantPriceListList, error) {
+	f.rec("listPriceLists", in)
+	return &adminapi.TenantPriceListList{}, nil
+}
+func (f *fake) ListPriceListVersions(_ context.Context, in adminapi.ListPriceListVersionsInput) (*adminapi.TenantPriceVersionList, error) {
+	f.rec("listPriceListVersions", in)
+	return &adminapi.TenantPriceVersionList{}, nil
+}
+func (f *fake) CreatePriceListVersion(_ context.Context, in adminapi.CreatePriceListVersionInput) (*adminapi.TenantPriceVersion, error) {
+	f.rec("createPriceListVersion", in)
+	return &adminapi.TenantPriceVersion{}, nil
+}
+func (f *fake) GetPriceListVersion(_ context.Context, in adminapi.GetPriceListVersionInput) (*adminapi.TenantPriceVersion, error) {
+	f.rec("getPriceListVersion", in)
+	return &adminapi.TenantPriceVersion{}, nil
+}
+func (f *fake) DeletePriceListVersion(_ context.Context, in adminapi.DeletePriceListVersionInput) (*adminapi.TenantPriceVersion, error) {
+	f.rec("deletePriceListVersion", in)
+	return &adminapi.TenantPriceVersion{}, nil
 }
 func (f *fake) ListPlatformLimits(_ context.Context, in adminapi.ListPlatformLimitsInput) (*adminapi.PlatformLimitRuleList, error) {
 	f.rec("listPlatformLimits", in)
@@ -927,8 +955,37 @@ func TestRouterAndClient(t *testing.T) {
 			in := adminapi.SetTenantTimeZoneInput{Tenant: tid, Body: adminapi.TenantTimeZoneSet{TimeZone: "Europe/Rome"}}
 			add("setTenantTimeZone", in, func() error { _, err := c.SetTenantTimeZone(ctx, in); return err })
 		}
-		if len(adminapi.Operations) != 98 {
-			t.Fatalf("%d operations, want 98 (the 35 of epic 1 and sprint 2.1, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1, the 12 of sprint 5.2 and the 2 of sprint 5.3)", len(adminapi.Operations))
+		{
+			in := adminapi.GetActiveCurrencyInput{Tenant: tid}
+			add("getActiveCurrency", in, func() error { _, err := c.GetActiveCurrency(ctx, in); return err })
+		}
+		{
+			in := adminapi.SetActiveCurrencyInput{Tenant: tid, Body: adminapi.ActiveCurrencySet{Currency: "EUR"}}
+			add("setActiveCurrency", in, func() error { _, err := c.SetActiveCurrency(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListPriceListsInput{Tenant: tid}
+			add("listPriceLists", in, func() error { _, err := c.ListPriceLists(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListPriceListVersionsInput{Tenant: tid, Limit: 2, Cursor: "abc", Currency: "EUR", Provider: "openai", Model: "gpt-4o", At: "2026-11-14T12:00:00Z"}
+			add("listPriceListVersions", in, func() error { _, err := c.ListPriceListVersions(ctx, in); return err })
+		}
+		{
+			in := adminapi.CreatePriceListVersionInput{Tenant: tid, Body: adminapi.TenantPriceCreate{Provider: "openai", Model: "gpt-4o", Currency: "EUR",
+				Rates: []adminapi.PriceRate{{Category: "input", Rate: "1"}}}}
+			add("createPriceListVersion", in, func() error { _, err := c.CreatePriceListVersion(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetPriceListVersionInput{Tenant: tid, Price: cid}
+			add("getPriceListVersion", in, func() error { _, err := c.GetPriceListVersion(ctx, in); return err })
+		}
+		{
+			in := adminapi.DeletePriceListVersionInput{Tenant: tid, Price: cid}
+			add("deletePriceListVersion", in, func() error { _, err := c.DeletePriceListVersion(ctx, in); return err })
+		}
+		if len(adminapi.Operations) != 105 {
+			t.Fatalf("%d operations, want 105 (the 35 of epic 1 and sprint 2.1, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1, the 12 of sprint 5.2, the 2 of sprint 5.3 and the 7 of sprint 5.4)", len(adminapi.Operations))
 		}
 		for _, op := range adminapi.Operations {
 			tc, ok := calls[op.ID]

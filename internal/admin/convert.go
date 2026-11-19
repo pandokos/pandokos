@@ -25,10 +25,12 @@ func nonNil(s []string) []string {
 
 func (s *server) tenantOut(r queries.PandokosTenant) adminapi.Tenant {
 	z := s.tenantTimeZoneOut(r.TimeZone, r.TimeZonePrevious, r.TimeZoneEffectiveFrom)
+	c := s.activeCurrencyOut(r.ActiveCurrency, r.ActiveCurrencyPrevious, r.ActiveCurrencyEffectiveFrom, s.now())
 	return adminapi.Tenant{
 		ID: r.ID, Name: r.Name, DisplayName: r.DisplayName, State: adminapi.TenantState(r.State),
 		CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(), StateChangedAt: r.StateChangedAt.UTC(),
 		TimeZone: r.TimeZone, TimeZoneInForce: z.InForce, TimeZoneEffectiveFrom: z.EffectiveFrom,
+		ActiveCurrency: r.ActiveCurrency, ActiveCurrencyInForce: c.InForce, ActiveCurrencyEffectiveFrom: c.EffectiveFrom,
 	}
 }
 
@@ -181,4 +183,30 @@ func tenantPlatformIssuerOut(r queries.GetTenantPlatformIssuerRow) adminapi.Tena
 
 func issuerTenantOut(r queries.ListPlatformIssuerTenantsRow) adminapi.PlatformIssuerTenant {
 	return adminapi.PlatformIssuerTenant{IssuerID: r.IssuerID, TenantID: r.TenantID, TenantName: r.TenantName, ClaimValue: r.ClaimValue, CreatedAt: r.CreatedAt.UTC()}
+}
+
+// currencyName resolves a stored currency to a code: "" is the default of the installation.
+func (s *server) currencyName(raw string) string {
+	if raw == "" {
+		return s.defaultCurrency
+	}
+	return raw
+}
+
+// currencyInForce returns the raw currency that is in force at now: the previous one while a change is
+// pending, the current one otherwise.
+func currencyInForce(current, previous string, from *time.Time, now time.Time) string {
+	if from != nil && now.Before(*from) {
+		return previous
+	}
+	return current
+}
+
+// activeCurrencyOut builds the resource of the active currency of a tenant, without inactive limits.
+func (s *server) activeCurrencyOut(current, previous string, from *time.Time, now time.Time) adminapi.ActiveCurrency {
+	out := adminapi.ActiveCurrency{Currency: current, InForce: s.currencyName(currencyInForce(current, previous, from, now))}
+	if from != nil && now.Before(*from) {
+		out.EffectiveFrom = utcPtr(from)
+	}
+	return out
 }

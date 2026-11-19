@@ -212,6 +212,7 @@ func TestDefaults(t *testing.T) {
 		{"upstream.tls.ca_file", d.Upstream.TLS.CAFile, ""},
 		{"upstream.proxy.url", d.Upstream.Proxy.URL, ""},
 		{"pricing.import_at_start", d.Pricing.ImportAtStart, true},
+		{"pricing.default_currency", d.Pricing.DefaultCurrency, "USD"},
 		{"pricing.refresh.enabled", d.Pricing.Refresh.Enabled, false},
 		{"pricing.refresh.url", d.Pricing.Refresh.URL, "https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json"},
 		{"pricing.refresh.interval", time.Duration(d.Pricing.Refresh.Interval), 24 * time.Hour},
@@ -226,6 +227,7 @@ func TestDefaults(t *testing.T) {
 		{"telemetry.traces.sample_ratio", d.Telemetry.Traces.SampleRatio, 1.0},
 		{"telemetry.traces.propagate", d.Telemetry.Traces.Propagate, false},
 		{"telemetry.resource.attributes", d.Telemetry.Resource.Attributes, ""},
+		{"telemetry.tenant_usage_details", d.Telemetry.TenantUsageDetails, false},
 	}
 	for _, c := range checks {
 		if !reflect.DeepEqual(c.got, c.want) {
@@ -288,6 +290,7 @@ var wantKeys = []string{
 	"vault.kek.provider",
 	"vault.kek.local.key_file",
 	"pricing.import_at_start",
+	"pricing.default_currency",
 	"pricing.refresh.enabled",
 	"pricing.refresh.url",
 	"pricing.refresh.interval",
@@ -302,6 +305,7 @@ var wantKeys = []string{
 	"telemetry.traces.sample_ratio",
 	"telemetry.traces.propagate",
 	"telemetry.resource.attributes",
+	"telemetry.tenant_usage_details",
 	"tokens.enabled",
 	"tokens.max_token_bytes",
 	"tokens.clock_skew",
@@ -318,8 +322,8 @@ var wantDefaultText = []string{"info", "0.0.0.0:8080", "10s", "120s", "65536", "
 	"10485760", "30s", "10m", "4096", "UTC", "refuse", "refuse", "5m", "10s", "", "", "30s", "30s", "30s", "5m", "30s", "30s",
 	"", "", "pandokos", "verify-full", "", "5s", "pandokos_gateway", "", "10", "pandokos_admin", "", "10", "pandokos_worker", "", "5", "pandokos_owner", "",
 	"local", "",
-	"true", "false", "https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json", "24h",
-	"50ms", "500", "10000", "10s", "", "http/protobuf", "", "10s", "1", "false", "",
+	"true", "USD", "false", "https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json", "24h",
+	"50ms", "500", "10000", "10s", "", "http/protobuf", "", "10s", "1", "false", "", "false",
 	"true", "8192", "60s", "24h", "", "5s", "15m", "10s", "6h"}
 
 func leafKeys(t reflect.Type, prefix string, out *[]string) {
@@ -1589,4 +1593,60 @@ func TestInitPurposeAndNewKeys(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestCurrencyAndUsageDetailKeys is T-762: both keys from the file and the environment; a default
+// currency that is not three capital letters is refused; the warning is listed when usage details are on.
+func TestCurrencyAndUsageDetailKeys(t *testing.T) {
+	envOf := map[string]string{}
+	for _, k := range Keys() {
+		envOf[k.Name] = k.Env
+	}
+	if envOf["pricing.default_currency"] != "PANDOKOS_PRICING_DEFAULT_CURRENCY" || envOf["telemetry.tenant_usage_details"] != "PANDOKOS_TELEMETRY_TENANT_USAGE_DETAILS" {
+		t.Fatalf("environment names: %q %q", envOf["pricing.default_currency"], envOf["telemetry.tenant_usage_details"])
+	}
+	t.Run("from the file", func(t *testing.T) {
+		src := validSource(t)
+		src.File = writeFile(t, "pricing:\n  default_currency: EUR\ntelemetry:\n  tenant_usage_details: true\n")
+		c, ws := mustLoad(t, src)
+		if c.Pricing.DefaultCurrency != "EUR" || !c.Telemetry.TenantUsageDetails {
+			t.Errorf("%q %v", c.Pricing.DefaultCurrency, c.Telemetry.TenantUsageDetails)
+		}
+		found := false
+		for _, w := range ws {
+			found = found || w.Key == "telemetry.tenant_usage_details"
+		}
+		if !found {
+			t.Errorf("no warning for the usage details: %v", ws)
+		}
+	})
+	t.Run("from the environment, which wins over the file", func(t *testing.T) {
+		src := validSource(t)
+		src.File = writeFile(t, "pricing:\n  default_currency: EUR\n")
+		src.Environ = append(src.Environ, "PANDOKOS_PRICING_DEFAULT_CURRENCY=GBP", "PANDOKOS_TELEMETRY_TENANT_USAGE_DETAILS=true")
+		c, _ := mustLoad(t, src)
+		if c.Pricing.DefaultCurrency != "GBP" || !c.Telemetry.TenantUsageDetails {
+			t.Errorf("%q %v", c.Pricing.DefaultCurrency, c.Telemetry.TenantUsageDetails)
+		}
+	})
+	t.Run("the defaults, and no warning", func(t *testing.T) {
+		c, ws := mustLoad(t, validSource(t))
+		if c.Pricing.DefaultCurrency != "USD" || c.Telemetry.TenantUsageDetails {
+			t.Errorf("%q %v", c.Pricing.DefaultCurrency, c.Telemetry.TenantUsageDetails)
+		}
+		for _, w := range ws {
+			if w.Key == "telemetry.tenant_usage_details" {
+				t.Errorf("a warning with the key off: %v", w)
+			}
+		}
+	})
+	for _, bad := range []string{"usd", "US", "USDD", "U1D", "EU R"} {
+		t.Run("refused "+bad, func(t *testing.T) {
+			src := validSource(t)
+			src.Environ = append(src.Environ, "PANDOKOS_PRICING_DEFAULT_CURRENCY="+bad)
+			if _, _, err := Load(src); err == nil || !hasProblem(err, "pricing.default_currency") {
+				t.Errorf("%q: %v", bad, err)
+			}
+		})
+	}
 }

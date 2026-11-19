@@ -114,8 +114,10 @@ func ratesOf(categories []string, thresholds []int64, rates []string) ([]pricing
 }
 
 // LoadTenantAccess reads what one tenant was granted and the restriction it set, in one tenant
-// transaction. A tenant with no restriction row is unrestricted.
-func LoadTenantAccess(ctx context.Context, db *store.DB, id tenant.ID) (TenantAccess, error) {
+// transaction, then its active currency (resolved with defaultCurrency) and its price versions in
+// the currencies in force and, while a change is pending, the one that follows. A tenant with no
+// restriction row is unrestricted.
+func LoadTenantAccess(ctx context.Context, db *store.DB, id tenant.ID, defaultCurrency string) (TenantAccess, error) {
 	ta := TenantAccess{Granted: map[string]bool{}}
 	err := db.WithTenant(ctx, id, func(ctx context.Context, tx store.Tx) error {
 		q := queries.New(tx)
@@ -129,14 +131,36 @@ func LoadTenantAccess(ctx context.Context, db *store.DB, id tenant.ID) (TenantAc
 		r, err := q.GetModelRestriction(ctx)
 		switch {
 		case errors.Is(err, store.ErrNoRows):
-			return nil
 		case err != nil:
 			return err
+		default:
+			ta.Restricted = true
+			ta.Allowed = make(map[string]bool, len(r.Models))
+			for _, ref := range r.Models {
+				ta.Allowed[ref] = true
+			}
 		}
-		ta.Restricted = true
-		ta.Allowed = make(map[string]bool, len(r.Models))
-		for _, ref := range r.Models {
-			ta.Allowed[ref] = true
+		ac, err := q.GetTenantActiveCurrency(ctx)
+		if err != nil {
+			return err
+		}
+		ta.Currency = pricing.ResolveActive(ac.ActiveCurrency, ac.ActiveCurrencyPrevious, ac.ActiveCurrencyEffectiveFrom, defaultCurrency)
+		currencies := []string{ta.Currency.Current}
+		if ta.Currency.Previous != "" && ta.Currency.Previous != ta.Currency.Current {
+			currencies = append(currencies, ta.Currency.Previous)
+		}
+		rows, err := q.LoadTenantPriceVersions(ctx, currencies)
+		if err != nil {
+			return err
+		}
+		ta.Prices = map[string][]pricing.Version{}
+		for _, v := range rows {
+			rates, err := ratesOf(v.Categories, v.Thresholds, v.Rates)
+			if err != nil {
+				return err
+			}
+			ta.Prices[v.ModelID] = append(ta.Prices[v.ModelID], pricing.Version{ID: v.ID, ModelID: v.ModelID, ValidFrom: v.ValidFrom,
+				Currency: v.Currency, Source: pricing.SourceTenant, End: v.Kind == "end", Rates: rates})
 		}
 		return nil
 	})

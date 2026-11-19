@@ -222,7 +222,7 @@ func (l *Limits) reserve(ctx context.Context, p authz.Principal, e gateway.Limit
 	}
 	if unpriced {
 		if l.refusePrice && enforced {
-			return nil, &gateway.LimitRefusal{Code: string(family.CodeNoPrice), Currency: budgetCurrency, PriceCurrency: e.Cost.Currency}, gateway.LimitStateLimited, nil
+			return nil, &gateway.LimitRefusal{Code: string(family.CodeNoPrice), Currency: budgetCurrency, PriceCurrency: e.Cost.Currency, PriceSource: e.Cost.Source}, gateway.LimitStateLimited, nil
 		}
 		kept := make([]limits.Limit, 0, len(ls))
 		for _, x := range ls {

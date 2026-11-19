@@ -590,3 +590,78 @@ turns not ready, because the ledger of migrations no longer matches, and a reque
 refused with 503: its rule query names columns that are gone, so it fails closed and enforces nothing
 wrongly. A new binary against the schema of 0010 does not start. The migration changes nothing that was
 enforced. There is no down migration; to go back, restore the database from a backup taken before.
+
+## 17. Grants of migration 0012
+
+Migration `0012_tenant_price_lists` adds the price lists of a tenant and its active currency, makes the
+limit rules one per currency, and records the source of a price in the usage ledger
+([catalogue guide](catalogue.md), section 7, [limits guide](limits.md), section 5,
+[ADR 0053](../adr/0053-tenant-price-lists-and-active-currency.md),
+[ADR 0054](../adr/0054-usage-data-is-the-tenants.md)). It runs in one transaction as the owner role, and
+changes no existing row and lifts no row-level security.
+
+**What changes.**
+
+- Two tenant-scoped tables, `tenant_price_version` (a version of one model in one currency: `kind`
+  `price` or `end`, `valid_from`, `note`) and `tenant_price_rate` (its rates per category and
+  threshold). Both have forced row-level security with the one policy `tenant_isolation`. **No policy
+  shows a row of either to the platform scope**, and the platform's operations never open a tenant's
+  session to read them: only the tenant reads and writes its prices. The gateway and the admin role
+  read both tables; the admin role inserts versions and rates (by column) and deletes versions; nobody
+  updates; **the worker holds nothing on them**, because counters are rebuilt from recorded costs, not
+  from prices.
+- Triggers: `tenant_price_version_guard` holds for every role, the owner included: a version never
+  starts before `now()`, is never updated, and is deleted only before it starts; the deferred
+  constraint triggers `tenant_price_version_shape` and `tenant_price_rate_shape` check at commit that a
+  `price` has a base rate for every category it prices and an `end` has none; rates are immutable and
+  no table can be truncated; a version inserted or deleted sends `catalog:<tenant id>`.
+  `tenant_price_version_model_fkey` references `model` with `ON DELETE RESTRICT`: a model that a tenant
+  priced cannot be deleted (409 `invalid_state`, field `tenant_prices`, which says only that some
+  tenant priced it); retire it instead.
+- `tenant` gains `active_currency`, `active_currency_previous` (`''` or three capital letters) and
+  `active_currency_effective_from`, with the same shape as the time zone columns. The trigger
+  `tenant_active_currency_guard` holds for every role: **only a session of the tenant itself changes
+  them**, the currency in force changes only through a pending change whose instant is in the future
+  and at most 32 days away, and a pending change that is replaced keeps its instant. `''` is the
+  default of the installation, `pricing.default_currency`. `tenant_active_currency_notify` sends
+  `catalog:<tenant id>` and `limits:<tenant id>`. The admin role holds `UPDATE` on the three columns
+  (the policy `tenant_self_update` of migration 0011 limits it to the tenant's own row).
+- `limit_rule` and `platform_limit_rule`: the unique key gains `currency` (`''` for count metrics, so
+  nothing changes for them): one rule per subject, scope, metric and currency. The indexes are rebuilt.
+- `usage_record` gains the nullable `price_source` (`catalogue` or `tenant`) and the check
+  `usage_record_price_source_valid`, created `NOT VALID`: new rows are checked, existing rows hold
+  NULL, and no partition is rewritten or scanned. The gateway role holds `INSERT` on the column. The
+  ledger has no foreign key to a version.
+- Four trigger functions are added (`tenant_active_currency_guard`, `notify_tenant_currency`,
+  `tenant_price_version_guard` and `tenant_price_shape`); none is `SECURITY DEFINER`, they run with the
+  rights of the session that writes and read nothing of another tenant: nothing that crosses the tenant
+  boundary is new.
+
+**Locks and duration.** `ACCESS EXCLUSIVE` on `tenant`, the two rule tables and `usage_record` for
+the length of the transaction. Three columns with a constant default are added to `tenant` (no
+rewrite); the rule tables are small (at most 5,000 rules per tenant); no partition is touched. A
+failure rolls everything back to the schema of 0011.
+
+**Upgrade: stop, migrate, start.** The schema holds nothing that the binary of sprint 5.3 would
+misread (every tenant has the default currency), but that binary no longer serves: it turns not ready
+because the ledger of migrations is not its own. A new binary against the schema of 0011 does not
+start. There is no down migration; to go back, restore a backup taken before.
+
+**What changes in behaviour for an installation at the upgrade.**
+
+1. **Cost budgets and platform cost ceilings apply only in the tenant's active currency**, which is
+   `pricing.default_currency` (`USD` unless you set it) for every tenant at the upgrade. An
+   installation whose prices and budgets are in another currency sets the key **before** starting the
+   new binary; otherwise its budgets are inactive until each tenant changes its currency (which takes
+   effect at the start of the next month of the tenant's zone, [limits guide](limits.md), section 5).
+2. **A catalogue price in another currency than the tenant's active currency no longer prices the
+   tenant's requests**, and a budget in another currency no longer refuses with `no_price`: it is
+   inactive. A model whose only catalogue price is an override in another currency has an unknown
+   cost for a tenant in the default currency, and `no_price` for a tenant with an active budget
+   (`limits.on_unknown_price`).
+3. **The request log and the spans lose cost, currency and token fields**: `cost`, `currency`,
+   `usage`, `reserved_tokens`, `limit`, `limit_currency`, `price_currency` and `price_source` of the
+   request log, `pandokos.cost.amount` and `pandokos.cost.currency` of the spans. They come back with
+   `telemetry.tenant_usage_details` ([telemetry guide](telemetry.md)). The troubleshooting of
+   `no_price` therefore moves from the operator's log to the tenant's tools (the capability check,
+   `active` in `limit list`, `listTenantModels`, [limits guide](limits.md), section 15).

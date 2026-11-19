@@ -53,7 +53,7 @@ func TestEventWriter(t *testing.T) {
 		newWriter := func(t *testing.T) *limits.EventWriter {
 			t.Helper()
 			w, err := limits.NewEventWriter(limits.EventWriterOptions{DB: d.Open(t, store.RoleGateway),
-				Logger: slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})), Now: time.Now})
+				Logger: slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})), Now: time.Now, UsageDetails: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -287,4 +287,56 @@ func TestEventWriter(t *testing.T) {
 			}
 		})
 	})
+}
+
+// TestEventLinesUsageDetails is the part of T-739 that belongs to the event writer: with
+// telemetry.tenant_usage_details off, the lines about an event carry the tenant, the kind and the rule
+// and nothing of the metric, the scope, the percent or the subject; with it on, all of it.
+func TestEventLinesUsageDetails(t *testing.T) {
+	d := dbtest.NewMigrated(t)
+	for _, on := range []bool{false, true} {
+		t.Run(fmt.Sprintf("key %v", on), func(t *testing.T) {
+			a := d.SeedTenant(t, fmt.Sprintf("event-lines-%v", on))
+			logs := &safeBuf{}
+			w, err := limits.NewEventWriter(limits.EventWriterOptions{DB: d.Open(t, store.RoleGateway),
+				Logger: slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})), Now: time.Now, UsageDetails: on})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan struct{})
+			go func() { w.Run(ctx); close(done) }()
+			defer func() { cancel(); <-done }()
+
+			nov := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+			rule := ruleUUID(9)
+			w.Offer(eventFor(a, rule, 50, nov))
+			bad := eventFor(a, "not-a-uuid", 80, nov) // the database refuses it: `limit event not recorded`
+			w.Offer(bad)
+			testutil.Eventually(t, 10*time.Second, "both lines", func() bool {
+				return strings.Contains(logs.String(), "limit event recorded") && strings.Contains(logs.String(), "limit event not recorded")
+			})
+			for _, msg := range []string{"limit event recorded", "limit event not recorded"} {
+				var line string
+				for _, l := range strings.Split(logs.String(), "\n") {
+					if strings.Contains(l, `"msg":"`+msg+`"`) {
+						line = l
+					}
+				}
+				for _, want := range []string{a.String(), `"kind":"threshold_reached"`} {
+					if !strings.Contains(line, want) {
+						t.Errorf("the `%s` line lacks %s: %s", msg, want, line)
+					}
+				}
+				if wantRule := map[string]string{"limit event recorded": rule, "limit event not recorded": "not-a-uuid"}[msg]; !strings.Contains(line, wantRule) {
+					t.Errorf("the `%s` line lacks the rule: %s", msg, line)
+				}
+				for _, k := range []string{`"metric"`, `"subject_kind"`, `"limit_scope"`, `"percent"`} {
+					if has := strings.Contains(line, k); has != (on && (msg == "limit event recorded" || k == `"metric"`)) {
+						t.Errorf("key %v: the `%s` line has %s = %v: %s", on, msg, k, has, line)
+					}
+				}
+			}
+		})
+	}
 }

@@ -28,8 +28,8 @@ func (f *fakeAPI) UpdateLimit(_ context.Context, in adminapi.UpdateLimitInput) (
 func (f *fakeAPI) DeleteLimit(_ context.Context, in adminapi.DeleteLimitInput) (*adminapi.LimitRule, error) {
 	return pick[adminapi.LimitRule](f, "deleteLimit"), f.rec("deleteLimit", in)
 }
-func (f *fakeAPI) ListTenantPlatformLimits(_ context.Context, in adminapi.ListTenantPlatformLimitsInput) (*adminapi.PlatformLimitRuleList, error) {
-	return pick[adminapi.PlatformLimitRuleList](f, "listTenantPlatformLimits"), f.rec("listTenantPlatformLimits", in)
+func (f *fakeAPI) ListTenantPlatformLimits(_ context.Context, in adminapi.ListTenantPlatformLimitsInput) (*adminapi.TenantPlatformLimitRuleList, error) {
+	return pick[adminapi.TenantPlatformLimitRuleList](f, "listTenantPlatformLimits"), f.rec("listTenantPlatformLimits", in)
 }
 func (f *fakeAPI) ListLimitEvents(_ context.Context, in adminapi.ListLimitEventsInput) (*adminapi.LimitEventList, error) {
 	return pick[adminapi.LimitEventList](f, "listLimitEvents"), f.rec("listLimitEvents", in)

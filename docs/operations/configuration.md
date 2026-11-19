@@ -60,8 +60,8 @@ replaced by `_`.
 | `cache.principal_ttl` | `PANDOKOS_CACHE_PRINCIPAL_TTL` | duration | `30s` | Lifetime of a cached principal in the gateway: the upper bound on the time a revocation or a suspension takes to reach the inference listener (1s to 60s) |
 | `cache.credential_ttl` | `PANDOKOS_CACHE_CREDENTIAL_TTL` | duration | `30s` | Lifetime of a cached provider credential in the gateway: the upper bound on the time a disable, revocation or replacement takes to reach the inference listener when notifications are not delivered (1s to 60s) |
 | `cache.data_key_ttl` | `PANDOKOS_CACHE_DATA_KEY_TTL` | duration | `5m` | Lifetime of an unwrapped data key in the gateway (1s to 15m) |
-| `cache.catalog_ttl` | `PANDOKOS_CACHE_CATALOG_TTL` | duration | `30s` | Lifetime of the cached catalogue and of a tenant's model access in the gateway: the upper bound on the time a catalogue, price or model-access change takes to reach the inference listener when notifications are not delivered (1s to 5m); see the [catalogue guide](catalogue.md) |
-| `cache.limits_ttl` | `PANDOKOS_CACHE_LIMITS_TTL` | duration | `30s` | Lifetime of a tenant's cached limit rules in the gateway: the upper bound on the time a changed rule takes to apply when no notification arrives (1s to 5m) |
+| `cache.catalog_ttl` | `PANDOKOS_CACHE_CATALOG_TTL` | duration | `30s` | Lifetime of the cached catalogue and of a tenant's model access, active currency and price lists in the gateway: the upper bound on the time a catalogue, price, model-access, tenant price or active-currency change takes to reach the inference listener when notifications are not delivered (1s to 5m); see the [catalogue guide](catalogue.md) |
+| `cache.limits_ttl` | `PANDOKOS_CACHE_LIMITS_TTL` | duration | `30s` | Lifetime of a tenant's cached limit rules in the gateway: the upper bound on the time a changed rule or a changed active currency takes to apply when no notification arrives (1s to 5m) |
 | `tokens.enabled` | `PANDOKOS_TOKENS_ENABLED` | boolean | `true` | Accept tokens of trusted issuers on the inference listener. `false`: every credential that is not a virtual key is malformed and no key of an issuer is ever fetched; read by `serve` only. See the [tokens guide](tokens.md) |
 | `tokens.max_token_bytes` | `PANDOKOS_TOKENS_MAX_TOKEN_BYTES` | integer | `8192` | Largest token accepted (1024 to 16384, and at most half of `listeners.inference.max_header_bytes`) |
 | `tokens.clock_skew` | `PANDOKOS_TOKENS_CLOCK_SKEW` | duration | `60s` | Tolerance on `exp`, `nbf` and `iat` of a token (0 to 5m) |
@@ -91,6 +91,7 @@ replaced by `_`.
 | `vault.kek.provider` | `PANDOKOS_VAULT_KEK_PROVIDER` | `local` | `local` | Key-encryption key provider; only `local` exists |
 | `vault.kek.local.key_file` | `PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE` | path | none, required by `serve` | File with the key-encryption key: 32 random bytes in standard base64. Create it with `pandokos kek generate` ([vault guide](vault.md)) |
 | `pricing.import_at_start` | `PANDOKOS_PRICING_IMPORT_AT_START` | boolean | `true` | Import the embedded price snapshot when `serve` starts, unless an identical or a newer import exists ([catalogue guide](catalogue.md)) |
+| `pricing.default_currency` | `PANDOKOS_PRICING_DEFAULT_CURRENCY` | ISO 4217 code | `USD` | The currency in which the costs of the tenants that have not chosen an active currency are computed, and in which their cost budgets apply; three capital letters. It must be the same on every instance, like `limits.time_zone`, and set before the first start of a release that has tenant price lists if your prices and budgets are not in USD ([database guide](database.md), section 17). It takes effect at restart, for every such tenant at once ([catalogue guide](catalogue.md), section 7) |
 | `pricing.refresh.enabled` | `PANDOKOS_PRICING_REFRESH_ENABLED` | boolean | `false` | Download the price dataset periodically: an outbound request to `pricing.refresh.url` |
 | `pricing.refresh.url` | `PANDOKOS_PRICING_REFRESH_URL` | URL | `https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json` | Address of the price dataset; `https` only, no user information. Pin it to a commit to control what is imported |
 | `pricing.refresh.interval` | `PANDOKOS_PRICING_REFRESH_INTERVAL` | duration | `24h` | Time between downloads (1h to 720h) |
@@ -105,6 +106,7 @@ replaced by `_`.
 | `telemetry.traces.sample_ratio` | `PANDOKOS_TELEMETRY_TRACES_SAMPLE_RATIO` | decimal | `1` | Share of the traces started here that is sampled (0 to 1); the sampled flag of a caller's `traceparent` is followed |
 | `telemetry.traces.propagate` | `PANDOKOS_TELEMETRY_TRACES_PROPAGATE` | boolean | `false` | Send the trace context to the provider in a `traceparent` header |
 | `telemetry.resource.attributes` | `PANDOKOS_TELEMETRY_RESOURCE_ATTRIBUTES` | list | none | Resource attributes of the traces: `key=value` pairs separated by commas, in YAML and in the environment |
+| `telemetry.tenant_usage_details` | `PANDOKOS_TELEMETRY_TENANT_USAGE_DETAILS` | boolean | `false` | Write the cost, currency and token counts of a tenant's requests to the request log and to traces; off by default because they are the tenant's data; `serve` logs a warning at start when it is on ([telemetry guide](telemetry.md)) |
 
 Durations are strings in Go syntax (`"30s"`, `"10m"`); a YAML number is rejected for a duration.
 Sizes are integers in bytes.
@@ -184,6 +186,7 @@ All problems are reported together, not only the first. Each is attached to a ke
 | `cache.credential_ttl` | 1s to 60s |
 | `cache.data_key_ttl` | 1s to 15m |
 | `cache.catalog_ttl` | 1s to 5m (checked for every purpose) |
+| `pricing.default_currency` | three capital letters (`must be three capital letters`) |
 | `pricing.refresh.interval` | 1h to 720h; checked for `serve` and `config check --for serve`, also while the refresh is disabled |
 | `pricing.refresh.url` | a valid `https` URL with a host and no user information; checked for `serve` as the interval is; no message quotes the URL |
 | `vault.kek.provider` | `local` |
@@ -214,6 +217,7 @@ they do not prevent start.
 | `upstream.proxy.url` | `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY` (or the lower-case name) is set in the environment and the key is not (`serve` only) | `<VARIABLE>` is set in the environment and is not used; set upstream.proxy.url to send provider traffic through a proxy |
 | `telemetry.resource.attributes` | `OTEL_RESOURCE_ATTRIBUTES` is set in the environment (`serve` only) | `OTEL_RESOURCE_ATTRIBUTES` is set in the environment: the OpenTelemetry SDK adds its attributes to the resource; they never replace those Pandokos sets. The value is never shown |
 | `telemetry.otlp.endpoint` | `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set in the environment and the key is not (`serve` only) | `<VARIABLE>` is set in the environment and is not used; set telemetry.otlp.endpoint to export traces |
+| `telemetry.tenant_usage_details` | true | tenant usage details (cost, currency, token counts) are written to logs and traces |
 | `listeners.inference.address` | no TLS and the host is not a loopback address or `localhost` | the listener serves plain HTTP; set listeners.inference.tls.cert_file and key_file, or terminate TLS in front of it |
 | `listeners.admin.address` | no TLS, host not loopback, `allow_plaintext` true | the administration API is served without TLS; keys travel in clear text unless TLS ends in front of it |
 | `listeners.admin.allow_plaintext` | true while TLS is configured or the host is loopback | has no effect |
@@ -287,11 +291,14 @@ vault:
 cache:
   catalog_ttl: 30s
 pricing:
+  default_currency: USD
   import_at_start: true
   refresh:
     enabled: false
     url: https://raw.githubusercontent.com/pydantic/genai-prices/<commit>/prices/new_data/v2/data.json
     interval: 24h
+telemetry:
+  tenant_usage_details: false
 upstream:
   connect_timeout: 10s
   tls:
@@ -302,7 +309,7 @@ upstream:
 
 ## Variables of the API commands
 
-`pandokos tenant`, `service-account`, `key`, `platform-key`, `credential`, `tenant-credential`, `provider`, `endpoint`, `model`, `price`, `price-import`, `tenant-model`, `model-restriction` and `whoami` are clients of the
+`pandokos tenant`, `service-account`, `key`, `platform-key`, `credential`, `tenant-credential`, `provider`, `endpoint`, `model`, `price`, `price-import`, `price-list`, `tenant-model`, `model-restriction` and `whoami` are clients of the
 administration API. They read `PANDOKOS_CLI_SERVER` (default `http://127.0.0.1:8081`),
 `PANDOKOS_CLI_KEY_FILE` (required) and `PANDOKOS_CLI_CA_FILE`. These variables are not part of the
 server configuration and cause no warning. No key of the server configuration starts with `cli`.

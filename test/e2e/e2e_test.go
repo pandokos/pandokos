@@ -674,20 +674,20 @@ func TestMigrateCommand(t *testing.T) { // T-160
 	}
 
 	code, out, errs := runBinary(t, env, "migrate", "status")
-	if code != 1 || errs != "" || out != "0001_init  pending\n0002_identity_audit  pending\n0003_vault  pending\n0004_catalogue  pending\n0005_gateway_auth_failures  pending\n0006_usage_ledger  pending\n0007_provider_stream_usage  pending\n0008_trusted_issuers  pending\n0009_limit_rules  pending\n0010_quotas_budgets  pending\n0011_limit_integrity  pending\nschema is at version 0; this binary needs version 11\n" {
+	if code != 1 || errs != "" || out != "0001_init  pending\n0002_identity_audit  pending\n0003_vault  pending\n0004_catalogue  pending\n0005_gateway_auth_failures  pending\n0006_usage_ledger  pending\n0007_provider_stream_usage  pending\n0008_trusted_issuers  pending\n0009_limit_rules  pending\n0010_quotas_budgets  pending\n0011_limit_integrity  pending\n0012_tenant_price_lists  pending\nschema is at version 0; this binary needs version 12\n" {
 		t.Fatalf("status before: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate")
-	if code != 0 || errs != "" || out != "applied 0001_init\napplied 0002_identity_audit\napplied 0003_vault\napplied 0004_catalogue\napplied 0005_gateway_auth_failures\napplied 0006_usage_ledger\napplied 0007_provider_stream_usage\napplied 0008_trusted_issuers\napplied 0009_limit_rules\napplied 0010_quotas_budgets\napplied 0011_limit_integrity\nschema is at version 11\n" {
+	if code != 0 || errs != "" || out != "applied 0001_init\napplied 0002_identity_audit\napplied 0003_vault\napplied 0004_catalogue\napplied 0005_gateway_auth_failures\napplied 0006_usage_ledger\napplied 0007_provider_stream_usage\napplied 0008_trusted_issuers\napplied 0009_limit_rules\napplied 0010_quotas_budgets\napplied 0011_limit_integrity\napplied 0012_tenant_price_lists\nschema is at version 12\n" {
 		t.Fatalf("migrate: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate")
-	if code != 0 || errs != "" || out != "schema is at version 11\n" {
+	if code != 0 || errs != "" || out != "schema is at version 12\n" {
 		t.Fatalf("second migrate: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate", "status")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if code != 0 || errs != "" || len(lines) != 12 || !applied("0001_init").MatchString(lines[0]) || !applied("0002_identity_audit").MatchString(lines[1]) || !applied("0003_vault").MatchString(lines[2]) || !applied("0004_catalogue").MatchString(lines[3]) || !applied("0005_gateway_auth_failures").MatchString(lines[4]) || !applied("0006_usage_ledger").MatchString(lines[5]) || !applied("0007_provider_stream_usage").MatchString(lines[6]) || !applied("0008_trusted_issuers").MatchString(lines[7]) || !applied("0009_limit_rules").MatchString(lines[8]) || !applied("0010_quotas_budgets").MatchString(lines[9]) || !applied("0011_limit_integrity").MatchString(lines[10]) || lines[11] != "schema is at version 11; this binary needs version 11" {
+	if code != 0 || errs != "" || len(lines) != 13 || !applied("0001_init").MatchString(lines[0]) || !applied("0002_identity_audit").MatchString(lines[1]) || !applied("0003_vault").MatchString(lines[2]) || !applied("0004_catalogue").MatchString(lines[3]) || !applied("0005_gateway_auth_failures").MatchString(lines[4]) || !applied("0006_usage_ledger").MatchString(lines[5]) || !applied("0007_provider_stream_usage").MatchString(lines[6]) || !applied("0008_trusted_issuers").MatchString(lines[7]) || !applied("0009_limit_rules").MatchString(lines[8]) || !applied("0010_quotas_budgets").MatchString(lines[9]) || !applied("0011_limit_integrity").MatchString(lines[10]) || !applied("0012_tenant_price_lists").MatchString(lines[11]) || lines[12] != "schema is at version 12; this binary needs version 12" {
 		t.Fatalf("status after: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	testutil.AssertAbsent(t, "migrate output", out+errs, d.Passwords()...)
@@ -709,7 +709,7 @@ func TestServeRefusesUnmigratedDatabase(t *testing.T) { // T-161
 	}
 
 	d.Migrate(t)
-	if _, err := d.Super(t).Exec(context.Background(), "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (12, 'future', repeat('0', 64), 'x')"); err != nil {
+	if _, err := d.Super(t).Exec(context.Background(), "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (13, 'future', repeat('0', 64), 'x')"); err != nil {
 		t.Fatal(err)
 	}
 	code, out, errs = runBinary(t, serveEnv(t, d), "serve", "--config", writeConfig(t, "info"))
@@ -765,7 +765,7 @@ func TestServeBehindPooler(t *testing.T) { // T-163
 	d := dbtest.New(t)
 	pooled := d.Pooled(t)
 	code, out, errs := runBinary(t, pooled.Env(t), "migrate")
-	if code != 0 || !strings.Contains(out, "schema is at version 11") {
+	if code != 0 || !strings.Contains(out, "schema is at version 12") {
 		t.Fatalf("migrate through the pooler: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	up := fakeprovider.New(t)
@@ -958,7 +958,7 @@ func TestNoDefaultCredentials(t *testing.T) {
 			c := apitest.CallFor(t, op, apitest.Params{Tenant: "0192f0f0-0000-7000-8000-000000000001", ServiceAccount: "0192f0f0-0000-7000-8000-000000000002", VirtualKey: "tabcdefghijklmnop", PlatformKey: "pabcdefghijklmnop", Credential: "0192f0f0-0000-7000-8000-000000000003",
 				Provider: "synthetic-missing", Endpoint: "ep-missing", Model: "0192f0f0-0000-7000-8000-000000000004", PriceVersion: "0192f0f0-0000-7000-8000-000000000005", PriceImport: "0192f0f0-0000-7000-8000-000000000006",
 				TokenIssuer: "0192f0f0-0000-7000-8000-000000000007", SubjectMapping: "0192f0f0-0000-7000-8000-000000000008", PlatformIssuer: "0192f0f0-0000-7000-8000-000000000009",
-				LimitRule: "0192f0f0-0000-7000-8000-00000000000a", PlatformLimit: "0192f0f0-0000-7000-8000-00000000000b"})
+				LimitRule: "0192f0f0-0000-7000-8000-00000000000a", PlatformLimit: "0192f0f0-0000-7000-8000-00000000000b", TenantPrice: "0192f0f0-0000-7000-8000-00000000000c"})
 			var body []byte
 			if c.Body != nil {
 				body, _ = json.Marshal(c.Body)

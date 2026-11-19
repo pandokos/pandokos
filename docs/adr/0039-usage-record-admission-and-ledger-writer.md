@@ -68,3 +68,4 @@ partition would reject records); metadata in one JSON header (parsing ambiguity)
 - 2026-11: sprint 5.1 writes outcome `rejected_limit`; limits settle with the record's figures, so the stream estimate of this record is confirmed unchanged ([ADR 0048](0048-reserve-and-settle.md)).
 - 2026-11-18: accepted by the maintainer after review.
 - 2026-11-18: sprint 5.3: `usage_record.limit_state` records how limits treated the request; the column is added without rewriting a partition ([ADR 0049](0049-limit-rules.md)).
+- 2026-11-18: sprint 5.4: `usage_record.price_source` says which price list the price version belongs to; the column is added without rewriting a partition

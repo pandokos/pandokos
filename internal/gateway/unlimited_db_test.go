@@ -38,7 +38,7 @@ func newZoneGateway(t *testing.T, d *dbtest.Database, tenants map[string]tenant.
 		t.Fatalf("NewZones: %v", err)
 	}
 	gw := d.Open(t, store.RoleGateway)
-	cache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: gw, Logger: quiet, TTL: time.Minute, Zones: zones})
+	cache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: gw, Logger: quiet, TTL: time.Minute, Zones: zones, DefaultCurrency: "USD"})
 	if err != nil {
 		t.Fatal(err)
 	}

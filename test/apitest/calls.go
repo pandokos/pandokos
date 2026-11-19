@@ -1,10 +1,12 @@
 package apitest
 
 import (
+	"math/rand"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/test/fixtures"
@@ -27,6 +29,7 @@ type Params struct {
 	PlatformIssuer string // {issuer} of a platform-level issuer
 	LimitRule      string // {rule} of a limit rule of the tenant
 	PlatformLimit  string // {rule} of a platform limit rule
+	TenantPrice    string // {price} of a scheduled price version of the tenant's price lists
 }
 
 // NoLimitRule is the {rule} of a call whose Params name no limit rule: a well-formed identifier
@@ -132,6 +135,15 @@ func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 	case "getTenantTimeZone":
 	case "setTenantTimeZone":
 		body = map[string]any{"time_zone": ""}
+	case "listPriceLists", "listPriceListVersions", "getPriceListVersion", "deletePriceListVersion", "getActiveCurrency":
+	case "createPriceListVersion":
+		// A random start: two calls with the same start in one list and model collide on the unique key.
+		start := time.Now().UTC().Add(time.Hour + time.Duration(rand.Int63n(int64(24*time.Hour*365)))).Truncate(time.Second)
+		body = map[string]any{"provider": "openai", "model": "gpt-4o-mini", "currency": "EUR", "valid_from": start.Format(time.RFC3339),
+			"rates": []map[string]any{{"category": "input", "threshold": 0, "rate": "1"}}}
+	case "setActiveCurrency":
+		// The default of the installation: always accepted, and it changes nothing.
+		body = map[string]any{"currency": ""}
 	default:
 		tb.Fatalf("apitest.CallFor does not know the operation %s: add it", op.ID)
 	}
@@ -142,6 +154,7 @@ func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 	path = strings.ReplaceAll(path, "{endpoint}", p.Endpoint)
 	path = strings.ReplaceAll(path, "{model}", p.Model)
 	path = strings.ReplaceAll(path, "{price_version}", p.PriceVersion)
+	path = strings.ReplaceAll(path, "{price}", p.TenantPrice)
 	path = strings.ReplaceAll(path, "{price_import}", p.PriceImport)
 	path = strings.ReplaceAll(path, "{mapping}", p.SubjectMapping)
 	rule := p.LimitRule

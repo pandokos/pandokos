@@ -8,8 +8,11 @@ is reached, how the counters relate to the usage ledger, how to write rules and 
 values. It applies from sprint 5.1 ([ADR 0048](../adr/0048-reserve-and-settle.md),
 [ADR 0049](../adr/0049-limit-rules.md)) and sprint 5.2 ([ADR 0050](../adr/0050-quotas-and-budgets-periods-attribution-currencies.md),
 [ADR 0051](../adr/0051-period-counters-and-the-ledger.md), [ADR 0052](../adr/0052-administration-of-limits.md)),
-and sprint 5.3 (the amendments of ADR 0049, 0050 and 0052): rules that reference their subject and
-scope, the time zone of a tenant, the currency check of budgets, `limit_state`.
+sprint 5.3 (the amendments of ADR 0049, 0050 and 0052): rules that reference their subject and
+scope, the time zone of a tenant, the currency check of budgets, `limit_state`; and sprint 5.4
+([ADR 0053](../adr/0053-tenant-price-lists-and-active-currency.md), [ADR 0054](../adr/0054-usage-data-is-the-tenants.md),
+the amendments of 0049, 0050 and 0052 again): the active currency of a tenant, one rule per currency,
+and the usage details that the log no longer carries.
 
 > **Limits are per gateway instance until the Valkey store exists.** Each instance counts alone, in
 > memory: with *N* instances a limit admits up to *N* times its value. A restart empties the rate
@@ -237,49 +240,101 @@ empty. The monthly counter of December in Tokyo counts from the same 15:00 UTC.
 
 ## 5. Budgets
 
-A budget is a `cost_per_day` or `cost_per_month` rule: an amount in one currency.
+A budget is a `cost_per_day` or `cost_per_month` rule: an amount in one currency. Which budgets and
+ceilings apply to a tenant is decided by its **active currency** ([ADR 0050](../adr/0050-quotas-and-budgets-periods-attribution-currencies.md),
+amended in sprint 5.4; [ADR 0053](../adr/0053-tenant-price-lists-and-active-currency.md)).
 
-- **Currency.** The rule states a currency of three capital letters. A budget counts the known costs
-  of requests in that currency and nothing else; costs keep the currency of the price in force when
-  they were computed and are never converted. For a budget, a request priced in another currency is
-  in the same position as a request with no price. Several currencies need one budget each, on
-  narrower scopes (a provider, a model) or subjects.
-- **The currency is checked when the rule is written.** A budget is refused, on create and on update, with
-  400 on `currency` when no catalogue price that can be in force for its scope is in its currency: a
-  version in force now, or one that starts later (a replaced version cannot come back), of any model of
-  the scope (for a tenant rule, the models the tenant can be given). The answer names the currencies in
-  use, sorted (`must be a currency the prices of this scope use: EUR, USD`), or says
-  `no model of this scope has a price` when there is none. Nothing is converted. Count metrics are not checked. The check
-  is about the moment of the write: prices change afterwards, and a request that a budget cannot measure
-  still meets `limits.on_unknown_price`. Sprint 5.4 (tenant price lists) adds the tenant's own prices
-  to the set for tenant rules.
-- **Prices are set by the platform, for every tenant.** The catalogue prices, imported or overridden, are
-  the platform's: a tenant cannot set one for itself, and a price in force is the same for every tenant
-  that can use the model. A tenant that wants a budget in a currency no price uses has to ask for a
-  price in it, or wait for tenant price lists (sprint 5.4).
-- **When a price override in another currency makes sense.** An override in another currency
-  ([catalogue guide](catalogue.md), section 6) is right when the provider or the contract is really
-  billed in that currency: a European contract in EUR for a model the dataset prices in USD. The model then
-  has a price in the currency you pay in, costs are computed in it, and budgets in it are accepted. It is
-  **not a shortcut for one tenant's budget**: the override changes the price of the model for every tenant
-  that uses it (their costs and their budgets switch currency with it, and a budget in the old currency
-  can no longer measure the model: 409 `no_price` or `limits.on_unknown_price`), and it marks the model so
-  that imports stop updating it. If only one tenant wants a different currency, set the budget in a
-  currency the model's price uses, or wait for tenant price lists.
+- **The active currency.** Every tenant has one: `pricing.default_currency` (`USD` unless configured)
+  until it chooses another ([catalogue guide](catalogue.md), section 7). Every cost of the tenant is
+  computed in it, with the tenant's price list in that currency where it prices the model, otherwise
+  with the catalogue's price when that is in that currency, otherwise unknown. Nothing is converted and
+  amounts of different currencies are never added.
+- **Only budgets and ceilings in the active currency apply.** A cost rule of the tenant, of a service
+  account or of a key, and a ceiling of the platform, applies to a request only when its currency is the
+  tenant's active currency at the request's start. A cost rule in another currency is **inactive**: it
+  is not evaluated, holds no counter, records no event and never refuses. A request that only inactive
+  cost rules match is `unlimited` ([section 15](#15-logs-and-troubleshooting)). Count and token rules
+  do not depend on currencies.
+- **Which rules are inactive.** Every rule resource has `active`: `false` for a cost rule whose currency
+  is not the tenant's active currency now, `true` otherwise (on a platform ceiling the member is omitted
+  instead of `false`, and the CLI prints it as `false`). `limit list --tenant T` shows the column,
+  and so does `limit platform --tenant T` for the platform's ceilings that apply to the tenant. The
+  platform's own list (`platform-limit list`) has no `active`: it compares the ceiling's currency with
+  the tenant's `active_currency_in_force` on the `Tenant` resource.
+- **One rule per currency.** A rule is one per subject, scope, metric **and currency**, so a budget in the
+  active currency and one prepared in another coexist (409 `conflict` only for the same four). A
+  ceiling of the platform for one tenant replaces the default ceiling of the same scope, metric and
+  currency.
+- **A budget can be written in any currency that has a list for its scope.** The currency is checked when
+  the rule is written, on create and on update, with 400 on `currency`:
+
+  | Rule | Currencies accepted |
+  |---|---|
+  | A rule of a tenant | those of the tenant's own prices and of the catalogue's prices, for the models of the scope the tenant can be given: a version in force now or starting later |
+  | A ceiling of the platform for one tenant | the catalogue's for the models of the scope, plus the tenant's active currency and its pending one (read from the `Tenant` resource: the platform does not read the tenant's lists, and a currency the tenant made active has a list) |
+  | A default ceiling | the catalogue's |
+
+  The answer names the currencies, sorted (`must be a currency the prices of this scope use: EUR, USD`),
+  or says `no model of this scope has a price`. Whether the currency is the active one is **not**
+  checked: a budget in another currency is how a change of currency is prepared. Count metrics are not
+  checked. The check is about the moment of the write: prices change afterwards.
+- **Preparing a change of currency, step by step** (a tenant administrator; the example moves ACME from
+  USD to EUR):
+
+  1. Write the prices in the new currency for the models in use: `pandokos price-list set --tenant ACME
+     --currency EUR --model openai/gpt-4o --rate input=2.3 --rate output=9.2`. Check with
+     `pandokos price-list lists --tenant ACME` and `tenant-model list --tenant ACME` (`tenant_price` and
+     `price_source` show what prices each model now).
+  2. Write the budgets in the new currency next to the old ones: `pandokos limit create --tenant ACME
+     --metric cost_per_month --amount 400 --currency EUR`. They are inactive (`limit list` says so) and
+     count nothing until the change.
+  3. Set the currency: `pandokos price-list currency set --tenant ACME EUR`. It takes effect at the start
+     of the next month in the tenant's time zone, never at once; the answer gives `effective_from` and
+     `inactive_limits`, the rules (of the tenant and of the platform) that will stop applying. Until then
+     nothing changes. Setting the currency in force again withdraws the change.
+  4. From that instant the EUR budgets start whole periods, counted from the ledger over their range like
+     any counter: the costs recorded before are in the old currency and are not theirs. The USD rules stay
+     and can be deleted afterwards.
+
+  No budget stops applying in the middle of one of its periods and none starts with a period already
+  running, so a change frees nothing of the period in progress.
+- **What the platform's ceilings measure.** A ceiling in the tenant's active currency counts the cost
+  at **the tenant's price**, one cost per request ([ADR 0048](../adr/0048-reserve-and-settle.md)): where
+  the tenant's list prices the model, the tenant's price; otherwise the catalogue's. Under BYOK the tenant
+  pays its provider; a tenant list that is wrong makes the tenant's own figures wrong.
+- **A tenant can step out of the platform's cost ceilings by changing its currency.** From the next
+  month the ceilings in the old currency are inactive for it. The platform sees the pending change on
+  the `Tenant` resource (`active_currency`, `active_currency_in_force`, `active_currency_effective_from`;
+  `pandokos tenant get`) and can write a ceiling for that tenant in the new currency before it takes effect
+  (`platform-limit create --for-tenant T --currency EUR ...`, accepted for the tenant's active or pending
+  currency). **Ceilings in requests and tokens do not depend on currencies and cannot be stepped out of**:
+  a platform that needs a limit no tenant can leave sets it in tokens.
+- **Catalogue prices are set by the platform, for every tenant** (imported or overridden); since sprint 5.4 a
+  tenant can add prices of its own, which take precedence in its active currency, and cannot change the
+  catalogue's. **A catalogue price in another currency.** An override in another currency
+  ([catalogue guide](catalogue.md), section 6) prices only the tenants whose active currency it is in:
+  for the others the model has no catalogue price, and a budget that applies meets
+  `limits.on_unknown_price`. It marks the model so that imports stop updating it. It is right when the
+  provider is really billed in that currency; for one tenant's currency, the tenant writes its own list.
 - **Amounts.** An amount has at most six fraction digits and is at most 1,000,000,000. It is stored
   in millionths of the currency and counted with exact decimals. The `X-Pandokos-Limit` and
   `X-Pandokos-Limit-Remaining` headers of a budget are decimals with no trailing zeros (`250.5`, `0`).
-- **Unknown prices at reservation.** The estimate of a request has a known cost only when the model
-  has a price in force that can price it, and, for a given budget, when that price is in the budget's
-  currency. If a budget applies to the request and cannot measure it, `limits.on_unknown_price`
-  decides:
+- **Unknown prices at reservation.** The estimate of a request has a known cost only when the model has a
+  price **in the tenant's active currency** that can price it: the tenant's list, or the catalogue's.
+  `no_price` therefore means "no price in the active currency". If a budget or a ceiling that applies
+  to the request cannot measure it, `limits.on_unknown_price` decides:
 
 | Value | What happens |
 |---|---|
 | `refuse` (default) | The request is refused with 409 `no_price`: `Pandokos: a budget applies to this call and the model has no price the budget can be measured with.` There is no `Retry-After`, because waiting does not help. The usage record has outcome `rejected_limit` and `error_code` `no_price` |
 | `allow` | The request is admitted and reserved against every other limit; the budgets that cannot measure it do not count it. The log line has `budget_unpriced: true` |
 
-  A tenant with a budget therefore cannot call a model without a price unless the operator says so.
+  A tenant with an active budget therefore cannot call a model without a price in its currency unless the
+  operator says so. A model with no price in the active currency and no active budget or ceiling is
+  served, and its cost is recorded as unknown. To see why a request met `no_price`, use the tenant's own
+  tools: `tenant-model list` (`listTenantModels`: `price`, `tenant_price`, `price_source`: is there a price in the active
+  currency?), `limit list` (`active`) and the capability check; the amounts are not in the operator's log
+  by default (section 15).
 - **Unknown price at settlement.** A request whose cost turns out unknown (a category of usage that
   has no rate) counts a cost of zero in a budget: a budget counts known costs only, exactly as the
   ledger total does.
@@ -290,9 +345,15 @@ A budget is a `cost_per_day` or `cost_per_month` rule: an amount in one currency
 - **The capability check.** `checks.budget` of the tenant's capability check ([administration API
   reference](../reference/admin-api.md)) says whether a call would find a budget exhausted, computed
   from the ledger, which it reads with the worker database role inside the tenant's session, under
-  row-level security (not with the admin role): `not_enforced`, `unpriced`, `exhausted` or `available`. `available` means "not
+  row-level security (not with the admin role): `not_enforced` (no enforced quota or budget in force
+  matches; inactive budgets do not count), `unpriced` (an active budget matches and the model has no
+  price in the active currency), `exhausted` or `available`. `available` means "not
   exhausted"; a call whose estimate exceeds what is left is still refused. Requests in flight are
   not in that total.
+- **How fast it applies.** A change of currency or of prices reaches a gateway within a second
+  normally and within `cache.catalog_ttl` and `cache.limits_ttl` at most (30 s by default). If the two
+  caches of one gateway disagree for that time, the request meets `limits.on_unknown_price`. A change
+  of currency is known a month ahead unless it is made in the last minutes of a month.
 
 ## 6. Reserve and settle: the estimate
 
@@ -453,7 +514,7 @@ the percentage, so a restart, which finds the same threshold passed again, inser
 gateway inserts events off the request path; if the database is unavailable it retries, and it
 flushes what is left at shutdown within what remains of `ledger.shutdown_flush_timeout`. An event
 can be lost only when the process dies between the crossing and the insert **and** the period ends
-before the next start. Each inserted row is logged as `limit event recorded`. Read events with
+before the next start. Each inserted row is logged as `limit event recorded`, with the tenant, the kind and the rule ID; the metric, scope, subject kind and percent only with `telemetry.tenant_usage_details` (the same holds for `limit event not recorded`, which adds the SQLSTATE and the error class). Read events with
 `pandokos limit events` or `listLimitEvents` (newest first). Delivery to other systems (webhooks)
 does not exist yet: sprint 6.4 adds it ([ADR 0014](../adr/0014-events-outbox.md)).
 
@@ -627,7 +688,7 @@ pandokos limit events --tenant acme --kind threshold_reached
 ```
 
 Rules are validated when written: a count metric takes `--limit` and no currency, a cost metric an
-amount and a currency (and the currency must be one a price of the scope uses, section 5); a subject must
+amount and a currency (and the currency must be one that has a price list for the scope, section 5); a subject must
 exist in the tenant and must not be a revoked key (the answer is the same whether an ID is elsewhere or
 nowhere); a tenant holds at most 5,000 rules (the 5,001st is refused with 409 `invalid_state`).
 A rule is never left without its subject or its scope.
@@ -668,6 +729,10 @@ deleted rules reach the gateway through the same notification as any deleted rul
   exists: divide by the number of instances you run.
 - A limit that is changed applies to the counts already held. Lowering it below the current count
   refuses new requests until the window has moved on, or the period has ended.
+- Choose the active currency of a tenant once, as you do its zone: a change waits for the next month, and
+  the budgets in the old currency stop applying then. Prepare the budgets in the new currency before it
+  (section 5). A platform that sets cost ceilings should know that a tenant can leave them by changing its
+  currency; set the ceiling that must hold in tokens.
 - Choose the zone of a tenant once, where its days and months should turn; a change moves every
   boundary after it takes effect at the start of the next month (section 4). Leave `limits.time_zone` where the
   tenants without a zone of their own should turn. Keep `limits.on_unknown_price` at `refuse` unless unpriced models are expected to be
@@ -675,22 +740,25 @@ deleted rules reach the gateway through the same notification as any deleted rul
 
 ## 15. Logs and troubleshooting
 
-The `request` line ([gateway guide](gateway.md), section 10) gains these fields:
+The `request` line ([gateway guide](gateway.md), section 10) gains these fields. The fields marked
+**details** hold a tenant's usage and are written only when `telemetry.tenant_usage_details` is `true`
+([telemetry guide](telemetry.md), [ADR 0054](../adr/0054-usage-data-is-the-tenants.md)); by default the log
+shows that a request was limited and by which rule, not the amounts:
 
 | Field | Present | Meaning |
 |---|---|---|
-| `reserved_tokens` | a reservation was made | the tokens reserved for the request: input plus output estimate |
+| `reserved_tokens` (**details**) | a reservation was made | the tokens reserved for the request: input plus output estimate |
 | `limit_subject`, `limit_metric` | refused by a limit | the subject kind and the metric that had no room |
 | `limit_scope` | refused by a limit | `all`, `provider` or `model` |
-| `limit_currency` | refused by a budget | the currency of the budget |
+| `limit_currency` (**details**) | refused by a budget | the currency of the budget |
 | `limit_level` | refused by a limit | `platform` or `tenant`: who set the value in force |
-| `limit` | refused by a limit | the value in force (a decimal for a budget, for example `250.5`) |
+| `limit` (**details**) | refused by a limit | the value in force (a decimal for a budget, for example `250.5`) |
 | `retry_after_s` | refused by a limit | the `Retry-After` that was sent |
 | `estimate_over_limit` | the estimate alone exceeds the limit | `true`: waiting will not help |
 | `budget_unpriced` | admitted with `limits.on_unknown_price` `allow` | `true`: a budget could not measure the request |
 | `limits_unverified` | admitted with `limits.on_store_failure` `allow` | `true`: counters could not be verified |
 | `limit_state` | every request line | how limits treated the request: `limited`, `unlimited`, `unverified` or `not_evaluated`, the same value as the usage record |
-| `price_currency` | refused with `no_price` | the currency of the price in force, absent when the model has none (next to `limit_currency`, the budget's) |
+| `price_currency`, `price_source` (**details**) | refused with `no_price` | the currency and the list (`tenant` or `catalogue`) of the price that applied, absent when the model has none (next to `limit_currency`, the budget's) |
 
 Other lines: `limit reservation expired` (error: `request_id`, `tenant_id`), `limit settle failed`
 (error: `request_id`, and the panic type or the error), `limit rules unavailable` (warning:
@@ -708,7 +776,8 @@ credential or a subject ID other than the principal fields of the request line.
 | 429 `rate_limited` with `limit_metric` `tokens_per_minute` and a small `Remaining` | the output limit the callers set: without one every request reserves the default |
 | 429 `rate_limited` with `limit_metric` `concurrent_requests` | slow or hanging requests; `limits.max_request_duration` ends them |
 | 429 `quota_exceeded` | the metric, scope and `Retry-After`: the quota or budget resets at the end of the period in the tenant's time zone; raise the rule or wait. `limit events --kind exhausted` shows when it was first reached |
-| 409 `no_price` | the model has no price in the budget's currency (`limit_currency` against `price_currency` in the log): add a price, move the budget to a narrower scope, or set `limits.on_unknown_price` to `allow`; see the override in section 5 before changing a price for one tenant |
+| 409 `no_price` | the model has no price in the tenant's **active currency** while a budget or ceiling in it applies. With the tenant's tools: `tenant-model list` (`price`, `tenant_price`, `price_source`), `limit list` (`active`), `price-list currency get`. The tenant adds a price in its active currency, narrows the budget to a scope with prices, or the operator sets `limits.on_unknown_price` to `allow`. In the operator's log, `limit_currency` against `price_currency` and `price_source`, only with `telemetry.tenant_usage_details` |
+| A budget that never refuses | `active` in `limit list`: its currency may not be the tenant's active currency (`price-list currency get`), or the change of currency has not taken effect yet (`effective_from`) |
 | 503 `unavailable` and `limit rules unavailable` | the database: the rules of that tenant could not be read and none were cached |
 | 503 `unavailable` and `limit counters unavailable` | the usage ledger could not be read to load a counter and `limits.on_store_failure` is `refuse` |
 | `limit reservation expired` | a defect: report it with the request ID |
@@ -749,9 +818,10 @@ Seeing the row for a tenant you meant to limit is the signal to write a rule.
 
 | Missing | Sprint |
 |---|---|
-| Tenant price lists, so that a tenant can price a model for itself (and set a budget in its currency); the price source in the usage record | 5.4 |
 | Counters shared by several instances, kept in Valkey and rebuilt from the ledger | epic 8 |
 | Delivery of limit events to other systems (webhook, outbox) | 6.4 |
 | Limit metrics for dashboards | 6.1 |
 | A "used against limit" report, and a usage rollup that makes the ledger reads cheap | 6.2 |
 | A cheaper path for budgets: a request with budget limits makes about 105 allocations per reserve and settle, against 4 for rate limits (measured by benchmark T-622; sprint 5.3 did not change the count); revisited with the 6.1 metrics and epic 8 | 6.1, epic 8 |
+
+Tenant price lists, listed here before, were delivered in sprint 5.4 (section 5). Platform aggregates per tenant are not planned: usage is the tenant's ([usage guide](usage.md), section 10).

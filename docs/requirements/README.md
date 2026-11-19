@@ -75,7 +75,7 @@ APIs; a billing, invoicing or payment system; a model host; a general-purpose AP
 | Vault | The function that stores and uses encrypted secrets |
 | Cell | A group of data-plane instances with their database. Pool cells are shared; a silo cell serves one tenant |
 
-Actors: platform admin, platform auditor, platform usage viewer; tenant owner, tenant admin,
+Actors: platform admin, platform auditor; tenant owner, tenant admin,
 credential manager, usage viewer, auditor, developer; service accounts; and the external systems:
 provider, identity provider, event receiver (for example a billing system), telemetry collector.
 
@@ -149,7 +149,7 @@ SOW 0.1; *new* marks requirements added in this revision.
 | AZ-03 | Pandokos ships immutable built-in tenant roles: owner, admin, credential manager, usage viewer, auditor, developer, inference, read-only | M | R1 (admin, inference), R2 (all) | RBAC-05, RBAC-06 |
 | AZ-04 | A tenant can define custom roles from the permission catalogue. Nobody can grant a permission they do not hold | S | R2 | RBAC-02, RBAC-03, new |
 | AZ-05 | A role that is still assigned cannot be deleted; roles can be deactivated | S | R2 | RBAC-07 |
-| AZ-06 | Platform roles are separate from tenant roles and imply no tenant membership: platform admin, platform auditor, platform usage viewer | M | R1 (admin), R2 (others) | SYS-01, SYS-13 |
+| AZ-06 | Platform roles are separate from tenant roles and imply no tenant membership: platform admin, platform auditor. No platform role reads the usage or the costs of a tenant | M | R1 (admin), R2 (others) | SYS-01, SYS-13 |
 | AZ-07 | The platform admin manages the tenant lifecycle, the provider and model catalogue and platform-wide limits | M | R1 | SYS-02, SYS-04 to SYS-07 |
 | AZ-08 | No platform role can read, export or replace a tenant's secret. A platform admin can see credential metadata and can disable or revoke a tenant credential, with a reason, on the audit record | M | R1 | SYS-08, SYS-09, SYS-10 |
 | AZ-09 | A platform admin acting inside a tenant (its users, roles or keys) performs an explicit support action that requires a reason, is audited in the tenant's log and can be disabled by configuration | S | R2 | SYS-03, SYS-11, SYS-12 |
@@ -190,6 +190,7 @@ SOW 0.1; *new* marks requirements added in this revision.
 | CAT-08 | Prices are versioned in time, with a currency. The cost of a request uses the price in force when it was made. When no price is known the usage is recorded with an unknown cost | M | R1 | MODEL-07, §11.3 |
 | CAT-09 | The price list can be loaded and refreshed from an open dataset and overridden by the operator. Every change creates a new version and an audit record | S | R1 | new |
 | CAT-10 | The catalogue can be exported and imported declaratively | S | R2 | NFR-MAINT-02 |
+| CAT-11 | A tenant can hold price lists of its own, one per currency, for the models it can use. Its active currency selects the list: where that list prices a model it takes precedence over the catalogue price in that currency. Only the tenant reads and writes its lists | S | R2 | new (issue #48) |
 
 ### 5.6 Gateway (inference data plane)
 
@@ -240,8 +241,8 @@ SOW 0.1; *new* marks requirements added in this revision.
 | USE-03 | A record holds: record ID, request ID, trace ID, tenant, caller, virtual key or token subject, credential ID, provider, model, endpoint, streaming flag, timestamps and duration, outcome, token counts by category (input, output, cached, provider-specific), other billed units, estimated cost, currency, price version and caller metadata | M | R1 | USAGE-03, USAGE-04, §10.3 |
 | USE-04 | Values reported by the provider and values estimated by Pandokos are stored separately | M | R1 | §10.3, BILL-05 |
 | USE-05 | The ledger is append-only: no record is changed after it is written | M | R1 | USAGE-08 |
-| USE-06 | Aggregated reports are available by tenant, period, provider, model and caller | M | R2 | USAGE-07 |
-| USE-07 | Tenant roles read their tenant's usage. Platform roles read the aggregates they are allowed to see | M | R2 | USAGE-09 |
+| USE-06 | Aggregated reports are available to the tenant, by period, provider, model and caller | M | R2 | USAGE-07 |
+| USE-07 | Tenant roles read their tenant's usage. Platform roles read no usage of a tenant: they see operational indicators of the installation, with no tenant and no cost | M | R2 | USAGE-09 |
 | USE-08 | Retention is configurable and usage can be exported in an open format | S | R2 | NFR-PRIV-03, BILLING-06 |
 | USE-09 | Only the tenant's own credential is used for its requests. Costs are estimates and informational: the provider's invoice is the authority | M | R1 | BILL-02 to 06 |
 
@@ -436,13 +437,13 @@ allow-list of metered endpoints (GW-09); errors in the shape of the called API (
 explicit rule against silent fallback between credentials (VLT-01); limit headers (LIM-09); an
 anti-escalation rule for role grants (AZ-04); detectable key format (IAM-03); canary-secret tests
 (VLT-14); egress address checks (GW-06); atomic audit (AUD-03); a tenant capability check for
-integrators (API-07); graceful draining (OPS-12); refreshing prices from an open dataset (CAT-09). Sessions for people (IAM-21, IAM-22) and an
+integrators (API-07); graceful draining (OPS-12); refreshing prices from an open dataset (CAT-09); price lists of a tenant's own and its active currency (CAT-11). Sessions for people (IAM-21, IAM-22) and an
 answer to "what may this user do" (AZ-11), so that an interface can be built on the API.
 
 **Rescoped.** The fifteen named providers became three tiers by API family (CAT-02): supporting
 the OpenAI wire protocol covers most of the list with one adapter. The unified OpenAI-compatible
 endpoint stays, but only as routing to providers that already speak that protocol (GW-15).
-Pool, silo and bridge became deployment tiers built on cells (OPS-06).
+Pool, silo and bridge became deployment tiers built on cells (OPS-06). Platform usage viewing was dropped: usage, limit events and price lists are the tenant's (USE-06, USE-07, AZ-06, [ADR 0054](../adr/0054-usage-data-is-the-tenants.md)).
 
 ## 10. Standards
 

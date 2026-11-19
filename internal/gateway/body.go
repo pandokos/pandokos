@@ -27,7 +27,7 @@ func (g trailerGuard) end(err error) {
 // noteFirstByte takes the time of the first body byte read from the provider.
 func (st *reqState) noteFirstByte(n int) {
 	if n > 0 && st.firstByte.IsZero() {
-		st.firstByte = time.Now()
+		st.firstByte = st.now()
 	}
 }
 

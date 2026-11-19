@@ -77,7 +77,7 @@ their sessions within the bound.
 
 ### 4.3 Roles
 
-- All built-in tenant roles; platform auditor and platform usage viewer.
+- All built-in tenant roles; platform auditor (AZ-06 no longer has a platform usage viewer; no platform role reads usage, costs or prices of a tenant).
 - Custom roles from the permission catalogue; no-escalation rule; deactivation; deletion guard.
 - `GET /v1/me`: identity, platform permissions, memberships and effective permissions per tenant.
 - Platform support action inside a tenant: explicit permission, mandatory reason, tenant audit

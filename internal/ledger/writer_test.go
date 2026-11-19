@@ -104,7 +104,7 @@ type rig struct {
 
 func opts(buffer, batch int, flush time.Duration) (Options, *testutil.LogBuffer) {
 	logs := &testutil.LogBuffer{}
-	return Options{Logger: telemetry.NewLogger(logs, "debug"), BufferSize: buffer, BatchSize: batch, FlushInterval: flush}, logs
+	return Options{UsageDetails: true, Logger: telemetry.NewLogger(logs, "debug"), BufferSize: buffer, BatchSize: batch, FlushInterval: flush}, logs
 }
 
 // start builds a writer over fs and runs it; the cleanup closes it.

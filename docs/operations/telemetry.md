@@ -18,9 +18,12 @@ Metrics and token counts on spans come with a later release.
 | `telemetry.traces.sample_ratio` | share of new traces that is sampled, 0 to 1 (default 1) |
 | `telemetry.traces.propagate` | send the trace context to the provider (default false) |
 | `telemetry.resource.attributes` | extra resource attributes, `key=value` pairs separated by commas |
+| `telemetry.tenant_usage_details` | write the cost, currency and token counts of a tenant's requests to the request log and to traces (default false; see below) |
 
 Each has an environment variable (`PANDOKOS_TELEMETRY_...`) as in the
 [configuration reference](configuration.md). They are read by `serve` only.
+
+**`telemetry.tenant_usage_details`** (`PANDOKOS_TELEMETRY_TENANT_USAGE_DETAILS`, default `false`). The cost, the currency and the token counts of a tenant's requests are the tenant's data ([ADR 0054](../adr/0054-usage-data-is-the-tenants.md)): by default neither the request log line nor the spans carry them. Turned on, the request line gets `cost`, `currency`, the `usage` group, `reserved_tokens` and, of a refusal, `limit`, `limit_currency`, `price_currency` and `price_source` ([gateway guide](gateway.md), section 10), and the provider span gets `pandokos.cost.amount` and `pandokos.cost.currency`. `serve` logs one `configuration warning` at start (`config check` prints it too) when it is on, naming the key: tenant usage is then written to logs and traces that the tenant cannot see. Use it for a single-tenant installation or for debugging. Token counts were never span attributes. The same key governs two lines of the writers: `usage record rejected` and `usage record not written` carry the whole `row` only when it is on, and otherwise the identifiers, the outcome, the duration, the byte counts and `metadata_count`; `limit event recorded` and `limit event not recorded` carry the metric, scope, subject kind and percent only when it is on, and otherwise the tenant, the kind and the rule ID ([usage guide](usage.md), [limits guide](limits.md)).
 
 Without an endpoint no exporter exists and nothing leaves the process, but trace IDs are still made:
 the usage record and the request log line carry a `trace_id`, and propagation works.
@@ -57,7 +60,7 @@ Attributes, the complete list:
 | Span | Attributes |
 |---|---|
 | server | `http.request.method`, `http.route`, `http.response.status_code`, `pandokos.request.id`, `pandokos.record.id`, `pandokos.tenant.id`, `pandokos.principal.id`, `pandokos.key.id`, `pandokos.provider`, `pandokos.operation`, `pandokos.outcome`, `pandokos.error.code` |
-| provider | `pandokos.provider`, `pandokos.endpoint`, `pandokos.model`, `pandokos.operation`, `pandokos.stream`, `pandokos.credential.id`, `http.response.status_code`, `pandokos.upstream.error`, `pandokos.ttfb_ms`, `pandokos.usage.source`, `pandokos.usage.output_source`, `pandokos.cost.status`, `pandokos.cost.amount`, `pandokos.cost.currency` |
+| provider | `pandokos.provider`, `pandokos.endpoint`, `pandokos.model`, `pandokos.operation`, `pandokos.stream`, `pandokos.credential.id`, `http.response.status_code`, `pandokos.upstream.error`, `pandokos.ttfb_ms`, `pandokos.usage.source`, `pandokos.usage.output_source`, `pandokos.cost.status`; with `telemetry.tenant_usage_details` also `pandokos.cost.amount`, `pandokos.cost.currency` |
 
 `pandokos.error.code` and `pandokos.upstream.error` are set only when there is an error. The span
 status is `Error` for the outcomes `upstream_error`, `timeout` and `internal_error` and unset

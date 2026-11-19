@@ -16,6 +16,7 @@ type Cost struct {
 	Amount    Decimal // in Currency; zero when !Known
 	Currency  string
 	VersionID string     // "" when no version
+	Source    string     // SourceCatalogue or SourceTenant whenever VersionID is set
 	Lines     []CostLine // the breakdown, in category order, for the categories that have units
 	Fallbacks []Category // categories priced at another category's rate
 }

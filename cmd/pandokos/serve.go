@@ -201,7 +201,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	catalogCache, err := catalog.NewCache(catalog.CacheOptions{DB: gatewayDB, Logger: logger, TTL: time.Duration(cfg.Cache.CatalogTTL)})
+	catalogCache, err := catalog.NewCache(catalog.CacheOptions{DB: gatewayDB, Logger: logger, TTL: time.Duration(cfg.Cache.CatalogTTL), DefaultCurrency: cfg.Pricing.DefaultCurrency})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
@@ -211,12 +211,12 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	ruleCache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: gatewayDB, Logger: logger, TTL: time.Duration(cfg.Cache.LimitsTTL), Zones: zones})
+	ruleCache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: gatewayDB, Logger: logger, TTL: time.Duration(cfg.Cache.LimitsTTL), Zones: zones, DefaultCurrency: cfg.Pricing.DefaultCurrency})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	events, err := limits.NewEventWriter(limits.EventWriterOptions{DB: gatewayDB, Logger: logger})
+	events, err := limits.NewEventWriter(limits.EventWriterOptions{DB: gatewayDB, Logger: logger, UsageDetails: cfg.Telemetry.TenantUsageDetails})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
@@ -258,6 +258,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		Refresh:   refresh,
 	}
 	adminOpts.Limits.Zones, adminOpts.Limits.OnUnknownPrice = zones, cfg.Limits.OnUnknownPrice
+	adminOpts.DefaultCurrency = cfg.Pricing.DefaultCurrency
 	adminOpts.Limits.Ledger = limits.NewLedger(workerDB)
 	adminHandler, err := admin.New(adminOpts)
 	if err != nil {
@@ -287,7 +288,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	}
 	writer, err := ledger.New(ledger.Options{
 		DB: gatewayDB, Logger: logger, BufferSize: cfg.Ledger.BufferSize, BatchSize: cfg.Ledger.BatchSize,
-		FlushInterval: time.Duration(cfg.Ledger.FlushInterval),
+		FlushInterval: time.Duration(cfg.Ledger.FlushInterval), UsageDetails: cfg.Telemetry.TenantUsageDetails,
 	})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())

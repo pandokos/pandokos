@@ -18,6 +18,7 @@ import (
 )
 
 var hostName = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$`)
+var reCurrencyCode = regexp.MustCompile(`^[A-Z]{3}$`)
 
 func validate(c *Config, purpose Purpose) []Problem {
 	var ps []Problem
@@ -494,6 +495,9 @@ func keyFileWarning(c *Config) []Warning {
 // quotes the URL: it may hold a token in its path or query.
 func validatePricing(c *Config) []Problem {
 	var ps []Problem
+	if !reCurrencyCode.MatchString(c.Pricing.DefaultCurrency) {
+		ps = append(ps, Problem{"pricing.default_currency", "must be three capital letters"})
+	}
 	r := &c.Pricing.Refresh
 	if d := time.Duration(r.Interval); d < time.Hour || d > 720*time.Hour {
 		ps = append(ps, Problem{"pricing.refresh.interval", "must be between 1h and 720h"})

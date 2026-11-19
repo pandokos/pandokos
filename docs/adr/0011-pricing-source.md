@@ -48,3 +48,4 @@ privileged provider credentials.
 
 
 - 2026-11: sprint 2.2 implements it with the v2 format of the dataset, which replaced the frozen v1 files ([ADR 0036](0036-prices-costs-and-importer.md)).
+- 2026-11-18: sprint 5.4: tenants hold price lists of their own, used in their active currency ([ADR 0053](0053-tenant-price-lists-and-active-currency.md))

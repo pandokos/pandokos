@@ -58,6 +58,8 @@ A record is *proposed* until the maintainer accepts it, by merging its pull requ
 | [0050](0050-quotas-and-budgets-periods-attribution-currencies.md) | Quotas and budgets: periods, attribution, currencies and unknown prices | accepted |
 | [0051](0051-period-counters-and-the-ledger.md) | Period counters and the ledger: load, cut, reconciliation, the failing store | accepted |
 | [0052](0052-administration-of-limits.md) | Administration of limits: scopes, thresholds, events, API and permissions | accepted |
+| [0053](0053-tenant-price-lists-and-active-currency.md) | Tenant price lists and the active currency | proposed |
+| [0054](0054-usage-data-is-the-tenants.md) | Usage data is the tenant's: what the platform does not see | proposed |
 
 ## Questions from SOW 0.1 and where they were decided
 

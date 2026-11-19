@@ -432,5 +432,167 @@ func TestTenantTimeZonePolicies(t *testing.T) {
 	})
 }
 
+// TestActiveCurrencyPolicies is T-743: the admin role in the tenant's session changes the three currency
+// columns of its own row; the platform scope, another tenant's session, a session without scope and a
+// superuser without scope are refused; the gateway and the worker cannot update; every refusal of the
+// guard (no pending instant, an instant in the past or beyond 32 days, a replacement that moves the
+// instant, a wrong previous currency); the format; a tenant is created with the default; the two
+// notifications.
+func TestActiveCurrencyPolicies(t *testing.T) {
+	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
+		super := d.Super(t)
+		a, b := d.SeedTenant(t, "cur-a"), d.SeedTenant(t, "cur-b")
+		sessA := sessions(a)[0]
+		platform := session{name: "platform", setting: "app.scope", value: "platform"}
+		ad := d.Connect(t, "admin")
+		listener := d.Super(t)
+		if _, err := listener.Exec(ctx(t), "LISTEN pandokos_cache"); err != nil {
+			t.Fatal(err)
+		}
+		notifications(listener, 200*time.Millisecond)
+
+		set := func(s session, id tenant.ID, currency, previous string, from any) (int64, error) {
+			return execIn(t, ad, s, `UPDATE pandokos.tenant SET active_currency = $2, active_currency_previous = $3, active_currency_effective_from = $4::timestamptz WHERE id = $1::uuid`,
+				id.String(), currency, previous, from)
+		}
+		in := func(days float64) any { return time.Now().UTC().Add(time.Duration(days * 24 * float64(time.Hour))) }
+		row := func(id tenant.ID) string {
+			return scalar(t, super, `SELECT active_currency || '|' || active_currency_previous || '|' || COALESCE(active_currency_effective_from::text, '') FROM pandokos.tenant WHERE id = $1::uuid`, id.String())
+		}
+		expect := func(what, want string, err error) {
+			t.Helper()
+			if got := sqlstate(err); got != want {
+				t.Errorf("%s: SQLSTATE %q (%v), want %q", what, got, err, want)
+			}
+		}
+		sorted := func(ns []string) string {
+			if len(ns) == 2 && ns[0] > ns[1] {
+				ns[0], ns[1] = ns[1], ns[0]
+			}
+			return fmt.Sprint(ns)
+		}
+
+		t.Run("a tenant session changes its own currency, and two notifications follow", func(t *testing.T) {
+			n, err := set(sessA, a, "EUR", "", in(10))
+			if err != nil || n != 1 {
+				t.Fatalf("a pending change: %d %v", n, err)
+			}
+			if got, want := sorted(notifications(listener, 400*time.Millisecond)), fmt.Sprint([]string{"catalog:" + a.String(), "limits:" + a.String()}); got != want {
+				t.Errorf("notifications %s, want %s", got, want)
+			}
+			// Withdrawn: the currency in force is the previous one again.
+			if n, err := set(sessA, a, "", "", nil); err != nil || n != 1 {
+				t.Errorf("a pending change withdrawn: %d %v", n, err)
+			}
+			if got := row(a); got != "||" {
+				t.Errorf("the columns after the withdrawal %q", got)
+			}
+		})
+
+		t.Run("nobody else changes it: the platform scope, another tenant, no session, a superuser without a scope", func(t *testing.T) {
+			expect("the platform scope", insufficientPrivilege, errOf(set(platform, a, "EUR", "", in(5))))
+			expect("the platform scope, every column of the row", insufficientPrivilege,
+				errOf(execIn(t, ad, platform, `UPDATE pandokos.tenant SET active_currency = 'EUR', active_currency_effective_from = now() + interval '1 day'`)))
+			if n, err := set(sessA, b, "EUR", "", in(10)); err != nil || n != 0 {
+				t.Errorf("A's session changed B's row: %d %v", n, err)
+			}
+			for _, s := range []session{noSession, {name: "empty", setting: "app.tenant_id", value: ""}} {
+				if n, err := set(s, a, "EUR", "", in(10)); err == nil && n != 0 {
+					t.Errorf("session %s changed %d rows", s.name, n)
+				}
+			}
+			expect("a superuser without a scope", insufficientPrivilege,
+				errOf(execIn(t, super0(t, d), noSession, `UPDATE pandokos.tenant SET active_currency = 'EUR', active_currency_effective_from = now() + interval '1 day' WHERE id = $1::uuid`, a.String())))
+			expect("a superuser in the platform scope", insufficientPrivilege,
+				errOf(execIn(t, super0(t, d), platform, `UPDATE pandokos.tenant SET active_currency = 'EUR', active_currency_effective_from = now() + interval '1 day' WHERE id = $1::uuid`, a.String())))
+			if got := row(a) + " " + row(b); got != "|| ||" {
+				t.Errorf("the columns after the refusals: %q", got)
+			}
+			// The other columns of the row keep their policies: the platform scope still renames.
+			if n, err := execIn(t, ad, platform, `UPDATE pandokos.tenant SET display_name = 'Tenant B' WHERE id = $1::uuid`, b.String()); err != nil || n != 1 {
+				t.Errorf("platform scope, display name: %d %v", n, err)
+			}
+			// A tenant session cannot rename, change the state or the zone through the same statement.
+			expect("the currency and the display name together", insufficientPrivilege,
+				errOf(execIn(t, ad, sessA, `UPDATE pandokos.tenant SET display_name = 'x', active_currency = 'EUR', active_currency_effective_from = now() + interval '1 day' WHERE id = $1::uuid`, a.String())))
+		})
+
+		t.Run("the gateway and the worker cannot update", func(t *testing.T) {
+			for _, role := range []string{"gateway", "worker"} {
+				for _, s := range []session{sessA, platform} {
+					_, err := execIn(t, d.Connect(t, role), s, `UPDATE pandokos.tenant SET active_currency = 'EUR'`)
+					expect(role+" in session "+s.name, insufficientPrivilege, err)
+				}
+			}
+		})
+
+		t.Run("every refusal of the guard", func(t *testing.T) {
+			expect("a currency in force changed without a pending instant", checkViolation, errOf(set(sessA, a, "EUR", "", nil)))
+			expect("a previous currency that is not the one in force", checkViolation, errOf(set(sessA, a, "EUR", "GBP", in(5))))
+			expect("an instant in the past", checkViolation, errOf(set(sessA, a, "EUR", "", in(-0.5))))
+			expect("an instant now", checkViolation, errOf(set(sessA, a, "EUR", "", time.Now().UTC())))
+			expect("an instant 33 days away", checkViolation, errOf(set(sessA, a, "EUR", "", in(33))))
+			expect("a malformed currency", checkViolation, errOf(set(sessA, a, "eur", "", in(5))))
+			expect("a currency of two letters", checkViolation, errOf(set(sessA, a, "EU", "", in(5))))
+			expect("a malformed previous currency", checkViolation, errOf(set(sessA, a, "EUR", "usd", in(5))))
+			if got := row(a); got != "||" {
+				t.Fatalf("the columns %q after refusals", got)
+			}
+			if n, err := set(sessA, a, "EUR", "", in(31)); err != nil || n != 1 {
+				t.Fatalf("an instant 31 days away: %d %v", n, err)
+			}
+			pending := scalar(t, super, `SELECT active_currency_effective_from::text FROM pandokos.tenant WHERE id = $1::uuid`, a.String())
+			// A replacement keeps the instant; one that moves it is refused.
+			expect("a replacement that moves the instant", checkViolation, errOf(set(sessA, a, "GBP", "", in(5))))
+			expect("a replacement with another previous", checkViolation, errOf(set(sessA, a, "GBP", "EUR", pending)))
+			if n, err := execIn(t, ad, sessA, `UPDATE pandokos.tenant SET active_currency = 'GBP' WHERE id = $1::uuid`, a.String()); err != nil || n != 1 {
+				t.Errorf("a replacement that keeps the instant: %d %v", n, err)
+			}
+			if got := scalar(t, super, `SELECT active_currency || '|' || active_currency_previous || '|' || (active_currency_effective_from::text = $2)::text FROM pandokos.tenant WHERE id = $1::uuid`, a.String(), pending); got != "GBP||true" {
+				t.Errorf("after the replacement: %q", got)
+			}
+			if n, err := set(sessA, a, "", "", nil); err != nil || n != 1 {
+				t.Errorf("withdrawal: %d %v", n, err)
+			}
+			expect("a currency of the wrong format in the constraint, whoever writes it", checkViolation,
+				errOf(execIn(t, super0(t, d), session{name: "tenant-a", setting: "app.tenant_id", value: a.String()}, `UPDATE pandokos.tenant SET active_currency = 'eur', active_currency_effective_from = now() + interval '1 day' WHERE id = $1::uuid`, a.String())))
+		})
+
+		t.Run("after the instant the next change is a new pending one", func(t *testing.T) {
+			// A change that took effect: the instant lies in the past. Only a superuser with the triggers off can write it.
+			c := d.SeedTenant(t, "cur-c")
+			d.SetTenantCurrency(t, c, "EUR", "", time.Now().Add(-24*time.Hour))
+			sessC := sessions(c)[0]
+			expect("the currency in force is EUR: changing it without a pending instant", checkViolation, errOf(set(sessC, c, "GBP", "", nil)))
+			expect("a previous currency that is the old one", checkViolation, errOf(set(sessC, c, "GBP", "", in(5))))
+			if n, err := set(sessC, c, "GBP", "EUR", in(5)); err != nil || n != 1 {
+				t.Errorf("a new pending change after the instant: %d %v", n, err)
+			}
+			if n, err := set(sessC, c, "EUR", "", nil); err != nil || n != 1 {
+				t.Errorf("a withdrawal: %d %v", n, err)
+			}
+		})
+
+		t.Run("a tenant is created with the default", func(t *testing.T) {
+			rows, err := query(t, ad, platform, `INSERT INTO pandokos.tenant (name) VALUES ('cur-new') RETURNING active_currency, active_currency_previous, active_currency_effective_from::text AS at`)
+			if err != nil || len(rows) != 1 || rows[0]["active_currency"] != "" || rows[0]["active_currency_previous"] != "" || rows[0]["at"] != nil {
+				t.Errorf("created: %v %v", rows, err)
+			}
+			for what, sql := range map[string]string{
+				"a currency":             `INSERT INTO pandokos.tenant (name, active_currency) VALUES ('cur-ins-1', 'EUR')`,
+				"a previous currency":    `INSERT INTO pandokos.tenant (name, active_currency_previous) VALUES ('cur-ins-2', 'EUR')`,
+				"a pending change":       `INSERT INTO pandokos.tenant (name, active_currency, active_currency_previous, active_currency_effective_from) VALUES ('cur-ins-3', 'EUR', 'USD', now() + interval '1 day')`,
+				"an instant and nothing": `INSERT INTO pandokos.tenant (name, active_currency_effective_from) VALUES ('cur-ins-4', now() + interval '1 day')`,
+			} {
+				_, err := execIn(t, ad, platform, sql)
+				if got := sqlstate(err); got != insufficientPrivilege && got != checkViolation {
+					t.Errorf("%s from the administration role: %v", what, err)
+				}
+				expect(what+" from a superuser", checkViolation, errOf(execIn(t, super0(t, d), noSession, sql)))
+			}
+		})
+	})
+}
+
 // super0 is a fresh superuser connection, for statements that run in a session of their own.
 func super0(t *testing.T, d *dbtest.Database) *pgx.Conn { t.Helper(); return d.Super(t) }

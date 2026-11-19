@@ -75,11 +75,15 @@ const (
 	PlatformLimitRead   = "platform_limit:read"
 	PlatformLimitWrite  = "platform_limit:write"
 	PlatformLimitDelete = "platform_limit:delete"
+
+	PriceListRead   = "price_list:read"
+	PriceListWrite  = "price_list:write"
+	PriceListDelete = "price_list:delete"
 )
 
 var catalogue = []Permission{
 	{IdentityRead, ScopeSelf, "Reading one's own identity, roles and permissions"},
-	{TenantRead, ScopePlatform, "Reading and listing tenants"},
+	{TenantRead, ScopePlatform, "Reading and listing tenants, with their time zone and active currency"},
 	{TenantWrite, ScopePlatform, "Creating a tenant with its first administrator; changing its name and display name"},
 	{TenantSuspend, ScopePlatform, "Suspending and reactivating a tenant"},
 	{PlatformKeyRead, ScopePlatform, "Reading and listing platform keys (metadata)"},
@@ -101,7 +105,7 @@ var catalogue = []Permission{
 	{CatalogRead, ScopePlatform, "Reading providers, endpoints, models, model grants, price versions and price imports"},
 	{CatalogWrite, ScopePlatform, "Creating, changing and deleting providers, endpoints and models; granting models to tenants and revoking grants"},
 	{CatalogPrice, ScopePlatform, "Setting and removing price overrides; running a price import"},
-	{ModelRead, ScopeTenant, "Listing the models available to the tenant, with their prices; reading the tenant's model restriction"},
+	{ModelRead, ScopeTenant, "Listing the models available to the tenant, with the prices that apply to it; reading the tenant's model restriction"},
 	{ModelRestrict, ScopeTenant, "Setting and clearing the tenant's model restriction"},
 	{UsageRead, ScopeTenant, "Listing the tenant's usage records"},
 	{TokenIssuerRead, ScopeTenant, "Reading and listing the tenant's trusted token issuers and the platform-level issuers that list the tenant"},
@@ -119,6 +123,9 @@ var catalogue = []Permission{
 	{PlatformLimitRead, ScopePlatform, "Reading and listing the ceilings the platform sets for tenants"},
 	{PlatformLimitWrite, ScopePlatform, "Creating and changing the ceilings the platform sets for tenants"},
 	{PlatformLimitDelete, ScopePlatform, "Deleting a ceiling the platform sets for tenants"},
+	{PriceListRead, ScopeTenant, "Reading the tenant's price lists and their versions, and the tenant's active currency"},
+	{PriceListWrite, ScopeTenant, "Adding a price version to one of the tenant's price lists; choosing the tenant's active currency"},
+	{PriceListDelete, ScopeTenant, "Removing a price version of the tenant's lists that has not started"},
 }
 
 // Catalogue returns the permissions, in a fixed order.
@@ -172,7 +179,8 @@ func Roles() []Role {
 			"Administers the installation: tenants and platform keys"},
 		{RoleTenantAdmin, KindServiceAccount, sorted(IdentityRead, ServiceAccountRead, ServiceAccountWrite, VirtualKeyRead, VirtualKeyWrite, VirtualKeyRevoke, ModelInvoke,
 			CredentialRead, CredentialWrite, CredentialRotate, CredentialDelete, CredentialUse, ModelRead, ModelRestrict, UsageRead,
-			TokenIssuerRead, TokenIssuerWrite, TokenIssuerDelete, SubjectMappingRead, SubjectMappingWrite, SubjectMappingDelete, LimitRead, LimitWrite, LimitDelete),
+			TokenIssuerRead, TokenIssuerWrite, TokenIssuerDelete, SubjectMappingRead, SubjectMappingWrite, SubjectMappingDelete, LimitRead, LimitWrite, LimitDelete,
+			PriceListRead, PriceListWrite, PriceListDelete),
 			"Administers one tenant: service accounts and virtual keys; may call models"},
 		{RoleInference, KindServiceAccount, sorted(ModelInvoke, CredentialUse), "Calls models through the inference listener"},
 	}

@@ -58,6 +58,8 @@ type Options struct {
 	PropagateTrace         bool                      // send traceparent and tracestate to the provider
 	Limits                 Limits                    // optional: nil enforces no limit
 	DefaultOutputTokens    int64                     // output tokens reserved per choice when the caller sets no limit; positive
+	Now                    func() time.Time          // optional: the clock of the start of a request (default time.Now); a seam for tests
+	UsageDetails           bool                      // telemetry.tenant_usage_details: cost, currency and token counts in the log line and the spans
 }
 
 // Handler is the inference handler.
@@ -80,6 +82,9 @@ type Handler struct {
 	propagate   bool
 	limits      Limits
 	defaultOut  int64
+	// usageDetails is Options.UsageDetails: cost, currency and token counts go to the request line and the spans only when it is set.
+	usageDetails bool
+	now          func() time.Time // Options.Now
 }
 
 // New validates the options and returns a Handler.
@@ -128,24 +133,30 @@ func New(o Options) (*Handler, error) {
 		names = append(names, name)
 	}
 	sort.Strings(names)
+	now := o.Now
+	if now == nil {
+		now = time.Now
+	}
 	h := &Handler{
-		familyNames: names,
-		logger:      o.Logger,
-		auth:        o.Authenticator,
-		catalogue:   o.Catalogue,
-		credentials: o.Credentials,
-		failures:    o.Failures,
-		families:    families,
-		def:         def,
-		maxBody:     o.MaxRequestBodyBytes,
-		readTimeout: o.RequestBodyReadTimeout,
-		maxDuration: o.MaxRequestDuration,
-		recorder:    o.Recorder,
-		tracer:      o.Tracer.Tracer(instrumentationScope, trace.WithInstrumentationVersion(buildinfo.Version)),
-		propagator:  propagation.TraceContext{},
-		propagate:   o.PropagateTrace,
-		limits:      o.Limits,
-		defaultOut:  o.DefaultOutputTokens,
+		now:          now,
+		familyNames:  names,
+		logger:       o.Logger,
+		auth:         o.Authenticator,
+		catalogue:    o.Catalogue,
+		credentials:  o.Credentials,
+		failures:     o.Failures,
+		families:     families,
+		def:          def,
+		maxBody:      o.MaxRequestBodyBytes,
+		readTimeout:  o.RequestBodyReadTimeout,
+		maxDuration:  o.MaxRequestDuration,
+		recorder:     o.Recorder,
+		tracer:       o.Tracer.Tracer(instrumentationScope, trace.WithInstrumentationVersion(buildinfo.Version)),
+		propagator:   propagation.TraceContext{},
+		propagate:    o.PropagateTrace,
+		limits:       o.Limits,
+		defaultOut:   o.DefaultOutputTokens,
+		usageDetails: o.UsageDetails,
 	}
 	h.proxy = h.newProxy(&classTransport{public: o.Public, private: o.Private})
 	return h, nil
@@ -156,6 +167,7 @@ type stateKey struct{}
 // reqState is the state of one request. It is reached through the request context by the proxy
 // callbacks, which run on the handler goroutine.
 type reqState struct {
+	now      func() time.Time // the clock of the handler
 	start    time.Time
 	id       string
 	sw       *statusWriter
@@ -261,7 +273,7 @@ func providerName(s string) bool {
 
 // ServeHTTP handles one request: the steps of sprint.md section 5.1, in that order.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	st := &reqState{start: time.Now(), id: NewRequestID(), callerCx: r.Context(), method: logMethod(r.Method), adapter: h.def, limitState: LimitStateNotEvaluated}
+	st := &reqState{now: h.now, start: h.now(), id: NewRequestID(), callerCx: r.Context(), method: logMethod(r.Method), adapter: h.def, limitState: LimitStateNotEvaluated}
 	st.sw = &statusWriter{ResponseWriter: w, requestID: st.id}
 	w.Header().Set(family.HeaderRequestID, st.id)
 	defer func() { h.finish(st, recover()) }()
@@ -610,7 +622,7 @@ func (h *Handler) logRequest(st *reqState, outcome string) {
 	if st.invalidReason != "" {
 		attrs = append(attrs, "invalid_reason", st.invalidReason)
 	}
-	attrs = append(attrs, "duration_ms", time.Since(st.start).Milliseconds())
+	attrs = append(attrs, "duration_ms", st.now().Sub(st.start).Milliseconds())
 	if p := st.principal; p != nil {
 		attrs = append(attrs, "tenant_id", p.TenantID.String(), "service_account_id", p.ID, "key_id", p.KeyID)
 		if p.IssuerID != "" {
@@ -659,9 +671,6 @@ func (h *Handler) logRequest(st *reqState, outcome string) {
 		if st.rec != nil && st.rec.OutputSource != source {
 			attrs = append(attrs, "usage_output_source", string(st.rec.OutputSource))
 		}
-		if source != usage.SourceNone {
-			attrs = append(attrs, usageAttr(st.costUsage))
-		}
 	}
 	if st.ledgerFull {
 		attrs = append(attrs, "ledger", "full")
@@ -672,9 +681,6 @@ func (h *Handler) logRequest(st *reqState, outcome string) {
 			attrs = append(attrs, "trace_id", r.TraceID)
 		}
 		attrs = append(attrs, "cost_status", r.CostStatus)
-		if r.Cost.Known {
-			attrs = append(attrs, "cost", r.Cost.Amount.String(), "currency", r.Cost.Currency)
-		}
 		if n := len(r.Metadata); n > 0 {
 			attrs = append(attrs, "metadata_count", n)
 		}
@@ -685,7 +691,48 @@ func (h *Handler) logRequest(st *reqState, outcome string) {
 	if st.readerFailed {
 		attrs = append(attrs, "usage_reader", "failed")
 	}
+	if h.usageDetails {
+		attrs = append(attrs, st.usageDetailAttrs()...)
+	}
 	h.logger.Info("request", attrs...)
+}
+
+// usageDetailAttrs is the one place that builds the fields of the request line that hold a tenant's usage
+// data (sprint.md 5.11): the cost and its currency, the token counts, the tokens reserved and, of a refusal,
+// the limit, its currency and the currency and source of the price. The caller writes them only when
+// telemetry.tenant_usage_details is on (T-739, T-R52).
+func (st *reqState) usageDetailAttrs() []any {
+	var attrs []any
+	if st.answered {
+		source := usage.SourceNone
+		if st.rec != nil {
+			source = st.rec.InputSource
+		}
+		if source != usage.SourceNone {
+			attrs = append(attrs, usageAttr(st.costUsage))
+		}
+	}
+	if r := st.rec; r != nil && r.Cost.Known {
+		attrs = append(attrs, "cost", r.Cost.Amount.String(), "currency", r.Cost.Currency)
+	}
+	if st.reservation != nil || st.reservedTokens > 0 {
+		attrs = append(attrs, "reserved_tokens", st.reservedTokens)
+	}
+	if r := st.refusal; r != nil {
+		var limit any = r.Limit
+		if r.Currency != "" {
+			limit = millionths(r.Limit)
+			attrs = append(attrs, "limit_currency", r.Currency)
+		}
+		attrs = append(attrs, "limit", limit)
+		if r.PriceCurrency != "" {
+			attrs = append(attrs, "price_currency", r.PriceCurrency)
+		}
+		if r.PriceSource != "" {
+			attrs = append(attrs, "price_source", r.PriceSource)
+		}
+	}
+	return attrs
 }
 
 func routeLabelOf(st *reqState) string {

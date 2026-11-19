@@ -358,10 +358,24 @@ type refReq struct {
 	resolveAt        time.Time // when the record leaves the writer's queue: committed, rejected or lost
 	limits           []Limit
 	res              Reservation
+	cur              string // the currency its cost is in (sprint 5.4); refCurrency when empty
+}
+
+// currency is the currency the cost of the request is in.
+func (q *refReq) currency() string {
+	if q.cur == "" {
+		return refCurrency
+	}
+	return q.cur
 }
 
 func (q *refReq) matches(l Limit) bool {
 	if q.tn != l.Tenant {
+		return false
+	}
+	// A cost limit counts only the requests whose cost is in its currency (sprint 5.4): the costs
+	// recorded in another currency are not its own.
+	if l.Metric.Cost() && l.Currency != q.currency() {
 		return false
 	}
 	switch l.Subject {
@@ -472,7 +486,7 @@ func (r *refModel) Ledger(asOf time.Time, t tenant.ID, from, liveFrom, to time.T
 			k.minute = q.start.Unix() / 60
 		}
 		if q.actCost >= 0 {
-			k.curr = refCurrency
+			k.curr = q.currency()
 		}
 		g := groups[k]
 		if g == nil {

@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
+
+	"github.com/pandokos/pandokos/internal/pricing"
 )
 
 func mm(kv ...any) map[Metric]int64 {
@@ -738,6 +741,199 @@ func TestResolveByIdentifier(t *testing.T) {
 		rs := []Rule{rule(Rule{SubjectKind: SubjectTenant, ModelID: "m1"})}
 		if got := forQuery(rs, Query{ProviderID: "p1", ModelID: "m1"}); len(got) != 0 {
 			t.Errorf("%+v", got)
+		}
+	})
+}
+
+// ---- sprint 5.4: the active currency ------------------------------------------------------------
+
+// currencyRule is a rule of any subject and scope with the currency of a cost metric given.
+func currencyRule(id string, kind SubjectKind, sid, prov, model string, m Metric, v int64, currency string) Rule {
+	r := scoped(id, kind, sid, prov, model, m, v, true)
+	if m.Cost() {
+		r.Currency = currency
+	}
+	return r
+}
+
+// TestActiveCurrencyRules is T-728: For leaves out the cost limits outside the currency in force at
+// the start of the request, at every level and subject.
+func TestActiveCurrencyRules(t *testing.T) {
+	a := tid(1)
+	start := at(2026, 11, 17, 12, 0, 0)
+	q := Query{ServiceAccountID: "sa-1", KeyID: "key-1", ProviderID: "openai", ModelID: "gpt-4", Start: start}
+	cal := TenantCalendar{Current: utcCal}
+	build := func(cur pricing.Active, plat, own, rules []Rule) RuleSet {
+		s := NewScopedRuleSet(a, plat, own, rules)
+		s.Calendar, s.Currency = cal, cur
+		return s
+	}
+	usd, eur := pricing.Active{Current: "USD"}, pricing.Active{Current: "EUR"}
+	costOf := func(ls []Limit) map[string]string { // "subject/metric" -> currency
+		out := map[string]string{}
+		for _, l := range ls {
+			if l.Metric.Cost() {
+				out[fmt.Sprintf("%s/%s/%s", l.Level, l.Subject, l.Metric)] = l.Currency
+			}
+		}
+		return out
+	}
+
+	t.Run("every level and subject keeps only the currency in force", func(t *testing.T) {
+		var tenantRules []Rule
+		n := 0
+		for _, cur := range []string{"USD", "EUR"} {
+			for _, sub := range []struct {
+				k  SubjectKind
+				id string
+			}{{SubjectTenant, ""}, {SubjectServiceAccount, "sa-1"}, {SubjectKey, "key-1"}} {
+				for _, m := range []Metric{CostPerDay, CostPerMonth} {
+					n++
+					tenantRules = append(tenantRules, currencyRule(fmt.Sprintf("r%d", n), sub.k, sub.id, "", "", m, 1000, cur))
+				}
+			}
+		}
+		defaults := []Rule{currencyRule("d-usd", SubjectTenant, "", "", "", CostPerMonth, 9000, "USD"), currencyRule("d-eur", SubjectTenant, "", "", "", CostPerMonth, 9000, "EUR")}
+		for cur, want := range map[string]pricing.Active{"USD": usd, "EUR": eur} {
+			got := build(want, defaults, nil, tenantRules).For(q)
+			for _, l := range got {
+				if l.Metric.Cost() && l.Currency != cur {
+					t.Errorf("%s in force: a limit in %s applies: %+v", cur, l.Currency, l)
+				}
+			}
+			cost := 0
+			for _, l := range got {
+				if l.Metric.Cost() {
+					cost++
+				}
+			}
+			// Six rules of the tenant in each currency; the platform default shares the counter of the tenant's
+			// monthly rule, so there are six counters.
+			if cost != 6 {
+				t.Errorf("%s in force: %d cost limits, want the six counters of that currency", cur, cost)
+			}
+		}
+	})
+
+	t.Run("a platform ceiling in another currency never applies", func(t *testing.T) {
+		own := []Rule{currencyRule("p-eur", SubjectTenant, "", "", "", CostPerDay, 500, "EUR")}
+		if got := costOf(build(usd, nil, own, nil).For(q)); len(got) != 0 {
+			t.Errorf("a ceiling in EUR applies to a tenant in USD: %v", got)
+		}
+		if got := costOf(build(eur, nil, own, nil).For(q)); len(got) != 1 {
+			t.Errorf("a ceiling in EUR does not apply to a tenant in EUR: %v", got)
+		}
+	})
+
+	t.Run("a pending change switches at its instant", func(t *testing.T) {
+		change := at(2026, 12, 1, 0, 0, 0)
+		cur := pricing.Active{Current: "EUR", Previous: "USD", From: change}
+		rules := []Rule{currencyRule("usd", SubjectTenant, "", "", "", CostPerMonth, 1000, "USD"), currencyRule("eur", SubjectTenant, "", "", "", CostPerMonth, 2000, "EUR")}
+		set := build(cur, nil, nil, rules)
+		for _, c := range []struct {
+			name string
+			at   time.Time
+			want string
+		}{
+			{"a nanosecond before", change.Add(-time.Nanosecond), "USD"},
+			{"at the instant", change, "EUR"},
+			{"after it", change.Add(48 * time.Hour), "EUR"},
+			{"long before", change.Add(-90 * 24 * time.Hour), "USD"},
+		} {
+			qq := q
+			qq.Start = c.at
+			got := set.For(qq)
+			if len(got) != 1 || got[0].Currency != c.want {
+				t.Errorf("%s: %+v, want the budget in %s", c.name, got, c.want)
+			}
+		}
+	})
+
+	t.Run("count limits are never left out", func(t *testing.T) {
+		rules := []Rule{
+			scoped("rpm", SubjectTenant, "", "", "", RequestsPerMinute, 10, true),
+			scoped("tpd", SubjectKey, "key-1", "", "", TokensPerDay, 100, true),
+			scoped("rpd", SubjectServiceAccount, "sa-1", "openai", "", RequestsPerDay, 100, true),
+			currencyRule("cost", SubjectTenant, "", "", "", CostPerDay, 1000, "EUR"),
+		}
+		got := build(usd, nil, nil, rules).For(q)
+		if len(got) != 3 {
+			t.Errorf("%d limits, want the three count limits: %+v", len(got), got)
+		}
+		for _, l := range got {
+			if l.Metric.Cost() {
+				t.Errorf("a cost limit in EUR applies in USD: %+v", l)
+			}
+		}
+	})
+
+	t.Run("the zero Active leaves nothing out", func(t *testing.T) {
+		rules := []Rule{currencyRule("a", SubjectTenant, "", "", "", CostPerDay, 1000, "EUR"), currencyRule("b", SubjectKey, "key-1", "", "", CostPerDay, 1000, "USD"),
+			currencyRule("c", SubjectServiceAccount, "sa-1", "", "", CostPerMonth, 1000, "GBP")}
+		if got := build(pricing.Active{}, nil, nil, rules).For(q); len(got) != 3 {
+			t.Errorf("%d limits, want 3: %+v", len(got), got)
+		}
+	})
+
+	t.Run("two budgets that differ by currency are two rules", func(t *testing.T) {
+		rules := []Rule{currencyRule("usd", SubjectTenant, "", "", "", CostPerMonth, 1000, "USD"), currencyRule("eur", SubjectTenant, "", "", "", CostPerMonth, 2000, "EUR")}
+		set := build(pricing.Active{}, nil, nil, rules)
+		got := set.For(q)
+		max := map[string]int64{}
+		for _, l := range got {
+			max[l.Currency] = l.Max
+		}
+		if len(got) != 2 || !reflect.DeepEqual(max, map[string]int64{"USD": 1000, "EUR": 2000}) {
+			t.Errorf("limits %+v, want one per currency", got)
+		}
+		if len(got) == 2 && got[0].RuleID == got[1].RuleID {
+			t.Errorf("one rule stands for both currencies: %+v", got)
+		}
+		// In force, each one alone applies, with its own value.
+		if l := build(eur, nil, nil, rules).For(q); len(l) != 1 || l[0].Max != 2000 || l[0].RuleID != "eur" {
+			t.Errorf("EUR in force: %+v", l)
+		}
+		if l := build(usd, nil, nil, rules).For(q); len(l) != 1 || l[0].Max != 1000 || l[0].RuleID != "usd" {
+			t.Errorf("USD in force: %+v", l)
+		}
+	})
+
+	t.Run("a tenant's ceiling replaces the default of its currency only", func(t *testing.T) {
+		defaults := []Rule{currencyRule("d-usd", SubjectTenant, "", "", "", CostPerMonth, 9000, "USD"), currencyRule("d-eur", SubjectTenant, "", "", "", CostPerMonth, 8000, "EUR")}
+		own := []Rule{currencyRule("o-eur", SubjectTenant, "", "", "", CostPerMonth, 3000, "EUR")}
+		set := build(pricing.Active{}, defaults, own, nil)
+		byCur := map[string]Limit{}
+		for _, l := range set.For(q) {
+			byCur[l.Currency] = l
+		}
+		if len(byCur) != 2 || byCur["EUR"].RuleID != "o-eur" || byCur["EUR"].Max != 3000 || byCur["USD"].RuleID != "d-usd" || byCur["USD"].Max != 9000 {
+			t.Errorf("limits %+v, want the tenant's ceiling for EUR and the default for USD", byCur)
+		}
+		if l := build(usd, defaults, own, nil).For(q); len(l) != 1 || l[0].RuleID != "d-usd" {
+			t.Errorf("USD in force: %+v, want the default of USD", l)
+		}
+		if l := build(eur, defaults, own, nil).For(q); len(l) != 1 || l[0].RuleID != "o-eur" || l[0].Level != LevelPlatform {
+			t.Errorf("EUR in force: %+v, want the tenant's ceiling", l)
+		}
+	})
+
+	t.Run("at most one limit per counter", func(t *testing.T) {
+		rules := []Rule{
+			currencyRule("p1", SubjectTenant, "", "", "", CostPerMonth, 5000, "EUR"),
+			currencyRule("t1", SubjectTenant, "", "", "", CostPerMonth, 3000, "EUR"),
+			currencyRule("t2", SubjectTenant, "", "", "", CostPerMonth, 4000, "USD"),
+			currencyRule("k1", SubjectKey, "key-1", "", "", CostPerMonth, 100, "EUR"),
+			currencyRule("k2", SubjectKey, "key-1", "", "", CostPerMonth, 100, "USD"),
+		}
+		for _, cur := range []pricing.Active{{}, usd, eur} {
+			seen := map[ckey]bool{}
+			for _, l := range build(cur, rules[:1], nil, rules[1:]).For(q) {
+				k := ckeyOf(l)
+				if seen[k] {
+					t.Errorf("%+v: two limits on one counter %+v", cur, k)
+				}
+				seen[k] = true
+			}
 		}
 	})
 }

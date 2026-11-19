@@ -85,6 +85,14 @@ func limitsWarnings(c *Config) []Warning {
 	return nil
 }
 
+// telemetryWarnings warns that a tenant's usage data goes to logs and traces.
+func telemetryWarnings(c *Config) []Warning {
+	if c.Telemetry.TenantUsageDetails {
+		return []Warning{{Key: "telemetry.tenant_usage_details", Message: "tenant usage details (cost, currency, token counts) are written to logs and traces"}}
+	}
+	return nil
+}
+
 func warnings(cfg *Config, env map[string]string, known map[string]bool, src Source) []Warning {
 	ws := listenerAndURLWarnings(cfg)
 	if src.Purpose == PurposeServe {
@@ -92,6 +100,7 @@ func warnings(cfg *Config, env map[string]string, known map[string]bool, src Sou
 		ws = append(ws, otelEnvironmentWarnings(cfg, src.Environ)...)
 		ws = append(ws, tokenWarnings(cfg)...)
 		ws = append(ws, limitsWarnings(cfg)...)
+		ws = append(ws, telemetryWarnings(cfg)...)
 	}
 	var unknown []string
 	for name := range env {

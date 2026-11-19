@@ -70,8 +70,13 @@ the consequence "a rule for a subject that does not exist is idle".
    `not_evaluated`), and a tenant's first unlimited request of a day leaves one audit row
    `limit.unlimited_traffic` in the tenant's log and in the platform's.
 
+## Amendment (sprint 5.4)
+
+A cost limit outside the tenant's active currency is left out when the limits of a request are resolved. A tenant's ceiling replaces the default of the same scope, metric and currency.
+
 ## History
 
 - 2026-11-18: sprint 5.2 adds the columns (scope, currency, enforcement, thresholds) and the administration API ([ADR 0052](0052-administration-of-limits.md)).
 - 2026-11-18: accepted by the maintainer after review. Amendments planned in sprint 5.3: typed subject columns with foreign keys (`ON DELETE RESTRICT`), the scope by identifier, rules deleted with audit when their subject is deleted or a key revoked, deletion of a referenced provider or model refused, unlimited traffic traced in the usage record and once a day per tenant in the audit log.
 - 2026-11-18: amended by sprint 5.3 (see Amendment).
+- 2026-11-18: amended by sprint 5.4 (see Amendment); [ADR 0053](0053-tenant-price-lists-and-active-currency.md).

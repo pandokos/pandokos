@@ -28,6 +28,18 @@ type Target struct {
 	// DefaultOutputTokens is the output reservation per choice of a request that sets no output
 	// limit; 0 when the model has none and the configured default applies.
 	DefaultOutputTokens int64
+	// Currency is the active currency of the tenant; the zero value prices from the catalogue
+	// whatever its currency.
+	Currency pricing.Active
+	// TenantPrices holds the tenant's price versions of the model, of the currencies of Currency;
+	// read-only.
+	TenantPrices []pricing.Version
+}
+
+// PriceList is the price list of the tenant for the model: its currency, the catalogue's versions
+// and its own.
+func (t Target) PriceList() pricing.List {
+	return pricing.List{Currency: t.Currency, Catalogue: t.Prices, Tenant: t.TenantPrices}
 }
 
 // Recorder receives the usage record of every admitted request.
@@ -71,6 +83,7 @@ type LimitRefusal struct {
 	Level, Subject, Metric string
 	Scope, Currency        string // how narrow the rule is (all, provider, model); the currency of a budget
 	PriceCurrency          string // with code no_price: the currency of the estimate's price, empty without one (sprint 5.3, C3)
+	PriceSource            string // with code no_price: the list the estimate's price came from, empty without one
 	Limit, Remaining       int64
 	RetryAfter, Reset      time.Duration
 	OverLimit              bool

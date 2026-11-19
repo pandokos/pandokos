@@ -464,7 +464,12 @@ func TestCapabilityBudget(t *testing.T) {
 		want(t, budget(t, p, m), adminapi.BudgetAvailabilityUnpriced, false, "no_price")
 		q, priced := newModel(t, true)
 		seedBudget(t, c.api.DB, tn, "cost_per_month", 10_000_000, q, "EUR") // priced in USD only
+		// Sprint 5.4 (5.7): a budget in a currency that is not the active one is inactive, so it does not make the
+		// model unpriced; once EUR is the active currency the budget applies and the model has no price in it.
+		want(t, budget(t, q, priced), adminapi.BudgetAvailabilityNotEnforced, true)
+		c.api.DB.SetTenantCurrency(t, tn, "EUR", "", time.Time{})
 		want(t, budget(t, q, priced), adminapi.BudgetAvailabilityUnpriced, false, "no_price")
+		c.api.DB.SetTenantCurrency(t, tn, "", "", time.Time{})
 	})
 
 	t.Run("unpriced with on_unknown_price allow: the call can be made", func(t *testing.T) {
@@ -637,4 +642,60 @@ func TestCapabilityTenantZone(t *testing.T) {
 		twin := c.createModel(t, p2.Name, map[string]any{"name": other.Name, "availability": "all"})
 		wantBudget(t, "a model of the same name of another provider", capabilityOf(t, c, c.a.ID, c.ka, p2.Name, twin.Name), adminapi.BudgetAvailabilityNotEnforced)
 	})
+}
+
+// TestCapabilityActiveCurrency is T-756: checks.budget: available with an active budget and a price in the
+// active currency; not_enforced when the only budget is inactive; unpriced with an active budget and a
+// model priced in neither list; exhausted from the ledger in the active currency only; another tenant
+// unaffected.
+func TestCapabilityActiveCurrency(t *testing.T) {
+	c := newCat(t)
+	tn, err := tenant.ParseID(c.a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := c.createProvider(t, nil)
+	c.createEndpoint(t, p.Name, nil)
+	m := c.createModel(t, p.Name, map[string]any{"availability": "all"})
+	credentialFor(t, c, p.Name, "main")
+	if r := c.platform(t, "POST", "/v1/models/"+m.ID+"/prices", map[string]any{"currency": "USD", "rates": []map[string]any{{"category": "input", "threshold": 0, "rate": "1"}}}); r.Status/100 != 2 {
+		t.Fatalf("a price: %d %s", r.Status, r.Body)
+	}
+	budget := func(id, key string) adminapi.Capability { return capabilityOf(t, c, id, key, p.Name, m.Name) }
+	want := func(what string, got adminapi.Capability, b adminapi.BudgetAvailability, callable bool, reasons ...string) {
+		t.Helper()
+		if got.Checks.Budget != b || got.Callable != callable || strings.Join(got.Reasons, ",") != strings.Join(reasons, ",") {
+			t.Errorf("%s: budget %q, callable %v, reasons %v; want %q, %v, %v", what, got.Checks.Budget, got.Callable, got.Reasons, b, callable, reasons)
+		}
+	}
+	d := c.api.DB
+	d.SeedLimitRule(t, tn, "tenant", "", "cost_per_month", 1_000_000, dbtest.LimitOptions{Provider: p.Name, Currency: "USD"}) // 1 USD
+	d.SeedLimitRule(t, tn, "tenant", "", "cost_per_day", 2_000_000, dbtest.LimitOptions{Provider: p.Name, Currency: "EUR"})   // 2 EUR, inactive while USD is in force
+
+	want("an active budget and a price in the active currency", budget(c.a.ID, c.ka), adminapi.BudgetAvailabilityAvailable, true)
+
+	// Only the budget in another currency: the tenant is in EUR, the only budget it has in EUR is... the one
+	// of 2 EUR; take the USD one away to see the inactive case first.
+	d.DeleteLimitRule(t, tn, "tenant", "", "cost_per_month")
+	want("the only budget is inactive", budget(c.a.ID, c.ka), adminapi.BudgetAvailabilityNotEnforced, true)
+
+	d.SetTenantCurrency(t, tn, "EUR", "", time.Time{})
+	want("an active EUR budget and a model priced in USD only", budget(c.a.ID, c.ka), adminapi.BudgetAvailabilityUnpriced, false, "no_price")
+
+	d.SeedTenantPrice(t, tn, "EUR", p.Name, m.Name, time.Time{})
+	want("the tenant's own price in EUR", budget(c.a.ID, c.ka), adminapi.BudgetAvailabilityAvailable, true)
+
+	// exhausted from the ledger in the active currency only: 2 EUR budget a day.
+	now := time.Now().UTC()
+	d.SeedUsage(t, tn, dbtest.UsageRow{StartedAt: now.Add(-time.Second), Provider: p.Name, Model: m.Name, InputTokens: 5, Cost: "50", Currency: "USD"})
+	want("a cost in another currency counts for nothing", budget(c.a.ID, c.ka), adminapi.BudgetAvailabilityAvailable, true)
+	d.SeedUsage(t, tn, dbtest.UsageRow{StartedAt: now.Add(-2 * time.Second), Provider: p.Name, Model: m.Name, InputTokens: 5, Cost: "2.5", Currency: "EUR"})
+	want("a cost in the active currency over the budget", budget(c.a.ID, c.ka), adminapi.BudgetAvailabilityExhausted, false, "budget_exhausted")
+
+	// Another tenant has none of it.
+	credentialForTenant := c.api.Credential(t, c.b.ID, c.kb, p.Name, "main")
+	if r := c.do(t, "POST", "/v1/tenants/"+c.b.ID+"/credentials/"+credentialForTenant.ID+"/set-default", c.kb, nil); r.Status/100 != 2 && !credentialForTenant.IsDefault {
+		t.Fatalf("set-default: %d", r.Status)
+	}
+	want("another tenant", budget(c.b.ID, c.kb), adminapi.BudgetAvailabilityNotEnforced, true)
 }

@@ -111,7 +111,7 @@ func expectedRow(r usage.Record) map[string]any {
 		"reasoning_tokens": num(provOut, r.Usage.ReasoningTokens),
 		"other_units":      other, "provider_usage": reported,
 		"estimated_input_tokens": num(estIn, r.Estimated.InputTokens), "estimated_output_tokens": num(estOut, r.Estimated.OutputTokens),
-		"cost_status": r.CostStatus, "cost_reason": reason, "currency": nilIf(r.Cost.Currency), "price_version_id": nilIf(r.Cost.VersionID),
+		"cost_status": r.CostStatus, "cost_reason": reason, "currency": nilIf(r.Cost.Currency), "price_version_id": nilIf(r.Cost.VersionID), "price_source": nilIf(r.Cost.Source),
 		"cost_fallbacks": fallbacks, "metadata": stringMap(r.Metadata), "metadata_dropped": float64(r.MetadataDropped),
 		"limit_state": nilIf(r.LimitState),
 	}
@@ -250,7 +250,7 @@ func TestWriterRoundTrip(t *testing.T) {
 		}
 
 		logs := &testutil.LogBuffer{}
-		w, err := New(Options{DB: gateway, Logger: telemetry.NewLogger(logs, "debug"), BufferSize: total, BatchSize: total, FlushInterval: time.Second})
+		w, err := New(Options{DB: gateway, Logger: telemetry.NewLogger(logs, "debug"), UsageDetails: true, BufferSize: total, BatchSize: total, FlushInterval: time.Second})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -353,7 +353,7 @@ func TestDatabaseDown(t *testing.T) {
 	gateway := d.Open(t, store.RoleGateway)
 	tid := d.SeedTenant(t, "ledger-down")
 	logs := &testutil.LogBuffer{}
-	w, err := New(Options{DB: gateway, Logger: telemetry.NewLogger(logs, "debug"), BufferSize: 6, BatchSize: 3, FlushInterval: 10 * time.Millisecond})
+	w, err := New(Options{DB: gateway, Logger: telemetry.NewLogger(logs, "debug"), UsageDetails: true, BufferSize: 6, BatchSize: 3, FlushInterval: 10 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,7 +430,7 @@ func TestIdempotentRetry(t *testing.T) {
 	useFastBackoff(t)
 	d := dbtest.NewMigrated(t)
 	tid := d.SeedTenant(t, "ledger-retry")
-	o := Options{Logger: telemetry.NewLogger(&testutil.LogBuffer{}, "debug"), BufferSize: 10, BatchSize: 4, FlushInterval: 10 * time.Millisecond}
+	o := Options{Logger: telemetry.NewLogger(&testutil.LogBuffer{}, "debug"), UsageDetails: true, BufferSize: 10, BatchSize: 4, FlushInterval: 10 * time.Millisecond}
 	wrap := &commitThenFail{inner: newDBSink(d.Open(t, store.RoleGateway))}
 	w, err := newWriter(o, wrap)
 	if err != nil {
@@ -483,7 +483,7 @@ func TestRejectedRecord(t *testing.T) {
 	d := dbtest.NewMigrated(t)
 	a, b := d.SeedTenant(t, "ledger-rej-a"), d.SeedTenant(t, "ledger-rej-b")
 	logs := &testutil.LogBuffer{}
-	o := Options{Logger: telemetry.NewLogger(logs, "debug"), BufferSize: 10, BatchSize: 5, FlushInterval: time.Second}
+	o := Options{Logger: telemetry.NewLogger(logs, "debug"), UsageDetails: true, BufferSize: 10, BatchSize: 5, FlushInterval: time.Second}
 	bad := testutil.ValidRecord(a)
 	bad.Metadata = map[string]string{"note": fixtures.CanaryCompletion}
 	w, err := newWriter(o, &corrupting{inner: newDBSink(d.Open(t, store.RoleGateway)), badID: bad.ID})
@@ -673,7 +673,7 @@ func TestWriterLimitState(t *testing.T) {
 			r.LimitState = s
 			recs = append(recs, r)
 		}
-		w, err := New(Options{DB: d.Open(t, store.RoleGateway), Logger: telemetry.NewLogger(&testutil.LogBuffer{}, "debug"), BufferSize: 16, BatchSize: 16, FlushInterval: 10 * time.Millisecond})
+		w, err := New(Options{DB: d.Open(t, store.RoleGateway), Logger: telemetry.NewLogger(&testutil.LogBuffer{}, "debug"), UsageDetails: true, BufferSize: 16, BatchSize: 16, FlushInterval: 10 * time.Millisecond})
 		if err != nil {
 			t.Fatal(err)
 		}

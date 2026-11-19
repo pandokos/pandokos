@@ -319,16 +319,19 @@ type PandokosSubjectMapping struct {
 }
 
 type PandokosTenant struct {
-	ID                    string
-	Name                  string
-	DisplayName           string
-	State                 string
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
-	StateChangedAt        time.Time
-	TimeZone              string
-	TimeZonePrevious      string
-	TimeZoneEffectiveFrom *time.Time
+	ID                          string
+	Name                        string
+	DisplayName                 string
+	State                       string
+	CreatedAt                   time.Time
+	UpdatedAt                   time.Time
+	StateChangedAt              time.Time
+	TimeZone                    string
+	TimeZonePrevious            string
+	TimeZoneEffectiveFrom       *time.Time
+	ActiveCurrency              string
+	ActiveCurrencyPrevious      string
+	ActiveCurrencyEffectiveFrom *time.Time
 }
 
 type PandokosTenantDataKey struct {
@@ -347,6 +350,25 @@ type PandokosTenantModelRestriction struct {
 	Models    []string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+type PandokosTenantPriceRate struct {
+	TenantID       string
+	PriceVersionID string
+	Category       string
+	Threshold      int64
+	Rate           string
+}
+
+type PandokosTenantPriceVersion struct {
+	TenantID  string
+	ID        string
+	ModelID   string
+	ValidFrom time.Time
+	Kind      string
+	Currency  string
+	Note      string
+	CreatedAt time.Time
 }
 
 type PandokosTrustedIssuer struct {
@@ -411,6 +433,7 @@ type PandokosUsageRecord struct {
 	Metadata              string
 	MetadataDropped       int32
 	LimitState            *string
+	PriceSource           *string
 }
 
 type PandokosUsageRecordDefault struct {

@@ -482,7 +482,10 @@ func TestEveryStatement(t *testing.T) {
 		// Sprint 5.3: the time zone of a tenant, the rules of a subject that goes away, unlimited traffic.
 		integrityStatements(c, t, admin, gateway, tid, called)
 
-		// The 154 statements, and nothing was prepared on the server.
+		// Sprint 5.4: the active currency and the price lists of a tenant.
+		priceListStatements(c, t, d, admin, gateway, tid, called)
+
+		// The 170 statements, and nothing was prepared on the server.
 		var names []string
 		typ := reflect.TypeOf(&queries.Queries{})
 		for i := 0; i < typ.NumMethod(); i++ {
@@ -491,8 +494,8 @@ func TestEveryStatement(t *testing.T) {
 			}
 		}
 		sort.Strings(names)
-		if len(names) != 154 {
-			t.Errorf("the generated package has %d statements, want 154: %v", len(names), names)
+		if len(names) != 170 {
+			t.Errorf("the generated package has %d statements, want 170: %v", len(names), names)
 		}
 		for _, name := range names {
 			if !called[name] {

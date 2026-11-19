@@ -18,29 +18,82 @@ var (
 )
 
 var (
-	re0  = regexp.MustCompile("^[a-z][a-z0-9-]{0,62}$")
-	re1  = regexp.MustCompile("^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$")
-	re2  = regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
-	re3  = regexp.MustCompile("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
-	re4  = regexp.MustCompile("^https?://[^/?#@\\s]+(/[^?#\\s]*)?$")
-	re5  = regexp.MustCompile("^[a-z0-9][a-z0-9-]{0,62}$")
-	re6  = regexp.MustCompile("^([a-z0-9][a-z0-9-]{0,62})?$")
-	re7  = regexp.MustCompile("^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,6})?$")
-	re8  = regexp.MustCompile("^[A-Z]{3}$")
-	re9  = regexp.MustCompile("^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$")
-	re10 = regexp.MustCompile("^[!-~]+$")
-	re11 = regexp.MustCompile("^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$")
-	re12 = regexp.MustCompile("^https://[^\\s?#@]+$")
-	re13 = regexp.MustCompile("^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$")
-	re14 = regexp.MustCompile("^[A-Za-z0-9_.:/-]{1,64}$")
-	re15 = regexp.MustCompile("^p[a-z2-7]{16}$")
-	re16 = regexp.MustCompile("^(0|[1-9][0-9]{0,6})(\\.[0-9]{1,12})?$")
-	re17 = regexp.MustCompile("^[a-z0-9][a-z0-9_.-]{0,62}$")
-	re18 = regexp.MustCompile("^([a-z0-9][a-z0-9_.-]{0,62})?$")
-	re19 = regexp.MustCompile("^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$")
-	re20 = regexp.MustCompile("^t[a-z2-7]{16}$")
-	re21 = regexp.MustCompile("^[a-z_]+:[a-z_]+$")
+	re0  = regexp.MustCompile("^([A-Z]{3})?$")
+	re1  = regexp.MustCompile("^[A-Z]{3}$")
+	re2  = regexp.MustCompile("^[a-z][a-z0-9-]{0,62}$")
+	re3  = regexp.MustCompile("^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$")
+	re4  = regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+	re5  = regexp.MustCompile("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
+	re6  = regexp.MustCompile("^https?://[^/?#@\\s]+(/[^?#\\s]*)?$")
+	re7  = regexp.MustCompile("^[a-z0-9][a-z0-9-]{0,62}$")
+	re8  = regexp.MustCompile("^([a-z0-9][a-z0-9-]{0,62})?$")
+	re9  = regexp.MustCompile("^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,6})?$")
+	re10 = regexp.MustCompile("^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$")
+	re11 = regexp.MustCompile("^[!-~]+$")
+	re12 = regexp.MustCompile("^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$")
+	re13 = regexp.MustCompile("^https://[^\\s?#@]+$")
+	re14 = regexp.MustCompile("^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$")
+	re15 = regexp.MustCompile("^[A-Za-z0-9_.:/-]{1,64}$")
+	re16 = regexp.MustCompile("^p[a-z2-7]{16}$")
+	re17 = regexp.MustCompile("^(0|[1-9][0-9]{0,6})(\\.[0-9]{1,12})?$")
+	re18 = regexp.MustCompile("^[a-z0-9][a-z0-9_.-]{0,62}$")
+	re19 = regexp.MustCompile("^([a-z0-9][a-z0-9_.-]{0,62})?$")
+	re20 = regexp.MustCompile("^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$")
+	re21 = regexp.MustCompile("^t[a-z2-7]{16}$")
+	re22 = regexp.MustCompile("^[a-z_]+:[a-z_]+$")
 )
+
+// ActiveCurrency is a schema of the administration API.
+type ActiveCurrency struct {
+	Currency string `json:"currency"`
+	InForce  string `json:"in_force"`
+	// Present while a change is pending; the instant from which currency is in force.
+	EffectiveFrom *time.Time `json:"effective_from,omitempty"`
+	// Only in the answer to a change: the cost rules of the tenant and the ceilings of the platform that apply to it whose currency is not the new one. From effective_from they are inactive: they count nothing and refuse nothing.
+	InactiveLimits []InactiveLimit `json:"inactive_limits,omitempty"`
+}
+
+var requiredActiveCurrency = []string{"currency", "in_force"}
+
+var nestedActiveCurrency = []nestedMember{{Name: "inactive_limits", Many: true, Required: requiredInactiveLimit, Nested: nestedInactiveLimit}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *ActiveCurrency) Validate() []FieldError {
+	var errs []FieldError
+	if !re0.MatchString(v.Currency) {
+		errs = append(errs, FieldError{Field: "currency", Message: "must match ^([A-Z]{3})?$"})
+	}
+	if !re1.MatchString(v.InForce) {
+		errs = append(errs, FieldError{Field: "in_force", Message: "must match ^[A-Z]{3}$"})
+	}
+	if len(v.InactiveLimits) > 100 {
+		errs = append(errs, FieldError{Field: "inactive_limits", Message: "must have at most 100 items"})
+	}
+	for i := range v.InactiveLimits {
+		for _, e := range v.InactiveLimits[i].Validate() {
+			errs = append(errs, FieldError{Field: "inactive_limits[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// ActiveCurrencySet is a schema of the administration API.
+type ActiveCurrencySet struct {
+	Currency string `json:"currency"`
+}
+
+var requiredActiveCurrencySet = []string{"currency"}
+
+var nestedActiveCurrencySet []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *ActiveCurrencySet) Validate() []FieldError {
+	var errs []FieldError
+	if !re0.MatchString(v.Currency) {
+		errs = append(errs, FieldError{Field: "currency", Message: "must match ^([A-Z]{3})?$"})
+	}
+	return errs
+}
 
 // ApiFamily: The wire protocol of a provider.
 type ApiFamily string
@@ -60,7 +113,7 @@ func (v ApiFamily) Valid() bool {
 	return false
 }
 
-// BudgetAvailability: not_enforced when no enforced quota or budget of the tenant matches; unpriced when a budget matches and the model has no price in its currency; exhausted when a matching quota or budget is used up for the current period.
+// BudgetAvailability: not_enforced when no enforced quota or budget in force matches (a budget in another currency than the tenant's active currency is not in force); unpriced when a budget matches and the model has no price in the active currency; exhausted when a matching quota or budget is used up for the current period.
 type BudgetAvailability string
 
 // Values of BudgetAvailability.
@@ -98,10 +151,10 @@ var nestedCapability = []nestedMember{{Name: "checks", Required: requiredCapabil
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Capability) Validate() []FieldError {
 	var errs []FieldError
-	if !re0.MatchString(v.Provider) {
+	if !re2.MatchString(v.Provider) {
 		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
-	if !re1.MatchString(v.Model) {
+	if !re3.MatchString(v.Model) {
 		errs = append(errs, FieldError{Field: "model", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 	}
 	for _, e := range v.Checks.Validate() {
@@ -173,16 +226,16 @@ var nestedCredential []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Credential) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.ID) {
+	if !re4.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re2.MatchString(v.TenantID) {
+	if !re4.MatchString(v.TenantID) {
 		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re0.MatchString(v.Provider) {
+	if !re2.MatchString(v.Provider) {
 		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
-	if !re3.MatchString(v.Label) {
+	if !re5.MatchString(v.Label) {
 		errs = append(errs, FieldError{Field: "label", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if !v.Owner.Valid() {
@@ -254,10 +307,10 @@ var nestedCredentialCreate []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *CredentialCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re0.MatchString(v.Provider) {
+	if !re2.MatchString(v.Provider) {
 		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
-	if !re3.MatchString(v.Label) {
+	if !re5.MatchString(v.Label) {
 		errs = append(errs, FieldError{Field: "label", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if runeCount(v.Secret) < 8 {
@@ -370,7 +423,7 @@ var nestedCredentialUpdate []nestedMember
 func (v *CredentialUpdate) Validate() []FieldError {
 	var errs []FieldError
 	if v.Label.Set {
-		if !re3.MatchString(v.Label.Value) {
+		if !re5.MatchString(v.Label.Value) {
 			errs = append(errs, FieldError{Field: "label", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 	}
@@ -425,13 +478,13 @@ var nestedEndpoint []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Endpoint) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.ID) {
+	if !re4.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re0.MatchString(v.Provider) {
+	if !re2.MatchString(v.Provider) {
 		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
-	if !re3.MatchString(v.Name) {
+	if !re5.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	return errs
@@ -454,10 +507,10 @@ var nestedEndpointCreate []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *EndpointCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re3.MatchString(v.Name) {
+	if !re5.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
-	if !re4.MatchString(v.BaseURL) {
+	if !re6.MatchString(v.BaseURL) {
 		errs = append(errs, FieldError{Field: "base_url", Message: "must match ^https?://[^/?#@\\s]+(/[^?#\\s]*)?$"})
 	}
 	if runeCount(v.BaseURL) < 8 {
@@ -466,7 +519,7 @@ func (v *EndpointCreate) Validate() []FieldError {
 	if runeCount(v.BaseURL) > 2048 {
 		errs = append(errs, FieldError{Field: "base_url", Message: "length must be at most 2048"})
 	}
-	if v.Region != "" && !re5.MatchString(v.Region) {
+	if v.Region != "" && !re7.MatchString(v.Region) {
 		errs = append(errs, FieldError{Field: "region", Message: "must match ^[a-z0-9][a-z0-9-]{0,62}$"})
 	}
 	if runeCount(v.Description) > 500 {
@@ -516,7 +569,7 @@ var nestedEndpointUpdate []nestedMember
 func (v *EndpointUpdate) Validate() []FieldError {
 	var errs []FieldError
 	if v.BaseURL.Set {
-		if !re4.MatchString(v.BaseURL.Value) {
+		if !re6.MatchString(v.BaseURL.Value) {
 			errs = append(errs, FieldError{Field: "base_url", Message: "must match ^https?://[^/?#@\\s]+(/[^?#\\s]*)?$"})
 		}
 		if runeCount(v.BaseURL.Value) < 8 {
@@ -527,7 +580,7 @@ func (v *EndpointUpdate) Validate() []FieldError {
 		}
 	}
 	if v.Region.Set {
-		if !re6.MatchString(v.Region.Value) {
+		if !re8.MatchString(v.Region.Value) {
 			errs = append(errs, FieldError{Field: "region", Message: "must match ^([a-z0-9][a-z0-9-]{0,62})?$"})
 		}
 	}
@@ -563,6 +616,34 @@ func (v *FieldError) Validate() []FieldError {
 	return errs
 }
 
+// InactiveLimit is a schema of the administration API.
+type InactiveLimit struct {
+	// platform (a ceiling) or tenant (a rule of the tenant).
+	Level    string      `json:"level"`
+	RuleID   string      `json:"rule_id"`
+	Metric   LimitMetric `json:"metric"`
+	Currency string      `json:"currency"`
+}
+
+var requiredInactiveLimit = []string{"level", "rule_id", "metric", "currency"}
+
+var nestedInactiveLimit []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *InactiveLimit) Validate() []FieldError {
+	var errs []FieldError
+	if !re4.MatchString(v.RuleID) {
+		errs = append(errs, FieldError{Field: "rule_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !v.Metric.Valid() {
+		errs = append(errs, FieldError{Field: "metric", Message: "must be one of concurrent_requests, requests_per_minute, tokens_per_minute, requests_per_day, requests_per_month, tokens_per_day, tokens_per_month, cost_per_day, cost_per_month"})
+	}
+	if !re1.MatchString(v.Currency) {
+		errs = append(errs, FieldError{Field: "currency", Message: "must match ^[A-Z]{3}$"})
+	}
+	return errs
+}
+
 // IssuerRef is a schema of the administration API.
 type IssuerRef struct {
 	Scope IssuerScope `json:"scope"`
@@ -581,10 +662,10 @@ func (v *IssuerRef) Validate() []FieldError {
 	if !v.Scope.Valid() {
 		errs = append(errs, FieldError{Field: "scope", Message: "must be one of tenant, platform"})
 	}
-	if !re2.MatchString(v.ID) {
+	if !re4.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if v.Name != "" && !re3.MatchString(v.Name) {
+	if v.Name != "" && !re5.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	return errs
@@ -659,13 +740,13 @@ var nestedLimitEvent []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *LimitEvent) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.ID) {
+	if !re4.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	if !v.Kind.Valid() {
 		errs = append(errs, FieldError{Field: "kind", Message: "must be one of threshold_reached, exhausted"})
 	}
-	if !re2.MatchString(v.RuleID) {
+	if !re4.MatchString(v.RuleID) {
 		errs = append(errs, FieldError{Field: "rule_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	if !v.RuleLevel.Valid() {
@@ -769,19 +850,21 @@ type LimitRule struct {
 	// false means the rule never refuses and only records its thresholds.
 	Enforce bool `json:"enforce"`
 	// Percentages of the limit at which an event is recorded, ascending.
-	Thresholds []int     `json:"thresholds"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	Thresholds []int `json:"thresholds"`
+	// false for a cost rule whose currency is not the active currency of the tenant in force now; such a rule counts and refuses nothing.
+	Active    bool      `json:"active"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
-var requiredLimitRule = []string{"id", "subject_kind", "subject_id", "provider", "provider_id", "model", "model_id", "metric", "limit", "amount", "currency", "enforce", "thresholds", "created_at", "updated_at"}
+var requiredLimitRule = []string{"id", "subject_kind", "subject_id", "provider", "provider_id", "model", "model_id", "metric", "limit", "amount", "currency", "enforce", "thresholds", "active", "created_at", "updated_at"}
 
 var nestedLimitRule []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *LimitRule) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.ID) {
+	if !re4.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	if !v.SubjectKind.Valid() {
@@ -836,10 +919,10 @@ func (v *LimitRuleCreate) Validate() []FieldError {
 	if runeCount(v.SubjectID) > 64 {
 		errs = append(errs, FieldError{Field: "subject_id", Message: "length must be at most 64"})
 	}
-	if v.Provider != "" && !re0.MatchString(v.Provider) {
+	if v.Provider != "" && !re2.MatchString(v.Provider) {
 		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
-	if v.Model != "" && !re1.MatchString(v.Model) {
+	if v.Model != "" && !re3.MatchString(v.Model) {
 		errs = append(errs, FieldError{Field: "model", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 	}
 	if !v.Metric.Valid() {
@@ -851,10 +934,10 @@ func (v *LimitRuleCreate) Validate() []FieldError {
 	if v.Limit > 1000000000000 {
 		errs = append(errs, FieldError{Field: "limit", Message: "must be at most 1000000000000"})
 	}
-	if v.Amount != "" && !re7.MatchString(v.Amount) {
+	if v.Amount != "" && !re9.MatchString(v.Amount) {
 		errs = append(errs, FieldError{Field: "amount", Message: "must match ^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,6})?$"})
 	}
-	if v.Currency != "" && !re8.MatchString(v.Currency) {
+	if v.Currency != "" && !re1.MatchString(v.Currency) {
 		errs = append(errs, FieldError{Field: "currency", Message: "must match ^[A-Z]{3}$"})
 	}
 	if len(v.Thresholds) > 4 {
@@ -937,7 +1020,7 @@ func (v *LimitRuleUpdate) Validate() []FieldError {
 		}
 	}
 	if v.Amount.Set {
-		if !re7.MatchString(v.Amount.Value) {
+		if !re9.MatchString(v.Amount.Value) {
 			errs = append(errs, FieldError{Field: "amount", Message: "must match ^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,6})?$"})
 		}
 	}
@@ -1082,19 +1165,19 @@ var nestedModel []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Model) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.ID) {
+	if !re4.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re0.MatchString(v.Provider) {
+	if !re2.MatchString(v.Provider) {
 		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
 	if !v.ApiFamily.Valid() {
 		errs = append(errs, FieldError{Field: "api_family", Message: "must be one of openai, anthropic"})
 	}
-	if !re1.MatchString(v.Name) {
+	if !re3.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 	}
-	if !re9.MatchString(v.Ref) {
+	if !re10.MatchString(v.Ref) {
 		errs = append(errs, FieldError{Field: "ref", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 	}
 	if !v.Status.Valid() {
@@ -1146,13 +1229,13 @@ var nestedModelCreate []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ModelCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re0.MatchString(v.Provider) {
+	if !re2.MatchString(v.Provider) {
 		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
-	if !re1.MatchString(v.Name) {
+	if !re3.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 	}
-	if v.UpstreamID != "" && !re10.MatchString(v.UpstreamID) {
+	if v.UpstreamID != "" && !re11.MatchString(v.UpstreamID) {
 		errs = append(errs, FieldError{Field: "upstream_id", Message: "must match ^[!-~]+$"})
 	}
 	if runeCount(v.UpstreamID) > 256 {
@@ -1177,7 +1260,7 @@ func (v *ModelCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "capabilities", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Capabilities {
-		if !re11.MatchString(item) {
+		if !re12.MatchString(item) {
 			errs = append(errs, FieldError{Field: "capabilities", Message: "must match ^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$"})
 		}
 	}
@@ -1217,13 +1300,13 @@ var nestedModelGrant []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ModelGrant) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.ModelID) {
+	if !re4.MatchString(v.ModelID) {
 		errs = append(errs, FieldError{Field: "model_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re2.MatchString(v.TenantID) {
+	if !re4.MatchString(v.TenantID) {
 		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re3.MatchString(v.TenantName) {
+	if !re5.MatchString(v.TenantName) {
 		errs = append(errs, FieldError{Field: "tenant_name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	return errs
@@ -1289,7 +1372,7 @@ var nestedModelRestriction []nestedMember
 func (v *ModelRestriction) Validate() []FieldError {
 	var errs []FieldError
 	for _, item := range v.Models {
-		if !re9.MatchString(item) {
+		if !re10.MatchString(item) {
 			errs = append(errs, FieldError{Field: "models", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 		}
 	}
@@ -1315,7 +1398,7 @@ func (v *ModelRestrictionSet) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "models", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Models {
-		if !re9.MatchString(item) {
+		if !re10.MatchString(item) {
 			errs = append(errs, FieldError{Field: "models", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 		}
 	}
@@ -1365,7 +1448,7 @@ var nestedModelUpdate []nestedMember
 func (v *ModelUpdate) Validate() []FieldError {
 	var errs []FieldError
 	if v.UpstreamID.Set {
-		if !re10.MatchString(v.UpstreamID.Value) {
+		if !re11.MatchString(v.UpstreamID.Value) {
 			errs = append(errs, FieldError{Field: "upstream_id", Message: "must match ^[!-~]+$"})
 		}
 		if runeCount(v.UpstreamID.Value) > 256 {
@@ -1400,7 +1483,7 @@ func (v *ModelUpdate) Validate() []FieldError {
 			errs = append(errs, FieldError{Field: "capabilities", Message: "must not repeat an item"})
 		}
 		for _, item := range v.Capabilities.Value {
-			if !re11.MatchString(item) {
+			if !re12.MatchString(item) {
 				errs = append(errs, FieldError{Field: "capabilities", Message: "must match ^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$"})
 			}
 		}
@@ -1481,16 +1564,16 @@ var nestedPlatformIssuer []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformIssuer) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.ID) {
+	if !re4.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re3.MatchString(v.Name) {
+	if !re5.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if runeCount(v.Description) > 200 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
 	}
-	if !re12.MatchString(v.Issuer) {
+	if !re13.MatchString(v.Issuer) {
 		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 	}
 	if runeCount(v.Issuer) > 255 {
@@ -1515,14 +1598,14 @@ func (v *PlatformIssuer) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Algorithms {
-		if !re13.MatchString(item) {
+		if !re14.MatchString(item) {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 		}
 	}
-	if !re14.MatchString(v.SubjectClaim) {
+	if !re15.MatchString(v.SubjectClaim) {
 		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
-	if !re14.MatchString(v.TenantClaim) {
+	if !re15.MatchString(v.TenantClaim) {
 		errs = append(errs, FieldError{Field: "tenant_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
 	if len(v.RequiredClaims) > 16 {
@@ -1567,13 +1650,13 @@ func (*PlatformIssuerCreate) sentEmpty() []string { return []string{"subject_cla
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformIssuerCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re3.MatchString(v.Name) {
+	if !re5.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if runeCount(v.Description) > 200 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
 	}
-	if !re12.MatchString(v.Issuer) {
+	if !re13.MatchString(v.Issuer) {
 		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 	}
 	if runeCount(v.Issuer) > 255 {
@@ -1598,14 +1681,14 @@ func (v *PlatformIssuerCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Algorithms {
-		if !re13.MatchString(item) {
+		if !re14.MatchString(item) {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 		}
 	}
-	if v.SubjectClaim != "" && !re14.MatchString(v.SubjectClaim) {
+	if v.SubjectClaim != "" && !re15.MatchString(v.SubjectClaim) {
 		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
-	if !re14.MatchString(v.TenantClaim) {
+	if !re15.MatchString(v.TenantClaim) {
 		errs = append(errs, FieldError{Field: "tenant_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
 	if len(v.RequiredClaims) > 16 {
@@ -1660,13 +1743,13 @@ var nestedPlatformIssuerTenant []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformIssuerTenant) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.IssuerID) {
+	if !re4.MatchString(v.IssuerID) {
 		errs = append(errs, FieldError{Field: "issuer_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re2.MatchString(v.TenantID) {
+	if !re4.MatchString(v.TenantID) {
 		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re3.MatchString(v.TenantName) {
+	if !re5.MatchString(v.TenantName) {
 		errs = append(errs, FieldError{Field: "tenant_name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if runeCount(v.ClaimValue) < 1 {
@@ -1747,7 +1830,7 @@ var nestedPlatformIssuerUpdate []nestedMember
 func (v *PlatformIssuerUpdate) Validate() []FieldError {
 	var errs []FieldError
 	if v.Name.Set {
-		if !re3.MatchString(v.Name.Value) {
+		if !re5.MatchString(v.Name.Value) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 	}
@@ -1757,7 +1840,7 @@ func (v *PlatformIssuerUpdate) Validate() []FieldError {
 		}
 	}
 	if v.Issuer.Set {
-		if !re12.MatchString(v.Issuer.Value) {
+		if !re13.MatchString(v.Issuer.Value) {
 			errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 		}
 		if runeCount(v.Issuer.Value) > 255 {
@@ -1788,18 +1871,18 @@ func (v *PlatformIssuerUpdate) Validate() []FieldError {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 		}
 		for _, item := range v.Algorithms.Value {
-			if !re13.MatchString(item) {
+			if !re14.MatchString(item) {
 				errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 			}
 		}
 	}
 	if v.SubjectClaim.Set {
-		if !re14.MatchString(v.SubjectClaim.Value) {
+		if !re15.MatchString(v.SubjectClaim.Value) {
 			errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 		}
 	}
 	if v.TenantClaim.Set {
-		if !re14.MatchString(v.TenantClaim.Value) {
+		if !re15.MatchString(v.TenantClaim.Value) {
 			errs = append(errs, FieldError{Field: "tenant_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 		}
 	}
@@ -1840,7 +1923,7 @@ var nestedPlatformKey []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformKey) Validate() []FieldError {
 	var errs []FieldError
-	if !re15.MatchString(v.ID) {
+	if !re16.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^p[a-z2-7]{16}$"})
 	}
 	if !v.State.Valid() {
@@ -1945,7 +2028,7 @@ var nestedPlatformLimitRule []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformLimitRule) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.ID) {
+	if !re4.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	if !v.Metric.Valid() {
@@ -1987,13 +2070,13 @@ var nestedPlatformLimitRuleCreate []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformLimitRuleCreate) Validate() []FieldError {
 	var errs []FieldError
-	if v.Tenant != "" && !re2.MatchString(v.Tenant) {
+	if v.Tenant != "" && !re4.MatchString(v.Tenant) {
 		errs = append(errs, FieldError{Field: "tenant", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if v.Provider != "" && !re0.MatchString(v.Provider) {
+	if v.Provider != "" && !re2.MatchString(v.Provider) {
 		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
-	if v.Model != "" && !re1.MatchString(v.Model) {
+	if v.Model != "" && !re3.MatchString(v.Model) {
 		errs = append(errs, FieldError{Field: "model", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 	}
 	if !v.Metric.Valid() {
@@ -2005,10 +2088,10 @@ func (v *PlatformLimitRuleCreate) Validate() []FieldError {
 	if v.Limit > 1000000000000 {
 		errs = append(errs, FieldError{Field: "limit", Message: "must be at most 1000000000000"})
 	}
-	if v.Amount != "" && !re7.MatchString(v.Amount) {
+	if v.Amount != "" && !re9.MatchString(v.Amount) {
 		errs = append(errs, FieldError{Field: "amount", Message: "must match ^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,6})?$"})
 	}
-	if v.Currency != "" && !re8.MatchString(v.Currency) {
+	if v.Currency != "" && !re1.MatchString(v.Currency) {
 		errs = append(errs, FieldError{Field: "currency", Message: "must match ^[A-Z]{3}$"})
 	}
 	if len(v.Thresholds) > 4 {
@@ -2105,7 +2188,7 @@ var nestedPriceImport = []nestedMember{{Name: "items", Many: true, Required: req
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceImport) Validate() []FieldError {
 	var errs []FieldError
-	if v.ID != "" && !re2.MatchString(v.ID) {
+	if v.ID != "" && !re4.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	if !v.Source.Valid() {
@@ -2152,10 +2235,10 @@ var nestedPriceImportItem = []nestedMember{{Name: "issues", Many: true, Required
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceImportItem) Validate() []FieldError {
 	var errs []FieldError
-	if !re0.MatchString(v.Provider) {
+	if !re2.MatchString(v.Provider) {
 		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
-	if !re1.MatchString(v.Model) {
+	if !re3.MatchString(v.Model) {
 		errs = append(errs, FieldError{Field: "model", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 	}
 	for i := range v.Issues {
@@ -2260,7 +2343,7 @@ var nestedPriceOverride = []nestedMember{{Name: "rates", Many: true, Required: r
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceOverride) Validate() []FieldError {
 	var errs []FieldError
-	if !re8.MatchString(v.Currency) {
+	if !re1.MatchString(v.Currency) {
 		errs = append(errs, FieldError{Field: "currency", Message: "must match ^[A-Z]{3}$"})
 	}
 	if runeCount(v.Note) > 500 {
@@ -2305,7 +2388,7 @@ func (v *PriceRate) Validate() []FieldError {
 	if v.Threshold > 100000000 {
 		errs = append(errs, FieldError{Field: "threshold", Message: "must be at most 100000000"})
 	}
-	if !re16.MatchString(v.Rate) {
+	if !re17.MatchString(v.Rate) {
 		errs = append(errs, FieldError{Field: "rate", Message: "must match ^(0|[1-9][0-9]{0,6})(\\.[0-9]{1,12})?$"})
 	}
 	return errs
@@ -2350,16 +2433,16 @@ var nestedPriceVersion = []nestedMember{{Name: "rates", Many: true, Required: re
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceVersion) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.ID) {
+	if !re4.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re2.MatchString(v.ModelID) {
+	if !re4.MatchString(v.ModelID) {
 		errs = append(errs, FieldError{Field: "model_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	if !v.Source.Valid() {
 		errs = append(errs, FieldError{Field: "source", Message: "must be one of import, override"})
 	}
-	if v.ImportID != "" && !re2.MatchString(v.ImportID) {
+	if v.ImportID != "" && !re4.MatchString(v.ImportID) {
 		errs = append(errs, FieldError{Field: "import_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	for i := range v.Rates {
@@ -2495,10 +2578,10 @@ var nestedProvider []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Provider) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.ID) {
+	if !re4.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re0.MatchString(v.Name) {
+	if !re2.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
 	if !v.ApiFamily.Valid() {
@@ -2527,7 +2610,7 @@ var nestedProviderCreate []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ProviderCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re0.MatchString(v.Name) {
+	if !re2.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
 	if !v.ApiFamily.Valid() {
@@ -2539,7 +2622,7 @@ func (v *ProviderCreate) Validate() []FieldError {
 	if runeCount(v.Description) > 500 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 500"})
 	}
-	if v.DatasetProvider != "" && !re17.MatchString(v.DatasetProvider) {
+	if v.DatasetProvider != "" && !re18.MatchString(v.DatasetProvider) {
 		errs = append(errs, FieldError{Field: "dataset_provider", Message: "must match ^[a-z0-9][a-z0-9_.-]{0,62}$"})
 	}
 	if v.StreamUsageOption != "" && !v.StreamUsageOption.Valid() {
@@ -2600,7 +2683,7 @@ func (v *ProviderUpdate) Validate() []FieldError {
 	if v.Enabled.Set {
 	}
 	if v.DatasetProvider.Set {
-		if !re18.MatchString(v.DatasetProvider.Value) {
+		if !re19.MatchString(v.DatasetProvider.Value) {
 			errs = append(errs, FieldError{Field: "dataset_provider", Message: "must match ^([a-z0-9][a-z0-9_.-]{0,62})?$"})
 		}
 	}
@@ -2674,13 +2757,13 @@ var nestedServiceAccount []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ServiceAccount) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.ID) {
+	if !re4.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re2.MatchString(v.TenantID) {
+	if !re4.MatchString(v.TenantID) {
 		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re3.MatchString(v.Name) {
+	if !re5.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if !v.State.Valid() {
@@ -2706,7 +2789,7 @@ var nestedServiceAccountCreate []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ServiceAccountCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re3.MatchString(v.Name) {
+	if !re5.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if runeCount(v.Description) > 500 {
@@ -2719,7 +2802,7 @@ func (v *ServiceAccountCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "roles", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Roles {
-		if !re0.MatchString(item) {
+		if !re2.MatchString(item) {
 			errs = append(errs, FieldError{Field: "roles", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 		}
 	}
@@ -2783,7 +2866,7 @@ var nestedServiceAccountUpdate []nestedMember
 func (v *ServiceAccountUpdate) Validate() []FieldError {
 	var errs []FieldError
 	if v.Name.Set {
-		if !re3.MatchString(v.Name.Value) {
+		if !re5.MatchString(v.Name.Value) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 	}
@@ -2800,7 +2883,7 @@ func (v *ServiceAccountUpdate) Validate() []FieldError {
 			errs = append(errs, FieldError{Field: "roles", Message: "must not repeat an item"})
 		}
 		for _, item := range v.Roles.Value {
-			if !re0.MatchString(item) {
+			if !re2.MatchString(item) {
 				errs = append(errs, FieldError{Field: "roles", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 			}
 		}
@@ -2863,10 +2946,10 @@ var nestedSubjectMapping = []nestedMember{{Name: "issuer", Required: requiredIss
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *SubjectMapping) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.ID) {
+	if !re4.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re2.MatchString(v.TenantID) {
+	if !re4.MatchString(v.TenantID) {
 		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	for _, e := range v.Issuer.Validate() {
@@ -2878,10 +2961,10 @@ func (v *SubjectMapping) Validate() []FieldError {
 	if runeCount(v.Subject) > 255 {
 		errs = append(errs, FieldError{Field: "subject", Message: "length must be at most 255"})
 	}
-	if !re2.MatchString(v.ServiceAccountID) {
+	if !re4.MatchString(v.ServiceAccountID) {
 		errs = append(errs, FieldError{Field: "service_account_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re3.MatchString(v.ServiceAccountName) {
+	if !re5.MatchString(v.ServiceAccountName) {
 		errs = append(errs, FieldError{Field: "service_account_name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if runeCount(v.Description) > 200 {
@@ -2914,7 +2997,7 @@ func (v *SubjectMappingCreate) Validate() []FieldError {
 	if runeCount(v.Subject) > 255 {
 		errs = append(errs, FieldError{Field: "subject", Message: "length must be at most 255"})
 	}
-	if !re2.MatchString(v.ServiceAccountID) {
+	if !re4.MatchString(v.ServiceAccountID) {
 		errs = append(errs, FieldError{Field: "service_account_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	if runeCount(v.Description) > 200 {
@@ -2947,39 +3030,45 @@ func (v *SubjectMappingList) Validate() []FieldError {
 
 // Tenant is a schema of the administration API.
 type Tenant struct {
-	ID                    string      `json:"id"`
-	Name                  string      `json:"name"`
-	DisplayName           string      `json:"display_name"`
-	State                 TenantState `json:"state"`
-	CreatedAt             time.Time   `json:"created_at"`
-	UpdatedAt             time.Time   `json:"updated_at"`
-	StateChangedAt        time.Time   `json:"state_changed_at"`
-	TimeZone              string      `json:"time_zone"`
-	TimeZoneInForce       string      `json:"time_zone_in_force"`
-	TimeZoneEffectiveFrom *time.Time  `json:"time_zone_effective_from,omitempty"`
+	ID                          string      `json:"id"`
+	Name                        string      `json:"name"`
+	DisplayName                 string      `json:"display_name"`
+	State                       TenantState `json:"state"`
+	CreatedAt                   time.Time   `json:"created_at"`
+	UpdatedAt                   time.Time   `json:"updated_at"`
+	StateChangedAt              time.Time   `json:"state_changed_at"`
+	TimeZone                    string      `json:"time_zone"`
+	TimeZoneInForce             string      `json:"time_zone_in_force"`
+	TimeZoneEffectiveFrom       *time.Time  `json:"time_zone_effective_from,omitempty"`
+	ActiveCurrency              string      `json:"active_currency"`
+	ActiveCurrencyInForce       string      `json:"active_currency_in_force"`
+	ActiveCurrencyEffectiveFrom *time.Time  `json:"active_currency_effective_from,omitempty"`
 }
 
-var requiredTenant = []string{"id", "name", "display_name", "state", "created_at", "updated_at", "state_changed_at", "time_zone", "time_zone_in_force"}
+var requiredTenant = []string{"id", "name", "display_name", "state", "created_at", "updated_at", "state_changed_at", "time_zone", "time_zone_in_force", "active_currency", "active_currency_in_force"}
 
 var nestedTenant []nestedMember
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Tenant) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.ID) {
+	if !re4.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re3.MatchString(v.Name) {
+	if !re5.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if !v.State.Valid() {
 		errs = append(errs, FieldError{Field: "state", Message: "must be one of provisioning, active, suspended, deleting, deleted"})
 	}
-	if !re19.MatchString(v.TimeZone) {
+	if !re20.MatchString(v.TimeZone) {
 		errs = append(errs, FieldError{Field: "time_zone", Message: "must match ^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$"})
 	}
 	if runeCount(v.TimeZone) > 64 {
 		errs = append(errs, FieldError{Field: "time_zone", Message: "length must be at most 64"})
+	}
+	if !re0.MatchString(v.ActiveCurrency) {
+		errs = append(errs, FieldError{Field: "active_currency", Message: "must match ^([A-Z]{3})?$"})
 	}
 	return errs
 }
@@ -3002,19 +3091,19 @@ var nestedTenantCreate []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re3.MatchString(v.Name) {
+	if !re5.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if runeCount(v.DisplayName) > 200 {
 		errs = append(errs, FieldError{Field: "display_name", Message: "length must be at most 200"})
 	}
-	if v.TimeZone != "" && !re19.MatchString(v.TimeZone) {
+	if v.TimeZone != "" && !re20.MatchString(v.TimeZone) {
 		errs = append(errs, FieldError{Field: "time_zone", Message: "must match ^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$"})
 	}
 	if runeCount(v.TimeZone) > 64 {
 		errs = append(errs, FieldError{Field: "time_zone", Message: "length must be at most 64"})
 	}
-	if v.AdminServiceAccountName != "" && !re3.MatchString(v.AdminServiceAccountName) {
+	if v.AdminServiceAccountName != "" && !re5.MatchString(v.AdminServiceAccountName) {
 		errs = append(errs, FieldError{Field: "admin_service_account_name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	return errs
@@ -3072,13 +3161,17 @@ func (v *TenantList) Validate() []FieldError {
 type TenantModel struct {
 	Model Model `json:"model"`
 	// false when the tenant's restriction leaves the model out.
-	Allowed bool          `json:"allowed"`
-	Price   *PriceVersion `json:"price,omitempty"`
+	Allowed bool `json:"allowed"`
+	// The catalogue's version in force.
+	Price       *PriceVersion       `json:"price,omitempty"`
+	TenantPrice *TenantPriceVersion `json:"tenant_price,omitempty"`
+	// tenant or catalogue: which of tenant_price and price applies to the tenant in its active currency; empty when neither does.
+	PriceSource string `json:"price_source,omitempty"`
 }
 
 var requiredTenantModel = []string{"model", "allowed"}
 
-var nestedTenantModel = []nestedMember{{Name: "model", Required: requiredModel, Nested: nestedModel}, {Name: "price", Required: requiredPriceVersion, Nested: nestedPriceVersion}}
+var nestedTenantModel = []nestedMember{{Name: "model", Required: requiredModel, Nested: nestedModel}, {Name: "price", Required: requiredPriceVersion, Nested: nestedPriceVersion}, {Name: "tenant_price", Required: requiredTenantPriceVersion, Nested: nestedTenantPriceVersion}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantModel) Validate() []FieldError {
@@ -3089,6 +3182,11 @@ func (v *TenantModel) Validate() []FieldError {
 	if v.Price != nil {
 		for _, e := range v.Price.Validate() {
 			errs = append(errs, FieldError{Field: "price." + e.Field, Message: e.Message})
+		}
+	}
+	if v.TenantPrice != nil {
+		for _, e := range v.TenantPrice.Validate() {
+			errs = append(errs, FieldError{Field: "tenant_price." + e.Field, Message: e.Message})
 		}
 	}
 	return errs
@@ -3137,22 +3235,22 @@ var nestedTenantPlatformIssuer []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantPlatformIssuer) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.ID) {
+	if !re4.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re3.MatchString(v.Name) {
+	if !re5.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
-	if !re12.MatchString(v.Issuer) {
+	if !re13.MatchString(v.Issuer) {
 		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 	}
 	if runeCount(v.Issuer) > 255 {
 		errs = append(errs, FieldError{Field: "issuer", Message: "length must be at most 255"})
 	}
-	if !re14.MatchString(v.SubjectClaim) {
+	if !re15.MatchString(v.SubjectClaim) {
 		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
-	if !re14.MatchString(v.TenantClaim) {
+	if !re15.MatchString(v.TenantClaim) {
 		errs = append(errs, FieldError{Field: "tenant_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
 	return errs
@@ -3180,6 +3278,264 @@ func (v *TenantPlatformIssuerList) Validate() []FieldError {
 	return errs
 }
 
+// TenantPlatformLimitRule is a schema of the administration API.
+type TenantPlatformLimitRule struct {
+	ID string `json:"id"`
+	// The tenant the rule is for; empty for the default of every tenant.
+	Tenant string `json:"tenant"`
+	// Empty when the rule is not scoped to a provider.
+	Provider string `json:"provider"`
+	// Empty when the rule is not scoped to a provider (a model).
+	ProviderID string `json:"provider_id"`
+	// Empty when the rule is not scoped to a model.
+	Model string `json:"model"`
+	// Empty when the rule is not scoped to a provider (a model).
+	ModelID string      `json:"model_id"`
+	Metric  LimitMetric `json:"metric"`
+	// Requests or tokens; 0 for a cost metric.
+	Limit int `json:"limit"`
+	// The budget as a decimal; empty unless a cost metric.
+	Amount string `json:"amount"`
+	// Empty unless a cost metric.
+	Currency string `json:"currency"`
+	// false means the rule never refuses and only records its thresholds.
+	Enforce bool `json:"enforce"`
+	// Percentages of the limit at which an event is recorded, ascending.
+	Thresholds []int `json:"thresholds"`
+	// Whether the ceiling applies to the tenant in its active currency in force: always present, true or false (a count ceiling is always active).
+	Active    bool      `json:"active"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+var requiredTenantPlatformLimitRule = []string{"id", "tenant", "provider", "provider_id", "model", "model_id", "metric", "limit", "amount", "currency", "enforce", "thresholds", "active", "created_at", "updated_at"}
+
+var nestedTenantPlatformLimitRule []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TenantPlatformLimitRule) Validate() []FieldError {
+	var errs []FieldError
+	if !re4.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !v.Metric.Valid() {
+		errs = append(errs, FieldError{Field: "metric", Message: "must be one of concurrent_requests, requests_per_minute, tokens_per_minute, requests_per_day, requests_per_month, tokens_per_day, tokens_per_month, cost_per_day, cost_per_month"})
+	}
+	if len(v.Thresholds) > 4 {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "must have at most 4 items"})
+	}
+	if !unique(v.Thresholds) {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "must not repeat an item"})
+	}
+	if anyBelow(v.Thresholds, 1) {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "every item must be at least 1"})
+	}
+	if anyAbove(v.Thresholds, 100) {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "every item must be at most 100"})
+	}
+	return errs
+}
+
+// TenantPlatformLimitRuleList is a schema of the administration API.
+type TenantPlatformLimitRuleList struct {
+	Items []TenantPlatformLimitRule `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredTenantPlatformLimitRuleList = []string{"items"}
+
+var nestedTenantPlatformLimitRuleList = []nestedMember{{Name: "items", Many: true, Required: requiredTenantPlatformLimitRule, Nested: nestedTenantPlatformLimitRule}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TenantPlatformLimitRuleList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// TenantPriceCreate is a schema of the administration API.
+type TenantPriceCreate struct {
+	Provider string          `json:"provider"`
+	Model    string          `json:"model"`
+	Currency string          `json:"currency"`
+	Kind     TenantPriceKind `json:"kind,omitempty"`
+	// Now when absent; never in the past.
+	ValidFrom *time.Time  `json:"valid_from,omitempty"`
+	Note      string      `json:"note,omitempty"`
+	Rates     []PriceRate `json:"rates,omitempty"`
+}
+
+var requiredTenantPriceCreate = []string{"provider", "model", "currency"}
+
+var nestedTenantPriceCreate = []nestedMember{{Name: "rates", Many: true, Required: requiredPriceRate, Nested: nestedPriceRate}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TenantPriceCreate) Validate() []FieldError {
+	var errs []FieldError
+	if !re2.MatchString(v.Provider) {
+		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+	}
+	if !re3.MatchString(v.Model) {
+		errs = append(errs, FieldError{Field: "model", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
+	}
+	if !re1.MatchString(v.Currency) {
+		errs = append(errs, FieldError{Field: "currency", Message: "must match ^[A-Z]{3}$"})
+	}
+	if v.Kind != "" && !v.Kind.Valid() {
+		errs = append(errs, FieldError{Field: "kind", Message: "must be one of price, end"})
+	}
+	if runeCount(v.Note) > 500 {
+		errs = append(errs, FieldError{Field: "note", Message: "length must be at most 500"})
+	}
+	if len(v.Rates) > 64 {
+		errs = append(errs, FieldError{Field: "rates", Message: "must have at most 64 items"})
+	}
+	for i := range v.Rates {
+		for _, e := range v.Rates[i].Validate() {
+			errs = append(errs, FieldError{Field: "rates[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// TenantPriceKind: price carries rates; end carries none, and from its start the list does not price the model.
+type TenantPriceKind string
+
+// Values of TenantPriceKind.
+const (
+	TenantPriceKindPrice TenantPriceKind = "price"
+	TenantPriceKindEnd   TenantPriceKind = "end"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v TenantPriceKind) Valid() bool {
+	switch v {
+	case TenantPriceKindPrice, TenantPriceKindEnd:
+		return true
+	}
+	return false
+}
+
+// TenantPriceList is a schema of the administration API.
+type TenantPriceList struct {
+	Currency string `json:"currency"`
+	// Versions of the list
+	Versions int `json:"versions"`
+	// Models the list prices now.
+	ModelsPriced int `json:"models_priced"`
+	// true when the currency of the list is the active currency in force.
+	Active bool `json:"active"`
+}
+
+var requiredTenantPriceList = []string{"currency", "versions", "models_priced", "active"}
+
+var nestedTenantPriceList []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TenantPriceList) Validate() []FieldError {
+	var errs []FieldError
+	if !re1.MatchString(v.Currency) {
+		errs = append(errs, FieldError{Field: "currency", Message: "must match ^[A-Z]{3}$"})
+	}
+	return errs
+}
+
+// TenantPriceListList is a schema of the administration API.
+type TenantPriceListList struct {
+	Items []TenantPriceList `json:"items"`
+}
+
+var requiredTenantPriceListList = []string{"items"}
+
+var nestedTenantPriceListList = []nestedMember{{Name: "items", Many: true, Required: requiredTenantPriceList, Nested: nestedTenantPriceList}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TenantPriceListList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// TenantPriceVersion is a schema of the administration API.
+type TenantPriceVersion struct {
+	ID        string          `json:"id"`
+	ModelID   string          `json:"model_id"`
+	Provider  string          `json:"provider"`
+	Model     string          `json:"model"`
+	Kind      TenantPriceKind `json:"kind"`
+	ValidFrom time.Time       `json:"valid_from"`
+	Currency  string          `json:"currency"`
+	Rates     []PriceRate     `json:"rates"`
+	Note      string          `json:"note"`
+	// true when this is the version of its list and model in force now. A list is used only while its currency is the active currency.
+	InForce   bool      `json:"in_force"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+var requiredTenantPriceVersion = []string{"id", "model_id", "provider", "model", "kind", "valid_from", "currency", "rates", "note", "in_force", "created_at"}
+
+var nestedTenantPriceVersion = []nestedMember{{Name: "rates", Many: true, Required: requiredPriceRate, Nested: nestedPriceRate}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TenantPriceVersion) Validate() []FieldError {
+	var errs []FieldError
+	if !re4.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !re4.MatchString(v.ModelID) {
+		errs = append(errs, FieldError{Field: "model_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !re2.MatchString(v.Provider) {
+		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+	}
+	if !re3.MatchString(v.Model) {
+		errs = append(errs, FieldError{Field: "model", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
+	}
+	if !v.Kind.Valid() {
+		errs = append(errs, FieldError{Field: "kind", Message: "must be one of price, end"})
+	}
+	if !re1.MatchString(v.Currency) {
+		errs = append(errs, FieldError{Field: "currency", Message: "must match ^[A-Z]{3}$"})
+	}
+	for i := range v.Rates {
+		for _, e := range v.Rates[i].Validate() {
+			errs = append(errs, FieldError{Field: "rates[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// TenantPriceVersionList is a schema of the administration API.
+type TenantPriceVersionList struct {
+	Items []TenantPriceVersion `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredTenantPriceVersionList = []string{"items"}
+
+var nestedTenantPriceVersionList = []nestedMember{{Name: "items", Many: true, Required: requiredTenantPriceVersion, Nested: nestedTenantPriceVersion}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TenantPriceVersionList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
 // TenantRef is a schema of the administration API.
 type TenantRef struct {
 	ID    string      `json:"id"`
@@ -3194,10 +3550,10 @@ var nestedTenantRef []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantRef) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.ID) {
+	if !re4.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re3.MatchString(v.Name) {
+	if !re5.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if !v.State.Valid() {
@@ -3243,7 +3599,7 @@ var nestedTenantTimeZone []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantTimeZone) Validate() []FieldError {
 	var errs []FieldError
-	if !re19.MatchString(v.TimeZone) {
+	if !re20.MatchString(v.TimeZone) {
 		errs = append(errs, FieldError{Field: "time_zone", Message: "must match ^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$"})
 	}
 	if runeCount(v.TimeZone) > 64 {
@@ -3264,7 +3620,7 @@ var nestedTenantTimeZoneSet []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantTimeZoneSet) Validate() []FieldError {
 	var errs []FieldError
-	if !re19.MatchString(v.TimeZone) {
+	if !re20.MatchString(v.TimeZone) {
 		errs = append(errs, FieldError{Field: "time_zone", Message: "must match ^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$"})
 	}
 	if runeCount(v.TimeZone) > 64 {
@@ -3288,7 +3644,7 @@ var nestedTenantUpdate []nestedMember
 func (v *TenantUpdate) Validate() []FieldError {
 	var errs []FieldError
 	if v.Name.Set {
-		if !re3.MatchString(v.Name.Value) {
+		if !re5.MatchString(v.Name.Value) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 	}
@@ -3298,7 +3654,7 @@ func (v *TenantUpdate) Validate() []FieldError {
 		}
 	}
 	if v.TimeZone.Set {
-		if !re19.MatchString(v.TimeZone.Value) {
+		if !re20.MatchString(v.TimeZone.Value) {
 			errs = append(errs, FieldError{Field: "time_zone", Message: "must match ^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$"})
 		}
 		if runeCount(v.TimeZone.Value) > 64 {
@@ -3335,19 +3691,19 @@ var nestedTokenIssuer []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TokenIssuer) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.ID) {
+	if !re4.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re2.MatchString(v.TenantID) {
+	if !re4.MatchString(v.TenantID) {
 		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re3.MatchString(v.Name) {
+	if !re5.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if runeCount(v.Description) > 200 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
 	}
-	if !re12.MatchString(v.Issuer) {
+	if !re13.MatchString(v.Issuer) {
 		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 	}
 	if runeCount(v.Issuer) > 255 {
@@ -3372,11 +3728,11 @@ func (v *TokenIssuer) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Algorithms {
-		if !re13.MatchString(item) {
+		if !re14.MatchString(item) {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 		}
 	}
-	if !re14.MatchString(v.SubjectClaim) {
+	if !re15.MatchString(v.SubjectClaim) {
 		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
 	if len(v.RequiredClaims) > 16 {
@@ -3417,13 +3773,13 @@ func (*TokenIssuerCreate) sentEmpty() []string { return []string{"subject_claim"
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TokenIssuerCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re3.MatchString(v.Name) {
+	if !re5.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if runeCount(v.Description) > 200 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
 	}
-	if !re12.MatchString(v.Issuer) {
+	if !re13.MatchString(v.Issuer) {
 		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 	}
 	if runeCount(v.Issuer) > 255 {
@@ -3448,11 +3804,11 @@ func (v *TokenIssuerCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Algorithms {
-		if !re13.MatchString(item) {
+		if !re14.MatchString(item) {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 		}
 	}
-	if v.SubjectClaim != "" && !re14.MatchString(v.SubjectClaim) {
+	if v.SubjectClaim != "" && !re15.MatchString(v.SubjectClaim) {
 		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
 	if len(v.RequiredClaims) > 16 {
@@ -3512,7 +3868,7 @@ var nestedTokenIssuerUpdate []nestedMember
 func (v *TokenIssuerUpdate) Validate() []FieldError {
 	var errs []FieldError
 	if v.Name.Set {
-		if !re3.MatchString(v.Name.Value) {
+		if !re5.MatchString(v.Name.Value) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 	}
@@ -3522,7 +3878,7 @@ func (v *TokenIssuerUpdate) Validate() []FieldError {
 		}
 	}
 	if v.Issuer.Set {
-		if !re12.MatchString(v.Issuer.Value) {
+		if !re13.MatchString(v.Issuer.Value) {
 			errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 		}
 		if runeCount(v.Issuer.Value) > 255 {
@@ -3553,13 +3909,13 @@ func (v *TokenIssuerUpdate) Validate() []FieldError {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 		}
 		for _, item := range v.Algorithms.Value {
-			if !re13.MatchString(item) {
+			if !re14.MatchString(item) {
 				errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 			}
 		}
 	}
 	if v.SubjectClaim.Set {
-		if !re14.MatchString(v.SubjectClaim.Value) {
+		if !re15.MatchString(v.SubjectClaim.Value) {
 			errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 		}
 	}
@@ -3649,24 +4005,26 @@ type UsageRecord struct {
 	CostStatus string `json:"cost_status"`
 	CostReason string `json:"cost_reason"`
 	// Decimal amount in currency; null unless cost_status is known. Informational under BYOK.
-	Cost            Nullable[string] `json:"cost,omitzero"`
-	Currency        string           `json:"currency"`
-	PriceVersionID  string           `json:"price_version_id"`
-	CostFallbacks   []string         `json:"cost_fallbacks"`
-	Metadata        []MetadataEntry  `json:"metadata"`
-	MetadataDropped int              `json:"metadata_dropped"`
+	Cost           Nullable[string] `json:"cost,omitzero"`
+	Currency       string           `json:"currency"`
+	PriceVersionID string           `json:"price_version_id"`
+	// catalogue or tenant: the price list price_version_id belongs to; empty when the record has no price version.
+	PriceSource     string          `json:"price_source"`
+	CostFallbacks   []string        `json:"cost_fallbacks"`
+	Metadata        []MetadataEntry `json:"metadata"`
+	MetadataDropped int             `json:"metadata_dropped"`
 	// limited, unlimited, unverified or not_evaluated; empty for a record written before the field existed.
 	LimitState string `json:"limit_state"`
 }
 
-var requiredUsageRecord = []string{"id", "request_id", "trace_id", "started_at", "duration_ms", "principal_kind", "principal_id", "key_id", "credential_id", "provider", "api_family", "operation", "endpoint", "model", "model_id", "upstream_model", "stream", "outcome", "error_code", "upstream_status", "ttfb_ms", "request_bytes", "response_bytes", "input_source", "output_source", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens", "estimated_input_tokens", "estimated_output_tokens", "other_units", "provider_usage", "cost_status", "cost_reason", "currency", "price_version_id", "cost_fallbacks", "metadata", "metadata_dropped", "limit_state"}
+var requiredUsageRecord = []string{"id", "request_id", "trace_id", "started_at", "duration_ms", "principal_kind", "principal_id", "key_id", "credential_id", "provider", "api_family", "operation", "endpoint", "model", "model_id", "upstream_model", "stream", "outcome", "error_code", "upstream_status", "ttfb_ms", "request_bytes", "response_bytes", "input_source", "output_source", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens", "estimated_input_tokens", "estimated_output_tokens", "other_units", "provider_usage", "cost_status", "cost_reason", "currency", "price_version_id", "price_source", "cost_fallbacks", "metadata", "metadata_dropped", "limit_state"}
 
 var nestedUsageRecord = []nestedMember{{Name: "other_units", Many: true, Required: requiredUsageCounter, Nested: nestedUsageCounter}, {Name: "provider_usage", Many: true, Required: requiredUsageCounter, Nested: nestedUsageCounter}, {Name: "metadata", Many: true, Required: requiredMetadataEntry, Nested: nestedMetadataEntry}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *UsageRecord) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.ID) {
+	if !re4.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	for i := range v.OtherUnits {
@@ -3733,20 +4091,20 @@ var nestedVirtualKey []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *VirtualKey) Validate() []FieldError {
 	var errs []FieldError
-	if !re20.MatchString(v.ID) {
+	if !re21.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^t[a-z2-7]{16}$"})
 	}
-	if !re2.MatchString(v.TenantID) {
+	if !re4.MatchString(v.TenantID) {
 		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re2.MatchString(v.ServiceAccountID) {
+	if !re4.MatchString(v.ServiceAccountID) {
 		errs = append(errs, FieldError{Field: "service_account_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if v.CredentialID != "" && !re2.MatchString(v.CredentialID) {
+	if v.CredentialID != "" && !re4.MatchString(v.CredentialID) {
 		errs = append(errs, FieldError{Field: "credential_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	for _, item := range v.Models {
-		if !re9.MatchString(item) {
+		if !re10.MatchString(item) {
 			errs = append(errs, FieldError{Field: "models", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 		}
 	}
@@ -3773,13 +4131,13 @@ var nestedVirtualKeyCreate []nestedMember
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *VirtualKeyCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re2.MatchString(v.ServiceAccountID) {
+	if !re4.MatchString(v.ServiceAccountID) {
 		errs = append(errs, FieldError{Field: "service_account_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	if runeCount(v.Description) > 200 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
 	}
-	if v.CredentialID != "" && !re2.MatchString(v.CredentialID) {
+	if v.CredentialID != "" && !re4.MatchString(v.CredentialID) {
 		errs = append(errs, FieldError{Field: "credential_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	if v.Models != nil && len(v.Models) < 1 {
@@ -3792,7 +4150,7 @@ func (v *VirtualKeyCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "models", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Models {
-		if !re9.MatchString(item) {
+		if !re10.MatchString(item) {
 			errs = append(errs, FieldError{Field: "models", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 		}
 	}
@@ -3806,7 +4164,7 @@ func (v *VirtualKeyCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "scopes", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Scopes {
-		if !re21.MatchString(item) {
+		if !re22.MatchString(item) {
 			errs = append(errs, FieldError{Field: "scopes", Message: "must match ^[a-z_]+:[a-z_]+$"})
 		}
 	}
@@ -3860,101 +4218,108 @@ var Operations = []Operation{
 	{ID: "getMe", Method: "GET", Path: "/v1/me", Permission: "identity:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "listModels", Method: "GET", Path: "/v1/models", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "createModel", Method: "POST", Path: "/v1/models", Permission: "catalog:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getModel", Method: "GET", Path: "/v1/models/{model}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re2}}},
-	{ID: "updateModel", Method: "PATCH", Path: "/v1/models/{model}", Permission: "catalog:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re2}}},
-	{ID: "deleteModel", Method: "DELETE", Path: "/v1/models/{model}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re2}}},
-	{ID: "clearPriceOverride", Method: "POST", Path: "/v1/models/{model}/clear-price-override", Permission: "catalog:price", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re2}}},
-	{ID: "listModelGrants", Method: "GET", Path: "/v1/models/{model}/grants", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re2}}},
-	{ID: "grantModel", Method: "PUT", Path: "/v1/models/{model}/grants/{tenant}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re2}, {Name: "tenant", Pattern: re2}}},
-	{ID: "revokeModelGrant", Method: "DELETE", Path: "/v1/models/{model}/grants/{tenant}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re2}, {Name: "tenant", Pattern: re2}}},
-	{ID: "listPriceVersions", Method: "GET", Path: "/v1/models/{model}/prices", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re2}}},
-	{ID: "createPriceOverride", Method: "POST", Path: "/v1/models/{model}/prices", Permission: "catalog:price", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re2}}},
-	{ID: "deletePriceVersion", Method: "DELETE", Path: "/v1/models/{model}/prices/{price_version}", Permission: "catalog:price", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re2}, {Name: "price_version", Pattern: re2}}},
+	{ID: "getModel", Method: "GET", Path: "/v1/models/{model}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re4}}},
+	{ID: "updateModel", Method: "PATCH", Path: "/v1/models/{model}", Permission: "catalog:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re4}}},
+	{ID: "deleteModel", Method: "DELETE", Path: "/v1/models/{model}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re4}}},
+	{ID: "clearPriceOverride", Method: "POST", Path: "/v1/models/{model}/clear-price-override", Permission: "catalog:price", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re4}}},
+	{ID: "listModelGrants", Method: "GET", Path: "/v1/models/{model}/grants", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re4}}},
+	{ID: "grantModel", Method: "PUT", Path: "/v1/models/{model}/grants/{tenant}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re4}, {Name: "tenant", Pattern: re4}}},
+	{ID: "revokeModelGrant", Method: "DELETE", Path: "/v1/models/{model}/grants/{tenant}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re4}, {Name: "tenant", Pattern: re4}}},
+	{ID: "listPriceVersions", Method: "GET", Path: "/v1/models/{model}/prices", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re4}}},
+	{ID: "createPriceOverride", Method: "POST", Path: "/v1/models/{model}/prices", Permission: "catalog:price", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re4}}},
+	{ID: "deletePriceVersion", Method: "DELETE", Path: "/v1/models/{model}/prices/{price_version}", Permission: "catalog:price", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re4}, {Name: "price_version", Pattern: re4}}},
 	{ID: "listPlatformIssuers", Method: "GET", Path: "/v1/platform-issuers", Permission: "platform_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "createPlatformIssuer", Method: "POST", Path: "/v1/platform-issuers", Permission: "platform_issuer:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getPlatformIssuer", Method: "GET", Path: "/v1/platform-issuers/{issuer}", Permission: "platform_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re2}}},
-	{ID: "updatePlatformIssuer", Method: "PATCH", Path: "/v1/platform-issuers/{issuer}", Permission: "platform_issuer:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "issuer", Pattern: re2}}},
-	{ID: "deletePlatformIssuer", Method: "DELETE", Path: "/v1/platform-issuers/{issuer}", Permission: "platform_issuer:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re2}}},
-	{ID: "listPlatformIssuerTenants", Method: "GET", Path: "/v1/platform-issuers/{issuer}/tenants", Permission: "platform_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re2}}},
-	{ID: "putPlatformIssuerTenant", Method: "PUT", Path: "/v1/platform-issuers/{issuer}/tenants/{tenant}", Permission: "platform_issuer:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "issuer", Pattern: re2}, {Name: "tenant", Pattern: re2}}},
-	{ID: "deletePlatformIssuerTenant", Method: "DELETE", Path: "/v1/platform-issuers/{issuer}/tenants/{tenant}", Permission: "platform_issuer:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re2}, {Name: "tenant", Pattern: re2}}},
+	{ID: "getPlatformIssuer", Method: "GET", Path: "/v1/platform-issuers/{issuer}", Permission: "platform_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re4}}},
+	{ID: "updatePlatformIssuer", Method: "PATCH", Path: "/v1/platform-issuers/{issuer}", Permission: "platform_issuer:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "issuer", Pattern: re4}}},
+	{ID: "deletePlatformIssuer", Method: "DELETE", Path: "/v1/platform-issuers/{issuer}", Permission: "platform_issuer:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re4}}},
+	{ID: "listPlatformIssuerTenants", Method: "GET", Path: "/v1/platform-issuers/{issuer}/tenants", Permission: "platform_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re4}}},
+	{ID: "putPlatformIssuerTenant", Method: "PUT", Path: "/v1/platform-issuers/{issuer}/tenants/{tenant}", Permission: "platform_issuer:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "issuer", Pattern: re4}, {Name: "tenant", Pattern: re4}}},
+	{ID: "deletePlatformIssuerTenant", Method: "DELETE", Path: "/v1/platform-issuers/{issuer}/tenants/{tenant}", Permission: "platform_issuer:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re4}, {Name: "tenant", Pattern: re4}}},
 	{ID: "listPlatformKeys", Method: "GET", Path: "/v1/platform-keys", Permission: "platform_key:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "createPlatformKey", Method: "POST", Path: "/v1/platform-keys", Permission: "platform_key:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getPlatformKey", Method: "GET", Path: "/v1/platform-keys/{key}", Permission: "platform_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "key", Pattern: re15}}},
-	{ID: "revokePlatformKey", Method: "POST", Path: "/v1/platform-keys/{key}/revoke", Permission: "platform_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "key", Pattern: re15}}},
+	{ID: "getPlatformKey", Method: "GET", Path: "/v1/platform-keys/{key}", Permission: "platform_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "key", Pattern: re16}}},
+	{ID: "revokePlatformKey", Method: "POST", Path: "/v1/platform-keys/{key}/revoke", Permission: "platform_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "key", Pattern: re16}}},
 	{ID: "listPlatformLimits", Method: "GET", Path: "/v1/platform-limits", Permission: "platform_limit:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "createPlatformLimit", Method: "POST", Path: "/v1/platform-limits", Permission: "platform_limit:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getPlatformLimit", Method: "GET", Path: "/v1/platform-limits/{rule}", Permission: "platform_limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "rule", Pattern: re2}}},
-	{ID: "updatePlatformLimit", Method: "PATCH", Path: "/v1/platform-limits/{rule}", Permission: "platform_limit:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "rule", Pattern: re2}}},
-	{ID: "deletePlatformLimit", Method: "DELETE", Path: "/v1/platform-limits/{rule}", Permission: "platform_limit:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "rule", Pattern: re2}}},
+	{ID: "getPlatformLimit", Method: "GET", Path: "/v1/platform-limits/{rule}", Permission: "platform_limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "rule", Pattern: re4}}},
+	{ID: "updatePlatformLimit", Method: "PATCH", Path: "/v1/platform-limits/{rule}", Permission: "platform_limit:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "rule", Pattern: re4}}},
+	{ID: "deletePlatformLimit", Method: "DELETE", Path: "/v1/platform-limits/{rule}", Permission: "platform_limit:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "rule", Pattern: re4}}},
 	{ID: "listPriceImports", Method: "GET", Path: "/v1/price-imports", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "runPriceImport", Method: "POST", Path: "/v1/price-imports", Permission: "catalog:price", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getPriceImport", Method: "GET", Path: "/v1/price-imports/{price_import}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "price_import", Pattern: re2}}},
+	{ID: "getPriceImport", Method: "GET", Path: "/v1/price-imports/{price_import}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "price_import", Pattern: re4}}},
 	{ID: "listProviders", Method: "GET", Path: "/v1/providers", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "createProvider", Method: "POST", Path: "/v1/providers", Permission: "catalog:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getProvider", Method: "GET", Path: "/v1/providers/{provider}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re0}}},
-	{ID: "updateProvider", Method: "PATCH", Path: "/v1/providers/{provider}", Permission: "catalog:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re0}}},
-	{ID: "deleteProvider", Method: "DELETE", Path: "/v1/providers/{provider}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re0}}},
-	{ID: "listEndpoints", Method: "GET", Path: "/v1/providers/{provider}/endpoints", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re0}}},
-	{ID: "createEndpoint", Method: "POST", Path: "/v1/providers/{provider}/endpoints", Permission: "catalog:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re0}}},
-	{ID: "getEndpoint", Method: "GET", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re0}, {Name: "endpoint", Pattern: re3}}},
-	{ID: "updateEndpoint", Method: "PATCH", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re0}, {Name: "endpoint", Pattern: re3}}},
-	{ID: "deleteEndpoint", Method: "DELETE", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re0}, {Name: "endpoint", Pattern: re3}}},
-	{ID: "listTenantCredentials", Method: "GET", Path: "/v1/tenant-credentials/{tenant}", Permission: "tenant_credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "getTenantCredential", Method: "GET", Path: "/v1/tenant-credentials/{tenant}/{credential}", Permission: "tenant_credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
-	{ID: "disableTenantCredential", Method: "POST", Path: "/v1/tenant-credentials/{tenant}/{credential}/disable", Permission: "tenant_credential:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
-	{ID: "revokeTenantCredential", Method: "POST", Path: "/v1/tenant-credentials/{tenant}/{credential}/revoke", Permission: "tenant_credential:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
+	{ID: "getProvider", Method: "GET", Path: "/v1/providers/{provider}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re2}}},
+	{ID: "updateProvider", Method: "PATCH", Path: "/v1/providers/{provider}", Permission: "catalog:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re2}}},
+	{ID: "deleteProvider", Method: "DELETE", Path: "/v1/providers/{provider}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re2}}},
+	{ID: "listEndpoints", Method: "GET", Path: "/v1/providers/{provider}/endpoints", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re2}}},
+	{ID: "createEndpoint", Method: "POST", Path: "/v1/providers/{provider}/endpoints", Permission: "catalog:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re2}}},
+	{ID: "getEndpoint", Method: "GET", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re2}, {Name: "endpoint", Pattern: re5}}},
+	{ID: "updateEndpoint", Method: "PATCH", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re2}, {Name: "endpoint", Pattern: re5}}},
+	{ID: "deleteEndpoint", Method: "DELETE", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re2}, {Name: "endpoint", Pattern: re5}}},
+	{ID: "listTenantCredentials", Method: "GET", Path: "/v1/tenant-credentials/{tenant}", Permission: "tenant_credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getTenantCredential", Method: "GET", Path: "/v1/tenant-credentials/{tenant}/{credential}", Permission: "tenant_credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
+	{ID: "disableTenantCredential", Method: "POST", Path: "/v1/tenant-credentials/{tenant}/{credential}/disable", Permission: "tenant_credential:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
+	{ID: "revokeTenantCredential", Method: "POST", Path: "/v1/tenant-credentials/{tenant}/{credential}/revoke", Permission: "tenant_credential:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
 	{ID: "listTenants", Method: "GET", Path: "/v1/tenants", Permission: "tenant:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "createTenant", Method: "POST", Path: "/v1/tenants", Permission: "tenant:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getTenant", Method: "GET", Path: "/v1/tenants/{tenant}", Permission: "tenant:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "updateTenant", Method: "PATCH", Path: "/v1/tenants/{tenant}", Permission: "tenant:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "getCapability", Method: "GET", Path: "/v1/tenants/{tenant}/capability", Permission: "model:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "listCredentials", Method: "GET", Path: "/v1/tenants/{tenant}/credentials", Permission: "credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "createCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials", Permission: "credential:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "getCredential", Method: "GET", Path: "/v1/tenants/{tenant}/credentials/{credential}", Permission: "credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
-	{ID: "updateCredential", Method: "PATCH", Path: "/v1/tenants/{tenant}/credentials/{credential}", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
-	{ID: "deleteCredential", Method: "DELETE", Path: "/v1/tenants/{tenant}/credentials/{credential}", Permission: "credential:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
-	{ID: "disableCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/disable", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
-	{ID: "enableCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/enable", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
-	{ID: "revokeCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/revoke", Permission: "credential:delete", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
-	{ID: "replaceCredentialSecret", Method: "PUT", Path: "/v1/tenants/{tenant}/credentials/{credential}/secret", Permission: "credential:rotate", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
-	{ID: "setDefaultCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/set-default", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
-	{ID: "listLimitEvents", Method: "GET", Path: "/v1/tenants/{tenant}/limit-events", Permission: "limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "listLimits", Method: "GET", Path: "/v1/tenants/{tenant}/limits", Permission: "limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "createLimit", Method: "POST", Path: "/v1/tenants/{tenant}/limits", Permission: "limit:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "getLimit", Method: "GET", Path: "/v1/tenants/{tenant}/limits/{rule}", Permission: "limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "rule", Pattern: re2}}},
-	{ID: "updateLimit", Method: "PATCH", Path: "/v1/tenants/{tenant}/limits/{rule}", Permission: "limit:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "rule", Pattern: re2}}},
-	{ID: "deleteLimit", Method: "DELETE", Path: "/v1/tenants/{tenant}/limits/{rule}", Permission: "limit:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "rule", Pattern: re2}}},
-	{ID: "getModelRestriction", Method: "GET", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "setModelRestriction", Method: "PUT", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:restrict", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "clearModelRestriction", Method: "DELETE", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:restrict", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "listTenantModels", Method: "GET", Path: "/v1/tenants/{tenant}/models", Permission: "model:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "listTenantPlatformIssuers", Method: "GET", Path: "/v1/tenants/{tenant}/platform-issuers", Permission: "token_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "listTenantPlatformLimits", Method: "GET", Path: "/v1/tenants/{tenant}/platform-limits", Permission: "limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "reactivateTenant", Method: "POST", Path: "/v1/tenants/{tenant}/reactivate", Permission: "tenant:suspend", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "listServiceAccounts", Method: "GET", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "createServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "getServiceAccount", Method: "GET", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}", Permission: "service_account:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "service_account", Pattern: re2}}},
-	{ID: "updateServiceAccount", Method: "PATCH", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "service_account", Pattern: re2}}},
-	{ID: "disableServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}/disable", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "service_account", Pattern: re2}}},
-	{ID: "enableServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}/enable", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "service_account", Pattern: re2}}},
-	{ID: "listSubjectMappings", Method: "GET", Path: "/v1/tenants/{tenant}/subject-mappings", Permission: "subject_mapping:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "createSubjectMapping", Method: "POST", Path: "/v1/tenants/{tenant}/subject-mappings", Permission: "subject_mapping:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "getSubjectMapping", Method: "GET", Path: "/v1/tenants/{tenant}/subject-mappings/{mapping}", Permission: "subject_mapping:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "mapping", Pattern: re2}}},
-	{ID: "deleteSubjectMapping", Method: "DELETE", Path: "/v1/tenants/{tenant}/subject-mappings/{mapping}", Permission: "subject_mapping:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "mapping", Pattern: re2}}},
-	{ID: "suspendTenant", Method: "POST", Path: "/v1/tenants/{tenant}/suspend", Permission: "tenant:suspend", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "getTenantTimeZone", Method: "GET", Path: "/v1/tenants/{tenant}/time-zone", Permission: "limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "setTenantTimeZone", Method: "PUT", Path: "/v1/tenants/{tenant}/time-zone", Permission: "limit:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "listTokenIssuers", Method: "GET", Path: "/v1/tenants/{tenant}/token-issuers", Permission: "token_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "createTokenIssuer", Method: "POST", Path: "/v1/tenants/{tenant}/token-issuers", Permission: "token_issuer:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "getTokenIssuer", Method: "GET", Path: "/v1/tenants/{tenant}/token-issuers/{issuer}", Permission: "token_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "issuer", Pattern: re2}}},
-	{ID: "updateTokenIssuer", Method: "PATCH", Path: "/v1/tenants/{tenant}/token-issuers/{issuer}", Permission: "token_issuer:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "issuer", Pattern: re2}}},
-	{ID: "deleteTokenIssuer", Method: "DELETE", Path: "/v1/tenants/{tenant}/token-issuers/{issuer}", Permission: "token_issuer:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "issuer", Pattern: re2}}},
-	{ID: "listUsageRecords", Method: "GET", Path: "/v1/tenants/{tenant}/usage-records", Permission: "usage:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "listVirtualKeys", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "createVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "getVirtualKey", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys/{key}", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "key", Pattern: re20}}},
-	{ID: "revokeVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys/{key}/revoke", Permission: "virtual_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "key", Pattern: re20}}},
+	{ID: "getTenant", Method: "GET", Path: "/v1/tenants/{tenant}", Permission: "tenant:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "updateTenant", Method: "PATCH", Path: "/v1/tenants/{tenant}", Permission: "tenant:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getActiveCurrency", Method: "GET", Path: "/v1/tenants/{tenant}/active-currency", Permission: "price_list:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "setActiveCurrency", Method: "PUT", Path: "/v1/tenants/{tenant}/active-currency", Permission: "price_list:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getCapability", Method: "GET", Path: "/v1/tenants/{tenant}/capability", Permission: "model:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "listCredentials", Method: "GET", Path: "/v1/tenants/{tenant}/credentials", Permission: "credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "createCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials", Permission: "credential:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getCredential", Method: "GET", Path: "/v1/tenants/{tenant}/credentials/{credential}", Permission: "credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
+	{ID: "updateCredential", Method: "PATCH", Path: "/v1/tenants/{tenant}/credentials/{credential}", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
+	{ID: "deleteCredential", Method: "DELETE", Path: "/v1/tenants/{tenant}/credentials/{credential}", Permission: "credential:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
+	{ID: "disableCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/disable", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
+	{ID: "enableCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/enable", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
+	{ID: "revokeCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/revoke", Permission: "credential:delete", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
+	{ID: "replaceCredentialSecret", Method: "PUT", Path: "/v1/tenants/{tenant}/credentials/{credential}/secret", Permission: "credential:rotate", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
+	{ID: "setDefaultCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/set-default", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
+	{ID: "listLimitEvents", Method: "GET", Path: "/v1/tenants/{tenant}/limit-events", Permission: "limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "listLimits", Method: "GET", Path: "/v1/tenants/{tenant}/limits", Permission: "limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "createLimit", Method: "POST", Path: "/v1/tenants/{tenant}/limits", Permission: "limit:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getLimit", Method: "GET", Path: "/v1/tenants/{tenant}/limits/{rule}", Permission: "limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "rule", Pattern: re4}}},
+	{ID: "updateLimit", Method: "PATCH", Path: "/v1/tenants/{tenant}/limits/{rule}", Permission: "limit:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "rule", Pattern: re4}}},
+	{ID: "deleteLimit", Method: "DELETE", Path: "/v1/tenants/{tenant}/limits/{rule}", Permission: "limit:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "rule", Pattern: re4}}},
+	{ID: "getModelRestriction", Method: "GET", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "setModelRestriction", Method: "PUT", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:restrict", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "clearModelRestriction", Method: "DELETE", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:restrict", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "listTenantModels", Method: "GET", Path: "/v1/tenants/{tenant}/models", Permission: "model:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "listTenantPlatformIssuers", Method: "GET", Path: "/v1/tenants/{tenant}/platform-issuers", Permission: "token_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "listTenantPlatformLimits", Method: "GET", Path: "/v1/tenants/{tenant}/platform-limits", Permission: "limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "listPriceLists", Method: "GET", Path: "/v1/tenants/{tenant}/price-lists", Permission: "price_list:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "listPriceListVersions", Method: "GET", Path: "/v1/tenants/{tenant}/prices", Permission: "price_list:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "createPriceListVersion", Method: "POST", Path: "/v1/tenants/{tenant}/prices", Permission: "price_list:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getPriceListVersion", Method: "GET", Path: "/v1/tenants/{tenant}/prices/{price}", Permission: "price_list:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "price", Pattern: re4}}},
+	{ID: "deletePriceListVersion", Method: "DELETE", Path: "/v1/tenants/{tenant}/prices/{price}", Permission: "price_list:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "price", Pattern: re4}}},
+	{ID: "reactivateTenant", Method: "POST", Path: "/v1/tenants/{tenant}/reactivate", Permission: "tenant:suspend", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "listServiceAccounts", Method: "GET", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "createServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getServiceAccount", Method: "GET", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}", Permission: "service_account:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "service_account", Pattern: re4}}},
+	{ID: "updateServiceAccount", Method: "PATCH", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "service_account", Pattern: re4}}},
+	{ID: "disableServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}/disable", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "service_account", Pattern: re4}}},
+	{ID: "enableServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}/enable", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "service_account", Pattern: re4}}},
+	{ID: "listSubjectMappings", Method: "GET", Path: "/v1/tenants/{tenant}/subject-mappings", Permission: "subject_mapping:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "createSubjectMapping", Method: "POST", Path: "/v1/tenants/{tenant}/subject-mappings", Permission: "subject_mapping:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getSubjectMapping", Method: "GET", Path: "/v1/tenants/{tenant}/subject-mappings/{mapping}", Permission: "subject_mapping:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "mapping", Pattern: re4}}},
+	{ID: "deleteSubjectMapping", Method: "DELETE", Path: "/v1/tenants/{tenant}/subject-mappings/{mapping}", Permission: "subject_mapping:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "mapping", Pattern: re4}}},
+	{ID: "suspendTenant", Method: "POST", Path: "/v1/tenants/{tenant}/suspend", Permission: "tenant:suspend", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getTenantTimeZone", Method: "GET", Path: "/v1/tenants/{tenant}/time-zone", Permission: "limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "setTenantTimeZone", Method: "PUT", Path: "/v1/tenants/{tenant}/time-zone", Permission: "limit:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "listTokenIssuers", Method: "GET", Path: "/v1/tenants/{tenant}/token-issuers", Permission: "token_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "createTokenIssuer", Method: "POST", Path: "/v1/tenants/{tenant}/token-issuers", Permission: "token_issuer:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getTokenIssuer", Method: "GET", Path: "/v1/tenants/{tenant}/token-issuers/{issuer}", Permission: "token_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "issuer", Pattern: re4}}},
+	{ID: "updateTokenIssuer", Method: "PATCH", Path: "/v1/tenants/{tenant}/token-issuers/{issuer}", Permission: "token_issuer:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "issuer", Pattern: re4}}},
+	{ID: "deleteTokenIssuer", Method: "DELETE", Path: "/v1/tenants/{tenant}/token-issuers/{issuer}", Permission: "token_issuer:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "issuer", Pattern: re4}}},
+	{ID: "listUsageRecords", Method: "GET", Path: "/v1/tenants/{tenant}/usage-records", Permission: "usage:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "listVirtualKeys", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "createVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getVirtualKey", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys/{key}", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "key", Pattern: re21}}},
+	{ID: "revokeVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys/{key}/revoke", Permission: "virtual_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "key", Pattern: re21}}},
 }
 
 // GetMeInput is the input of getMe.
@@ -4273,6 +4638,17 @@ type UpdateTenantInput struct {
 	Body   TenantUpdate
 }
 
+// GetActiveCurrencyInput is the input of getActiveCurrency.
+type GetActiveCurrencyInput struct {
+	Tenant string // path
+}
+
+// SetActiveCurrencyInput is the input of setActiveCurrency.
+type SetActiveCurrencyInput struct {
+	Tenant string // path
+	Body   ActiveCurrencySet
+}
+
 // GetCapabilityInput is the input of getCapability.
 type GetCapabilityInput struct {
 	Tenant   string // path
@@ -4434,6 +4810,40 @@ type ListTenantPlatformLimitsInput struct {
 	Tenant string // path
 	Limit  int    // query; the zero value means absent
 	Cursor string // query; the zero value means absent
+}
+
+// ListPriceListsInput is the input of listPriceLists.
+type ListPriceListsInput struct {
+	Tenant string // path
+}
+
+// ListPriceListVersionsInput is the input of listPriceListVersions.
+type ListPriceListVersionsInput struct {
+	Tenant   string // path
+	Limit    int    // query; the zero value means absent
+	Cursor   string // query; the zero value means absent
+	Currency string // query; the zero value means absent
+	Provider string // query; the zero value means absent
+	Model    string // query; the zero value means absent
+	At       string // query; the zero value means absent
+}
+
+// CreatePriceListVersionInput is the input of createPriceListVersion.
+type CreatePriceListVersionInput struct {
+	Tenant string // path
+	Body   TenantPriceCreate
+}
+
+// GetPriceListVersionInput is the input of getPriceListVersion.
+type GetPriceListVersionInput struct {
+	Tenant string // path
+	Price  string // path
+}
+
+// DeletePriceListVersionInput is the input of deletePriceListVersion.
+type DeletePriceListVersionInput struct {
+	Tenant string // path
+	Price  string // path
 }
 
 // ReactivateTenantInput is the input of reactivateTenant.
@@ -4710,6 +5120,10 @@ type Server interface {
 	GetTenant(ctx context.Context, in GetTenantInput) (*Tenant, error)
 	// UpdateTenant: PATCH /v1/tenants/{tenant}. Change the name, the display name or the time zone of a tenant
 	UpdateTenant(ctx context.Context, in UpdateTenantInput) (*Tenant, error)
+	// GetActiveCurrency: GET /v1/tenants/{tenant}/active-currency. Read the currency every cost of the tenant is computed in
+	GetActiveCurrency(ctx context.Context, in GetActiveCurrencyInput) (*ActiveCurrency, error)
+	// SetActiveCurrency: PUT /v1/tenants/{tenant}/active-currency. Choose the currency every cost of the tenant is computed in
+	SetActiveCurrency(ctx context.Context, in SetActiveCurrencyInput) (*ActiveCurrency, error)
 	// GetCapability: GET /v1/tenants/{tenant}/capability. Say whether the tenant can call a provider and model now
 	GetCapability(ctx context.Context, in GetCapabilityInput) (*Capability, error)
 	// ListCredentials: GET /v1/tenants/{tenant}/credentials. List the provider credentials of a tenant (metadata)
@@ -4755,7 +5169,17 @@ type Server interface {
 	// ListTenantPlatformIssuers: GET /v1/tenants/{tenant}/platform-issuers. List the platform-level token issuers that list the tenant
 	ListTenantPlatformIssuers(ctx context.Context, in ListTenantPlatformIssuersInput) (*TenantPlatformIssuerList, error)
 	// ListTenantPlatformLimits: GET /v1/tenants/{tenant}/platform-limits. List the ceilings the platform sets for a tenant
-	ListTenantPlatformLimits(ctx context.Context, in ListTenantPlatformLimitsInput) (*PlatformLimitRuleList, error)
+	ListTenantPlatformLimits(ctx context.Context, in ListTenantPlatformLimitsInput) (*TenantPlatformLimitRuleList, error)
+	// ListPriceLists: GET /v1/tenants/{tenant}/price-lists. List the price lists of the tenant, one per currency
+	ListPriceLists(ctx context.Context, in ListPriceListsInput) (*TenantPriceListList, error)
+	// ListPriceListVersions: GET /v1/tenants/{tenant}/prices. List the price versions of the tenant's price lists, newest first
+	ListPriceListVersions(ctx context.Context, in ListPriceListVersionsInput) (*TenantPriceVersionList, error)
+	// CreatePriceListVersion: POST /v1/tenants/{tenant}/prices. Add a price version to one of the tenant's price lists
+	CreatePriceListVersion(ctx context.Context, in CreatePriceListVersionInput) (*TenantPriceVersion, error)
+	// GetPriceListVersion: GET /v1/tenants/{tenant}/prices/{price}. Read a price version of the tenant's price lists
+	GetPriceListVersion(ctx context.Context, in GetPriceListVersionInput) (*TenantPriceVersion, error)
+	// DeletePriceListVersion: DELETE /v1/tenants/{tenant}/prices/{price}. Remove a price version of the tenant's lists that has not started
+	DeletePriceListVersion(ctx context.Context, in DeletePriceListVersionInput) (*TenantPriceVersion, error)
 	// ReactivateTenant: POST /v1/tenants/{tenant}/reactivate. Reactivate a suspended tenant
 	ReactivateTenant(ctx context.Context, in ReactivateTenantInput) (*Tenant, error)
 	// ListServiceAccounts: GET /v1/tenants/{tenant}/service-accounts. List the service accounts of a tenant
@@ -4868,7 +5292,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Provider = v
 		}
-		if in.Provider != "" && !re0.MatchString(in.Provider) {
+		if in.Provider != "" && !re2.MatchString(in.Provider) {
 			errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 		}
 		if v, ok := q["name"]; ok {
@@ -4877,7 +5301,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Name = v
 		}
-		if in.Name != "" && !re1.MatchString(in.Name) {
+		if in.Name != "" && !re3.MatchString(in.Name) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 		}
 		if v, ok := q["status"]; ok {
@@ -5205,7 +5629,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Name = v
 		}
-		if in.Name != "" && !re3.MatchString(in.Name) {
+		if in.Name != "" && !re5.MatchString(in.Name) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 		if v, ok := q["enabled"]; ok {
@@ -5993,7 +6417,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Provider = v
 		}
-		if in.Provider != "" && !re0.MatchString(in.Provider) {
+		if in.Provider != "" && !re2.MatchString(in.Provider) {
 			errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 		}
 		if len(errs) > 0 {
@@ -6118,7 +6542,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Name = v
 		}
-		if in.Name != "" && !re3.MatchString(in.Name) {
+		if in.Name != "" && !re5.MatchString(in.Name) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 		if len(errs) > 0 {
@@ -6185,6 +6609,40 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		writeJSON(w, 200, out)
+	case "getActiveCurrency":
+		var in GetActiveCurrencyInput
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GetActiveCurrency(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "setActiveCurrency":
+		var in SetActiveCurrencyInput
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredActiveCurrencySet, nestedActiveCurrencySet, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.SetActiveCurrency(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
 	case "getCapability":
 		var in GetCapabilityInput
 		in.Tenant = params["tenant"]
@@ -6200,7 +6658,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Provider = v
 		}
-		if in.Provider != "" && !re0.MatchString(in.Provider) {
+		if in.Provider != "" && !re2.MatchString(in.Provider) {
 			errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 		}
 		if v, ok := q["model"]; ok {
@@ -6209,7 +6667,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Model = v
 		}
-		if in.Model != "" && !re1.MatchString(in.Model) {
+		if in.Model != "" && !re3.MatchString(in.Model) {
 			errs = append(errs, FieldError{Field: "model", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 		}
 		if len(errs) > 0 {
@@ -6277,7 +6735,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Provider = v
 		}
-		if in.Provider != "" && !re0.MatchString(in.Provider) {
+		if in.Provider != "" && !re2.MatchString(in.Provider) {
 			errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 		}
 		if len(errs) > 0 {
@@ -6519,7 +6977,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Rule = v
 		}
-		if in.Rule != "" && !re2.MatchString(in.Rule) {
+		if in.Rule != "" && !re4.MatchString(in.Rule) {
 			errs = append(errs, FieldError{Field: "rule", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 		}
 		if len(errs) > 0 {
@@ -6605,7 +7063,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Provider = v
 		}
-		if in.Provider != "" && !re0.MatchString(in.Provider) {
+		if in.Provider != "" && !re2.MatchString(in.Provider) {
 			errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 		}
 		if v, ok := q["model"]; ok {
@@ -6614,7 +7072,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Model = v
 		}
-		if in.Model != "" && !re1.MatchString(in.Model) {
+		if in.Model != "" && !re3.MatchString(in.Model) {
 			errs = append(errs, FieldError{Field: "model", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 		}
 		if len(errs) > 0 {
@@ -6788,7 +7246,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Provider = v
 		}
-		if in.Provider != "" && !re0.MatchString(in.Provider) {
+		if in.Provider != "" && !re2.MatchString(in.Provider) {
 			errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 		}
 		if len(errs) > 0 {
@@ -6900,6 +7358,153 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		writeJSON(w, 200, out)
+	case "listPriceLists":
+		var in ListPriceListsInput
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.ListPriceLists(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "listPriceListVersions":
+		var in ListPriceListVersionsInput
+		in.Tenant = params["tenant"]
+		q, err := parseQuery(r, "limit", "cursor", "currency", "provider", "model", "at")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		if v, ok := q["currency"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "currency", Message: "must not be empty"})
+			}
+			in.Currency = v
+		}
+		if in.Currency != "" && !re1.MatchString(in.Currency) {
+			errs = append(errs, FieldError{Field: "currency", Message: "must match ^[A-Z]{3}$"})
+		}
+		if v, ok := q["provider"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "provider", Message: "must not be empty"})
+			}
+			in.Provider = v
+		}
+		if in.Provider != "" && !re2.MatchString(in.Provider) {
+			errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+		}
+		if v, ok := q["model"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "model", Message: "must not be empty"})
+			}
+			in.Model = v
+		}
+		if in.Model != "" && !re3.MatchString(in.Model) {
+			errs = append(errs, FieldError{Field: "model", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
+		}
+		if v, ok := q["at"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "at", Message: "must not be empty"})
+			}
+			in.At = v
+		}
+		if in.At != "" && runeCount(in.At) < 1 {
+			errs = append(errs, FieldError{Field: "at", Message: "length must be at least 1"})
+		}
+		if runeCount(in.At) > 64 {
+			errs = append(errs, FieldError{Field: "at", Message: "length must be at most 64"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListPriceListVersions(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "createPriceListVersion":
+		var in CreatePriceListVersionInput
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredTenantPriceCreate, nestedTenantPriceCreate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.CreatePriceListVersion(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 201, out)
+	case "getPriceListVersion":
+		var in GetPriceListVersionInput
+		in.Tenant = params["tenant"]
+		in.Price = params["price"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GetPriceListVersion(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "deletePriceListVersion":
+		var in DeletePriceListVersionInput
+		in.Tenant = params["tenant"]
+		in.Price = params["price"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.DeletePriceListVersion(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
 	case "reactivateTenant":
 		var in ReactivateTenantInput
 		in.Tenant = params["tenant"]
@@ -6976,7 +7581,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Name = v
 		}
-		if in.Name != "" && !re3.MatchString(in.Name) {
+		if in.Name != "" && !re5.MatchString(in.Name) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 		if len(errs) > 0 {
@@ -7139,7 +7744,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Issuer = v
 		}
-		if in.Issuer != "" && !re2.MatchString(in.Issuer) {
+		if in.Issuer != "" && !re4.MatchString(in.Issuer) {
 			errs = append(errs, FieldError{Field: "issuer", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 		}
 		if v, ok := q["service_account"]; ok {
@@ -7148,7 +7753,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.ServiceAccount = v
 		}
-		if in.ServiceAccount != "" && !re2.MatchString(in.ServiceAccount) {
+		if in.ServiceAccount != "" && !re4.MatchString(in.ServiceAccount) {
 			errs = append(errs, FieldError{Field: "service_account", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 		}
 		if v, ok := q["subject"]; ok {
@@ -7326,7 +7931,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Name = v
 		}
-		if in.Name != "" && !re3.MatchString(in.Name) {
+		if in.Name != "" && !re5.MatchString(in.Name) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 		if v, ok := q["enabled"]; ok {
@@ -7477,7 +8082,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Provider = v
 		}
-		if in.Provider != "" && !re0.MatchString(in.Provider) {
+		if in.Provider != "" && !re2.MatchString(in.Provider) {
 			errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 		}
 		if v, ok := q["limit_state"]; ok {
@@ -7551,7 +8156,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.ServiceAccountID = v
 		}
-		if in.ServiceAccountID != "" && !re2.MatchString(in.ServiceAccountID) {
+		if in.ServiceAccountID != "" && !re4.MatchString(in.ServiceAccountID) {
 			errs = append(errs, FieldError{Field: "service_account_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 		}
 		if len(errs) > 0 {
@@ -8269,6 +8874,26 @@ func (c *Client) UpdateTenant(ctx context.Context, in UpdateTenantInput) (*Tenan
 	return &out, nil
 }
 
+// GetActiveCurrency calls GET /v1/tenants/{tenant}/active-currency. Read the currency every cost of the tenant is computed in
+func (c *Client) GetActiveCurrency(ctx context.Context, in GetActiveCurrencyInput) (*ActiveCurrency, error) {
+	q := url.Values{}
+	var out ActiveCurrency
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/active-currency", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// SetActiveCurrency calls PUT /v1/tenants/{tenant}/active-currency. Choose the currency every cost of the tenant is computed in
+func (c *Client) SetActiveCurrency(ctx context.Context, in SetActiveCurrencyInput) (*ActiveCurrency, error) {
+	q := url.Values{}
+	var out ActiveCurrency
+	if err := c.do(ctx, "PUT", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/active-currency", q, &in.Body, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // GetCapability calls GET /v1/tenants/{tenant}/capability. Say whether the tenant can call a provider and model now
 func (c *Client) GetCapability(ctx context.Context, in GetCapabilityInput) (*Capability, error) {
 	q := url.Values{}
@@ -8565,7 +9190,7 @@ func (c *Client) ListTenantPlatformIssuers(ctx context.Context, in ListTenantPla
 }
 
 // ListTenantPlatformLimits calls GET /v1/tenants/{tenant}/platform-limits. List the ceilings the platform sets for a tenant
-func (c *Client) ListTenantPlatformLimits(ctx context.Context, in ListTenantPlatformLimitsInput) (*PlatformLimitRuleList, error) {
+func (c *Client) ListTenantPlatformLimits(ctx context.Context, in ListTenantPlatformLimitsInput) (*TenantPlatformLimitRuleList, error) {
 	q := url.Values{}
 	if in.Limit != 0 {
 		q.Set("limit", strconv.Itoa(in.Limit))
@@ -8573,8 +9198,76 @@ func (c *Client) ListTenantPlatformLimits(ctx context.Context, in ListTenantPlat
 	if in.Cursor != "" {
 		q.Set("cursor", string(in.Cursor))
 	}
-	var out PlatformLimitRuleList
+	var out TenantPlatformLimitRuleList
 	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/platform-limits", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListPriceLists calls GET /v1/tenants/{tenant}/price-lists. List the price lists of the tenant, one per currency
+func (c *Client) ListPriceLists(ctx context.Context, in ListPriceListsInput) (*TenantPriceListList, error) {
+	q := url.Values{}
+	var out TenantPriceListList
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/price-lists", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListPriceListVersions calls GET /v1/tenants/{tenant}/prices. List the price versions of the tenant's price lists, newest first
+func (c *Client) ListPriceListVersions(ctx context.Context, in ListPriceListVersionsInput) (*TenantPriceVersionList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	if in.Currency != "" {
+		q.Set("currency", string(in.Currency))
+	}
+	if in.Provider != "" {
+		q.Set("provider", string(in.Provider))
+	}
+	if in.Model != "" {
+		q.Set("model", string(in.Model))
+	}
+	if in.At != "" {
+		q.Set("at", string(in.At))
+	}
+	var out TenantPriceVersionList
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/prices", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreatePriceListVersion calls POST /v1/tenants/{tenant}/prices. Add a price version to one of the tenant's price lists
+func (c *Client) CreatePriceListVersion(ctx context.Context, in CreatePriceListVersionInput) (*TenantPriceVersion, error) {
+	q := url.Values{}
+	var out TenantPriceVersion
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/prices", q, &in.Body, 201, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetPriceListVersion calls GET /v1/tenants/{tenant}/prices/{price}. Read a price version of the tenant's price lists
+func (c *Client) GetPriceListVersion(ctx context.Context, in GetPriceListVersionInput) (*TenantPriceVersion, error) {
+	q := url.Values{}
+	var out TenantPriceVersion
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/prices/"+url.PathEscape(in.Price)+"", q, nil, 200, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeletePriceListVersion calls DELETE /v1/tenants/{tenant}/prices/{price}. Remove a price version of the tenant's lists that has not started
+func (c *Client) DeletePriceListVersion(ctx context.Context, in DeletePriceListVersionInput) (*TenantPriceVersion, error) {
+	q := url.Values{}
+	var out TenantPriceVersion
+	if err := c.do(ctx, "DELETE", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/prices/"+url.PathEscape(in.Price)+"", q, nil, 200, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

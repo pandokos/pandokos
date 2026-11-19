@@ -6,6 +6,8 @@ import (
 
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/audit"
+	"github.com/pandokos/pandokos/internal/catalog"
+	"github.com/pandokos/pandokos/internal/pricing"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/queries"
 )
@@ -45,6 +47,11 @@ func (s *server) ListTenantModels(ctx context.Context, in adminapi.ListTenantMod
 	limit, ask := limitOf(in.Limit)
 	out := &adminapi.TenantModelList{Items: []adminapi.TenantModel{}}
 	now := s.now()
+	// The tenant's active currency and its price lists, read once per call.
+	ta, err := catalog.LoadTenantAccess(ctx, s.db, tid, s.defaultCurrency)
+	if err != nil {
+		return nil, err
+	}
 	err = s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
 		q := queries.New(tx)
 		rows, err := q.ListVisibleModels(ctx, queries.ListVisibleModelsParams{Provider: in.Provider, After: after, AfterID: afterID(after, id), PageSize: ask})
@@ -66,7 +73,9 @@ func (s *server) ListTenantModels(ctx context.Context, in adminapi.ListTenantMod
 			}
 			m := modelOut(r)
 			item := adminapi.TenantModel{Model: m, Allowed: !restricted || allowed[m.Ref]}
+			// The catalogue's version in force, whatever its currency, and the list that prices the tenant now.
 			pv, err := q.PriceAt(ctx, queries.PriceAtParams{ModelID: r.ID, At: &now})
+			var catalogue []pricing.Version
 			switch {
 			case err == nil:
 				v, err := priceOut(priceFromAt(pv))
@@ -74,8 +83,24 @@ func (s *server) ListTenantModels(ctx context.Context, in adminapi.ListTenantMod
 					return err
 				}
 				item.Price = &v
+				catalogue = []pricing.Version{{ID: pv.ID, ModelID: pv.ModelID, ValidFrom: pv.ValidFrom, Currency: pv.Currency}}
 			case !isNoRowsErr(err):
 				return err
+			}
+			version, source, found := pricing.List{Currency: ta.Currency, Catalogue: catalogue, Tenant: ta.Prices[r.ID]}.At(now)
+			if found {
+				item.PriceSource = source
+				if source == pricing.SourceTenant {
+					row, err := q.GetTenantPriceVersion(ctx, version.ID)
+					if err != nil {
+						return err
+					}
+					tp, err := tenantPriceOut(tenantPriceFromGet(row))
+					if err != nil {
+						return err
+					}
+					item.TenantPrice = &tp
+				}
 			}
 			out.Items = append(out.Items, item)
 		}

@@ -3,11 +3,14 @@ package resolver
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
+	"time"
 
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/catalog"
 	"github.com/pandokos/pandokos/internal/gateway"
+	"github.com/pandokos/pandokos/internal/pricing"
 	"github.com/pandokos/pandokos/internal/telemetry"
 	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/test/testutil"
@@ -17,9 +20,10 @@ import (
 // (the unexported interface `source`, which NewCatalogue satisfies with a *catalog.Cache). It
 // serves a snapshot that need not satisfy the constraints of the database.
 type fakeSource struct {
-	snap  *catalog.Snapshot
-	err   error
-	reads *int // how many times the snapshot was read, when not nil
+	snap   *catalog.Snapshot
+	err    error
+	reads  *int                 // how many times the snapshot was read, when not nil
+	access catalog.TenantAccess // what the tenant's entry holds (sprint 5.4): its currency and prices
 }
 
 func (f fakeSource) read() {
@@ -41,9 +45,9 @@ func (f fakeSource) Resolve(_ context.Context, p authz.Principal, provider, name
 	return f.snap.Resolve(p, catalog.TenantAccess{}, provider, name)
 }
 
-func (f fakeSource) ResolveIn(ctx context.Context, p authz.Principal, provider, name string) (*catalog.Snapshot, catalog.Model, catalog.Endpoint, error) {
+func (f fakeSource) ResolveIn(ctx context.Context, p authz.Principal, provider, name string) (*catalog.Snapshot, catalog.TenantAccess, catalog.Model, catalog.Endpoint, error) {
 	m, e, err := f.Resolve(ctx, p, provider, name)
-	return f.snap, m, e, err
+	return f.snap, f.access, m, e, err
 }
 
 func testPrincipal() authz.Principal {
@@ -175,4 +179,61 @@ func TestCatalogueLimitsValues(t *testing.T) {
 			t.Errorf("%s: MaxOutputTokens %d ContextWindow %d, want %d and %d", name, got.MaxOutputTokens, got.ContextWindow, want[0], want[1])
 		}
 	}
+}
+
+// TestCatalogueTenantPrices is T-733: the target carries the currency of the tenant, the catalogue's
+// versions of the model and the tenant's versions of the resolved model only.
+func TestCatalogueTenantPrices(t *testing.T) {
+	from := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	catVersion := pricing.Version{ID: "cat-1", ModelID: "m1", ValidFrom: from, Currency: "USD", Source: "import"}
+	catOther := pricing.Version{ID: "cat-2", ModelID: "m2", ValidFrom: from, Currency: "USD", Source: "import"}
+	own := pricing.Version{ID: "own-1", ModelID: "m1", ValidFrom: from, Currency: "EUR", Source: pricing.SourceTenant}
+	ownEnd := pricing.Version{ID: "own-end", ModelID: "m1", ValidFrom: from.Add(time.Hour), Currency: "EUR", Source: pricing.SourceTenant, End: true}
+	ownOther := pricing.Version{ID: "own-2", ModelID: "m2", ValidFrom: from, Currency: "EUR", Source: pricing.SourceTenant}
+	snap := catalog.NewSnapshot(catalog.SnapshotData{
+		Providers: []catalog.Provider{{ID: "p1", Name: "synth", Family: "openai", Enabled: true}},
+		Endpoints: map[string][]catalog.Endpoint{"synth": {{Name: "main", BaseURL: "http://10.0.0.5:8000/v1", Private: true, Enabled: true, Default: true}}},
+		Models: []catalog.Model{
+			{ID: "m1", Provider: "synth", Name: "one", UpstreamID: "one", Status: "active", Availability: "all"},
+			{ID: "m2", Provider: "synth", Name: "two", UpstreamID: "two", Status: "active", Availability: "all"},
+		},
+		Versions: map[string][]pricing.Version{"m1": {catVersion}, "m2": {catOther}},
+	})
+	active := pricing.Active{Current: "EUR", Previous: "USD", From: from.Add(24 * time.Hour)}
+	access := catalog.TenantAccess{Currency: active, Prices: map[string][]pricing.Version{"m1": {own, ownEnd}, "m2": {ownOther}}}
+	cat := newCatalogue(fakeSource{snap: snap, access: access}, telemetry.NewLogger(&testutil.LogBuffer{}, "debug"))
+
+	got, err := cat.Resolve(context.Background(), testPrincipal(), "synth", "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Currency != active {
+		t.Errorf("currency %+v, want the tenant's %+v", got.Currency, active)
+	}
+	if len(got.Prices) != 1 || got.Prices[0].ID != "cat-1" {
+		t.Errorf("the catalogue's versions: %+v, want those of the model only", got.Prices)
+	}
+	if !reflect.DeepEqual(got.TenantPrices, []pricing.Version{own, ownEnd}) {
+		t.Errorf("the tenant's versions: %+v, want those of the resolved model only", got.TenantPrices)
+	}
+	// The list built from the target: the catalogue's USD price before the change, none after the end of the list.
+	l := got.PriceList()
+	if v, src, ok := l.At(from.Add(30 * time.Minute)); !ok || v.ID != "cat-1" || src != pricing.SourceCatalogue {
+		t.Errorf("before the change (USD in force): %+v %s %v", v, src, ok)
+	}
+	if v, src, ok := l.At(from.Add(25 * time.Hour)); ok {
+		t.Errorf("after the change, the list of EUR has ended and the catalogue prices in USD: %+v %s", v, src)
+	}
+	eur := pricing.List{Currency: pricing.Active{Current: "EUR"}, Catalogue: got.Prices, Tenant: got.TenantPrices}
+	if v, src, ok := eur.At(from.Add(30 * time.Minute)); !ok || v.ID != "own-1" || src != pricing.SourceTenant {
+		t.Errorf("EUR in force: %+v %s %v", v, src, ok)
+	}
+
+	t.Run("a principal without a tenant is priced from the catalogue as before", func(t *testing.T) {
+		cat := newCatalogue(fakeSource{snap: snap}, telemetry.NewLogger(&testutil.LogBuffer{}, "debug"))
+		got, err := cat.Resolve(context.Background(), testPrincipal(), "synth", "two")
+		if err != nil || got.Currency != (pricing.Active{}) || len(got.TenantPrices) != 0 || len(got.Prices) != 1 || got.Prices[0].ID != "cat-2" {
+			t.Errorf("%+v %v", got, err)
+		}
+	})
 }

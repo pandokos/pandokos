@@ -85,6 +85,9 @@ type Telemetry struct {
 	Traces   TelemetryTraces   `yaml:"traces"`
 	Resource TelemetryResource `yaml:"resource"`
 
+	// TenantUsageDetails writes the cost, currency and token counts of a tenant to logs and traces.
+	TenantUsageDetails bool `yaml:"tenant_usage_details"`
+
 	ResourceAttributes map[string]string `yaml:"-"` // filled by Load when the purpose is serve
 }
 
@@ -161,8 +164,9 @@ type Cache struct {
 // Pricing configures the price list: the import of the embedded snapshot at start and the
 // optional periodic download. Only serve reads and validates the download settings.
 type Pricing struct {
-	ImportAtStart bool           `yaml:"import_at_start"`
-	Refresh       PricingRefresh `yaml:"refresh"`
+	ImportAtStart   bool           `yaml:"import_at_start"`
+	DefaultCurrency string         `yaml:"default_currency"`
+	Refresh         PricingRefresh `yaml:"refresh"`
 }
 
 // PricingRefresh configures the periodic download of the price dataset.
@@ -358,8 +362,9 @@ func Defaults() *Config {
 			LimitsTTL:     Duration(30 * time.Second),
 		},
 		Pricing: Pricing{
-			ImportAtStart: true,
-			Refresh:       PricingRefresh{URL: DefaultPriceURL, Interval: Duration(24 * time.Hour)},
+			ImportAtStart:   true,
+			DefaultCurrency: "USD",
+			Refresh:         PricingRefresh{URL: DefaultPriceURL, Interval: Duration(24 * time.Hour)},
 		},
 		Ledger: Ledger{
 			FlushInterval:        Duration(50 * time.Millisecond),

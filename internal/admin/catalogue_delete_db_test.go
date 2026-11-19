@@ -127,3 +127,37 @@ func TestCatalogueDeleteRefused(t *testing.T) {
 		_ = c
 	})
 }
+
+// TestModelDeleteTenantPrices is T-759: a model with a tenant version is not deleted: 409 invalid_state with
+// the errors entry of 5.8, nothing audited, no tenant, currency or rate in the answer.
+func TestModelDeleteTenantPrices(t *testing.T) {
+	w := newPW(t)
+	api := w.api
+	model := decodeInto[adminapi.Model](t, w.do(t, w.plat, "POST", "/v1/models", map[string]any{"provider": w.cat.Provider.Name, "name": apitest.UniqueName("m"), "availability": "all"}), 201)
+	v := w.createPrice(t, priceBody(model, w.cat.Provider.Name, "EUR", tpRates("input", "0", "6.54321"), map[string]any{"valid_from": scheduled(3, 0), "note": "secret-note"}))
+	seen := seenIDs(t, api)
+	r := w.do(t, w.plat, "DELETE", "/v1/models/"+model.ID, nil)
+	p := expect(t, r, 409, adminapi.ProblemCodeInvalidState)
+	if len(p.Errors) != 1 || p.Errors[0].Field != "tenant_prices" || p.Errors[0].Message != "tenant price lists reference this model; retire the model instead" {
+		t.Errorf("errors %+v", p.Errors)
+	}
+	for _, leak := range []string{w.a.ID, w.a.Name, "EUR", "6.54321", "secret-note", v.ID} {
+		if strings.Contains(string(r.Body), leak) {
+			t.Errorf("the answer names %q: %s", leak, r.Body)
+		}
+	}
+	if rows := newRows(t, api, seen); len(rows) != 0 {
+		t.Errorf("a refused deletion wrote %+v", rows)
+	}
+	// The model is still there, and a started version keeps it so: it is retired instead.
+	decodeInto[adminapi.Model](t, w.do(t, w.plat, "GET", "/v1/models/"+model.ID, nil), 200)
+	retired := decodeInto[adminapi.Model](t, w.do(t, w.plat, "PATCH", "/v1/models/"+model.ID, map[string]any{"status": "retired"}), 200)
+	if retired.Status != adminapi.ModelStatusRetired {
+		t.Errorf("%+v", retired)
+	}
+	// Once the version is deleted the model can go.
+	decodeInto[adminapi.TenantPriceVersion](t, w.do(t, w.ka, "DELETE", w.pricesPath(w.a)+"/"+v.ID, nil), 200)
+	if r := w.do(t, w.plat, "DELETE", "/v1/models/"+model.ID, nil); r.Status != 200 {
+		t.Errorf("after the deletion of the version: %d\n%s", r.Status, r.Body)
+	}
+}

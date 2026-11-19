@@ -564,7 +564,7 @@ func TestModelDefaultOutput(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ta, err := catalog.LoadTenantAccess(ctx(t), c.api.Admin, tn)
+		ta, err := catalog.LoadTenantAccess(ctx(t), c.api.Admin, tn, "USD")
 		if err != nil {
 			t.Fatal(err)
 		}

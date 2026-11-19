@@ -138,6 +138,9 @@ func build(t *testing.T, targets map[string]gateway.Target, guard *egress.Guard,
 		MaxRequestBodyBytes:    1 << 20,
 		RequestBodyReadTimeout: 2 * time.Second,
 		MaxRequestDuration:     10 * time.Second,
+		// The tests of the request line and of the spans read cost, tokens and currencies, which sprint 5.4
+		// writes only behind telemetry.tenant_usage_details: the harness turns it on; T-739 turns it off.
+		UsageDetails: true,
 	}
 	if mutate != nil {
 		mutate(&o)

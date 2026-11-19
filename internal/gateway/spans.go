@@ -50,8 +50,9 @@ func failed(o usage.Outcome) bool {
 	return o == usage.OutcomeUpstreamError || o == usage.OutcomeTimeout || o == usage.OutcomeInternalError
 }
 
-// endClient sets the attributes and the status of the client span from the record and ends it.
-func (st *reqState) endClient(r *usage.Record) {
+// endClient sets the attributes and the status of the client span from the record and ends it; the cost
+// and its currency only when usageDetails (telemetry.tenant_usage_details) is on.
+func (st *reqState) endClient(r *usage.Record, usageDetails bool) {
 	s := st.client
 	if s == nil {
 		return
@@ -78,7 +79,7 @@ func (st *reqState) endClient(r *usage.Record) {
 	if r.TTFB != nil {
 		attrs = append(attrs, attribute.Int64(attrTTFB, r.TTFB.Milliseconds()))
 	}
-	if r.Cost.Known {
+	if r.Cost.Known && usageDetails {
 		attrs = append(attrs, attribute.String(attrCostAmount, r.Cost.Amount.String()), attribute.String(attrCostCurrency, r.Cost.Currency))
 	}
 	s.SetAttributes(attrs...)

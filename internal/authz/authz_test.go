@@ -69,10 +69,13 @@ func TestCatalogue(t *testing.T) {
 		{"platform_limit:read", ScopePlatform},
 		{"platform_limit:write", ScopePlatform},
 		{"platform_limit:delete", ScopePlatform},
+		{"price_list:read", ScopeTenant},
+		{"price_list:write", ScopeTenant},
+		{"price_list:delete", ScopeTenant},
 	}
 	got := Catalogue()
-	if len(got) != 41 {
-		t.Fatalf("%d permissions, want 41", len(got))
+	if len(got) != 44 {
+		t.Fatalf("%d permissions, want 44", len(got))
 	}
 	re := regexp.MustCompile(`^[a-z_]+:[a-z_]+$`)
 	seen := map[string]bool{}
@@ -122,7 +125,8 @@ func TestRoles(t *testing.T) {
 		PlatformIssuerRead, PlatformIssuerWrite, PlatformIssuerDelete, PlatformLimitRead, PlatformLimitWrite, PlatformLimitDelete}
 	tenantAll := []string{IdentityRead, ServiceAccountRead, ServiceAccountWrite, VirtualKeyRead, VirtualKeyWrite, VirtualKeyRevoke, ModelInvoke,
 		CredentialRead, CredentialWrite, CredentialRotate, CredentialDelete, CredentialUse, ModelRead, ModelRestrict, UsageRead,
-		TokenIssuerRead, TokenIssuerWrite, TokenIssuerDelete, SubjectMappingRead, SubjectMappingWrite, SubjectMappingDelete, LimitRead, LimitWrite, LimitDelete}
+		TokenIssuerRead, TokenIssuerWrite, TokenIssuerDelete, SubjectMappingRead, SubjectMappingWrite, SubjectMappingDelete, LimitRead, LimitWrite, LimitDelete,
+		PriceListRead, PriceListWrite, PriceListDelete}
 	want := []struct {
 		name string
 		kind Kind
@@ -272,7 +276,7 @@ func TestEffective(t *testing.T) {
 	}{
 		{"union of roles", sa(id(1), tenant.StateActive, []string{RoleInference, RoleTenantAdmin}, nil),
 			[]string{CredentialDelete, CredentialRead, CredentialRotate, CredentialUse, CredentialWrite, IdentityRead, LimitDelete, LimitRead, LimitWrite, ModelInvoke,
-				ModelRead, ModelRestrict, ServiceAccountRead, ServiceAccountWrite, SubjectMappingDelete, SubjectMappingRead, SubjectMappingWrite,
+				ModelRead, ModelRestrict, PriceListDelete, PriceListRead, PriceListWrite, ServiceAccountRead, ServiceAccountWrite, SubjectMappingDelete, SubjectMappingRead, SubjectMappingWrite,
 				TokenIssuerDelete, TokenIssuerRead, TokenIssuerWrite, UsageRead, VirtualKeyRead, VirtualKeyRevoke, VirtualKeyWrite}},
 		{"scopes intersect", sa(id(1), tenant.StateActive, []string{RoleTenantAdmin}, []string{VirtualKeyRead, "tenant:read", ModelInvoke}),
 			[]string{ModelInvoke, VirtualKeyRead}},
@@ -430,6 +434,40 @@ func TestLimitPermissions(t *testing.T) {
 		}
 		if d := Decide(admin, p, Target{TenantID: a}); d != Deny {
 			t.Errorf("tenant admin, %s: %v, want a refusal", p, d)
+		}
+	}
+}
+
+// TestPriceListPermissions is T-753: the three permissions of sprint 5.4 have tenant scope and their
+// texts; tenant-admin holds them; platform-admin and inference hold none.
+func TestPriceListPermissions(t *testing.T) {
+	want := map[string]string{
+		PriceListRead:   "Reading the tenant's price lists and their versions, and the tenant's active currency",
+		PriceListWrite:  "Adding a price version to one of the tenant's price lists; choosing the tenant's active currency",
+		PriceListDelete: "Removing a price version of the tenant's lists that has not started",
+	}
+	for name, text := range want {
+		p, ok := Lookup(name)
+		if !ok || p.Scope != ScopeTenant || p.Description != text {
+			t.Errorf("%s: %+v (found %v), want tenant scope and %q", name, p, ok, text)
+		}
+	}
+	for _, r := range Roles() {
+		held := 0
+		for _, perm := range r.Permissions {
+			if _, ok := want[perm]; ok {
+				held++
+			}
+		}
+		switch r.Name {
+		case RoleTenantAdmin:
+			if held != 3 {
+				t.Errorf("tenant-admin holds %d of the three", held)
+			}
+		default:
+			if held != 0 {
+				t.Errorf("%s holds %d price list permissions", r.Name, held)
+			}
 		}
 	}
 }

@@ -237,7 +237,115 @@ pandokos price override openai/gpt-4o --currency USD --rate input=2.4 --rate out
   refused while a version of the model has not started. The override stays in force until the next
   import creates a version.
 
-## 7. How fast a change takes effect
+## 7. Tenant price lists and the active currency
+
+The prices of sections 4 to 6 are the platform's and the same for every tenant. A tenant can also hold
+**price lists of its own**, for a contract price or to read its costs and set its budgets in its own
+currency ([ADR 0053](../adr/0053-tenant-price-lists-and-active-currency.md), requirement CAT-11). This
+section is for the tenant administrator; the platform administrator should know the rules because they
+decide which of its ceilings apply ([limits guide](limits.md), section 5).
+
+**Who reads and writes.** The tenant, and nobody else. The three permissions `price_list:read`,
+`price_list:write` and `price_list:delete` are tenant-scoped and held by `tenant-admin`; no platform role
+holds one, and the platform has no operation, policy or function that reads or writes a tenant's prices.
+A tenant's lists are stored in the tables `tenant_price_version` and `tenant_price_rate`, behind
+row-level security ([database guide](database.md), section 17). The only place where the platform meets
+them is a refusal: a model that a tenant has priced cannot be deleted (retire it instead).
+
+**One list per currency.** The versions a tenant wrote in one currency are its list in that currency.
+A version is a price for a model: rates per category, with tiers and fallbacks, exact decimals, starting
+now or later and never in the past, never changed, and removable only before it starts: the rules of
+section 4, with the difference that a tenant can name only a model it can use (section 3). A version
+of kind **`end`** stops the list for one model from its start, so that the catalogue's price applies again;
+it needs a price of the list in force at its start. At most 50,000 versions per tenant; the same list,
+model and start twice is a conflict.
+
+```
+pandokos price-list set --tenant ACME --currency EUR --model openai/gpt-4o \
+    --rate input=2.3 --rate output=9.2 --note "contract 2026"      # --valid-from TIME to schedule
+pandokos price-list set --tenant ACME --currency EUR --model openai/gpt-4o --end --valid-from 2027-01-01T00:00:00Z
+pandokos price-list lists --tenant ACME                           # one row per currency
+pandokos price-list list  --tenant ACME [--currency EUR] [--model openai/gpt-4o | --provider openai] [--at TIME]
+pandokos price-list get   --tenant ACME ID
+pandokos price-list delete --tenant ACME ID                       # only a version that has not started
+```
+
+`--rate` has the syntax of `price override`. The operations are `listPriceLists`, `listPriceListVersions`,
+`createPriceListVersion`, `getPriceListVersion` and `deletePriceListVersion`; each creation and deletion
+writes an audit record (`tenant_price.create`, `tenant_price.delete`) in the tenant's log
+([reference](../reference/admin-api.md)).
+
+**The active currency.** A tenant has one active currency: the default of the installation
+(`pricing.default_currency`, `USD` unless configured) until it chooses another. **Every cost of the tenant
+is computed in it**, for a model and an instant, in this order:
+
+1. the tenant's list in the active currency, when it has a price for the model in force: source `tenant`;
+2. otherwise the catalogue's version in force, **when it is in the active currency**: source `catalogue`;
+3. otherwise there is no price: the cost is unknown (`no_price`) and `limits.on_unknown_price` decides when a
+   budget applies ([limits guide](limits.md), section 5).
+
+Lists in other currencies are kept and take no part. Nothing is converted and no two currencies are
+added (never convert, never add). The usage record says which list the price came from (`price_source`,
+[usage guide](usage.md)).
+
+**Example.** The catalogue prices `openai/gpt-4o` in USD and the tenant has the default currency.
+
+1. The tenant writes a EUR list for `openai/gpt-4o` (`price-list set --currency EUR ...`). Nothing
+   changes: its active currency is USD, its costs are in USD at the catalogue price, and its USD budgets
+   apply.
+2. It writes a EUR budget (`limit create --metric cost_per_month --amount 400 --currency EUR`): accepted,
+   because a list in EUR exists for the scope; it is **inactive** for now.
+3. It sets the currency (`price-list currency set --tenant ACME EUR`). The answer says that the change is
+   pending and from when, and lists the budgets and ceilings that stop applying then.
+4. From the start of the next month in the tenant's time zone, EUR prices every cost and the EUR budget
+   applies; the USD budgets and the platform's USD ceilings are inactive. `openai/gpt-4o-mini`, which the
+   EUR list does not price and the catalogue prices in USD only, now has an unknown cost: a request to it
+   under an active budget meets `limits.on_unknown_price` (409 `no_price` by default). The tenant adds
+   it to the list, or does not use the model.
+
+**Changing the active currency** (`PUT /v1/tenants/{tenant}/active-currency`, `price_list:write`;
+`price-list currency set --tenant T CCC` or `--default`; `price-list currency get`).
+
+- Only when **a list in that currency exists**: a price of the tenant's own in it, or a catalogue price in
+  it for a model the tenant can be given, in both cases in force or starting later. Otherwise 400 on
+  `currency`: `no price list in this currency: add prices in it first`. The default of the installation
+  is always accepted. Withdrawing a pending change (setting the currency in force again) needs no list.
+- Setting the code that equals the installation's default (`USD` for a tenant on the default) is not the
+  same as setting the default: it pins that code to the tenant, schedules a pending change at the same
+  instant, and nothing in force changes (the tenant stays in USD) until it follows the default again with
+  `--default`. Use `--default` to follow the installation.
+- It takes effect at **the start of the next month in the tenant's time zone** (the zone in force when it
+  is made; the same instant as a change of zone, [limits guide](limits.md), section 4), never at once.
+  Why: every day and month period in progress ends at or before that instant, so no budget is freed
+  and none starts with a period already running. A second change before then replaces the pending
+  currency and keeps the instant; setting the currency in force again withdraws the change.
+- The resource shows `currency` (as set), `in_force` (the code in force now) and `effective_from` while a
+  change is pending; the answer to a change adds `inactive_limits`. The platform reads the active
+  currency, `active_currency` and `active_currency_in_force`, on the `Tenant` resource, and nothing of the
+  lists.
+- Only the tenant changes it: `createTenant` and `updateTenant` do not take it, and the database refuses
+  a change from any other session.
+
+**How fast a version takes effect.** The gateway keeps a tenant's currency and versions with its model
+access ([section 8](#8-how-fast-a-change-takes-effect)): a new or removed version reaches it through a
+notification, normally within a second, and within `cache.catalog_ttl` otherwise. A scheduled version, and
+a pending change of currency, take effect at their instant with no notification. A request is priced
+with one version from its estimate to its settlement; a version replaced while it runs does not change
+it.
+
+**What imports and overrides do not touch.** A price import or a price override writes the catalogue and
+never a tenant's list, and a tenant's list never changes what the catalogue says for anyone else. A
+catalogue price in another currency than a tenant's active currency (an override in EUR, say) does not
+price that tenant's requests: its cost for the model is unknown. An operator that overrides prices in a
+currency other than the default should say so to the tenants whose budgets are in it, or set
+`pricing.default_currency`.
+
+**Retiring a model.** A model that a tenant has priced is **retired, not deleted**: a version that has
+started can never be removed, and the foreign key refuses the deletion (409 `invalid_state`, field
+`tenant_prices`). A grant that is revoked leaves the tenant's versions; they price nothing while the
+model cannot be called.
+
+## 8. How fast a change takes effect
 
 The gateway keeps the catalogue (providers, endpoints, models, price versions) and each tenant's access
 (grants and restriction) in memory for `cache.catalog_ttl` (`PANDOKOS_CACHE_CATALOG_TTL`): **30 s** by
@@ -248,18 +356,19 @@ delivered, for instance behind a pooler in transaction mode without `database.di
 interrupted. A price changed during a call's lifetime may be priced with the previous version; the
 version is recorded with the cost, so the record is self-consistent.
 
-## 8. Limits
+## 9. Limits
 
 - Costs are **estimates, not invoices** ([ADR 0011](../adr/0011-pricing-source.md)): the provider's
   invoice is the authority. Use an override when you have a contract price.
 - Price variants (service tiers, batch discounts, regions) and time-of-day prices are not represented;
   they are priced at the standard rate and reported.
 - Currencies are not converted and amounts in different currencies are never added.
-- A price override in another currency changes the price of the model for every tenant: see the
-  [limits guide](limits.md), section 5, before using it for one tenant's budget.
+- A price override in another currency changes the catalogue price of the model for every tenant, and
+  prices only the tenants whose active currency it is in: for one tenant's currency write a tenant price
+  list instead (section 7, [limits guide](limits.md), section 5).
 - The dataset is third-party data under the MIT licence; its accuracy is not guaranteed.
 - A model the dataset does not match has no price until you set an override; its cost is unknown, not
   zero.
 - A model without a price is served and recorded with an unknown cost, never a zero cost. Under a
-  budget ([limits guide](limits.md), section 5) such a call is refused with 409 `no_price` unless
-  `limits.on_unknown_price` is `allow`.
+  budget ([limits guide](limits.md), section 5) such a call (no price in the tenant's active currency) is
+  refused with 409 `no_price` unless `limits.on_unknown_price` is `allow`.

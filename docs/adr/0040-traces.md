@@ -56,3 +56,4 @@ environment configuration (settings outside ADR 0019).
 
 - 2026-11: sprint 3.3 adds the span attribute pandokos.usage.output_source.
 - 2026-11-18: accepted by the maintainer after review.
+- 2026-11-18: sprint 5.4: the cost attributes of the client span are set only with `telemetry.tenant_usage_details`

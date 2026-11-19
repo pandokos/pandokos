@@ -165,9 +165,9 @@ header values, bodies and query strings never appear. Values of sensitive keys a
 | `ttfb_ms` | when a body byte arrived | time to the first byte of the response body |
 | `request_bytes`, `response_bytes` | when known | body bytes received and sent |
 | `usage_source` | when the provider answered | `provider`, `estimated` or `none` |
-| `usage` | when `usage_source` is `provider` | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `reasoning_tokens`, plus one entry per non-zero provider-specific category |
+| `usage` | when `usage_source` is `provider` **and `telemetry.tenant_usage_details` is on** | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `reasoning_tokens`, plus one entry per non-zero provider-specific category |
 
-The usage record adds `record_id`, `trace_id`, `cost_status`, `cost`, `currency`, `metadata_count`, `metadata_dropped`, `usage_reader` and `ledger` (see the [gateway guide](gateway.md), section 10).
+The usage record adds `record_id`, `trace_id`, `cost_status`, (with `telemetry.tenant_usage_details`) `cost`, `currency`, `metadata_count`, `metadata_dropped`, `usage_reader` and `ledger` (see the [gateway guide](gateway.md), section 10).
 
 Health requests are logged at level debug, everything else at info.
 

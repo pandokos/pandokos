@@ -29,6 +29,9 @@ type RuleCacheOptions struct {
 	Now    func() time.Time
 	// Zones gives the calendar of each tenant's zone (sprint 5.3, C2).
 	Zones *Zones
+	// DefaultCurrency is pricing.default_currency (sprint 5.4): the active currency of a tenant that
+	// chose none.
+	DefaultCurrency string
 }
 
 type ruleEntry struct {
@@ -69,7 +72,7 @@ func NewRuleCache(o RuleCacheOptions) (*RuleCache, error) {
 		return nil, errors.New("limits: the rule cache needs the zones of the installation")
 	}
 	return newCountingRuleCache(func(ctx context.Context, id tenant.ID) (RuleSet, int, error) {
-		return loadRules(ctx, o.DB, id, o.Zones)
+		return loadRules(ctx, o.DB, id, o.Zones, o.DefaultCurrency)
 	}, o)
 }
 

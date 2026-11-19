@@ -14,6 +14,7 @@ import (
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/gateway"
 	"github.com/pandokos/pandokos/internal/limits"
+	"github.com/pandokos/pandokos/internal/pricing"
 	"github.com/pandokos/pandokos/internal/resolver"
 	"github.com/pandokos/pandokos/internal/tenant"
 
@@ -38,6 +39,43 @@ type Real struct {
 
 	zmu   sync.Mutex
 	zones map[tenant.ID]limits.TenantCalendar // by tenant, for the rules kept in memory (sprint 5.3)
+	cur   map[tenant.ID]pricing.Active        // by tenant, for the rules kept in memory (sprint 5.4)
+}
+
+// DefaultCurrency is the active currency of a tenant whose rules are kept in memory until SetCurrency
+// says another: the default of the installation.
+const DefaultCurrency = "USD"
+
+// Currency is the active currency of a tenant whose rules are kept in memory: the zero value (no cost
+// limit is left out, as for a rule set built without a tenant row) until SetCurrency says another.
+func (r *Real) Currency(id tenant.ID) pricing.Active {
+	r.zmu.Lock()
+	defer r.zmu.Unlock()
+	return r.cur[id]
+}
+
+// SetCurrency gives a tenant whose rules are kept in memory an active currency, taking effect at the
+// instant at (a test that wants the change rule of sprint 5.4 passes the instant limits.NextChange
+// gives; a zero or an earlier instant is a change that took effect). Before it the currency in force
+// is the one the tenant had, DefaultCurrency when it had none. The rule set of the tenant is built
+// again at its next load.
+func (r *Real) SetCurrency(tb testing.TB, id tenant.ID, currency string, at time.Time) {
+	tb.Helper()
+	r.zmu.Lock()
+	defer r.zmu.Unlock()
+	if r.cur == nil {
+		r.cur = map[tenant.ID]pricing.Active{}
+	}
+	prev := r.cur[id]
+	before := DefaultCurrency
+	if prev.Current != "" {
+		before = prev.At(at)
+	}
+	if at.IsZero() || !at.After(r.now()) {
+		r.cur[id] = pricing.Active{Current: currency}
+		return
+	}
+	r.cur[id] = pricing.Active{Current: currency, Previous: before, From: at}
 }
 
 // TenantCalendar is the calendar of a tenant whose rules are kept in memory: the zone of Real until
@@ -97,7 +135,9 @@ func ForTenants(tb testing.TB, rules map[tenant.ID][]limits.Rule) *Real {
 		if !ok {
 			return limits.NewRuleSet(id, nil, nil, nil), nil
 		}
-		return limits.NewRuleSet(id, nil, nil, rs), nil
+		set := limits.NewRuleSet(id, nil, nil, rs)
+		set.Currency = r.Currency(id)
+		return set, nil
 	}, limits.RuleCacheOptions{Logger: quiet, TTL: 5 * time.Minute})
 	if err != nil {
 		tb.Fatal(err)
@@ -233,6 +273,7 @@ func NewWith(tb testing.TB, o Options) *Real {
 		cache, err = limits.NewRuleCacheFunc(func(_ context.Context, id tenant.ID) (limits.RuleSet, error) {
 			rs := limits.NewScopedRuleSet(id, o.PlatformDefault, o.Platform[id], o.Rules[id])
 			rs.Calendar = r.TenantCalendar(id)
+			rs.Currency = r.Currency(id)
 			return rs, nil
 		}, limits.RuleCacheOptions{Logger: quiet, TTL: 5 * time.Minute})
 		if err != nil {

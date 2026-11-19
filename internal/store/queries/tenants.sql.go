@@ -14,7 +14,8 @@ const createTenant = `-- name: CreateTenant :one
 INSERT INTO pandokos.tenant (name, display_name, time_zone)
 VALUES ($1::text, $2::text, $3::text)
 RETURNING id, name, display_name, state, created_at, updated_at, state_changed_at,
-          time_zone, time_zone_previous, time_zone_effective_from
+          time_zone, time_zone_previous, time_zone_effective_from,
+          active_currency, active_currency_previous, active_currency_effective_from
 `
 
 type CreateTenantParams struct {
@@ -39,13 +40,17 @@ func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) (Pan
 		&i.TimeZone,
 		&i.TimeZonePrevious,
 		&i.TimeZoneEffectiveFrom,
+		&i.ActiveCurrency,
+		&i.ActiveCurrencyPrevious,
+		&i.ActiveCurrencyEffectiveFrom,
 	)
 	return i, err
 }
 
 const getTenant = `-- name: GetTenant :one
 SELECT id, name, display_name, state, created_at, updated_at, state_changed_at,
-       time_zone, time_zone_previous, time_zone_effective_from
+       time_zone, time_zone_previous, time_zone_effective_from,
+       active_currency, active_currency_previous, active_currency_effective_from
   FROM pandokos.tenant
  WHERE id = $1::uuid
 `
@@ -64,13 +69,17 @@ func (q *Queries) GetTenant(ctx context.Context, id string) (PandokosTenant, err
 		&i.TimeZone,
 		&i.TimeZonePrevious,
 		&i.TimeZoneEffectiveFrom,
+		&i.ActiveCurrency,
+		&i.ActiveCurrencyPrevious,
+		&i.ActiveCurrencyEffectiveFrom,
 	)
 	return i, err
 }
 
 const getTenantForUpdate = `-- name: GetTenantForUpdate :one
 SELECT id, name, display_name, state, created_at, updated_at, state_changed_at,
-       time_zone, time_zone_previous, time_zone_effective_from
+       time_zone, time_zone_previous, time_zone_effective_from,
+       active_currency, active_currency_previous, active_currency_effective_from
   FROM pandokos.tenant
  WHERE id = $1::uuid
    FOR UPDATE
@@ -90,13 +99,17 @@ func (q *Queries) GetTenantForUpdate(ctx context.Context, id string) (PandokosTe
 		&i.TimeZone,
 		&i.TimeZonePrevious,
 		&i.TimeZoneEffectiveFrom,
+		&i.ActiveCurrency,
+		&i.ActiveCurrencyPrevious,
+		&i.ActiveCurrencyEffectiveFrom,
 	)
 	return i, err
 }
 
 const listTenants = `-- name: ListTenants :many
 SELECT t.id, t.name, t.display_name, t.state, t.created_at, t.updated_at, t.state_changed_at,
-       t.time_zone, t.time_zone_previous, t.time_zone_effective_from
+       t.time_zone, t.time_zone_previous, t.time_zone_effective_from,
+       t.active_currency, t.active_currency_previous, t.active_currency_effective_from
   FROM pandokos.tenant t
  WHERE ($1::text = '' OR t.state = $1::text)
    AND ($2::text = '' OR t.name = $2::text)
@@ -153,6 +166,9 @@ func (q *Queries) ListTenants(ctx context.Context, arg ListTenantsParams) ([]Pan
 			&i.TimeZone,
 			&i.TimeZonePrevious,
 			&i.TimeZoneEffectiveFrom,
+			&i.ActiveCurrency,
+			&i.ActiveCurrencyPrevious,
+			&i.ActiveCurrencyEffectiveFrom,
 		); err != nil {
 			return nil, err
 		}
@@ -169,7 +185,8 @@ UPDATE pandokos.tenant
    SET state = $1::text
  WHERE id = $2::uuid
 RETURNING id, name, display_name, state, created_at, updated_at, state_changed_at,
-          time_zone, time_zone_previous, time_zone_effective_from
+          time_zone, time_zone_previous, time_zone_effective_from,
+          active_currency, active_currency_previous, active_currency_effective_from
 `
 
 type SetTenantStateParams struct {
@@ -191,6 +208,9 @@ func (q *Queries) SetTenantState(ctx context.Context, arg SetTenantStateParams) 
 		&i.TimeZone,
 		&i.TimeZonePrevious,
 		&i.TimeZoneEffectiveFrom,
+		&i.ActiveCurrency,
+		&i.ActiveCurrencyPrevious,
+		&i.ActiveCurrencyEffectiveFrom,
 	)
 	return i, err
 }
@@ -201,7 +221,8 @@ UPDATE pandokos.tenant
        display_name = CASE WHEN $3::boolean THEN $4::text ELSE display_name END
  WHERE id = $5::uuid
 RETURNING id, name, display_name, state, created_at, updated_at, state_changed_at,
-          time_zone, time_zone_previous, time_zone_effective_from
+          time_zone, time_zone_previous, time_zone_effective_from,
+          active_currency, active_currency_previous, active_currency_effective_from
 `
 
 type UpdateTenantParams struct {
@@ -232,6 +253,9 @@ func (q *Queries) UpdateTenant(ctx context.Context, arg UpdateTenantParams) (Pan
 		&i.TimeZone,
 		&i.TimeZonePrevious,
 		&i.TimeZoneEffectiveFrom,
+		&i.ActiveCurrency,
+		&i.ActiveCurrencyPrevious,
+		&i.ActiveCurrencyEffectiveFrom,
 	)
 	return i, err
 }

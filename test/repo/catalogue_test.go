@@ -138,3 +138,63 @@ func TestPriceSnapshot(t *testing.T) {
 		}
 	}
 }
+
+// goFiles returns the Go files under the directories (relative to the root), tests excepted.
+func goFiles(t *testing.T, dirs ...string) []string {
+	t.Helper()
+	var out []string
+	for _, d := range dirs {
+		err := filepath.WalkDir(filepath.Join(root(t), d), func(path string, e os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if !e.IsDir() && strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+				out = append(out, path)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	return out
+}
+
+// TestOnePriceDefinition is T-R51: pricing.VersionAt is called in internal/pricing only; in
+// internal/gateway the fields Target.Prices, Target.TenantPrices and Target.Currency are read by PriceList
+// only (tests excepted). Without type information a selector .Currency counts when its operand is the
+// variable t, the receiver and the parameter name that Target has in the package.
+func TestOnePriceDefinition(t *testing.T) {
+	fset := token.NewFileSet()
+	for _, file := range goFiles(t, "cmd", "internal") {
+		rel, _ := filepath.Rel(root(t), file)
+		rel = filepath.ToSlash(rel)
+		f, err := parser.ParseFile(fset, file, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		inGateway := strings.HasPrefix(rel, "internal/gateway/")
+		for _, decl := range f.Decls {
+			fn, isFn := decl.(*ast.FuncDecl)
+			ast.Inspect(decl, func(n ast.Node) bool {
+				sel, ok := n.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				if id, ok := sel.X.(*ast.Ident); ok && id.Name == "pricing" && sel.Sel.Name == "VersionAt" && !strings.HasPrefix(rel, "internal/pricing/") {
+					t.Errorf("%s: pricing.VersionAt is called outside internal/pricing", fset.Position(sel.Pos()))
+				}
+				if inGateway && (!isFn || fn.Name.Name != "PriceList") {
+					x, isIdent := sel.X.(*ast.Ident)
+					switch {
+					case sel.Sel.Name == "Prices" || sel.Sel.Name == "TenantPrices":
+						t.Errorf("%s: .%s is read outside Target.PriceList", fset.Position(sel.Pos()), sel.Sel.Name)
+					case sel.Sel.Name == "Currency" && isIdent && x.Name == "t":
+						t.Errorf("%s: .Currency of a Target is read outside Target.PriceList", fset.Position(sel.Pos()))
+					}
+				}
+				return true
+			})
+		}
+	}
+}

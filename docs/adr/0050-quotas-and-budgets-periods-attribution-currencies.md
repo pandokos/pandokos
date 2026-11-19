@@ -77,8 +77,18 @@ restart" for tenants that have a zone of their own.
    price that can be in force for its scope is in its currency. Nothing is converted. Sprint 5.4 adds
    the tenant's own prices to that set.
 
+## Amendment (sprint 5.4)
+
+Replaces decision 4 for a price in another currency, and extends decision 3 and the amendment of sprint 5.3.
+
+1. A tenant has an active currency; a budget, and a ceiling of the platform, applies only while its currency is the tenant's active currency, and is inactive otherwise: it counts and refuses nothing.
+2. A request a budget in force cannot measure (no price in the active currency) still meets `limits.on_unknown_price`. A price in another currency is no longer a case: prices outside the active currency are not used.
+3. The currency check on write admits any currency that has a list for the scope: the tenant's own or the catalogue's; for a ceiling of one tenant, the catalogue's or that tenant's active or pending currency.
+4. A change of the active currency takes effect at the start of the next month in the tenant's zone, with a pending zone change at the same instant.
+
 ## History
 
 - 2026-11: `limits.on_unknown_price`, `limits.time_zone` and the code `no_price` are added in sprint 5.2.
 - 2026-11-18: accepted by the maintainer after review. Amendments planned in sprint 5.3 (a time zone per tenant, effective from the next period; a budget refused on write when no price of its scope is in its currency) and sprint 5.4 (price lists per tenant, issue #48).
 - 2026-11-18: amended by sprint 5.3 (see Amendment); tenant price lists remain planned for sprint 5.4.
+- 2026-11-18: amended by sprint 5.4 (see Amendment); [ADR 0053](0053-tenant-price-lists-and-active-currency.md).

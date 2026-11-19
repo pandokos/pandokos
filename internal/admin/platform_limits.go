@@ -107,7 +107,11 @@ func (s *server) CreatePlatformLimit(ctx context.Context, in adminapi.CreatePlat
 				return invalid("model", "must name a model of the provider")
 			}
 		}
-		if err := checkBudgetCurrency(ctx, q, string(f.Metric), f.Currency, scope.ProviderID, scope.ModelID, false); err != nil {
+		bs, err := s.platformBudgetScope(ctx, q, nilIfEmpty(scope.ProviderID), nilIfEmpty(scope.ModelID), forTenant)
+		if err != nil {
+			return err
+		}
+		if err := checkBudgetCurrency(ctx, q, string(f.Metric), f.Currency, bs); err != nil {
 			return err
 		}
 		row, err := q.CreatePlatformLimitRule(ctx, queries.CreatePlatformLimitRuleParams{
@@ -174,7 +178,11 @@ func (s *server) UpdatePlatformLimit(ctx context.Context, in adminapi.UpdatePlat
 			out = platformRuleOut(queries.GetPlatformLimitRuleRow(cur))
 			return nil
 		}
-		if err := checkBudgetCurrency(ctx, q, cur.Metric, cur.Currency, cur.ProviderID, cur.ModelID, false); err != nil {
+		bs, err := s.platformBudgetScope(ctx, q, nilIfEmpty(cur.ProviderID), nilIfEmpty(cur.ModelID), cur.TenantID)
+		if err != nil {
+			return err
+		}
+		if err := checkBudgetCurrency(ctx, q, cur.Metric, cur.Currency, bs); err != nil {
 			return err
 		}
 		row, err := q.UpdatePlatformLimitRule(ctx, queries.UpdatePlatformLimitRuleParams{ID: cur.ID, LimitValue: next.Value, Enforce: next.Enforce, Thresholds: next.Thresholds})
