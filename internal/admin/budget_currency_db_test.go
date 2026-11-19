@@ -239,7 +239,8 @@ func TestBudgetCurrencyLists(t *testing.T) {
 				t.Errorf("%s: a currency of the tenant's own price: %d\n%s", what, r.Status, r.Body)
 			}
 		}
-		// The scope of the price matters: another model of the provider has no EUR price.
+		// The scope of the price matters: another model of the provider has no EUR price (it has a USD one).
+		w.api.DB.SeedPrice(t, prov, other.Name, "USD", time.Time{})
 		if m := currencies(t, w.do(t, w.ka, "POST", rulesA, budget(prov, other.Name, "EUR"))); !strings.HasPrefix(m, prefix) {
 			t.Errorf("another model: %q", m)
 		}

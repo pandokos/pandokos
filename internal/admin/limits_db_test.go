@@ -943,6 +943,10 @@ func TestLimitRulesByCurrency(t *testing.T) {
 	prov, model := w.cat.Provider.Name, w.cat.All
 	w.api.DB.SeedPrice(t, prov, model.Name, "USD", time.Time{})
 	w.createPrice(t, priceBody(model, prov, "EUR", nil, nil)) // the tenant's own list in EUR
+	// A ceiling for a tenant is checked against the catalogue's currencies and the tenant's active and pending
+	// one, never against its lists (T-754): another model of the provider has a catalogue price in EUR.
+	otherEUR := decodeInto[adminapi.Model](t, w.do(t, w.plat, "POST", "/v1/models", map[string]any{"provider": prov, "name": apitest.UniqueName("m"), "availability": "all"}), 201)
+	w.api.DB.SeedPrice(t, prov, otherEUR.Name, "EUR", time.Time{})
 	rules := "/v1/tenants/" + w.a.ID + "/limits"
 	seen := seenIDs(t, w.api)
 	mk := func(currency, amount string) map[string]any {

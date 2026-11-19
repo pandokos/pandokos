@@ -90,7 +90,7 @@ func (s *server) GetCapability(ctx context.Context, in adminapi.GetCapabilityInp
 		out.Reasons = append(out.Reasons, "no_credential")
 	}
 	now := s.now().UTC()
-	budget, reasons, err := s.budgetCheck(ctx, tid, snap, model, rerr == nil, in.Provider, in.Model, now)
+	budget, reasons, err := s.budgetCheck(ctx, tid, snap, ta, model, rerr == nil, in.Provider, in.Model, now)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (s *server) GetCapability(ctx context.Context, in adminapi.GetCapabilityInp
 // counters of the gateway. As the rest of the check it describes a key of the tenant without pin
 // and model list, so the rules of service accounts and keys, soft rules and rate limits take no
 // part; requests in flight are not counted.
-func (s *server) budgetCheck(ctx context.Context, tid tenant.ID, snap *catalog.Snapshot, m catalog.Model, resolved bool,
+func (s *server) budgetCheck(ctx context.Context, tid tenant.ID, snap *catalog.Snapshot, ta catalog.TenantAccess, m catalog.Model, resolved bool,
 	provider, model string, now time.Time) (adminapi.BudgetAvailability, []string, error) {
 	zones := s.limits.Zones
 	if zones == nil {
@@ -137,9 +137,11 @@ func (s *server) budgetCheck(ctx context.Context, tid tenant.ID, snap *catalog.S
 
 	unpriced := false
 	if s.limits.OnUnknownPrice != "allow" && resolved {
-		version, found := pricing.VersionAt(snap.Versions(m.ID), now)
+		// The price in force is the one of the tenant's active currency (its own list, else the catalogue's);
+		// the cost limits that reach this point are active in that currency (RuleSet.For, C2).
+		_, _, found := pricing.List{Currency: ta.Currency, Catalogue: snap.Versions(m.ID), Tenant: ta.Prices[m.ID]}.At(now)
 		for _, l := range matching {
-			if l.Metric.Cost() && (!found || version.Currency != l.Currency) {
+			if l.Metric.Cost() && !found {
 				unpriced = true
 			}
 		}

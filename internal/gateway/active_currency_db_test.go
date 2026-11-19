@@ -245,6 +245,7 @@ func TestActiveCurrencyBudget(t *testing.T) {
 		if c.status != 429 || header(c, "X-Pandokos-Limit-Currency") != "USD" || header(c, "X-Pandokos-Error") != "quota_exceeded" {
 			t.Errorf("the fourth request of A in USD: %d currency %q, want 429 quota_exceeded in USD", c.status, header(c, "X-Pandokos-Limit-Currency"))
 		}
+		sa.rows(t, 4) // the writer is asynchronous: wait for the three answered requests and the refusal
 		if got := sa.spent(t, "USD"); got != 3*catalogueCost {
 			t.Errorf("A has spent %d in USD, want %d", got, 3*catalogueCost)
 		}
@@ -323,6 +324,7 @@ func TestActiveCurrencyBudget(t *testing.T) {
 		if c := sc.ask(t); c.status != 429 || header(c, "X-Pandokos-Limit-Currency") != "EUR" || header(c, "X-Pandokos-Limit-Metric") != "cost_per_day" {
 			t.Errorf("the second request of C: %d currency %q metric %q, want 429 at the platform's EUR ceiling", c.status, header(c, "X-Pandokos-Limit-Currency"), header(c, "X-Pandokos-Limit-Metric"))
 		}
+		sc.rows(t, 2)
 		if got := sc.spent(t, "EUR"); got != tenantCost {
 			t.Errorf("C has spent %d in EUR, want %d: the ceiling counts the tenant's price", got, tenantCost)
 		}

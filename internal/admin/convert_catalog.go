@@ -215,6 +215,8 @@ func mapCatalogError(err error) error {
 			return invalidState("limit_rules", "limit rules reference this provider; disable the provider instead")
 		case "limit_rule_model_fkey", "platform_limit_rule_model_fkey":
 			return invalidState("limit_rules", "limit rules reference this model; retire the model or remove its grants instead")
+		case "tenant_price_version_model_fkey":
+			return invalidState("tenant_prices", "tenant price lists reference this model; retire the model instead")
 		}
 		return errInvalidState
 	case "check":
@@ -223,4 +225,40 @@ func mapCatalogError(err error) error {
 		}
 	}
 	return err
+}
+
+// tenantPriceRow is a version of a tenant's list with its rates as three parallel arrays.
+type tenantPriceRow struct {
+	ID, ModelID, Provider, Model string
+	ValidFrom                    time.Time
+	Kind, Currency, Note         string
+	CreatedAt                    time.Time
+	InForce                      bool
+	Categories                   []string
+	Thresholds                   []int64
+	Rates                        []string
+}
+
+func tenantPriceFromGet(r queries.GetTenantPriceVersionRow) tenantPriceRow {
+	return tenantPriceRow(r)
+}
+
+func tenantPriceFromList(r queries.ListTenantPriceVersionsRow) tenantPriceRow {
+	return tenantPriceRow(r)
+}
+
+// tenantPriceOut converts a version to its resource; rates are decimal text without trailing zeros.
+func tenantPriceOut(r tenantPriceRow) (adminapi.TenantPriceVersion, error) {
+	rates := make([]adminapi.PriceRate, len(r.Categories))
+	for i := range r.Categories {
+		d, err := pricing.ParseDecimal(r.Rates[i])
+		if err != nil {
+			return adminapi.TenantPriceVersion{}, err
+		}
+		rates[i] = adminapi.PriceRate{Category: adminapi.PriceCategory(r.Categories[i]), Threshold: int(r.Thresholds[i]), Rate: d.String()}
+	}
+	return adminapi.TenantPriceVersion{
+		ID: r.ID, ModelID: r.ModelID, Provider: r.Provider, Model: r.Model, Kind: adminapi.TenantPriceKind(r.Kind), ValidFrom: r.ValidFrom.UTC(),
+		Currency: r.Currency, Rates: rates, Note: r.Note, InForce: r.InForce, CreatedAt: r.CreatedAt.UTC(),
+	}, nil
 }

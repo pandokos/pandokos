@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"slices"
 	"strconv"
 	"strings"
@@ -330,6 +331,22 @@ func limitRuleOut(r queries.GetLimitRuleRow) adminapi.LimitRule {
 	return adminapi.LimitRule{ID: r.ID, SubjectKind: adminapi.LimitSubjectKind(r.SubjectKind), SubjectID: r.SubjectID, Provider: r.Provider,
 		ProviderID: r.ProviderID, ModelID: r.ModelID, Model: r.Model, Metric: adminapi.LimitMetric(r.Metric), Limit: limit, Amount: amount, Currency: r.Currency, Enforce: r.Enforce,
 		Thresholds: thresholdsOut(r.Thresholds), Active: true, CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC()}
+}
+
+// inForceCurrency is the active currency of the tenant whose session q runs in, resolved with the default
+// currency, at the time of the read. A rule on a cost metric is active only in that currency.
+func (s *server) inForceCurrency(ctx context.Context, q *queries.Queries) (string, error) {
+	row, err := q.GetTenantActiveCurrency(ctx)
+	if err != nil {
+		return "", err
+	}
+	return pricing.ResolveActive(row.ActiveCurrency, row.ActiveCurrencyPrevious, row.ActiveCurrencyEffectiveFrom, s.defaultCurrency).At(s.now()), nil
+}
+
+// ruleActive reports whether a rule counts and refuses now: every rule that is not a cost rule, and a
+// cost rule in the currency in force.
+func ruleActive(metric adminapi.LimitMetric, currency, inForce string) bool {
+	return !costMetric(metric) || currency == inForce
 }
 
 func platformRuleOut(r queries.GetPlatformLimitRuleRow) adminapi.PlatformLimitRule {

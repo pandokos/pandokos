@@ -767,7 +767,7 @@ func TestUsagePriceSource(t *testing.T) {
 		}
 		in, out := decimal(t, rates["input"]), decimal(t, rates["output"])
 		got := in.MulInt(1000).Add(out.MulInt(500)).DivPow10(6)
-		if r.Cost.Value != got.String() {
+		if decimal(t, r.Cost.Value).String() != got.String() { // the column keeps its scale; compare the numbers
 			t.Errorf("record %d: the cost %s computed again is %s", i, r.Cost.Value, got)
 		}
 	}

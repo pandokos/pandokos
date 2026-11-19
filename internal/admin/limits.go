@@ -34,8 +34,12 @@ func (s *server) ListLimits(ctx context.Context, in adminapi.ListLimitsInput) (*
 	}
 	limit, ask := limitOf(in.Limit)
 	var rows []queries.ListLimitRulesPageRow
+	var inForce string
 	err = s.inTenantPath(ctx, in.Tenant, func(ctx context.Context, _ store.Tx, q *queries.Queries, _ tenant.ID) error {
 		var err error
+		if inForce, err = s.inForceCurrency(ctx, q); err != nil {
+			return err
+		}
 		rows, err = q.ListLimitRulesPage(ctx, queries.ListLimitRulesPageParams{
 			SubjectKind: string(in.SubjectKind), SubjectID: in.SubjectID, Metric: string(in.Metric), Provider: in.Provider, Model: in.Model,
 			After: after, Sort: sortBy, AfterID: afterID(after, id), PageSize: ask,
@@ -51,7 +55,9 @@ func (s *server) ListLimits(ctx context.Context, in adminapi.ListLimitsInput) (*
 			out.NextCursor = encodeCursor(sortBy, "", rows[limit-1].ID)
 			break
 		}
-		out.Items = append(out.Items, limitRuleOut(queries.GetLimitRuleRow(r)))
+		item := limitRuleOut(queries.GetLimitRuleRow(r))
+		item.Active = ruleActive(item.Metric, item.Currency, inForce)
+		out.Items = append(out.Items, item)
 	}
 	return out, nil
 }
@@ -122,8 +128,14 @@ func (s *server) CreateLimit(ctx context.Context, in adminapi.CreateLimitInput) 
 			}
 		}
 		// After the visibility check: a model granted elsewhere or nowhere must not answer differently on currency.
-		if err := checkBudgetCurrency(ctx, q, string(f.Metric), f.Currency, budgetScope{ProviderID: nilIfEmpty(scope.ProviderID), ModelID: nilIfEmpty(scope.ModelID), Tenant: true}); err != nil {
-			return err
+		if costMetric(f.Metric) {
+			set, err := tenantBudgetCurrencies(ctx, q, budgetScope{ProviderID: nilIfEmpty(scope.ProviderID), ModelID: nilIfEmpty(scope.ModelID)})
+			if err != nil {
+				return err
+			}
+			if err := refuseCurrency(set, f.Currency); err != nil {
+				return err
+			}
 		}
 		row, err := q.CreateLimitRule(ctx, queries.CreateLimitRuleParams{
 			SubjectKind: string(kind), ServiceAccountID: nilIfEmpty(subj.ServiceAccountID), VirtualKeyID: nilIfEmpty(subj.VirtualKeyID),
@@ -134,6 +146,9 @@ func (s *server) CreateLimit(ctx context.Context, in adminapi.CreateLimitInput) 
 			return err
 		}
 		out = limitRuleOut(queries.GetLimitRuleRow(row))
+		if err := s.setActive(ctx, q, &out); err != nil {
+			return err
+		}
 		detail := map[string]any{"subject_kind": row.SubjectKind, "subject_id": row.SubjectID, "provider": row.Provider, "model": row.Model}
 		return audit.RecordTenant(ctx, tx, tid, tenantEvent(ctx, "limit.create", "limit_rule", row.ID,
 			ruleDetail(detail, row.ProviderID, row.ModelID, row.Metric, row.LimitValue, row.Currency, row.Enforce, row.Thresholds)))
@@ -156,7 +171,7 @@ func (s *server) GetLimit(ctx context.Context, in adminapi.GetLimitInput) (*admi
 			return err
 		}
 		out = limitRuleOut(row)
-		return nil
+		return s.setActive(ctx, q, &out)
 	})
 	if isNoRowsErr(err) {
 		return nil, errNotFound
@@ -188,16 +203,25 @@ func (s *server) UpdateLimit(ctx context.Context, in adminapi.UpdateLimitInput) 
 		}
 		if detail == nil {
 			out = limitRuleOut(queries.GetLimitRuleRow(cur))
-			return nil
+			return s.setActive(ctx, q, &out)
 		}
-		if err := checkBudgetCurrency(ctx, q, cur.Metric, cur.Currency, budgetScope{ProviderID: nilIfEmpty(cur.ProviderID), ModelID: nilIfEmpty(cur.ModelID), Tenant: true}); err != nil {
-			return err
+		if costMetric(adminapi.LimitMetric(cur.Metric)) {
+			set, err := tenantBudgetCurrencies(ctx, q, budgetScope{ProviderID: nilIfEmpty(cur.ProviderID), ModelID: nilIfEmpty(cur.ModelID)})
+			if err != nil {
+				return err
+			}
+			if err := refuseCurrency(set, cur.Currency); err != nil {
+				return err
+			}
 		}
 		row, err := q.UpdateLimitRule(ctx, queries.UpdateLimitRuleParams{ID: cur.ID, LimitValue: next.Value, Enforce: next.Enforce, Thresholds: next.Thresholds})
 		if err != nil {
 			return err
 		}
 		out = limitRuleOut(queries.GetLimitRuleRow(row))
+		if err := s.setActive(ctx, q, &out); err != nil {
+			return err
+		}
 		detail["subject_kind"], detail["subject_id"], detail["provider"], detail["model"], detail["metric"] =
 			cur.SubjectKind, cur.SubjectID, cur.Provider, cur.Model, cur.Metric
 		return audit.RecordTenant(ctx, tx, tid, tenantEvent(ctx, "limit.update", "limit_rule", cur.ID, detail))
@@ -223,6 +247,9 @@ func (s *server) DeleteLimit(ctx context.Context, in adminapi.DeleteLimitInput) 
 			return err
 		}
 		out = limitRuleOut(queries.GetLimitRuleRow(row))
+		if err := s.setActive(ctx, q, &out); err != nil {
+			return err
+		}
 		detail := map[string]any{"subject_kind": row.SubjectKind, "subject_id": row.SubjectID, "provider": row.Provider, "model": row.Model}
 		return audit.RecordTenant(ctx, tx, tid, tenantEvent(ctx, "limit.delete", "limit_rule", row.ID,
 			ruleDetail(detail, row.ProviderID, row.ModelID, row.Metric, row.LimitValue, row.Currency, row.Enforce, row.Thresholds)))
@@ -246,8 +273,12 @@ func (s *server) ListTenantPlatformLimits(ctx context.Context, in adminapi.ListT
 	}
 	limit, ask := limitOf(in.Limit)
 	var rows []queries.ListTenantPlatformLimitRulesRow
+	var inForce string
 	err = s.inTenantPath(ctx, in.Tenant, func(ctx context.Context, _ store.Tx, q *queries.Queries, _ tenant.ID) error {
 		var err error
+		if inForce, err = s.inForceCurrency(ctx, q); err != nil {
+			return err
+		}
 		rows, err = q.ListTenantPlatformLimitRules(ctx, queries.ListTenantPlatformLimitRulesParams{After: after, AfterID: afterID(after, id), PageSize: ask})
 		return err
 	})
@@ -263,6 +294,7 @@ func (s *server) ListTenantPlatformLimits(ctx context.Context, in adminapi.ListT
 		l, amount := valueOut(r.Metric, r.LimitValue)
 		item := adminapi.PlatformLimitRule{ID: r.ID, Provider: r.Provider, ProviderID: r.ProviderID, Model: r.Model, ModelID: r.ModelID, Metric: adminapi.LimitMetric(r.Metric), Limit: l, Amount: amount,
 			Currency: r.Currency, Enforce: r.Enforce, Thresholds: thresholdsOut(r.Thresholds), CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC()}
+		item.Active = ruleActive(item.Metric, item.Currency, inForce)
 		if !r.IsDefault {
 			item.Tenant = in.Tenant
 		}
@@ -309,4 +341,14 @@ func limitEventOut(r queries.ListLimitEventsRow) adminapi.LimitEvent {
 		SubjectKind: adminapi.LimitSubjectKind(r.SubjectKind), SubjectID: r.SubjectID, Provider: r.Provider, Model: r.Model,
 		Metric: adminapi.LimitMetric(r.Metric), Currency: r.Currency, PeriodStart: r.PeriodStart.UTC(), PeriodEnd: r.PeriodEnd.UTC(),
 		Percent: int(r.Percent), Limit: l, Amount: amount, Observed: observedText(r.Observed), OccurredAt: r.OccurredAt.UTC()}
+}
+
+// setActive sets Active of a rule read or written in the session q runs in.
+func (s *server) setActive(ctx context.Context, q *queries.Queries, r *adminapi.LimitRule) error {
+	inForce, err := s.inForceCurrency(ctx, q)
+	if err != nil {
+		return err
+	}
+	r.Active = ruleActive(r.Metric, r.Currency, inForce)
+	return nil
 }

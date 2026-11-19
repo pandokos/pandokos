@@ -424,7 +424,11 @@ func TestTenantModelsPrice(t *testing.T) {
 		t.Helper()
 		out := map[string]adminapi.TenantModel{}
 		for cursor := ""; ; {
-			page := decodeInto[adminapi.TenantModelList](t, w.do(t, w.ka, "GET", "/v1/tenants/"+w.a.ID+"/models?limit=200&cursor="+cursor, nil), 200)
+			url := "/v1/tenants/" + w.a.ID + "/models?limit=200"
+			if cursor != "" {
+				url += "&cursor=" + cursor
+			}
+			page := decodeInto[adminapi.TenantModelList](t, w.do(t, w.ka, "GET", url, nil), 200)
 			for _, it := range page.Items {
 				out[it.Model.ID] = it
 			}

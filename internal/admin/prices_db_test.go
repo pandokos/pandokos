@@ -575,7 +575,11 @@ func TestCatalogueUntouched(t *testing.T) {
 	// The price in force for the tenant is its own, in front of the catalogue's override.
 	var mp adminapi.TenantModel
 	for cursor := ""; ; {
-		page := decodeInto[adminapi.TenantModelList](t, w.do(t, w.ka, "GET", "/v1/tenants/"+w.a.ID+"/models?limit=200&cursor="+cursor, nil), 200)
+		url := "/v1/tenants/" + w.a.ID + "/models?limit=200"
+		if cursor != "" {
+			url += "&cursor=" + cursor
+		}
+		page := decodeInto[adminapi.TenantModelList](t, w.do(t, w.ka, "GET", url, nil), 200)
 		for _, it := range page.Items {
 			if it.Model.ID == model.ID {
 				mp = it
