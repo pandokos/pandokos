@@ -54,11 +54,11 @@ func TestPriceListCommands(t *testing.T) {
 
 	t.Run("lists, list, get and delete", func(t *testing.T) {
 		check(t, call(t, "listPriceLists", "price-list", "lists", "--tenant", tid), adminapi.ListPriceListsInput{Tenant: tid})
-		check(t, call(t, "listPriceListVersions", "price-list", "list", "--tenant", tid), adminapi.ListPriceListVersionsInput{Tenant: tid})
+		check(t, call(t, "listPriceListVersions", "price-list", "list", "--tenant", tid), adminapi.ListPriceListVersionsInput{Tenant: tid, Limit: 50})
 		check(t, call(t, "listPriceListVersions", "price-list", "list", "--tenant", tid, "--currency", "EUR", "--model", "openai/gpt-4o", "--at", from.Format(time.RFC3339)),
-			adminapi.ListPriceListVersionsInput{Tenant: tid, Currency: "EUR", Provider: "openai", Model: "gpt-4o", At: from.Format(time.RFC3339)})
-		check(t, call(t, "listPriceListVersions", "price-list", "list", "--tenant", tid, "--provider", "openai"), adminapi.ListPriceListVersionsInput{Tenant: tid, Provider: "openai"})
-		check(t, call(t, "listPriceListVersions", "price-list", "list", "--tenant", tid, "--model", "meta/llama/3"), adminapi.ListPriceListVersionsInput{Tenant: tid, Provider: "meta", Model: "llama/3"}) // the first slash
+			adminapi.ListPriceListVersionsInput{Tenant: tid, Limit: 50, Currency: "EUR", Provider: "openai", Model: "gpt-4o", At: from.Format(time.RFC3339)})
+		check(t, call(t, "listPriceListVersions", "price-list", "list", "--tenant", tid, "--provider", "openai"), adminapi.ListPriceListVersionsInput{Tenant: tid, Limit: 50, Provider: "openai"})
+		check(t, call(t, "listPriceListVersions", "price-list", "list", "--tenant", tid, "--model", "meta/llama/3"), adminapi.ListPriceListVersionsInput{Tenant: tid, Limit: 50, Provider: "meta", Model: "llama/3"}) // the first slash
 		check(t, call(t, "getPriceListVersion", "price-list", "get", "--tenant", tid, priceID), adminapi.GetPriceListVersionInput{Tenant: tid, Price: priceID})
 		check(t, call(t, "deletePriceListVersion", "price-list", "delete", "--tenant", tid, priceID), adminapi.DeletePriceListVersionInput{Tenant: tid, Price: priceID})
 	})

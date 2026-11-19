@@ -349,21 +349,43 @@ func columnName(k string) string {
 
 func (a *app) printTable(items []any) {
 	tw := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
+	rows := make([][]pair, len(items))
+	var cols []pair
+	for i, it := range items {
+		rows[i] = fields(it)
+		if len(rows[i]) > len(cols) {
+			cols = rows[i]
+		}
+	}
 	if len(items) > 0 {
 		var head []string
-		for _, p := range fields(items[0]) {
+		for _, p := range cols {
 			head = append(head, strings.ToUpper(columnName(p.k)))
 		}
 		fmt.Fprintln(tw, strings.Join(head, "\t"))
 	}
-	for _, it := range items {
+	for _, r := range rows {
 		var row []string
-		for _, p := range fields(it) {
-			row = append(row, p.v)
+		for _, c := range cols {
+			row = append(row, cell(r, c.k))
 		}
 		fmt.Fprintln(tw, strings.Join(row, "\t"))
 	}
 	_ = tw.Flush()
+}
+
+// cell is the value of a member in a row of a table. A member that a row lacks is empty, except
+// active, which a document leaves out when it is false.
+func cell(row []pair, key string) string {
+	for _, p := range row {
+		if p.k == key {
+			return p.v
+		}
+	}
+	if key == "active" {
+		return "false"
+	}
+	return ""
 }
 
 // keyOut creates the file for a new key before the key exists, so that an existing file is an
