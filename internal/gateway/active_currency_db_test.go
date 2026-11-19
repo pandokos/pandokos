@@ -269,10 +269,10 @@ func TestActiveCurrencyBudget(t *testing.T) {
 		if c.status != 429 || header(c, "X-Pandokos-Limit-Currency") != "EUR" || header(c, "X-Pandokos-Error") != "quota_exceeded" {
 			t.Errorf("the fourth request of A in EUR: %d currency %q, want 429 quota_exceeded in EUR", c.status, header(c, "X-Pandokos-Limit-Currency"))
 		}
+		rows := served(sa.rows(t, 8)) // the writer is asynchronous: wait for the records before the sum is read
 		if got := sa.spent(t, "EUR"); got != 3*tenantCost {
 			t.Errorf("A has spent %d in EUR, want %d", got, 3*tenantCost)
 		}
-		rows := served(sa.rows(t, 8))
 		var tenantEUR, catalogueUSD int
 		for _, r := range rows {
 			switch {
