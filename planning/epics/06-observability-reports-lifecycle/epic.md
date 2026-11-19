@@ -24,9 +24,9 @@ erasure), 0014.
 
 - OTLP metrics: requests, errors, time to first byte, duration, tokens, cost, limit refusals.
 - GenAI attributes on spans and metrics at a pinned convention version, documented.
-- Cardinality policy: tenant label off by default, opt-in.
+- Cardinality policy: tenant label off by default, opt-in, and for request, error and latency metrics only, never to cost or tokens: those exist per installation only (ADR 0054).
 - Prometheus endpoint on the admin listener.
-- Redacting log handler; log reference.
+- Redacting log handler; log reference; usage details stay behind `telemetry.tenant_usage_details`.
 - Example dashboards.
 - The provider's own 429 answers counted per provider credential (never as a tenant label), so that
   an operator can see which credential is saturated (issue #32).
@@ -38,8 +38,12 @@ collector stopped, inference latency is unchanged.
 
 ### 6.2 Reports and audit reading
 
-- Usage rollups maintained by the worker; report API by period, provider, model and caller;
-  platform aggregates. The rollup serves the limit counters and the capability check (5.2 §11).
+- Usage rollups maintained by the worker in each tenant's session; report API for the tenant by
+  period, provider, model and caller; no platform aggregate per tenant: the platform sees
+  operational indicators of the installation, without tenant and cost (ADR 0054). The rollup serves
+  the limit counters and the capability check (5.2 §11).
+  *Note:* costs are reported as recorded, per currency and price source, never converted or added
+  across currencies (5.4 §11).
 - Usage export as newline-delimited JSON and CSV.
 - Audit reading API with filters; per-tenant hash chain; `pandokos audit verify`; audit export.
 - Retention settings for usage and audit; partition dropping through the audited function.

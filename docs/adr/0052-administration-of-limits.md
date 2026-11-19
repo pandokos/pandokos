@@ -59,7 +59,12 @@ disappears stays and matches nothing".
 4. Two operations are added, `getTenantTimeZone` and `setTenantTimeZone`, under `limit:read` and
    `limit:write`.
 
+## Amendment (sprint 5.4)
+
+There is one rule per subject, scope, metric and currency (decision 1). The rule resources show whether a cost rule is active.
+
 ## History
 
 - 2026-11-18: accepted by the maintainer after review. Amendments planned in sprint 5.3: existence checks of subject and scope become foreign keys; automatic deletions of rules are audited as `limit.delete` with the actor and the reason.
 - 2026-11-18: amended by sprint 5.3 (see Amendment).
+- 2026-11-18: amended by sprint 5.4 (see Amendment); [ADR 0053](0053-tenant-price-lists-and-active-currency.md).

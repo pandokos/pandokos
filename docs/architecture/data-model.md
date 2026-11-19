@@ -21,6 +21,9 @@ erDiagram
     PROVIDER ||--o{ ENDPOINT : exposes
     PROVIDER ||--o{ MODEL : offers
     MODEL ||--o{ PRICE_VERSION : priced
+    TENANT ||--o{ TENANT_PRICE_VERSION : prices
+    MODEL ||--o{ TENANT_PRICE_VERSION : priced_by_tenant
+    TENANT_PRICE_VERSION ||--|{ TENANT_PRICE_RATE : has
     TENANT ||--o{ MODEL_TENANT_GRANT : granted
     TENANT ||--o| TENANT_MODEL_RESTRICTION : restricts
     TENANT ||--o{ LIMIT_RULE : constrained
@@ -37,6 +40,7 @@ erDiagram
 | Identity | `app_user`, `local_account`, `user_session`, `membership`, `service_account`, `virtual_key`, `trusted_issuer`, `subject_mapping`, `role`, `role_permission`, `role_assignment` | tenant (`app_user`, `local_account` and `user_session` are global, memberships are tenant-scoped) |
 | Vault | `tenant_data_key`, `provider_credential` | tenant |
 | Policy | `tenant_model_restriction`, `limit_rule` | tenant |
+| Tenant prices | `tenant_price_version`, `tenant_price_rate` | tenant; no policy shows them to the platform scope |
 | Records | `usage_record`, `audit_event`, `platform_audit_event` | tenant, except the platform audit |
 | Delivery | `outbox_event`, `outbox_delivery` | tenant |
 
@@ -252,7 +256,7 @@ into five groups, with provider values and Pandokos's estimates kept apart (USE-
 - **estimated by Pandokos**: estimated input and output tokens; empty unless the source is
   `estimated`;
 - **cost**: status (`known`, `unknown` with a reason, `none`), the exact amount, currency, the price
-  version in force when the request started, and the categories priced by fallback. The cost is
+  version in force when the request started, the list it belongs to (`price_source`: `catalogue` or `tenant`; NULL when no price was used or before sprint 5.4), and the categories priced by fallback. The cost is
   informational: the provider's invoice is the authority.
 
 Check constraints enforce the sources: a provider column is null unless its source is `provider`, an
@@ -327,3 +331,29 @@ Migration 0011 ([database guide](../operations/database.md), section 16;
 - **Two functions cross the tenant boundary** (see the security model): one for the rules of a
   platform-level issuer's mappings, one for the audit row of unlimited traffic. Two partial unique indexes
   on the audit logs make that row once per tenant and day.
+
+## Tenant price lists and the active currency (sprint 5.4)
+
+Migration 0012 ([database guide](../operations/database.md), section 17;
+[ADR 0053](../adr/0053-tenant-price-lists-and-active-currency.md),
+[ADR 0054](../adr/0054-usage-data-is-the-tenants.md)).
+
+- **`tenant_price_version` and `tenant_price_rate`** are tenant-scoped tables with forced row-level
+  security and the canonical policy only. A version belongs to a tenant and a model and has a currency,
+  a start, a kind (`price` or `end`) and a note; the versions of one tenant and currency are its list in
+  that currency. Its rates, one per category and tier, are `numeric(24,12)` per million units. The same
+  rules as the catalogue's versions hold for every role, the owner included: never updated, never
+  started in the past, deleted only before they start; the shape (a base rate for every category priced,
+  none for an end) is checked at commit. `tenant_price_version_model_fkey` references `model` with `ON
+  DELETE RESTRICT`. The gateway and the admin role read them, the admin role writes them, the worker holds
+  nothing, and the platform scope sees no row.
+- **`tenant.active_currency`**, `active_currency_previous` and `active_currency_effective_from` (`''` is
+  the default of the installation, `pricing.default_currency`); the currency in force changes only through
+  a pending change that takes effect at the start of the next month in the tenant's zone, and only from
+  the tenant's own session (guard trigger).
+- **One rule per subject, scope, metric and currency**: the unique keys of `limit_rule` and
+  `platform_limit_rule` gain `currency`.
+- **`usage_record.price_source`** names the table `price_version_id` refers to; there is still no
+  foreign key from the ledger.
+- No function is added and none crosses the tenant boundary: a tenant's usage, limit events and prices
+  are read by the tenant only through the product.

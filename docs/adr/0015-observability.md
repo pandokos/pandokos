@@ -56,3 +56,4 @@ a conversation store outside tenant isolation.
 ## History
 
 - 2026-11: sprint 3.2 builds traces over OTLP/HTTP; spans exist for admitted requests only ([ADR 0040](0040-traces.md)).
+- 2026-11-18: sprint 5.4: logs and traces carry no cost, currency or token count unless `telemetry.tenant_usage_details` is on ([ADR 0054](0054-usage-data-is-the-tenants.md))

@@ -83,7 +83,7 @@ Every operation has one CLI command that only calls the generated client. `TENAN
 | Command | Operation |
 |---|---|
 | `whoami` | `getMe` |
-| `tenant list`, `create` (`--time-zone`), `get`, `update` (`--time-zone`), `suspend`, `reactivate` | `listTenants`, `createTenant`, `getTenant`, `updateTenant`, `suspendTenant`, `reactivateTenant` |
+| `tenant list`, `create` (`--time-zone`), `get` (shows `active_currency`, `active_currency_in_force`, `active_currency_effective_from`), `update` (`--time-zone`), `suspend`, `reactivate` | `listTenants`, `createTenant`, `getTenant`, `updateTenant`, `suspendTenant`, `reactivateTenant` |
 | `service-account list`, `create`, `get`, `update`, `disable`, `enable` | `listServiceAccounts`, `createServiceAccount`, `getServiceAccount`, `updateServiceAccount`, `disableServiceAccount`, `enableServiceAccount` |
 | `key list`, `create`, `get`, `revoke` | `listVirtualKeys`, `createVirtualKey`, `getVirtualKey`, `revokeVirtualKey` |
 | `platform-key list`, `create`, `get`, `revoke` | `listPlatformKeys`, `createPlatformKey`, `getPlatformKey`, `revokePlatformKey` |
@@ -98,6 +98,7 @@ Every operation has one CLI command that only calls the generated client. `TENAN
 | `model-restriction get`, `set`, `clear` | `getModelRestriction`, `setModelRestriction`, `clearModelRestriction` |
 | `capability check` | `getCapability` |
 | `usage list` | `listUsageRecords` |
+| `price-list lists`, `list`, `get`, `set`, `delete`, `currency get`, `currency set` | `listPriceLists`, `listPriceListVersions`, `getPriceListVersion`, `createPriceListVersion`, `deletePriceListVersion`, `getActiveCurrency`, `setActiveCurrency` |
 | `token-issuer list`, `create`, `get`, `update`, `delete`, `platform` | `listTokenIssuers`, `createTokenIssuer`, `getTokenIssuer`, `updateTokenIssuer`, `deleteTokenIssuer`, `listTenantPlatformIssuers` |
 | `subject-mapping list`, `create`, `get`, `delete` | `listSubjectMappings`, `createSubjectMapping`, `getSubjectMapping`, `deleteSubjectMapping` |
 | `platform-issuer list`, `create`, `get`, `update`, `delete`, `tenants`, `add-tenant`, `remove-tenant` | `listPlatformIssuers`, `createPlatformIssuer`, `getPlatformIssuer`, `updatePlatformIssuer`, `deletePlatformIssuer`, `listPlatformIssuerTenants`, `putPlatformIssuerTenant`, `deletePlatformIssuerTenant` |
@@ -229,12 +230,16 @@ they are enforced is in the [limits guide](../operations/limits.md).
   `model`, `provider_id` and `model_id` (the identifiers the rule holds; empty when it is not scoped; names
   are read through them at the time of the call), `metric` (one of the nine), `limit` (an integer; 0 for a cost metric), `amount` (a decimal
   string with at most six fraction digits; empty unless a cost metric), `currency`, `enforce`,
-  `thresholds` (up to four percentages, ascending), `created_at` and `updated_at`. A platform rule has
+  `thresholds` (up to four percentages, ascending), `active` (a cost rule counts only while its currency is the
+  tenant's active currency in force; `false` otherwise. On a platform ceiling the member is `true` in the
+  answer of `listTenantPlatformLimits` and **absent** when the ceiling is inactive, and always absent from
+  `listPlatformLimits`, which compares with `active_currency_in_force` of the tenant instead; the CLI prints
+  an absent value as `false`), `created_at` and `updated_at`. A platform rule has
   `tenant` (an ID; empty for a default of every tenant) in place of the subject. `listLimits` filters
   by `subject_kind`, `subject_id`, `metric`, `provider` and `model`; `listPlatformLimits` by the tenant
   it applies to and `metric`.
 - **Validation** (400 `invalid_request` naming the field; 409 `conflict` when a rule of the same
-  subject, scope and metric exists). A count metric needs `limit` (1 to 1,000,000,000,000) and takes no
+  subject, scope, metric and currency exists). A count metric needs `limit` (1 to 1,000,000,000,000) and takes no
   `amount` or `currency`; a cost metric needs `amount` (greater than 0, at most 1,000,000,000, at most
   six fraction digits) and `currency` (three capital letters) and takes no `limit`. The three metrics
   `concurrent_requests`, `requests_per_minute` and `tokens_per_minute` take `enforce: true` and no
@@ -245,9 +250,12 @@ they are enforced is in the [limits guide](../operations/limits.md).
   `model` needs `provider`; the provider must exist and the model must be one the tenant can see (for
   a platform rule, one that exists). The message is the same whether an ID exists in another tenant or
   nowhere. A platform rule with a `tenant` needs an existing tenant. **A budget's currency** must be one
-  that a catalogue price that can be in force for its scope uses (400 on `currency`: `must be a currency
-  the prices of this scope use: EUR, USD`, sorted, or `no model of this scope has a price`); the check
-  applies to the creation and the update of tenant and platform budgets, and not to count metrics.
+  that has a list for its scope: for a tenant rule, a currency of the tenant's own prices or of the
+  catalogue's for a model of the scope; for a ceiling of one tenant, the catalogue's or the tenant's active or
+  pending currency; for a default ceiling, the catalogue's (400 on `currency`: `must be a currency the prices
+  of this scope use: EUR, USD`, sorted, or `no model of this scope has a price`). The check applies to the
+  creation and the update of tenant and platform budgets, and not to count metrics; it does not ask that the
+  currency be the active one ([limits guide](../operations/limits.md), section 5).
 - **At most 5,000 rules** per tenant: the count is checked in the transaction of the creation, under a
   lock per tenant, and the 5,001st is refused with 409 `invalid_state`.
 - `PATCH` takes `limit` or `amount`, `enforce` and `thresholds` (at least one, and the result must
@@ -300,6 +308,53 @@ they are enforced is in the [limits guide](../operations/limits.md).
   `update` takes `--limit`, `--amount`, `--soft`, `--enforce`, `--threshold` and `--no-thresholds`.
   `limit events` takes `--kind` and `--rule`. `limit time-zone get --tenant T` and `limit time-zone set --tenant T ZONE|--default` call `getTenantTimeZone` and `setTenantTimeZone` (a zone and `--default` are exclusive).
 
+### Price lists and the active currency
+
+A tenant administrator writes the tenant's own price lists and chooses its active currency; **only the
+tenant reads and writes them**, and no platform principal can: the three permissions are tenant-scoped and
+no platform role holds one. What they mean is in the [catalogue guide](../operations/catalogue.md),
+section 7 ([ADR 0053](../adr/0053-tenant-price-lists-and-active-currency.md)).
+
+- `listPriceLists`: one `TenantPriceList` per currency in which the tenant has a version: `currency`,
+  `versions`, `models_priced` (models with a price in force now) and `active` (its currency is the one in
+  force).
+- `listPriceListVersions`: newest first; filters `currency`, `provider`, `model` (needs `provider`) and `at`
+  (RFC 3339: the versions in force then, one per list and model); cursor on the ID.
+- `createPriceListVersion` (`provider`, `model` and `currency` required; `kind` `price` (default) or `end`,
+  `rates` (as `PriceRate`; none for an end), `valid_from`, `note`): 201 with the `TenantPriceVersion` (`id`,
+  `model_id`, `provider`, `model`, `currency`, `kind`, `valid_from`, `rates`, `note`, `in_force`,
+  `created_at`). 400 on `model` (`must name a model available to this tenant`: the same for a model that is
+  elsewhere and one that is nowhere), on `rates` (the rules of `createPriceOverride`) and on `valid_from`
+  (in the past); 409 `invalid_state` for an `end` when the list has no price for the model at that start
+  (field `kind`) and beyond 50,000 versions per tenant; 409 `conflict` for the same list, model and start
+  twice. A new version starts now or later and never changes.
+- `getPriceListVersion` reads any version, replaced ones included; `deletePriceListVersion` removes one that
+  has not started (409 `invalid_state` otherwise) and returns it as it was. An ID of another tenant is the
+  404 of an ID that does not exist.
+- `getActiveCurrency` and `setActiveCurrency` (`PUT {"currency": "EUR"}`; `""` is the default of the
+  installation): `ActiveCurrency` has `currency` (as set), `in_force` (the code in force now) and
+  `effective_from` (while a change is pending); the answer to a change adds `inactive_limits` (at most 100:
+  `level` `tenant` or `platform`, `rule_id`, `metric`, `currency`): the cost rules and ceilings that stop
+  applying when it takes effect. A currency other than the default needs a list (400 on `currency`: `no price
+  list in this currency: add prices in it first`). The change takes effect at the start of the next month in
+  the tenant's time zone; a second change before then replaces the pending currency and keeps the instant.
+- **Audit.** Three actions in the tenant's log, written in the transaction of the change, with the tenant
+  principal as actor: `tenant_price.create` and `tenant_price.delete` (resource `tenant_price_version`:
+  provider, model, `model_id`, currency, kind, `valid_from`; a create adds the `rates` and
+  `previous_version`) and `tenant.active_currency_update` (resource `tenant`: `from`, `to`, `in_force`,
+  `effective_from`, `inactive_limits` as a number). The `note` of a version is stored with it and never
+  copied into an audit record or a log line. The platform's log gets no row from these operations.
+- The `Tenant` resource shows the platform `active_currency`, `active_currency_in_force` and
+  `active_currency_effective_from`: a setting of the tenant, not usage and not a price, which the platform
+  needs to know which of its ceilings apply. `createTenant` and `updateTenant` do not take it.
+- `listTenantModels` also shows, per model, `tenant_price` (the version of the tenant's active list in force,
+  when it is a price) and `price_source` (`tenant`, `catalogue`, or empty when no price applies in the active
+  currency). A model that a tenant has priced cannot be deleted (409 `invalid_state`, field `tenant_prices`).
+- CLI: `price-list lists|list|get|set|delete` and `price-list currency get|set`, each with `--tenant`;
+  `set` takes `--currency`, `--model`, a repeatable `--rate category[@threshold]=amount`, `--end`,
+  `--valid-from` and `--note`; `currency set` takes a code or `--default` and prints the rules that become
+  inactive.
+
 ### The catalogue
 
 The operations are described in the [catalogue guide](../operations/catalogue.md). Provider and endpoint
@@ -326,7 +381,7 @@ reference `provider/name` wherever it takes a model.
 | `getCapability` | `GET /v1/tenants/{tenant}/capability` | `model:read` |
 | `listUsageRecords` | `GET /v1/tenants/{tenant}/usage-records` | `usage:read` |
 
-- `getCapability` answers whether a tenant can call a provider and model now (`provider` and `model` are required): `callable`, the failing `reasons` in a fixed order (`provider_unavailable`, `model_not_allowed`, `no_credential`, `credential_disabled`, `credential_revoked`), the `checks` and `budget`, which takes four values from the tenant's enforced quotas and budgets of a day or month that match the provider and model, read from the usage ledger with the worker database role, inside the tenant's session under row-level security: `not_enforced` (none matches), `unpriced` (a budget matches and the model has no price in the budget's currency while `limits.on_unknown_price` is `refuse`; reason `no_price`), `exhausted` (the total of the current period is at or above a limit; reason `budget_exhausted`) and `available`. The two reasons follow the others in that order. Only the tenant's own rules for the whole tenant count (the check describes a key without pin or list, so rules of service accounts and keys, soft rules and rate limits are not evaluated), requests in flight are not in the total, and `available` means "not exhausted": a call whose estimate exceeds what is left is still refused. It reads committed catalogue state and credential metadata and never opens a credential, so it can differ from a call made at the same moment by at most the cache lifetimes; a key's pin and model list are not evaluated. `checks.budget` uses the calendar of the tenant (its time zone, and a change pending) and matches rules by catalogue identifier. A suspended tenant is answered 403 `tenant_suspended`. CLI: `capability check --tenant T --provider P --model M`. [ADR 0043](../adr/0043-tenant-capability-check-and-usage-list.md).
+- `getCapability` answers whether a tenant can call a provider and model now (`provider` and `model` are required): `callable`, the failing `reasons` in a fixed order (`provider_unavailable`, `model_not_allowed`, `no_credential`, `credential_disabled`, `credential_revoked`), the `checks` and `budget`, which takes four values from the tenant's enforced quotas and budgets of a day or month that match the provider and model, read from the usage ledger with the worker database role, inside the tenant's session under row-level security: `not_enforced` (none matches; budgets in another currency than the active one do not count), `unpriced` (an active budget (one in the tenant's active currency) matches and the model has no price in that currency while `limits.on_unknown_price` is `refuse`; reason `no_price`), `exhausted` (the total of the current period is at or above a limit; reason `budget_exhausted`) and `available`. The two reasons follow the others in that order. Only the tenant's own rules for the whole tenant count (the check describes a key without pin or list, so rules of service accounts and keys, soft rules and rate limits are not evaluated), requests in flight are not in the total, and `available` means "not exhausted": a call whose estimate exceeds what is left is still refused. It reads committed catalogue state and credential metadata and never opens a credential, so it can differ from a call made at the same moment by at most the cache lifetimes; a key's pin and model list are not evaluated. `checks.budget` uses the calendar of the tenant (its time zone, and a change pending) and matches rules by catalogue identifier. A suspended tenant is answered 403 `tenant_suspended`. CLI: `capability check --tenant T --provider P --model M`. [ADR 0043](../adr/0043-tenant-capability-check-and-usage-list.md).
 - `listUsageRecords` lists a tenant's usage records newest first, with `from`, `to`, `provider`, `limit_state` (`limited`, `unlimited`, `unverified` or `not_evaluated`), `limit` and `cursor` (rules and representation in the [usage guide](../operations/usage.md), section 9); a record shows `limit_state`, empty for one written before sprint 5.3. CLI: `usage list --tenant T [--from --to --provider --limit-state]`.
 - The provider member `stream_usage_option` is `add` or `omit`; `omit` for a provider of family `anthropic` is `invalid_request` ("must be add for a provider of family anthropic").
 - Collections: `listModels` filters by `provider`, `name`, `status` and `availability`. `createModel`

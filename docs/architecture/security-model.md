@@ -13,6 +13,7 @@
 | Provider credentials of tenants | They are spendable money and access to the tenant's provider account. They cannot be recreated by the platform |
 | Tenant separation | One tenant must not see or affect another's configuration, usage or spend |
 | Usage ledger and audit log | They are the evidence for what was spent and for investigations |
+| A tenant's usage records, limit events and price lists | They describe what a tenant consumes and what it pays. Through the product only the tenant reads them: row-level security on their tables, tenant-scoped permissions that no platform role holds, no platform operation or definer function that returns them, and a request log and traces without cost, currency or token counts unless `telemetry.tenant_usage_details` is on ([ADR 0054](../adr/0054-usage-data-is-the-tenants.md)). The platform sees operational indicators of the installation, with no tenant and no cost |
 | Content in transit | Prompts and completions pass through memory and must leave no trace |
 | Availability and spend | A caller must not exhaust the service or a budget that is not theirs |
 
@@ -103,6 +104,12 @@ of a running gateway. The rule that platform administrators cannot read tenant s
 application and database control. It removes the capability from the product's interfaces and
 makes misuse visible; it is not cryptographic separation from the organization that runs the
 installation.
+
+**Confidentiality of a tenant's data against whoever administers the database, the hosts or the backups is
+out of scope (issue #33).** The owner role, a superuser, a backup or a host reads every table, the
+usage records, limit events and price lists of a tenant among them. Row-level security separates
+tenants from each other and from the platform roles of the product, not from the operator of the
+installation. This sprint narrows what the product itself exposes; it does not encrypt usage data.
 
 A tenant that needs separation from the operator's infrastructure needs its own cell, with its
 own key-encryption key held where it decides.

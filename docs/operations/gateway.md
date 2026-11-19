@@ -341,7 +341,7 @@ The `request` line of the [container guide](container.md) gains these fields fro
 | `record_id` | the request was admitted | the ID of its usage record |
 | `trace_id` | the request has a trace | 32 hexadecimal characters |
 | `cost_status` | the request was admitted | `known`, `unknown` or `none` |
-| `cost`, `currency` | the cost is known | the amount and its currency |
+| `cost`, `currency` | the cost is known **and `telemetry.tenant_usage_details` is on** | the amount and its currency |
 | `usage_source` | the provider answered | `provider`, `estimated` or `none`: the source of the input side |
 | `usage_output_source` | the output side has another source | only when it differs from `usage_source`, for example `usage_source: provider` and `usage_output_source: estimated` after a stream cut following `message_start` |
 | `upstream_request_id` | the provider sent one | its `X-Request-Id` (`openai`) or `Request-Id` (`anthropic`), bounded |
@@ -349,10 +349,13 @@ The `request` line of the [container guide](container.md) gains these fields fro
 | `usage_reader` | the reader gave up | `failed` |
 | `issuer_id` | the credential was a token | the ID of the registration that accepted it; `key_id` is then the ID of the subject mapping |
 | `ledger` | step 3a refused the request | `full` (written `ledger: full` in this guide) |
-| `reserved_tokens` | a reservation was made (sprint 5.1) | input plus output tokens reserved by the estimate |
-| `limit_subject`, `limit_metric`, `limit_scope`, `limit_currency`, `limit_level`, `limit`, `retry_after_s` | step 7b refused the request (`limit_scope` `all`, `provider` or `model`; `limit_currency` for a budget, whose `limit` is a decimal) | the subject kind (`tenant`, `service_account`, `key`), the metric, who set the value (`platform` or `tenant`), the value in force and the `Retry-After` sent |
+| `reserved_tokens` | a reservation was made (sprint 5.1) **and `telemetry.tenant_usage_details` is on** | input plus output tokens reserved by the estimate |
+| `limit_subject`, `limit_metric`, `limit_scope`, `limit_level`, `retry_after_s` | step 7b refused the request (`limit_scope` `all`, `provider` or `model`) | the subject kind (`tenant`, `service_account`, `key`), the metric, who set the value (`platform` or `tenant`) and the `Retry-After` sent |
+| `limit`, `limit_currency`, `price_currency`, `price_source` | step 7b refused the request **and `telemetry.tenant_usage_details` is on** (`limit_currency` for a budget, whose `limit` is a decimal; `price_currency` and `price_source` on a `no_price` refusal) | the value in force, the currency of the budget, and the currency and list (`tenant` or `catalogue`) of the price that applied |
 | `estimate_over_limit` | the estimate alone exceeds the limit | `true`: waiting cannot help |
 | `budget_unpriced` | the request was admitted although a budget could not measure it (`limits.on_unknown_price` `allow`) | `true` |
 | `limits_unverified` | the request was admitted although its counters could not be verified (`limits.on_store_failure` `allow`) | `true` |
+
+**Usage details are the tenant's and are off by default.** The fields `cost`, `currency`, the `usage` group of token counts, `reserved_tokens`, `limit`, `limit_currency`, `price_currency` and `price_source` describe what a tenant consumes and pays; a log pipeline is outside the tenant's control, so they are written only when `telemetry.tenant_usage_details` is `true` ([ADR 0054](../adr/0054-usage-data-is-the-tenants.md)). `serve` then logs one `configuration warning` at start. What stays on every line: IDs, provider, endpoint, model, operation, outcome, error code, statuses, durations, byte counts, `usage_source`, `cost_status`, `limit_state` and, of a refusal, `limit_subject`, `limit_metric`, `limit_level`, `limit_scope`, `retry_after_s` and `estimate_over_limit`. To find out why a tenant meets `no_price`, use the tenant's own tools ([limits guide](limits.md), section 15).
 
 `ttfb_ms` now means the first body byte (section 4a).

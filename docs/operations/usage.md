@@ -96,8 +96,9 @@ Provider values and estimates never share a column; check constraints enforce it
 | `cost_status` | `known`, `unknown` or `none`, section 4 |
 | `cost_reason` | when the status is `unknown`: `no_price`, `category_unpriced` or `inconsistent_usage` (also when the amount would not fit the column) |
 | `cost` | the amount, exact (`numeric(38,18)`), in the currency of the price |
-| `currency` | the three-letter code of the price version |
+| `currency` | the three-letter code of the price version: the tenant's active currency when the request started (section 4) |
 | `price_version_id` | the price version in force when the request started |
+| `price_source` | which list `price_version_id` belongs to: `tenant` (a version of the tenant's own price list, table `tenant_price_version`) or `catalogue` (`price_version`); empty (NULL) when no price was used and in records written before sprint 5.4 |
 | `cost_fallbacks` | the usage categories that were priced at a fallback rate |
 
 No column except `tenant_id` is a foreign key: a record outlives the key, the credential, the model
@@ -169,12 +170,14 @@ provider's usage (or the estimate, when that is all there is):
 | `cost_status` | When |
 |---|---|
 | `known` | the price covers the usage |
-| `unknown` | usage exists and could not be priced; `cost_reason` is `no_price` (no price version for the model), `category_unpriced` or `inconsistent_usage` |
+| `unknown` | usage exists and could not be priced; `cost_reason` is `no_price` (no price for the model in the tenant's active currency), `category_unpriced` or `inconsistent_usage` |
 | `none` | both sources are `none` |
 
-Amounts are exact, in the currency of the price version, and never converted. **Under BYOK the cost
+Amounts are exact, in the currency of the price version, and never converted. The price is chosen by the tenant's active currency: the model's version in force in the tenant's own list in that currency, else the catalogue's version in force when it is in that currency, else none ([catalogue guide](catalogue.md), section 7). **Under BYOK the cost
 is informational**: the tenant pays the provider with its own credential, and the figure is what the
 catalogue's prices say the call would cost.
+
+**Reproducing a cost.** A record names the price it used: `price_version_id` and `price_source`. For `catalogue`, `pandokos price list MODEL` shows the version and its rates (a platform administrator); for `tenant`, `pandokos price-list get --tenant T ID` shows it (a tenant administrator), replaced versions included. The cost is the sum, over the usage categories of the record, of units times rate divided by a million, with the tiers and fallbacks of the [catalogue guide](catalogue.md), section 4. A request is priced with one version and one currency from its estimate to its settlement.
 
 ## 5. Caller metadata
 
@@ -307,3 +310,25 @@ the same policy; the gateway role cannot read a row it wrote.
 
 To follow one request, search the log for its `request_id` or `record_id`, and the ledger by
 `(tenant_id, request_id)`, which is indexed.
+
+## 10. Who reads usage
+
+The usage records, the limit events and the price lists of a tenant are **the tenant's**
+([ADR 0054](../adr/0054-usage-data-is-the-tenants.md)):
+
+- Through the product only the tenant reads them: `usage:read` (`pandokos usage list`), `limit:read`
+  (`limit events`) and `price_list:read`, all tenant-scoped permissions of `tenant-admin`. No platform
+  role reads usage, limit events or prices of a tenant, no platform operation returns them and no
+  platform role is a usage viewer ([permissions](../reference/permissions.md)). In the database the
+  platform scope and a session without a scope see no row of these tables.
+- What the platform sees are operational indicators of the installation (requests, errors, latency,
+  saturation) with no tenant and no cost, and the ceilings it set, not what was counted against them.
+- **What the operator's logs and traces carry.** By default the request log line and the spans hold no
+  cost, currency, token count, reserved amount or budget figure. They hold the IDs (the tenant too: that
+  a tenant made a request is operational), the model, the outcome, durations and byte counts. With
+  `telemetry.tenant_usage_details` they carry the cost and the counts again, and `serve` warns at start
+  ([telemetry guide](telemetry.md)).
+- **The limit.** Row-level security separates tenants from each other and from the platform roles of
+  the product. It does not protect a tenant's data from whoever administers the database, the hosts or
+  the backups: the owner role, a superuser or a backup reads every table (issue #33, [security
+  model](../architecture/security-model.md)).

@@ -51,3 +51,4 @@ them).
 
 - 2026-11: sprint 3.1 sends the download through the egress guard: it obeys upstream.proxy.url and upstream.tls.ca_file; "without proxy" in point 4 now means "without a proxy from the environment".
 - 2026-11-18: recorded as accepted by the maintainer.
+- 2026-11-18: sprint 5.4: the rules of a price version also govern the versions of a tenant's price lists; imports and overrides do not touch them; a catalogue price prices a tenant's request only in the tenant's active currency ([ADR 0053](0053-tenant-price-lists-and-active-currency.md))

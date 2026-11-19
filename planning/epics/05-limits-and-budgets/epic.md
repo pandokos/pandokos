@@ -16,7 +16,7 @@ come with epic 8.
 
 ## Decisions it implements
 
-ADR 0012.
+ADR 0012; sprint 5.4 adds [ADR 0053](../../../docs/adr/0053-tenant-price-lists-and-active-currency.md) (tenant price lists and the active currency) and [ADR 0054](../../../docs/adr/0054-usage-data-is-the-tenants.md) (usage data is the tenant's).
 
 ## Sprints
 
@@ -109,6 +109,8 @@ says whether the request was limited, unlimited or unverified; a tenant's first 
 of a day writes exactly one audit row.
 
 ### 5.4 Tenant price lists
+
+Designed and delivered as [5.4-tenant-price-lists/sprint.md](5.4-tenant-price-lists/sprint.md).
 
 Added after the review of ADR 0050 by the maintainer (2026-11-18); the need is in issue #48. Scope
 revised by the maintainer on 2026-11-18. Scope closed.

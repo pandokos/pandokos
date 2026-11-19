@@ -58,7 +58,7 @@ The six limit permissions are held by two roles: `tenant-admin` has `limit:read`
 `platform_limit:delete`. The role `inference` has none. A platform principal cannot write a tenant's own
 rules and a tenant principal can neither read nor write platform rules beyond the ceilings that apply to
 its own tenant (`listTenantPlatformLimits`, under `limit:read`). Custom roles are not yet possible
-(sprint 4.3), so these are the only holders ([limits guide](../operations/limits.md)). The platform sets a tenant's time zone with `tenant:write` (`createTenant`, `updateTenant`). No permission was added in sprint 5.3.
+(sprint 4.3), so these are the only holders ([limits guide](../operations/limits.md)). The platform sets a tenant's time zone with `tenant:write` (`createTenant`, `updateTenant`). No permission was added in sprint 5.3. Sprint 5.4 adds three, `price_list:read`, `price_list:write` and `price_list:delete`, all tenant-scoped and held by `tenant-admin`; the active currency is chosen with `price_list:write`. **No platform permission reads or writes a tenant's usage records, limit events or price lists**, and no platform role is a usage viewer ([ADR 0054](../adr/0054-usage-data-is-the-tenants.md)): what a platform principal reads of a tenant is its setting (the active currency on the `Tenant` resource), never what it consumes or pays.
 
 Scope *platform*: held by platform principals only. Scope *tenant*: held by principals of that
 tenant only, and checked against the tenant of the request. Scope *self*: the caller itself.
