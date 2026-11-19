@@ -147,6 +147,9 @@ func TestTenantPriceLists(t *testing.T) {
 		if fieldsOf(p)[0] != "kind" {
 			t.Errorf("errors %+v", p.Errors)
 		}
+		if m := messageOf(p, "kind"); m != "the list has no price in force for this model at that time" {
+			t.Errorf("message %q", m)
+		}
 		invalidOn(t, "an end with rates", w.do(t, w.ka, "POST", path, map[string]any{"provider": prov, "model": all.Name, "currency": "USD", "kind": "end", "rates": tpRates("input", "0", "1")}), "rates")
 		end := decodeInto[adminapi.TenantPriceVersion](t, w.do(t, w.ka, "POST", path, map[string]any{"provider": prov, "model": all.Name, "currency": "USD", "kind": "end", "valid_from": scheduled(30, 0)}), 201)
 		if end.Kind != adminapi.TenantPriceKindEnd || len(end.Rates) != 0 || end.InForce {

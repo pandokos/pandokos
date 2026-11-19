@@ -157,7 +157,7 @@ func (s *server) CreatePriceListVersion(ctx context.Context, in adminapi.CreateP
 		}
 		havePrev := err == nil
 		if kind == adminapi.TenantPriceKindEnd && (!havePrev || prev.Kind != string(adminapi.TenantPriceKindPrice)) {
-			return invalidState("kind", "the list has no price for this model at that start")
+			return invalidState("kind", "the list has no price in force for this model at that time")
 		}
 		n, err := q.CountTenantPriceVersions(ctx)
 		if err != nil {

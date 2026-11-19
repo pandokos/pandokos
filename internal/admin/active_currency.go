@@ -65,13 +65,14 @@ func (s *server) SetActiveCurrency(ctx context.Context, in adminapi.SetActiveCur
 			prev, next string
 			from       *time.Time
 			write      bool
+			withdraw   bool
 		)
 		switch {
 		case to == cur.ActiveCurrency:
 			// Nothing is written; the answer shows a pending instant.
 			prev, next, from = cur.ActiveCurrencyPrevious, to, cur.ActiveCurrencyEffectiveFrom
 		case to == inForce:
-			prev, next, from, write = "", to, nil, true
+			prev, next, from, write, withdraw = "", to, nil, true, true
 		case pending:
 			prev, next, from, write = cur.ActiveCurrencyPrevious, to, cur.ActiveCurrencyEffectiveFrom, true
 		default:
@@ -84,7 +85,7 @@ func (s *server) SetActiveCurrency(ctx context.Context, in adminapi.SetActiveCur
 			at := limits.NextChange(cal, cur.DbNow)
 			prev, next, from, write = inForce, to, &at, true
 		}
-		if write && to != "" {
+		if write && !withdraw && to != "" { // the currency in force again needs no list: it is already the tenant's
 			has, err := q.CurrencyHasList(ctx, to)
 			if err != nil {
 				return err
@@ -104,7 +105,7 @@ func (s *server) SetActiveCurrency(ctx context.Context, in adminapi.SetActiveCur
 			}
 		}
 		out = s.activeCurrencyOut(next, prev, from, cur.DbNow)
-		inactive, err := s.inactiveLimits(ctx, q, s.currencyName(next))
+		inactive, inactiveTotal, err := s.inactiveLimits(ctx, q, s.currencyName(next))
 		if err != nil {
 			return err
 		}
@@ -113,7 +114,7 @@ func (s *server) SetActiveCurrency(ctx context.Context, in adminapi.SetActiveCur
 			return nil
 		}
 		return audit.RecordTenant(ctx, tx, tid, tenantEvent(ctx, "tenant.active_currency_update", "tenant", tid.String(), map[string]any{
-			"from": cur.ActiveCurrency, "to": next, "in_force": out.InForce, "effective_from": fmtTime(out.EffectiveFrom), "inactive_limits": len(inactive)}))
+			"from": cur.ActiveCurrency, "to": next, "in_force": out.InForce, "effective_from": fmtTime(out.EffectiveFrom), "inactive_limits": inactiveTotal}))
 	})
 	if isNoRowsErr(err) {
 		return nil, errNotFound
@@ -127,15 +128,15 @@ func (s *server) SetActiveCurrency(ctx context.Context, in adminapi.SetActiveCur
 // inactiveLimits lists, for a new currency, the cost rules of the tenant and the ceilings of the platform
 // that apply to it whose currency is another: from the change they count and refuse nothing. A default
 // ceiling the tenant's own ceiling of the same scope, metric and currency replaces is left out. Ordered
-// by level, then rule ID; at most the first 100. Both lists are read in the session of the tenant.
-func (s *server) inactiveLimits(ctx context.Context, q *queries.Queries, currency string) ([]adminapi.InactiveLimit, error) {
+// by level, then rule ID; at most the first 100 are returned, and the count is of all of them. Both lists are read in the session of the tenant.
+func (s *server) inactiveLimits(ctx context.Context, q *queries.Queries, currency string) (list []adminapi.InactiveLimit, total int, err error) {
 	rules, err := q.ListLimitRules(ctx)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	ceilings, err := q.ListPlatformLimitRules(ctx)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	var out []adminapi.InactiveLimit
 	for _, r := range rules {
@@ -163,8 +164,9 @@ func (s *server) inactiveLimits(ctx context.Context, q *queries.Queries, currenc
 		}
 		return out[i].RuleID < out[j].RuleID
 	})
+	total = len(out)
 	if len(out) > maxInactiveLimits {
 		out = out[:maxInactiveLimits]
 	}
-	return out, nil
+	return out, total, nil
 }

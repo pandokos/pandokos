@@ -1,6 +1,7 @@
 package admin_test
 
 import (
+	"fmt"
 	"sort"
 	"testing"
 	"time"
@@ -215,6 +216,37 @@ func TestActiveCurrency(t *testing.T) {
 		// The answer to a read does not carry them.
 		if g := decodeInto[adminapi.ActiveCurrency](t, pe.do(t, pe.ka, "GET", "/v1/tenants/"+pe.a.ID+"/active-currency", nil), 200); len(g.InactiveLimits) != 0 {
 			t.Errorf("a read carries %d inactive limits", len(g.InactiveLimits))
+		}
+	})
+
+	t.Run("withdrawing a pending change needs no list in the currency in force", func(t *testing.T) {
+		pf := newPW(t)
+		// EUR is in force, GBP is pending, and no list in EUR exists any more: the tenant has no
+		// price of its own in EUR and the catalogue none.
+		pf.api.DB.SetTenantCurrency(t, pf.idA, "GBP", "EUR", time.Now().Add(24*time.Hour))
+		p := "/v1/tenants/" + pf.a.ID + "/active-currency"
+		c := decodeInto[adminapi.ActiveCurrency](t, pf.do(t, pf.ka, "PUT", p, map[string]any{"currency": "EUR"}), 200)
+		if c.Currency != "EUR" || c.InForce != "EUR" || c.EffectiveFrom != nil {
+			t.Errorf("%+v", c)
+		}
+		// A new change to a currency with no list is still refused.
+		invalidOn(t, "GBP without a list", pf.do(t, pf.ka, "PUT", p, map[string]any{"currency": "GBP"}), "currency")
+	})
+
+	t.Run("the audit counts every inactive limit, the answer lists the first 100", func(t *testing.T) {
+		pg := newPW(t)
+		pg.createPrice(t, priceBody(pg.cat.All, pg.cat.Provider.Name, "EUR", nil, map[string]any{"valid_from": scheduled(3, 0)}))
+		const total = 101
+		for i := 0; i < total; i++ {
+			pg.api.DB.SeedPlatformLimit(t, nil, "cost_per_month", 5_000, dbtest.LimitOptions{Currency: fmt.Sprintf("X%c%c", 'A'+i/26, 'A'+i%26)})
+		}
+		c := decodeInto[adminapi.ActiveCurrency](t, pg.do(t, pg.ka, "PUT", "/v1/tenants/"+pg.a.ID+"/active-currency", map[string]any{"currency": "EUR"}), 200)
+		if len(c.InactiveLimits) != 100 {
+			t.Errorf("the answer lists %d limits, want 100", len(c.InactiveLimits))
+		}
+		rows := auditRows(t, pg.api)
+		if last := rows[len(rows)-1]; last.Action != "tenant.active_currency_update" || last.Detail["inactive_limits"] != float64(total) {
+			t.Errorf("audit row %+v: inactive_limits must be %d", last, total)
 		}
 	})
 }
