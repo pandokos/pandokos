@@ -22,6 +22,7 @@ func micros(n int64) string { return fmt.Sprintf("%d.%06d", n/1_000_000, n%1_000
 // with the key on, with the warning at start.
 func TestTenantPriceLists(t *testing.T) {
 	p, _, boot := limitsProc(t, "info")
+	p.priceFake(t, boot, "openai") // the catalogue price in USD, 3 and 6 per million
 	a, b := p.newLimitsTenant(t, boot, "prices-a"), p.newLimitsTenant(t, boot, "prices-b")
 
 	// The estimate of the fixture request: ceil(bytes / 4) input tokens and 4096 output tokens; the
@@ -64,7 +65,7 @@ func TestTenantPriceLists(t *testing.T) {
 	})
 
 	t.Run("after it A is refused at the EUR budget and B is not affected", func(t *testing.T) {
-		if out := p.mustCLI(t, a.admin, "limit", "list", "--tenant", a.idStr); !strings.Contains(out, "active") {
+		if out := p.mustCLI(t, a.admin, "limit", "list", "--tenant", a.idStr); !strings.Contains(strings.ToLower(out), "active") {
 			t.Errorf("limit list has no active column:\n%s", out)
 		}
 		testutil.Eventually(t, 3*time.Second, "the gateway to price A in EUR (the USD budget is exhausted and plays no part)", func() bool {
@@ -133,6 +134,7 @@ func TestTenantPriceLists(t *testing.T) {
 		on := startBinary(t, opts{level: "info", up: p.up, env: []string{"PANDOKOS_TELEMETRY_TENANT_USAGE_DETAILS=true"}})
 		boot2 := on.bootstrap(t)
 		on.prepareUpstream(t)
+		on.priceFake(t, boot2, "openai") // a cost needs a price
 		tn := on.newLimitsTenant(t, boot2, "prices-on")
 		if status, text := on.openaiCall(t, tn.key); status != 200 {
 			t.Fatalf("%d\n%s", status, text)
