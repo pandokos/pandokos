@@ -24,7 +24,9 @@ maintainer's review of 2026-11-18 decided that this data is the tenant's.
    without costs per tenant. It still sets ceilings, and knows the ceilings it set, not what was
    counted against them.
 3. The request log and the traces carry no cost, currency, token count, reserved amount or
-   budget figure of a request. `telemetry.tenant_usage_details`, off by default, brings them
+   budget figure of a request, and the lines of the ledger writer and of the limit event writer
+   carry no row, metric, scope, subject or percent: only identifiers, the outcome, durations, sizes,
+   the event kind and the rule ID. `telemetry.tenant_usage_details`, off by default, brings them
    back, with a warning at start: for single-tenant installations and for debugging.
 4. This is held by tests: negative tests on platform sessions in the database, on every platform
    operation of the API, on the result types of definer functions, and a repository test over

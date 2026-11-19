@@ -514,7 +514,7 @@ the percentage, so a restart, which finds the same threshold passed again, inser
 gateway inserts events off the request path; if the database is unavailable it retries, and it
 flushes what is left at shutdown within what remains of `ledger.shutdown_flush_timeout`. An event
 can be lost only when the process dies between the crossing and the insert **and** the period ends
-before the next start. Each inserted row is logged as `limit event recorded`. Read events with
+before the next start. Each inserted row is logged as `limit event recorded`, with the tenant, the kind and the rule ID; the metric, scope, subject kind and percent only with `telemetry.tenant_usage_details` (the same holds for `limit event not recorded`, which adds the SQLSTATE and the error class). Read events with
 `pandokos limit events` or `listLimitEvents` (newest first). Delivery to other systems (webhooks)
 does not exist yet: sprint 6.4 adds it ([ADR 0014](../adr/0014-events-outbox.md)).
 
