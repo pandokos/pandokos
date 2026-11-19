@@ -74,8 +74,9 @@ type priceStack struct {
 
 type priceOptions struct {
 	stackOptions
-	catalogTTL time.Duration // cache.catalog_ttl; a minute when zero
-	listener   bool          // the notifications of the triggers reach both caches
+	catalogTTL time.Duration    // cache.catalog_ttl; a minute when zero
+	catalogNow func() time.Time // the clock of the catalogue cache; the real one when nil
+	listener   bool             // the notifications of the triggers reach both caches
 }
 
 func (w *priceWorld) stack(t *testing.T, tn tenant.ID, o priceOptions) *priceStack {
@@ -86,7 +87,7 @@ func (w *priceWorld) stack(t *testing.T, tn tenant.ID, o priceOptions) *priceSta
 	if ttl == 0 {
 		ttl = time.Minute
 	}
-	cat, err := catalog.NewCache(catalog.CacheOptions{DB: gw, Logger: quiet, TTL: ttl, DefaultCurrency: "USD"})
+	cat, err := catalog.NewCache(catalog.CacheOptions{DB: gw, Logger: quiet, TTL: ttl, DefaultCurrency: "USD", Now: o.catalogNow})
 	if err != nil {
 		t.Fatal(err)
 	}

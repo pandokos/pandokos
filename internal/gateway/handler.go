@@ -58,6 +58,7 @@ type Options struct {
 	PropagateTrace         bool                      // send traceparent and tracestate to the provider
 	Limits                 Limits                    // optional: nil enforces no limit
 	DefaultOutputTokens    int64                     // output tokens reserved per choice when the caller sets no limit; positive
+	Now                    func() time.Time          // optional: the clock of the start of a request (default time.Now); a seam for tests
 	UsageDetails           bool                      // telemetry.tenant_usage_details: cost, currency and token counts in the log line and the spans
 }
 
@@ -83,6 +84,7 @@ type Handler struct {
 	defaultOut  int64
 	// usageDetails is Options.UsageDetails: cost, currency and token counts go to the request line and the spans only when it is set.
 	usageDetails bool
+	now          func() time.Time // Options.Now
 }
 
 // New validates the options and returns a Handler.
@@ -131,7 +133,12 @@ func New(o Options) (*Handler, error) {
 		names = append(names, name)
 	}
 	sort.Strings(names)
+	now := o.Now
+	if now == nil {
+		now = time.Now
+	}
 	h := &Handler{
+		now:          now,
 		familyNames:  names,
 		logger:       o.Logger,
 		auth:         o.Authenticator,
@@ -160,6 +167,7 @@ type stateKey struct{}
 // reqState is the state of one request. It is reached through the request context by the proxy
 // callbacks, which run on the handler goroutine.
 type reqState struct {
+	now      func() time.Time // the clock of the handler
 	start    time.Time
 	id       string
 	sw       *statusWriter
@@ -265,7 +273,7 @@ func providerName(s string) bool {
 
 // ServeHTTP handles one request: the steps of sprint.md section 5.1, in that order.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	st := &reqState{start: time.Now(), id: NewRequestID(), callerCx: r.Context(), method: logMethod(r.Method), adapter: h.def, limitState: LimitStateNotEvaluated}
+	st := &reqState{now: h.now, start: h.now(), id: NewRequestID(), callerCx: r.Context(), method: logMethod(r.Method), adapter: h.def, limitState: LimitStateNotEvaluated}
 	st.sw = &statusWriter{ResponseWriter: w, requestID: st.id}
 	w.Header().Set(family.HeaderRequestID, st.id)
 	defer func() { h.finish(st, recover()) }()
@@ -614,7 +622,7 @@ func (h *Handler) logRequest(st *reqState, outcome string) {
 	if st.invalidReason != "" {
 		attrs = append(attrs, "invalid_reason", st.invalidReason)
 	}
-	attrs = append(attrs, "duration_ms", time.Since(st.start).Milliseconds())
+	attrs = append(attrs, "duration_ms", st.now().Sub(st.start).Milliseconds())
 	if p := st.principal; p != nil {
 		attrs = append(attrs, "tenant_id", p.TenantID.String(), "service_account_id", p.ID, "key_id", p.KeyID)
 		if p.IssuerID != "" {

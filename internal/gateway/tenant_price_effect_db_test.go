@@ -1,7 +1,6 @@
 package gateway_test
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -66,51 +65,56 @@ func TestTenantPriceTakesEffect(t *testing.T) {
 		s.becomes(t, 2*time.Second, "the end to give the catalogue's price back", "catalogue", "USD")
 	})
 
-	// scheduled sets a tenant up with an instant ahead of the real clock, builds a stack with no
-	// notification and asks once: the answer is the one before the instant. When the machine is so busy
-	// that the instant came before that answer, the situation did not occur: it is tried again with a
-	// tenant and an instant further ahead, never asserted on.
-	scheduled := func(t *testing.T, name string, setup func(tn tenant.ID, at time.Time), wantSource, wantCurrency string) *priceStack {
+	// scheduled sets a tenant up with an instant ahead of the clock of the handler, builds a stack with no
+	// notification and asks once: the answer is the one before the instant. The handler clock is a test
+	// clock that stands still until the test moves it, and the two caches live much longer than the test
+	// and run on a frozen clock: nothing expires and nothing is notified, so the answer after the instant
+	// can only come from the entries that were cached before it, read at the new request time.
+	scheduled := func(t *testing.T, name string, setup func(tn tenant.ID, at time.Time), wantSource, wantCurrency string) (*priceStack, *testClock) {
 		t.Helper()
-		for margin, i := 1500*time.Millisecond, 0; margin <= 30*time.Second; margin, i = margin*2, i+1 {
-			tn := d.SeedTenant(t, fmt.Sprintf("%s-%d", name, i))
-			at := time.Now().Add(margin)
-			setup(tn, at)
-			s := w.stack(t, tn, priceOptions{}) // no listener: nothing is notified of anything
-			src, cur := s.lastSource(t)
-			if !time.Now().Before(at) {
-				continue
-			}
-			if src != wantSource || cur != wantCurrency {
-				t.Fatalf("before its instant: %s %s, want %s %s", src, cur, wantSource, wantCurrency)
-			}
-			return s
+		tn := d.SeedTenant(t, name)
+		at := time.Now().Add(10 * time.Minute)
+		setup(tn, at)
+		clk := newTestClock() // after the seeds: the versions that start "now" have started on this clock
+		frozen := time.Now()
+		cacheClock := func() time.Time { return frozen }
+		s := w.stack(t, tn, priceOptions{catalogTTL: 5 * time.Minute, catalogNow: cacheClock,
+			stackOptions: stackOptions{rulesTTL: 5 * time.Minute, rulesNow: cacheClock, clock: clk.Now}}) // no listener: nothing is notified of anything
+		if src, cur := s.lastSource(t); src != wantSource || cur != wantCurrency {
+			t.Fatalf("before its instant: %s %s, want %s %s", src, cur, wantSource, wantCurrency)
 		}
-		t.Fatal("the machine is too slow: no request was answered before the instant")
-		return nil
+		return s, clk
+	}
+	// after moves the clock past the instant and checks the next request is priced from the cached entries.
+	after := func(t *testing.T, s *priceStack, clk *testClock, wantSource, wantCurrency string) {
+		t.Helper()
+		clk.Advance(11 * time.Minute)
+		if src, cur := s.lastSource(t); src != wantSource || cur != wantCurrency {
+			t.Fatalf("after its instant: %s %s, want %s %s", src, cur, wantSource, wantCurrency)
+		}
 	}
 
 	t.Run("a scheduled version applies from its instant with no notification", func(t *testing.T) {
-		s := scheduled(t, "effect-scheduled", func(tn tenant.ID, at time.Time) {
+		s, clk := scheduled(t, "effect-scheduled", func(tn tenant.ID, at time.Time) {
 			d.SeedTenantPrice(t, tn, "USD", "openai", "fake-basic", at)
 		}, "catalogue", "USD")
-		s.becomes(t, 60*time.Second, "the scheduled version to apply", "tenant", "USD")
+		after(t, s, clk, "tenant", "USD")
 	})
 
 	t.Run("a scheduled end applies from its instant with no notification", func(t *testing.T) {
-		s := scheduled(t, "effect-scheduled-end", func(tn tenant.ID, at time.Time) {
+		s, clk := scheduled(t, "effect-scheduled-end", func(tn tenant.ID, at time.Time) {
 			d.SeedTenantPrice(t, tn, "USD", "openai", "fake-basic", time.Time{})
 			d.SeedTenantPriceEnd(t, tn, "USD", "openai", "fake-basic", at)
 		}, "tenant", "USD")
-		s.becomes(t, 60*time.Second, "the end to apply", "catalogue", "USD")
+		after(t, s, clk, "catalogue", "USD")
 	})
 
 	t.Run("a pending currency applies from its instant with no notification", func(t *testing.T) {
-		s := scheduled(t, "effect-pending", func(tn tenant.ID, at time.Time) {
+		s, clk := scheduled(t, "effect-pending", func(tn tenant.ID, at time.Time) {
 			d.SeedTenantPrice(t, tn, "EUR", "openai", "fake-basic", time.Time{})
 			d.SetTenantCurrency(t, tn, "EUR", "USD", at)
 		}, "catalogue", "USD")
-		s.becomes(t, 60*time.Second, "the new currency to apply", "tenant", "EUR")
+		after(t, s, clk, "tenant", "EUR")
 	})
 
 	t.Run("with the notifications cut a change reaches the gateway within the cache lifetimes", func(t *testing.T) {

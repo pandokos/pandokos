@@ -3,7 +3,6 @@ package gateway
 import (
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/family"
@@ -191,7 +190,7 @@ func (h *Handler) recordOf(st *reqState, logOutcome string) usage.Record {
 			r.CostStatus = "known"
 		}
 	}
-	r.Duration = time.Since(st.start)
+	r.Duration = st.now().Sub(st.start)
 	return r
 }
 
@@ -209,7 +208,7 @@ func (st *reqState) minimalRecord() usage.Record {
 		Provider: st.provider, APIFamily: st.family, Operation: st.op.Name,
 		Outcome: usage.OutcomeInternalError, ErrorCode: string(family.CodeInternal),
 		InputSource: usage.SourceNone, OutputSource: usage.SourceNone, CostStatus: "none",
-		LimitState: string(st.limitState), Duration: time.Since(st.start),
+		LimitState: string(st.limitState), Duration: st.now().Sub(st.start),
 	}
 }
 

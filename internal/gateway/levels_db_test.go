@@ -269,6 +269,8 @@ type stackOptions struct {
 	unknownPrice  string
 	start         time.Time               // the instant the clock of the limits shows when the stack is built; the real time when zero
 	rulesTTL      time.Duration           // the lifetime of the rules in the rule cache; a minute when zero (sprint 5.4)
+	rulesNow      func() time.Time        // the clock of the rule cache; the real one when nil
+	clock         func() time.Time        // gateway.Options.Now: the request start; the real clock when nil
 	unlimited     resolver.UnlimitedNoter // told of the first unlimited request of a tenant in a day; nobody when nil (sprint 5.4)
 	logs          io.Writer               // the debug log of the limiter, the reconciler and the ledger writer; discarded when nil (sprint 5.4)
 }
@@ -338,7 +340,7 @@ func newQuotaStack(t *testing.T, d *dbtest.Database, tn tenant.ID, o stackOption
 	if rulesTTL == 0 {
 		rulesTTL = time.Minute
 	}
-	cache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: s.gw, Logger: quiet, TTL: rulesTTL, Zones: zones, DefaultCurrency: "USD"})
+	cache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: s.gw, Logger: quiet, TTL: rulesTTL, Zones: zones, DefaultCurrency: "USD", Now: o.rulesNow})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,6 +387,9 @@ func newQuotaStack(t *testing.T, d *dbtest.Database, tn tenant.ID, o stackOption
 	s.h = newH(t, func(g *gateway.Options) {
 		g.Authenticator = testutil.StaticAuthenticator(auth)
 		g.Limits = s.real
+		if o.clock != nil {
+			g.Now = o.clock
+		}
 		if rec != nil {
 			g.Recorder = rec
 		}

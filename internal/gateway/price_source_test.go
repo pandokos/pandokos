@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"io"
 	"net/http"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -12,6 +13,19 @@ import (
 	"github.com/pandokos/pandokos/test/fakeprovider"
 	"github.com/pandokos/pandokos/test/testutil"
 )
+
+// testClock is a clock that stands still until a test moves it: the Now of the gateway under test.
+type testClock struct{ ns atomic.Int64 }
+
+func newTestClock() *testClock {
+	c := &testClock{}
+	c.ns.Store(time.Now().UnixNano())
+	return c
+}
+
+func (c *testClock) Now() time.Time { return time.Unix(0, c.ns.Load()) }
+
+func (c *testClock) Advance(d time.Duration) { c.ns.Add(int64(d)) }
 
 // listVersion is a version of a currency, started an hour ago unless from says otherwise, with an
 // input rate of in and an output rate of out per million.
@@ -96,49 +110,35 @@ func TestRecordPriceSource(t *testing.T) {
 	})
 
 	t.Run("a version that starts while a request runs does not change that request", func(t *testing.T) {
-		// The new version starts margin after the request was sent. Under load the request can be slow to
-		// reach the handler: when the version had started before the first event arrived, the situation
-		// the test is about did not occur and it is tried again with a larger margin, never asserted on.
-		for margin := 400 * time.Millisecond; ; margin *= 2 {
-			if margin > 10*time.Second {
-				t.Fatal("the machine is too slow: the request never began before the new version started")
-			}
-			h := newHarness(t, nil)
-			tgt := h.targets["openai/"+fakeprovider.ModelGatedStream]
-			newStart := time.Now().Add(margin)
-			tgt.Currency = eur
-			tgt.TenantPrices = []pricing.Version{
-				listVersion(t, "tenant-old", "EUR", pricing.SourceTenant, hourAgo, "1", "2"),
-				listVersion(t, "tenant-new", "EUR", pricing.SourceTenant, newStart, "100", "200"),
-			}
-			h.targets["openai/"+fakeprovider.ModelGatedStream] = tgt
-			resp, err := h.request(ctx5(t), t, http.MethodPost, route, chat(fakeprovider.ModelGatedStream, true), authed())
-			if err != nil {
-				t.Fatal(err)
-			}
-			br := bufio.NewReader(resp.Body)
-			if _, err := testutil.ReadEvent(br); err != nil {
-				t.Fatal(err)
-			}
-			if !time.Now().Before(newStart) {
-				// The request was already running (it answered its first event), but the version has started
-				// before we could be sure it began first: the start of the request is not known to precede it.
-				h.up.Release()
-				_, _ = io.ReadAll(br)
-				_ = resp.Body.Close()
-				continue
-			}
-			time.Sleep(time.Until(newStart.Add(100 * time.Millisecond))) // the new version has started when the request ends
-			h.up.Release()
-			if _, err := io.ReadAll(br); err != nil {
-				t.Fatal(err)
-			}
-			_ = resp.Body.Close()
-			r := h.oneRecord(t)
-			if r.Cost.VersionID != "tenant-old" || r.Cost.Source != pricing.SourceTenant || r.Cost.Currency != "EUR" {
-				t.Errorf("the record is priced with %+v: the version in force at the start of the request is the one that prices it", r.Cost)
-			}
-			return
+		// The handler runs on a test clock that stands still: the new version starts 10 minutes after the
+		// request began and the clock is moved past it while the request runs, so no timing is involved.
+		clk := newTestClock()
+		h := newHarness(t, func(g *gateway.Options) { g.Now = clk.Now })
+		tgt := h.targets["openai/"+fakeprovider.ModelGatedStream]
+		newStart := clk.Now().Add(10 * time.Minute)
+		tgt.Currency = eur
+		tgt.TenantPrices = []pricing.Version{
+			listVersion(t, "tenant-old", "EUR", pricing.SourceTenant, hourAgo, "1", "2"),
+			listVersion(t, "tenant-new", "EUR", pricing.SourceTenant, newStart, "100", "200"),
+		}
+		h.targets["openai/"+fakeprovider.ModelGatedStream] = tgt
+		resp, err := h.request(ctx5(t), t, http.MethodPost, route, chat(fakeprovider.ModelGatedStream, true), authed())
+		if err != nil {
+			t.Fatal(err)
+		}
+		br := bufio.NewReader(resp.Body)
+		if _, err := testutil.ReadEvent(br); err != nil {
+			t.Fatal(err)
+		}
+		clk.Advance(11 * time.Minute) // the new version has started when the request ends
+		h.up.Release()
+		if _, err := io.ReadAll(br); err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		r := h.oneRecord(t)
+		if r.Cost.VersionID != "tenant-old" || r.Cost.Source != pricing.SourceTenant || r.Cost.Currency != "EUR" {
+			t.Errorf("the record is priced with %+v: the version in force at the start of the request is the one that prices it", r.Cost)
 		}
 	})
 }
