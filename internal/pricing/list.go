@@ -34,14 +34,31 @@ type List struct {
 	Tenant    []Version // the tenant's versions of the model, of the currencies of Currency; End marks an end
 }
 
-// At returns the version in force at t and the list it belongs to. Until the sprint's rule of the
-// price lists is in place it answers from the catalogue alone.
+// At returns the version in force at t and the list it belongs to: the tenant's version of the
+// currency in force when it is a price, else the catalogue's version when it is in that currency.
+// A List with the zero Currency prices from the catalogue whatever its currency.
 func (l List) At(t time.Time) (Version, string, bool) {
-	v, found := VersionAt(l.Catalogue, t)
-	if !found {
-		return Version{}, "", false
+	if l.Currency == (Active{}) {
+		v, found := VersionAt(l.Catalogue, t)
+		if !found {
+			return Version{}, "", false
+		}
+		return v, SourceCatalogue, true
 	}
-	return v, SourceCatalogue, true
+	c := l.Currency.At(t)
+	var own []Version
+	for _, v := range l.Tenant {
+		if v.Currency == c {
+			own = append(own, v)
+		}
+	}
+	if v, found := VersionAt(own, t); found && !v.End {
+		return v, SourceTenant, true
+	}
+	if v, found := VersionAt(l.Catalogue, t); found && v.Currency == c {
+		return v, SourceCatalogue, true
+	}
+	return Version{}, "", false
 }
 
 // Cost is CostOf(u, the version in force at t), with Cost.Source set whenever Cost.VersionID is.
