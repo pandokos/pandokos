@@ -46,7 +46,7 @@ func TestLoadTenantPrices(t *testing.T) {
 
 		// Tenant A: lists in USD, EUR and GBP; B has its own EUR price on the same model.
 		oldUSD := d.SeedTenantPriceStarted(t, w.a, "USD", "synthetic", "synthetic-resolve", 5*time.Hour)
-		curUSD := d.SeedTenantPriceStarted(t, w.a, "USD", "synthetic", "synthetic-resolve", 30*time.Minute) // replaced the old one 30 minutes ago
+		curUSD := d.SeedTenantPriceStarted(t, w.a, "USD", "synthetic", "synthetic-resolve", 2*time.Hour) // replaced the old one more than an hour ago (the load keeps the version in force an hour ago)
 		laterUSD := d.SeedTenantPrice(t, w.a, "USD", "synthetic", "synthetic-resolve", now.Add(3*time.Hour))
 		gbp := d.SeedTenantPrice(t, w.a, "GBP", "synthetic", "synthetic-resolve", time.Time{})
 		eur := d.SeedTenantPrice(t, w.a, "EUR", "synthetic", "synthetic-resolve", time.Time{},

@@ -46,7 +46,7 @@ func (c *Catalogue) Provider(ctx context.Context, name string) (string, bool, er
 // Resolve returns the target for a model. The base URL of the endpoint is validated again: a
 // stored URL that fails is logged (names only, never the URL) and is ErrProviderUnavailable.
 func (c *Catalogue) Resolve(ctx context.Context, p authz.Principal, provider, model string) (gateway.Target, error) {
-	snap, _, m, ep, err := c.src.ResolveIn(ctx, p, provider, model)
+	snap, ta, m, ep, err := c.src.ResolveIn(ctx, p, provider, model)
 	switch {
 	case errors.Is(err, catalog.ErrModelNotAllowed):
 		return gateway.Target{}, gateway.ErrModelNotAllowed
@@ -69,6 +69,7 @@ func (c *Catalogue) Resolve(ctx context.Context, p authz.Principal, provider, mo
 		StreamUsage: prov.StreamUsageOption != "omit",
 		Provider:    provider, ProviderID: prov.ID, Endpoint: ep.Name, ModelID: m.ID, Model: m.Name, UpstreamModel: m.UpstreamID,
 		BaseURL: base, Private: ep.Private, Prices: snap.Versions(m.ID),
+		Currency: ta.Currency, TenantPrices: ta.Prices[m.ID],
 		MaxOutputTokens: m.MaxOutputTokens, ContextWindow: m.ContextWindow, DefaultOutputTokens: m.DefaultOutputTokens,
 	}, nil
 }

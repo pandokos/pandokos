@@ -80,7 +80,7 @@ func TestRecordPriceSource(t *testing.T) {
 		end := pricing.Version{ID: "tenant-end", ModelID: own.ModelID, ValidFrom: hourAgo.Add(30 * time.Minute), Currency: "EUR", Source: pricing.SourceTenant, End: true}
 		got := run(t, func(g *gateway.Target) {
 			g.Currency = eur
-			g.Prices = append(g.Prices, listVersion(t, "catalogue-eur", "EUR", "override", hourAgo.Add(-time.Hour), "7", "8"))
+			g.Prices = append(g.Prices, listVersion(t, "catalogue-eur", "EUR", "override", hourAgo.Add(10*time.Minute), "7", "8")) // newer than the harness's USD price: the catalogue's version in force is the one in EUR
 			g.TenantPrices = []pricing.Version{own, end}
 		})
 		if got.status != "known" || got.currency != "EUR" || got.source != pricing.SourceCatalogue || got.version != "catalogue-eur" {
