@@ -115,7 +115,7 @@ func ratesOf(categories []string, thresholds []int64, rates []string) ([]pricing
 
 // LoadTenantAccess reads what one tenant was granted and the restriction it set, in one tenant
 // transaction. A tenant with no restriction row is unrestricted.
-func LoadTenantAccess(ctx context.Context, db *store.DB, id tenant.ID) (TenantAccess, error) {
+func LoadTenantAccess(ctx context.Context, db *store.DB, id tenant.ID, _ string) (TenantAccess, error) {
 	ta := TenantAccess{Granted: map[string]bool{}}
 	err := db.WithTenant(ctx, id, func(ctx context.Context, tx store.Tx) error {
 		q := queries.New(tx)

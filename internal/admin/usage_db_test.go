@@ -715,3 +715,60 @@ func TestUsageLimitState(t *testing.T) {
 		}
 	})
 }
+
+// TestUsagePriceSource is T-758: listUsageRecords shows the source; a row written before the column, with a
+// version, reads catalogue; for records of both sources the cost computed again from the version the
+// record names equals the recorded cost.
+func TestUsagePriceSource(t *testing.T) {
+	u := newUsageWorld(t)
+	c := u.c
+	tid := tenantID(t, c.a.ID)
+	p := c.createProvider(t, nil)
+	c.createEndpoint(t, p.Name, nil)
+	m := c.createModel(t, p.Name, map[string]any{"availability": "all"})
+	cat := decode[adminapi.PriceVersion](t, c.platform(t, "POST", "/v1/models/"+m.ID+"/prices", map[string]any{"currency": "USD",
+		"rates": []map[string]any{{"category": "input", "threshold": 0, "rate": "1"}, {"category": "output", "threshold": 0, "rate": "2"}}}), 201)
+	own := decode[adminapi.TenantPriceVersion](t, c.do(t, "POST", "/v1/tenants/"+c.a.ID+"/prices", c.ka, map[string]any{"provider": p.Name, "model": m.Name, "currency": "EUR",
+		"rates": []map[string]any{{"category": "input", "threshold": 0, "rate": "3"}, {"category": "output", "threshold": 0, "rate": "6"}}}), 201)
+
+	now := time.Now().UTC()
+	mk := func(ago time.Duration, version, currency, source, amount string) usage.Record {
+		r := testutil.ValidRecord(tid)
+		r.StartedAt = now.Add(-ago).UTC().Truncate(time.Microsecond)
+		r.ID = usage.NewID(r.StartedAt)
+		r.Usage = family.Usage{InputTokens: 1000, OutputTokens: 500, Reported: map[string]int64{"prompt_tokens": 1000, "completion_tokens": 500}}
+		r.Cost = pricing.Cost{Known: true, Amount: decimal(t, amount), Currency: currency, VersionID: version, Source: source}
+		r.CostStatus = "known"
+		return r
+	}
+	// 1000 input and 500 output tokens: the catalogue's 1 and 2 give 0.002 USD, the tenant's 3 and 6 give 0.006 EUR.
+	u.write(t,
+		mk(10*time.Minute, cat.ID, "USD", pricing.SourceCatalogue, "0.002"),
+		mk(20*time.Minute, own.ID, "EUR", pricing.SourceTenant, "0.006"),
+		mk(30*time.Minute, cat.ID, "USD", "", "0.002"), // written before the column: NULL
+	)
+	list := decode[adminapi.UsageRecordList](t, c.do(t, "GET", "/v1/tenants/"+c.a.ID+"/usage-records", c.ka, nil), 200)
+	if len(list.Items) != 3 {
+		t.Fatalf("%d records", len(list.Items))
+	}
+	for i, want := range []string{"catalogue", "tenant", "catalogue"} {
+		r := list.Items[i]
+		if r.PriceSource != want {
+			t.Errorf("record %d: price_source %q, want %q", i, r.PriceSource, want)
+		}
+		// The cost again, from the version the record names.
+		var rates map[string]string
+		switch r.PriceSource {
+		case "tenant":
+			v := decode[adminapi.TenantPriceVersion](t, c.do(t, "GET", "/v1/tenants/"+c.a.ID+"/prices/"+r.PriceVersionID, c.ka, nil), 200)
+			rates = map[string]string{"input": v.Rates[0].Rate, "output": v.Rates[1].Rate}
+		default:
+			rates = map[string]string{"input": cat.Rates[0].Rate, "output": cat.Rates[1].Rate}
+		}
+		in, out := decimal(t, rates["input"]), decimal(t, rates["output"])
+		got := in.MulInt(1000).Add(out.MulInt(500)).DivPow10(6)
+		if r.Cost.Value != got.String() {
+			t.Errorf("record %d: the cost %s computed again is %s", i, r.Cost.Value, got)
+		}
+	}
+}

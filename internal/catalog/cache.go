@@ -38,11 +38,14 @@ type loader interface {
 	access(ctx context.Context, id tenant.ID) (TenantAccess, error)
 }
 
-type dbLoader struct{ db *store.DB }
+type dbLoader struct {
+	db              *store.DB
+	defaultCurrency string
+}
 
 func (l dbLoader) snapshot(ctx context.Context) (*Snapshot, error) { return LoadSnapshot(ctx, l.db) }
 func (l dbLoader) access(ctx context.Context, id tenant.ID) (TenantAccess, error) {
-	return LoadTenantAccess(ctx, l.db, id)
+	return LoadTenantAccess(ctx, l.db, id, l.defaultCurrency)
 }
 
 // flight is one load in progress. Callers that arrive while it runs and that no invalidation has
@@ -84,7 +87,7 @@ func NewCache(o CacheOptions) (*Cache, error) {
 	if o.DB == nil {
 		return nil, errors.New("catalog: the cache needs a database")
 	}
-	return newCache(dbLoader{o.DB}, o)
+	return newCache(dbLoader{db: o.DB, defaultCurrency: o.DefaultCurrency}, o)
 }
 
 func newCache(l loader, o CacheOptions) (*Cache, error) {

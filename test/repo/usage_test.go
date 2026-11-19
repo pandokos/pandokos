@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pandokos/pandokos/internal/adminapi"
+	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/config"
 	"github.com/pandokos/pandokos/internal/gateway"
 	"github.com/pandokos/pandokos/internal/usage"
@@ -356,4 +358,253 @@ func TestFuzzTargetsAreRun(t *testing.T) {
 			t.Errorf("the Makefile runs %s, which does not exist", k)
 		}
 	}
+}
+
+// usageTables are the tables whose rows only the tenant reads (sprint 5.4, section 5.10).
+var usageTables = []string{"pandokos.usage_record", "pandokos.limit_event", "pandokos.tenant_price_version", "pandokos.tenant_price_rate"}
+
+// usageStatements returns, from the generated query files, the methods whose SQL names one of the tables.
+func usageStatements(t *testing.T) map[string]bool {
+	t.Helper()
+	out := map[string]bool{}
+	fset := token.NewFileSet()
+	files, err := filepath.Glob(filepath.Join(root(t), "internal/store/queries/*.sql.go"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no generated query files: %v", err)
+	}
+	for _, file := range files {
+		f, err := parser.ParseFile(fset, file, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sqlOf := map[string]string{}
+		for _, d := range f.Decls {
+			if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.CONST {
+				for _, sp := range g.Specs {
+					vs := sp.(*ast.ValueSpec)
+					for i, n := range vs.Names {
+						if lit, ok := vs.Values[i].(*ast.BasicLit); ok {
+							sqlOf[n.Name] = lit.Value
+						}
+					}
+				}
+			}
+		}
+		for _, d := range f.Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if !ok || fn.Recv == nil || fn.Body == nil {
+				continue
+			}
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				if id, ok := n.(*ast.Ident); ok {
+					for _, tbl := range usageTables {
+						if strings.Contains(sqlOf[id.Name], tbl) {
+							out[fn.Name.Name] = true
+						}
+					}
+				}
+				return true
+			})
+		}
+	}
+	if len(out) < 4 {
+		t.Fatalf("only %d statements on the usage tables were found: the test proves nothing", len(out))
+	}
+	return out
+}
+
+// tenantOnly are the helpers that run a function in the session of a tenant.
+var tenantOnly = map[string]bool{"WithTenant": true, "inTenant": true, "inTenantPath": true}
+
+// TestUsageStaysWithTheTenant is T-R52: the statements that read usage_record, limit_event or a price
+// table of a tenant (found by their SQL) are called only inside WithTenant, inTenant or inTenantPath
+// (or in a function only called from those), never inside Platform or inPlatform; no handler of an
+// operation with a platform permission in internal/admin reaches one; and the gateway's request line
+// builds the fields of section 5.11 in one function only.
+func TestUsageStaysWithTheTenant(t *testing.T) {
+	stmts := usageStatements(t)
+	fset := token.NewFileSet()
+
+	t.Run("calls are inside a tenant session, never a platform one", func(t *testing.T) {
+		type site struct {
+			pos      token.Position
+			fn       string // the function declaration that holds the call
+			tenant   bool   // inside a function literal passed to a tenant helper
+			platform bool   // inside a function literal passed to Platform or inPlatform
+		}
+		var sites []site
+		calledFrom := map[string][]bool{} // function name -> for each call of it, whether the call is inside a tenant literal
+		for _, file := range goFiles(t, "cmd", "internal") {
+			if p := filepath.ToSlash(file); strings.Contains(p, "internal/store/queries/") || strings.Contains(p, "internal/adminapi/") { // generated; the names of its methods are those of operations
+				continue
+			}
+			f, err := parser.ParseFile(fset, file, nil, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, d := range f.Decls {
+				fn, ok := d.(*ast.FuncDecl)
+				if !ok || fn.Body == nil {
+					continue
+				}
+				var stack []ast.Node
+				ast.Inspect(fn.Body, func(n ast.Node) bool {
+					if n == nil {
+						stack = stack[:len(stack)-1]
+						return true
+					}
+					stack = append(stack, n)
+					call, ok := n.(*ast.CallExpr)
+					if !ok {
+						return true
+					}
+					name := ""
+					switch c := call.Fun.(type) {
+					case *ast.SelectorExpr:
+						name = c.Sel.Name
+					case *ast.Ident:
+						name = c.Name
+					}
+					tenantCtx, platformCtx := false, false
+					for i := len(stack) - 2; i >= 0; i-- {
+						lit, isLit := stack[i].(*ast.FuncLit)
+						if !isLit || i == 0 {
+							continue
+						}
+						if outer, ok := stack[i-1].(*ast.CallExpr); ok {
+							helper := ""
+							switch c := outer.Fun.(type) {
+							case *ast.SelectorExpr:
+								helper = c.Sel.Name
+							case *ast.Ident:
+								helper = c.Name
+							}
+							_ = lit
+							tenantCtx = tenantCtx || tenantOnly[helper]
+							platformCtx = platformCtx || helper == "Platform" || helper == "inPlatform"
+						}
+					}
+					if stmts[name] {
+						sites = append(sites, site{fset.Position(call.Pos()), fn.Name.Name, tenantCtx, platformCtx})
+					}
+					calledFrom[name] = append(calledFrom[name], tenantCtx)
+					return true
+				})
+			}
+		}
+		if len(sites) == 0 {
+			t.Fatal("no call of a statement on the usage tables was found: the test proves nothing")
+		}
+		onlyFromTenant := func(fn string) bool {
+			calls := calledFrom[fn]
+			if len(calls) == 0 {
+				return false
+			}
+			for _, c := range calls {
+				if !c {
+					return false
+				}
+			}
+			return true
+		}
+		for _, s := range sites {
+			if s.platform {
+				t.Errorf("%s: a statement on a tenant's usage or prices is called inside a platform session", s.pos)
+			}
+			if !s.tenant && !onlyFromTenant(s.fn) {
+				t.Errorf("%s: %s calls a statement on a tenant's usage or prices outside WithTenant, inTenant and inTenantPath, and is not only called from them", s.pos, s.fn)
+			}
+		}
+	})
+
+	t.Run("no handler of a platform operation reaches one", func(t *testing.T) {
+		body := map[string]*ast.FuncDecl{}
+		for _, file := range goFiles(t, "internal/admin") {
+			f, err := parser.ParseFile(fset, file, nil, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, d := range f.Decls {
+				if fn, ok := d.(*ast.FuncDecl); ok && fn.Body != nil {
+					body[fn.Name.Name] = fn
+				}
+			}
+		}
+		reaches := func(start string) bool {
+			seen := map[string]bool{}
+			var walk func(name string) bool
+			walk = func(name string) bool {
+				fn := body[name]
+				if fn == nil || seen[name] {
+					return false
+				}
+				seen[name] = true
+				found := false
+				ast.Inspect(fn.Body, func(n ast.Node) bool {
+					call, ok := n.(*ast.CallExpr)
+					if !ok || found {
+						return !found
+					}
+					callee := ""
+					switch c := call.Fun.(type) {
+					case *ast.SelectorExpr:
+						callee = c.Sel.Name
+					case *ast.Ident:
+						callee = c.Name
+					}
+					if stmts[callee] || (callee != name && walk(callee)) {
+						found = true
+					}
+					return !found
+				})
+				return found
+			}
+			return walk(start)
+		}
+		checked := 0
+		for _, op := range adminapi.Operations {
+			perm, ok := authz.Lookup(op.Permission)
+			if !ok || perm.Scope != authz.ScopePlatform {
+				continue
+			}
+			handler := strings.ToUpper(op.ID[:1]) + op.ID[1:]
+			if body[handler] == nil {
+				t.Errorf("no handler %s for %s", handler, op.ID)
+				continue
+			}
+			checked++
+			if reaches(handler) {
+				t.Errorf("%s (a platform operation) reaches a statement on a tenant's usage, limit events or prices", handler)
+			}
+		}
+		if checked < 40 {
+			t.Errorf("%d platform handlers checked", checked)
+		}
+	})
+
+	t.Run("the request line builds the fields of 5.11 in one function", func(t *testing.T) {
+		keys := map[string]bool{`"cost"`: true, `"currency"`: true, `"reserved_tokens"`: true, `"limit"`: true, `"limit_currency"`: true, `"price_currency"`: true, `"price_source"`: true}
+		holders := map[string][]string{}
+		for _, file := range goFiles(t, "internal/gateway") {
+			f, err := parser.ParseFile(fset, file, nil, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, d := range f.Decls {
+				fn, ok := d.(*ast.FuncDecl)
+				if !ok || fn.Body == nil {
+					continue
+				}
+				ast.Inspect(fn.Body, func(n ast.Node) bool {
+					if lit, ok := n.(*ast.BasicLit); ok && keys[lit.Value] {
+						holders[fn.Name.Name] = append(holders[fn.Name.Name], lit.Value)
+					}
+					return true
+				})
+			}
+		}
+		if len(holders) != 1 {
+			t.Errorf("the log keys of section 5.11 are string literals in %d functions (%v), want the one function that builds the gated fields", len(holders), holders)
+		}
+	})
 }

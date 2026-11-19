@@ -1059,3 +1059,69 @@ func TestLimitRuleIntegrity(t *testing.T) {
 }
 
 func errOf(_ int64, err error) error { return err }
+
+// TestRuleKeysByCurrency is T-744: in both rule tables two cost rules that differ only by currency
+// coexist; the same currency twice is refused; two count rules of one subject, scope and metric are
+// still refused. The scope of a rule (a provider, a model) is part of the key as before: the same
+// metric in another scope is another rule.
+func TestRuleKeysByCurrency(t *testing.T) {
+	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
+		super := d.Super(t)
+		a := d.SeedTenant(t, "keys-a")
+		provider := d.ProviderID(t, "openai")
+		insertRule := func(provider any, metric, currency string, value int64) error {
+			_, err := super.Exec(ctx(t), `INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, provider_id, metric, limit_value, currency) VALUES ($1::uuid, 'tenant', $2::uuid, $3, $4, $5)`,
+				a.String(), provider, metric, value, currency)
+			return err
+		}
+		insertPlatform := func(tenantID, provider any, metric, currency string, value int64) error {
+			_, err := super.Exec(ctx(t), `INSERT INTO pandokos.platform_limit_rule (tenant_id, provider_id, metric, limit_value, currency) VALUES ($1::uuid, $2::uuid, $3, $4, $5)`,
+				tenantID, provider, metric, value, currency)
+			return err
+		}
+
+		t.Run("limit_rule", func(t *testing.T) {
+			for _, scope := range []any{nil, provider} {
+				if err := insertRule(scope, "cost_per_month", "USD", 1000); err != nil {
+					t.Fatal(err)
+				}
+				if err := insertRule(scope, "cost_per_month", "EUR", 2000); err != nil {
+					t.Errorf("a cost rule in another currency: %v", err)
+				}
+				if err := insertRule(scope, "cost_per_month", "USD", 3000); sqlstate(err) != uniqueViolation {
+					t.Errorf("the same currency twice: %v, want 23505", err)
+				}
+				if err := insertRule(scope, "cost_per_day", "USD", 3000); err != nil {
+					t.Errorf("another metric: %v", err)
+				}
+				if err := insertRule(scope, "requests_per_day", "", 10); err != nil {
+					t.Fatal(err)
+				}
+				if err := insertRule(scope, "requests_per_day", "", 20); sqlstate(err) != uniqueViolation {
+					t.Errorf("two count rules of one subject, scope and metric: %v, want 23505", err)
+				}
+			}
+		})
+		t.Run("platform_limit_rule", func(t *testing.T) {
+			for _, tn := range []any{a.String(), nil} {
+				for _, scope := range []any{nil, provider} {
+					if err := insertPlatform(tn, scope, "cost_per_month", "USD", 1000); err != nil {
+						t.Fatalf("tenant %v scope %v: %v", tn, scope, err)
+					}
+					if err := insertPlatform(tn, scope, "cost_per_month", "EUR", 2000); err != nil {
+						t.Errorf("tenant %v scope %v, a cost rule in another currency: %v", tn, scope, err)
+					}
+					if err := insertPlatform(tn, scope, "cost_per_month", "USD", 3000); sqlstate(err) != uniqueViolation {
+						t.Errorf("tenant %v scope %v, the same currency twice: %v, want 23505", tn, scope, err)
+					}
+					if err := insertPlatform(tn, scope, "tokens_per_month", "", 10); err != nil {
+						t.Fatalf("tenant %v scope %v: %v", tn, scope, err)
+					}
+					if err := insertPlatform(tn, scope, "tokens_per_month", "", 20); sqlstate(err) != uniqueViolation {
+						t.Errorf("tenant %v scope %v, two count rules of one scope and metric: %v, want 23505", tn, scope, err)
+					}
+				}
+			}
+		})
+	})
+}

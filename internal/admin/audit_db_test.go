@@ -14,6 +14,7 @@ import (
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/authz"
+	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/test/apitest"
 	"github.com/pandokos/pandokos/test/fixtures"
 	"github.com/pandokos/pandokos/test/testutil"
@@ -114,6 +115,19 @@ type fixt struct {
 	dormant  adminapi.ServiceAccount
 	spare    adminapi.Credential // an active credential that is not the default
 	off      adminapi.Credential // a disabled one
+
+	cat *apitest.Catalogue // the catalogue of the price list steps (sprint 5.4), created by catalogue
+}
+
+// catalogue creates, once, a provider with a model every tenant may use. It writes platform audit rows,
+// so a test that watches the audit log calls it before it marks the rows it has seen.
+func (f *fixt) catalogue(t *testing.T) apitest.Catalogue {
+	t.Helper()
+	if f.cat == nil {
+		c := f.w.api.Catalog(t)
+		f.cat = &c
+	}
+	return *f.cat
 }
 
 func newFixtures(t *testing.T, opts ...func(*admin.Options)) *fixt {
@@ -172,6 +186,9 @@ func (f *fixt) steps(t *testing.T) []step {
 	exp := time.Now().Add(6 * time.Hour).UTC().Truncate(time.Second)
 	from := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
 	until := from.Add(24 * time.Hour)
+	cat := f.catalogue(t)
+	priceStart := time.Now().Add(48 * time.Hour).UTC().Truncate(time.Second)
+	var newPrice, otherPrice adminapi.TenantPriceVersion
 	var newSA adminapi.ServiceAccount
 	var newKey adminapi.VirtualKeyCreated
 	var newPlat adminapi.PlatformKeyCreated
@@ -462,6 +479,47 @@ func (f *fixt) steps(t *testing.T) []step {
 				return []auditRow{f.tenantActor(auditRow{Action: "tenant.time_zone_update", ResourceType: "tenant", ResourceID: tid, RequestID: rid(r),
 					Detail: map[string]any{"from": "", "to": "Europe/Rome", "in_force": z.InForce, "effective_from": effective}}, tid)}
 			}},
+		// Sprint 5.4: the tenant's price lists and its active currency (section 5.9).
+		{"createPriceListVersion",
+			func() *apitest.Response {
+				return w.api.Do(t, "POST", "/v1/tenants/"+tid+"/prices", w.adminKey, map[string]any{"provider": cat.Provider.Name, "model": cat.All.Name, "currency": "EUR",
+					"valid_from": rfc(priceStart), "note": "negotiated", "rates": []map[string]any{{"category": "input", "threshold": 0, "rate": "2.50"}, {"category": "output", "threshold": 0, "rate": "10"}}}, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				decode(r, &newPrice)
+				return []auditRow{f.tenantActor(auditRow{Action: "tenant_price.create", ResourceType: "tenant_price_version", ResourceID: newPrice.ID, RequestID: rid(r),
+					Detail: map[string]any{"provider": cat.Provider.Name, "model": cat.All.Name, "model_id": cat.All.ID, "currency": "EUR", "kind": "price", "valid_from": rfc(priceStart),
+						"rates": []any{map[string]any{"category": "input", "threshold": float64(0), "rate": "2.5"}, map[string]any{"category": "output", "threshold": float64(0), "rate": "10"}}}}, tid)}
+			}},
+		{"setActiveCurrency", // the list of the step above makes EUR acceptable; the change is pending
+			func() *apitest.Response {
+				return w.api.Do(t, "PUT", "/v1/tenants/"+tid+"/active-currency", w.adminKey, map[string]any{"currency": "EUR"}, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				var c adminapi.ActiveCurrency
+				decode(r, &c)
+				var effective any
+				if c.EffectiveFrom != nil {
+					effective = rfc(c.EffectiveFrom.UTC())
+				}
+				return []auditRow{f.tenantActor(auditRow{Action: "tenant.active_currency_update", ResourceType: "tenant", ResourceID: tid, RequestID: rid(r),
+					Detail: map[string]any{"from": "", "to": "EUR", "in_force": c.InForce, "effective_from": effective, "inactive_limits": float64(0)}}, tid)}
+			}},
+		{"deletePriceListVersion",
+			func() *apitest.Response {
+				// A second scheduled version, seeded without an audit row, which the deletion removes; the
+				// first stays, so that the tenant keeps a list in EUR.
+				id, err := tenant.ParseID(tid)
+				if err != nil {
+					t.Fatal(err)
+				}
+				otherPrice.ID = w.api.DB.SeedTenantPrice(t, id, "EUR", cat.Provider.Name, cat.All.Name, priceStart.Add(time.Hour))
+				return w.api.Do(t, "DELETE", "/v1/tenants/"+tid+"/prices/"+otherPrice.ID, w.adminKey, nil, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				return []auditRow{f.tenantActor(auditRow{Action: "tenant_price.delete", ResourceType: "tenant_price_version", ResourceID: otherPrice.ID, RequestID: rid(r),
+					Detail: map[string]any{"provider": cat.Provider.Name, "model": cat.All.Name, "model_id": cat.All.ID, "currency": "EUR", "kind": "price", "valid_from": rfc(priceStart.Add(time.Hour))}}, tid)}
+			}},
 	}
 }
 
@@ -470,6 +528,7 @@ func (f *fixt) steps(t *testing.T) []step {
 func TestEveryChangeIsAudited(t *testing.T) {
 	f := newFixtures(t)
 	api := f.w.api
+	f.catalogue(t) // writes platform audit rows: before the rows that exist are marked seen
 	seen := seenIDs(t, api)
 	steps := f.steps(t)
 
@@ -596,10 +655,30 @@ func TestEveryChangeIsAudited(t *testing.T) {
 func TestAuditIsAtomic(t *testing.T) {
 	f := newFixtures(t)
 	api := f.w.api
+	w := f.w
 	tid := f.w.tenant.ID
 	exp := time.Now().Add(6 * time.Hour).UTC().Truncate(time.Second)
+	cat := f.catalogue(t)
+	seededPrice := func() string {
+		id, err := tenant.ParseID(tid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return w.api.DB.SeedTenantPrice(t, id, "EUR", cat.Provider.Name, cat.All.Name, time.Now().Add(72*time.Hour))
+	}
+	scheduled := seededPrice() // for the deletion, and a list in EUR for the change of the currency
 
 	calls := map[string]func() *apitest.Response{
+		"createPriceListVersion": func() *apitest.Response {
+			return api.Do(t, "POST", "/v1/tenants/"+tid+"/prices", f.w.adminKey, map[string]any{"provider": cat.Provider.Name, "model": cat.All.Name, "currency": "EUR",
+				"valid_from": rfc(time.Now().Add(96 * time.Hour)), "rates": []map[string]any{{"category": "input", "threshold": 0, "rate": "1"}}}, nil)
+		},
+		"deletePriceListVersion": func() *apitest.Response {
+			return api.Do(t, "DELETE", "/v1/tenants/"+tid+"/prices/"+scheduled, f.w.adminKey, nil, nil)
+		},
+		"setActiveCurrency": func() *apitest.Response {
+			return api.Do(t, "PUT", "/v1/tenants/"+tid+"/active-currency", f.w.adminKey, map[string]any{"currency": "EUR"}, nil)
+		},
 		"createTenant": func() *apitest.Response {
 			return api.Do(t, "POST", "/v1/tenants", api.PlatformKey(), map[string]any{"name": "atomic-new"}, nil)
 		},

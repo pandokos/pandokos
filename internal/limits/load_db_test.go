@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pandokos/pandokos/internal/limits"
+	"github.com/pandokos/pandokos/internal/pricing"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/test/dbtest"
 )
@@ -34,7 +35,7 @@ func TestLoadRules(t *testing.T) {
 		d.SeedLimitRule(t, b, "key", kb, "concurrent_requests", 9)
 		d.SeedLimitRule(t, b, "tenant", "", "concurrent_requests", 4)
 
-		got, err := limits.LoadRules(ctx, gw, a, zonesOf(t))
+		got, err := limits.LoadRules(ctx, gw, a, zonesOf(t), "USD")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -72,7 +73,7 @@ func TestLoadRules(t *testing.T) {
 			t.Error("B's platform row or tenant rule is in A's rules")
 		}
 
-		gotB, err := limits.LoadRules(ctx, gw, b, zonesOf(t))
+		gotB, err := limits.LoadRules(ctx, gw, b, zonesOf(t), "USD")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -83,7 +84,7 @@ func TestLoadRules(t *testing.T) {
 
 		t.Run("a tenant without rules gets the defaults", func(t *testing.T) {
 			c := d.SeedTenant(t, "load-c")
-			set, err := limits.LoadRules(ctx, gw, c, zonesOf(t))
+			set, err := limits.LoadRules(ctx, gw, c, zonesOf(t), "USD")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -93,7 +94,7 @@ func TestLoadRules(t *testing.T) {
 		})
 
 		t.Run("the load runs as the gateway role, in the tenant's session", func(t *testing.T) {
-			if _, err := limits.LoadRules(ctx, d.Open(t, store.RoleWorker), a, zonesOf(t)); err == nil {
+			if _, err := limits.LoadRules(ctx, d.Open(t, store.RoleWorker), a, zonesOf(t), "USD"); err == nil {
 				t.Error("the worker role loaded rules: the load does not depend on the grants of the gateway role")
 			}
 		})
@@ -120,7 +121,7 @@ func TestLoadRules(t *testing.T) {
 				}
 			}
 			insert(1, limits.MaxRulesPerTenant)
-			set, err := limits.LoadRules(ctx, gw, c, zonesOf(t))
+			set, err := limits.LoadRules(ctx, gw, c, zonesOf(t), "USD")
 			if err != nil {
 				t.Fatalf("%d rules: %v", limits.MaxRulesPerTenant, err)
 			}
@@ -129,7 +130,7 @@ func TestLoadRules(t *testing.T) {
 				t.Error("the last rule is missing")
 			}
 			insert(limits.MaxRulesPerTenant+1, limits.MaxRulesPerTenant+1)
-			if _, err := limits.LoadRules(ctx, gw, c, zonesOf(t)); err == nil {
+			if _, err := limits.LoadRules(ctx, gw, c, zonesOf(t), "USD"); err == nil {
 				t.Errorf("%d rules loaded", limits.MaxRulesPerTenant+1)
 			}
 		})
@@ -152,6 +153,7 @@ func TestLoadRulesColumns(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		a := d.SeedTenant(t, "cols-a")
+		d.SetTenantCurrency(t, a, "EUR", "", time.Time{}) // sprint 5.4: a cost limit applies in the active currency only; the budgets below are in EUR
 		gw := d.Open(t, store.RoleGateway)
 		cal, err := limits.NewCalendar(time.UTC)
 		if err != nil {
@@ -171,7 +173,7 @@ func TestLoadRulesColumns(t *testing.T) {
 		d.SeedLimitRule(t, a, "key", k1, "requests_per_day", 7, dbtest.LimitOptions{Provider: "anthropic"})
 		d.SeedLimitRule(t, a, "service_account", sa1, "requests_per_month", 70)
 
-		set, err := limits.LoadRules(ctx, gw, a, zonesOf(t))
+		set, err := limits.LoadRules(ctx, gw, a, zonesOf(t), "USD")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -223,7 +225,7 @@ func TestLoadRulesColumns(t *testing.T) {
 			}
 			d.SeedLimitRule(t, c, "tenant", "", "tokens_per_hour", 10)
 			d.SeedLimitRule(t, c, "tenant", "", "tokens_per_day", 20)
-			set, err := limits.LoadRules(ctx, gw, c, zonesOf(t))
+			set, err := limits.LoadRules(ctx, gw, c, zonesOf(t), "USD")
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}
@@ -270,7 +272,7 @@ func TestLoadRulesTyped(t *testing.T) {
 		d.SeedLimitRule(t, a, "key", mapping, "tokens_per_day", 77, dbtest.LimitOptions{Provider: "anthropic"})
 
 		t.Run("identifiers, names and the key ID through the join", func(t *testing.T) {
-			set, err := limits.LoadRules(ctx, gw, a, zones)
+			set, err := limits.LoadRules(ctx, gw, a, zones, "USD")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -302,7 +304,7 @@ func TestLoadRulesTyped(t *testing.T) {
 			}
 			// Another tenant's loader sees none of it.
 			b := d.SeedTenant(t, "typed-b")
-			other, err := limits.LoadRules(ctx, gw, b, zones)
+			other, err := limits.LoadRules(ctx, gw, b, zones, "USD")
 			if err != nil || len(other.For(limits.Query{KeyID: keyID, ServiceAccountID: sa, ProviderID: prov, ModelID: model, Start: start})) > 1 {
 				t.Errorf("tenant B's rules: %v %v", other, err)
 			}
@@ -310,7 +312,7 @@ func TestLoadRulesTyped(t *testing.T) {
 
 		t.Run("no zone: the default zone, no previous", func(t *testing.T) {
 			tn := d.SeedTenant(t, "typed-none")
-			set, err := limits.LoadRules(ctx, gw, tn, zones)
+			set, err := limits.LoadRules(ctx, gw, tn, zones, "USD")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -321,7 +323,7 @@ func TestLoadRulesTyped(t *testing.T) {
 		t.Run("a zone of its own", func(t *testing.T) {
 			tn := d.SeedTenant(t, "typed-zone")
 			d.SetTenantZone(t, tn, "Europe/Rome", "", time.Time{})
-			set, err := limits.LoadRules(ctx, gw, tn, zones)
+			set, err := limits.LoadRules(ctx, gw, tn, zones, "USD")
 			if c := set.Calendar; err != nil || zoneOf(c.Current) != "Europe/Rome" || c.Previous != nil {
 				t.Errorf("calendar %s -> %s (%v), want Europe/Rome only", zoneOf(c.Previous), zoneOf(c.Current), err)
 			}
@@ -330,7 +332,7 @@ func TestLoadRulesTyped(t *testing.T) {
 			tn := d.SeedTenant(t, "typed-pending")
 			from := time.Now().UTC().Add(10 * 24 * time.Hour).Truncate(time.Microsecond)
 			d.SetTenantZone(t, tn, "Asia/Tokyo", "", from)
-			set, err := limits.LoadRules(ctx, gw, tn, zones)
+			set, err := limits.LoadRules(ctx, gw, tn, zones, "USD")
 			c := set.Calendar
 			if err != nil || zoneOf(c.Current) != "Asia/Tokyo" || zoneOf(c.Previous) != "UTC" || !c.From.Equal(from) {
 				t.Fatalf("calendar %s -> %s from %v (%v), want UTC until %s, then Asia/Tokyo", zoneOf(c.Previous), zoneOf(c.Current), c.From, err, from)
@@ -343,7 +345,7 @@ func TestLoadRulesTyped(t *testing.T) {
 			tn := d.SeedTenant(t, "typed-effective")
 			from := time.Now().UTC().Add(-24 * time.Hour).Truncate(time.Microsecond)
 			d.SetTenantZone(t, tn, "Europe/Rome", "Asia/Tokyo", from)
-			set, err := limits.LoadRules(ctx, gw, tn, zones)
+			set, err := limits.LoadRules(ctx, gw, tn, zones, "USD")
 			c := set.Calendar
 			if err != nil || zoneOf(c.Current) != "Europe/Rome" || zoneOf(c.Previous) != "Asia/Tokyo" || !c.From.Equal(from) {
 				t.Fatalf("calendar %s -> %s from %v (%v)", zoneOf(c.Previous), zoneOf(c.Current), c.From, err)
@@ -355,7 +357,7 @@ func TestLoadRulesTyped(t *testing.T) {
 		t.Run("an unknown zone is a load error", func(t *testing.T) {
 			tn := d.SeedTenant(t, "typed-unknown")
 			d.SetTenantZone(t, tn, "Mars/Olympus", "", time.Time{})
-			if set, err := limits.LoadRules(ctx, gw, tn, zones); err == nil {
+			if set, err := limits.LoadRules(ctx, gw, tn, zones, "USD"); err == nil {
 				t.Errorf("rules loaded with a zone the binary does not know: %s", zoneOf(set.Calendar.Current))
 			}
 		})
@@ -387,4 +389,102 @@ func zonesOf(tb testing.TB) *limits.Zones {
 		tb.Fatalf("NewZones: %v", err)
 	}
 	return z
+}
+
+// TestLoadRulesCurrency is T-729: the loader reads the active currency of the tenant in the transaction
+// of the rules and resolves the default; both tables hold two currencies for one scope and metric.
+func TestLoadRulesCurrency(t *testing.T) {
+	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		gw := d.Open(t, store.RoleGateway)
+		zones := zonesOf(t)
+		start := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+		change := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
+
+		t.Run("the default is resolved", func(t *testing.T) {
+			tn := d.SeedTenant(t, "cur-default")
+			for _, def := range []string{"USD", "CHF"} {
+				set, err := limits.LoadRules(ctx, gw, tn, zones, def)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if want := (pricing.Active{Current: def}); set.Currency != want {
+					t.Errorf("default %s: currency %+v, want %+v", def, set.Currency, want)
+				}
+			}
+		})
+		t.Run("a currency of its own", func(t *testing.T) {
+			tn := d.SeedTenant(t, "cur-own")
+			d.SetTenantCurrency(t, tn, "EUR", "", time.Time{})
+			set, err := limits.LoadRules(ctx, gw, tn, zones, "USD")
+			if want := (pricing.Active{Current: "EUR"}); err != nil || set.Currency != want {
+				t.Errorf("currency %+v (%v), want %+v", set.Currency, err, want)
+			}
+		})
+		t.Run("a pending change, the previous one default", func(t *testing.T) {
+			tn := d.SeedTenant(t, "cur-pending")
+			d.SetTenantCurrency(t, tn, "EUR", "USD", change)
+			set, err := limits.LoadRules(ctx, gw, tn, zones, "GBP")
+			want := pricing.Active{Current: "EUR", Previous: "USD", From: change}
+			if err != nil || set.Currency.Current != want.Current || set.Currency.Previous != want.Previous || !set.Currency.From.Equal(change) {
+				t.Errorf("currency %+v (%v), want %+v", set.Currency, err, want)
+			}
+		})
+		t.Run("a pending change from the default", func(t *testing.T) {
+			tn := d.SeedTenant(t, "cur-pending-default")
+			d.SetTenantCurrency(t, tn, "EUR", "", change) // previous '' is the default of the installation
+			set, err := limits.LoadRules(ctx, gw, tn, zones, "GBP")
+			if err != nil || set.Currency.Current != "EUR" || set.Currency.Previous != "GBP" || !set.Currency.From.Equal(change) {
+				t.Errorf("currency %+v (%v), want EUR from GBP at %v", set.Currency, err, change)
+			}
+		})
+		t.Run("a change that took effect", func(t *testing.T) {
+			tn := d.SeedTenant(t, "cur-took-effect")
+			d.SetTenantCurrency(t, tn, "EUR", "USD", time.Now().Add(-24*time.Hour))
+			set, err := limits.LoadRules(ctx, gw, tn, zones, "USD")
+			if err != nil || set.Currency.At(time.Now()) != "EUR" || set.Currency.At(time.Now().Add(-48*time.Hour)) != "USD" {
+				t.Errorf("currency %+v (%v)", set.Currency, err)
+			}
+		})
+		t.Run("both tables with two currencies", func(t *testing.T) {
+			tn := d.SeedTenant(t, "cur-rules")
+			d.SeedPlatformLimit(t, &tn, "cost_per_month", 9_000_000, dbtest.LimitOptions{Currency: "USD"})
+			d.SeedPlatformLimit(t, &tn, "cost_per_month", 8_000_000, dbtest.LimitOptions{Currency: "EUR"})
+			d.SeedLimitRule(t, tn, "tenant", "", "cost_per_month", 5_000_000, dbtest.LimitOptions{Currency: "USD"})
+			d.SeedLimitRule(t, tn, "tenant", "", "cost_per_month", 4_000_000, dbtest.LimitOptions{Currency: "EUR"})
+			q := limits.Query{Start: start}
+			cal := mustUTC(t)
+
+			set, err := limits.LoadRules(ctx, gw, tn, zones, "USD")
+			if err != nil {
+				t.Fatal(err)
+			}
+			set.Calendar = limits.TenantCalendar{Current: cal}
+			got := set.For(q)
+			if len(got) != 1 || got[0].Currency != "USD" || got[0].Max != 5_000_000 {
+				t.Errorf("a tenant in USD: %+v, want the one counter in USD with the smaller value 5,000,000", got)
+			}
+			d.SetTenantCurrency(t, tn, "EUR", "", time.Time{})
+			set, err = limits.LoadRules(ctx, gw, tn, zones, "USD")
+			if err != nil {
+				t.Fatal(err)
+			}
+			set.Calendar = limits.TenantCalendar{Current: cal}
+			if got = set.For(q); len(got) != 1 || got[0].Currency != "EUR" || got[0].Max != 4_000_000 {
+				t.Errorf("a tenant in EUR: %+v, want the counter in EUR with 4,000,000", got)
+			}
+			// With the change pending, the rules in force depend on the instant of the request.
+			d.SetTenantCurrency(t, tn, "EUR", "USD", change)
+			set, err = limits.LoadRules(ctx, gw, tn, zones, "USD")
+			if err != nil {
+				t.Fatal(err)
+			}
+			set.Calendar = limits.TenantCalendar{Current: cal}
+			before, after := set.For(limits.Query{Start: change.Add(-time.Second)}), set.For(limits.Query{Start: change})
+			if len(before) != 1 || before[0].Currency != "USD" || len(after) != 1 || after[0].Currency != "EUR" {
+				t.Errorf("before %+v, after %+v", before, after)
+			}
+		})
+	})
 }

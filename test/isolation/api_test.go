@@ -2,6 +2,7 @@ package isolation
 
 import (
 	"encoding/json"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -19,6 +20,7 @@ import (
 	"github.com/pandokos/pandokos/internal/gateway"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/telemetry"
+	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/test/apitest"
 	"github.com/pandokos/pandokos/test/fakeprovider"
 	"github.com/pandokos/pandokos/test/fixtures"
@@ -45,6 +47,9 @@ type side struct {
 
 	// The limit rules of sprint 5.2, seeded as superuser: a rule of the side and a platform rule for it.
 	limitRule, platformLimit string
+
+	// The price of sprint 5.4: a scheduled version of the side's own price list, seeded as superuser.
+	tenantPrice string
 }
 
 type apiWorld struct {
@@ -119,6 +124,7 @@ func newAPIWorld(t *testing.T) *apiWorld {
 	platformIssuer := w.api.SeedPlatformIssuer(t)
 	for _, s := range []*side{&w.a, &w.b} {
 		w.api.SeedPlatformIssuerTenant(t, platformIssuer, s.tenant.ID)
+		s.tenantPrice = w.seedTenantPrice(t, *s)
 		s.platformIssuer = platformIssuer
 		s.provider, s.endpoint, s.model, s.priceVersion, s.priceImport = w.cat.Provider.Name, w.cat.Endpoint.Name, w.cat.All.ID, pv.ID, imp.ID
 	}
@@ -129,7 +135,19 @@ func (s side) params() apitest.Params {
 	return apitest.Params{Tenant: s.tenant.ID, ServiceAccount: s.sa.ID, VirtualKey: s.key.Key.ID, PlatformKey: "pabcdefghijklmnop", Credential: s.cred.ID,
 		Provider: s.provider, Endpoint: s.endpoint, Model: s.model, PriceVersion: s.priceVersion, PriceImport: s.priceImport,
 		TokenIssuer: s.tokenIssuer, SubjectMapping: s.mapping, PlatformIssuer: s.platformIssuer,
-		LimitRule: s.limitRule, PlatformLimit: s.platformLimit}
+		LimitRule: s.limitRule, PlatformLimit: s.platformLimit, TenantPrice: s.tenantPrice}
+}
+
+// seedTenantPrice seeds a scheduled version of the side's price list for the model of everybody, with a
+// start of its own (a start is unique per list and model), and returns its ID.
+func (w *apiWorld) seedTenantPrice(t *testing.T, s side) string {
+	t.Helper()
+	id, err := tenant.ParseID(s.tenant.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now().Add(time.Hour + time.Duration(rand.Int63n(int64(24*time.Hour*365))))
+	return w.api.DB.SeedTenantPrice(t, id, "EUR", w.cat.Provider.Name, w.cat.All.Name, start)
 }
 
 // fresh is params with a credential, and a model, of its own when the operation names one: the
@@ -161,6 +179,11 @@ func (w *apiWorld) fresh(t *testing.T, s side, op adminapi.Operation) apitest.Pa
 	if strings.HasPrefix(op.Path, "/v1/platform-issuers") && strings.Contains(op.Path, "{issuer}") {
 		p.PlatformIssuer = w.api.SeedPlatformIssuer(t)
 		w.api.SeedPlatformIssuerTenant(t, p.PlatformIssuer, s.tenant.ID)
+	}
+	// The operations of sprint 5.4 that name a price version get a scheduled one of their own (a
+	// delete removes it).
+	if strings.Contains(op.Path, "{price}") {
+		p.TenantPrice = w.seedTenantPrice(t, s)
 	}
 	return p
 }
@@ -306,7 +329,7 @@ func TestCrossTenantIndistinguishable(t *testing.T) {
 			missing := apitest.Params{Tenant: randomUUID(t, w), ServiceAccount: randomUUID(t, w), VirtualKey: randomKeyID(t), PlatformKey: "pabcdefghijklmnoq", Credential: randomUUID(t, w),
 				Provider: "synthetic-missing", Endpoint: "ep-missing", Model: randomUUID(t, w), PriceVersion: randomUUID(t, w), PriceImport: randomUUID(t, w),
 				TokenIssuer: randomUUID(t, w), SubjectMapping: randomUUID(t, w), PlatformIssuer: randomUUID(t, w),
-				LimitRule: randomUUID(t, w), PlatformLimit: randomUUID(t, w)}
+				LimitRule: randomUUID(t, w), PlatformLimit: randomUUID(t, w), TenantPrice: randomUUID(t, w)}
 			cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
 			if op.ID == "createTenant" {
 				cm.Body = cr.Body
@@ -332,9 +355,9 @@ func TestCrossTenantIndistinguishable(t *testing.T) {
 			real, missing := w.a.params(), w.a.params()
 			real.Tenant, missing.Tenant = w.b.tenant.ID, randomUUID(t, w)
 			real.ServiceAccount, real.VirtualKey, real.Credential = w.b.sa.ID, w.b.key.Key.ID, w.b.cred.ID
-			real.TokenIssuer, real.SubjectMapping, real.LimitRule = w.b.tokenIssuer, w.b.mapping, w.b.limitRule
+			real.TokenIssuer, real.SubjectMapping, real.LimitRule, real.TenantPrice = w.b.tokenIssuer, w.b.mapping, w.b.limitRule, w.b.tenantPrice
 			missing.ServiceAccount, missing.VirtualKey, missing.Credential = randomUUID(t, w), randomKeyID(t), randomUUID(t, w)
-			missing.TokenIssuer, missing.SubjectMapping, missing.LimitRule = randomUUID(t, w), randomUUID(t, w), randomUUID(t, w)
+			missing.TokenIssuer, missing.SubjectMapping, missing.LimitRule, missing.TenantPrice = randomUUID(t, w), randomUUID(t, w), randomUUID(t, w), randomUUID(t, w)
 			cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
 			r1 := w.api.Do(t, cr.Method, cr.Path, w.a.adminKey, cr.Body, nil)
 			r2 := w.api.Do(t, cm.Method, cm.Path, w.a.adminKey, cm.Body, nil)
@@ -353,12 +376,12 @@ func TestCrossTenantIndistinguishable(t *testing.T) {
 		// A second parameter: in A's own tenant, B's resource against a missing one.
 		if strings.Contains(op.Path, "{service_account}") || strings.Contains(op.Path, "{credential}") || (strings.Contains(op.Path, "{key}") && !strings.HasPrefix(op.Path, "/v1/platform-keys")) ||
 			strings.Contains(op.Path, "{mapping}") || (strings.Contains(op.Path, "{issuer}") && strings.HasPrefix(op.Path, "/v1/tenants/")) ||
-			(strings.Contains(op.Path, "{rule}") && strings.HasPrefix(op.Path, "/v1/tenants/")) {
+			(strings.Contains(op.Path, "{rule}") && strings.HasPrefix(op.Path, "/v1/tenants/")) || strings.Contains(op.Path, "{price}") {
 			real, missing := w.a.params(), w.a.params()
 			real.ServiceAccount, real.VirtualKey, real.Credential = w.b.sa.ID, w.b.key.Key.ID, w.b.cred.ID
-			real.TokenIssuer, real.SubjectMapping, real.LimitRule = w.b.tokenIssuer, w.b.mapping, w.b.limitRule
+			real.TokenIssuer, real.SubjectMapping, real.LimitRule, real.TenantPrice = w.b.tokenIssuer, w.b.mapping, w.b.limitRule, w.b.tenantPrice
 			missing.ServiceAccount, missing.VirtualKey, missing.Credential = randomUUID(t, w), randomKeyID(t), randomUUID(t, w)
-			missing.TokenIssuer, missing.SubjectMapping, missing.LimitRule = randomUUID(t, w), randomUUID(t, w), randomUUID(t, w)
+			missing.TokenIssuer, missing.SubjectMapping, missing.LimitRule, missing.TenantPrice = randomUUID(t, w), randomUUID(t, w), randomUUID(t, w), randomUUID(t, w)
 			cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
 			r1 := w.api.Do(t, cr.Method, cr.Path, w.a.adminKey, cr.Body, nil)
 			r2 := w.api.Do(t, cm.Method, cm.Path, w.a.adminKey, cm.Body, nil)
@@ -538,15 +561,15 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 		// And none in B.
 		p := w.a.params()
 		p.Tenant, p.ServiceAccount, p.VirtualKey, p.Credential = w.b.tenant.ID, w.b.sa.ID, w.b.key.Key.ID, w.b.cred.ID
-		p.TokenIssuer, p.SubjectMapping, p.LimitRule = w.b.tokenIssuer, w.b.mapping, w.b.limitRule
+		p.TokenIssuer, p.SubjectMapping, p.LimitRule, p.TenantPrice = w.b.tokenIssuer, w.b.mapping, w.b.limitRule, w.b.tenantPrice
 		other := apitest.CallFor(t, op, p)
 		if r := w.api.Do(t, other.Method, other.Path, w.a.adminKey, other.Body, nil); r.Status != 404 {
 			t.Errorf("%s in B: status %d\n%s", op.ID, r.Status, r.Body)
 		}
 		n++
 	}
-	if n != 45 {
-		t.Errorf("%d tenant operations, want 45 (24, the two of sprint 3.3, the ten of sprint 4.1, the seven of sprint 5.2 and the two of sprint 5.3)", n)
+	if n != 52 {
+		t.Errorf("%d tenant operations, want 52 (24, the two of sprint 3.3, the ten of sprint 4.1, the seven of sprint 5.2, the two of sprint 5.3 and the seven of sprint 5.4)", n)
 	}
 	if _, err := c.GetTenant(ctx(t), adminapi.GetTenantInput{Tenant: w.b.tenant.ID}); err == nil {
 		t.Error("a tenant key read a tenant")
@@ -579,7 +602,7 @@ func TestPlatformKeyHasNoTenantPermission(t *testing.T) {
 		}
 		real, missing := w.a.params(), w.a.params()
 		missing.Tenant, missing.ServiceAccount, missing.VirtualKey, missing.Credential = randomUUID(t, w), randomUUID(t, w), randomKeyID(t), randomUUID(t, w)
-		missing.TokenIssuer, missing.SubjectMapping = randomUUID(t, w), randomUUID(t, w)
+		missing.TokenIssuer, missing.SubjectMapping, missing.TenantPrice = randomUUID(t, w), randomUUID(t, w), randomUUID(t, w)
 		cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
 		r1 := w.api.Do(t, cr.Method, cr.Path, w.api.PlatformKey(), cr.Body, nil)
 		r2 := w.api.Do(t, cm.Method, cm.Path, w.api.PlatformKey(), cm.Body, nil)
@@ -747,4 +770,62 @@ func scalarOf(t *testing.T, api *apitest.API, sql string, args ...any) string {
 		t.Fatalf("%s: %v", sql, err)
 	}
 	return s
+}
+
+// priceListOperations are the seven operations of sprint 5.4.
+var priceListOperations = []string{"listPriceLists", "listPriceListVersions", "createPriceListVersion", "getPriceListVersion", "deletePriceListVersion", "getActiveCurrency", "setActiveCurrency"}
+
+// TestTenantPriceAPI is T-748: a key of tenant B on the seven operations of A gets the 404 of a tenant
+// that does not exist; a price ID of B in A's path is the 404 of an unknown ID.
+func TestTenantPriceAPI(t *testing.T) {
+	w := newAPIWorld(t)
+	byID := map[string]adminapi.Operation{}
+	for _, op := range adminapi.Operations {
+		byID[op.ID] = op
+	}
+	rowsOfA := w.api.SnapshotTenant(t, w.a.tenant.ID)
+	for _, id := range priceListOperations {
+		op, ok := byID[id]
+		if !ok {
+			t.Errorf("the operation %s is not in the specification", id)
+			continue
+		}
+		t.Run(id+" on another tenant", func(t *testing.T) {
+			real, missing := w.fresh(t, w.b, op), w.fresh(t, w.b, op)
+			real.Tenant, missing.Tenant = w.a.tenant.ID, randomUUID(t, w)
+			real.TenantPrice, missing.TenantPrice = w.a.tenantPrice, randomUUID(t, w)
+			cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
+			r1 := w.api.Do(t, cr.Method, cr.Path, w.b.adminKey, cr.Body, nil)
+			r2 := w.api.Do(t, cm.Method, cm.Path, w.b.adminKey, cm.Body, nil)
+			if r1.Status != 404 || r2.Status != 404 || !strings.Contains(string(r1.Body), `"code":"not_found"`) {
+				t.Errorf("B's key on A: %d, on a missing tenant: %d, want 404 not_found\n%s", r1.Status, r2.Status, r1.Body)
+			}
+			if normalize(t, r1) != normalize(t, r2) {
+				t.Errorf("another tenant and a missing tenant differ:\n%s\n%s", normalize(t, r1), normalize(t, r2))
+			}
+			if after := w.api.SnapshotTenant(t, w.a.tenant.ID); after != rowsOfA {
+				t.Fatalf("%s changed a row of tenant A", id)
+			}
+		})
+		if !strings.Contains(op.Path, "{price}") {
+			continue
+		}
+		t.Run(id+" with a price of another tenant", func(t *testing.T) {
+			real, missing := w.fresh(t, w.a, op), w.fresh(t, w.a, op)
+			real.TenantPrice, missing.TenantPrice = w.b.tenantPrice, randomUUID(t, w)
+			cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
+			rowsOfB := w.api.SnapshotTenant(t, w.b.tenant.ID)
+			r1 := w.api.Do(t, cr.Method, cr.Path, w.a.adminKey, cr.Body, nil)
+			r2 := w.api.Do(t, cm.Method, cm.Path, w.a.adminKey, cm.Body, nil)
+			if r1.Status != 404 || r2.Status != 404 {
+				t.Errorf("B's price in A's path: %d, an unknown one: %d, want 404\n%s", r1.Status, r2.Status, r1.Body)
+			}
+			if normalize(t, r1) != normalize(t, r2) {
+				t.Errorf("B's price and an unknown one differ:\n%s\n%s", normalize(t, r1), normalize(t, r2))
+			}
+			if after := w.api.SnapshotTenant(t, w.b.tenant.ID); after != rowsOfB {
+				t.Fatalf("%s changed a row of tenant B", id)
+			}
+		})
+	}
 }

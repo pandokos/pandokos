@@ -558,3 +558,92 @@ func TestUsageLimitState(t *testing.T) {
 		}
 	})
 }
+
+// TestUsagePriceSource is T-745: the gateway role inserts `catalogue`, `tenant` (each with a price
+// version) and NULL; a source without a version and another value are refused, in an existing partition
+// and in a partition created later; the row is still append-only.
+func TestUsagePriceSource(t *testing.T) {
+	d := dbtest.NewMigrated(t)
+	a := d.SeedTenant(t, "source-a")
+	super := d.Super(t)
+	gateway := d.Connect(t, "gateway")
+	sessA := sessions(a)[0]
+	version := "0192f0f0-0000-7000-8000-0000000000c1"
+
+	insert := func(started time.Time, source, versionID any) error {
+		_, err := execIn(t, gateway, sessA, `INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind, principal_id,
+				provider, api_family, operation, outcome, duration_ms, input_source, output_source, cost_status, price_version_id, price_source)
+			VALUES ($1::uuid, pandokos.uuid_v7(), $2, md5(random()::text), 'service_account', '0192f0f0-0000-7000-8000-0000000000a2',
+				'openai', 'openai', 'chat.completions', 'ok', 1, 'none', 'none', 'none', $3::uuid, $4)`, a.String(), started, versionID, source)
+		return err
+	}
+	now := time.Now().UTC()
+
+	t.Run("each source with a version and NULL are accepted", func(t *testing.T) {
+		for _, c := range []struct{ source, version any }{{"catalogue", version}, {"tenant", version}, {nil, version}, {nil, nil}} {
+			if err := insert(now, c.source, c.version); err != nil {
+				t.Errorf("source %v with version %v: %v", c.source, c.version, err)
+			}
+		}
+		for source, want := range map[string]int{"catalogue": 1, "tenant": 1} {
+			if n := countUsage(t, super, `WHERE tenant_id = $1::uuid AND price_source = $2`, a.String(), source); n != want {
+				t.Errorf("%d rows with %s, want %d", n, source, want)
+			}
+		}
+		if n := countUsage(t, super, `WHERE tenant_id = $1::uuid AND price_source IS NULL`, a.String()); n != 2 {
+			t.Errorf("%d rows with NULL, want 2", n)
+		}
+	})
+
+	t.Run("a source without a version and another value are refused in an existing partition", func(t *testing.T) {
+		for _, c := range []struct {
+			what    string
+			source  any
+			version any
+		}{
+			{"catalogue without a version", "catalogue", nil}, {"tenant without a version", "tenant", nil},
+			{"an empty source", "", version}, {"another value", "operator", version}, {"a capital", "Tenant", version}, {"a space", "tenant ", version},
+		} {
+			if err := insert(now, c.source, c.version); sqlstate(err) != checkViolation {
+				t.Errorf("%s: %v, want SQLSTATE %s", c.what, err, checkViolation)
+			}
+		}
+	})
+
+	t.Run("and in a partition created later", func(t *testing.T) {
+		if _, err := execIn(t, d.Connect(t, "worker"), noSession, `SELECT pandokos.ensure_usage_partitions(9)`); err != nil {
+			t.Fatal(err)
+		}
+		far := now.AddDate(0, 8, 0)
+		if err := insert(far, "tenant", version); err != nil {
+			t.Fatalf("a valid value in the new partition: %v", err)
+		}
+		if got := scalar(t, super, `SELECT tableoid::regclass::text FROM pandokos.usage_record WHERE started_at = $1`, far); got == "pandokos.usage_record_default" || got == "<null>" {
+			t.Errorf("the row is in %s: the partition was not created", got)
+		}
+		if err := insert(far, "tenant", nil); sqlstate(err) != checkViolation {
+			t.Errorf("a source without a version in the new partition: %v, want SQLSTATE %s", err, checkViolation)
+		}
+		if err := insert(far, "unknown", version); sqlstate(err) != checkViolation {
+			t.Errorf("a bad value in the new partition: %v, want SQLSTATE %s", err, checkViolation)
+		}
+	})
+
+	t.Run("the row is still append-only", func(t *testing.T) {
+		for _, role := range runtimeRoles {
+			for _, sql := range []string{
+				`UPDATE pandokos.usage_record SET price_source = 'tenant'`,
+				`UPDATE pandokos.usage_record SET price_source = NULL`,
+				`DELETE FROM pandokos.usage_record`,
+				`TRUNCATE pandokos.usage_record`,
+			} {
+				if _, err := execIn(t, d.Connect(t, role), sessA, sql); sqlstate(err) != insufficientPrivilege {
+					t.Errorf("%s: %q: %v, want SQLSTATE %s", role, sql, err, insufficientPrivilege)
+				}
+			}
+		}
+		if _, err := super.Exec(ctx(t), `UPDATE pandokos.usage_record SET price_source = 'tenant' WHERE tenant_id = $1::uuid`, a.String()); err == nil {
+			t.Error("the owner updated a usage record")
+		}
+	})
+}

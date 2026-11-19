@@ -380,3 +380,38 @@ func (d *Database) LockTable(tb testing.TB, table string) (release func()) {
 	tb.Cleanup(release)
 	return release
 }
+
+// SeedTenantPriceStarted inserts a version of a tenant's list that started `ago` before now, with the
+// triggers off: the state the passing of time leaves, which the guard of the table refuses for every
+// role. Without rates it has `input` 1 and `output` 2.
+func (d *Database) SeedTenantPriceStarted(tb testing.TB, id tenant.ID, currency, provider, model string, ago time.Duration, rates ...Rate) string {
+	tb.Helper()
+	if len(rates) == 0 {
+		rates = []Rate{{Category: "input", Rate: "1"}, {Category: "output", Rate: "2"}}
+	}
+	ctx, cancel := ctx30()
+	defer cancel()
+	var vid string
+	err := pgx.BeginFunc(ctx, d.Super(tb), func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SET LOCAL session_replication_role = replica`); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `INSERT INTO pandokos.tenant_price_version (tenant_id, model_id, valid_from, currency)
+			SELECT $1::uuid, m.id, now() - make_interval(secs => $4::float8), $5
+			  FROM pandokos.model m JOIN pandokos.provider p ON p.id = m.provider_id WHERE p.name = $2 AND m.name = $3
+			RETURNING id::text`, id.String(), provider, model, ago.Seconds(), currency).Scan(&vid); err != nil {
+			return err
+		}
+		for _, r := range rates {
+			if _, err := tx.Exec(ctx, `INSERT INTO pandokos.tenant_price_rate (tenant_id, price_version_id, category, threshold, rate)
+				VALUES ($1::uuid, $2::uuid, $3, $4, $5::numeric)`, id.String(), vid, r.Category, r.Threshold, r.Rate); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		tb.Fatalf("seed a started tenant price: %v", err)
+	}
+	return vid
+}

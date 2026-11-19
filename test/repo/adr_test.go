@@ -1,7 +1,9 @@
 package repo
 
 import (
+	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -67,4 +69,30 @@ func amendmentOf(t *testing.T, doc string) string {
 		t.Fatal(`no section "Amendment (sprint 5.3)"`)
 	}
 	return doc[loc[0]:]
+}
+
+// TestPriceAndUsageRecords is T-R50: ADR 0053 and 0054 exist and are in the index; ADR 0049, 0050 and
+// 0052 each have an `Amendment (sprint 5.4)` section and a history line that names it.
+func TestPriceAndUsageRecords(t *testing.T) {
+	index := read(t, "docs/adr/README.md")
+	for _, adr := range []string{"0053-tenant-price-lists-and-the-active-currency", "0054-usage-data-is-the-tenants"} {
+		matches, _ := filepath.Glob(filepath.Join(root(t), "docs/adr", adr[:4]+"-*.md"))
+		if len(matches) != 1 {
+			t.Errorf("ADR %s: %d files", adr[:4], len(matches))
+			continue
+		}
+		if !strings.Contains(index, filepath.Base(matches[0])) {
+			t.Errorf("ADR %s is not in the index", adr[:4])
+		}
+	}
+	for _, adr := range []string{"0049-limit-rules", "0050-quotas-and-budgets-periods-attribution-currencies", "0052-administration-of-limits"} {
+		doc := read(t, "docs/adr/"+adr+".md")
+		if !regexp.MustCompile(`(?m)^## Amendment \(sprint 5\.4\)`).MatchString(doc) {
+			t.Errorf("%s has no section \"Amendment (sprint 5.4)\"", adr)
+		}
+		history := regexp.MustCompile(`(?m)^## History\s*$`).FindStringIndex(doc)
+		if history == nil || !regexp.MustCompile(`(?m)^- .*amended by sprint 5\.4`).MatchString(doc[history[0]:]) {
+			t.Errorf("%s has no history line that names sprint 5.4", adr)
+		}
+	}
 }

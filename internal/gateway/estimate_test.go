@@ -129,6 +129,87 @@ func TestEstimate(t *testing.T) {
 	})
 }
 
+// TestEstimateTenantPrice is T-734: the estimate is priced through the list of the target: amount,
+// currency, version ID and source; unknown when neither list prices the model in the active currency;
+// an amount that does not fit keeps currency, version and source.
+func TestEstimateTenantPrice(t *testing.T) {
+	start := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	oa := openai.Adapter()
+	chat := operationOf(t, oa, openai.OperationChatCompletions)
+	one := family.OutputBound{Tokens: 1000, Choices: 1}
+	const def = 4096
+	priced := func(id, currency, source string, from time.Time, in, out string) pricing.Version {
+		v := priceAt(t, id, from, in, out)
+		v.Currency, v.Source = currency, source
+		return v
+	}
+	// 400 bytes are 100 input tokens and the output is 1000: the amounts are written by hand.
+	// At 1 EUR per million input tokens and 2 per million output tokens: 100/1e6 + 2000/1e6 = 0.0021 EUR.
+	tenantEUR := priced("tenant-eur", "EUR", pricing.SourceTenant, start.Add(-time.Hour), "1", "2")
+	catUSD := priced("cat-usd", "USD", "import", start.Add(-time.Hour), "10", "20")
+	catEUR := priced("cat-eur", "EUR", "import", start.Add(-time.Hour), "5", "6")
+
+	t.Run("a tenant price in the active currency", func(t *testing.T) {
+		target := Target{Currency: pricing.Active{Current: "EUR"}, Prices: []pricing.Version{catUSD}, TenantPrices: []pricing.Version{tenantEUR}}
+		got := estimateOf(oa, chat, one, 400, target, def, start)
+		c := got.Cost
+		if !c.Known || c.Amount.String() != "0.0021" || c.Currency != "EUR" || c.VersionID != "tenant-eur" || c.Source != pricing.SourceTenant {
+			t.Errorf("cost %+v (amount %s), want 0.0021 EUR from the tenant's version", c, c.Amount)
+		}
+		if got.InputTokens != 100 || got.OutputTokens != 1000 {
+			t.Errorf("tokens %d + %d", got.InputTokens, got.OutputTokens)
+		}
+	})
+
+	t.Run("the catalogue's price in the active currency", func(t *testing.T) {
+		target := Target{Currency: pricing.Active{Current: "USD"}, Prices: []pricing.Version{catUSD}, TenantPrices: []pricing.Version{tenantEUR}}
+		c := estimateOf(oa, chat, one, 400, target, def, start).Cost
+		if !c.Known || c.Amount.String() != "0.021" || c.Currency != "USD" || c.VersionID != "cat-usd" || c.Source != pricing.SourceCatalogue {
+			t.Errorf("cost %+v (amount %s), want 0.021 USD from the catalogue", c, c.Amount)
+		}
+	})
+
+	t.Run("a pending change prices in the currency in force at the start", func(t *testing.T) {
+		change := start.Add(time.Hour)
+		target := Target{Currency: pricing.Active{Current: "EUR", Previous: "USD", From: change}, Prices: []pricing.Version{catUSD}, TenantPrices: []pricing.Version{tenantEUR}}
+		if c := estimateOf(oa, chat, one, 400, target, def, start).Cost; c.Currency != "USD" || c.Source != pricing.SourceCatalogue {
+			t.Errorf("before the change: %+v", c)
+		}
+		if c := estimateOf(oa, chat, one, 400, target, def, change).Cost; c.Currency != "EUR" || c.Source != pricing.SourceTenant {
+			t.Errorf("from the change: %+v", c)
+		}
+	})
+
+	t.Run("unknown when neither list prices the model in the active currency", func(t *testing.T) {
+		target := Target{Currency: pricing.Active{Current: "EUR"}, Prices: []pricing.Version{catUSD}}
+		got := estimateOf(oa, chat, one, 400, target, def, start)
+		if c := got.Cost; c.Known || c.Reason != pricing.ReasonNoPrice || c.VersionID != "" || c.Source != "" {
+			t.Errorf("cost %+v, want unknown without a version or a source", c)
+		}
+		if got.InputTokens != 100 || got.OutputTokens != 1000 {
+			t.Errorf("tokens %d + %d: an unknown price must not change the reservation", got.InputTokens, got.OutputTokens)
+		}
+	})
+
+	t.Run("the catalogue in the active currency when the list has none", func(t *testing.T) {
+		target := Target{Currency: pricing.Active{Current: "EUR"}, Prices: []pricing.Version{catEUR}}
+		c := estimateOf(oa, chat, one, 400, target, def, start).Cost
+		if !c.Known || c.Amount.String() != "0.0065" || c.Source != pricing.SourceCatalogue {
+			t.Errorf("cost %+v (amount %s)", c, c.Amount)
+		}
+	})
+
+	t.Run("an amount that does not fit keeps the currency, the version and the source", func(t *testing.T) {
+		huge := priced("tenant-huge", "EUR", pricing.SourceTenant, start.Add(-time.Hour), "100000000000000", "100000000000000")
+		target := Target{Currency: pricing.Active{Current: "EUR"}, TenantPrices: []pricing.Version{huge}}
+		got := estimateOf(oa, chat, family.OutputBound{Tokens: 999_999_999_999, Choices: 1}, 400, target, def, start)
+		c := got.Cost
+		if c.Known || c.Reason != pricing.ReasonInconsistentUsage || c.Currency != "EUR" || c.VersionID != "tenant-huge" || c.Source != pricing.SourceTenant {
+			t.Errorf("cost %+v, want unknown (inconsistent usage) with currency EUR, version and source of the tenant", c)
+		}
+	})
+}
+
 // TestEstimateModelDefault is T-663: the formula of section 5.10 at each branch, and what the
 // estimate carries for the period limits.
 func TestEstimateModelDefault(t *testing.T) {

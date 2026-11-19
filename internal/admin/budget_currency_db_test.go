@@ -192,3 +192,95 @@ func TestBudgetCurrency(t *testing.T) {
 		}
 	})
 }
+
+// TestBudgetCurrencyLists is T-754: the table of 5.7, for the scopes model, provider and all: EUR is
+// accepted for a tenant's rule once the tenant has a EUR price in force or scheduled for the scope,
+// refused before with the sorted currencies; the catalogue's currencies are still accepted; another
+// tenant's check is unchanged; a ceiling for a tenant is accepted in its active and its pending currency
+// and refused in a currency in which the tenant only has an unused list; a default ceiling is as in 5.3.
+func TestBudgetCurrencyLists(t *testing.T) {
+	w := newPW(t)
+	prov := w.cat.Provider.Name
+	model := w.cat.All
+	other := decodeInto[adminapi.Model](t, w.do(t, w.plat, "POST", "/v1/models", map[string]any{"provider": prov, "name": apitest.UniqueName("m"), "availability": "all"}), 201)
+	w.api.DB.SeedPrice(t, prov, model.Name, "USD", time.Time{})
+	rulesA, rulesB := "/v1/tenants/"+w.a.ID+"/limits", "/v1/tenants/"+w.b.ID+"/limits"
+	budget := func(provider, model, currency string) map[string]any {
+		b := map[string]any{"metric": "cost_per_month", "amount": "5", "currency": currency}
+		if provider != "" {
+			b["provider"] = provider
+		}
+		if model != "" {
+			b["model"] = model
+		}
+		return b
+	}
+	currencies := func(t *testing.T, r *apitest.Response) string {
+		t.Helper()
+		p := expect(t, r, 400, adminapi.ProblemCodeInvalidRequest)
+		return messageOf(p, "currency")
+	}
+	const prefix = "must be a currency the prices of this scope use: "
+
+	t.Run("a tenant's rule: EUR is refused until the tenant has a EUR price for the scope", func(t *testing.T) {
+		for what, b := range map[string]map[string]any{
+			"model": budget(prov, model.Name, "EUR"), "provider": budget(prov, "", "EUR"), "all": budget("", "", "EUR"),
+		} {
+			if m := currencies(t, w.do(t, w.ka, "POST", rulesA, b)); !strings.HasPrefix(m, prefix+"USD") {
+				t.Errorf("%s: %q, want the sorted currencies of the catalogue's prices (USD)", what, m)
+			}
+		}
+		w.createPrice(t, priceBody(model, prov, "EUR", nil, map[string]any{"valid_from": scheduled(2, 0)})) // scheduled counts
+		for what, b := range map[string]map[string]any{
+			"model": budget(prov, model.Name, "EUR"), "provider": budget(prov, "", "EUR"), "all": budget("", "", "EUR"),
+		} {
+			b["metric"] = "cost_per_day"
+			if r := w.do(t, w.ka, "POST", rulesA, b); r.Status != 201 {
+				t.Errorf("%s: a currency of the tenant's own price: %d\n%s", what, r.Status, r.Body)
+			}
+		}
+		// The scope of the price matters: another model of the provider has no EUR price.
+		if m := currencies(t, w.do(t, w.ka, "POST", rulesA, budget(prov, other.Name, "EUR"))); !strings.HasPrefix(m, prefix) {
+			t.Errorf("another model: %q", m)
+		}
+		// The catalogue's currencies are still accepted.
+		if r := w.do(t, w.ka, "POST", rulesA, budget(prov, model.Name, "USD")); r.Status != 201 {
+			t.Errorf("the catalogue's currency: %d\n%s", r.Status, r.Body)
+		}
+		// Another tenant's check is unchanged by A's list.
+		if m := currencies(t, w.do(t, w.kb, "POST", rulesB, budget(prov, model.Name, "EUR"))); !strings.HasPrefix(m, prefix+"USD") {
+			t.Errorf("tenant B: %q", m)
+		}
+		// The currencies in the message are those of both lists, sorted.
+		w.createPrice(t, priceBody(model, prov, "CHF", nil, nil))
+		if m := currencies(t, w.do(t, w.ka, "POST", rulesA, budget(prov, model.Name, "GBP"))); !strings.HasPrefix(m, prefix+"CHF, EUR, USD") {
+			t.Errorf("%q, want CHF, EUR, USD", m)
+		}
+	})
+
+	t.Run("a ceiling for one tenant: the catalogue's set plus its active and pending currency", func(t *testing.T) {
+		pb := newPW(t)
+		post := func(currency string) *apitest.Response {
+			return pb.do(t, pb.plat, "POST", "/v1/platform-limits", map[string]any{"tenant": pb.a.ID, "metric": "cost_per_month", "amount": "9", "currency": currency, "provider": pb.cat.Provider.Name})
+		}
+		// The tenant has a list in CHF that it does not use, and is in EUR with GBP pending.
+		pb.createPrice(t, priceBody(pb.cat.All, pb.cat.Provider.Name, "CHF", nil, nil))
+		pb.api.DB.SetTenantCurrency(t, pb.idA, "GBP", "EUR", time.Now().Add(48*time.Hour))
+		for _, cur := range []string{"EUR", "GBP"} {
+			if r := post(cur); r.Status != 201 {
+				t.Errorf("the tenant's %s: %d\n%s", cur, r.Status, r.Body)
+			}
+		}
+		if m := currencies(t, post("CHF")); !strings.HasPrefix(m, prefix) || strings.Contains(m, "CHF") {
+			t.Errorf("a list the tenant does not use: %q: the platform does not read the tenant's lists", m)
+		}
+		// A default ceiling: the catalogue's set, as in 5.3.
+		pb.api.DB.SeedPrice(t, pb.cat.Provider.Name, pb.cat.All.Name, "USD", time.Time{})
+		if r := pb.do(t, pb.plat, "POST", "/v1/platform-limits", map[string]any{"metric": "cost_per_month", "amount": "9", "currency": "USD", "provider": pb.cat.Provider.Name}); r.Status != 201 {
+			t.Errorf("a default ceiling in the catalogue's currency: %d\n%s", r.Status, r.Body)
+		}
+		if r := pb.do(t, pb.plat, "POST", "/v1/platform-limits", map[string]any{"metric": "cost_per_month", "amount": "9", "currency": "EUR", "provider": pb.cat.Provider.Name}); r.Status != 400 {
+			t.Errorf("a default ceiling in a currency of no catalogue price: %d", r.Status)
+		}
+	})
+}

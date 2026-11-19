@@ -6,6 +6,15 @@ import (
 	"github.com/pandokos/pandokos/internal/adminapi"
 )
 
+// Test seams (T-751): when set, createPriceListVersion calls afterTenantPriceInsert right after the
+// insert of the version and its rates and fails with its error, so that a test can check that the
+// version and its audit row stay together. Nil in production.
+var afterTenantPriceInsert func() error
+
+// maxTenantPriceVersions is the bound on the versions of one tenant (sprint 5.4, section 5.5); a
+// variable so that T-749 can lower it.
+var maxTenantPriceVersions = 50_000
+
 // ListPriceLists lists the price lists of a tenant. Implemented in sprint 5.4, step C6.
 func (s *server) ListPriceLists(context.Context, adminapi.ListPriceListsInput) (*adminapi.TenantPriceListList, error) {
 	return nil, errNotImplemented

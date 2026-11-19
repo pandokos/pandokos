@@ -958,7 +958,7 @@ func TestNoDefaultCredentials(t *testing.T) {
 			c := apitest.CallFor(t, op, apitest.Params{Tenant: "0192f0f0-0000-7000-8000-000000000001", ServiceAccount: "0192f0f0-0000-7000-8000-000000000002", VirtualKey: "tabcdefghijklmnop", PlatformKey: "pabcdefghijklmnop", Credential: "0192f0f0-0000-7000-8000-000000000003",
 				Provider: "synthetic-missing", Endpoint: "ep-missing", Model: "0192f0f0-0000-7000-8000-000000000004", PriceVersion: "0192f0f0-0000-7000-8000-000000000005", PriceImport: "0192f0f0-0000-7000-8000-000000000006",
 				TokenIssuer: "0192f0f0-0000-7000-8000-000000000007", SubjectMapping: "0192f0f0-0000-7000-8000-000000000008", PlatformIssuer: "0192f0f0-0000-7000-8000-000000000009",
-				LimitRule: "0192f0f0-0000-7000-8000-00000000000a", PlatformLimit: "0192f0f0-0000-7000-8000-00000000000b"})
+				LimitRule: "0192f0f0-0000-7000-8000-00000000000a", PlatformLimit: "0192f0f0-0000-7000-8000-00000000000b", TenantPrice: "0192f0f0-0000-7000-8000-00000000000c"})
 			var body []byte
 			if c.Body != nil {
 				body, _ = json.Marshal(c.Body)

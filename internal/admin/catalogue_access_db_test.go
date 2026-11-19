@@ -3,6 +3,7 @@ package admin_test
 import (
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/test/apitest"
@@ -400,4 +401,59 @@ func manyRefs(n int, ref string) []string {
 		out[i] = ref + "-" + apitest.UniqueName("n")
 	}
 	return out
+}
+
+// TestTenantModelsPrice is T-757: listTenantModels shows price, tenant_price and price_source for the
+// catalogue in the active currency, the tenant's list, a catalogue price in another currency (empty
+// source), neither, an end, and a list in an inactive currency (not shown).
+func TestTenantModelsPrice(t *testing.T) {
+	w := newPW(t)
+	prov := w.cat.Provider.Name
+	mk := func() adminapi.Model {
+		return decodeInto[adminapi.Model](t, w.do(t, w.plat, "POST", "/v1/models", map[string]any{"provider": prov, "name": apitest.UniqueName("m"), "availability": "all"}), 201)
+	}
+	catUSD, ownEUR, catEUR, none, ended := mk(), mk(), mk(), mk(), mk()
+	d := w.api.DB
+	d.SeedPrice(t, prov, catUSD.Name, "USD", time.Time{})
+	d.SeedTenantPrice(t, w.idA, "EUR", prov, ownEUR.Name, time.Time{})
+	d.SeedPrice(t, prov, catEUR.Name, "EUR", time.Time{})
+	d.SeedTenantPrice(t, w.idA, "EUR", prov, ended.Name, time.Time{})
+	time.Sleep(20 * time.Millisecond)
+	d.SeedTenantPriceEnd(t, w.idA, "EUR", prov, ended.Name, time.Time{})
+	list := func() map[string]adminapi.TenantModel {
+		t.Helper()
+		out := map[string]adminapi.TenantModel{}
+		for cursor := ""; ; {
+			page := decodeInto[adminapi.TenantModelList](t, w.do(t, w.ka, "GET", "/v1/tenants/"+w.a.ID+"/models?limit=200&cursor="+cursor, nil), 200)
+			for _, it := range page.Items {
+				out[it.Model.ID] = it
+			}
+			if cursor = page.NextCursor; cursor == "" {
+				return out
+			}
+		}
+	}
+	check := func(what string, m adminapi.TenantModel, price, tenantPrice bool, source string) {
+		t.Helper()
+		if (m.Price != nil) != price || (m.TenantPrice != nil) != tenantPrice || m.PriceSource != source {
+			t.Errorf("%s: price %v, tenant_price %v, source %q; want %v, %v, %q", what, m.Price != nil, m.TenantPrice != nil, m.PriceSource, price, tenantPrice, source)
+		}
+	}
+
+	got := list() // the tenant is in USD
+	check("the catalogue in the active currency", got[catUSD.ID], true, false, "catalogue")
+	check("a list in an inactive currency is not shown", got[ownEUR.ID], false, false, "")
+	check("a catalogue price in another currency", got[catEUR.ID], true, false, "")
+	check("neither", got[none.ID], false, false, "")
+
+	w.api.DB.SetTenantCurrency(t, w.idA, "EUR", "", time.Time{})
+	got = list() // the tenant is in EUR
+	check("the tenant's list", got[ownEUR.ID], false, true, "tenant")
+	if tp := got[ownEUR.ID].TenantPrice; tp == nil || tp.Currency != "EUR" || !tp.InForce || tp.Kind != adminapi.TenantPriceKindPrice {
+		t.Errorf("tenant_price %+v", tp)
+	}
+	check("the catalogue's USD price, the tenant in EUR", got[catUSD.ID], true, false, "")
+	check("the catalogue's EUR price", got[catEUR.ID], true, false, "catalogue")
+	check("an end", got[ended.ID], false, false, "")
+	check("neither", got[none.ID], false, false, "")
 }

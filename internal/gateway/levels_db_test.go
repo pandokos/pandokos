@@ -20,6 +20,7 @@ import (
 	"github.com/pandokos/pandokos/internal/ledger"
 	"github.com/pandokos/pandokos/internal/limits"
 	"github.com/pandokos/pandokos/internal/pricing"
+	"github.com/pandokos/pandokos/internal/resolver"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/telemetry"
 	"github.com/pandokos/pandokos/internal/tenant"
@@ -50,7 +51,7 @@ func newLevelsEnv(t *testing.T, d *dbtest.Database) *levelsEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: d.Open(t, store.RoleGateway), Logger: quiet, TTL: 5 * time.Minute, Zones: zones})
+	cache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: d.Open(t, store.RoleGateway), Logger: quiet, TTL: 5 * time.Minute, Zones: zones, DefaultCurrency: "USD"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +267,10 @@ type stackOptions struct {
 	callers       []string
 	newH          func(t *testing.T, mutate func(*gateway.Options)) *harness
 	unknownPrice  string
-	start         time.Time // the instant the clock of the limits shows when the stack is built; the real time when zero
+	start         time.Time               // the instant the clock of the limits shows when the stack is built; the real time when zero
+	rulesTTL      time.Duration           // the lifetime of the rules in the rule cache; a minute when zero (sprint 5.4)
+	unlimited     resolver.UnlimitedNoter // told of the first unlimited request of a tenant in a day; nobody when nil (sprint 5.4)
+	logs          io.Writer               // the debug log of the limiter, the reconciler and the ledger writer; discarded when nil (sprint 5.4)
 }
 
 // quotaStack is a gateway with the period limits of sprint 5.2 over the test database: the rules
@@ -330,7 +334,11 @@ func newQuotaStack(t *testing.T, d *dbtest.Database, tn tenant.ID, o stackOption
 	if err != nil {
 		t.Fatal(err)
 	}
-	cache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: s.gw, Logger: quiet, TTL: time.Minute, Zones: zones})
+	rulesTTL := o.rulesTTL
+	if rulesTTL == 0 {
+		rulesTTL = time.Minute
+	}
+	cache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: s.gw, Logger: quiet, TTL: rulesTTL, Zones: zones, DefaultCurrency: "USD"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,10 +350,14 @@ func newQuotaStack(t *testing.T, d *dbtest.Database, tn tenant.ID, o stackOption
 	evDone := make(chan struct{})
 	go func() { s.events.Run(ctx); close(evDone) }()
 
-	lo := limitstest.Options{Cache: cache, Events: s.events, Zone: o.zone, OnUnknownPrice: o.unknownPrice, Start: o.start}
+	lo := limitstest.Options{Cache: cache, Events: s.events, Zone: o.zone, OnUnknownPrice: o.unknownPrice, Start: o.start, Unlimited: o.unlimited, Logs: o.logs}
 	var rec gateway.Recorder
 	if o.ledger {
-		s.writer, err = ledger.New(ledger.Options{DB: s.gw, Logger: quiet, BufferSize: 4096, BatchSize: 64, FlushInterval: 10 * time.Millisecond})
+		wlog := quiet
+		if o.logs != nil {
+			wlog = slog.New(slog.NewJSONHandler(o.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		}
+		s.writer, err = ledger.New(ledger.Options{DB: s.gw, Logger: wlog, BufferSize: 4096, BatchSize: 64, FlushInterval: 10 * time.Millisecond})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -553,7 +565,7 @@ func (s *quotaStack) limitsFor(t *testing.T, who, provider, model string, at tim
 	if err != nil {
 		t.Fatal(err)
 	}
-	set, err := limits.LoadRules(ctx, s.gw, s.tn, zones)
+	set, err := limits.LoadRules(ctx, s.gw, s.tn, zones, "USD")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -186,15 +186,15 @@ func TestResolveDB(t *testing.T) {
 	}
 
 	// LoadTenantAccess is what the cache loads: the grants and the restriction of one tenant.
-	ta, err := catalog.LoadTenantAccess(ctx(t), w.gateway, w.a)
+	ta, err := catalog.LoadTenantAccess(ctx(t), w.gateway, w.a, "USD")
 	if err != nil || !ta.Granted[modelID(t, e, "synthetic-resolve")] || ta.Restricted || len(ta.Granted) != 1 {
 		t.Errorf("tenant access of A: %+v %v", ta, err)
 	}
 	w.restrict(w.a, "openai/gpt-4o")
-	if ta, err = catalog.LoadTenantAccess(ctx(t), w.gateway, w.a); err != nil || !ta.Restricted || !ta.Allowed["openai/gpt-4o"] || len(ta.Allowed) != 1 {
+	if ta, err = catalog.LoadTenantAccess(ctx(t), w.gateway, w.a, "USD"); err != nil || !ta.Restricted || !ta.Allowed["openai/gpt-4o"] || len(ta.Allowed) != 1 {
 		t.Errorf("tenant access of A with a restriction: %+v %v", ta, err)
 	}
-	if tb, err := catalog.LoadTenantAccess(ctx(t), w.gateway, w.b); err != nil || len(tb.Granted) != 0 || tb.Restricted {
+	if tb, err := catalog.LoadTenantAccess(ctx(t), w.gateway, w.b, "USD"); err != nil || len(tb.Granted) != 0 || tb.Restricted {
 		t.Errorf("tenant access of B: %+v %v", tb, err)
 	}
 

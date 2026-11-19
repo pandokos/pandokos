@@ -228,7 +228,7 @@ func TestLimits(t *testing.T) {
 		sameProblem(t, "a model that is not visible and one that is not there", hidden, missing)
 	})
 
-	t.Run("a rule of the same subject, scope and metric is a 409; a budget has one currency", func(t *testing.T) {
+	t.Run("a rule of the same subject, scope and metric is a 409; a budget is one per currency", func(t *testing.T) {
 		first := map[string]any{"metric": "tokens_per_day", "limit": 5, "provider": w.cat.Provider.Name}
 		w.create(t, first)
 		expect(t, w.do(t, w.ka, "POST", w.baseA, first), 409, adminapi.ProblemCodeConflict)
@@ -247,7 +247,12 @@ func TestLimits(t *testing.T) {
 		// of 5.8 and meets the conflict (a budget has one currency).
 		w.api.DB.SeedPrice(t, w.cat.Provider.Name, w.cat.All.Name, "USD", time.Now().Add(24*time.Hour))
 		w.create(t, map[string]any{"metric": "cost_per_day", "amount": "5", "currency": "EUR", "provider": w.cat.Provider.Name, "model": w.cat.All.Name})
-		expect(t, w.do(t, w.ka, "POST", w.baseA, map[string]any{"metric": "cost_per_day", "amount": "7", "currency": "USD", "provider": w.cat.Provider.Name, "model": w.cat.All.Name}), 409, adminapi.ProblemCodeConflict)
+		// Sprint 5.4 (5.7): a rule is one per subject, scope, metric and currency. A budget in another currency
+		// coexists (that is how a change of currency is prepared); the same currency twice is the 409.
+		if r := w.do(t, w.ka, "POST", w.baseA, map[string]any{"metric": "cost_per_day", "amount": "7", "currency": "USD", "provider": w.cat.Provider.Name, "model": w.cat.All.Name}); r.Status != 201 {
+			t.Errorf("a budget in another currency: %d\n%s", r.Status, r.Body)
+		}
+		expect(t, w.do(t, w.ka, "POST", w.baseA, map[string]any{"metric": "cost_per_day", "amount": "9", "currency": "EUR", "provider": w.cat.Provider.Name, "model": w.cat.All.Name}), 409, adminapi.ProblemCodeConflict)
 		// The same rule in another tenant is fine.
 		if r := w.do(t, w.kb, "POST", "/v1/tenants/"+w.b.ID+"/limits", map[string]any{"metric": "tokens_per_day", "limit": 5}); r.Status != 201 {
 			t.Errorf("the same rule in tenant B: %d\n%s", r.Status, r.Body)
@@ -928,4 +933,80 @@ func TestLimitSubjectsTyped(t *testing.T) {
 			t.Errorf("by a provider that is not there: %+v", l.Items)
 		}
 	})
+}
+
+// TestLimitRulesByCurrency is T-755: two budgets that differ by currency are created for one subject and
+// scope, for a tenant and for the platform; the same currency twice is 409 conflict; `active` on each rule
+// before and after a switch; listTenantPlatformLimits sets it; the audit details name the currency.
+func TestLimitRulesByCurrency(t *testing.T) {
+	w := newPW(t)
+	prov, model := w.cat.Provider.Name, w.cat.All
+	w.api.DB.SeedPrice(t, prov, model.Name, "USD", time.Time{})
+	w.createPrice(t, priceBody(model, prov, "EUR", nil, nil)) // the tenant's own list in EUR
+	rules := "/v1/tenants/" + w.a.ID + "/limits"
+	seen := seenIDs(t, w.api)
+	mk := func(currency, amount string) map[string]any {
+		return map[string]any{"metric": "cost_per_month", "amount": amount, "currency": currency, "provider": prov}
+	}
+
+	usd := decodeInto[adminapi.LimitRule](t, w.do(t, w.ka, "POST", rules, mk("USD", "5")), 201)
+	eur := decodeInto[adminapi.LimitRule](t, w.do(t, w.ka, "POST", rules, mk("EUR", "7")), 201)
+	if usd.ID == eur.ID || usd.Currency != "USD" || eur.Currency != "EUR" {
+		t.Errorf("%+v %+v", usd, eur)
+	}
+	expect(t, w.do(t, w.ka, "POST", rules, mk("EUR", "9")), 409, adminapi.ProblemCodeConflict)
+	expect(t, w.do(t, w.ka, "POST", rules, mk("USD", "9")), 409, adminapi.ProblemCodeConflict)
+	rows := newRows(t, w.api, seen)
+	if len(rows) != 2 || rows[0].Detail["currency"] == nil || rows[1].Detail["currency"] == nil || rows[0].Detail["currency"] == rows[1].Detail["currency"] {
+		t.Errorf("the audit details name the currency: %+v", rows)
+	}
+
+	// The same for the platform: a ceiling for the tenant in both currencies, a conflict for the same one.
+	pl := func(currency string) map[string]any {
+		b := mk(currency, "50")
+		b["tenant"] = w.a.ID
+		return b
+	}
+	pUSD := decodeInto[adminapi.PlatformLimitRule](t, w.do(t, w.plat, "POST", "/v1/platform-limits", pl("USD")), 201)
+	decodeInto[adminapi.PlatformLimitRule](t, w.do(t, w.plat, "POST", "/v1/platform-limits", pl("EUR")), 201)
+	expect(t, w.do(t, w.plat, "POST", "/v1/platform-limits", pl("EUR")), 409, adminapi.ProblemCodeConflict)
+	_ = pUSD
+
+	active := func(path string) map[string]bool {
+		t.Helper()
+		out := map[string]bool{}
+		l := decodeInto[adminapi.LimitRuleList](t, w.do(t, w.ka, "GET", path, nil), 200)
+		for _, r := range l.Items {
+			out[r.Currency] = r.Active
+		}
+		return out
+	}
+	check := func(when, inForce string) {
+		t.Helper()
+		for _, path := range []string{rules, "/v1/tenants/" + w.a.ID + "/platform-limits"} {
+			got := active(path)
+			for _, cur := range []string{"USD", "EUR"} {
+				if got[cur] != (cur == inForce) {
+					t.Errorf("%s, %s: active by currency %v, want only %s", when, path, got, inForce)
+				}
+			}
+		}
+		one := decodeInto[adminapi.LimitRule](t, w.do(t, w.ka, "GET", rules+"/"+eur.ID, nil), 200)
+		if one.Active != (inForce == "EUR") {
+			t.Errorf("%s: getLimit active %v", when, one.Active)
+		}
+	}
+	check("before the switch (USD, the default)", "USD")
+	w.api.DB.SetTenantCurrency(t, w.idA, "EUR", "", time.Time{})
+	check("after the switch", "EUR")
+	// A count rule is always active.
+	count := decodeInto[adminapi.LimitRule](t, w.do(t, w.ka, "POST", rules, map[string]any{"metric": "requests_per_day", "limit": 3}), 201)
+	if !count.Active {
+		t.Errorf("a count rule is inactive: %+v", count)
+	}
+	// The platform's own view of its ceilings does not carry active.
+	raw := rawJSON(t, w.do(t, w.plat, "GET", "/v1/platform-limits/"+pUSD.ID, nil))
+	if _, ok := raw["active"]; ok {
+		t.Errorf("a platform ceiling in the platform's view carries active: %v", raw)
+	}
 }

@@ -211,7 +211,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	ruleCache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: gatewayDB, Logger: logger, TTL: time.Duration(cfg.Cache.LimitsTTL), Zones: zones})
+	ruleCache, err := limits.NewRuleCache(limits.RuleCacheOptions{DB: gatewayDB, Logger: logger, TTL: time.Duration(cfg.Cache.LimitsTTL), Zones: zones, DefaultCurrency: cfg.Pricing.DefaultCurrency})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1

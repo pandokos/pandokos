@@ -540,3 +540,56 @@ func TestPriceImportAPI(t *testing.T) {
 		testutil.AssertAbsent(t, "the import list", string(raw), marker)
 	})
 }
+
+// TestCatalogueUntouched is T-760: an import and an override for a model leave a tenant's versions and their
+// precedence as they were; the import report and price_override do not mention tenant lists.
+func TestCatalogueUntouched(t *testing.T) {
+	w := newPW(t)
+	prov, model := w.cat.Provider.Name, w.cat.All
+	own := w.createPrice(t, priceBody(model, prov, "USD", tpRates("input", "0", "42"), nil))
+	before := w.api.SnapshotTenant(t, w.a.ID)
+
+	o := w.do(t, w.plat, "POST", "/v1/models/"+model.ID+"/prices", map[string]any{"currency": "USD", "rates": []map[string]any{{"category": "input", "threshold": 0, "rate": "1"}}})
+	if o.Status != 201 {
+		t.Fatalf("override: %d %s", o.Status, o.Body)
+	}
+	imp := w.do(t, w.plat, "POST", "/v1/price-imports", map[string]any{"source": "embedded"})
+	if imp.Status/100 != 2 {
+		t.Fatalf("import: %d %s", imp.Status, imp.Body)
+	}
+	for _, r := range []*apitest.Response{o, imp} {
+		low := strings.ToLower(string(r.Body))
+		for _, word := range []string{"tenant_price", "tenant price", "price list", "tenant_prices"} {
+			if strings.Contains(low, word) {
+				t.Errorf("a platform answer mentions %q: %s", word, r.Body)
+			}
+		}
+	}
+	if after := w.api.SnapshotTenant(t, w.a.ID); after != before {
+		t.Error("the import or the override changed a row of the tenant")
+	}
+	got := decodeInto[adminapi.TenantPriceVersion](t, w.do(t, w.ka, "GET", w.pricesPath(w.a)+"/"+own.ID, nil), 200)
+	if !got.InForce || got.Rates[0].Rate != "42" {
+		t.Errorf("the tenant's version after the import: %+v", got)
+	}
+	// The price in force for the tenant is its own, in front of the catalogue's override.
+	var mp adminapi.TenantModel
+	for cursor := ""; ; {
+		page := decodeInto[adminapi.TenantModelList](t, w.do(t, w.ka, "GET", "/v1/tenants/"+w.a.ID+"/models?limit=200&cursor="+cursor, nil), 200)
+		for _, it := range page.Items {
+			if it.Model.ID == model.ID {
+				mp = it
+			}
+		}
+		if cursor = page.NextCursor; cursor == "" {
+			break
+		}
+	}
+	if mp.PriceSource != "tenant" || mp.TenantPrice == nil || mp.TenantPrice.ID != own.ID || mp.Price == nil {
+		t.Errorf("precedence: %+v", mp)
+	}
+	m := decodeInto[adminapi.Model](t, w.do(t, w.plat, "GET", "/v1/models/"+model.ID, nil), 200)
+	if !m.PriceOverride {
+		t.Errorf("price_override %v after an override", m.PriceOverride)
+	}
+}

@@ -1594,3 +1594,59 @@ func TestInitPurposeAndNewKeys(t *testing.T) {
 		}
 	})
 }
+
+// TestCurrencyAndUsageDetailKeys is T-762: both keys from the file and the environment; a default
+// currency that is not three capital letters is refused; the warning is listed when usage details are on.
+func TestCurrencyAndUsageDetailKeys(t *testing.T) {
+	envOf := map[string]string{}
+	for _, k := range Keys() {
+		envOf[k.Name] = k.Env
+	}
+	if envOf["pricing.default_currency"] != "PANDOKOS_PRICING_DEFAULT_CURRENCY" || envOf["telemetry.tenant_usage_details"] != "PANDOKOS_TELEMETRY_TENANT_USAGE_DETAILS" {
+		t.Fatalf("environment names: %q %q", envOf["pricing.default_currency"], envOf["telemetry.tenant_usage_details"])
+	}
+	t.Run("from the file", func(t *testing.T) {
+		src := validSource(t)
+		src.File = writeFile(t, "pricing:\n  default_currency: EUR\ntelemetry:\n  tenant_usage_details: true\n")
+		c, ws := mustLoad(t, src)
+		if c.Pricing.DefaultCurrency != "EUR" || !c.Telemetry.TenantUsageDetails {
+			t.Errorf("%q %v", c.Pricing.DefaultCurrency, c.Telemetry.TenantUsageDetails)
+		}
+		found := false
+		for _, w := range ws {
+			found = found || w.Key == "telemetry.tenant_usage_details"
+		}
+		if !found {
+			t.Errorf("no warning for the usage details: %v", ws)
+		}
+	})
+	t.Run("from the environment, which wins over the file", func(t *testing.T) {
+		src := validSource(t)
+		src.File = writeFile(t, "pricing:\n  default_currency: EUR\n")
+		src.Environ = append(src.Environ, "PANDOKOS_PRICING_DEFAULT_CURRENCY=GBP", "PANDOKOS_TELEMETRY_TENANT_USAGE_DETAILS=true")
+		c, _ := mustLoad(t, src)
+		if c.Pricing.DefaultCurrency != "GBP" || !c.Telemetry.TenantUsageDetails {
+			t.Errorf("%q %v", c.Pricing.DefaultCurrency, c.Telemetry.TenantUsageDetails)
+		}
+	})
+	t.Run("the defaults, and no warning", func(t *testing.T) {
+		c, ws := mustLoad(t, validSource(t))
+		if c.Pricing.DefaultCurrency != "USD" || c.Telemetry.TenantUsageDetails {
+			t.Errorf("%q %v", c.Pricing.DefaultCurrency, c.Telemetry.TenantUsageDetails)
+		}
+		for _, w := range ws {
+			if w.Key == "telemetry.tenant_usage_details" {
+				t.Errorf("a warning with the key off: %v", w)
+			}
+		}
+	})
+	for _, bad := range []string{"usd", "US", "USDD", "U1D", "EU R"} {
+		t.Run("refused "+bad, func(t *testing.T) {
+			src := validSource(t)
+			src.Environ = append(src.Environ, "PANDOKOS_PRICING_DEFAULT_CURRENCY="+bad)
+			if _, _, err := Load(src); err == nil || !hasProblem(err, "pricing.default_currency") {
+				t.Errorf("%q: %v", bad, err)
+			}
+		})
+	}
+}

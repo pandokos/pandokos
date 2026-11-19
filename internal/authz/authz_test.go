@@ -437,3 +437,37 @@ func TestLimitPermissions(t *testing.T) {
 		}
 	}
 }
+
+// TestPriceListPermissions is T-753: the three permissions of sprint 5.4 have tenant scope and their
+// texts; tenant-admin holds them; platform-admin and inference hold none.
+func TestPriceListPermissions(t *testing.T) {
+	want := map[string]string{
+		PriceListRead:   "Reading the tenant's price lists and their versions, and the tenant's active currency",
+		PriceListWrite:  "Adding a price version to one of the tenant's price lists; choosing the tenant's active currency",
+		PriceListDelete: "Removing a price version of the tenant's lists that has not started",
+	}
+	for name, text := range want {
+		p, ok := Lookup(name)
+		if !ok || p.Scope != ScopeTenant || p.Description != text {
+			t.Errorf("%s: %+v (found %v), want tenant scope and %q", name, p, ok, text)
+		}
+	}
+	for _, r := range Roles() {
+		held := 0
+		for _, perm := range r.Permissions {
+			if _, ok := want[perm]; ok {
+				held++
+			}
+		}
+		switch r.Name {
+		case RoleTenantAdmin:
+			if held != 3 {
+				t.Errorf("tenant-admin holds %d of the three", held)
+			}
+		default:
+			if held != 0 {
+				t.Errorf("%s holds %d price list permissions", r.Name, held)
+			}
+		}
+	}
+}

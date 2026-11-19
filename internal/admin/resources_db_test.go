@@ -15,6 +15,7 @@ import (
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/store"
+	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/test/apitest"
 	"github.com/pandokos/pandokos/test/testutil"
 )
@@ -623,4 +624,56 @@ func testLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard,
 func authenticated(api *apitest.API, t *testing.T, key string) bool {
 	t.Helper()
 	return api.Do(t, "GET", "/v1/me", key, nil, nil).Status != 401
+}
+
+// TestTenantShowsActiveCurrency is T-761: getTenant and listTenants show the three members of the active
+// currency; createTenant and updateTenant refuse a currency member (400).
+func TestTenantShowsActiveCurrency(t *testing.T) {
+	api := apitest.New(t)
+	ten, _ := api.Tenant(t, "shows-currency")
+	id, err := tenant.ParseID(ten.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(what string, got adminapi.Tenant, current, inForce string, pending bool) {
+		t.Helper()
+		if got.ActiveCurrency != current || got.ActiveCurrencyInForce != inForce || (got.ActiveCurrencyEffectiveFrom != nil) != pending {
+			t.Errorf("%s: %q in force %q pending %v; want %q, %q, %v", what, got.ActiveCurrency, got.ActiveCurrencyInForce, got.ActiveCurrencyEffectiveFrom != nil, current, inForce, pending)
+		}
+	}
+	get := func() adminapi.Tenant {
+		return decodeInto[adminapi.Tenant](t, api.Do(t, "GET", "/v1/tenants/"+ten.ID, api.PlatformKey(), nil, nil), 200)
+	}
+	listed := func() adminapi.Tenant {
+		l := decodeInto[adminapi.TenantList](t, api.Do(t, "GET", "/v1/tenants?name="+ten.Name, api.PlatformKey(), nil, nil), 200)
+		if len(l.Items) != 1 {
+			t.Fatalf("%d tenants", len(l.Items))
+		}
+		return l.Items[0]
+	}
+	check("the default", get(), "", "USD", false)
+	check("the default, listed", listed(), "", "USD", false)
+	api.DB.SetTenantCurrency(t, id, "EUR", "", time.Time{})
+	check("a currency of its own", get(), "EUR", "EUR", false)
+	api.DB.SetTenantCurrency(t, id, "GBP", "EUR", time.Now().Add(48*time.Hour))
+	check("a pending change", get(), "GBP", "EUR", true)
+	check("a pending change, listed", listed(), "GBP", "EUR", true)
+
+	for _, member := range []string{"active_currency", "active_currency_in_force", "active_currency_effective_from"} {
+		invalidOnAny(t, "createTenant with "+member, api.Do(t, "POST", "/v1/tenants", api.PlatformKey(), map[string]any{"name": apitest.UniqueName("with-currency"), member: "EUR"}, nil))
+		invalidOnAny(t, "updateTenant with "+member, api.Do(t, "PATCH", "/v1/tenants/"+ten.ID, api.PlatformKey(), map[string]any{member: "EUR"}, nil))
+	}
+	check("unchanged by the refusals", get(), "GBP", "EUR", true)
+}
+
+// invalidOnAny expects a 400 invalid_request.
+func invalidOnAny(t *testing.T, what string, r *apitest.Response) {
+	t.Helper()
+	if r.Status != 400 {
+		t.Errorf("%s: %d, want 400\n%s", what, r.Status, r.Body)
+		return
+	}
+	if p := problem(t, r); p.Code != adminapi.ProblemCodeInvalidRequest {
+		t.Errorf("%s: code %s", what, p.Code)
+	}
 }

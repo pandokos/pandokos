@@ -48,7 +48,7 @@ func (s *server) GetCapability(ctx context.Context, in adminapi.GetCapabilityInp
 	if err != nil {
 		return nil, err
 	}
-	ta, err := catalog.LoadTenantAccess(ctx, s.db, tid)
+	ta, err := catalog.LoadTenantAccess(ctx, s.db, tid, s.defaultCurrency)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +112,7 @@ func (s *server) budgetCheck(ctx context.Context, tid tenant.ID, snap *catalog.S
 	if zones == nil {
 		return "", nil, errors.New("admin: the capability check needs the zones of the installation")
 	}
-	rules, err := limits.LoadRules(ctx, s.db, tid, zones)
+	rules, err := limits.LoadRules(ctx, s.db, tid, zones, s.defaultCurrency)
 	if err != nil {
 		return "", nil, err
 	}

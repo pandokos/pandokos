@@ -154,3 +154,68 @@ func TestIntegrityReference(t *testing.T) {
 
 	mentionsAll(t, "docs/operations/usage.md", read(t, "docs/operations/usage.md"), "limit_state", "not_evaluated", "unverified")
 }
+
+// TestTenantPriceGuide is T-R48: catalogue.md has the section on tenant price lists and the active
+// currency (lists per currency, precedence, end, the change rule, what imports and overrides do not
+// touch); limits.md section 5 says which budgets apply, how a change is prepared and what a ceiling
+// measures; the telemetry and gateway guides name the key and no longer list the removed fields as
+// always present.
+func TestTenantPriceGuide(t *testing.T) {
+	cat := read(t, "docs/operations/catalogue.md")
+	s := section(cat, regexp.MustCompile(`(?i)^#+ .*tenant price lists and the active currency`))
+	if s == "" {
+		t.Fatal(`docs/operations/catalogue.md has no section "Tenant price lists and the active currency"`)
+	}
+	mentionsAll(t, "the catalogue section on tenant price lists", s, "list", "currency", "end", "next month", "time zone", "import", "override", "never convert", "price_list:write", "tenant_price", "active_currency")
+
+	lim := read(t, "docs/operations/limits.md")
+	b := section(lim, regexp.MustCompile(`(?i)^#+ 5\. Budgets`))
+	if b == "" {
+		t.Fatal(`docs/operations/limits.md has no section 5 "Budgets"`)
+	}
+	mentionsAll(t, "limits.md section 5", b, "active currency", "inactive", "active", "prepare", "ceiling", "tokens", "tenant's price", "no_price", "listTenantModels", "pricing.default_currency")
+
+	for _, doc := range []string{"docs/operations/telemetry.md", "docs/operations/gateway.md"} {
+		text := read(t, doc)
+		mentionsAll(t, doc, text, "telemetry.tenant_usage_details")
+		if regexp.MustCompile(`(?m)^\|\s*` + "`" + `(cost|reserved_tokens|limit_currency|price_currency)` + "`" + `\s*\|[^|]*\|\s*always`).MatchString(text) {
+			t.Errorf("%s lists a removed field as always present", doc)
+		}
+	}
+}
+
+// TestTenantPriceReference is T-R49: admin-api.md lists the seven operations and the three audit
+// actions; permissions.md the three permissions; configuration.md the two keys; database.md the section
+// of migration 0012 with the upgrade notes; usage.md names price_source; the requirements have CAT-11 and
+// the new wording of USE-06, USE-07 and AZ-06 (no "platform usage viewer"); the security model names
+// issue #33; the epic file of epic 6 carries the two notes.
+func TestTenantPriceReference(t *testing.T) {
+	api := read(t, "docs/reference/admin-api.md")
+	mentionsAll(t, "admin-api.md", api, "listPriceLists", "listPriceListVersions", "createPriceListVersion", "getPriceListVersion", "deletePriceListVersion",
+		"getActiveCurrency", "setActiveCurrency", "tenant_price.create", "tenant_price.delete", "tenant.active_currency_update")
+	mentionsAll(t, "permissions.md", read(t, "docs/reference/permissions.md"), "price_list:read", "price_list:write", "price_list:delete")
+	mentionsAll(t, "configuration.md", read(t, "docs/operations/configuration.md"), "pricing.default_currency", "telemetry.tenant_usage_details")
+	db := read(t, "docs/operations/database.md")
+	mentionsAll(t, "database.md", db, "0012", "active currency", "no_price", "pricing.default_currency", "request log", "spans")
+	mentionsAll(t, "usage.md", read(t, "docs/operations/usage.md"), "price_source")
+
+	req := read(t, "docs/requirements/README.md")
+	mentionsAll(t, "the requirements", req, "CAT-11")
+	if strings.Contains(strings.ToLower(req), "platform usage viewer") {
+		t.Error(`the requirements still name a "platform usage viewer"`)
+	}
+	for _, id := range []string{"USE-06", "USE-07", "AZ-06"} {
+		line := ""
+		for _, l := range strings.Split(req, "\n") {
+			if strings.HasPrefix(l, "| "+id+" ") {
+				line = l
+			}
+		}
+		if line == "" {
+			t.Errorf("the requirements have no row %s", id)
+		}
+	}
+	mentionsAll(t, "the security model", read(t, "docs/architecture/security-model.md"), "#33")
+	epic6 := read(t, "planning/epics/06-observability-reports-lifecycle/epic.md")
+	mentionsAll(t, "the epic file of epic 6", epic6, "tenant_usage_details", "per installation", "never to cost or tokens")
+}
