@@ -266,7 +266,7 @@ func (s *server) DeleteLimit(ctx context.Context, in adminapi.DeleteLimitInput) 
 // ListTenantPlatformLimits: List the ceilings the platform sets for a tenant. The session is the
 // tenant's: the policy of the table leaves the defaults and the tenant's own rows, so nothing of
 // another tenant can be read.
-func (s *server) ListTenantPlatformLimits(ctx context.Context, in adminapi.ListTenantPlatformLimitsInput) (*adminapi.PlatformLimitRuleList, error) {
+func (s *server) ListTenantPlatformLimits(ctx context.Context, in adminapi.ListTenantPlatformLimitsInput) (*adminapi.TenantPlatformLimitRuleList, error) {
 	after, _, id, err := decodeCursor(in.Cursor, "id")
 	if err != nil {
 		return nil, err
@@ -285,14 +285,14 @@ func (s *server) ListTenantPlatformLimits(ctx context.Context, in adminapi.ListT
 	if err != nil {
 		return nil, err
 	}
-	out := &adminapi.PlatformLimitRuleList{Items: []adminapi.PlatformLimitRule{}}
+	out := &adminapi.TenantPlatformLimitRuleList{Items: []adminapi.TenantPlatformLimitRule{}}
 	for i, r := range rows {
 		if i == limit {
 			out.NextCursor = encodeCursor("id", "", rows[limit-1].ID)
 			break
 		}
 		l, amount := valueOut(r.Metric, r.LimitValue)
-		item := adminapi.PlatformLimitRule{ID: r.ID, Provider: r.Provider, ProviderID: r.ProviderID, Model: r.Model, ModelID: r.ModelID, Metric: adminapi.LimitMetric(r.Metric), Limit: l, Amount: amount,
+		item := adminapi.TenantPlatformLimitRule{ID: r.ID, Provider: r.Provider, ProviderID: r.ProviderID, Model: r.Model, ModelID: r.ModelID, Metric: adminapi.LimitMetric(r.Metric), Limit: l, Amount: amount,
 			Currency: r.Currency, Enforce: r.Enforce, Thresholds: thresholdsOut(r.Thresholds), CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC()}
 		item.Active = ruleActive(item.Metric, item.Currency, inForce)
 		if !r.IsDefault {

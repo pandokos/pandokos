@@ -231,10 +231,10 @@ they are enforced is in the [limits guide](../operations/limits.md).
   are read through them at the time of the call), `metric` (one of the nine), `limit` (an integer; 0 for a cost metric), `amount` (a decimal
   string with at most six fraction digits; empty unless a cost metric), `currency`, `enforce`,
   `thresholds` (up to four percentages, ascending), `active` (a cost rule counts only while its currency is the
-  tenant's active currency in force; `false` otherwise. On a platform ceiling the member is `true` in the
-  answer of `listTenantPlatformLimits` and **absent** when the ceiling is inactive, and always absent from
-  `listPlatformLimits`, which compares with `active_currency_in_force` of the tenant instead; the CLI prints
-  an absent value as `false`), `created_at` and `updated_at`. A platform rule has
+  tenant's active currency in force; `false` otherwise. On a platform ceiling the member is always present,
+  `true` or `false`, in the answer of `listTenantPlatformLimits` (the tenant's view), and always absent from
+  `listPlatformLimits` and the other platform operations, which compare with `active_currency_in_force` of the
+  tenant instead), `created_at` and `updated_at`. A platform rule has
   `tenant` (an ID; empty for a default of every tenant) in place of the subject. `listLimits` filters
   by `subject_kind`, `subject_id`, `metric`, `provider` and `model`; `listPlatformLimits` by the tenant
   it applies to and `metric`.

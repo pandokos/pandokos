@@ -374,16 +374,12 @@ func (a *app) printTable(items []any) {
 	_ = tw.Flush()
 }
 
-// cell is the value of a member in a row of a table. A member that a row lacks is empty, except
-// active, which a document leaves out when it is false.
+// cell is the value of a member in a row of a table. A member that a row lacks is empty.
 func cell(row []pair, key string) string {
 	for _, p := range row {
 		if p.k == key {
 			return p.v
 		}
-	}
-	if key == "active" {
-		return "false"
 	}
 	return ""
 }

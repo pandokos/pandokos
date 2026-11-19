@@ -979,6 +979,27 @@ func TestLimitRulesByCurrency(t *testing.T) {
 	active := func(path string) map[string]bool {
 		t.Helper()
 		out := map[string]bool{}
+		if strings.HasSuffix(path, "/platform-limits") {
+			// The tenant's view of the ceilings always carries active, true or false.
+			raw := rawJSON(t, w.do(t, w.ka, "GET", path, nil))
+			items, _ := raw["items"].([]any)
+			for _, it := range items {
+				m, _ := it.(map[string]any)
+				a, ok := m["active"].(bool)
+				if !ok {
+					t.Errorf("a ceiling in the tenant's view has no boolean active: %v", m)
+				}
+				cur, _ := m["currency"].(string)
+				out[cur] = a
+			}
+			l := decodeInto[adminapi.TenantPlatformLimitRuleList](t, w.do(t, w.ka, "GET", path, nil), 200)
+			for _, r := range l.Items {
+				if out[r.Currency] != r.Active {
+					t.Errorf("typed active %v differs from the document", r.Active)
+				}
+			}
+			return out
+		}
 		l := decodeInto[adminapi.LimitRuleList](t, w.do(t, w.ka, "GET", path, nil), 200)
 		for _, r := range l.Items {
 			out[r.Currency] = r.Active

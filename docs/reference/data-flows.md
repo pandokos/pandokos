@@ -50,5 +50,5 @@ alphabet.
 ## The log
 
 The log is the operator's. It holds identifiers and measurements, and, when the ledger cannot write
-a record at shutdown, the row of that record as JSON without its metadata values
-(`usage record not written`). Treat it as operational data: it names tenants, keys and request IDs. For a refused token it also names the registration and, once the signature verified, the subject, which is an identifier chosen by the identity provider (it may be a person's email address with some providers); the issuer's host appears in the key-retrieval lines, with an address literal shown as `(address)`.
+a record at shutdown and `telemetry.tenant_usage_details` is on, the row of that record as JSON without its metadata values
+(`usage record not written`); with the key off the line has identifiers and sizes only. Treat it as operational data: it names tenants, keys and request IDs. For a refused token it also names the registration and, once the signature verified, the subject, which is an identifier chosen by the identity provider (it may be a person's email address with some providers); the issuer's host appears in the key-retrieval lines, with an address literal shown as `(address)`.

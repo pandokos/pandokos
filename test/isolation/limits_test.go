@@ -547,7 +547,7 @@ func TestLimitAPI(t *testing.T) {
 				t.Errorf("B lists the rule of A")
 			}
 		}
-		var pl adminapi.PlatformLimitRuleList
+		var pl adminapi.TenantPlatformLimitRuleList
 		r = w.api.Do(t, "GET", "/v1/tenants/"+w.b.tenant.ID+"/platform-limits?limit=100", w.b.adminKey, nil, nil)
 		if err := json.Unmarshal(r.Body, &pl); err != nil {
 			t.Fatal(err)

@@ -280,9 +280,9 @@ func (f *fake) DeleteLimit(_ context.Context, in adminapi.DeleteLimitInput) (*ad
 	f.rec("deleteLimit", in)
 	return &adminapi.LimitRule{}, nil
 }
-func (f *fake) ListTenantPlatformLimits(_ context.Context, in adminapi.ListTenantPlatformLimitsInput) (*adminapi.PlatformLimitRuleList, error) {
+func (f *fake) ListTenantPlatformLimits(_ context.Context, in adminapi.ListTenantPlatformLimitsInput) (*adminapi.TenantPlatformLimitRuleList, error) {
 	f.rec("listTenantPlatformLimits", in)
-	return &adminapi.PlatformLimitRuleList{}, nil
+	return &adminapi.TenantPlatformLimitRuleList{}, nil
 }
 func (f *fake) ListLimitEvents(_ context.Context, in adminapi.ListLimitEventsInput) (*adminapi.LimitEventList, error) {
 	f.rec("listLimitEvents", in)

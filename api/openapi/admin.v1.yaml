@@ -1852,7 +1852,7 @@ paths:
         - {$ref: '#/components/parameters/Limit'}
         - {$ref: '#/components/parameters/Cursor'}
       responses:
-        "200": {$ref: '#/components/responses/PlatformLimitRuleList'}
+        "200": {$ref: '#/components/responses/TenantPlatformLimitRuleList'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
         "401": {$ref: '#/components/responses/Unauthenticated'}
         "403": {$ref: '#/components/responses/Forbidden'}
@@ -2665,6 +2665,11 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/PlatformLimitRuleList'}
+    TenantPlatformLimitRuleList:
+      description: One page of the ceilings of a tenant, as the tenant sees them.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/TenantPlatformLimitRuleList'}
     LimitEventList:
       description: One page of limit events, newest first.
       content:
@@ -4011,7 +4016,28 @@ components:
         currency: {type: string, description: Empty unless a cost metric.}
         enforce: {type: boolean, description: false means the rule never refuses and only records its thresholds.}
         thresholds: {type: array, description: 'Percentages of the limit at which an event is recorded, ascending.', maxItems: 4, uniqueItems: true, items: {type: integer, minimum: 1, maximum: 100}}
-        active: {type: boolean, description: 'Only in listTenantPlatformLimits: whether the ceiling applies to the tenant in its active currency.'}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    # A ceiling as the tenant sees it: the platform view (PlatformLimitRule) has no active member, because
+    # it compares nothing with a currency in force.
+    TenantPlatformLimitRule:
+      type: object
+      additionalProperties: false
+      required: [id, tenant, provider, provider_id, model, model_id, metric, limit, amount, currency, enforce, thresholds, active, created_at, updated_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        tenant: {type: string, description: The tenant the rule is for; empty for the default of every tenant.}
+        provider: {type: string, description: Empty when the rule is not scoped to a provider.}
+        provider_id: {type: string, description: 'Empty when the rule is not scoped to a provider (a model).'}
+        model: {type: string, description: Empty when the rule is not scoped to a model.}
+        model_id: {type: string, description: 'Empty when the rule is not scoped to a provider (a model).'}
+        metric: {$ref: '#/components/schemas/LimitMetric'}
+        limit: {type: integer, description: Requests or tokens; 0 for a cost metric.}
+        amount: {type: string, description: The budget as a decimal; empty unless a cost metric.}
+        currency: {type: string, description: Empty unless a cost metric.}
+        enforce: {type: boolean, description: false means the rule never refuses and only records its thresholds.}
+        thresholds: {type: array, description: 'Percentages of the limit at which an event is recorded, ascending.', maxItems: 4, uniqueItems: true, items: {type: integer, minimum: 1, maximum: 100}}
+        active: {type: boolean, description: 'Whether the ceiling applies to the tenant in its active currency in force: always present, true or false (a count ceiling is always active).'}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
     PlatformLimitRuleCreate:
@@ -4068,6 +4094,15 @@ components:
         items:
           type: array
           items: {$ref: '#/components/schemas/PlatformLimitRule'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    TenantPlatformLimitRuleList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/TenantPlatformLimitRule'}
         next_cursor: {type: string, description: Absent on the last page.}
     LimitEventList:
       type: object

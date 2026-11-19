@@ -2016,11 +2016,9 @@ type PlatformLimitRule struct {
 	// false means the rule never refuses and only records its thresholds.
 	Enforce bool `json:"enforce"`
 	// Percentages of the limit at which an event is recorded, ascending.
-	Thresholds []int `json:"thresholds"`
-	// Only in listTenantPlatformLimits: whether the ceiling applies to the tenant in its active currency.
-	Active    bool      `json:"active,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Thresholds []int     `json:"thresholds"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 var requiredPlatformLimitRule = []string{"id", "tenant", "provider", "provider_id", "model", "model_id", "metric", "limit", "amount", "currency", "enforce", "thresholds", "created_at", "updated_at"}
@@ -3271,6 +3269,86 @@ var nestedTenantPlatformIssuerList = []nestedMember{{Name: "items", Many: true, 
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantPlatformIssuerList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// TenantPlatformLimitRule is a schema of the administration API.
+type TenantPlatformLimitRule struct {
+	ID string `json:"id"`
+	// The tenant the rule is for; empty for the default of every tenant.
+	Tenant string `json:"tenant"`
+	// Empty when the rule is not scoped to a provider.
+	Provider string `json:"provider"`
+	// Empty when the rule is not scoped to a provider (a model).
+	ProviderID string `json:"provider_id"`
+	// Empty when the rule is not scoped to a model.
+	Model string `json:"model"`
+	// Empty when the rule is not scoped to a provider (a model).
+	ModelID string      `json:"model_id"`
+	Metric  LimitMetric `json:"metric"`
+	// Requests or tokens; 0 for a cost metric.
+	Limit int `json:"limit"`
+	// The budget as a decimal; empty unless a cost metric.
+	Amount string `json:"amount"`
+	// Empty unless a cost metric.
+	Currency string `json:"currency"`
+	// false means the rule never refuses and only records its thresholds.
+	Enforce bool `json:"enforce"`
+	// Percentages of the limit at which an event is recorded, ascending.
+	Thresholds []int `json:"thresholds"`
+	// Whether the ceiling applies to the tenant in its active currency in force: always present, true or false (a count ceiling is always active).
+	Active    bool      `json:"active"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+var requiredTenantPlatformLimitRule = []string{"id", "tenant", "provider", "provider_id", "model", "model_id", "metric", "limit", "amount", "currency", "enforce", "thresholds", "active", "created_at", "updated_at"}
+
+var nestedTenantPlatformLimitRule []nestedMember
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TenantPlatformLimitRule) Validate() []FieldError {
+	var errs []FieldError
+	if !re4.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !v.Metric.Valid() {
+		errs = append(errs, FieldError{Field: "metric", Message: "must be one of concurrent_requests, requests_per_minute, tokens_per_minute, requests_per_day, requests_per_month, tokens_per_day, tokens_per_month, cost_per_day, cost_per_month"})
+	}
+	if len(v.Thresholds) > 4 {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "must have at most 4 items"})
+	}
+	if !unique(v.Thresholds) {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "must not repeat an item"})
+	}
+	if anyBelow(v.Thresholds, 1) {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "every item must be at least 1"})
+	}
+	if anyAbove(v.Thresholds, 100) {
+		errs = append(errs, FieldError{Field: "thresholds", Message: "every item must be at most 100"})
+	}
+	return errs
+}
+
+// TenantPlatformLimitRuleList is a schema of the administration API.
+type TenantPlatformLimitRuleList struct {
+	Items []TenantPlatformLimitRule `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredTenantPlatformLimitRuleList = []string{"items"}
+
+var nestedTenantPlatformLimitRuleList = []nestedMember{{Name: "items", Many: true, Required: requiredTenantPlatformLimitRule, Nested: nestedTenantPlatformLimitRule}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TenantPlatformLimitRuleList) Validate() []FieldError {
 	var errs []FieldError
 	for i := range v.Items {
 		for _, e := range v.Items[i].Validate() {
@@ -5091,7 +5169,7 @@ type Server interface {
 	// ListTenantPlatformIssuers: GET /v1/tenants/{tenant}/platform-issuers. List the platform-level token issuers that list the tenant
 	ListTenantPlatformIssuers(ctx context.Context, in ListTenantPlatformIssuersInput) (*TenantPlatformIssuerList, error)
 	// ListTenantPlatformLimits: GET /v1/tenants/{tenant}/platform-limits. List the ceilings the platform sets for a tenant
-	ListTenantPlatformLimits(ctx context.Context, in ListTenantPlatformLimitsInput) (*PlatformLimitRuleList, error)
+	ListTenantPlatformLimits(ctx context.Context, in ListTenantPlatformLimitsInput) (*TenantPlatformLimitRuleList, error)
 	// ListPriceLists: GET /v1/tenants/{tenant}/price-lists. List the price lists of the tenant, one per currency
 	ListPriceLists(ctx context.Context, in ListPriceListsInput) (*TenantPriceListList, error)
 	// ListPriceListVersions: GET /v1/tenants/{tenant}/prices. List the price versions of the tenant's price lists, newest first
@@ -9112,7 +9190,7 @@ func (c *Client) ListTenantPlatformIssuers(ctx context.Context, in ListTenantPla
 }
 
 // ListTenantPlatformLimits calls GET /v1/tenants/{tenant}/platform-limits. List the ceilings the platform sets for a tenant
-func (c *Client) ListTenantPlatformLimits(ctx context.Context, in ListTenantPlatformLimitsInput) (*PlatformLimitRuleList, error) {
+func (c *Client) ListTenantPlatformLimits(ctx context.Context, in ListTenantPlatformLimitsInput) (*TenantPlatformLimitRuleList, error) {
 	q := url.Values{}
 	if in.Limit != 0 {
 		q.Set("limit", strconv.Itoa(in.Limit))
@@ -9120,7 +9198,7 @@ func (c *Client) ListTenantPlatformLimits(ctx context.Context, in ListTenantPlat
 	if in.Cursor != "" {
 		q.Set("cursor", string(in.Cursor))
 	}
-	var out PlatformLimitRuleList
+	var out TenantPlatformLimitRuleList
 	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/platform-limits", q, nil, 200, &out); err != nil {
 		return nil, err
 	}
