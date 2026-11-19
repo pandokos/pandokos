@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/pandokos/pandokos/internal/pricing"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/queries"
 	"github.com/pandokos/pandokos/internal/tenant"
@@ -21,15 +22,16 @@ const MaxRulesPerTenant = 5000
 // The set carries the calendar of the tenant, read in the same transaction: its zone, and while a
 // change is pending the zone in force until then. A zone this binary cannot load is an error.
 //
-// defaultCurrency is pricing.default_currency, the active currency of a tenant that chose none
-// (sprint 5.4; the loader does not read the currency yet).
+// defaultCurrency is pricing.default_currency, the active currency of a tenant that chose none;
+// the set carries the currency in force (and the one before it while a change is pending), read in
+// the same transaction after the time zone.
 func LoadRules(ctx context.Context, db *store.DB, id tenant.ID, zones *Zones, defaultCurrency string) (RuleSet, error) {
 	set, _, err := loadRules(ctx, db, id, zones, defaultCurrency)
 	return set, err
 }
 
 // loadRules is LoadRules that also returns the number of rules skipped.
-func loadRules(ctx context.Context, db *store.DB, id tenant.ID, zones *Zones, _ string) (RuleSet, int, error) {
+func loadRules(ctx context.Context, db *store.DB, id tenant.ID, zones *Zones, defaultCurrency string) (RuleSet, int, error) {
 	var set RuleSet
 	skipped := 0
 	err := db.WithTenant(ctx, id, func(ctx context.Context, tx store.Tx) error {
@@ -82,8 +84,13 @@ func loadRules(ctx context.Context, db *store.DB, id tenant.ID, zones *Zones, _ 
 		if err != nil {
 			return err
 		}
+		ac, err := q.GetTenantActiveCurrency(ctx)
+		if err != nil {
+			return err
+		}
 		set = NewScopedRuleSet(id, def, own, rules)
 		set.Calendar = cal
+		set.Currency = pricing.ResolveActive(ac.ActiveCurrency, ac.ActiveCurrencyPrevious, ac.ActiveCurrencyEffectiveFrom, defaultCurrency)
 		return nil
 	})
 	if err != nil {

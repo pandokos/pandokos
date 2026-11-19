@@ -70,3 +70,20 @@ func (l List) Cost(u family.Usage, t time.Time) Cost {
 	}
 	return c
 }
+
+// ResolveActive builds the Active of a tenant from its three columns: "" is def, and Previous and
+// From are set only while a change is pending (from is not nil).
+func ResolveActive(current, previous string, from *time.Time, def string) Active {
+	if current == "" {
+		current = def
+	}
+	a := Active{Current: current}
+	if from != nil {
+		a.From = *from
+		a.Previous = previous
+		if a.Previous == "" {
+			a.Previous = def
+		}
+	}
+	return a
+}

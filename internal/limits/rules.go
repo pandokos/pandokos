@@ -50,8 +50,9 @@ type RuleSet struct {
 	// Calendar is the calendar of the tenant: the loader sets it; For takes the period of a limit
 	// from it. A zero calendar yields no period limit.
 	Calendar TenantCalendar
-	// Currency is the active currency of the tenant: the loader will set it and For will apply a
-	// cost limit only in the currency in force. Zero for now.
+	// Currency is the active currency of the tenant, set by the loader: For applies a cost limit
+	// only in the currency in force at the start of the request. Zero: every cost limit applies
+	// (rule sets built without a tenant row).
 	Currency pricing.Active
 	subjects map[subjectRef]map[scopeKey]*scopeLimits
 }
@@ -157,6 +158,9 @@ type slotKey struct {
 	subject subjectRef
 	scope   scopeKey
 	metric  int
+	// currency is the currency of a cost rule, "" for another metric: a budget in each currency
+	// has its own slot.
+	currency string
 }
 
 // NewScopedRuleSet builds the RuleSet of a tenant from rules that carry a scope, a currency, an
@@ -165,11 +169,13 @@ type slotKey struct {
 // its scope and metric) and the tenant's own rules. Invalid rules are ignored.
 func NewScopedRuleSet(t tenant.ID, platformDefault, platformTenant, rules []Rule) RuleSet {
 	slots := map[slotKey]*ruleSlot{}
+	var order []slotKey // first use, so that the limits come in a fixed order
 	slot := func(k slotKey) *ruleSlot {
 		s := slots[k]
 		if s == nil {
 			s = &ruleSlot{}
 			slots[k] = s
+			order = append(order, k)
 		}
 		return s
 	}
@@ -183,7 +189,7 @@ func NewScopedRuleSet(t tenant.ID, platformDefault, platformTenant, rules []Rule
 			if !r.Metric.Cost() {
 				r.Currency = ""
 			}
-			slot(slotKey{platRef, scopeKey{r.ProviderID, r.ModelID}, metricIndex9(r.Metric)}).plat = &r
+			slot(slotKey{platRef, scopeKey{r.ProviderID, r.ModelID}, metricIndex9(r.Metric), r.Currency}).plat = &r
 		}
 	}
 	for _, r := range rules {
@@ -200,10 +206,11 @@ func NewScopedRuleSet(t tenant.ID, platformDefault, platformTenant, rules []Rule
 			r.Currency = ""
 		}
 		ref := subjectRef{r.SubjectKind, r.SubjectID}
-		slot(slotKey{ref, scopeKey{r.ProviderID, r.ModelID}, metricIndex9(r.Metric)}).own = &r
+		slot(slotKey{ref, scopeKey{r.ProviderID, r.ModelID}, metricIndex9(r.Metric), r.Currency}).own = &r
 	}
 	s := RuleSet{Tenant: t}
-	for k, sl := range slots {
+	for _, k := range order {
+		sl := slots[k]
 		if s.subjects == nil {
 			s.subjects = map[subjectRef]map[scopeKey]*scopeLimits{}
 		}
@@ -217,7 +224,7 @@ func NewScopedRuleSet(t tenant.ID, platformDefault, platformTenant, rules []Rule
 			sc = &scopeLimits{}
 			by[k.scope] = sc
 		}
-		sc[k.metric] = s.counters(k.subject, k.scope, Metrics()[k.metric], sl)
+		sc[k.metric] = append(sc[k.metric], s.counters(k.subject, k.scope, Metrics()[k.metric], sl)...)
 	}
 	return s
 }
@@ -322,6 +329,10 @@ func (s RuleSet) For(q Query) []Limit {
 	}
 	var out []Limit
 	cal := s.Calendar.At(q.Start)
+	var active string
+	if s.Currency != (pricing.Active{}) {
+		active = s.Currency.At(q.Start)
+	}
 	var days, months Period
 	var haveDay, haveMonth bool
 	emit := func(ref subjectRef) {
@@ -336,6 +347,9 @@ func (s RuleSet) For(q Query) []Limit {
 			}
 			for i := range set {
 				for _, l := range set[i] {
+					if active != "" && l.Metric.Cost() && l.Currency != active {
+						continue // inactive: not in the tenant's active currency
+					}
 					if kind, ok := l.Metric.Period(); ok {
 						if cal == nil {
 							continue
