@@ -181,6 +181,25 @@ func TestPlatformAPISeesNoTenantUsage(t *testing.T) {
 		}
 	}
 
+	// Positive controls: the platform operations that name tenant A answer 2xx (before the loop: one of its operations suspends A) (so the absence of the canaries
+	// is not an error page), and the tenant's own key does see the canaries in the three tenant operations
+	// that hold them (so the canaries are in the data the platform key cannot read).
+	for _, path := range []string{"/v1/tenants/" + w.a.tenant.ID, "/v1/tenants", "/v1/platform-limits?applies_to=" + w.a.tenant.ID, "/v1/models"} {
+		if r := w.api.Do(t, "GET", path, platformKey, nil, nil); r.Status/100 != 2 {
+			t.Errorf("GET %s with the platform key: %d %s", path, r.Status, r.Body)
+		}
+	}
+	for path, canary := range map[string]string{
+		"/v1/tenants/" + w.a.tenant.ID + "/usage-records?limit=100": "7654321",
+		"/v1/tenants/" + w.a.tenant.ID + "/limit-events?limit=100":  "7654321",
+		"/v1/tenants/" + w.a.tenant.ID + "/prices?limit=100":        "6.54321",
+	} {
+		r := w.api.Do(t, "GET", path, w.a.adminKey, nil, nil)
+		if r.Status != 200 || !strings.Contains(string(r.Body), canary) {
+			t.Errorf("GET %s with the key of tenant A: %d, canary %s present %v: %s", path, r.Status, canary, strings.Contains(string(r.Body), canary), r.Body)
+		}
+	}
+
 	tenantOps, platformOps := 0, 0
 	for _, op := range adminapi.Operations {
 		switch scopeOf(t, op) {
@@ -206,6 +225,7 @@ func TestPlatformAPISeesNoTenantUsage(t *testing.T) {
 	if tenantOps < 45 || platformOps < 40 {
 		t.Errorf("%d tenant operations and %d platform operations were called: too few", tenantOps, platformOps)
 	}
+
 	rows, err := w.api.Super(t).Query(ctx(t), `SELECT t::text FROM pandokos.platform_audit_event t`)
 	if err != nil {
 		t.Fatal(err)
