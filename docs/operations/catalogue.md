@@ -309,7 +309,11 @@ added (never convert, never add). The usage record says which list the price cam
 - Only when **a list in that currency exists**: a price of the tenant's own in it, or a catalogue price in
   it for a model the tenant can be given, in both cases in force or starting later. Otherwise 400 on
   `currency`: `no price list in this currency: add prices in it first`. The default of the installation
-  is always accepted.
+  is always accepted. Withdrawing a pending change (setting the currency in force again) needs no list.
+- Setting the code that equals the installation's default (`USD` for a tenant on the default) is not the
+  same as setting the default: it pins that code to the tenant, schedules a pending change at the same
+  instant, and nothing in force changes (the tenant stays in USD) until it follows the default again with
+  `--default`. Use `--default` to follow the installation.
 - It takes effect at **the start of the next month in the tenant's time zone** (the zone in force when it
   is made; the same instant as a change of zone, [limits guide](limits.md), section 4), never at once.
   Why: every day and month period in progress ends at or before that instant, so no budget is freed
