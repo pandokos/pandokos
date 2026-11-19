@@ -3,7 +3,7 @@ id: SPRINT-5.4
 title: Tenant price lists
 epic: EPIC-5
 release: v0.2
-status: in-progress
+status: done
 design: draft 2026-11-18, second version after the maintainer's review of the same day
 ---
 
