@@ -632,7 +632,9 @@ changes no existing row and lifts no row-level security.
   `usage_record_price_source_valid`, created `NOT VALID`: new rows are checked, existing rows hold
   NULL, and no partition is rewritten or scanned. The gateway role holds `INSERT` on the column. The
   ledger has no foreign key to a version.
-- No function is added and no function is `SECURITY DEFINER`: nothing that crosses the tenant
+- Four trigger functions are added (`tenant_active_currency_guard`, `notify_tenant_currency`,
+  `tenant_price_version_guard` and `tenant_price_shape`); none is `SECURITY DEFINER`, they run with the
+  rights of the session that writes and read nothing of another tenant: nothing that crosses the tenant
   boundary is new.
 
 **Locks and duration.** `ACCESS EXCLUSIVE` on `tenant`, the two rule tables and `usage_record` for
