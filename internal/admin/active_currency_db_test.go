@@ -72,6 +72,7 @@ func TestActiveCurrency(t *testing.T) {
 
 	t.Run("a scheduled tenant price makes a list", func(t *testing.T) {
 		w.createPrice(t, priceBody(all, prov, "EUR", nil, map[string]any{"valid_from": scheduled(3, 0)}))
+		newRows(t, api, seen) // the audit row of the version is not the change's
 		want := monthEnd(t, "UTC", dbNow(t, api))
 		r := put(w.ka, "EUR")
 		c := decodeInto[adminapi.ActiveCurrency](t, r, 200)
@@ -100,6 +101,7 @@ func TestActiveCurrency(t *testing.T) {
 	t.Run("a second change keeps the instant, the currency in force withdraws it", func(t *testing.T) {
 		before := get()
 		w.createPrice(t, priceBody(all, prov, "GBP", nil, map[string]any{"valid_from": scheduled(3, 0)}))
+		newRows(t, api, seen) // the audit row of the version is not the change's
 		c := decodeInto[adminapi.ActiveCurrency](t, put(w.ka, "GBP"), 200)
 		if c.Currency != "GBP" || c.InForce != "USD" || c.EffectiveFrom == nil || !c.EffectiveFrom.Equal(*before.EffectiveFrom) {
 			t.Errorf("%+v, want GBP and the instant %v", c, before.EffectiveFrom)

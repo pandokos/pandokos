@@ -100,7 +100,7 @@ func TestTenantPriceLists(t *testing.T) {
 		if len(at.Items) != 2 || !ids[usdLater.ID] || !ids[eurSoon.ID] {
 			t.Errorf("at +6h: one version per list and model, the later USD and the EUR: %+v", ids)
 		}
-		if at := list("?at=" + time.Now().UTC().Format(time.RFC3339)); len(at.Items) != 1 || at.Items[0].ID != now.ID {
+		if at := list("?at=" + time.Now().UTC().Format(time.RFC3339Nano)); len(at.Items) != 1 || at.Items[0].ID != now.ID {
 			t.Errorf("at now: %+v", at.Items)
 		}
 		p1 := list("?limit=2")
@@ -183,7 +183,7 @@ func TestTenantPriceLists(t *testing.T) {
 		}
 		invalidOn(t, "a price without rates", w.do(t, w.ka, "POST", path, map[string]any{"provider": prov, "model": all.Name, "currency": "USD"}), "rates")
 		invalidOn(t, "a rate without a base rate", w.do(t, w.ka, "POST", path, priceBody(all, prov, "USD", tpRates("input", "1000", "1"), nil)), "rates")
-		invalidOn(t, "a negative rate", w.do(t, w.ka, "POST", path, priceBody(all, prov, "USD", tpRates("input", "0", "-1"), nil)), "rates")
+		invalidOn(t, "a negative rate", w.do(t, w.ka, "POST", path, priceBody(all, prov, "USD", tpRates("input", "0", "-1"), nil)), "rates[0].rate")
 		invalidOn(t, "a start in the past", w.do(t, w.ka, "POST", path, priceBody(all, prov, "USD", nil, map[string]any{"valid_from": scheduled(-2, 0)})), "valid_from")
 		invalidOn(t, "a malformed currency", w.do(t, w.ka, "POST", path, priceBody(all, prov, "usd", nil, nil)), "currency")
 		invalidOn(t, "an unknown kind", w.do(t, w.ka, "POST", path, priceBody(all, prov, "USD", nil, map[string]any{"kind": "free"})), "kind")

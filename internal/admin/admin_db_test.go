@@ -14,6 +14,7 @@ import (
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/catalog"
+	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/test/apitest"
 	"github.com/pandokos/pandokos/test/testutil"
 )
@@ -104,6 +105,9 @@ type world struct {
 	// The limit rules of sprint 5.2, seeded as superuser: a rule of the tenant and a platform rule
 	// for it.
 	limitRule, platformLimit string
+
+	// A scheduled price version of the tenant's own price lists (sprint 5.4), seeded as superuser.
+	tenantPrice string
 }
 
 func newWorld(t *testing.T, name string) *world {
@@ -153,13 +157,18 @@ func (w *world) fill(t *testing.T, name string) {
 	w.api.SeedPlatformIssuerTenant(t, w.platformIssuer, w.tenant.ID)
 	w.limitRule = w.api.SeedLimitRule(t, w.tenant.ID)
 	w.platformLimit = w.api.SeedPlatformLimit(t, w.tenant.ID)
+	tid, err := tenant.ParseID(w.tenant.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.tenantPrice = w.api.DB.SeedTenantPrice(t, tid, "CHF", w.cat.Provider.Name, w.cat.All.Name, time.Now().Add(72*time.Hour))
 }
 
 func (w *world) params() apitest.Params {
 	return apitest.Params{Tenant: w.tenant.ID, ServiceAccount: w.sa.ID, VirtualKey: w.key.Key.ID, PlatformKey: w.platformK.Key.ID, Credential: w.cred.ID,
 		Provider: w.cat.Provider.Name, Endpoint: w.cat.Endpoint.Name, Model: w.cat.All.ID, PriceVersion: w.pv.ID, PriceImport: w.imp,
 		TokenIssuer: w.tokenIssuer, SubjectMapping: w.mapping, PlatformIssuer: w.platformIssuer,
-		LimitRule: w.limitRule, PlatformLimit: w.platformLimit}
+		LimitRule: w.limitRule, PlatformLimit: w.platformLimit, TenantPrice: w.tenantPrice}
 }
 
 // call makes the valid call of op with the key.

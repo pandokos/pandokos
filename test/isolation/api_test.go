@@ -783,7 +783,6 @@ func TestTenantPriceAPI(t *testing.T) {
 	for _, op := range adminapi.Operations {
 		byID[op.ID] = op
 	}
-	rowsOfA := w.api.SnapshotTenant(t, w.a.tenant.ID)
 	for _, id := range priceListOperations {
 		op, ok := byID[id]
 		if !ok {
@@ -795,6 +794,7 @@ func TestTenantPriceAPI(t *testing.T) {
 			real.Tenant, missing.Tenant = w.a.tenant.ID, randomUUID(t, w)
 			real.TenantPrice, missing.TenantPrice = w.a.tenantPrice, randomUUID(t, w)
 			cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
+			rowsOfA := w.api.SnapshotTenant(t, w.a.tenant.ID) // taken here: a call with A's own key (below) records its use
 			r1 := w.api.Do(t, cr.Method, cr.Path, w.b.adminKey, cr.Body, nil)
 			r2 := w.api.Do(t, cm.Method, cm.Path, w.b.adminKey, cm.Body, nil)
 			if r1.Status != 404 || r2.Status != 404 || !strings.Contains(string(r1.Body), `"code":"not_found"`) {

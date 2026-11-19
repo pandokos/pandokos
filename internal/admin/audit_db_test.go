@@ -503,7 +503,7 @@ func (f *fixt) steps(t *testing.T) []step {
 					effective = rfc(c.EffectiveFrom.UTC())
 				}
 				return []auditRow{f.tenantActor(auditRow{Action: "tenant.active_currency_update", ResourceType: "tenant", ResourceID: tid, RequestID: rid(r),
-					Detail: map[string]any{"from": "", "to": "EUR", "in_force": c.InForce, "effective_from": effective, "inactive_limits": float64(0)}}, tid)}
+					Detail: map[string]any{"from": "", "to": "EUR", "in_force": c.InForce, "effective_from": effective, "inactive_limits": float64(1)}}, tid)}
 			}},
 		{"deletePriceListVersion",
 			func() *apitest.Response {
