@@ -37,7 +37,7 @@ func TestWriterPriceSource(t *testing.T) {
 			mk(3, pricing.Cost{}, "none"),                                 // none: NULL
 			mk(4, pricing.Cost{Reason: pricing.ReasonCategoryUnpriced, Currency: "EUR", VersionID: testutil.RandomUUID(), Source: pricing.SourceTenant}, "unknown"), // a version without an amount
 		}
-		w, err := New(Options{DB: gateway, Logger: telemetry.NewLogger(&testutil.LogBuffer{}, "debug"), BufferSize: len(recs), BatchSize: len(recs), FlushInterval: 50 * time.Millisecond})
+		w, err := New(Options{DB: gateway, Logger: telemetry.NewLogger(&testutil.LogBuffer{}, "debug"), UsageDetails: true, BufferSize: len(recs), BatchSize: len(recs), FlushInterval: 50 * time.Millisecond})
 		if err != nil {
 			t.Fatal(err)
 		}

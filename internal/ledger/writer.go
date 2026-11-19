@@ -35,6 +35,9 @@ type Options struct {
 	BufferSize    int           // records admitted and not yet written; > 0
 	BatchSize     int           // records per flush; > 0
 	FlushInterval time.Duration // how long a record waits for company; > 0
+	// UsageDetails is telemetry.tenant_usage_details: the lines about a record that is rejected or not
+	// written carry its whole row only when it is set; otherwise only identifiers and operational fields.
+	UsageDetails bool
 }
 
 // Stats is a snapshot of the counters of a Writer.
@@ -77,6 +80,7 @@ func (s dbSink) insert(ctx context.Context, t tenant.ID, records []usage.Record)
 type Writer struct {
 	sink                       sink
 	log                        *slog.Logger
+	usageDetails               bool
 	bufferSize, batchSize      int
 	flushInterval              time.Duration
 	backoffInitial, backoffMax time.Duration
@@ -125,7 +129,7 @@ func newWriter(o Options, s sink) (*Writer, error) {
 		return nil, errors.New("ledger: no sink")
 	}
 	return &Writer{
-		sink: s, log: o.Logger,
+		sink: s, log: o.Logger, usageDetails: o.UsageDetails,
 		bufferSize: o.BufferSize, batchSize: o.BatchSize, flushInterval: o.FlushInterval,
 		backoffInitial: backoffInitial, backoffMax: backoffMax,
 		wake: make(chan struct{}, 1), closeCh: make(chan struct{}), drained: make(chan struct{}),
@@ -183,8 +187,8 @@ func (w *Writer) Record(r usage.Record) {
 		}
 		w.mu.Unlock()
 		// What is logged: the fields that passed their checks, never the one that failed.
-		w.log.Error("usage record rejected", "record_id", r.ID, "tenant_id", r.TenantID.String(), "error", err.Error(),
-			"row", rowJSON(&r, r.Failed()...))
+		attrs := []any{"record_id", r.ID, "tenant_id", r.TenantID.String(), "error", err.Error()}
+		w.log.Error("usage record rejected", w.withRow(attrs, &r, r.Failed()...)...)
 		if warn {
 			w.log.Error("usage record without admission")
 		}
@@ -499,7 +503,8 @@ func (l *loop) succeeded() {
 func (w *Writer) reject(r *usage.Record, err error) {
 	attrs := w.identity(r, "sqlstate", store.SQLState(err))
 	_, constraint, _ := store.ConstraintViolation(err)
-	attrs = append(attrs, "constraint", constraint, "metadata_count", len(r.Metadata), "row", rowJSON(r))
+	attrs = append(attrs, "constraint", constraint, "metadata_count", len(r.Metadata))
+	attrs = w.withRow(attrs, r)
 	w.log.Error("usage record rejected", attrs...)
 }
 
@@ -507,7 +512,7 @@ func (w *Writer) reject(r *usage.Record, err error) {
 // row as JSON, so that it can be inserted by hand; the values of the metadata are left out, and
 // so are the columns named in omit (the fields that failed Validate).
 func (w *Writer) logNotWritten(r *usage.Record, omit ...string) {
-	attrs := w.identity(r, "metadata_count", len(r.Metadata), "row", rowJSON(r, omit...))
+	attrs := w.withRow(w.identity(r, "metadata_count", len(r.Metadata)), r, omit...)
 	if len(omit) > 0 { // the identity fields that failed Validate are not logged either
 		kept := attrs[:0:0]
 		for i := 0; i < len(attrs); i += 2 {
@@ -518,6 +523,23 @@ func (w *Writer) logNotWritten(r *usage.Record, omit ...string) {
 		attrs = kept
 	}
 	w.log.Error("usage record not written", attrs...)
+}
+
+// withRow adds to the attributes of a line what it says of the record: the whole row (without the columns
+// named in omit) when telemetry.tenant_usage_details is on; otherwise only operational fields, the
+// duration and the sizes, and no token, estimate, cost, currency, price version, price source or metadata.
+func (w *Writer) withRow(attrs []any, r *usage.Record, omit ...string) []any {
+	if w.usageDetails {
+		return append(attrs, "row", rowJSON(r, omit...))
+	}
+	attrs = append(attrs, "duration_ms", r.Duration.Milliseconds())
+	if r.RequestBytes != nil {
+		attrs = append(attrs, "request_bytes", *r.RequestBytes)
+	}
+	if r.ResponseBytes != nil {
+		attrs = append(attrs, "response_bytes", *r.ResponseBytes)
+	}
+	return attrs
 }
 
 // rowJSON is the record as the insert statement reads it, with the metadata values removed and
