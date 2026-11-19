@@ -117,7 +117,7 @@ limits), with history lines on ADR 0012, 0014, 0020, 0032, 0035, 0037, 0039 and 
     (split roles): the worker-role ledger reader.
   - After 1.0: issue #31, #32 (credential scope with pins), #36 and #33 (confidentiality against
     the operator of the database).
-- Not scheduled: allowance headers on admitted responses (5.1 O-7); several budgets per scope in other currencies (5.2 O-5); a raise of the bound of six fraction
+- Not scheduled: allowance headers on admitted responses (5.1 O-7); a raise of the bound of six fraction
   digits and 10⁹ units of a budget amount (5.2 O-11) when someone needs it.
 
 ## Maintainer actions
