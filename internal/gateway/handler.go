@@ -81,7 +81,7 @@ type Handler struct {
 	propagate   bool
 	limits      Limits
 	defaultOut  int64
-	// usageDetails is Options.UsageDetails; the log line and the spans do not yet consult it.
+	// usageDetails is Options.UsageDetails: cost, currency and token counts go to the request line and the spans only when it is set.
 	usageDetails bool
 }
 
@@ -663,9 +663,6 @@ func (h *Handler) logRequest(st *reqState, outcome string) {
 		if st.rec != nil && st.rec.OutputSource != source {
 			attrs = append(attrs, "usage_output_source", string(st.rec.OutputSource))
 		}
-		if source != usage.SourceNone {
-			attrs = append(attrs, usageAttr(st.costUsage))
-		}
 	}
 	if st.ledgerFull {
 		attrs = append(attrs, "ledger", "full")
@@ -676,9 +673,6 @@ func (h *Handler) logRequest(st *reqState, outcome string) {
 			attrs = append(attrs, "trace_id", r.TraceID)
 		}
 		attrs = append(attrs, "cost_status", r.CostStatus)
-		if r.Cost.Known {
-			attrs = append(attrs, "cost", r.Cost.Amount.String(), "currency", r.Cost.Currency)
-		}
 		if n := len(r.Metadata); n > 0 {
 			attrs = append(attrs, "metadata_count", n)
 		}
@@ -689,7 +683,48 @@ func (h *Handler) logRequest(st *reqState, outcome string) {
 	if st.readerFailed {
 		attrs = append(attrs, "usage_reader", "failed")
 	}
+	if h.usageDetails {
+		attrs = append(attrs, st.usageDetailAttrs()...)
+	}
 	h.logger.Info("request", attrs...)
+}
+
+// usageDetailAttrs is the one place that builds the fields of the request line that hold a tenant's usage
+// data (sprint.md 5.11): the cost and its currency, the token counts, the tokens reserved and, of a refusal,
+// the limit, its currency and the currency and source of the price. The caller writes them only when
+// telemetry.tenant_usage_details is on (T-739, T-R52).
+func (st *reqState) usageDetailAttrs() []any {
+	var attrs []any
+	if st.answered {
+		source := usage.SourceNone
+		if st.rec != nil {
+			source = st.rec.InputSource
+		}
+		if source != usage.SourceNone {
+			attrs = append(attrs, usageAttr(st.costUsage))
+		}
+	}
+	if r := st.rec; r != nil && r.Cost.Known {
+		attrs = append(attrs, "cost", r.Cost.Amount.String(), "currency", r.Cost.Currency)
+	}
+	if st.reservation != nil || st.reservedTokens > 0 {
+		attrs = append(attrs, "reserved_tokens", st.reservedTokens)
+	}
+	if r := st.refusal; r != nil {
+		var limit any = r.Limit
+		if r.Currency != "" {
+			limit = millionths(r.Limit)
+			attrs = append(attrs, "limit_currency", r.Currency)
+		}
+		attrs = append(attrs, "limit", limit)
+		if r.PriceCurrency != "" {
+			attrs = append(attrs, "price_currency", r.PriceCurrency)
+		}
+		if r.PriceSource != "" {
+			attrs = append(attrs, "price_source", r.PriceSource)
+		}
+	}
+	return attrs
 }
 
 func routeLabelOf(st *reqState) string {

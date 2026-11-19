@@ -113,9 +113,6 @@ func (h *Handler) settleLimit(st *reqState) {
 // limitAttrs are the log fields of sprint.md section 5.9.
 func (st *reqState) limitAttrs() []any {
 	attrs := []any{"limit_state", string(st.limitState)}
-	if st.reservation != nil || st.reservedTokens > 0 {
-		attrs = append(attrs, "reserved_tokens", st.reservedTokens)
-	}
 	if m, ok := st.reservation.(interface{ Unpriced() bool }); ok && m.Unpriced() {
 		attrs = append(attrs, "budget_unpriced", true)
 	}
@@ -123,20 +120,10 @@ func (st *reqState) limitAttrs() []any {
 		attrs = append(attrs, "limits_unverified", true)
 	}
 	if r := st.refusal; r != nil {
-		var limit any = r.Limit
-		if r.Currency != "" {
-			limit = millionths(r.Limit)
-		}
 		attrs = append(attrs, "limit_subject", r.Subject, "limit_metric", r.Metric, "limit_level", r.Level,
-			"limit", limit, "retry_after_s", seconds(r.RetryAfter))
+			"retry_after_s", seconds(r.RetryAfter))
 		if r.Scope != "" {
 			attrs = append(attrs, "limit_scope", r.Scope)
-		}
-		if r.Currency != "" {
-			attrs = append(attrs, "limit_currency", r.Currency)
-		}
-		if r.PriceCurrency != "" {
-			attrs = append(attrs, "price_currency", r.PriceCurrency)
 		}
 		if r.OverLimit {
 			attrs = append(attrs, "estimate_over_limit", true)
