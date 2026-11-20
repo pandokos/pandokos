@@ -107,13 +107,15 @@ func TestTenantPriceLists(t *testing.T) {
 	})
 
 	t.Run("usage list shows both sources", func(t *testing.T) {
-		out := p.mustCLI(t, a.admin, "usage", "list", "--tenant", a.idStr, "-o", "json", "--all")
-		if !strings.Contains(out, `"price_source": "catalogue"`) && !strings.Contains(out, `"price_source":"catalogue"`) {
-			t.Errorf("no catalogue record:\n%s", out)
+		// The usage rows are written asynchronously by the ledger: wait for both sources instead of reading once.
+		has := func(out, source string) bool {
+			return strings.Contains(out, `"price_source": "`+source+`"`) || strings.Contains(out, `"price_source":"`+source+`"`)
 		}
-		if !strings.Contains(out, `"price_source": "tenant"`) && !strings.Contains(out, `"price_source":"tenant"`) {
-			t.Errorf("no tenant record:\n%s", out)
-		}
+		var out string
+		testutil.Eventually(t, 15*time.Second, "the usage list to show the catalogue and the tenant price sources", func() bool {
+			out = p.mustCLI(t, a.admin, "usage", "list", "--tenant", a.idStr, "-o", "json", "--all")
+			return has(out, "catalogue") && has(out, "tenant")
+		})
 	})
 
 	t.Run("the default log has no cost and has it with the key on, with the warning at start", func(t *testing.T) {
