@@ -2,7 +2,6 @@ package gateway_test
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -62,15 +61,6 @@ func (l recordLedger) Usage(_ context.Context, t tenant.ID, from, liveFrom, to t
 		out = append(out, *g)
 	}
 	return out, nil
-}
-
-// numText is a number of a JSON log line as text: a decimal is a string or a number, an integer
-// a number that is not written in exponent form.
-func numText(v any) string {
-	if f, ok := v.(float64); ok {
-		return strconv.FormatFloat(f, 'f', -1, 64)
-	}
-	return fmt.Sprint(v)
 }
 
 // quotaRefusal is a refusal of a period limit, with values that differ between the metrics.

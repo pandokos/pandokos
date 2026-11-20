@@ -124,7 +124,7 @@ func (s *server) validationTarget(ctx context.Context, provider string, validate
 
 // validate presents the secret to the provider. It runs before any transaction is opened and
 // logs one line with the outcome and the status; the response of the provider is never seen.
-func (s *server) validate(ctx context.Context, tid tenant.ID, provider string, t *vault.ValidationTarget, sec secret.Secret) error {
+func (s *server) validate(ctx context.Context, provider string, t *vault.ValidationTarget, sec secret.Secret) error {
 	start := time.Now()
 	verdict, status := s.validator.Validate(ctx, *t, sec)
 	outcome := "unavailable"
@@ -278,7 +278,7 @@ func (s *server) CreateCredential(ctx context.Context, in adminapi.CreateCredent
 	}
 	sec := secret.New(b.Secret)
 	if v != nil {
-		if err := s.validate(ctx, tid, b.Provider, v, sec); err != nil {
+		if err := s.validate(ctx, b.Provider, v, sec); err != nil {
 			return nil, err
 		}
 	}
@@ -431,7 +431,7 @@ func (s *server) ReplaceCredentialSecret(ctx context.Context, in adminapi.Replac
 	}
 	sec := secret.New(b.Secret)
 	if v != nil {
-		if err := s.validate(ctx, tid, cur.Provider, v, sec); err != nil {
+		if err := s.validate(ctx, cur.Provider, v, sec); err != nil {
 			return nil, err
 		}
 	}

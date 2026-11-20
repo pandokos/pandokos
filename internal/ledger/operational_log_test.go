@@ -32,7 +32,7 @@ func TestLedgerLogsNoRow(t *testing.T) {
 			r.admitRecord(t, tid)
 			r.wait(t, "the record to be rejected", func() bool { return r.w.Stats().Rejected == 1 })
 		}},
-		{"a record written off at Close", "usage record not written", func(t *testing.T, r *rig, tid tenant.ID) {
+		{"a record written off at Close", "usage record not written", func(_ *testing.T, r *rig, tid tenant.ID) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			r.w.Close(ctx)
