@@ -63,9 +63,8 @@ func TestMetadata(t *testing.T) {
 		if got := c.header.Get("X-Pandokos-Metadata-Dropped"); got != "5" {
 			t.Errorf("the response header says %q, want 5", got)
 		}
-		line := h.lastRequestLine(t)
-		if line["metadata_dropped"] != float64(5) {
-			t.Errorf("the log says %v", line["metadata_dropped"])
+		if line := h.lastRequestLine(t); line["metadata_dropped"] != nil {
+			t.Errorf("the request line counts the metadata (ADR 0055): %v", line)
 		}
 	})
 

@@ -135,9 +135,9 @@ func (c *RuleCache) Rules(ctx context.Context, id tenant.ID) (RuleSet, error) {
 			var skipped int
 			f.val, skipped, f.err = c.load(lctx, id)
 			if f.err != nil {
-				c.log.Warn("limit rules unavailable", "tenant_id", id.String())
+				c.log.Warn("limit rules unavailable")
 			} else if skipped > 0 {
-				c.log.Debug("limit rules of an unknown metric or subject skipped", "tenant_id", id.String(), "skipped", skipped)
+				c.log.Debug("limit rules of an unknown metric or subject skipped", "skipped", skipped)
 			}
 			c.mu.Lock()
 			if c.flights[id] == f {

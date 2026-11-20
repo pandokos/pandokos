@@ -491,7 +491,9 @@ func expect403(t *testing.T, op adminapi.Operation, r *apitest.Response) {
 
 // inferenceHandler returns an in-process inference handler authenticating with the virtual
 // keys of the world, and the log buffer of its request lines.
-func inferenceHandler(t *testing.T, w *apiWorld) (*httptest.Server, *testutil.LogBuffer) {
+// inferenceHandler returns the server and the recorder of its usage records: the request line names
+// no tenant (ADR 0055), the record does.
+func inferenceHandler(t *testing.T, w *apiWorld) (*httptest.Server, *testutil.MemoryRecorder) {
 	t.Helper()
 	logs := &testutil.LogBuffer{}
 	logger := telemetry.NewLogger(logs, "debug")
@@ -502,6 +504,7 @@ func inferenceHandler(t *testing.T, w *apiWorld) (*httptest.Server, *testutil.Lo
 	}
 	up := fakeprovider.New(t)
 	guard := testutil.TestGuard(t)
+	rec := &testutil.MemoryRecorder{}
 	h, err := gateway.New(gateway.Options{
 		DefaultOutputTokens: 4096,
 		Logger:              logger, Authenticator: auth,
@@ -511,14 +514,14 @@ func inferenceHandler(t *testing.T, w *apiWorld) (*httptest.Server, *testutil.Lo
 		DefaultFamily: "openai",
 		Public:        guard.Transport(false), Private: guard.Transport(true),
 		MaxRequestBodyBytes: 1 << 20, RequestBodyReadTimeout: 2 * time.Second, MaxRequestDuration: 10 * time.Second,
-		Recorder: &testutil.MemoryRecorder{}, Tracer: tracenoop.NewTracerProvider(),
+		Recorder: rec, Tracer: tracenoop.NewTracerProvider(),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return srv, logs
+	return srv, rec
 }
 
 func chat(t *testing.T, srv *httptest.Server, key string, hdr http.Header, query string) *http.Response {
@@ -575,21 +578,20 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 		t.Error("a tenant key read a tenant")
 	}
 	// The inference handler attributes each key to its own tenant.
-	srv, logs := inferenceHandler(t, w)
+	srv, rec := inferenceHandler(t, w)
 	for _, s := range []side{w.a, w.b} {
 		resp := chat(t, srv, s.inference.Secret, nil, "")
 		if resp.StatusCode != 200 {
 			t.Fatalf("inference with the key of %s: %d", s.tenant.Name, resp.StatusCode)
 		}
 	}
-	testutil.Eventually(t, 5*time.Second, "two request lines", func() bool { return len(logs.Find(t, "request")) >= 2 })
-	lines := logs.Find(t, "request")
+	testutil.Eventually(t, 5*time.Second, "two usage records", func() bool { return len(rec.Records()) >= 2 })
 	got := map[string]bool{}
-	for _, l := range lines {
-		got[l["tenant_id"].(string)] = true
+	for _, r := range rec.Records() {
+		got[r.TenantID.String()] = true
 	}
 	if !got[w.a.tenant.ID] || !got[w.b.tenant.ID] || len(got) != 2 {
-		t.Errorf("tenants in the request lines: %v", got)
+		t.Errorf("tenants in the usage records: %v", got)
 	}
 }
 
@@ -712,7 +714,7 @@ func TestCallerCannotNameTheTenant(t *testing.T) {
 	}
 
 	// On the inference handler the same headers and query change nothing.
-	srv, logs := inferenceHandler(t, w)
+	srv, rec := inferenceHandler(t, w)
 	for _, q := range []string{"", "?tenant_id=" + w.b.tenant.ID} {
 		for _, h := range []http.Header{nil, hdr} {
 			if resp := chat(t, srv, w.a.inference.Secret, h, q); resp.StatusCode != 200 {
@@ -720,10 +722,10 @@ func TestCallerCannotNameTheTenant(t *testing.T) {
 			}
 		}
 	}
-	testutil.Eventually(t, 5*time.Second, "four request lines", func() bool { return len(logs.Find(t, "request")) >= 4 })
-	for _, l := range logs.Find(t, "request") {
-		if l["tenant_id"] != w.a.tenant.ID {
-			t.Errorf("a request line names tenant %v", l["tenant_id"])
+	testutil.Eventually(t, 5*time.Second, "four usage records", func() bool { return len(rec.Records()) >= 4 })
+	for _, r := range rec.Records() {
+		if r.TenantID.String() != w.a.tenant.ID {
+			t.Errorf("a usage record names tenant %v", r.TenantID)
 		}
 	}
 }

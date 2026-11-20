@@ -48,13 +48,15 @@ func TestFailSealLog(t *testing.T) {
 			}
 			var se *vault.SealError
 			if errors.As(tc.err, &se) {
-				for k, want := range map[string]any{"credential_id": "cred-1", "kek_version": "kek-1", "data_key_version": float64(1)} {
+				for k, want := range map[string]any{"kek_version": "kek-1", "data_key_version": float64(1)} {
 					if line[k] != want {
 						t.Errorf("%s = %v, want %v", k, line[k], want)
 					}
 				}
-				if _, ok := line["tenant_id"]; !ok {
-					t.Errorf("no tenant_id in %v", line)
+				for _, k := range []string{"tenant_id", "credential_id"} {
+					if _, ok := line[k]; ok {
+						t.Errorf("%s in %v (ADR 0055)", k, line)
+					}
 				}
 			}
 		})

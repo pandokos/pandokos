@@ -242,8 +242,8 @@ func TestUsageAndTelemetryGuides(t *testing.T) {
 				}
 			}
 		}
-		if keys != 8 {
-			t.Errorf("%d telemetry keys, want 8", keys)
+		if keys != 7 {
+			t.Errorf("%d telemetry keys, want 7", keys)
 		}
 		for _, w := range []string{"OTEL_RESOURCE_ATTRIBUTES", "OTEL_", "traceparent", "upstream.tls.ca_file", "sampl", "propagat"} {
 			if !strings.Contains(doc, w) {
@@ -582,8 +582,9 @@ func TestUsageStaysWithTheTenant(t *testing.T) {
 		}
 	})
 
-	t.Run("the request line builds the fields of 5.11 in one function", func(t *testing.T) {
-		keys := map[string]bool{`"cost"`: true, `"currency"`: true, `"reserved_tokens"`: true, `"limit"`: true, `"limit_currency"`: true, `"price_currency"`: true, `"price_source"`: true}
+	t.Run("no function of the gateway names a field of the tenant's usage or identity (ADR 0055)", func(t *testing.T) {
+		keys := map[string]bool{`"cost"`: true, `"currency"`: true, `"reserved_tokens"`: true, `"limit"`: true, `"limit_currency"`: true, `"price_currency"`: true, `"price_source"`: true,
+			`"tenant_id"`: true, `"service_account_id"`: true, `"key_id"`: true, `"credential_id"`: true, `"issuer_id"`: true, `"subject"`: true}
 		holders := map[string][]string{}
 		for _, file := range goFiles(t, "internal/gateway") {
 			f, err := parser.ParseFile(fset, file, nil, 0)
@@ -603,8 +604,8 @@ func TestUsageStaysWithTheTenant(t *testing.T) {
 				})
 			}
 		}
-		if len(holders) != 1 {
-			t.Errorf("the log keys of section 5.11 are string literals in %d functions (%v), want the one function that builds the gated fields", len(holders), holders)
+		if len(holders) != 0 {
+			t.Errorf("tenant fields are string literals in %d functions of the gateway (%v), want none", len(holders), holders)
 		}
 	})
 }

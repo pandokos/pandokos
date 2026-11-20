@@ -10,6 +10,9 @@ type Operation struct {
 	Name   string // "chat.completions"
 	Method string // "POST"
 	Path   string // native path appended to the endpoint base URL: "/v1/chat/completions"
+	// GenAI is the value of gen_ai.operation.name on the provider span: a well-known value of the
+	// OpenTelemetry GenAI conventions when one applies ("chat", "embeddings"), else the name.
+	GenAI string
 	// NoUsage marks an operation that consumes no tokens (token counting): its records carry no
 	// usage, no estimate and no cost.
 	NoUsage bool

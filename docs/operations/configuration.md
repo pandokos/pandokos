@@ -106,7 +106,6 @@ replaced by `_`.
 | `telemetry.traces.sample_ratio` | `PANDOKOS_TELEMETRY_TRACES_SAMPLE_RATIO` | decimal | `1` | Share of the traces started here that is sampled (0 to 1); the sampled flag of a caller's `traceparent` is followed |
 | `telemetry.traces.propagate` | `PANDOKOS_TELEMETRY_TRACES_PROPAGATE` | boolean | `false` | Send the trace context to the provider in a `traceparent` header |
 | `telemetry.resource.attributes` | `PANDOKOS_TELEMETRY_RESOURCE_ATTRIBUTES` | list | none | Resource attributes of the traces: `key=value` pairs separated by commas, in YAML and in the environment |
-| `telemetry.tenant_usage_details` | `PANDOKOS_TELEMETRY_TENANT_USAGE_DETAILS` | boolean | `false` | Write the cost, currency and token counts of a tenant's requests to the request log and to traces; off by default because they are the tenant's data; `serve` logs a warning at start when it is on ([telemetry guide](telemetry.md)) |
 
 Durations are strings in Go syntax (`"30s"`, `"10m"`); a YAML number is rejected for a duration.
 Sizes are integers in bytes.
@@ -217,7 +216,6 @@ they do not prevent start.
 | `upstream.proxy.url` | `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY` (or the lower-case name) is set in the environment and the key is not (`serve` only) | `<VARIABLE>` is set in the environment and is not used; set upstream.proxy.url to send provider traffic through a proxy |
 | `telemetry.resource.attributes` | `OTEL_RESOURCE_ATTRIBUTES` is set in the environment (`serve` only) | `OTEL_RESOURCE_ATTRIBUTES` is set in the environment: the OpenTelemetry SDK adds its attributes to the resource; they never replace those Pandokos sets. The value is never shown |
 | `telemetry.otlp.endpoint` | `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set in the environment and the key is not (`serve` only) | `<VARIABLE>` is set in the environment and is not used; set telemetry.otlp.endpoint to export traces |
-| `telemetry.tenant_usage_details` | true | tenant usage details (cost, currency, token counts) are written to logs and traces |
 | `listeners.inference.address` | no TLS and the host is not a loopback address or `localhost` | the listener serves plain HTTP; set listeners.inference.tls.cert_file and key_file, or terminate TLS in front of it |
 | `listeners.admin.address` | no TLS, host not loopback, `allow_plaintext` true | the administration API is served without TLS; keys travel in clear text unless TLS ends in front of it |
 | `listeners.admin.allow_plaintext` | true while TLS is configured or the host is loopback | has no effect |
@@ -297,8 +295,6 @@ pricing:
     enabled: false
     url: https://raw.githubusercontent.com/pydantic/genai-prices/<commit>/prices/new_data/v2/data.json
     interval: 24h
-telemetry:
-  tenant_usage_details: false
 upstream:
   connect_timeout: 10s
   tls:

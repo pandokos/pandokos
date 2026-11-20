@@ -176,7 +176,7 @@ func TestGatewayGuide(t *testing.T) {
 				}
 			}
 		}
-		for _, w := range []string{"background", "X-Pandokos-Metadata-", "X-Pandokos-Metadata-Dropped", "ttfb_ms", "record_id", "trace_id", "cost_status", "usage_source", "ledger: full", "0024"} {
+		for _, w := range []string{"background", "X-Pandokos-Metadata-", "X-Pandokos-Metadata-Dropped", "ttfb_ms", "trace_id", "ledger: full", "0024", "0055"} {
 			if !strings.Contains(doc, w) {
 				t.Errorf("gateway.md lacks %q", w)
 			}

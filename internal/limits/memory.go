@@ -487,7 +487,7 @@ func (m *Memory) Sweep(now time.Time) int {
 		sh.mu.Unlock()
 	}
 	for _, e := range all {
-		m.log.Error("limit reservation expired", "request_id", e.requestID, "tenant_id", e.tenant.String())
+		m.log.Error("limit reservation expired", "request_id", e.requestID)
 	}
 	return len(all)
 }

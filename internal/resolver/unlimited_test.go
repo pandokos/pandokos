@@ -95,8 +95,8 @@ func TestUnlimitedAuditor(t *testing.T) {
 		if n, p := rowsOf(t, d, a); n != 1 || p != 1 {
 			t.Errorf("%d and %d rows after two hundred notes of one day", n, p)
 		}
-		if got := aud.lines("unlimited traffic recorded", "INFO"); got != 1 {
-			t.Errorf("%d lines 'unlimited traffic recorded', want 1", got)
+		if got := aud.lines("unlimited traffic recorded", "INFO"); got != 0 {
+			t.Errorf("%d lines 'unlimited traffic recorded': the row is the tenant's audit, not a log line (ADR 0055)", got)
 		}
 		for key, want := range map[string]string{"day": today, "time_zone": "Europe/Rome", "provider": "openai"} {
 			if n := d.Count(t, `SELECT count(*) FROM pandokos.audit_event WHERE action = 'limit.unlimited_traffic' AND tenant_id = $1::uuid AND detail ->> $2 = $3`, a.String(), key, want); n != 1 {

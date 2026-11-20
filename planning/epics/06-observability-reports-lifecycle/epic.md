@@ -23,10 +23,10 @@ erasure), 0014.
 ### 6.1 Metrics and conventions
 
 - OTLP metrics: requests, errors, time to first byte, duration, tokens, cost, limit refusals.
-- GenAI attributes on spans and metrics at a pinned convention version, documented.
-- Cardinality policy: tenant label off by default, opt-in, and for request, error and latency metrics only, never to cost or tokens: those exist per installation only (ADR 0054).
+- GenAI attributes on metrics at a pinned convention version, documented; spans keep only the Required attributes (ADR 0055).
+- Cardinality policy: no tenant label; cost and tokens exist per installation only (ADR 0054, ADR 0055). A tenant dimension of operational telemetry is issue #52.
 - Prometheus endpoint on the admin listener.
-- Redacting log handler; log reference; usage details stay behind `telemetry.tenant_usage_details`.
+- Redacting log handler; log reference; logs and spans hold no tenant data (ADR 0055).
 - Example dashboards.
 - The provider's own 429 answers counted per provider credential (never as a tenant label), so that
   an operator can see which credential is saturated (issue #32).

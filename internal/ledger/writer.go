@@ -35,9 +35,6 @@ type Options struct {
 	BufferSize    int           // records admitted and not yet written; > 0
 	BatchSize     int           // records per flush; > 0
 	FlushInterval time.Duration // how long a record waits for company; > 0
-	// UsageDetails is telemetry.tenant_usage_details: the lines about a record that is rejected or not
-	// written carry its whole row only when it is set; otherwise only identifiers and operational fields.
-	UsageDetails bool
 }
 
 // Stats is a snapshot of the counters of a Writer.
@@ -80,7 +77,6 @@ func (s dbSink) insert(ctx context.Context, t tenant.ID, records []usage.Record)
 type Writer struct {
 	sink                       sink
 	log                        *slog.Logger
-	usageDetails               bool
 	bufferSize, batchSize      int
 	flushInterval              time.Duration
 	backoffInitial, backoffMax time.Duration
@@ -129,7 +125,7 @@ func newWriter(o Options, s sink) (*Writer, error) {
 		return nil, errors.New("ledger: no sink")
 	}
 	return &Writer{
-		sink: s, log: o.Logger, usageDetails: o.UsageDetails,
+		sink: s, log: o.Logger,
 		bufferSize: o.BufferSize, batchSize: o.BatchSize, flushInterval: o.FlushInterval,
 		backoffInitial: backoffInitial, backoffMax: backoffMax,
 		wake: make(chan struct{}, 1), closeCh: make(chan struct{}), drained: make(chan struct{}),
@@ -167,11 +163,8 @@ func (w *Writer) Record(r usage.Record) {
 		// Close has finished: nobody reads the queue any more.
 		w.unwritten++
 		w.mu.Unlock()
-		var omit []string
-		if err != nil {
-			omit = r.Failed()
-		}
-		w.logNotWritten(&r, omit...)
+		// Lost like the records Close counted: one line says so, with nothing of the record.
+		w.log.Error("usage record not written")
 		return
 	}
 	covered := w.inUse > len(w.queue) // a slot is held for a request that has not recorded yet
@@ -186,9 +179,13 @@ func (w *Writer) Record(r usage.Record) {
 			w.warnedFree = true
 		}
 		w.mu.Unlock()
-		// What is logged: the fields that passed their checks, never the one that failed.
-		attrs := []any{"record_id", r.ID, "tenant_id", r.TenantID.String(), "error", err.Error()}
-		w.log.Error("usage record rejected", w.withRow(attrs, &r, r.Failed()...)...)
+		// What is logged: the request ID, when it passed its check, and the name of the column
+		// that failed, never a value.
+		attrs := []any{"error", err.Error()}
+		if !slices.Contains(r.Failed(), "request_id") {
+			attrs = append([]any{"request_id", r.RequestID}, attrs...)
+		}
+		w.log.Error("usage record rejected", attrs...)
 		if warn {
 			w.log.Error("usage record without admission")
 		}
@@ -220,13 +217,6 @@ func (w *Writer) afterFree() {
 			close(w.drained)
 		}
 	}
-}
-
-// identity is the attributes that name a record without metadata values.
-func (w *Writer) identity(r *usage.Record, extra ...any) []any {
-	return append([]any{
-		"record_id", r.ID, "request_id", r.RequestID, "tenant_id", r.TenantID.String(), "outcome", string(r.Outcome),
-	}, extra...)
 }
 
 // Ready fails with "ledger: buffer full" from the moment an Admit is refused until the slots
@@ -498,72 +488,11 @@ func (l *loop) succeeded() {
 	l.failures = 0
 }
 
-// reject logs a record the database refuses; its slot is freed by the caller. The line carries
-// the SQLSTATE, the constraint and the row, without the values of the metadata.
+// reject logs a record the database refuses; its slot is freed by the caller. The line names the
+// request and carries the SQLSTATE and the constraint: never a field of the row (ADR 0055).
 func (w *Writer) reject(r *usage.Record, err error) {
-	attrs := w.identity(r, "sqlstate", store.SQLState(err))
 	_, constraint, _ := store.ConstraintViolation(err)
-	attrs = append(attrs, "constraint", constraint, "metadata_count", len(r.Metadata))
-	attrs = w.withRow(attrs, r)
-	w.log.Error("usage record rejected", attrs...)
-}
-
-// logNotWritten logs a record that will not reach the table: the identity fields and the whole
-// row as JSON, so that it can be inserted by hand; the values of the metadata are left out, and
-// so are the columns named in omit (the fields that failed Validate).
-func (w *Writer) logNotWritten(r *usage.Record, omit ...string) {
-	attrs := w.withRow(w.identity(r, "metadata_count", len(r.Metadata)), r, omit...)
-	if len(omit) > 0 { // the identity fields that failed Validate are not logged either
-		kept := attrs[:0:0]
-		for i := 0; i < len(attrs); i += 2 {
-			if k, _ := attrs[i].(string); !slices.Contains(omit, k) {
-				kept = append(kept, attrs[i], attrs[i+1])
-			}
-		}
-		attrs = kept
-	}
-	w.log.Error("usage record not written", attrs...)
-}
-
-// withRow adds to the attributes of a line what it says of the record: the whole row (without the columns
-// named in omit) when telemetry.tenant_usage_details is on; otherwise only operational fields, the
-// duration and the sizes, and no token, estimate, cost, currency, price version, price source or metadata.
-func (w *Writer) withRow(attrs []any, r *usage.Record, omit ...string) []any {
-	if w.usageDetails {
-		return append(attrs, "row", rowJSON(r, omit...))
-	}
-	attrs = append(attrs, "duration_ms", r.Duration.Milliseconds())
-	if r.RequestBytes != nil {
-		attrs = append(attrs, "request_bytes", *r.RequestBytes)
-	}
-	if r.ResponseBytes != nil {
-		attrs = append(attrs, "response_bytes", *r.ResponseBytes)
-	}
-	return attrs
-}
-
-// rowJSON is the record as the insert statement reads it, with the metadata values removed and
-// the columns named in omit left out.
-func rowJSON(r *usage.Record, omit ...string) string {
-	// The caller's metadata comes from request headers: the row is built from a copy that never
-	// holds it, so no value of it can reach a log line.
-	c := *r
-	c.Metadata = nil
-	rw := rowOf(&c)
-	rw.Metadata = map[string]string{}
-	b, err := json.Marshal(rw)
-	if err != nil || len(omit) == 0 {
-		return string(b)
-	}
-	var m map[string]any
-	if json.Unmarshal(b, &m) != nil {
-		return ""
-	}
-	for _, k := range omit {
-		delete(m, k)
-	}
-	b, _ = json.Marshal(m)
-	return string(b)
+	w.log.Error("usage record rejected", "request_id", r.RequestID, "sqlstate", store.SQLState(err), "constraint", constraint)
 }
 
 // retryable says whether a refusal is about the state of the database and not about the record:
@@ -629,9 +558,6 @@ func (w *Writer) Close(ctx context.Context) (unwritten int) {
 	w.closed = true
 	w.mu.Unlock()
 
-	for i := range remaining {
-		w.logNotWritten(&remaining[i])
-	}
 	if len(remaining) > 0 || missing > 0 {
 		w.log.Error("ledger closed with records lost", "unwritten", len(remaining), "missing", missing)
 	} else {

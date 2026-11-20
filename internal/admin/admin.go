@@ -171,10 +171,12 @@ func (s *server) logRequest(r *http.Request, st *reqState, status int, d time.Du
 	if st.errCode != "" {
 		attrs = append(attrs, "error_code", string(st.errCode))
 	}
+	// A principal of the platform is named: its activity is the platform's. A tenant's principal
+	// is not, nor its tenant (ADR 0055).
 	if p := st.principal; p != nil {
-		attrs = append(attrs, "principal_type", string(p.Kind), "principal_id", p.ID, "key_id", p.KeyID)
-		if p.Kind == authz.KindServiceAccount {
-			attrs = append(attrs, "tenant_id", p.TenantID.String())
+		attrs = append(attrs, "principal_type", string(p.Kind))
+		if p.Kind != authz.KindServiceAccount {
+			attrs = append(attrs, "principal_id", p.ID, "key_id", p.KeyID)
 		}
 	}
 	s.log.Info("admin request", attrs...)
@@ -228,7 +230,6 @@ func (s *server) before(ctx context.Context, r *http.Request, op *adminapi.Opera
 // authFailed logs a failed authentication and records it in the audit log, within the cap.
 func (s *server) authFailed(ctx context.Context, st *reqState, f *authn.Failure) {
 	d := f.Detail()
-	reason, keyID, tenantID := d.Reason, d.KeyID, d.TenantID
 	audited := false
 	if s.limiter.allow() {
 		audited = s.recordFailure(ctx, st, f) == nil
@@ -236,14 +237,8 @@ func (s *server) authFailed(ctx context.Context, st *reqState, f *authn.Failure)
 			s.log.Debug("authentication failure not recorded", "request_id", st.id)
 		}
 	}
-	attrs := []any{"listener", "admin", "request_id", st.id, "reason", reason}
-	if keyID != "" {
-		attrs = append(attrs, "key_id", keyID)
-	}
-	if tenantID != "" {
-		attrs = append(attrs, "tenant_id", tenantID)
-	}
-	attrs = append(attrs, "audited", audited)
+	// The line says why, never who: the key and the tenant go to the audit log only (ADR 0055).
+	attrs := []any{"listener", "admin", "request_id", st.id, "reason", d.Reason, "audited", audited}
 	s.log.Warn("authentication failed", attrs...)
 }
 
@@ -315,10 +310,7 @@ func (s *server) fail(w http.ResponseWriter, r *http.Request, _ *adminapi.Operat
 		attrs := []any{"request_id", st.id, "operation", st.operation, "cause", "kek_unavailable"}
 		var se *vault.SealError
 		if errors.As(err, &se) {
-			attrs = []any{"request_id", st.id, "operation", st.operation, "tenant_id", se.TenantID.String()}
-			if se.CredentialID != "" {
-				attrs = append(attrs, "credential_id", se.CredentialID)
-			}
+			attrs = []any{"request_id", st.id, "operation", st.operation}
 			if se.DataKeyVersion != 0 {
 				attrs = append(attrs, "data_key_version", se.DataKeyVersion)
 			}

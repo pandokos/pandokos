@@ -2,7 +2,6 @@ package ledger
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -104,7 +103,7 @@ type rig struct {
 
 func opts(buffer, batch int, flush time.Duration) (Options, *testutil.LogBuffer) {
 	logs := &testutil.LogBuffer{}
-	return Options{UsageDetails: true, Logger: telemetry.NewLogger(logs, "debug"), BufferSize: buffer, BatchSize: batch, FlushInterval: flush}, logs
+	return Options{Logger: telemetry.NewLogger(logs, "debug"), BufferSize: buffer, BatchSize: batch, FlushInterval: flush}, logs
 }
 
 // start builds a writer over fs and runs it; the cleanup closes it.
@@ -324,16 +323,12 @@ func TestAdmission(t *testing.T) {
 			t.Fatalf("%d lines", len(lines))
 		}
 		testutil.AssertNoCanary(t, "the log", r.logs.String())
-		// The line carries the fields that passed their checks, as JSON, and not the one that failed.
-		var row map[string]any
-		if err := json.Unmarshal([]byte(fmt.Sprint(lines[0]["row"])), &row); err != nil {
-			t.Fatalf("the line has no row: %v", lines[0])
-		}
-		if row["provider"] != "openai" || row["id"] == nil {
-			t.Errorf("the row: %v", row)
-		}
-		if _, ok := row["request_id"]; ok {
-			t.Errorf("the row holds the field that failed: %v", row)
+		// The line names the column that failed and carries nothing of the record (ADR 0055): here the
+		// request ID is the field that failed, so it is not there either.
+		for _, k := range []string{"row", "record_id", "tenant_id", "request_id"} {
+			if _, ok := lines[0][k]; ok {
+				t.Errorf("the line has %s: %v", k, lines[0])
+			}
 		}
 		if !strings.Contains(fmt.Sprint(lines[0]["error"]), "request_id") {
 			t.Errorf("the error does not name the field: %v", lines[0]["error"])
@@ -350,8 +345,8 @@ func TestAdmission(t *testing.T) {
 		late.Metadata = map[string]string{"note": fixtures.CanaryPrompt}
 		r.w.Record(late)
 		lines := r.logs.Find(t, "usage record not written")
-		if len(lines) != 1 || lines[0]["level"] != "ERROR" || lines[0]["record_id"] != late.ID || lines[0]["row"] == nil {
-			t.Fatalf("lines %v", lines)
+		if len(lines) != 1 || lines[0]["level"] != "ERROR" || len(lines[0]) != 3 {
+			t.Fatalf("lines %v: one line with nothing of the record (ADR 0055)", lines)
 		}
 		if n := len(r.logs.Find(t, "usage record without admission")); n != 0 {
 			t.Errorf("%d `without admission` lines", n)
@@ -655,25 +650,17 @@ func TestCloseAtDeadline(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Error("Run did not return")
 	}
-	lines := logs.Find(t, "usage record not written")
-	if len(lines) != 3 {
-		t.Fatalf("%d `usage record not written` lines", len(lines))
+	// The records lost are counted, never logged one by one (ADR 0055).
+	if n := len(logs.Find(t, "usage record not written")); n != 0 {
+		t.Errorf("%d `usage record not written` lines", n)
 	}
-	seen := map[string]bool{}
-	for _, l := range lines {
-		if l["level"] != "ERROR" {
-			t.Errorf("level %v", l["level"])
-		}
-		seen[fmt.Sprint(l["record_id"])] = true
-		for _, k := range []string{"record_id", "request_id", "tenant_id", "outcome"} {
-			if _, ok := l[k]; !ok {
-				t.Errorf("the line has no %s: %v", k, l)
-			}
-		}
+	lost := logs.Find(t, "ledger closed with records lost")
+	if len(lost) != 1 || lost[0]["level"] != "ERROR" || fmt.Sprint(lost[0]["unwritten"]) != "3" {
+		t.Fatalf("the lost line: %v", lost)
 	}
 	for _, id := range ids {
-		if !seen[id] {
-			t.Errorf("record %s is not in the log", id)
+		if strings.Contains(logs.String(), id) {
+			t.Errorf("record %s is in the log", id)
 		}
 	}
 	testutil.AssertNoCanary(t, "the log", logs.String())
@@ -766,88 +753,33 @@ func TestConcurrency(t *testing.T) {
 	testutil.Eventually(t, 2*time.Second, "no goroutine is left", func() bool { return runtime.NumGoroutine() <= baseline+2 })
 }
 
-// TestRecordAfterCloseOmitsFailedFields is T-551: a record that fails Validate and arrives after
-// Close is logged as `usage record not written` without the fields that failed, the rule of the
-// normal rejection path; a record that passes Validate is logged with every field.
+// TestRecordAfterCloseOmitsFailedFields is T-551 as ADR 0055 redefines it: a record that arrives after
+// Close, valid or not, is logged as `usage record not written` with nothing of the record.
 func TestRecordAfterCloseOmitsFailedFields(t *testing.T) {
-	closed := func(t *testing.T) *rig {
-		t.Helper()
-		r := start(t, 5, 10, 5*time.Millisecond, &fakeStore{})
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		r.w.Close(ctx)
-		return r
-	}
-	rowOf := func(t *testing.T, line map[string]any) map[string]any {
-		t.Helper()
-		var row map[string]any
-		if err := json.Unmarshal([]byte(fmt.Sprint(line["row"])), &row); err != nil {
-			t.Fatalf("the line has no row: %v", line)
-		}
-		return row
-	}
-
-	t.Run("one failed field", func(t *testing.T) {
-		r := closed(t)
-		bad := testutil.ValidRecord(tenantID(t))
-		bad.RequestID = fixtures.CanaryPrompt // not 32 hex characters
-		if bad.Validate() == nil {
-			t.Fatal("the record passes Validate")
-		}
-		r.w.Record(bad)
-		lines := r.logs.Find(t, "usage record not written")
-		if len(lines) != 1 || lines[0]["record_id"] != bad.ID {
-			t.Fatalf("lines %v", lines)
-		}
-		row := rowOf(t, lines[0])
-		if _, ok := row["request_id"]; ok {
-			t.Errorf("the row holds the field that failed: %v", row)
-		}
-		if row["provider"] != "openai" || row["id"] != bad.ID || row["input_source"] == nil {
-			t.Errorf("the row lost the fields that passed: %v", row)
-		}
-		testutil.AssertNoCanary(t, "the log", r.logs.String())
-		if got := r.w.Stats().Unwritten; got != 1 {
-			t.Errorf("Unwritten %d", got)
-		}
-	})
-
-	t.Run("several failed fields", func(t *testing.T) {
-		r := closed(t)
-		bad := testutil.ValidRecord(tenantID(t))
-		bad.RequestID, bad.Provider, bad.Usage.InputTokens = fixtures.CanaryPrompt, "Not A Provider "+fixtures.CanaryCompletion, -1
-		failed := bad.Failed()
-		if len(failed) < 3 {
-			t.Fatalf("only %v fail", failed)
-		}
-		r.w.Record(bad)
-		lines := r.logs.Find(t, "usage record not written")
-		if len(lines) != 1 {
-			t.Fatalf("lines %v", lines)
-		}
-		row := rowOf(t, lines[0])
-		for _, f := range failed {
-			if _, ok := row[f]; ok {
-				t.Errorf("the row holds %s, a field that failed", f)
+	for _, valid := range []bool{true, false} {
+		t.Run(fmt.Sprintf("valid %v", valid), func(t *testing.T) {
+			r := start(t, 5, 10, 5*time.Millisecond, &fakeStore{})
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			r.w.Close(ctx)
+			rec := testutil.ValidRecord(tenantID(t))
+			if !valid {
+				rec.RequestID, rec.Provider = fixtures.CanaryPrompt, "Not A Provider "+fixtures.CanaryCompletion
 			}
-		}
-		if row["api_family"] != "openai" || row["operation"] != "chat.completions" {
-			t.Errorf("the row lost the fields that passed: %v", row)
-		}
-		testutil.AssertNoCanary(t, "the log", r.logs.String())
-	})
-
-	t.Run("a valid record keeps every field", func(t *testing.T) {
-		r := closed(t)
-		good := testutil.ValidRecord(tenantID(t))
-		r.w.Record(good)
-		lines := r.logs.Find(t, "usage record not written")
-		if len(lines) != 1 {
-			t.Fatalf("lines %v", lines)
-		}
-		row := rowOf(t, lines[0])
-		if row["request_id"] != good.RequestID || row["provider"] != "openai" {
-			t.Errorf("the row: %v", row)
-		}
-	})
+			r.w.Record(rec)
+			lines := r.logs.Find(t, "usage record not written")
+			if len(lines) != 1 || len(lines[0]) != 3 {
+				t.Fatalf("lines %v", lines)
+			}
+			for _, v := range []string{rec.ID, rec.RequestID, rec.TenantID.String()} {
+				if strings.Contains(r.logs.String(), v) {
+					t.Errorf("the log holds %s", v)
+				}
+			}
+			testutil.AssertNoCanary(t, "the log", r.logs.String())
+			if got := r.w.Stats().Unwritten; got != 1 {
+				t.Errorf("Unwritten %d", got)
+			}
+		})
+	}
 }

@@ -659,9 +659,10 @@ start. There is no down migration; to go back, restore a backup taken before.
    inactive. A model whose only catalogue price is an override in another currency has an unknown
    cost for a tenant in the default currency, and `no_price` for a tenant with an active budget
    (`limits.on_unknown_price`).
-3. **The request log and the spans lose cost, currency and token fields**: `cost`, `currency`,
-   `usage`, `reserved_tokens`, `limit`, `limit_currency`, `price_currency` and `price_source` of the
-   request log, `pandokos.cost.amount` and `pandokos.cost.currency` of the spans. They come back with
-   `telemetry.tenant_usage_details` ([telemetry guide](telemetry.md)). The troubleshooting of
+3. **The request log and the spans lose every field of the tenant**: identifiers of the tenant and
+   the caller, model, credential, sizes, usage, cost, currency and limit rules; the spans keep only
+   the attributes the OpenTelemetry conventions make Required, and the ledger writer no longer logs
+   rows ([ADR 0055](../adr/0055-operational-telemetry-holds-no-tenant-data.md),
+   [telemetry guide](telemetry.md)). No setting brings them back. The troubleshooting of
    `no_price` therefore moves from the operator's log to the tenant's tools (the capability check,
    `active` in `limit list`, `listTenantModels`, [limits guide](limits.md), section 15).

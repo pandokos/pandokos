@@ -250,7 +250,7 @@ func TestWriterRoundTrip(t *testing.T) {
 		}
 
 		logs := &testutil.LogBuffer{}
-		w, err := New(Options{DB: gateway, Logger: telemetry.NewLogger(logs, "debug"), UsageDetails: true, BufferSize: total, BatchSize: total, FlushInterval: time.Second})
+		w, err := New(Options{DB: gateway, Logger: telemetry.NewLogger(logs, "debug"), BufferSize: total, BatchSize: total, FlushInterval: time.Second})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -353,7 +353,7 @@ func TestDatabaseDown(t *testing.T) {
 	gateway := d.Open(t, store.RoleGateway)
 	tid := d.SeedTenant(t, "ledger-down")
 	logs := &testutil.LogBuffer{}
-	w, err := New(Options{DB: gateway, Logger: telemetry.NewLogger(logs, "debug"), UsageDetails: true, BufferSize: 6, BatchSize: 3, FlushInterval: 10 * time.Millisecond})
+	w, err := New(Options{DB: gateway, Logger: telemetry.NewLogger(logs, "debug"), BufferSize: 6, BatchSize: 3, FlushInterval: 10 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,7 +430,7 @@ func TestIdempotentRetry(t *testing.T) {
 	useFastBackoff(t)
 	d := dbtest.NewMigrated(t)
 	tid := d.SeedTenant(t, "ledger-retry")
-	o := Options{Logger: telemetry.NewLogger(&testutil.LogBuffer{}, "debug"), UsageDetails: true, BufferSize: 10, BatchSize: 4, FlushInterval: 10 * time.Millisecond}
+	o := Options{Logger: telemetry.NewLogger(&testutil.LogBuffer{}, "debug"), BufferSize: 10, BatchSize: 4, FlushInterval: 10 * time.Millisecond}
 	wrap := &commitThenFail{inner: newDBSink(d.Open(t, store.RoleGateway))}
 	w, err := newWriter(o, wrap)
 	if err != nil {
@@ -483,7 +483,7 @@ func TestRejectedRecord(t *testing.T) {
 	d := dbtest.NewMigrated(t)
 	a, b := d.SeedTenant(t, "ledger-rej-a"), d.SeedTenant(t, "ledger-rej-b")
 	logs := &testutil.LogBuffer{}
-	o := Options{Logger: telemetry.NewLogger(logs, "debug"), UsageDetails: true, BufferSize: 10, BatchSize: 5, FlushInterval: time.Second}
+	o := Options{Logger: telemetry.NewLogger(logs, "debug"), BufferSize: 10, BatchSize: 5, FlushInterval: time.Second}
 	bad := testutil.ValidRecord(a)
 	bad.Metadata = map[string]string{"note": fixtures.CanaryCompletion}
 	w, err := newWriter(o, &corrupting{inner: newDBSink(d.Open(t, store.RoleGateway)), badID: bad.ID})
@@ -531,15 +531,13 @@ func TestRejectedRecord(t *testing.T) {
 		t.Fatalf("%d `usage record rejected` lines", len(lines))
 	}
 	l := lines[0]
-	if l["level"] != "ERROR" || l["sqlstate"] != "23514" || l["constraint"] != "usage_record_request_id_format" || l["record_id"] != bad.ID {
+	if l["level"] != "ERROR" || l["sqlstate"] != "23514" || l["constraint"] != "usage_record_request_id_format" || l["request_id"] != bad.RequestID {
 		t.Errorf("the line: %v", l)
 	}
-	var logged map[string]any
-	if err := json.Unmarshal([]byte(fmt.Sprint(l["row"])), &logged); err != nil || logged["id"] != bad.ID || logged["provider"] == nil {
-		t.Errorf("the row of the line: %v (%v)", l["row"], err)
-	}
-	if m, _ := logged["metadata"].(map[string]any); len(m) != 0 {
-		t.Errorf("the row holds metadata values: %v", m)
+	for _, k := range []string{"row", "record_id", "tenant_id"} {
+		if _, ok := l[k]; ok {
+			t.Errorf("the line has %s (ADR 0055): %v", k, l)
+		}
 	}
 	testutil.AssertNoCanary(t, "the log", logs.String())
 	cctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -644,15 +642,16 @@ func TestClose(t *testing.T) {
 		case <-time.After(2 * time.Second):
 			t.Error("Run did not return")
 		}
-		lines := logs.Find(t, "usage record not written")
-		if len(lines) != 3 {
-			t.Fatalf("%d `usage record not written` lines", len(lines))
+		// The records lost are counted, never logged one by one (ADR 0055).
+		if n := len(logs.Find(t, "usage record not written")); n != 0 {
+			t.Errorf("%d `usage record not written` lines", n)
 		}
-		for _, l := range lines {
-			id, _ := l["record_id"].(string)
-			if !ids[id] || l["tenant_id"] != tid.String() || l["request_id"] == nil || l["outcome"] == nil {
-				t.Errorf("the line: %v", l)
-			}
+		lost := logs.Find(t, "ledger closed with records lost")
+		if len(lost) != 1 || fmt.Sprint(lost[0]["unwritten"]) != "3" {
+			t.Fatalf("the lost line: %v", lost)
+		}
+		if strings.Contains(logs.String(), tid.String()) {
+			t.Errorf("the log holds the tenant ID: %s", logs.String())
 		}
 		testutil.AssertNoCanary(t, "the log", logs.String())
 	})
@@ -673,7 +672,7 @@ func TestWriterLimitState(t *testing.T) {
 			r.LimitState = s
 			recs = append(recs, r)
 		}
-		w, err := New(Options{DB: d.Open(t, store.RoleGateway), Logger: telemetry.NewLogger(&testutil.LogBuffer{}, "debug"), UsageDetails: true, BufferSize: 16, BatchSize: 16, FlushInterval: 10 * time.Millisecond})
+		w, err := New(Options{DB: d.Open(t, store.RoleGateway), Logger: telemetry.NewLogger(&testutil.LogBuffer{}, "debug"), BufferSize: 16, BatchSize: 16, FlushInterval: 10 * time.Millisecond})
 		if err != nil {
 			t.Fatal(err)
 		}

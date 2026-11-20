@@ -1,11 +1,12 @@
 # Telemetry guide
 
 Pandokos exports traces over OTLP/HTTP to a collector you run. Each authenticated request produces
-two spans, joined to the caller's trace when the caller sent one. A span carries identifiers and
-measurements, never content. This page says how to configure the export, what the spans hold, who
-decides what is sampled, and what happens when the collector is away. It applies from sprint 3.2;
-decision: [ADR 0040](../adr/0040-traces.md) (refining [ADR 0015](../adr/0015-observability.md)).
-Metrics and token counts on spans come with a later release.
+two spans, joined to the caller's trace when the caller sent one. A span carries only the attributes
+the OpenTelemetry semantic conventions make Required, never content and nothing of the tenant. This
+page says how to configure the export, what the spans hold, who decides what is sampled, and what
+happens when the collector is away. Decisions: [ADR 0040](../adr/0040-traces.md) (refining
+[ADR 0015](../adr/0015-observability.md)) and [ADR 0055](../adr/0055-operational-telemetry-holds-no-tenant-data.md).
+Metrics come with a later release.
 
 ## 1. The keys
 
@@ -18,12 +19,14 @@ Metrics and token counts on spans come with a later release.
 | `telemetry.traces.sample_ratio` | share of new traces that is sampled, 0 to 1 (default 1) |
 | `telemetry.traces.propagate` | send the trace context to the provider (default false) |
 | `telemetry.resource.attributes` | extra resource attributes, `key=value` pairs separated by commas |
-| `telemetry.tenant_usage_details` | write the cost, currency and token counts of a tenant's requests to the request log and to traces (default false; see below) |
 
 Each has an environment variable (`PANDOKOS_TELEMETRY_...`) as in the
 [configuration reference](configuration.md). They are read by `serve` only.
 
-**`telemetry.tenant_usage_details`** (`PANDOKOS_TELEMETRY_TENANT_USAGE_DETAILS`, default `false`). The cost, the currency and the token counts of a tenant's requests are the tenant's data ([ADR 0054](../adr/0054-usage-data-is-the-tenants.md)): by default neither the request log line nor the spans carry them. Turned on, the request line gets `cost`, `currency`, the `usage` group, `reserved_tokens` and, of a refusal, `limit`, `limit_currency`, `price_currency` and `price_source` ([gateway guide](gateway.md), section 10), and the provider span gets `pandokos.cost.amount` and `pandokos.cost.currency`. `serve` logs one `configuration warning` at start (`config check` prints it too) when it is on, naming the key: tenant usage is then written to logs and traces that the tenant cannot see. Use it for a single-tenant installation or for debugging. Token counts were never span attributes. The same key governs two lines of the writers: `usage record rejected` and `usage record not written` carry the whole `row` only when it is on, and otherwise the identifiers, the outcome, the duration, the byte counts and `metadata_count`; `limit event recorded` and `limit event not recorded` carry the metric, scope, subject kind and percent only when it is on, and otherwise the tenant, the kind and the rule ID ([usage guide](usage.md), [limits guide](limits.md)).
+Logs and spans hold nothing of a tenant: no tenant, caller, key, model, credential, size, usage,
+cost or limit rule ([ADR 0055](../adr/0055-operational-telemetry-holds-no-tenant-data.md)). There is
+no setting that brings them back. The key `telemetry.tenant_usage_details` of earlier development
+builds no longer exists; a file that has it is refused as an unknown key.
 
 Without an endpoint no exporter exists and nothing leaves the process, but trace IDs are still made:
 the usage record and the request log line carry a `trace_id`, and propagation works.
@@ -55,24 +58,25 @@ authenticate produces no span and no header is read from it).
 | server | `POST /{provider}/v1/chat/completions` (the route label), server | the caller's trace when its `traceparent` is valid, else a new trace | the start of the request to its end |
 | provider | `<operation> <model>` (the catalogue model name), client | the server span | the call to the provider, to the end of the response body |
 
-Attributes, the complete list:
+Attributes, the complete list: only those the OpenTelemetry semantic conventions mark **Required**,
+nothing else. The server span follows the HTTP server span, the provider span the GenAI inference span
+(`gen_ai.client.inference`).
 
 | Span | Attributes |
 |---|---|
-| server | `http.request.method`, `http.route`, `http.response.status_code`, `pandokos.request.id`, `pandokos.record.id`, `pandokos.tenant.id`, `pandokos.principal.id`, `pandokos.key.id`, `pandokos.provider`, `pandokos.operation`, `pandokos.outcome`, `pandokos.error.code` |
-| provider | `pandokos.provider`, `pandokos.endpoint`, `pandokos.model`, `pandokos.operation`, `pandokos.stream`, `pandokos.credential.id`, `http.response.status_code`, `pandokos.upstream.error`, `pandokos.ttfb_ms`, `pandokos.usage.source`, `pandokos.usage.output_source`, `pandokos.cost.status`; with `telemetry.tenant_usage_details` also `pandokos.cost.amount`, `pandokos.cost.currency` |
+| server | `http.request.method`, `url.path` (`/<provider>/<native path>`, never the query string), `url.scheme` |
+| provider | `gen_ai.operation.name` (`chat` for chat completions, responses and messages, `embeddings`, or `messages.count_tokens`), `gen_ai.provider.name` (the provider segment of the route) |
 
-`pandokos.error.code` and `pandokos.upstream.error` are set only when there is an error. The span
-status is `Error` for the outcomes `upstream_error`, `timeout` and `internal_error` and unset
-otherwise; there is no status description, no event and no link. `pandokos.record.id` and
-`pandokos.request.id` join a span to its row in the [usage ledger](usage.md) and to the request log
-line.
+The span status is `Error` for the outcomes `upstream_error`, `timeout` and `internal_error` and unset
+otherwise; there is no status description, no event and no link. The span names carry no model: the
+server span is named after the method, the provider span after `gen_ai.operation.name`. A span is
+joined to the request log line and to the tenant's usage record by its trace ID (`trace_id`).
 
-For a call authenticated by a token of a trusted issuer ([tokens guide](tokens.md)) `pandokos.principal.id` is the ID of the service account, as for a key, and `pandokos.key.id` is the ID of the subject mapping. No span attribute holds the token, the subject or the issuer.
-
-**Never on a span:** a request or response body, any header value, a secret, a URL or host, the
-caller's metadata, a model string that did not resolve, token counts (they wait for the `gen_ai.*`
-names of the metrics release). No setting enables any of it.
+**Never on a span:** the tenant, the caller, the key, the token registration or the subject; the model,
+the credential, the endpoint; token counts, costs, usage sources; a request or response body, any
+header value, a secret, the caller's metadata. Attributes the conventions mark Conditionally
+Required, Recommended or Opt-In are not emitted. No setting enables any of it. Whether and how the
+platform gets a tenant dimension in its telemetry is issue #52.
 
 ## 4. Sampling
 

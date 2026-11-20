@@ -111,9 +111,9 @@ func TestAdapter(t *testing.T) {
 			t.Errorf("Name = %q", a.Name())
 		}
 		want := []family.Operation{
-			{Name: "chat.completions", Method: "POST", Path: "/v1/chat/completions"},
-			{Name: "responses", Method: "POST", Path: "/v1/responses"},
-			{Name: "embeddings", Method: "POST", Path: "/v1/embeddings"},
+			{Name: "chat.completions", Method: "POST", Path: "/v1/chat/completions", GenAI: "chat"},
+			{Name: "responses", Method: "POST", Path: "/v1/responses", GenAI: "chat"},
+			{Name: "embeddings", Method: "POST", Path: "/v1/embeddings", GenAI: "embeddings"},
 		}
 		got := a.Operations()
 		sort.Slice(got, func(i, j int) bool { return got[i].Name < got[j].Name })

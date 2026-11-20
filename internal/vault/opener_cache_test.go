@@ -807,20 +807,9 @@ func TestOpenerCache(t *testing.T) {
 		pr := principalOf(a, "")
 		w.mustOpen(pr, "openai", "plain-default-0001")
 		w.mustOpen(pr, "openai", "plain-default-0001")
-		lines := logLines(t, w.logs, "credential opened")
-		if len(lines) != 2 {
-			t.Fatalf("%d lines `credential opened`, want 2", len(lines))
-		}
-		for i, wantCache := range []string{"miss", "hit"} {
-			l := lines[i]
-			if l["level"] != "DEBUG" || l["request_id"] != "req-0001" || l["tenant_id"] != a.String() || l["principal_id"] != pr.ID ||
-				l["key_id"] != pr.KeyID || l["credential_id"] != cuid(1) || l["provider"] != "openai" || l["pinned"] != false || l["cache"] != wantCache {
-				t.Errorf("line %d: %v", i, l)
-			}
-		}
 		w.mustOpen(principalOf(a, cuid(1)), "openai", "plain-default-0001")
-		if l := logLines(t, w.logs, "credential opened")[2]; l["pinned"] != true || l["cache"] != "hit" {
-			t.Errorf("the pinned call: %v", l)
+		if n := len(logLines(t, w.logs, "credential opened")); n != 0 {
+			t.Errorf("%d lines `credential opened`: an open writes no line (ADR 0055)", n)
 		}
 		if strings.Contains(w.logs.String(), "plain-default-0001") {
 			t.Error("the secret is in the log")
@@ -845,7 +834,7 @@ func TestOpenerCache(t *testing.T) {
 			t.Fatalf("%d lines `credential cannot be opened`, want 1", len(errs))
 		}
 		e := errs[0]
-		if e["level"] != "ERROR" || e["request_id"] != "req-0001" || e["tenant_id"] != a.String() || e["credential_id"] != cuid(1) ||
+		if e["level"] != "ERROR" || e["request_id"] != "req-0001" || e["tenant_id"] != nil || e["credential_id"] != nil ||
 			e["cause"] != "authentication" || e["data_key_version"] != float64(1) || e["kek_version"] != w2.src.deks[a.String()+"/1"].KekVersion {
 			t.Errorf("error line: %v", e)
 		}
@@ -883,7 +872,7 @@ func TestOpenerCache(t *testing.T) {
 				t.Fatalf("%s: no error", c.name)
 			}
 			ls := logLines(t, w3.logs, "credential cannot be opened")
-			if len(ls) != 1 || ls[0]["cause"] != c.cause || ls[0]["credential_id"] != cuid(1) || ls[0]["tenant_id"] != a.String() || ls[0]["request_id"] != "req-0001" {
+			if len(ls) != 1 || ls[0]["cause"] != c.cause || ls[0]["credential_id"] != nil || ls[0]["tenant_id"] != nil || ls[0]["request_id"] != "req-0001" {
 				t.Errorf("%s: %v, want cause %s", c.name, ls, c.cause)
 			}
 		}

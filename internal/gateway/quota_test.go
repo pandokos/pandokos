@@ -164,15 +164,15 @@ func TestQuotaExceeded(t *testing.T) {
 					t.Errorf("record: outcome %q, code %q, credential %q", r.Outcome, r.ErrorCode, r.CredentialID)
 				}
 				line := h.awaitOutcome(t, "pandokos_error")
-				if line["error_code"] != "quota_exceeded" || line["limit_metric"] != ref.Metric || line["limit_scope"] != ref.Scope ||
-					line["limit_subject"] != ref.Subject || line["limit_level"] != ref.Level || line["retry_after_s"] != float64(ref.RetryAfter/time.Second) {
+				if line["error_code"] != "quota_exceeded" {
 					t.Errorf("request line %v", line)
 				}
-				if numText(line["limit"]) != m.want.limit {
-					t.Errorf("logged limit %v, want %s (a budget is logged as a decimal)", line["limit"], m.want.limit)
-				}
-				if cur, ok := line["limit_currency"]; m.want.currency != "" && cur != m.want.currency || m.want.currency == "" && ok {
-					t.Errorf("limit_currency %v (present %v), want %q", cur, ok, m.want.currency)
+				// The rule is the tenant's: the caller reads it in the response headers, the log does
+				// not repeat it (ADR 0055).
+				for _, k := range []string{"limit_metric", "limit_scope", "limit_subject", "limit_level", "retry_after_s", "limit", "limit_currency"} {
+					if _, ok := line[k]; ok {
+						t.Errorf("the request line has %s: %v", k, line)
+					}
 				}
 				if n := len(h.creds.Calls()) + len(h.up.Requests()); n != 0 {
 					t.Errorf("%d credential opens or provider requests after a refusal", n)
@@ -293,14 +293,10 @@ func TestNoPrice(t *testing.T) {
 			if n := len(h.up.Requests()); n != 2 {
 				t.Errorf("%d requests reached the provider, want 2", n)
 			}
-			marked := 0
 			for _, l := range h.requestLines(t, 3) {
-				if l["budget_unpriced"] == true {
-					marked++
+				if _, ok := l["budget_unpriced"]; ok {
+					t.Errorf("a request line carries budget_unpriced (ADR 0055): %v", l)
 				}
-			}
-			if marked != 2 {
-				t.Errorf("%d request lines carry budget_unpriced, want 2", marked)
 			}
 			for _, l := range limitsOf(t, real, opts, f.provider, "fake-basic") {
 				if l.Metric != limits.CostPerDay {

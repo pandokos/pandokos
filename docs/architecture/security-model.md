@@ -13,7 +13,7 @@
 | Provider credentials of tenants | They are spendable money and access to the tenant's provider account. They cannot be recreated by the platform |
 | Tenant separation | One tenant must not see or affect another's configuration, usage or spend |
 | Usage ledger and audit log | They are the evidence for what was spent and for investigations |
-| A tenant's usage records, limit events and price lists | They describe what a tenant consumes and what it pays. Through the product only the tenant reads them: row-level security on their tables, tenant-scoped permissions that no platform role holds, no platform operation or definer function that returns them, and a request log and traces without cost, currency or token counts unless `telemetry.tenant_usage_details` is on ([ADR 0054](../adr/0054-usage-data-is-the-tenants.md)). The platform sees operational indicators of the installation, with no tenant and no cost |
+| A tenant's usage records, limit events and price lists | They describe what a tenant consumes and what it pays. Through the product only the tenant reads them: row-level security on their tables, tenant-scoped permissions that no platform role holds, no platform operation or definer function that returns them, and a request log and traces that hold no tenant data: no tenant or caller identifier, model, usage, cost or limit rule ([ADR 0054](../adr/0054-usage-data-is-the-tenants.md), [ADR 0055](../adr/0055-operational-telemetry-holds-no-tenant-data.md)). The platform sees operational indicators of the installation, with no tenant and no cost |
 | Content in transit | Prompts and completions pass through memory and must leave no trace |
 | Availability and spend | A caller must not exhaust the service or a budget that is not theirs |
 
@@ -64,7 +64,7 @@ flowchart LR
 7. **Infrastructure operator.** See the next section.
 8. **Gateway to trace collector.** Outbound only, to the one URL the operator configured, through
    the same guard as provider calls (certificates verified, no proxy, no redirect, forbidden
-   addresses refused). It receives spans made of identifiers and measurements, never content,
+   addresses refused). It receives spans that carry only the attributes the OpenTelemetry conventions make Required, never a tenant identifier or content,
    a header value or caller metadata ([telemetry guide](../operations/telemetry.md),
    [ADR 0040](../adr/0040-traces.md)); what each destination receives is listed in
    [data flows](../reference/data-flows.md).

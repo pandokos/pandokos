@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"regexp"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -397,14 +398,16 @@ func TestLedgerAtShutdown(t *testing.T) {
 		if took := time.Since(began); took > 5*time.Second+2*time.Second+time.Second {
 			t.Errorf("the process took %s to exit", took)
 		}
-		lines := completeLines(p.stdout, "usage record not written")
-		if len(lines) != 3 {
-			t.Fatalf("%d `usage record not written` lines, want 3", len(lines))
+		// The three records are lost and counted, never logged one by one (ADR 0055).
+		if n := len(completeLines(p.stdout, "usage record not written")); n != 0 {
+			t.Errorf("%d `usage record not written` lines", n)
 		}
-		for _, l := range lines {
-			if l["level"] != "ERROR" || l["record_id"] == nil || l["request_id"] == nil || l["tenant_id"] != tid {
-				t.Errorf("the line: %v", l)
-			}
+		lost := completeLines(p.stdout, "ledger closed with records lost")
+		if len(lost) != 1 || lost[0]["level"] != "ERROR" || fmt.Sprint(lost[0]["unwritten"]) != "3" {
+			t.Fatalf("the lost line: %v", lost)
+		}
+		if strings.Contains(p.stdout.String(), tid) {
+			t.Error("stdout names the tenant")
 		}
 		testutil.AssertNoCanary(t, "stdout", p.stdout.String())
 		p.db.SetAcceptingConnections(t, true)

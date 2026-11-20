@@ -216,7 +216,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	events, err := limits.NewEventWriter(limits.EventWriterOptions{DB: gatewayDB, Logger: logger, UsageDetails: cfg.Telemetry.TenantUsageDetails})
+	events, err := limits.NewEventWriter(limits.EventWriterOptions{DB: gatewayDB, Logger: logger})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
@@ -288,7 +288,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	}
 	writer, err := ledger.New(ledger.Options{
 		DB: gatewayDB, Logger: logger, BufferSize: cfg.Ledger.BufferSize, BatchSize: cfg.Ledger.BatchSize,
-		FlushInterval: time.Duration(cfg.Ledger.FlushInterval), UsageDetails: cfg.Telemetry.TenantUsageDetails,
+		FlushInterval: time.Duration(cfg.Ledger.FlushInterval),
 	})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())

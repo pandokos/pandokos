@@ -93,7 +93,7 @@ func TestCompatibleProvider(t *testing.T) {
 							t.Errorf("estimated output %d, want the %d content events", r.Estimated.OutputTokens, want)
 						}
 					}
-					if line := h.lastRequestLine(t); line["provider"] != "compat" || line["api_family"] != "openai" {
+					if line := h.lastRequestLine(t); line["provider"] != "compat" {
 						t.Errorf("request line %v", line)
 					}
 				})

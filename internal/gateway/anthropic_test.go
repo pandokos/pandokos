@@ -265,10 +265,7 @@ func TestAnthropicPassthrough(t *testing.T) {
 					t.Error("no X-Pandokos-Request-Id")
 				}
 				line := h.lastRequestLine(t)
-				if line["upstream_request_id"] != c.header.Get("Request-Id") {
-					t.Errorf("upstream_request_id %v, want %q", line["upstream_request_id"], c.header.Get("Request-Id"))
-				}
-				if line["api_family"] != "anthropic" || line["operation"] != "messages" || line["provider"] != "anthropic" {
+				if line["provider"] != "anthropic" {
 					t.Errorf("request line %v", line)
 				}
 				if line["usage_injected"] != false {
@@ -294,8 +291,8 @@ func TestAnthropicPassthrough(t *testing.T) {
 			if reqs := h.up.Requests(); len(reqs) != 1 || string(reqs[0].Body) != want {
 				t.Fatalf("the provider received %q, want %q", reqs[0].Body, want)
 			}
-			if line := h.lastRequestLine(t); line["model"] != aliasModel {
-				t.Errorf("the log names the model %v", line["model"])
+			if r := h.oneRecord(t); r.Model != aliasModel {
+				t.Errorf("the record names the model %v", r.Model)
 			}
 		}
 	})
@@ -615,17 +612,6 @@ func TestAnthropicUsageRecord(t *testing.T) {
 		}
 		return d
 	}
-	clientAttr := func(t *testing.T, h *harness, key string) string {
-		t.Helper()
-		_, client := endedSpans(t, h, 2)
-		for _, kv := range client.Attributes() {
-			if string(kv.Key) == key {
-				return kv.Value.AsString()
-			}
-		}
-		return "<absent>"
-	}
-
 	t.Run("a complete stream", func(t *testing.T) {
 		h := newFamilies(t, nil)
 		c := h.sendA(t, anthropicRoute, messages("fake-basic", true), anthropicHdr())
@@ -648,20 +634,6 @@ func TestAnthropicUsageRecord(t *testing.T) {
 		sameCost(t, r.Cost, costAt(t, h, "fake-basic", family.Usage{InputTokens: 12, OutputTokens: 7}))
 		if r.CostStatus != "known" || r.Cost.Amount.Cmp(dec("0.000078")) != 0 {
 			t.Errorf("cost %s %s", r.CostStatus, r.Cost.Amount)
-		}
-		line := h.lastRequestLine(t)
-		if line["usage_source"] != "provider" {
-			t.Errorf("usage_source %v", line["usage_source"])
-		}
-		if _, ok := line["usage_output_source"]; ok {
-			t.Errorf("usage_output_source is logged when both sources agree: %v", line)
-		}
-		g := usageGroup(t, line)
-		if g["input_tokens"] != float64(12) || g["output_tokens"] != float64(7) {
-			t.Errorf("usage group %v", g)
-		}
-		if got := clientAttr(t, h, "pandokos.usage.output_source"); got != "provider" {
-			t.Errorf("span attribute pandokos.usage.output_source %q", got)
 		}
 	})
 
@@ -728,20 +700,6 @@ func TestAnthropicUsageRecord(t *testing.T) {
 			t.Error("the provider's own counters were not kept")
 		}
 		sameCost(t, r.Cost, costAt(t, h, fakeprovider.ModelCutAfterStart, family.Usage{InputTokens: 12, OutputTokens: wantOut}))
-		line := h.lastRequestLine(t)
-		if line["usage_source"] != "provider" || line["usage_output_source"] != "estimated" {
-			t.Errorf("log sources %v %v", line["usage_source"], line["usage_output_source"])
-		}
-		g := usageGroup(t, line)
-		if g["input_tokens"] != float64(12) || g["output_tokens"] != float64(wantOut) {
-			t.Errorf("the usage group must hold the figures the cost used: %v", g)
-		}
-		if got := clientAttr(t, h, "pandokos.usage.source"); got != "provider" {
-			t.Errorf("span usage.source %q", got)
-		}
-		if got := clientAttr(t, h, "pandokos.usage.output_source"); got != "estimated" {
-			t.Errorf("span usage.output_source %q", got)
-		}
 	})
 
 	t.Run("a stream cancelled after two deltas: the estimate counts the deltas delivered", func(t *testing.T) {
@@ -820,22 +778,6 @@ func TestAnthropicUsageRecord(t *testing.T) {
 		}
 		if r.Usage.InputTokens != 0 || r.Usage.OutputTokens != 0 || len(r.Usage.Reported) != 0 || !reflect.DeepEqual(r.Estimated, family.Usage{}) {
 			t.Errorf("usage %+v estimated %+v", r.Usage, r.Estimated)
-		}
-		line := h.lastRequestLine(t)
-		if line["usage_source"] != "none" {
-			t.Errorf("usage_source %v", line["usage_source"])
-		}
-		if _, ok := line["usage"]; ok {
-			t.Errorf("a usage group for an operation without usage: %v", line["usage"])
-		}
-		if _, ok := line["usage_output_source"]; ok {
-			t.Error("usage_output_source logged")
-		}
-		if line["cost_status"] != "none" {
-			t.Errorf("cost_status %v", line["cost_status"])
-		}
-		if got := clientAttr(t, h, "pandokos.usage.source"); got != "none" {
-			t.Errorf("span usage.source %q", got)
 		}
 	})
 
@@ -1004,7 +946,7 @@ func TestAnthropicMetadataAndTrace(t *testing.T) {
 		if v := h.up.Requests()[0].Header.Values("Traceparent"); len(v) != 0 {
 			t.Errorf("the provider received traceparent %v", v)
 		}
-		if name := client.Name(); name != "messages fake-basic" {
+		if name := client.Name(); name != "chat" {
 			t.Errorf("client span %q", name)
 		}
 	})

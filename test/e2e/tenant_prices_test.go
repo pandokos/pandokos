@@ -116,44 +116,19 @@ func TestTenantPriceLists(t *testing.T) {
 		}
 	})
 
-	t.Run("the default log has no cost and has it with the key on, with the warning at start", func(t *testing.T) {
+	t.Run("the request line has no cost, no currency and no tenant, and no setting brings them back", func(t *testing.T) {
 		for _, l := range logLines(t, p.stdout.String(), "request") {
-			for _, f := range []string{"cost", "currency", "usage", "reserved_tokens", "limit", "limit_currency", "price_currency", "price_source"} {
+			for _, f := range []string{"cost", "currency", "usage", "reserved_tokens", "limit", "limit_currency", "price_currency", "price_source", "tenant_id", "key_id", "model"} {
 				if _, ok := l[f]; ok {
-					t.Errorf("the default request line has %s: %v", f, l)
+					t.Errorf("the request line has %s: %v", f, l)
 				}
 			}
 		}
-		if n := len(logLines(t, p.stdout.String(), "configuration warning")); n != 0 {
-			for _, l := range logLines(t, p.stdout.String(), "configuration warning") {
-				if l["key"] == "telemetry.tenant_usage_details" {
-					t.Errorf("the warning with the key off: %v", l)
-				}
+		// The key of earlier development builds is unknown: in the environment it is ignored with a warning.
+		for _, l := range logLines(t, p.stdout.String(), "configuration warning") {
+			if l["key"] == "telemetry.tenant_usage_details" {
+				t.Errorf("a warning names the removed key: %v", l)
 			}
 		}
-		on := startBinary(t, opts{level: "info", up: p.up, env: []string{"PANDOKOS_TELEMETRY_TENANT_USAGE_DETAILS=true"}})
-		boot2 := on.bootstrap(t)
-		on.prepareUpstream(t)
-		on.priceFake(t, boot2, "openai") // a cost needs a price
-		tn := on.newLimitsTenant(t, boot2, "prices-on")
-		if status, text := on.openaiCall(t, tn.key); status != 200 {
-			t.Fatalf("%d\n%s", status, text)
-		}
-		testutil.Eventually(t, 5*time.Second, "the warning at start", func() bool {
-			for _, l := range completeLines(on.stdout, "configuration warning") {
-				if l["key"] == "telemetry.tenant_usage_details" {
-					return true
-				}
-			}
-			return false
-		})
-		testutil.Eventually(t, 5*time.Second, "a request line with the cost", func() bool {
-			for _, l := range completeLines(on.stdout, "request") {
-				if _, ok := l["cost"]; ok && l["currency"] == "USD" {
-					return true
-				}
-			}
-			return false
-		})
 	})
 }

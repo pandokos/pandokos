@@ -90,18 +90,13 @@ const (
 	callerTP    = "00-" + callerTrace + "-" + callerSpan + "-01"
 )
 
-var serverAttrs = []string{
-	"http.request.method", "http.route", "http.response.status_code", "pandokos.request.id", "pandokos.record.id",
-	"pandokos.tenant.id", "pandokos.principal.id", "pandokos.key.id", "pandokos.provider", "pandokos.operation", "pandokos.outcome",
-}
+// serverAttrs are the Required attributes of the HTTP server span, and nothing else (ADR 0055).
+var serverAttrs = []string{"http.request.method", "url.path", "url.scheme"}
 
-var clientAttrs = []string{
-	"pandokos.provider", "pandokos.endpoint", "pandokos.model", "pandokos.operation", "pandokos.stream", "pandokos.credential.id",
-	"http.response.status_code", "pandokos.ttfb_ms", "pandokos.usage.source", "pandokos.cost.status",
-	"pandokos.cost.amount", "pandokos.cost.currency", "pandokos.usage.output_source",
-}
+// clientAttrs are the Required attributes of the GenAI inference span, and nothing else (ADR 0055).
+var clientAttrs = []string{"gen_ai.operation.name", "gen_ai.provider.name"}
 
-// TestSpans is T-495.
+// TestSpans is T-495, with the attributes of ADR 0055.
 func TestSpans(t *testing.T) {
 	seen := map[string]bool{}
 	note := func(s sdktrace.ReadOnlySpan) {
@@ -112,17 +107,17 @@ func TestSpans(t *testing.T) {
 
 	t.Run("a forwarded request: a server span and a client span", func(t *testing.T) {
 		h := newHarness(t, nil)
-		c := h.sendAuthed(t, route, chat("fake-basic", false))
+		h.sendAuthed(t, route, chat("fake-basic", false))
 		server, client := endedSpans(t, h, 2)
 		note(server)
 		note(client)
 		rec := h.oneRecord(t)
 		line := h.lastRequestLine(t)
 
-		if server.Name() != "POST /{provider}/v1/chat/completions" || server.SpanKind() != trace.SpanKindServer {
+		if server.Name() != "POST" || server.SpanKind() != trace.SpanKindServer {
 			t.Errorf("server span %q %v", server.Name(), server.SpanKind())
 		}
-		if client.Name() != "chat.completions fake-basic" || client.SpanKind() != trace.SpanKindClient {
+		if client.Name() != "chat" || client.SpanKind() != trace.SpanKindClient {
 			t.Errorf("client span %q %v", client.Name(), client.SpanKind())
 		}
 		if client.Parent().SpanID() != server.SpanContext().SpanID() || client.SpanContext().TraceID() != server.SpanContext().TraceID() {
@@ -146,35 +141,20 @@ func TestSpans(t *testing.T) {
 		if got, want := keysOf(sa), append([]string(nil), serverAttrs...); !sameSet(got, want) {
 			t.Errorf("server attributes %v, want %v", got, want)
 		}
-		for k, want := range map[string]string{
-			"http.request.method": "POST", "http.route": "/{provider}/v1/chat/completions", "pandokos.request.id": c.header.Get("X-Pandokos-Request-Id"),
-			"pandokos.record.id": rec.ID, "pandokos.tenant.id": testPrincipal.TenantID.String(), "pandokos.principal.id": testPrincipal.ID,
-			"pandokos.key.id": testPrincipal.KeyID, "pandokos.provider": "openai", "pandokos.operation": "chat.completions", "pandokos.outcome": "ok",
-		} {
+		for k, want := range map[string]string{"http.request.method": "POST", "url.path": "/openai/v1/chat/completions", "url.scheme": "http"} {
 			if sa[k].AsString() != want {
 				t.Errorf("server %s = %q, want %q", k, sa[k].AsString(), want)
 			}
-		}
-		if sa["http.response.status_code"].AsInt64() != 200 {
-			t.Errorf("server status code %v", sa["http.response.status_code"])
 		}
 
 		ca := attrs(client)
 		if got := keysOf(ca); !sameSet(got, clientAttrs) {
 			t.Errorf("client attributes %v, want %v", got, clientAttrs)
 		}
-		for k, want := range map[string]string{
-			"pandokos.provider": "openai", "pandokos.endpoint": "synthetic-endpoint", "pandokos.model": "fake-basic", "pandokos.operation": "chat.completions",
-			"pandokos.credential.id": "synthetic-credential-openai", "pandokos.usage.source": "provider",
-			"pandokos.usage.output_source": "provider",
-			"pandokos.cost.status":         "known", "pandokos.cost.amount": rec.Cost.Amount.String(), "pandokos.cost.currency": "USD",
-		} {
+		for k, want := range map[string]string{"gen_ai.operation.name": "chat", "gen_ai.provider.name": "openai"} {
 			if ca[k].AsString() != want {
 				t.Errorf("client %s = %q, want %q", k, ca[k].AsString(), want)
 			}
-		}
-		if ca["pandokos.stream"].AsBool() || ca["http.response.status_code"].AsInt64() != 200 || ca["pandokos.ttfb_ms"].AsInt64() < 0 {
-			t.Errorf("client attributes: %v", ca)
 		}
 		for _, s := range []sdktrace.ReadOnlySpan{server, client} {
 			if s.Status().Code != codes.Unset || s.Status().Description != "" || len(s.Events()) != 0 || len(s.Links()) != 0 {
@@ -235,8 +215,7 @@ func TestSpans(t *testing.T) {
 			if client != nil {
 				t.Errorf("%s: a client span", name)
 			}
-			sa := attrs(server)
-			if sa["pandokos.outcome"].AsString() != "rejected_policy" || sa["pandokos.error.code"].AsString() == "" {
+			if sa := attrs(server); !sameSet(keysOf(sa), serverAttrs) {
 				t.Errorf("%s: %v", name, sa)
 			}
 			if server.Status().Code != codes.Unset {
@@ -266,14 +245,8 @@ func TestSpans(t *testing.T) {
 				t.Errorf("%q: status %v %q", s.Name(), s.Status().Code, s.Status().Description)
 			}
 		}
-		if got := attrs(server)["pandokos.outcome"].AsString(); got != "upstream_error" {
-			t.Errorf("outcome %q", got)
-		}
-		if got := attrs(client)["pandokos.usage.source"].AsString(); got != "none" {
-			t.Errorf("usage source %q", got)
-		}
-		if got := attrs(client)["pandokos.usage.output_source"].AsString(); got != "none" {
-			t.Errorf("usage output source %q", got)
+		if !sameSet(keysOf(attrs(server)), serverAttrs) || !sameSet(keysOf(attrs(client)), clientAttrs) {
+			t.Errorf("server %v client %v", attrs(server), attrs(client))
 		}
 	})
 
@@ -284,15 +257,8 @@ func TestSpans(t *testing.T) {
 		server, client := endedSpans(t, h, 2)
 		note(server)
 		note(client)
-		sa, ca := attrs(server), attrs(client)
-		if sa["pandokos.error.code"].AsString() != "upstream_unreachable" || ca["pandokos.upstream.error"].AsString() == "" {
-			t.Errorf("server %v client %v", sa, ca)
-		}
 		if server.Status().Code != codes.Error || client.Status().Code != codes.Error {
 			t.Errorf("status %v %v", server.Status().Code, client.Status().Code)
-		}
-		if v, ok := ca["http.response.status_code"]; ok && v.AsInt64() != 0 {
-			t.Errorf("a status code for a provider that did not answer: %v", v)
 		}
 	})
 
@@ -316,8 +282,8 @@ func TestSpans(t *testing.T) {
 			if outcome == usage.OutcomeOK {
 				want = codes.Unset
 			}
-			if server.Status().Code != want || attrs(server)["pandokos.outcome"].AsString() != string(outcome) {
-				t.Errorf("%s: status %v outcome %v", outcome, server.Status().Code, attrs(server)["pandokos.outcome"])
+			if server.Status().Code != want {
+				t.Errorf("%s: status %v", outcome, server.Status().Code)
 			}
 		}
 	})
@@ -327,7 +293,6 @@ func TestSpans(t *testing.T) {
 		for _, k := range append(append([]string(nil), serverAttrs...), clientAttrs...) {
 			known[k] = true
 		}
-		known["pandokos.error.code"], known["pandokos.upstream.error"] = true, true
 		for _, k := range gateway.SpanAttributes {
 			if !known[k] {
 				t.Errorf("gateway.SpanAttributes lists %q and this test does not know it", k)
@@ -441,6 +406,9 @@ func TestTelemetryCanaries(t *testing.T) {
 	spans := renderSpans(h.spans.Ended())
 	testutil.AssertNoCanary(t, "the spans", spans)
 	testutil.AssertAbsent(t, "the spans", spans, append(append(testutil.KeyForms(testKey), metaCanary, unresolved, fixtures.CanaryProviderKey), testutil.SecretForms(fixtures.CanaryProviderKey)...)...)
+	// Nothing of the tenant or of the caller (ADR 0055).
+	who := []string{testPrincipal.TenantID.String(), testPrincipal.ID, testPrincipal.KeyID, "fake-basic", "synthetic-credential-openai"}
+	testutil.AssertAbsent(t, "the spans", spans, who...)
 
 	records := h.rec.Records()
 	for _, r := range records {
@@ -466,4 +434,5 @@ func TestTelemetryCanaries(t *testing.T) {
 	logs := h.logs.String()
 	testutil.AssertNoCanary(t, "the logs", logs)
 	testutil.AssertAbsent(t, "the logs", logs, append(append(testutil.KeyForms(testKey), metaCanary, unresolved), testutil.SecretForms(fixtures.CanaryProviderKey)...)...)
+	testutil.AssertAbsent(t, "the logs", logs, who...)
 }

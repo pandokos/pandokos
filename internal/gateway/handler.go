@@ -59,7 +59,6 @@ type Options struct {
 	Limits                 Limits                    // optional: nil enforces no limit
 	DefaultOutputTokens    int64                     // output tokens reserved per choice when the caller sets no limit; positive
 	Now                    func() time.Time          // optional: the clock of the start of a request (default time.Now); a seam for tests
-	UsageDetails           bool                      // telemetry.tenant_usage_details: cost, currency and token counts in the log line and the spans
 }
 
 // Handler is the inference handler.
@@ -82,9 +81,7 @@ type Handler struct {
 	propagate   bool
 	limits      Limits
 	defaultOut  int64
-	// usageDetails is Options.UsageDetails: cost, currency and token counts go to the request line and the spans only when it is set.
-	usageDetails bool
-	now          func() time.Time // Options.Now
+	now         func() time.Time // Options.Now
 }
 
 // New validates the options and returns a Handler.
@@ -138,25 +135,24 @@ func New(o Options) (*Handler, error) {
 		now = time.Now
 	}
 	h := &Handler{
-		now:          now,
-		familyNames:  names,
-		logger:       o.Logger,
-		auth:         o.Authenticator,
-		catalogue:    o.Catalogue,
-		credentials:  o.Credentials,
-		failures:     o.Failures,
-		families:     families,
-		def:          def,
-		maxBody:      o.MaxRequestBodyBytes,
-		readTimeout:  o.RequestBodyReadTimeout,
-		maxDuration:  o.MaxRequestDuration,
-		recorder:     o.Recorder,
-		tracer:       o.Tracer.Tracer(instrumentationScope, trace.WithInstrumentationVersion(buildinfo.Version)),
-		propagator:   propagation.TraceContext{},
-		propagate:    o.PropagateTrace,
-		limits:       o.Limits,
-		defaultOut:   o.DefaultOutputTokens,
-		usageDetails: o.UsageDetails,
+		now:         now,
+		familyNames: names,
+		logger:      o.Logger,
+		auth:        o.Authenticator,
+		catalogue:   o.Catalogue,
+		credentials: o.Credentials,
+		failures:    o.Failures,
+		families:    families,
+		def:         def,
+		maxBody:     o.MaxRequestBodyBytes,
+		readTimeout: o.RequestBodyReadTimeout,
+		maxDuration: o.MaxRequestDuration,
+		recorder:    o.Recorder,
+		tracer:      o.Tracer.Tracer(instrumentationScope, trace.WithInstrumentationVersion(buildinfo.Version)),
+		propagator:  propagation.TraceContext{},
+		propagate:   o.PropagateTrace,
+		limits:      o.Limits,
+		defaultOut:  o.DefaultOutputTokens,
 	}
 	h.proxy = h.newProxy(&classTransport{public: o.Public, private: o.Private})
 	return h, nil
@@ -182,7 +178,6 @@ type reqState struct {
 	op       family.Operation
 
 	principal *authz.Principal
-	keyID     string // from a failed authentication, when the key parsed
 
 	bodyRead      bool
 	parsed        bool
@@ -363,7 +358,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	outCx, cancel := context.WithTimeout(r.Context(), h.maxDuration)
 	defer cancel()
-	outCx, st.client = h.tracer.Start(outCx, st.op.Name+" "+st.target.Model, trace.WithSpanKind(trace.SpanKindClient))
+	outCx, st.client = h.tracer.Start(outCx, st.op.GenAI, trace.WithSpanKind(trace.SpanKindClient), trace.WithAttributes(st.clientSpanAttributes()...))
 	st.outCx = outCx
 	req := r.WithContext(context.WithValue(outCx, stateKey{}, st))
 	req.Body = io.NopCloser(bytes.NewReader(prepared))
@@ -460,27 +455,15 @@ func (h *Handler) authenticate(r *http.Request, st *reqState) bool {
 		if errors.As(err, &d) {
 			detail = d.Detail()
 		}
-		reason, keyID, tenantID := detail.Reason, detail.KeyID, detail.TenantID
-		st.keyID = keyID
-		attrs := []any{"listener", "inference", "request_id", st.id, "reason", reason}
-		if keyID != "" {
-			attrs = append(attrs, "key_id", keyID)
-		}
-		if detail.IssuerID != "" {
-			attrs = append(attrs, "issuer_id", detail.IssuerID, "issuer_scope", detail.IssuerScope)
-		}
-		if detail.Subject != "" {
-			attrs = append(attrs, "subject", detail.Subject)
-		}
-		if tenantID != "" {
-			attrs = append(attrs, "tenant_id", tenantID)
-			if h.failures != nil {
-				audited := h.failures.Record(r.Context(), AuthFailure{
-					RequestID: st.id, Reason: reason, KeyID: keyID, TenantID: tenantID,
-					IssuerID: detail.IssuerID, IssuerScope: detail.IssuerScope, Subject: detail.Subject,
-				})
-				attrs = append(attrs, "audited", audited)
-			}
+		// The line says why, never who: the key, the tenant, the issuer and the subject go to the
+		// tenant's audit log only (ADR 0055).
+		attrs := []any{"listener", "inference", "request_id", st.id, "reason", detail.Reason}
+		if detail.TenantID != "" && h.failures != nil {
+			audited := h.failures.Record(r.Context(), AuthFailure{
+				RequestID: st.id, Reason: detail.Reason, KeyID: detail.KeyID, TenantID: detail.TenantID,
+				IssuerID: detail.IssuerID, IssuerScope: detail.IssuerScope, Subject: detail.Subject,
+			})
+			attrs = append(attrs, "audited", audited)
 		}
 		h.logger.Warn("authentication failed", attrs...)
 		h.fail(st, family.CodeUnauthenticated)
@@ -499,7 +482,12 @@ func (h *Handler) authenticate(r *http.Request, st *reqState) bool {
 	metadataHeader(st.sw.Header(), st.metadataDropped)
 	st.recordID = usage.NewID(st.start)
 	ctx := h.propagator.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
-	ctx, st.server = h.tracer.Start(ctx, routeLabelOf(st), trace.WithTimestamp(st.start), trace.WithSpanKind(trace.SpanKindServer))
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	ctx, st.server = h.tracer.Start(ctx, st.op.Method, trace.WithTimestamp(st.start), trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(st.serverSpanAttributes(scheme)...))
 	st.serverCx = ctx
 	st.traceID = traceIDOf(st.server)
 	// Under BYOK a call needs both permissions (D-4).
@@ -607,6 +595,9 @@ func (h *Handler) finish(st *reqState, rec any) {
 	}
 }
 
+// logRequest writes the request line. It carries what the operator needs to run the installation
+// and to explain a refusal or a failure: no identity of the caller or of its tenant, no model, no
+// size, no usage and no limit rule. The tenant reaches a line through its request ID (ADR 0055).
 func (h *Handler) logRequest(st *reqState, outcome string) {
 	attrs := []any{
 		"request_id", st.id,
@@ -623,22 +614,11 @@ func (h *Handler) logRequest(st *reqState, outcome string) {
 		attrs = append(attrs, "invalid_reason", st.invalidReason)
 	}
 	attrs = append(attrs, "duration_ms", st.now().Sub(st.start).Milliseconds())
-	if p := st.principal; p != nil {
-		attrs = append(attrs, "tenant_id", p.TenantID.String(), "service_account_id", p.ID, "key_id", p.KeyID)
-		if p.IssuerID != "" {
-			attrs = append(attrs, "issuer_id", p.IssuerID)
-		}
-	} else if st.keyID != "" {
-		attrs = append(attrs, "key_id", st.keyID)
-	}
 	if st.matched {
-		attrs = append(attrs, "provider", st.provider, "api_family", st.family, "operation", st.op.Name)
+		attrs = append(attrs, "provider", st.provider)
 	}
 	if st.resolved {
-		attrs = append(attrs, "model", st.target.Model, "model_id", st.target.ModelID, "endpoint", st.target.Endpoint)
-	}
-	if st.opened {
-		attrs = append(attrs, "credential_id", st.credentialID, "credential_pinned", st.pinned)
+		attrs = append(attrs, "endpoint", st.target.Endpoint)
 	}
 	if st.parsed {
 		attrs = append(attrs, "stream", st.stream, "usage_injected", st.strip)
@@ -655,84 +635,16 @@ func (h *Handler) logRequest(st *reqState, outcome string) {
 	if st.egressReason != "" {
 		attrs = append(attrs, "egress_reason", st.egressReason)
 	}
-	if st.upstreamRequestID != "" {
-		attrs = append(attrs, "upstream_request_id", st.upstreamRequestID)
-	}
-	if st.bodyRead {
-		attrs = append(attrs, "request_bytes", st.requestBytes)
-	}
-	if st.answered {
-		attrs = append(attrs, "response_bytes", st.responseBytes())
-		source := usage.SourceNone
-		if st.rec != nil {
-			source = st.rec.InputSource
-		}
-		attrs = append(attrs, "usage_source", string(source))
-		if st.rec != nil && st.rec.OutputSource != source {
-			attrs = append(attrs, "usage_output_source", string(st.rec.OutputSource))
-		}
-	}
 	if st.ledgerFull {
 		attrs = append(attrs, "ledger", "full")
 	}
-	if r := st.rec; r != nil {
-		attrs = append(attrs, "record_id", r.ID)
-		if r.TraceID != "" {
-			attrs = append(attrs, "trace_id", r.TraceID)
-		}
-		attrs = append(attrs, "cost_status", r.CostStatus)
-		if n := len(r.Metadata); n > 0 {
-			attrs = append(attrs, "metadata_count", n)
-		}
-		if r.MetadataDropped > 0 {
-			attrs = append(attrs, "metadata_dropped", r.MetadataDropped)
-		}
+	if r := st.rec; r != nil && r.TraceID != "" {
+		attrs = append(attrs, "trace_id", r.TraceID)
 	}
 	if st.readerFailed {
 		attrs = append(attrs, "usage_reader", "failed")
 	}
-	if h.usageDetails {
-		attrs = append(attrs, st.usageDetailAttrs()...)
-	}
 	h.logger.Info("request", attrs...)
-}
-
-// usageDetailAttrs is the one place that builds the fields of the request line that hold a tenant's usage
-// data (sprint.md 5.11): the cost and its currency, the token counts, the tokens reserved and, of a refusal,
-// the limit, its currency and the currency and source of the price. The caller writes them only when
-// telemetry.tenant_usage_details is on (T-739, T-R52).
-func (st *reqState) usageDetailAttrs() []any {
-	var attrs []any
-	if st.answered {
-		source := usage.SourceNone
-		if st.rec != nil {
-			source = st.rec.InputSource
-		}
-		if source != usage.SourceNone {
-			attrs = append(attrs, usageAttr(st.costUsage))
-		}
-	}
-	if r := st.rec; r != nil && r.Cost.Known {
-		attrs = append(attrs, "cost", r.Cost.Amount.String(), "currency", r.Cost.Currency)
-	}
-	if st.reservation != nil || st.reservedTokens > 0 {
-		attrs = append(attrs, "reserved_tokens", st.reservedTokens)
-	}
-	if r := st.refusal; r != nil {
-		var limit any = r.Limit
-		if r.Currency != "" {
-			limit = millionths(r.Limit)
-			attrs = append(attrs, "limit_currency", r.Currency)
-		}
-		attrs = append(attrs, "limit", limit)
-		if r.PriceCurrency != "" {
-			attrs = append(attrs, "price_currency", r.PriceCurrency)
-		}
-		if r.PriceSource != "" {
-			attrs = append(attrs, "price_source", r.PriceSource)
-		}
-	}
-	return attrs
 }
 
 func routeLabelOf(st *reqState) string {
@@ -752,25 +664,4 @@ func (st *reqState) responseBytes() int64 {
 		return st.countBody.bytes
 	}
 	return 0
-}
-
-func usageAttr(u family.Usage) slog.Attr {
-	attrs := []any{
-		slog.Int64("input_tokens", u.InputTokens),
-		slog.Int64("output_tokens", u.OutputTokens),
-		slog.Int64("cache_read_tokens", u.CacheReadTokens),
-		slog.Int64("cache_write_tokens", u.CacheWriteTokens),
-		slog.Int64("reasoning_tokens", u.ReasoningTokens),
-	}
-	names := make([]string, 0, len(u.Extra))
-	for k := range u.Extra {
-		names = append(names, k)
-	}
-	sort.Strings(names)
-	for _, k := range names {
-		if u.Extra[k] != 0 {
-			attrs = append(attrs, slog.Int64(k, u.Extra[k]))
-		}
-	}
-	return slog.Group("usage", attrs...)
 }

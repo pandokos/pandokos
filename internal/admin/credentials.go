@@ -134,7 +134,7 @@ func (s *server) validate(ctx context.Context, tid tenant.ID, provider string, t
 	case vault.Rejected:
 		outcome = "rejected"
 	}
-	s.log.Info("credential validation", "request_id", stateOf(ctx).id, "tenant_id", tid.String(), "provider", provider,
+	s.log.Info("credential validation", "request_id", stateOf(ctx).id, "provider", provider,
 		"outcome", outcome, "upstream_status", status, "duration_ms", time.Since(start).Milliseconds())
 	switch verdict {
 	case vault.Accepted:

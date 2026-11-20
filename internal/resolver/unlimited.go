@@ -130,25 +130,20 @@ func (a *UnlimitedAuditor) write(e unlimitedEntry) {
 	day, err := time.Parse("2006-01-02", e.day)
 	if err != nil {
 		a.forget(e.tenant)
-		a.log.Debug("unlimited traffic not recorded", "tenant_id", e.tenant.String(), "request_id", e.requestID, "error_class", "day")
+		a.log.Debug("unlimited traffic not recorded", "request_id", e.requestID, "error_class", "day")
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), unlimitedTimeout)
 	defer cancel()
-	var recorded bool
 	err = a.db.WithTenant(ctx, e.tenant, func(ctx context.Context, tx store.Tx) error {
-		var err error
-		recorded, err = queries.New(tx).RecordUnlimitedTraffic(ctx, queries.RecordUnlimitedTrafficParams{
+		_, err := queries.New(tx).RecordUnlimitedTraffic(ctx, queries.RecordUnlimitedTrafficParams{
 			Day: store.Date(day), TimeZone: e.zone, Provider: e.provider, Model: e.model, RequestID: e.requestID,
 		})
 		return err
 	})
 	if err != nil {
 		a.forget(e.tenant)
-		a.log.Debug("unlimited traffic not recorded", "tenant_id", e.tenant.String(), "request_id", e.requestID, "error_class", errorClass(err))
+		a.log.Debug("unlimited traffic not recorded", "request_id", e.requestID, "error_class", errorClass(err))
 		return
-	}
-	if recorded {
-		a.log.Info("unlimited traffic recorded", "tenant_id", e.tenant.String(), "day", e.day)
 	}
 }

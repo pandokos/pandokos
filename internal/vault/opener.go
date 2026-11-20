@@ -211,7 +211,7 @@ func (o *Opener) Open(ctx context.Context, u Use) (Opened, error) {
 	if p.CredentialID != "" {
 		if ent, ok := o.cachedCredential(tid, p.CredentialID); ok {
 			if ent.opened.Provider == u.Provider {
-				return o.opened(u, ent.opened, true, true), nil
+				return o.opened(ent.opened, true), nil
 			}
 			// The pin is of another provider: it is not in play for this call.
 		} else {
@@ -231,7 +231,7 @@ func (o *Opener) Open(ctx context.Context, u Use) (Opened, error) {
 	}
 
 	if ent, ok := o.cachedDefault(tid, u.Provider); ok {
-		return o.opened(u, ent.opened, false, true), nil
+		return o.opened(ent.opened, false), nil
 	}
 	row, err := o.src.defaultCredential(ctx, tid, u.Provider)
 	switch {
@@ -252,7 +252,7 @@ func (o *Opener) openRow(ctx context.Context, u Use, r credRow, pinned bool, ali
 	}
 	tid := u.Principal.TenantID
 	fail := func(err error, cause, kek string) (Opened, error) {
-		o.log.Error("credential cannot be opened", "request_id", u.RequestID, "tenant_id", tid.String(), "credential_id", r.id,
+		o.log.Error("credential cannot be opened", "request_id", u.RequestID,
 			"data_key_version", r.keyVersion, "kek_version", kek, "cause", cause)
 		return Opened{}, err
 	}
@@ -270,7 +270,7 @@ func (o *Opener) openRow(ctx context.Context, u Use, r credRow, pinned bool, ali
 	op := Opened{ID: r.id, Provider: r.provider, Label: r.label, Fingerprint: r.fingerprint, Secret: secret.New(string(plain))}
 	clear(plain)
 	o.putCredential(tid, op, alias, epoch, start)
-	return o.opened(u, op, pinned, false), nil
+	return o.opened(op, pinned), nil
 }
 
 // dataKey returns the derived data key of a tenant, from the cache or from the database. cause
@@ -303,16 +303,10 @@ func (o *Opener) dataKey(ctx context.Context, tid tenant.ID, version int32, epoc
 	return dk, row.KekVersion, "", nil
 }
 
-// opened logs a successful open and returns the result for this call.
-func (o *Opener) opened(u Use, op Opened, pinned, hit bool) Opened {
+// opened returns the result of a successful open for this call. It logs nothing: the line
+// would repeat the request line with the tenant's identifiers (ADR 0055).
+func (o *Opener) opened(op Opened, pinned bool) Opened {
 	op.Pinned = pinned
-	cache := "miss"
-	if hit {
-		cache = "hit"
-	}
-	o.log.Debug("credential opened", "request_id", u.RequestID, "tenant_id", u.Principal.TenantID.String(),
-		"principal_id", u.Principal.ID, "key_id", u.Principal.KeyID, "credential_id", op.ID, "provider", op.Provider,
-		"pinned", pinned, "cache", cache)
 	return op
 }
 

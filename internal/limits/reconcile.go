@@ -175,7 +175,7 @@ func (r *Reconciler) Tick(ctx context.Context) {
 			return
 		}
 		if err := r.reconcile(ctx, t); err != nil && ctx.Err() == nil {
-			r.o.Logger.Warn("limit reconciliation failed", slog.String("tenant", t.String()), slog.String("error_class", errorClass(err)))
+			r.o.Logger.Warn("limit reconciliation failed", slog.String("error_class", errorClass(err)))
 		}
 	}
 }

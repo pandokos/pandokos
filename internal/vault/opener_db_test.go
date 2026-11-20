@@ -212,8 +212,8 @@ func TestOpenerDB(t *testing.T) {
 	})
 
 	t.Run("the log holds no byte of a secret, a sealed value or a key", func(t *testing.T) {
-		if len(logs.Find(t, "credential opened")) == 0 {
-			t.Error("no debug line `credential opened`")
+		if n := len(logs.Find(t, "credential opened")); n != 0 {
+			t.Errorf("%d lines `credential opened`: an open writes no line (ADR 0055)", n)
 		}
 		errLines := logs.Find(t, "credential cannot be opened")
 		if len(errLines) < 4 {
@@ -223,9 +223,14 @@ func TestOpenerDB(t *testing.T) {
 		for _, l := range errLines {
 			cause, _ := l["cause"].(string)
 			causes[cause]++
-			for _, f := range []string{"request_id", "tenant_id", "credential_id", "cause"} {
+			for _, f := range []string{"request_id", "cause"} {
 				if l[f] == nil || l[f] == "" {
 					t.Errorf("the error line lacks %s: %v", f, l)
+				}
+			}
+			for _, f := range []string{"tenant_id", "credential_id"} {
+				if _, ok := l[f]; ok {
+					t.Errorf("the error line has %s (ADR 0055): %v", f, l)
 				}
 			}
 			if l["level"] != "ERROR" {
