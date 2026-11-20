@@ -110,24 +110,12 @@ func (h *Handler) settleLimit(st *reqState) {
 	res.Settle(u)
 }
 
-// limitAttrs are the log fields of sprint.md section 5.9.
+// limitAttrs are the log fields of the limits: whether they were evaluated and whether the counters
+// could be verified. No rule, subject, metric or scope of the tenant (ADR 0055).
 func (st *reqState) limitAttrs() []any {
 	attrs := []any{"limit_state", string(st.limitState)}
-	if m, ok := st.reservation.(interface{ Unpriced() bool }); ok && m.Unpriced() {
-		attrs = append(attrs, "budget_unpriced", true)
-	}
 	if m, ok := st.reservation.(interface{ Unverified() bool }); ok && m.Unverified() {
 		attrs = append(attrs, "limits_unverified", true)
-	}
-	if r := st.refusal; r != nil {
-		attrs = append(attrs, "limit_subject", r.Subject, "limit_metric", r.Metric, "limit_level", r.Level,
-			"retry_after_s", seconds(r.RetryAfter))
-		if r.Scope != "" {
-			attrs = append(attrs, "limit_scope", r.Scope)
-		}
-		if r.OverLimit {
-			attrs = append(attrs, "estimate_over_limit", true)
-		}
 	}
 	return attrs
 }

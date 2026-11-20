@@ -821,8 +821,8 @@ func TestCorrelation(t *testing.T) {
 	if line == nil {
 		t.Fatalf("no admin request line with request ID %s", id)
 	}
-	if line["operation"] != "createServiceAccount" || line["method"] != "POST" || line["status"] != float64(201) || line["tenant_id"] != f.w.tenant.ID ||
-		line["principal_type"] != "service_account" || line["principal_id"] != f.admin.ID || line["key_id"] != f.admin.KeyID {
+	if line["operation"] != "createServiceAccount" || line["method"] != "POST" || line["status"] != float64(201) || line["tenant_id"] != nil ||
+		line["principal_type"] != "service_account" || line["principal_id"] != nil || line["key_id"] != nil {
 		t.Errorf("the log line: %v", line)
 	}
 	if _, ok := line["duration_ms"]; !ok {

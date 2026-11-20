@@ -514,7 +514,7 @@ the percentage, so a restart, which finds the same threshold passed again, inser
 gateway inserts events off the request path; if the database is unavailable it retries, and it
 flushes what is left at shutdown within what remains of `ledger.shutdown_flush_timeout`. An event
 can be lost only when the process dies between the crossing and the insert **and** the period ends
-before the next start. Each inserted row is logged as `limit event recorded`, with the tenant, the kind and the rule ID; the metric, scope, subject kind and percent only with `telemetry.tenant_usage_details` (the same holds for `limit event not recorded`, which adds the SQLSTATE and the error class). Read events with
+before the next start. An inserted row writes no log line: the event is the tenant's. A row the database refuses is logged as `limit event not recorded` with its kind, the SQLSTATE and the error class, and nothing of the tenant or the rule ([ADR 0055](../adr/0055-operational-telemetry-holds-no-tenant-data.md)). Read events with
 `pandokos limit events` or `listLimitEvents` (newest first). Delivery to other systems (webhooks)
 does not exist yet: sprint 6.4 adds it ([ADR 0014](../adr/0014-events-outbox.md)).
 
@@ -715,7 +715,7 @@ deleted rules reach the gateway through the same notification as any deleted rul
 
 - **A token limit must not be below the largest request** that a caller makes: that request
   reserves its input plus its output and is refused every time, because no waiting makes room. Look
-  at the largest `reserved_tokens` in the log and at the output limits your callers set.
+  at the largest requests in the tenant's usage records and at the output limits your callers set.
 - **A budget must not be below the cost of the largest request**: such a request reserves its cost
   in full and is refused every time. The cost of a request reserved is its estimated tokens at the
   price in force; the bound of section 10 says how far one request can exceed it.
@@ -740,43 +740,36 @@ deleted rules reach the gateway through the same notification as any deleted rul
 
 ## 15. Logs and troubleshooting
 
-The `request` line ([gateway guide](gateway.md), section 10) gains these fields. The fields marked
-**details** hold a tenant's usage and are written only when `telemetry.tenant_usage_details` is `true`
-([telemetry guide](telemetry.md), [ADR 0054](../adr/0054-usage-data-is-the-tenants.md)); by default the log
-shows that a request was limited and by which rule, not the amounts:
+The `request` line ([gateway guide](gateway.md), section 10) says how limits treated a request and
+nothing of the tenant's rules ([ADR 0055](../adr/0055-operational-telemetry-holds-no-tenant-data.md)):
 
 | Field | Present | Meaning |
 |---|---|---|
-| `reserved_tokens` (**details**) | a reservation was made | the tokens reserved for the request: input plus output estimate |
-| `limit_subject`, `limit_metric` | refused by a limit | the subject kind and the metric that had no room |
-| `limit_scope` | refused by a limit | `all`, `provider` or `model` |
-| `limit_currency` (**details**) | refused by a budget | the currency of the budget |
-| `limit_level` | refused by a limit | `platform` or `tenant`: who set the value in force |
-| `limit` (**details**) | refused by a limit | the value in force (a decimal for a budget, for example `250.5`) |
-| `retry_after_s` | refused by a limit | the `Retry-After` that was sent |
-| `estimate_over_limit` | the estimate alone exceeds the limit | `true`: waiting will not help |
-| `budget_unpriced` | admitted with `limits.on_unknown_price` `allow` | `true`: a budget could not measure the request |
-| `limits_unverified` | admitted with `limits.on_store_failure` `allow` | `true`: counters could not be verified |
 | `limit_state` | every request line | how limits treated the request: `limited`, `unlimited`, `unverified` or `not_evaluated`, the same value as the usage record |
-| `price_currency`, `price_source` (**details**) | refused with `no_price` | the currency and the list (`tenant` or `catalogue`) of the price that applied, absent when the model has none (next to `limit_currency`, the budget's) |
+| `limits_unverified` | admitted with `limits.on_store_failure` `allow` | `true`: counters could not be verified |
+| `error_code` | refused | `rate_limited`, `quota_exceeded` or `no_price` |
 
-Other lines: `limit reservation expired` (error: `request_id`, `tenant_id`), `limit settle failed`
-(error: `request_id`, and the panic type or the error), `limit rules unavailable` (warning:
-`tenant_id`), `limit counters unavailable` (warning: `tenant_id`, `error_class`; once per tenant
-every ten seconds), `limit reconciliation failed` (warning: tenant, `error_class`), `limit event
-recorded` (info: tenant, kind, metric, subject kind, scope, percent), `limit event not recorded`
-(error) and `limit events not recorded` at shutdown (warning: the number left). `unlimited traffic recorded` (info: tenant, day) and `unlimited traffic not recorded` (debug) tell
-what the recorder below did. At start-up `limits ready` states the default zone and the two settings. No line holds a body, a header value, a
-credential or a subject ID other than the principal fields of the request line.
+The rule that refused a request (subject, metric, scope, level, value, `Retry-After`), the tokens
+reserved and the currencies are the tenant's: the caller reads them in the response headers
+(`X-Pandokos-Limit-*`), the tenant in its usage records, limit events and rules. To troubleshoot a
+refusal, ask the tenant for the `X-Pandokos-Request-Id` and the headers of the answer.
+
+Other lines: `limit reservation expired` (error: `request_id`), `limit settle failed`
+(error: `request_id`, and the panic type or the error), `limit rules unavailable` (warning),
+`limit counters unavailable` (warning: `error_class`; once per tenant every ten seconds),
+`limit reconciliation failed` (warning: `error_class`), `limit event not recorded` (error: kind,
+SQLSTATE, error class) and `limit events not recorded` at shutdown (warning: the number left).
+`unlimited traffic not recorded` (debug: `request_id`, `error_class`) tells that the recorder below
+failed; a recorded row writes no line. At start-up `limits ready` states the default zone and the two
+settings. No line names a tenant, a body, a header value, a credential or a subject.
 
 | You see | Look at |
 |---|---|
-| 429 `rate_limited` with `limit_metric` `requests_per_minute` | the caller's rate against `limit`; `limit_subject` says whether it is the key, the service account or the tenant |
-| 429 `rate_limited` with `limit_metric` `tokens_per_minute` and `estimate_over_limit: true` | the largest `reserved_tokens`; raise the limit or ask the caller for a lower output limit or a smaller input |
-| 429 `rate_limited` with `limit_metric` `tokens_per_minute` and a small `Remaining` | the output limit the callers set: without one every request reserves the default |
+| 429 `rate_limited` on `requests_per_minute` (header `X-Pandokos-Limit-Metric`) | the caller's rate against the limit; the subject says whether it is the key, the service account or the tenant |
+| 429 `rate_limited` on `tokens_per_minute` and a small `Remaining` | the output limit the callers set: without one every request reserves the default; an estimate larger than the limit cannot be cured by waiting |
 | 429 `rate_limited` with `limit_metric` `concurrent_requests` | slow or hanging requests; `limits.max_request_duration` ends them |
 | 429 `quota_exceeded` | the metric, scope and `Retry-After`: the quota or budget resets at the end of the period in the tenant's time zone; raise the rule or wait. `limit events --kind exhausted` shows when it was first reached |
-| 409 `no_price` | the model has no price in the tenant's **active currency** while a budget or ceiling in it applies. With the tenant's tools: `tenant-model list` (`price`, `tenant_price`, `price_source`), `limit list` (`active`), `price-list currency get`. The tenant adds a price in its active currency, narrows the budget to a scope with prices, or the operator sets `limits.on_unknown_price` to `allow`. In the operator's log, `limit_currency` against `price_currency` and `price_source`, only with `telemetry.tenant_usage_details` |
+| 409 `no_price` | the model has no price in the tenant's **active currency** while a budget or ceiling in it applies. With the tenant's tools: `tenant-model list` (`price`, `tenant_price`, `price_source`), `limit list` (`active`), `price-list currency get`. The tenant adds a price in its active currency, narrows the budget to a scope with prices, or the operator sets `limits.on_unknown_price` to `allow` |
 | A budget that never refuses | `active` in `limit list`: its currency may not be the tenant's active currency (`price-list currency get`), or the change of currency has not taken effect yet (`effective_from`) |
 | 503 `unavailable` and `limit rules unavailable` | the database: the rules of that tenant could not be read and none were cached |
 | 503 `unavailable` and `limit counters unavailable` | the usage ledger could not be read to load a counter and `limits.on_store_failure` is `refuse` |

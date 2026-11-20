@@ -177,7 +177,7 @@ func TestTenantPriceGuide(t *testing.T) {
 
 	for _, doc := range []string{"docs/operations/telemetry.md", "docs/operations/gateway.md"} {
 		text := read(t, doc)
-		mentionsAll(t, doc, text, "telemetry.tenant_usage_details")
+		mentionsAll(t, doc, text, "0055")
 		if regexp.MustCompile(`(?m)^\|\s*` + "`" + `(cost|reserved_tokens|limit_currency|price_currency)` + "`" + `\s*\|[^|]*\|\s*always`).MatchString(text) {
 			t.Errorf("%s lists a removed field as always present", doc)
 		}
@@ -194,7 +194,10 @@ func TestTenantPriceReference(t *testing.T) {
 	mentionsAll(t, "admin-api.md", api, "listPriceLists", "listPriceListVersions", "createPriceListVersion", "getPriceListVersion", "deletePriceListVersion",
 		"getActiveCurrency", "setActiveCurrency", "tenant_price.create", "tenant_price.delete", "tenant.active_currency_update")
 	mentionsAll(t, "permissions.md", read(t, "docs/reference/permissions.md"), "price_list:read", "price_list:write", "price_list:delete")
-	mentionsAll(t, "configuration.md", read(t, "docs/operations/configuration.md"), "pricing.default_currency", "telemetry.tenant_usage_details")
+	mentionsAll(t, "configuration.md", read(t, "docs/operations/configuration.md"), "pricing.default_currency")
+	if strings.Contains(read(t, "docs/operations/configuration.md"), "telemetry.tenant_usage_details") {
+		t.Error("configuration.md still names telemetry.tenant_usage_details, which ADR 0055 removes")
+	}
 	db := read(t, "docs/operations/database.md")
 	mentionsAll(t, "database.md", db, "0012", "active currency", "no_price", "pricing.default_currency", "request log", "spans")
 	mentionsAll(t, "usage.md", read(t, "docs/operations/usage.md"), "price_source")
@@ -217,5 +220,5 @@ func TestTenantPriceReference(t *testing.T) {
 	}
 	mentionsAll(t, "the security model", read(t, "docs/architecture/security-model.md"), "#33")
 	epic6 := read(t, "planning/epics/06-observability-reports-lifecycle/epic.md")
-	mentionsAll(t, "the epic file of epic 6", epic6, "tenant_usage_details", "per installation", "never to cost or tokens")
+	mentionsAll(t, "the epic file of epic 6", epic6, "ADR 0055", "per installation", "#52")
 }

@@ -228,7 +228,7 @@ func (h *Handler) safeRecordOf(st *reqState, logOutcome string) (r usage.Record)
 func (h *Handler) finishRecord(st *reqState, logOutcome string) {
 	r := h.safeRecordOf(st, logOutcome)
 	st.rec = &r
-	st.endClient(&r, h.usageDetails)
+	st.endClient(&r)
 	h.recorder.Record(r)
 	st.endServer(&r)
 }

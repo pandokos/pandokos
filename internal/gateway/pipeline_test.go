@@ -532,9 +532,8 @@ func TestCredentialResolution(t *testing.T) {
 		if len(calls) != 1 || calls[0].Provider != "openai" || calls[0].RequestID != c.header.Get("X-Pandokos-Request-Id") {
 			t.Errorf("Open was called with %+v, the response's request ID is %q", calls, c.header.Get("X-Pandokos-Request-Id"))
 		}
-		line := h.lastRequestLine(t)
-		if line["credential_id"] != "synthetic-credential-openai" || line["credential_pinned"] != true {
-			t.Errorf("line: %v", line)
+		if r := h.oneRecord(t); r.CredentialID != "synthetic-credential-openai" {
+			t.Errorf("record: %+v", r)
 		}
 		testutil.AssertAbsent(t, "the logs", h.logs.String(), testutil.SecretForms(fixtures.CanaryCredential)...)
 		testutil.AssertAbsent(t, "the response", c.dump(), testutil.SecretForms(fixtures.CanaryCredential)...)
@@ -592,9 +591,8 @@ func TestUpstreamModel(t *testing.T) {
 		if reqs := h.up.Requests(); len(reqs) != 1 || string(reqs[0].Body) != want {
 			t.Fatalf("the provider received %q, want %q", reqs[0].Body, want)
 		}
-		line := h.lastRequestLine(t)
-		if line["model"] != "nick" {
-			t.Errorf("the log names the model %v, want the public name nick", line["model"])
+		if r := h.oneRecord(t); r.Model != "nick" {
+			t.Errorf("the record names the model %v, want the public name nick", r.Model)
 		}
 	})
 	t.Run("streaming, with the usage splice", func(t *testing.T) {
@@ -1160,20 +1158,20 @@ func union(sets ...map[string]bool) map[string]bool {
 	return m
 }
 
-// TestRequestLogFields is T-438: the field set of section 5.9.
+// TestRequestLogFields is T-438: the field set of the request line, as ADR 0055 restricts it.
 func TestRequestLogFields(t *testing.T) {
 	base := setOf("time", "level", "msg", "request_id", "method", "route", "status", "outcome", "duration_ms", "limit_state")
-	op := setOf("provider", "api_family", "operation")
-	who := setOf("tenant_id", "service_account_id", "key_id")
-	resolved := setOf("model", "model_id", "endpoint")
-	credential := setOf("credential_id", "credential_pinned")
-	response := setOf("stream", "usage_injected", "upstream_status", "ttfb_ms", "request_bytes", "response_bytes", "usage_source", "usage", "upstream_request_id")
-	// Sprint 3.2 (section 5.5): every admitted request has a record ID, a trace ID and a cost
-	// status; a known cost has an amount and a currency; the number of metadata entries may be
-	// logged (metadata_count), and the fields below are absent unless the case says otherwise.
-	ledger := setOf("record_id", "trace_id", "cost_status")
-	cost := setOf("cost", "currency")
-	optional := setOf("metadata_count")
+	op := setOf("provider")
+	resolved := setOf("endpoint")
+	response := setOf("stream", "usage_injected", "upstream_status", "ttfb_ms")
+	// Every admitted request has a trace ID.
+	ledger := setOf("trace_id")
+	// What the line never holds (ADR 0055): the identity of the caller and of its tenant, the model,
+	// the credential, sizes, usage, cost, metadata and the limit rules.
+	never := []string{"tenant_id", "service_account_id", "key_id", "issuer_id", "api_family", "operation", "model", "model_id",
+		"credential_id", "credential_pinned", "request_bytes", "response_bytes", "usage_source", "usage_output_source", "usage",
+		"upstream_request_id", "record_id", "cost_status", "cost", "currency", "metadata_count", "metadata_dropped",
+		"limit_subject", "limit_metric", "limit_level", "limit_scope", "limit", "retry_after_s", "reserved_tokens", "budget_unpriced"}
 	forbid := func(line map[string]any, names ...string) {
 		t.Helper()
 		for _, n := range names {
@@ -1195,31 +1193,31 @@ func TestRequestLogFields(t *testing.T) {
 				t.Errorf("the field %s is not expected: %v", k, line)
 			}
 		}
+		forbid(line, never...)
 	}
 
 	t.Run("a success", func(t *testing.T) {
 		h := newHarness(t, nil)
 		h.sendAuthed(t, route, chat("fake-basic", false))
 		line := h.lastRequestLine(t)
-		within(t, line, union(base, op, who, resolved, credential, response, ledger, cost), optional)
+		within(t, line, union(base, op, resolved, response, ledger), nil)
 		rec := h.oneRecord(t)
-		if line["record_id"] != rec.ID || line["trace_id"] != rec.TraceID || line["cost_status"] != "known" || line["currency"] != "USD" || line["usage_source"] != "provider" {
+		if line["trace_id"] != rec.TraceID {
 			t.Errorf("the line does not match the record %s: %v", rec.ID, line)
 		}
-		for k, v := range map[string]any{"api_family": "openai", "provider": "openai", "operation": "chat.completions", "model": "fake-basic",
-			"endpoint": "synthetic-endpoint", "model_id": "synthetic-model-openai-fake-basic", "credential_pinned": false,
-			"upstream_request_id": "req_fake_0001", "route": "POST /{provider}/v1/chat/completions", "outcome": "ok"} {
+		for k, v := range map[string]any{"provider": "openai", "endpoint": "synthetic-endpoint",
+			"route": "POST /{provider}/v1/chat/completions", "outcome": "ok"} {
 			if line[k] != v {
 				t.Errorf("%s = %v, want %v", k, line[k], v)
 			}
 		}
-		forbid(line, "invalid_reason", "upstream_error", "egress_reason", "error_code", "usage_reader", "ledger", "metadata_dropped")
+		forbid(line, "invalid_reason", "upstream_error", "egress_reason", "error_code", "usage_reader", "ledger")
 	})
 	t.Run("a stream", func(t *testing.T) {
 		h := newHarness(t, nil)
 		h.sendAuthed(t, route, chat("fake-basic", true))
 		line := h.lastRequestLine(t)
-		within(t, line, union(base, op, who, resolved, credential, response, ledger, cost), optional)
+		within(t, line, union(base, op, resolved, response, ledger), nil)
 		if line["stream"] != true || line["usage_injected"] != true {
 			t.Errorf("line: %v", line)
 		}
@@ -1227,15 +1225,8 @@ func TestRequestLogFields(t *testing.T) {
 	t.Run("a provider error", func(t *testing.T) {
 		h := newHarness(t, nil)
 		h.sendAuthed(t, route, chat(fakeprovider.ModelError429, false))
-		// A provider error carries no usage: usage_source says none and there is no usage group.
-		withoutUsage := union(base, op, who, resolved, credential, response, ledger)
-		delete(withoutUsage, "usage")
 		line := h.lastRequestLine(t)
-		within(t, line, withoutUsage, optional)
-		if line["usage_source"] != "none" || line["cost_status"] != "none" {
-			t.Errorf("a provider error carries usage or cost: %v", line)
-		}
-		forbid(line, "cost", "currency")
+		within(t, line, union(base, op, resolved, response, ledger), nil)
 	})
 
 	refusal := func(name string, mutate func(*gateway.Options), do func(t *testing.T, h *harness), required, allowed map[string]bool, absent ...string) {
@@ -1243,16 +1234,15 @@ func TestRequestLogFields(t *testing.T) {
 			h := newHarness(t, mutate)
 			do(t, h)
 			line := h.awaitOutcome(t, "pandokos_error")
-			// A request that failed step 2 or 3 was not admitted: nothing of the ledger.
+			// A request that failed step 2 or 3 was not admitted: no trace.
 			admitted := !strings.HasPrefix(name, "step 2:") && !strings.HasPrefix(name, "step 3:")
 			if admitted {
-				required, allowed = union(required, ledger), union(allowed, optional)
+				required = union(required, ledger)
 			} else {
-				absent = append(append([]string(nil), absent...), "record_id", "trace_id", "cost_status", "cost", "currency", "metadata_count")
+				absent = append(append([]string(nil), absent...), "trace_id")
 			}
 			within(t, line, union(required, setOf("error_code")), allowed)
 			forbid(line, absent...)
-			forbid(line, "cost", "currency", "usage_source")
 			testutil.AssertNoCanary(t, "the logs", h.logs.String())
 			testutil.AssertAbsent(t, "the logs", h.logs.String(), testutil.KeyForms(testKey)...)
 		})
@@ -1263,26 +1253,26 @@ func TestRequestLogFields(t *testing.T) {
 	post := func(model string) func(t *testing.T, h *harness) {
 		return func(t *testing.T, h *harness) { h.sendAuthed(t, route, chat(model, false)) }
 	}
-	afterBody := setOf("request_bytes", "stream", "usage_injected")
+	afterBody := setOf("stream", "usage_injected")
 	refusal("step 2: not served", nil, func(t *testing.T, h *harness) { h.send(t, http.MethodGet, "/nope/v1/x", nil, authed()) },
-		base, nil, "provider", "api_family", "operation", "tenant_id", "key_id", "model", "credential_id", "upstream_status")
+		base, nil, "provider", "upstream_status")
 	refusal("step 3: unauthenticated", func(o *gateway.Options) {
 		o.Authenticator = fixedAuth{err: reasoned{"wrong_secret", "tabcdefghijklmnop", "0192f0f0-0000-7000-8000-000000000001"}}
-	}, post("fake-basic"), union(base, op, setOf("key_id")), nil, "tenant_id", "service_account_id", "model", "credential_id", "upstream_status", "request_bytes")
+	}, post("fake-basic"), union(base, op), nil, "upstream_status")
 	refusal("step 4: forbidden", func(o *gateway.Options) { o.Authenticator = fixedAuth{p: noRole} }, post("fake-basic"),
-		union(base, op, who), nil, "model", "credential_id", "upstream_status", "request_bytes")
+		union(base, op), nil, "upstream_status")
 	refusal("step 5: too large", func(o *gateway.Options) { o.MaxRequestBodyBytes = 10 }, post("fake-basic"),
-		union(base, op, who), setOf("request_bytes"), "model", "credential_id", "upstream_status")
+		union(base, op), nil, "upstream_status")
 	refusal("step 6: invalid", nil, func(t *testing.T, h *harness) { h.sendAuthed(t, route, []byte(`{}`)) },
-		union(base, op, who, setOf("invalid_reason", "request_bytes")), setOf("stream", "usage_injected"), "model", "model_id", "credential_id", "upstream_status")
-	refusal("step 7: model not allowed", nil, post("nope"), union(base, op, who, setOf("request_bytes")), afterBody,
-		"model", "model_id", "endpoint", "credential_id", "credential_pinned", "upstream_status")
+		union(base, op, setOf("invalid_reason")), afterBody, "upstream_status")
+	refusal("step 7: model not allowed", nil, post("nope"), union(base, op), afterBody,
+		"endpoint", "upstream_status")
 	refusal("step 8: no credential", func(o *gateway.Options) { o.Credentials = testutil.StaticCredentials(nil) }, post("fake-basic"),
-		union(base, op, who, resolved, setOf("request_bytes")), afterBody, "credential_id", "credential_pinned", "upstream_status")
+		union(base, op, resolved), afterBody, "upstream_status")
 	refusal("step 9: the provider cannot be reached", nil, func(t *testing.T, h *harness) {
 		closedPortTarget(h)
 		h.sendAuthed(t, route, chat("fake-basic", false))
-	}, union(base, op, who, resolved, credential, setOf("request_bytes", "upstream_error")), afterBody, "upstream_status")
+	}, union(base, op, resolved, setOf("upstream_error")), afterBody, "upstream_status")
 }
 
 // TestRequestLogIsNotLeaky checks that nothing of the caller's content is in the log of a good call.

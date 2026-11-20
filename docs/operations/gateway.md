@@ -308,16 +308,16 @@ provider you run yourself means the endpoint should be marked private
 
 ## 8. Authentication failures
 
-Every failure is logged as `authentication failed` (warn) with the reason, never the secret. A failure
+Every failure is logged as `authentication failed` (warn) with the reason and the request ID, never the
+secret, the key, the tenant, the registration or the subject ([ADR 0055](../adr/0055-operational-telemetry-holds-no-tenant-data.md)). A failure
 that names a key of a tenant (wrong secret, revoked, expired, service account disabled or not valid)
 is also recorded in that tenant's audit log as `auth.failure` (`detail.listener` `inference`). The
 record is bounded: at most one per key and reason in ten minutes and 60 a minute per instance.
 Failures that name no tenant (malformed, unknown key, kind not accepted) are logged only. The answer
 to the caller is the same whether or not a row was written.
 
-A refused token is logged the same way, with `issuer_id` and `issuer_scope` when a registration was
-selected and `subject` only once the signature verified; it never holds the token, a segment of it or
-a claim that was not verified. When it names a tenant (a tenant-bound registration, or a subject
+A refused token is logged the same way, with the reason only; the line never holds the token, a
+segment of it or a claim. When it names a tenant (a tenant-bound registration, or a subject
 that is not mapped or whose account is disabled) it is audited as `auth.failure` with `resource_type`
 `token_issuer` and the registration's ID as `resource_id`, at most one row per registration, reason and
 subject in ten minutes. The reasons are in the [tokens guide](tokens.md), section 4. Keys that cannot
@@ -334,28 +334,24 @@ tenant register its own credential with `pandokos credential create --provider o
 
 ## 10. Log fields of a request
 
-The `request` line of the [container guide](container.md) gains these fields from sprint 3.2 (`usage_output_source` and `upstream_request_id` from sprint 3.3):
+The `request` line of the [container guide](container.md) also has these fields:
 
 | Field | Present | Meaning |
 |---|---|---|
-| `record_id` | the request was admitted | the ID of its usage record |
 | `trace_id` | the request has a trace | 32 hexadecimal characters |
-| `cost_status` | the request was admitted | `known`, `unknown` or `none` |
-| `cost`, `currency` | the cost is known **and `telemetry.tenant_usage_details` is on** | the amount and its currency |
-| `usage_source` | the provider answered | `provider`, `estimated` or `none`: the source of the input side |
-| `usage_output_source` | the output side has another source | only when it differs from `usage_source`, for example `usage_source: provider` and `usage_output_source: estimated` after a stream cut following `message_start` |
-| `upstream_request_id` | the provider sent one | its `X-Request-Id` (`openai`) or `Request-Id` (`anthropic`), bounded |
-| `metadata_count`, `metadata_dropped` | metadata was sent / entries were dropped | counts, never values |
-| `usage_reader` | the reader gave up | `failed` |
-| `issuer_id` | the credential was a token | the ID of the registration that accepted it; `key_id` is then the ID of the subject mapping |
-| `ledger` | step 3a refused the request | `full` (written `ledger: full` in this guide) |
-| `reserved_tokens` | a reservation was made (sprint 5.1) **and `telemetry.tenant_usage_details` is on** | input plus output tokens reserved by the estimate |
-| `limit_subject`, `limit_metric`, `limit_scope`, `limit_level`, `retry_after_s` | step 7b refused the request (`limit_scope` `all`, `provider` or `model`) | the subject kind (`tenant`, `service_account`, `key`), the metric, who set the value (`platform` or `tenant`) and the `Retry-After` sent |
-| `limit`, `limit_currency`, `price_currency`, `price_source` | step 7b refused the request **and `telemetry.tenant_usage_details` is on** (`limit_currency` for a budget, whose `limit` is a decimal; `price_currency` and `price_source` on a `no_price` refusal) | the value in force, the currency of the budget, and the currency and list (`tenant` or `catalogue`) of the price that applied |
-| `estimate_over_limit` | the estimate alone exceeds the limit | `true`: waiting cannot help |
-| `budget_unpriced` | the request was admitted although a budget could not measure it (`limits.on_unknown_price` `allow`) | `true` |
+| `limit_state` | always | whether the limits were evaluated, and their result |
 | `limits_unverified` | the request was admitted although its counters could not be verified (`limits.on_store_failure` `allow`) | `true` |
+| `invalid_reason` | the body was refused as invalid | the reason |
+| `upstream_error`, `egress_reason` | the provider could not be reached, or the egress guard refused it | the class of the failure |
+| `usage_reader` | the reader gave up | `failed` |
+| `ledger` | step 3a refused the request | `full` (written `ledger: full` in this guide) |
 
-**Usage details are the tenant's and are off by default.** The fields `cost`, `currency`, the `usage` group of token counts, `reserved_tokens`, `limit`, `limit_currency`, `price_currency` and `price_source` describe what a tenant consumes and pays; a log pipeline is outside the tenant's control, so they are written only when `telemetry.tenant_usage_details` is `true` ([ADR 0054](../adr/0054-usage-data-is-the-tenants.md)). `serve` then logs one `configuration warning` at start. What stays on every line: IDs, provider, endpoint, model, operation, outcome, error code, statuses, durations, byte counts, `usage_source`, `cost_status`, `limit_state` and, of a refusal, `limit_subject`, `limit_metric`, `limit_level`, `limit_scope`, `retry_after_s` and `estimate_over_limit`. To find out why a tenant meets `no_price`, use the tenant's own tools ([limits guide](limits.md), section 15).
+**The line is operational and holds nothing of the tenant** ([ADR 0055](../adr/0055-operational-telemetry-holds-no-tenant-data.md)).
+It names no tenant, service account, key, token registration or subject, no model, credential or
+provider request ID, no size, usage source, token count, cost, currency or metadata count, and no
+limit rule (subject, metric, scope, level, value, `Retry-After`). All of that is in the tenant's usage
+record and limit events, which the tenant reads with its own tools (capability check, usage list,
+rules: [limits guide](limits.md), section 15). An operator who troubleshoots a request asks the tenant
+for its `X-Pandokos-Request-Id` and finds the line by `request_id`.
 
 `ttfb_ms` now means the first body byte (section 4a).

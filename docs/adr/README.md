@@ -60,6 +60,7 @@ A record is *proposed* until the maintainer accepts it, by merging its pull requ
 | [0052](0052-administration-of-limits.md) | Administration of limits: scopes, thresholds, events, API and permissions | accepted |
 | [0053](0053-tenant-price-lists-and-active-currency.md) | Tenant price lists and the active currency | proposed |
 | [0054](0054-usage-data-is-the-tenants.md) | Usage data is the tenant's: what the platform does not see | proposed |
+| [0055](0055-operational-telemetry-holds-no-tenant-data.md) | Operational telemetry holds no tenant data | proposed |
 
 ## Questions from SOW 0.1 and where they were decided
 

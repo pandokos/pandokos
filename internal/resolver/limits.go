@@ -152,7 +152,7 @@ func (l *Limits) unavailable(t tenant.ID, err error) {
 	}
 	l.noticed[t] = now
 	l.mu.Unlock()
-	l.log.Warn("limit counters unavailable", "tenant_id", t.String(), "error_class", errorClass(err))
+	l.log.Warn("limit counters unavailable", "error_class", errorClass(err))
 }
 
 // errorClass names the kind of an error without its text.

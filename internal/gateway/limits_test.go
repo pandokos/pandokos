@@ -122,9 +122,8 @@ func TestReserveStep(t *testing.T) {
 				if !e.Cost.Known {
 					t.Errorf("cost %+v: the model has a price", e.Cost)
 				}
-				line := h.lastRequestLine(t)
-				if got, ok := line["reserved_tokens"].(float64); !ok || int64(got) != e.InputTokens+e.OutputTokens {
-					t.Errorf("reserved_tokens %v, want %d", line["reserved_tokens"], e.InputTokens+e.OutputTokens)
+				if line := h.lastRequestLine(t); line["reserved_tokens"] != nil {
+					t.Errorf("reserved_tokens in the request line (ADR 0055): %v", line)
 				}
 			})
 
@@ -327,25 +326,21 @@ func TestRejectedLimitRecord(t *testing.T) {
 					t.Errorf("request ID %q, header %q", r.RequestID, c.header.Get("X-Pandokos-Request-Id"))
 				}
 				line := h.awaitOutcome(t, "pandokos_error")
-				if line["error_code"] != "rate_limited" || line["limit_subject"] != ref.Subject || line["limit_metric"] != ref.Metric ||
-					line["limit_level"] != ref.Level || line["limit_scope"] != ref.Scope || line["limit"] != float64(ref.Limit) || line["retry_after_s"] != float64(17) {
+				if line["error_code"] != "rate_limited" {
 					t.Errorf("request line %v", line)
 				}
-				if v, ok := line["estimate_over_limit"]; over && v != true {
-					t.Errorf("estimate_over_limit %v (present %v), want true", v, ok)
-				} else if !over && v == true {
-					t.Errorf("estimate_over_limit is true for a refusal that waiting cures")
-				}
-				if _, ok := line["reserved_tokens"]; ok {
-					t.Errorf("reserved_tokens on a refusal: %v", line["reserved_tokens"])
+				// The rule, its subject and the estimate are the tenant's (ADR 0055).
+				for _, k := range []string{"limit_subject", "limit_metric", "limit_level", "limit_scope", "limit", "retry_after_s", "estimate_over_limit", "reserved_tokens"} {
+					if _, ok := line[k]; ok {
+						t.Errorf("the request line has %s: %v", k, line)
+					}
 				}
 				testutil.AssertNoCanary(t, "the logs", h.logs.String())
 				server, client := endedSpans(t, h, 1)
 				if client != nil {
 					t.Error("a client span for a refusal")
 				}
-				sa := attrs(server)
-				if sa["pandokos.outcome"].AsString() != "rejected_limit" || sa["pandokos.error.code"].AsString() != "rate_limited" {
+				if sa := attrs(server); len(sa) != 3 {
 					t.Errorf("span attributes %v", sa)
 				}
 				if server.Status().Code != codes.Unset {

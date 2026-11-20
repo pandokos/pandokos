@@ -553,7 +553,7 @@ func TestValidationAtWrite(t *testing.T) {
 				t.Fatalf("%s: %d lines, want %d", c.outcome, len(lines), n+1)
 			}
 			l := lines[len(lines)-1]
-			if l["level"] != "INFO" || l["request_id"] != id || l["tenant_id"] != w.tenant.ID || l["provider"] != "openai" || l["outcome"] != c.outcome || l["upstream_status"] != c.status {
+			if l["level"] != "INFO" || l["request_id"] != id || l["tenant_id"] != nil || l["provider"] != "openai" || l["outcome"] != c.outcome || l["upstream_status"] != c.status {
 				t.Errorf("%s: the line %v", c.outcome, l)
 			}
 			if _, ok := l["duration_ms"]; !ok {

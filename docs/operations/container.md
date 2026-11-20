@@ -159,15 +159,16 @@ header values, bodies and query strings never appear. Values of sensitive keys a
 | `outcome` | always | `ok`, `pandokos_error`, `client_cancelled`, `client_error`, `timeout`, `upstream_aborted`, `shutdown_aborted` |
 | `error_code` | when Pandokos raised the error | the `X-Pandokos-Error` code |
 | `duration_ms` | always | wall time of the handler |
-| `provider`, `operation` | proxied route | `openai`, `chat.completions`, `responses` or `embeddings` |
+| `provider` | proxied route | the provider segment of the route |
+| `endpoint` | the model resolved | the endpoint of the catalogue the request was sent to |
 | `stream`, `usage_injected` | after the body was read | whether a stream was asked for, and whether Pandokos added the usage option |
 | `upstream_status` | when the provider answered | provider status |
 | `ttfb_ms` | when a body byte arrived | time to the first byte of the response body |
-| `request_bytes`, `response_bytes` | when known | body bytes received and sent |
-| `usage_source` | when the provider answered | `provider`, `estimated` or `none` |
-| `usage` | when `usage_source` is `provider` **and `telemetry.tenant_usage_details` is on** | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `reasoning_tokens`, plus one entry per non-zero provider-specific category |
 
-The usage record adds `record_id`, `trace_id`, `cost_status`, (with `telemetry.tenant_usage_details`) `cost`, `currency`, `metadata_count`, `metadata_dropped`, `usage_reader` and `ledger` (see the [gateway guide](gateway.md), section 10).
+The line names no caller, tenant, key, model, credential, size, usage, cost or limit rule: those are
+the tenant's and are in its usage record ([ADR 0055](../adr/0055-operational-telemetry-holds-no-tenant-data.md)).
+To follow one request, ask the tenant for its `X-Pandokos-Request-Id` and search the log for that
+`request_id`. The other fields of the line are in the [gateway guide](gateway.md), section 10.
 
 Health requests are logged at level debug, everything else at info.
 
@@ -189,8 +190,8 @@ On SIGTERM or SIGINT readiness goes to 503, the listener closes and in-flight re
 included, continue until they finish or `shutdown.drain_timeout` passes. Requests still running
 then are cancelled, which releases their provider connections. The usage records of all requests,
 the cancelled ones included, are then written to the database and the traces are flushed, together
-under `ledger.shutdown_flush_timeout` (default 10 s); records that cannot be written are logged in
-full (`usage record not written`, see the [usage guide](usage.md)). The process exits with code 0
+under `ledger.shutdown_flush_timeout` (default 10 s); records that cannot be written by then are lost,
+and one line, `ledger closed with records lost`, gives their number (see the [usage guide](usage.md)). The process exits with code 0
 within `shutdown.drain_timeout` plus, when requests were still running at the end of the drain, up to
 5 s for the cancelled handlers to record, plus `ledger.shutdown_flush_timeout`, plus about a second.
 **Give the container a stop grace period at least that long** plus a margin (worst case with the

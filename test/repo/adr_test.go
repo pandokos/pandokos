@@ -96,3 +96,21 @@ func TestPriceAndUsageRecords(t *testing.T) {
 		}
 	}
 }
+
+// TestOperationalTelemetryRecord: ADR 0055 exists and is in the index, and the records it refines
+// (0015, 0039, 0040, 0054) each have a history line that names it.
+func TestOperationalTelemetryRecord(t *testing.T) {
+	const adr = "0055-operational-telemetry-holds-no-tenant-data.md"
+	doc := read(t, "docs/adr/"+adr)
+	if !strings.Contains(read(t, "docs/adr/README.md"), adr) {
+		t.Error("ADR 0055 is not in the index")
+	}
+	mentionsAll(t, "ADR 0055", doc, "Required", "url.path", "gen_ai.operation.name", "gen_ai.provider.name", "request_id", "#52", "OPS-12", "tenant_usage_details")
+	for _, refined := range []string{"0015-observability", "0039-usage-record-admission-and-ledger-writer", "0040-traces", "0054-usage-data-is-the-tenants"} {
+		text := read(t, "docs/adr/"+refined+".md")
+		history := regexp.MustCompile(`(?m)^## History\s*$`).FindStringIndex(text)
+		if history == nil || !strings.Contains(text[history[0]:], adr) {
+			t.Errorf("%s has no history line that names ADR 0055", refined)
+		}
+	}
+}

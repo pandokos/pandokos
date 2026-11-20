@@ -8,9 +8,9 @@ import (
 
 // operations lists the metered endpoints of the family.
 var operations = []family.Operation{
-	{Name: OperationChatCompletions, Method: http.MethodPost, Path: PathChatCompletions},
-	{Name: OperationResponses, Method: http.MethodPost, Path: PathResponses},
-	{Name: OperationEmbeddings, Method: http.MethodPost, Path: PathEmbeddings},
+	{Name: OperationChatCompletions, Method: http.MethodPost, Path: PathChatCompletions, GenAI: "chat"},
+	{Name: OperationResponses, Method: http.MethodPost, Path: PathResponses, GenAI: "chat"},
+	{Name: OperationEmbeddings, Method: http.MethodPost, Path: PathEmbeddings, GenAI: "embeddings"},
 }
 
 // adapter implements family.Adapter by delegating to the functions of the package.

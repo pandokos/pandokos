@@ -234,9 +234,10 @@ should send traffic elsewhere.
 |---|---|---|
 | `ledger write failing` | warn | the database refused or could not be reached; logged when the state begins and once a minute; records stay queued. Look at the `database-*` readiness checks and the database |
 | `ledger write recovered` | info | writing works again |
-| `usage record rejected` | error | one record was refused and dropped; the others are not held up. Either the table refused it (fields: SQLSTATE, constraint name, `record_id`, `request_id`, `tenant_id`, `outcome`, `duration_ms`, the byte counts and `metadata_count`), or the check in Go (`Validate`) refused it before it was sent (fields: `error` naming the column, `record_id`, `tenant_id`, `duration_ms` and the byte counts). With `telemetry.tenant_usage_details` on, either line also carries `row`, the row as JSON without the metadata values (for a refusal by `Validate`, only the fields that passed); with it off there is no `row`: no token count, estimate, cost, currency, price version or price source reaches the log. The gateway saturates what the caller or the provider can make too large, so this should not happen: it means a bug, or the checks in Go and the table disagree. Report it with the line. States of a busy database (serialization failure, deadlock, lock not available, read-only transaction) are not rejections: the records stay queued and the writer retries |
+| `usage record rejected` | error | one record was refused and dropped; the others are not held up. Either the table refused it (fields: `request_id`, SQLSTATE and constraint name), or the check in Go (`Validate`) refused it before it was sent (fields: `error` naming the column, and `request_id` unless that is the column that failed). The line holds nothing else of the record ([ADR 0055](../adr/0055-operational-telemetry-holds-no-tenant-data.md)). The gateway saturates what the caller or the provider can make too large, so this should not happen: it means a bug, or the checks in Go and the table disagree. Report it with the line. States of a busy database (serialization failure, deadlock, lock not available, read-only transaction) are not rejections: the records stay queued and the writer retries |
 | `usage partitions not ensured` | warn | creating the monthly partitions failed (at start, which carries on, or in the hourly job); fields `error_class` and `sqlstate`. Rows still go to the default partition; look at the worker role and the database |
-| `usage record not written` | error | a record still in memory when the writer's shutdown deadline ended, or one that arrived after the writer had closed: its identity fields (`record_id`, `request_id`, `tenant_id`, `outcome`), `duration_ms`, the byte counts and `metadata_count`. With `telemetry.tenant_usage_details` on it also carries `row`, the whole row as JSON with the metadata values removed, and you can **rebuild the rows from these lines** with an `INSERT` as the owner (the record ID makes a repeated insert harmless); with it off the row is not in the log, because it holds the tenant's tokens and cost, and the rows of an outage can only be rebuilt from the tenant's own requests, so turn the key on before a planned shutdown that you expect to lose records. A last line, `ledger closed with records lost`, gives the count |
+| `usage record not written` | error | a record that arrived after the writer had closed; the line holds nothing of it. It is lost, like the records counted by `ledger closed with records lost` |
+| `ledger closed with records lost` | error | the writer's shutdown deadline ended with records still in memory: `unwritten` gives their number, `missing` the requests admitted that never recorded. Those records are lost: Pandokos does not rebuild them ([ADR 0055](../adr/0055-operational-telemetry-holds-no-tenant-data.md)). Give the container the stop grace period of section 8 |
 | `usage record without admission` | error | a handler recorded without having been admitted; once per start; report it |
 
 ## 7. Partitions
@@ -261,8 +262,8 @@ should send traffic elsewhere.
 After the drain (`shutdown.drain_timeout`), requests still running are cancelled and `serve` waits
 up to 5 s for them to record; the writer then stops admitting, writes every queued record
 and the late records of the requests just cancelled, under its own deadline
-`ledger.shutdown_flush_timeout`. Records it cannot write are logged in full as
-`usage record not written`, and one last line, `ledger closed with records lost`, gives their count. Give the container at least
+`ledger.shutdown_flush_timeout`. Records it cannot write by then are lost, and one last line,
+`ledger closed with records lost`, gives their count. Give the container at least
 `shutdown.drain_timeout + 5 s + ledger.shutdown_flush_timeout` plus a few seconds to stop; see the
 [container guide](container.md).
 
@@ -308,7 +309,8 @@ A superuser sees every row and bypasses the policy; that access belongs to the i
 operator, outside the boundary the product enforces. The admin and worker roles hold `SELECT` under
 the same policy; the gateway role cannot read a row it wrote.
 
-To follow one request, search the log for its `request_id` or `record_id`, and the ledger by
+To follow one request, search the log for its `request_id` (the tenant has it: it is the response
+header `X-Pandokos-Request-Id` and a column of its usage records), and the ledger by
 `(tenant_id, request_id)`, which is indexed.
 
 ## 10. Who reads usage
@@ -323,15 +325,14 @@ The usage records, the limit events and the price lists of a tenant are **the te
   platform scope and a session without a scope see no row of these tables.
 - What the platform sees are operational indicators of the installation (requests, errors, latency,
   saturation) with no tenant and no cost, and the ceilings it set, not what was counted against them.
-- **What the operator's logs and traces carry.** By default the request log line and the spans hold no
-  cost, currency, token count, reserved amount or budget figure. They hold the IDs (the tenant too: that
-  a tenant made a request is operational), the model, the outcome, durations and byte counts. The
-  lines of the ledger writer (`usage record rejected`, `usage record not written`) then carry only
-  identifiers, the outcome, the duration, the byte counts and the number of metadata entries, and the
-  line `limit event recorded` only the tenant, the kind and the rule ID. With
-  `telemetry.tenant_usage_details` they carry the cost and the counts again (the `row` of the ledger
-  lines; metric, scope, subject kind and percent of the event line), and `serve` warns at start
-  ([telemetry guide](telemetry.md)).
+- **What the operator's logs and traces carry.** Nothing of the tenant
+  ([ADR 0055](../adr/0055-operational-telemetry-holds-no-tenant-data.md)): no tenant, caller, key,
+  model, credential, size, usage source, token count, cost, currency, metadata count or limit rule.
+  The log is not a copy of the ledger: no line of the ledger writer holds a row, and a record that
+  cannot be written is counted, not logged. The request line and the spans hold what the operator
+  needs to run the installation (route, status, outcome, error code, provider, endpoint, durations,
+  trace ID); the operator reaches one request by the `request_id` the tenant gives. No setting brings
+  tenant data back into logs or traces.
 - **The limit.** Row-level security separates tenants from each other and from the platform roles of
   the product. It does not protect a tenant's data from whoever administers the database, the hosts or
   the backups: the owner role, a superuser or a backup reads every table (issue #33, [security

@@ -311,8 +311,8 @@ func TestExpiry(t *testing.T) {
 	for _, line := range strings.Split(logs.String(), "\n") {
 		if strings.Contains(line, "limit reservation expired") {
 			lines++
-			if !strings.Contains(line, `"level":"ERROR"`) || !strings.Contains(line, "req-expiry-1") || !strings.Contains(line, a.String()) {
-				t.Errorf("log line %s: want level error, the request ID and the tenant", line)
+			if !strings.Contains(line, `"level":"ERROR"`) || !strings.Contains(line, "req-expiry-1") || strings.Contains(line, a.String()) {
+				t.Errorf("log line %s: want level error and the request ID, not the tenant (ADR 0055)", line)
 			}
 		}
 	}

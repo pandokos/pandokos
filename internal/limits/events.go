@@ -46,9 +46,6 @@ type EventWriterOptions struct {
 	DB     *store.DB // the gateway pool
 	Logger *slog.Logger
 	Now    func() time.Time
-	// UsageDetails is telemetry.tenant_usage_details: the log lines about an event name its metric, scope,
-	// percent and subject only when it is set; otherwise only the tenant, the kind and the rule.
-	UsageDetails bool
 }
 
 const (
@@ -152,11 +149,8 @@ func (w *EventWriter) write(ctx context.Context, e Event) bool {
 			return false
 		}
 		if !store.IsUnavailable(err) {
-			attrs := []any{slog.String("tenant", e.Tenant.String()), slog.String("kind", e.Kind), slog.String("rule_id", e.RuleID)}
-			if w.o.UsageDetails {
-				attrs = append(attrs, slog.String("metric", string(e.Metric)))
-			}
-			w.o.Logger.Error("limit event not recorded", append(attrs, slog.String("sqlstate", store.SQLState(err)), slog.String("error_class", errorClass(err)))...)
+			// The event is the tenant's: the line names its kind and the error, nothing of the tenant (ADR 0055).
+			w.o.Logger.Error("limit event not recorded", slog.String("kind", e.Kind), slog.String("sqlstate", store.SQLState(err)), slog.String("error_class", errorClass(err)))
 			return true
 		}
 		select {
@@ -172,9 +166,8 @@ func (w *EventWriter) insert(ctx context.Context, e Event) error {
 	ctx, cancel := context.WithTimeout(ctx, eventAttempt)
 	defer cancel()
 	pct := int16(min(max(e.Percent, 0), 100)) //nolint:gosec // clamped to 0..100
-	var n int64
 	err := w.o.DB.WithTenant(ctx, e.Tenant, func(ctx context.Context, tx store.Tx) (err error) {
-		n, err = queries.New(tx).InsertLimitEvent(ctx, queries.InsertLimitEventParams{
+		_, err = queries.New(tx).InsertLimitEvent(ctx, queries.InsertLimitEventParams{
 			Kind: e.Kind, RuleID: e.RuleID, RuleLevel: e.Level, SubjectKind: string(e.Subject), SubjectID: e.SubjectID,
 			Provider: e.Provider, Model: e.Model, Metric: string(e.Metric), Currency: e.Currency,
 			PeriodStart: e.Period.Start, PeriodEnd: e.Period.End, Percent: pct, LimitValue: e.Value,
@@ -183,21 +176,6 @@ func (w *EventWriter) insert(ctx context.Context, e Event) error {
 	})
 	if err != nil {
 		return err
-	}
-	if n > 0 {
-		scope := "all"
-		switch {
-		case e.Model != "":
-			scope = "model"
-		case e.Provider != "":
-			scope = "provider"
-		}
-		attrs := []any{slog.String("tenant", e.Tenant.String()), slog.String("kind", e.Kind), slog.String("rule_id", e.RuleID)}
-		if w.o.UsageDetails {
-			attrs = append(attrs, slog.String("metric", string(e.Metric)), slog.String("subject_kind", string(e.Subject)),
-				slog.String("limit_scope", scope), slog.Int("percent", e.Percent))
-		}
-		w.o.Logger.Info("limit event recorded", attrs...)
 	}
 	return nil
 }

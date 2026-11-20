@@ -281,8 +281,6 @@ var keyTable = []keyDef{
 		setBool(func(c *Config) *bool { return &c.Telemetry.Traces.Propagate })),
 	serveDef("telemetry.resource.attributes", "list", "", "Resource attributes of the traces: key=value pairs separated by commas, at most 32",
 		setString(func(c *Config) *string { return &c.Telemetry.Resource.Attributes })),
-	serveDef("telemetry.tenant_usage_details", "boolean", "false", "Write the cost, currency and token counts of a tenant's requests to the request log and to traces; off by default because they are the tenant's data and a log pipeline is outside the tenant's control",
-		setBool(func(c *Config) *bool { return &c.Telemetry.TenantUsageDetails })),
 	serveDef("tokens.enabled", "boolean", "true", "Accept tokens of trusted issuers on the inference listener; false: every value that is not a virtual key is malformed and no key of an issuer is ever fetched",
 		setBool(func(c *Config) *bool { return &c.Tokens.Enabled })),
 	serveDef("tokens.max_token_bytes", "integer", "8192", "Largest token accepted; 1024 to 16384, at most half of listeners.inference.max_header_bytes",

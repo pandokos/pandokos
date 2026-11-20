@@ -273,7 +273,7 @@ SOW 0.1; *new* marks requirements added in this revision.
 |---|---|---|---|---|
 | OBS-01 | Pandokos is instrumented with OpenTelemetry and exports traces and metrics over OTLP. Logs are structured and written to standard output | M | R1 (traces), R2 (metrics) | OTEL-01, OTEL-02 |
 | OBS-02 | Each provider call produces one span, attached to the caller's trace through W3C Trace Context. Trace headers are never used for authentication or authorization | M | R1 | OTEL-03 to 05 |
-| OBS-03 | Spans and metrics follow the OpenTelemetry GenAI semantic conventions. The adopted version is pinned and documented, and changes are announced in release notes | M | R2 | OTEL-06, OTEL-12 |
+| OBS-03 | Metrics follow the OpenTelemetry GenAI semantic conventions; spans carry only the attributes the conventions mark Required, and nothing of a tenant's usage (ADR 0055). The adopted version is pinned and documented, and changes are announced in release notes | M | R2 | OTEL-06, OTEL-12 |
 | OBS-04 | Telemetry holds no content and no secrets | M | R1 | OTEL-07 |
 | OBS-05 | Endpoint, protocol, headers, sampling and resource attributes are configurable. A failing collector never blocks or slows inference | M | R1 | OTEL-08, OTEL-09, NFR-AV-03 |
 | OBS-06 | Metrics cover requests, errors, time to first byte, total latency, tokens, estimated cost and limit rejections, by provider, model and outcome | M | R2 | OTEL-10 |

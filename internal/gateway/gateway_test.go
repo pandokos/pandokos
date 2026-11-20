@@ -138,9 +138,6 @@ func build(t *testing.T, targets map[string]gateway.Target, guard *egress.Guard,
 		MaxRequestBodyBytes:    1 << 20,
 		RequestBodyReadTimeout: 2 * time.Second,
 		MaxRequestDuration:     10 * time.Second,
-		// The tests of the request line and of the spans read cost, tokens and currencies, which sprint 5.4
-		// writes only behind telemetry.tenant_usage_details: the harness turns it on; T-739 turns it off.
-		UsageDetails: true,
 	}
 	if mutate != nil {
 		mutate(&o)
@@ -255,13 +252,12 @@ func (h *harness) records(t *testing.T, n int) []usage.Record {
 	return h.rec.Records()
 }
 
-func usageGroup(t *testing.T, line map[string]any) map[string]any {
+// lastUsage waits for the record of the last request and returns its source and figures: the
+// request line carries no usage (ADR 0055), the record does.
+func (h *harness) lastUsage(t *testing.T) usage.Record {
 	t.Helper()
-	g, ok := line["usage"].(map[string]any)
-	if !ok {
-		t.Fatalf("no usage group in %v", line)
-	}
-	return g
+	recs := h.records(t, 1)
+	return recs[len(recs)-1]
 }
 
 func TestForwardNonStreaming(t *testing.T) {
@@ -276,12 +272,11 @@ func TestForwardNonStreaming(t *testing.T) {
 		t.Fatalf("provider saw %+v", reqs)
 	}
 	line := h.lastRequestLine(t)
-	if line["usage_source"] != "provider" || line["outcome"] != "ok" || line["stream"] != false {
+	if line["outcome"] != "ok" || line["stream"] != false {
 		t.Errorf("line: %v", line)
 	}
-	u := usageGroup(t, line)
-	if u["input_tokens"] != float64(9) || u["output_tokens"] != float64(12) {
-		t.Errorf("usage: %v", u)
+	if r := h.lastUsage(t); r.InputSource != usage.SourceProvider || r.Usage.InputTokens != 9 || r.Usage.OutputTokens != 12 {
+		t.Errorf("record: %+v", r)
 	}
 }
 
@@ -339,11 +334,11 @@ func TestStreamUsageInjectedAndStripped(t *testing.T) {
 		t.Fatalf("provider received %q, want %q", reqs[0].Body, wantBody)
 	}
 	line := h.lastRequestLine(t)
-	if line["usage_injected"] != true || line["stream"] != true || line["usage_source"] != "provider" {
+	if line["usage_injected"] != true || line["stream"] != true {
 		t.Errorf("line: %v", line)
 	}
-	if u := usageGroup(t, line); u["input_tokens"] != float64(9) || u["output_tokens"] != float64(12) {
-		t.Errorf("usage: %v", u)
+	if r := h.lastUsage(t); r.InputSource != usage.SourceProvider || r.Usage.InputTokens != 9 || r.Usage.OutputTokens != 12 {
+		t.Errorf("record: %+v", r)
 	}
 }
 
@@ -358,11 +353,11 @@ func TestStreamUsageRequestedByCaller(t *testing.T) {
 		t.Fatalf("provider received %q", reqs[0].Body)
 	}
 	line := h.lastRequestLine(t)
-	if line["usage_injected"] != false || line["usage_source"] != "provider" {
+	if line["usage_injected"] != false {
 		t.Errorf("line: %v", line)
 	}
-	if u := usageGroup(t, line); u["input_tokens"] != float64(9) {
-		t.Errorf("usage: %v", u)
+	if r := h.lastUsage(t); r.InputSource != usage.SourceProvider || r.Usage.InputTokens != 9 {
+		t.Errorf("record: %+v", r)
 	}
 }
 
@@ -675,8 +670,11 @@ func TestProviderErrorPassesThrough(t *testing.T) {
 		t.Error("a provider error carries X-Pandokos-Error")
 	}
 	line := h.lastRequestLine(t)
-	if line["outcome"] != "ok" || line["upstream_status"] != float64(429) || line["usage_source"] != "none" {
+	if line["outcome"] != "ok" || line["upstream_status"] != float64(429) {
 		t.Errorf("line: %v", line)
+	}
+	if r := h.lastUsage(t); r.InputSource != usage.SourceNone {
+		t.Errorf("record: %+v", r)
 	}
 }
 
@@ -900,21 +898,23 @@ func TestAuthorization(t *testing.T) {
 			if line["error_code"] != c.code || line["outcome"] != "pandokos_error" || line["status"] != float64(c.status) {
 				t.Errorf("request line: %v", line)
 			}
-			if c.auth.p.ID != "" && line["tenant_id"] != c.auth.p.TenantID.String() {
-				t.Errorf("a request refused by the decision names its tenant: %v", line["tenant_id"])
+			if _, ok := line["tenant_id"]; ok {
+				t.Errorf("a request line names a tenant (ADR 0055): %v", line)
 			}
 		})
 	}
 
-	t.Run("a good principal is forwarded and logged", func(t *testing.T) {
+	t.Run("a good principal is forwarded, and the line does not name it", func(t *testing.T) {
 		h := newHarness(t, func(o *gateway.Options) { o.Authenticator = fixedAuth{p: active} })
 		resp, b := h.call(t, chat("fake-basic", false))
 		if resp.StatusCode != 200 || len(b) == 0 || len(h.up.Requests()) != 1 {
 			t.Fatalf("status %d", resp.StatusCode)
 		}
 		line := h.lastRequestLine(t)
-		if line["tenant_id"] != active.TenantID.String() || line["service_account_id"] != active.ID || line["key_id"] != active.KeyID {
-			t.Errorf("identity fields: %v", line)
+		for _, k := range []string{"tenant_id", "service_account_id", "key_id"} {
+			if _, ok := line[k]; ok {
+				t.Errorf("identity field %s (ADR 0055): %v", k, line)
+			}
 		}
 	})
 
@@ -934,15 +934,15 @@ func TestAuthorization(t *testing.T) {
 			t.Fatalf("%d lines", len(lines))
 		}
 		l := lines[0]
-		if l["level"] != "WARN" || l["listener"] != "inference" || l["reason"] != "wrong_secret" || l["key_id"] != keyID || l["tenant_id"] != tenantID || len(fmt.Sprint(l["request_id"])) != 32 {
+		if l["level"] != "WARN" || l["listener"] != "inference" || l["reason"] != "wrong_secret" || l["key_id"] != nil || l["tenant_id"] != nil || len(fmt.Sprint(l["request_id"])) != 32 {
 			t.Errorf("the line: %v", l)
 		}
 		if _, ok := l["audited"]; ok {
 			t.Error("the inference listener does not audit: no audited field")
 		}
-		testutil.AssertAbsent(t, "logs", h.logs.String(), testKey)
+		testutil.AssertAbsent(t, "logs", h.logs.String(), testKey, keyID, tenantID)
 		req := h.lastRequestLine(t)
-		if req["key_id"] != keyID {
+		if _, ok := req["key_id"]; ok {
 			t.Errorf("a failed authentication names the key ID in the request line: %v", req["key_id"])
 		}
 	})

@@ -35,7 +35,7 @@ func TestStreamUsageOption(t *testing.T) {
 		if want := contentEvents(opChat, c.body); r.Estimated.OutputTokens != want || want == 0 {
 			t.Errorf("estimated output %d, want the %d content events delivered", r.Estimated.OutputTokens, want)
 		}
-		if line := h.lastRequestLine(t); line["usage_injected"] != false || line["usage_source"] != "estimated" {
+		if line := h.lastRequestLine(t); line["usage_injected"] != false {
 			t.Errorf("request line %v", line)
 		}
 	})

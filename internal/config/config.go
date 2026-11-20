@@ -85,9 +85,6 @@ type Telemetry struct {
 	Traces   TelemetryTraces   `yaml:"traces"`
 	Resource TelemetryResource `yaml:"resource"`
 
-	// TenantUsageDetails writes the cost, currency and token counts of a tenant to logs and traces.
-	TenantUsageDetails bool `yaml:"tenant_usage_details"`
-
 	ResourceAttributes map[string]string `yaml:"-"` // filled by Load when the purpose is serve
 }
 

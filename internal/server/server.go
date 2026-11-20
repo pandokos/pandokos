@@ -111,7 +111,6 @@ func New(o Options) (*Server, error) {
 		PropagateTrace:         cfg.Telemetry.Traces.Propagate,
 		Limits:                 o.Limits,
 		DefaultOutputTokens:    cfg.Limits.DefaultOutputTokens,
-		UsageDetails:           cfg.Telemetry.TenantUsageDetails,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("server: %w", err)
