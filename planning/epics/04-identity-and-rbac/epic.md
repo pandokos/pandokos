@@ -87,6 +87,25 @@ their sessions within the bound.
 
 Requirements: AZ-03 to AZ-06, AZ-09, AZ-10, AZ-11, SEC-08.
 
+Design constraint from open issues (noted 2026-11-21). These issues stay out of scope, but the
+permission catalogue, the reasons and the support action must be shaped so that they can be added
+later without reworking the role model:
+
+- [#31](https://github.com/pandokos/pandokos/issues/31) (time-boxed budget exceptions): a dedicated
+  permission to approve an overrun, distinct from editing limit rules (AZ-10), with a mandatory
+  reason (SEC-08). The catalogue must allow such a permission to be added; operations on limit rules
+  are among those that take a reason.
+- [#35](https://github.com/pandokos/pandokos/issues/35) (exposure report and containment): a
+  platform-level bulk action across tenants, with a mandatory reason and an audit record in each
+  affected tenant.
+- [#52](https://github.com/pandokos/pandokos/issues/52) (tenant correlation in operational
+  telemetry): a controlled re-identification by the operator, under a dedicated permission, with an
+  audit entry visible to the tenant.
+
+The platform support action is therefore designed as a general mechanism (explicit permission,
+mandatory reason, audit record in the tenant, configuration switch), not as a one-off for support
+inside a tenant.
+
 Exit: for each built-in role a test matrix shows which routes are allowed and denied, and
 `/v1/me` reports exactly the permissions the matrix expects; a tenant admin cannot grant a
 permission it lacks; a platform admin cannot read a tenant's usage or audit without a recorded
