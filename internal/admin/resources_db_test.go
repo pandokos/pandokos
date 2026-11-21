@@ -59,7 +59,7 @@ func TestTenants(t *testing.T) {
 		if m.PrincipalType != adminapi.PrincipalTypeServiceAccount || m.ID != sa.ID || m.Tenant == nil || m.Tenant.ID != out.Tenant.ID || m.Tenant.State != adminapi.TenantStateActive || m.Bootstrap {
 			t.Errorf("me: %+v", m)
 		}
-		if strings.Join(m.Roles, ",") != "tenant-admin" || len(m.Permissions) != 27 {
+		if strings.Join(m.Roles, ",") != "tenant-admin" || len(m.Permissions) != 29 {
 			t.Errorf("roles %v, permissions %v", m.Roles, m.Permissions)
 		}
 		// The default name of the first service account is admin; no expiry means none.
@@ -491,7 +491,7 @@ func TestPlatformKeys(t *testing.T) {
 	c := api.Client(boot)
 
 	m := me(t, api, boot)
-	if m.PrincipalType != adminapi.PrincipalTypePlatform || !m.Bootstrap || m.Tenant != nil || strings.Join(m.Roles, ",") != "platform-admin" || len(m.Permissions) != 18 {
+	if m.PrincipalType != adminapi.PrincipalTypePlatform || !m.Bootstrap || m.Tenant != nil || strings.Join(m.Roles, ",") != "platform-admin" || len(m.Permissions) != 20 {
 		t.Errorf("me: %+v", m)
 	}
 	r := api.Do(t, "GET", "/v1/me", boot, nil, nil)
@@ -585,8 +585,8 @@ func TestSuspensionBlocksAdministration(t *testing.T) {
 	before := w.api.SnapshotTenant(t, w.tenant.ID)
 	n := 0
 	for _, op := range adminapi.Operations {
-		if perm, _ := authz.Lookup(op.Permission); perm.Scope == authz.ScopePlatform {
-			continue
+		if perm, _ := authz.Lookup(op.Permission); op.Public || perm.Scope == authz.ScopePlatform {
+			continue // sprint 4.2: the public operations need no credential
 		}
 		n++
 		for _, key := range []string{w.adminKey, w.key.Secret} {
@@ -596,8 +596,8 @@ func TestSuspensionBlocksAdministration(t *testing.T) {
 			}
 		}
 	}
-	if n != 53 {
-		t.Errorf("only %d operations were exercised, want 53 (getMe, the twenty tenant operations of epic 2.1, the four of sprint 2.2, the two of sprint 3.3, the ten of sprint 4.1, the seven of sprint 5.2, the two of sprint 5.3 and the seven of sprint 5.4)", n)
+	if n != 67 {
+		t.Errorf("only %d operations were exercised, want 67 (getMe, the twenty tenant operations of epic 2.1, the four of sprint 2.2, the two of sprint 3.3, the ten of sprint 4.1, the seven of sprint 5.2, the two of sprint 5.3, the seven of sprint 5.4, and the ten members and the four own-session operations of sprint 4.2)", n)
 	}
 	if after := w.api.SnapshotTenant(t, w.tenant.ID); after != before {
 		t.Error("a row of the suspended tenant changed")

@@ -38,6 +38,114 @@ func (f *fake) rec(id string, in any) { f.mu.Lock(); f.got[id] = in; f.mu.Unlock
 func (f *fake) last(id string) any    { f.mu.Lock(); defer f.mu.Unlock(); return f.got[id] }
 func (f *fake) reset()                { f.mu.Lock(); f.got = map[string]any{}; f.mu.Unlock() }
 
+func (f *fake) GetAuthMethods(_ context.Context, in adminapi.GetAuthMethodsInput) (*adminapi.AuthMethods, error) {
+	f.rec("getAuthMethods", in)
+	return &adminapi.AuthMethods{}, nil
+}
+func (f *fake) CompleteOidcSignIn(_ context.Context, in adminapi.CompleteOidcSignInInput) (*adminapi.Redirect, error) {
+	f.rec("completeOidcSignIn", in)
+	return &adminapi.Redirect{Location: "/somewhere"}, nil
+}
+func (f *fake) StartOidcSignIn(_ context.Context, in adminapi.StartOidcSignInInput) (*adminapi.Redirect, error) {
+	f.rec("startOidcSignIn", in)
+	return &adminapi.Redirect{Location: "/somewhere"}, nil
+}
+func (f *fake) ChangePassword(_ context.Context, in adminapi.ChangePasswordInput) (*adminapi.Session, error) {
+	f.rec("changePassword", in)
+	return &adminapi.Session{}, nil
+}
+func (f *fake) ListOwnSessions(_ context.Context, in adminapi.ListOwnSessionsInput) (*adminapi.SessionList, error) {
+	f.rec("listOwnSessions", in)
+	return &adminapi.SessionList{}, nil
+}
+func (f *fake) DeleteOwnSession(_ context.Context, in adminapi.DeleteOwnSessionInput) (*adminapi.Session, error) {
+	f.rec("deleteOwnSession", in)
+	return &adminapi.Session{}, nil
+}
+func (f *fake) SignIn(_ context.Context, in adminapi.SignInInput) (*adminapi.Session, error) {
+	f.rec("signIn", in)
+	return &adminapi.Session{}, nil
+}
+func (f *fake) SignOut(_ context.Context, in adminapi.SignOutInput) (*adminapi.SignedOut, error) {
+	f.rec("signOut", in)
+	return &adminapi.SignedOut{}, nil
+}
+func (f *fake) ListMembers(_ context.Context, in adminapi.ListMembersInput) (*adminapi.MemberList, error) {
+	f.rec("listMembers", in)
+	return &adminapi.MemberList{}, nil
+}
+func (f *fake) CreateMember(_ context.Context, in adminapi.CreateMemberInput) (*adminapi.MemberCreated, error) {
+	f.rec("createMember", in)
+	return &adminapi.MemberCreated{}, nil
+}
+func (f *fake) GetMember(_ context.Context, in adminapi.GetMemberInput) (*adminapi.Member, error) {
+	f.rec("getMember", in)
+	return &adminapi.Member{}, nil
+}
+func (f *fake) UpdateMember(_ context.Context, in adminapi.UpdateMemberInput) (*adminapi.Member, error) {
+	f.rec("updateMember", in)
+	return &adminapi.Member{}, nil
+}
+func (f *fake) DeleteMember(_ context.Context, in adminapi.DeleteMemberInput) (*adminapi.Member, error) {
+	f.rec("deleteMember", in)
+	return &adminapi.Member{}, nil
+}
+func (f *fake) DisableMember(_ context.Context, in adminapi.DisableMemberInput) (*adminapi.Member, error) {
+	f.rec("disableMember", in)
+	return &adminapi.Member{}, nil
+}
+func (f *fake) EnableMember(_ context.Context, in adminapi.EnableMemberInput) (*adminapi.Member, error) {
+	f.rec("enableMember", in)
+	return &adminapi.Member{}, nil
+}
+func (f *fake) ResetMemberPassword(_ context.Context, in adminapi.ResetMemberPasswordInput) (*adminapi.PasswordReset, error) {
+	f.rec("resetMemberPassword", in)
+	return &adminapi.PasswordReset{}, nil
+}
+func (f *fake) RevokeMemberSessions(_ context.Context, in adminapi.RevokeMemberSessionsInput) (*adminapi.SessionsRevoked, error) {
+	f.rec("revokeMemberSessions", in)
+	return &adminapi.SessionsRevoked{}, nil
+}
+func (f *fake) UnlockMember(_ context.Context, in adminapi.UnlockMemberInput) (*adminapi.Member, error) {
+	f.rec("unlockMember", in)
+	return &adminapi.Member{}, nil
+}
+func (f *fake) ListUsers(_ context.Context, in adminapi.ListUsersInput) (*adminapi.UserList, error) {
+	f.rec("listUsers", in)
+	return &adminapi.UserList{}, nil
+}
+func (f *fake) CreateUser(_ context.Context, in adminapi.CreateUserInput) (*adminapi.UserCreated, error) {
+	f.rec("createUser", in)
+	return &adminapi.UserCreated{}, nil
+}
+func (f *fake) GetUser(_ context.Context, in adminapi.GetUserInput) (*adminapi.User, error) {
+	f.rec("getUser", in)
+	return &adminapi.User{}, nil
+}
+func (f *fake) UpdateUser(_ context.Context, in adminapi.UpdateUserInput) (*adminapi.User, error) {
+	f.rec("updateUser", in)
+	return &adminapi.User{}, nil
+}
+func (f *fake) DisableUser(_ context.Context, in adminapi.DisableUserInput) (*adminapi.User, error) {
+	f.rec("disableUser", in)
+	return &adminapi.User{}, nil
+}
+func (f *fake) EnableUser(_ context.Context, in adminapi.EnableUserInput) (*adminapi.User, error) {
+	f.rec("enableUser", in)
+	return &adminapi.User{}, nil
+}
+func (f *fake) ResetUserPassword(_ context.Context, in adminapi.ResetUserPasswordInput) (*adminapi.PasswordReset, error) {
+	f.rec("resetUserPassword", in)
+	return &adminapi.PasswordReset{}, nil
+}
+func (f *fake) RevokeUserSessions(_ context.Context, in adminapi.RevokeUserSessionsInput) (*adminapi.SessionsRevoked, error) {
+	f.rec("revokeUserSessions", in)
+	return &adminapi.SessionsRevoked{}, nil
+}
+func (f *fake) UnlockUser(_ context.Context, in adminapi.UnlockUserInput) (*adminapi.User, error) {
+	f.rec("unlockUser", in)
+	return &adminapi.User{}, nil
+}
 func (f *fake) GetMe(_ context.Context, in adminapi.GetMeInput) (*adminapi.Me, error) {
 	f.rec("getMe", in)
 	return &adminapi.Me{}, nil
@@ -984,8 +1092,116 @@ func TestRouterAndClient(t *testing.T) {
 			in := adminapi.DeletePriceListVersionInput{Tenant: tid, Price: cid}
 			add("deletePriceListVersion", in, func() error { _, err := c.DeletePriceListVersion(ctx, in); return err })
 		}
-		if len(adminapi.Operations) != 105 {
-			t.Fatalf("%d operations, want 105 (the 35 of epic 1 and sprint 2.1, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1, the 12 of sprint 5.2, the 2 of sprint 5.3 and the 7 of sprint 5.4)", len(adminapi.Operations))
+		{
+			in := adminapi.GetAuthMethodsInput{}
+			add("getAuthMethods", in, func() error { _, err := c.GetAuthMethods(ctx, in); return err })
+		}
+		{
+			in := adminapi.SignInInput{Body: adminapi.SignInRequest{Username: "ada", Password: "pw"}}
+			add("signIn", in, func() error { _, err := c.SignIn(ctx, in); return err })
+		}
+		{
+			in := adminapi.StartOidcSignInInput{}
+			add("startOidcSignIn", in, func() error { _, err := c.StartOidcSignIn(ctx, in); return err })
+		}
+		{
+			in := adminapi.CompleteOidcSignInInput{Code: "c", State: "s"}
+			add("completeOidcSignIn", in, func() error { _, err := c.CompleteOidcSignIn(ctx, in); return err })
+		}
+		{
+			in := adminapi.SignOutInput{}
+			add("signOut", in, func() error { _, err := c.SignOut(ctx, in); return err })
+		}
+		{
+			in := adminapi.ChangePasswordInput{Body: adminapi.PasswordChange{CurrentPassword: "a", NewPassword: "b"}}
+			add("changePassword", in, func() error { _, err := c.ChangePassword(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListOwnSessionsInput{}
+			add("listOwnSessions", in, func() error { _, err := c.ListOwnSessions(ctx, in); return err })
+		}
+		{
+			in := adminapi.DeleteOwnSessionInput{Session: sid}
+			add("deleteOwnSession", in, func() error { _, err := c.DeleteOwnSession(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListUsersInput{Limit: 4, Cursor: "abc", Sort: adminapi.UserSortUsername, State: adminapi.UserStateActive, Username: "ada"}
+			add("listUsers", in, func() error { _, err := c.ListUsers(ctx, in); return err })
+		}
+		{
+			in := adminapi.CreateUserInput{IdempotencyKey: "key-1", Body: adminapi.UserCreate{SignIn: adminapi.SignInMethodLocal, Username: "ada", PlatformRoles: []string{"platform-admin"}}}
+			add("createUser", in, func() error { _, err := c.CreateUser(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetUserInput{User: sid}
+			add("getUser", in, func() error { _, err := c.GetUser(ctx, in); return err })
+		}
+		{
+			in := adminapi.UpdateUserInput{User: sid, Body: adminapi.UserUpdate{DisplayName: adminapi.Some("Ada")}}
+			add("updateUser", in, func() error { _, err := c.UpdateUser(ctx, in); return err })
+		}
+		{
+			in := adminapi.DisableUserInput{User: sid, Body: adminapi.Reason{Reason: "why"}}
+			add("disableUser", in, func() error { _, err := c.DisableUser(ctx, in); return err })
+		}
+		{
+			in := adminapi.EnableUserInput{User: sid, Body: adminapi.Reason{Reason: "why"}}
+			add("enableUser", in, func() error { _, err := c.EnableUser(ctx, in); return err })
+		}
+		{
+			in := adminapi.UnlockUserInput{User: sid, Body: adminapi.Reason{Reason: "why"}}
+			add("unlockUser", in, func() error { _, err := c.UnlockUser(ctx, in); return err })
+		}
+		{
+			in := adminapi.ResetUserPasswordInput{User: sid, Body: adminapi.Reason{Reason: "why"}}
+			add("resetUserPassword", in, func() error { _, err := c.ResetUserPassword(ctx, in); return err })
+		}
+		{
+			in := adminapi.RevokeUserSessionsInput{User: sid, Body: adminapi.Reason{Reason: "why"}}
+			add("revokeUserSessions", in, func() error { _, err := c.RevokeUserSessions(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListMembersInput{Tenant: tid, Limit: 4, Cursor: "abc", Sort: adminapi.SortMinusCreatedAt, Username: "ada"}
+			add("listMembers", in, func() error { _, err := c.ListMembers(ctx, in); return err })
+		}
+		{
+			in := adminapi.CreateMemberInput{Tenant: tid, IdempotencyKey: "key-2", Body: adminapi.MemberCreate{Account: adminapi.MemberAccountKindNew, Username: "ada", Roles: []string{"tenant-admin"}}}
+			add("createMember", in, func() error { _, err := c.CreateMember(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetMemberInput{Tenant: tid, User: sid}
+			add("getMember", in, func() error { _, err := c.GetMember(ctx, in); return err })
+		}
+		{
+			in := adminapi.UpdateMemberInput{Tenant: tid, User: sid, Body: adminapi.MemberUpdate{Roles: adminapi.Some([]string{"tenant-admin"})}}
+			add("updateMember", in, func() error { _, err := c.UpdateMember(ctx, in); return err })
+		}
+		{
+			in := adminapi.DeleteMemberInput{Tenant: tid, User: sid}
+			add("deleteMember", in, func() error { _, err := c.DeleteMember(ctx, in); return err })
+		}
+		{
+			in := adminapi.DisableMemberInput{Tenant: tid, User: sid, Body: adminapi.Reason{Reason: "why"}}
+			add("disableMember", in, func() error { _, err := c.DisableMember(ctx, in); return err })
+		}
+		{
+			in := adminapi.EnableMemberInput{Tenant: tid, User: sid, Body: adminapi.Reason{Reason: "why"}}
+			add("enableMember", in, func() error { _, err := c.EnableMember(ctx, in); return err })
+		}
+		{
+			in := adminapi.UnlockMemberInput{Tenant: tid, User: sid, Body: adminapi.Reason{Reason: "why"}}
+			add("unlockMember", in, func() error { _, err := c.UnlockMember(ctx, in); return err })
+		}
+		{
+			in := adminapi.ResetMemberPasswordInput{Tenant: tid, User: sid, Body: adminapi.Reason{Reason: "why"}}
+			add("resetMemberPassword", in, func() error { _, err := c.ResetMemberPassword(ctx, in); return err })
+		}
+		{
+			in := adminapi.RevokeMemberSessionsInput{Tenant: tid, User: sid, Body: adminapi.Reason{Reason: "why"}}
+			add("revokeMemberSessions", in, func() error { _, err := c.RevokeMemberSessions(ctx, in); return err })
+		}
+		if len(adminapi.Operations) != 132 {
+			t.Fatalf("%d operations, want 132 (the 35 of epic 1 and sprint 2.1, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1, the 12 of sprint 5.2, the 2 of sprint 5.3, the 7 of sprint 5.4 and the 27 of sprint 4.2)", len(adminapi.Operations))
 		}
 		for _, op := range adminapi.Operations {
 			tc, ok := calls[op.ID]
@@ -1015,7 +1231,8 @@ func TestRouterAndClient(t *testing.T) {
 
 	t.Run("operations carry a permission and a status", func(t *testing.T) {
 		for _, op := range adminapi.Operations {
-			if op.Permission == "" || (op.Status != 200 && op.Status != 201) || !strings.HasPrefix(op.Path, "/v1/") {
+			// Sprint 4.2: a public operation has no permission; a redirect answers 303.
+			if (op.Permission == "") != op.Public || (op.Status != 200 && op.Status != 201 && op.Status != 303) || !strings.HasPrefix(op.Path, "/v1/") {
 				t.Errorf("%+v", op)
 			}
 			// 201 for the operations that make a resource, and for the one that runs an import.

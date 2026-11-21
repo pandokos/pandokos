@@ -37,23 +37,32 @@ type Fixture struct {
 func DefaultSpec() Spec {
 	return Spec{
 		Global: map[string]GlobalTable{
-			"schema_migration":       {Reason: "describes the installation, holds no tenant information"},
-			"tenant":                 {Reason: "the list of tenants; protected by its own policies", Restricted: true},
-			"virtual_key_directory":  {Reason: "Key ID to tenant, for the lookup function; no runtime role has any privilege on it"},
-			"platform_key":           {Reason: "Credentials of the platform; protected by its own policies", Restricted: true},
-			"platform_audit_event":   {Reason: "Audit log of the platform; protected by its own policies", Restricted: true},
-			"kek_version":            {Reason: "identifiers of key-encryption key versions; describes the installation, holds no key and no tenant information"},
-			"provider":               {Reason: "providers of the catalogue; read by every runtime role, written in platform scope", Restricted: true},
-			"provider_endpoint":      {Reason: "endpoints of providers; read by the gateway and the admin role, written in platform scope", Restricted: true},
-			"model":                  {Reason: "models of the catalogue; read by every runtime role, written in platform scope", Restricted: true},
-			"model_tenant_grant":     {Reason: "which tenants a model is granted to; a tenant's session sees its own rows; protected by its own policies", Restricted: true},
-			"price_import":           {Reason: "runs of the price importer; platform scope only", Restricted: true},
-			"price_version":          {Reason: "price versions; read by every runtime role, inserted in platform scope", Restricted: true},
-			"price_rate":             {Reason: "rates of price versions; read by every runtime role, inserted in platform scope", Restricted: true},
-			"platform_issuer":        {Reason: "platform-level token issuers; read by the gateway and the admin role, written in platform scope", Restricted: true},
-			"platform_issuer_tenant": {Reason: "the tenants a platform-level token issuer may act for; a tenant's session sees its own rows, the platform scope all of them; protected by its own policies", Restricted: true},
-			"issuer_directory":       {Reason: "which registration an issuer and audience select, for the lookup function; no runtime role has any privilege on it"},
-			"platform_limit_rule":    {Reason: "ceilings the platform sets for tenants; a tenant's session sees the defaults and its own rows, the platform scope all of them; protected by its own policies", Restricted: true},
+			"schema_migration":         {Reason: "describes the installation, holds no tenant information"},
+			"tenant":                   {Reason: "the list of tenants; protected by its own policies", Restricted: true},
+			"virtual_key_directory":    {Reason: "Key ID to tenant, for the lookup function; no runtime role has any privilege on it"},
+			"platform_key":             {Reason: "Credentials of the platform; protected by its own policies", Restricted: true},
+			"platform_audit_event":     {Reason: "Audit log of the platform; protected by its own policies", Restricted: true},
+			"kek_version":              {Reason: "identifiers of key-encryption key versions; describes the installation, holds no key and no tenant information"},
+			"provider":                 {Reason: "providers of the catalogue; read by every runtime role, written in platform scope", Restricted: true},
+			"provider_endpoint":        {Reason: "endpoints of providers; read by the gateway and the admin role, written in platform scope", Restricted: true},
+			"model":                    {Reason: "models of the catalogue; read by every runtime role, written in platform scope", Restricted: true},
+			"model_tenant_grant":       {Reason: "which tenants a model is granted to; a tenant's session sees its own rows; protected by its own policies", Restricted: true},
+			"price_import":             {Reason: "runs of the price importer; platform scope only", Restricted: true},
+			"price_version":            {Reason: "price versions; read by every runtime role, inserted in platform scope", Restricted: true},
+			"price_rate":               {Reason: "rates of price versions; read by every runtime role, inserted in platform scope", Restricted: true},
+			"platform_issuer":          {Reason: "platform-level token issuers; read by the gateway and the admin role, written in platform scope", Restricted: true},
+			"platform_issuer_tenant":   {Reason: "the tenants a platform-level token issuer may act for; a tenant's session sees its own rows, the platform scope all of them; protected by its own policies", Restricted: true},
+			"issuer_directory":         {Reason: "which registration an issuer and audience select, for the lookup function; no runtime role has any privilege on it"},
+			"platform_limit_rule":      {Reason: "ceilings the platform sets for tenants; a tenant's session sees the defaults and its own rows, the platform scope all of them; protected by its own policies", Restricted: true},
+			"app_user":                 {Reason: "people; the platform scope sees them all, a tenant's session the users it manages and its members; protected by its own policies", Restricted: true},
+			"local_account":            {Reason: "usernames and password hashes of local accounts; visible as app_user is; protected by its own policies", Restricted: true},
+			"user_identity":            {Reason: "issuer and subject of federated users; platform scope only", Restricted: true},
+			"user_session":             {Reason: "sessions of users; the platform scope sees them all, a tenant's session those of the users it manages; protected by its own policies", Restricted: true},
+			"platform_role_assignment": {Reason: "platform roles of users; platform scope only", Restricted: true},
+			"signin_throttle":          {Reason: "failed sign-ins per username and source; platform scope only", Restricted: true},
+			"oidc_login":               {Reason: "sign-in transactions of the identity provider; platform scope only", Restricted: true},
+			"idempotency_key":          {Reason: "idempotency keys of create operations; a tenant's session sees its own, the platform scope those of the platform; protected by its own policies", Restricted: true},
+			"membership_directory":     {Reason: "which tenants a user is a member of, for the lookup function; no runtime role has any privilege on it"},
 		},
 		Grants: map[string]map[string][]string{
 			"schema_migration": {
@@ -221,6 +230,37 @@ func DefaultSpec() Spec {
 				"pandokos_admin": {"DELETE", "INSERT(currency,enforce,limit_value,metric,model_id,provider_id,tenant_id,thresholds)",
 					"SELECT", "UPDATE(enforce,limit_value,thresholds)"},
 			},
+			"app_user": {
+				"pandokos_admin": {"INSERT(display_name,email,sign_in,tenant_id)", "SELECT", "UPDATE(display_name,email,state)"},
+			},
+			"membership": {
+				"pandokos_admin": {"DELETE", "INSERT(source,tenant_id,user_id)", "SELECT", "UPDATE(source)"},
+			},
+			"membership_role": {
+				"pandokos_admin": {"DELETE", "INSERT(role,source,tenant_id,user_id)", "SELECT"},
+			},
+			"local_account": {
+				"pandokos_admin": {"INSERT(must_change,password_expires_at,password_hash,user_id,username)", "SELECT", "UPDATE(must_change,password_changed_at,password_expires_at,password_hash)"},
+			},
+			"user_identity": {
+				"pandokos_admin": {"INSERT(issuer,subject,user_id)", "SELECT"},
+			},
+			"user_session": {
+				"pandokos_admin": {"DELETE", "INSERT(expires_at,method,token_hash,user_id)", "SELECT", "UPDATE(last_used_at)"},
+			},
+			"platform_role_assignment": {
+				"pandokos_admin": {"DELETE", "INSERT(role,source,user_id)", "SELECT"},
+			},
+			"signin_throttle": {
+				"pandokos_admin": {"DELETE", "INSERT(failures,key,kind,last_failure_at,locked_until,window_started_at)", "SELECT", "UPDATE(failures,last_failure_at,locked_until,window_started_at)"},
+			},
+			"oidc_login": {
+				"pandokos_admin": {"DELETE", "INSERT(expires_at,state_hash)", "SELECT"},
+			},
+			"idempotency_key": {
+				"pandokos_admin": {"DELETE", "INSERT(expires_at,key,locked_until,operation,principal_id,principal_kind,request_hash,salt,tenant_id)", "SELECT",
+					"UPDATE(attempt,committed_at,completed_at,locked_until,resource_id,resource_type,response_body,response_status)"},
+			},
 			"limit_event": {
 				"pandokos_gateway": {"INSERT(currency,kind,limit_value,metric,model,observed,percent,period_end,period_start,provider,rule_id,rule_level,subject_id,subject_kind,tenant_id)"},
 				"pandokos_admin":   {"SELECT"},
@@ -309,6 +349,17 @@ VALUES ($1::uuid, 'threshold_reached', pandokos.uuid_v7(), 'tenant', 'tenant', '
 SELECT r.price_version_id::text FROM r`,
 				Update: `note = 'changed'`,
 			},
+			"membership": {
+				Insert: `WITH u AS (INSERT INTO pandokos.app_user (sign_in, tenant_id) VALUES ('local', $1::uuid) RETURNING id)
+INSERT INTO pandokos.membership (tenant_id, user_id) SELECT $1::uuid, u.id FROM u RETURNING id::text`,
+				Update: `source = 'idp'`,
+			},
+			"membership_role": {
+				Insert: `WITH u AS (INSERT INTO pandokos.app_user (sign_in, tenant_id) VALUES ('local', $1::uuid) RETURNING id),
+     m AS (INSERT INTO pandokos.membership (tenant_id, user_id) SELECT $1::uuid, u.id FROM u RETURNING user_id)
+INSERT INTO pandokos.membership_role (tenant_id, user_id, role) SELECT $1::uuid, m.user_id, 'tenant-admin' FROM m RETURNING id::text`,
+				Update: `source = 'idp'`,
+			},
 			"tenant_price_rate": {
 				Insert: `WITH v AS (INSERT INTO pandokos.tenant_price_version (tenant_id, model_id, valid_from, currency)
            SELECT $1::uuid, m.id, now() + interval '1 hour' + random() * interval '1 hour', 'EUR'
@@ -322,7 +373,8 @@ SELECT r.price_version_id::text FROM r`,
 		},
 		SecurityDefiner: []string{"virtual_key_lookup", "virtual_key_directory_add", "record_auth_failure", "ensure_usage_partitions",
 			"issuer_lookup", "platform_issuer_tenant_lookup", "record_token_auth_failure", "issuer_directory_sync", "platform_issuer_mapping_count",
-			"delete_platform_issuer_limit_rules", "record_unlimited_traffic"},
+			"delete_platform_issuer_limit_rules", "record_unlimited_traffic",
+			"membership_guard", "membership_directory_sync", "user_tenants", "platform_role_assignment_guard", "platform_user_lookup"},
 		Views:      []string{"provider_credential_metadata"},
 		AppendOnly: []string{"audit_event", "platform_audit_event", "price_import", "usage_record", "limit_event"},
 	}

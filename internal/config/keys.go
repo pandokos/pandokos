@@ -142,6 +142,8 @@ var keyTable = []keyDef{
 		setString(func(c *Config) *string { return &c.Listeners.Admin.TLS.MinVersion })),
 	def("listeners.admin.allow_plaintext", "boolean", "false", "Acknowledges that the administration API is served without TLS on an address that is not loopback because TLS ends in front of it",
 		setBool(func(c *Config) *bool { return &c.Listeners.Admin.AllowPlaintext })),
+	serveDef("listeners.admin.trusted_proxies", "list", "", "CIDR prefixes, separated by commas in the environment, of the proxies in front of the administration listener whose X-Forwarded-For is believed",
+		func(c *Config, v string) error { c.Listeners.Admin.TrustedProxies = listValue(v); return nil }),
 	def("limits.max_request_body_bytes", "integer", "10485760", "Larger bodies get 413 request_too_large",
 		func(c *Config, v string) error {
 			n, err := parseInt64(v)
@@ -302,7 +304,11 @@ var keyTable = []keyDef{
 		setDuration(func(c *Config) *Duration { return &c.Tokens.JWKS.MinRefetchInterval })),
 	serveDef("tokens.jwks.max_stale", "duration", "6h", "Time a key set is used after its last successful fetch; at least twice tokens.jwks.refresh_interval, at most 72h",
 		setDuration(func(c *Config) *Duration { return &c.Tokens.JWKS.MaxStale })),
+	serveDef("tokens.admin_listener", "boolean", "false", "Accept tokens of trusted issuers on the administration listener too; needs tokens.enabled",
+		setBool(func(c *Config) *bool { return &c.Tokens.AdminListener })),
 }
+
+func init() { keyTable = append(keyTable, authKeys()...) }
 
 // serveDef is def for a key that only serve reads.
 func serveDef(name, typ, dflt, desc string, set func(*Config, string) error) keyDef {

@@ -71,6 +71,10 @@ func Load(src Source) (*Config, []Warning, error) {
 		problems = append(problems, loadDatabaseSecrets(cfg, src.Purpose)...)
 	}
 
+	if src.Purpose == PurposeServe && cfg.Auth.OIDC.Enabled {
+		problems = append(problems, loadOIDCSecret(cfg)...)
+	}
+
 	if len(problems) > 0 {
 		return nil, nil, &ValidationError{Problems: problems}
 	}

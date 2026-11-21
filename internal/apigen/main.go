@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"go/format"
+	"net/http"
 	"os"
 	"regexp"
 	"sort"
@@ -45,14 +46,21 @@ type pathItem struct {
 }
 
 type operation struct {
-	OperationID string               `yaml:"operationId"`
-	Tags        []string             `yaml:"tags"`
-	Summary     string               `yaml:"summary"`
-	Description string               `yaml:"description"`
-	Permission  string               `yaml:"x-pandokos-permission"`
-	Parameters  []*parameter         `yaml:"parameters"`
-	RequestBody *requestBody         `yaml:"requestBody"`
-	Responses   map[string]*response `yaml:"responses"`
+	OperationID string   `yaml:"operationId"`
+	Tags        []string `yaml:"tags"`
+	Summary     string   `yaml:"summary"`
+	Description string   `yaml:"description"`
+	Permission  string   `yaml:"x-pandokos-permission"`
+	// Public marks an operation that needs no credential (sign-in): it names no permission and
+	// says security: [].
+	Public bool `yaml:"x-pandokos-public"`
+	// LenientQuery lets a public operation ignore query parameters it does not declare (the
+	// callback of an identity provider adds some); a repeated declared one is still refused.
+	LenientQuery bool                   `yaml:"x-pandokos-lenient-query"`
+	Security     *[]map[string][]string `yaml:"security"`
+	Parameters   []*parameter           `yaml:"parameters"`
+	RequestBody  *requestBody           `yaml:"requestBody"`
+	Responses    map[string]*response   `yaml:"responses"`
 }
 
 type parameter struct {
@@ -77,6 +85,9 @@ type response struct {
 	Ref         string               `yaml:"$ref"`
 	Description string               `yaml:"description"`
 	Content     map[string]mediaType `yaml:"content"`
+	// Headers are accepted and ignored by the generator (Set-Cookie, Retry-After,
+	// Idempotency-Replayed), except that Location marks a redirect.
+	Headers map[string]any `yaml:"headers"`
 }
 
 // typeSpec is "string" or ["string", "null"].
@@ -600,9 +611,9 @@ func (g *generator) object(name string, s *schema) error {
 	g.p("}\n")
 	g.p("var required%s = []string{%s}\n", name, quoteList(s.Required))
 	if len(nested) == 0 {
-		g.p("var nested%s []nestedMember\n", name)
+		g.p("var nested%s []nestedSpec\n", name)
 	} else {
-		g.p("var nested%s = []nestedMember{%s}\n", name, strings.Join(nested, ", "))
+		g.p("var nested%s = []nestedSpec{%s}\n", name, strings.Join(nested, ", "))
 	}
 	if len(notEmpty) > 0 {
 		// An optional string is "" when absent, so a body that sends "" for a member whose
@@ -755,7 +766,8 @@ func (g *generator) param(p *parameter) (*parameter, error) {
 }
 
 // successBody returns the status and the schema name of the one 2xx response, and checks that
-// every other response is a problem.
+// every other response is a problem. A 303 response with a Location header and no content is
+// the one response of a redirect (a public GET): its schema name is "Redirect".
 func (g *generator) successBody(op *operation) (int, string, error) {
 	status, name := 0, ""
 	for _, code := range sortedKeys(op.Responses) {
@@ -771,6 +783,13 @@ func (g *generator) successBody(op *operation) (int, string, error) {
 		n, err := strconv.Atoi(code)
 		if err != nil || n < 200 || n > 599 {
 			return 0, "", fmt.Errorf("response %q: the status must be a number", code)
+		}
+		if n == http.StatusSeeOther {
+			if _, ok := t.Headers["Location"]; !ok || len(t.Content) != 0 || status != 0 {
+				return 0, "", errors.New("a 303 response has a Location header, no content, and is the only success response")
+			}
+			status, name = n, "Redirect"
+			continue
 		}
 		if n >= 300 {
 			m, ok := t.Content["application/problem+json"]
@@ -804,6 +823,7 @@ func (g *generator) operations() error {
 		bodyRequired                                      bool
 		pathParams, queryParams                           []param
 		doc                                               string
+		public, lenient, idempotent                       bool
 	}
 	var ops []opInfo
 	seen := map[string]bool{}
@@ -822,19 +842,39 @@ func (g *generator) operations() error {
 				return fail(errors.New("operationId must be a unique lowerCamelCase name"))
 			}
 			seen[op.OperationID] = true
-			if !rePermission.MatchString(op.Permission) {
-				return fail(errors.New("x-pandokos-permission must name one permission (resource:action)"))
+			switch {
+			case op.Public && op.Permission != "":
+				return fail(errors.New("an operation is x-pandokos-public or names x-pandokos-permission, not both"))
+			case op.Public:
+				if op.Security == nil || len(*op.Security) != 0 {
+					return fail(errors.New("a public operation says security: []"))
+				}
+			case op.LenientQuery:
+				return fail(errors.New("x-pandokos-lenient-query is for public operations only"))
+			case !rePermission.MatchString(op.Permission):
+				return fail(errors.New("x-pandokos-permission must name one permission (resource:action), or the operation is x-pandokos-public"))
 			}
-			info := opInfo{id: op.OperationID, method: m.method, path: path, permission: op.Permission, doc: comment(op.Summary)}
+			info := opInfo{id: op.OperationID, method: m.method, path: path, permission: op.Permission, doc: comment(op.Summary),
+				public: op.Public, lenient: op.LenientQuery}
 			info.input = goName(op.OperationID) + "Input"
 			var err error
 			if info.status, info.output, err = g.successBody(op); err != nil {
 				return fail(err)
 			}
+			if info.status == http.StatusSeeOther && (!op.Public || m.method != "GET") {
+				return fail(errors.New("a 303 response is for a public GET"))
+			}
 			for _, raw := range append(append([]*parameter{}, item.Parameters...), op.Parameters...) {
 				p, err := g.param(raw)
 				if err != nil {
 					return fail(err)
+				}
+				if p.In == "header" && p.Name == "Idempotency-Key" && raw.Ref == "#/components/parameters/IdempotencyKey" {
+					if info.status != http.StatusCreated {
+						return fail(errors.New("the Idempotency-Key parameter is for operations that answer 201"))
+					}
+					info.idempotent = true
+					continue
 				}
 				f, err := g.fieldOf(p.Schema, true)
 				if err != nil {
@@ -875,8 +915,8 @@ func (g *generator) operations() error {
 		for _, p := range o.pathParams {
 			pp = append(pp, fmt.Sprintf("{Name: %q, Pattern: %s}", p.name, g.re(p.f.s.Pattern)))
 		}
-		g.p("{ID: %q, Method: %q, Path: %q, Permission: %q, Status: %d, HasBody: %t, PathParams: []PathParam{%s}},",
-			o.id, o.method, o.path, o.permission, o.status, o.body != "", strings.Join(pp, ", "))
+		g.p("{ID: %q, Method: %q, Path: %q, Permission: %q, Public: %t, Idempotent: %t, Status: %d, HasBody: %t, PathParams: []PathParam{%s}},",
+			o.id, o.method, o.path, o.permission, o.public, o.idempotent, o.status, o.body != "", strings.Join(pp, ", "))
 	}
 	g.p("}\n")
 
@@ -889,6 +929,9 @@ func (g *generator) operations() error {
 		}
 		for _, p := range o.queryParams {
 			g.p("%s %s // query; the zero value means absent", goName(p.name), p.f.goType)
+		}
+		if o.idempotent {
+			g.p("IdempotencyKey string // header Idempotency-Key; checked by the hook, not by the router")
 		}
 		if o.body != "" {
 			g.p("Body %s", o.body)
@@ -904,6 +947,8 @@ func (g *generator) operations() error {
 		g.p("%s(ctx context.Context, in %s) (*%s, error)", goName(o.id), o.input, o.output)
 	}
 	g.p("}\n")
+	g.p("// Redirect is the answer of an operation whose only success is a 303 with a Location header.")
+	g.p("type Redirect struct{ Location string }\n")
 
 	// Dispatch.
 	g.p("func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, params map[string]string) {")
@@ -918,10 +963,14 @@ func (g *generator) operations() error {
 		for _, p := range o.queryParams {
 			names = append(names, p.name)
 		}
+		parse := "parseQuery"
+		if o.lenient {
+			parse = "parseQueryLenient"
+		}
 		if len(names) == 0 {
-			g.p("if _, err := parseQuery(r); err != nil { h.fail(w, r, op, err); return }")
+			g.p("if _, err := %s(r); err != nil { h.fail(w, r, op, err); return }", parse)
 		} else {
-			g.p("q, err := parseQuery(r, %s)", quoteList(names))
+			g.p("q, err := %s(r, %s)", parse, quoteList(names))
 			g.p("if err != nil { h.fail(w, r, op, err); return }")
 		}
 		if len(o.queryParams) > 0 {
@@ -956,6 +1005,9 @@ func (g *generator) operations() error {
 		if len(o.queryParams) > 0 {
 			g.p("if len(errs) > 0 { h.fail(w, r, op, invalid(errs)); return }")
 		}
+		if o.idempotent {
+			g.p("in.IdempotencyKey = r.Header.Get(\"Idempotency-Key\")")
+		}
 		if o.body != "" {
 			for _, fn := range g.trueByDefault[o.body] {
 				g.p("in.Body.%s = true", fn)
@@ -965,7 +1017,11 @@ func (g *generator) operations() error {
 		}
 		g.p("out, err := h.server.%s(r.Context(), in)", goName(o.id))
 		g.p("if err != nil { h.fail(w, r, op, err); return }")
-		g.p("writeJSON(w, %d, out)", o.status)
+		if o.output == "Redirect" {
+			g.p("writeRedirect(w, out)")
+		} else {
+			g.p("writeJSON(w, %d, out)", o.status)
+		}
 	}
 	g.p("}")
 	g.p("}\n")
@@ -992,8 +1048,21 @@ func (g *generator) operations() error {
 		if o.body != "" {
 			bodyArg = "&in.Body"
 		}
+		hdr := "nil"
+		if o.idempotent {
+			g.p("var hdr map[string]string")
+			g.p("if in.IdempotencyKey != \"\" { hdr = map[string]string{\"Idempotency-Key\": in.IdempotencyKey} }")
+			hdr = "hdr"
+		}
+		if o.output == "Redirect" {
+			g.p("loc, err := c.doRedirect(ctx, %q, %s, q)", o.method, expr)
+			g.p("if err != nil { return nil, err }")
+			g.p("return &Redirect{Location: loc}, nil")
+			g.p("}\n")
+			continue
+		}
 		g.p("var out %s", o.output)
-		g.p("if err := c.do(ctx, %q, %s, q, %s, %d, &out); err != nil { return nil, err }", o.method, expr, bodyArg, o.status)
+		g.p("if err := c.do(ctx, %q, %s, q, %s, %d, &out, %s); err != nil { return nil, err }", o.method, expr, bodyArg, o.status, hdr)
 		g.p("return &out, nil")
 		g.p("}\n")
 	}

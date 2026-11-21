@@ -15,7 +15,7 @@ import (
 // checkRoles refuses a role that does not exist or is not a role of service accounts.
 func checkRoles(roles []string) error {
 	for _, r := range roles {
-		if role, ok := authz.RoleByName(r); !ok || role.Kind != authz.KindServiceAccount {
+		if role, ok := authz.RoleByName(r); !ok || role.Scope != authz.ScopeTenant {
 			return invalid("roles", "must name built-in roles of service accounts")
 		}
 	}

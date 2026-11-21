@@ -468,6 +468,9 @@ func TestIssuerFunctions(t *testing.T) {
 				"platform_issuer_tenant_lookup": `SELECT pandokos.platform_issuer_tenant_lookup('` + piP + `', 'org-a')`,
 				"record_token_auth_failure":     `SELECT pandokos.record_token_auth_failure('tenant', '` + tiA + `', 'bad_signature', '', 'dddddddddddddddddddddddddddddddd')`,
 			} {
+				if role == "admin" && name != "record_token_auth_failure" {
+					continue // sprint 4.2: the admin role looks registrations up for tokens on the administration listener
+				}
 				if _, err := query(t, conn, sessA, sql); sqlstate(err) != insufficientPrivilege {
 					t.Errorf("%s cannot execute %s: %v, want SQLSTATE %s", role, name, err, insufficientPrivilege)
 				}
@@ -488,6 +491,9 @@ func TestIssuerFunctions(t *testing.T) {
 			}
 			n++
 			for _, role := range []string{"pandokos_admin", "pandokos_worker"} {
+				if role == "pandokos_admin" && name != "record_token_auth_failure" {
+					continue // sprint 4.2: granted to the admin role by migration 0013
+				}
 				if strings.Contains(who, role) {
 					t.Errorf("%s may execute %s", role, name)
 				}
@@ -672,7 +678,7 @@ func TestIssuerAPI(t *testing.T) {
 	platformOps := map[string]bool{"listPlatformIssuers": true, "createPlatformIssuer": true, "getPlatformIssuer": true, "updatePlatformIssuer": true, "deletePlatformIssuer": true,
 		"listPlatformIssuerTenants": true, "putPlatformIssuerTenant": true, "deletePlatformIssuerTenant": true}
 	seen := 0
-	for _, op := range adminapi.Operations {
+	for _, op := range apiOperations() {
 		if !tenantOps[op.ID] && !platformOps[op.ID] {
 			continue
 		}
@@ -716,7 +722,7 @@ func TestIssuerAPI(t *testing.T) {
 			cr, cm apitest.Call
 		}
 		var pairs []pair
-		for _, op := range adminapi.Operations {
+		for _, op := range apiOperations() {
 			if !tenantOps[op.ID] {
 				continue
 			}
@@ -743,7 +749,7 @@ func TestIssuerAPI(t *testing.T) {
 	})
 
 	t.Run("a key without the permission is a 403", func(t *testing.T) {
-		for _, op := range adminapi.Operations {
+		for _, op := range apiOperations() {
 			if !tenantOps[op.ID] {
 				continue
 			}
@@ -758,7 +764,7 @@ func TestIssuerAPI(t *testing.T) {
 	})
 
 	t.Run("a tenant key on a platform operation is a 403, the same for an existing and a missing resource", func(t *testing.T) {
-		for _, op := range adminapi.Operations {
+		for _, op := range apiOperations() {
 			if !platformOps[op.ID] {
 				continue
 			}
@@ -775,7 +781,7 @@ func TestIssuerAPI(t *testing.T) {
 			}
 		}
 		// A platform key on a tenant operation is no better (the existing tests cover every tenant operation; these ten are named here).
-		for _, op := range adminapi.Operations {
+		for _, op := range apiOperations() {
 			if !tenantOps[op.ID] {
 				continue
 			}
@@ -788,7 +794,7 @@ func TestIssuerAPI(t *testing.T) {
 		platformOnlyB := w.api.SeedPlatformIssuer(t)
 		w.api.SeedPlatformIssuerTenant(t, platformOnlyB, apiB.tenant.ID)
 		op := adminapi.Operation{}
-		for _, o := range adminapi.Operations {
+		for _, o := range apiOperations() {
 			if o.ID == "createSubjectMapping" {
 				op = o
 			}

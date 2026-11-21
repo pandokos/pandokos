@@ -37,6 +37,16 @@ linters:
             - google.golang.org/protobuf
             - github.com/go-logr/logr
             - github.com/go-jose/go-jose/v4
+            - golang.org/x/crypto
+        argon2-only-in-password:
+          list-mode: lax
+          files:
+            - "**/cmd/**"
+            - "**/internal/**"
+            - "!**/internal/password/**"
+          deny:
+            - pkg: golang.org/x/crypto
+              desc: Argon2id is confined to internal/password (sprint 4.2, rule 6)
         jose-only-where-tokens-are-read:
           list-mode: lax
           files:

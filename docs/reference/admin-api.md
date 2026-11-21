@@ -62,14 +62,34 @@ Errors are RFC 9457 problems (`application/problem+json`) with a fixed sentence 
 | `validation_unavailable` | 502 | the provider could not be asked or gave no clear answer when `validate` was asked; nothing was stored |
 | `price_dataset_invalid` | 422 | `runPriceImport` with source `remote`: the downloaded price dataset could not be read; nothing was imported (fixed text, the response bytes are never quoted) |
 | `price_source_unavailable` | 502 | `runPriceImport` with source `remote`: the price dataset could not be downloaded; nothing was imported (fixed text) |
+| `too_many_attempts` | 429 | sign-in or a password check is delayed or locked, or there are too many sign-in transactions (`Retry-After`) |
+| `password_change_required` | 403 | the session must change its password first |
+| `csrf_rejected` | 403 | the checks of origin and request forgery failed |
+| `sign_in_disabled` | 403 | the sign-in method is switched off, or the origin of the listener is not known |
+| `idempotency_key_reused` | 422 | the `Idempotency-Key` was used with another request |
+| `idempotency_in_progress` | 409 | the first request with the key is still running (`Retry-After`) |
+| `idempotency_response_lost` | 409 | the first request succeeded and its response was not kept |
 | `internal` | 500 | an unexpected failure |
 | `unavailable` | 503 | the database cannot be reached |
+
+## Users, sessions and members (sprint 4.2)
+
+A person calls the administration API with the session cookie that sign-in sets, in addition to a
+key (the document's `security` lists both). Four operations need no credential: `getAuthMethods`,
+`signIn`, `startOidcSignIn` and `completeOidcSignIn`. The caller's own sessions are managed with
+`signOut`, `changePassword`, `listOwnSessions` and `deleteOwnSession` (permission `session:self`).
+The users that the platform manages are `listUsers`, `createUser`, `getUser`, `updateUser`,
+`disableUser`, `enableUser`, `unlockUser`, `resetUserPassword` and `revokeUserSessions`; the members
+of a tenant are `listMembers`, `createMember`, `getMember`, `updateMember`, `deleteMember`,
+`disableMember`, `enableMember`, `unlockMember`, `resetMemberPassword` and `revokeMemberSessions`.
+Every operation that answers 201 takes an `Idempotency-Key` header. Part A of the sprint adds the
+document and the generated code; the handlers follow in the next steps.
 
 ## The accepted subset of OpenAPI 3.1
 
 `internal/apigen` accepts a deliberate subset and fails on anything else: `openapi: 3.1.0`; path
 items with `get`, `post`, `patch`, `put`, `delete`; operations with a unique lower-camel-case
-`operationId` and a mandatory `x-pandokos-permission`; path parameters that are strings with a
+`operationId` and a mandatory `x-pandokos-permission` (or `x-pandokos-public: true` with `security: []` for the four sign-in operations); path parameters that are strings with a
 pattern, query parameters that are optional strings, enumerations or integers; flat JSON request
 bodies; exactly one 2xx response; every other response `application/problem+json` with the schema
 `Problem`; component objects with `additionalProperties: false`. A keyword it does not know is an

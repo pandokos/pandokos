@@ -72,10 +72,15 @@ func TestCatalogue(t *testing.T) {
 		{"price_list:read", ScopeTenant},
 		{"price_list:write", ScopeTenant},
 		{"price_list:delete", ScopeTenant},
+		{"user:read", ScopePlatform},
+		{"user:write", ScopePlatform},
+		{"member:read", ScopeTenant},
+		{"member:write", ScopeTenant},
+		{"session:self", ScopeSelf},
 	}
 	got := Catalogue()
-	if len(got) != 44 {
-		t.Fatalf("%d permissions, want 44", len(got))
+	if len(got) != 49 {
+		t.Fatalf("%d permissions, want 49", len(got))
 	}
 	re := regexp.MustCompile(`^[a-z_]+:[a-z_]+$`)
 	seen := map[string]bool{}
@@ -122,19 +127,19 @@ func TestCatalogue(t *testing.T) {
 func TestRoles(t *testing.T) {
 	platform := []string{IdentityRead, TenantRead, TenantWrite, TenantSuspend, PlatformKeyRead, PlatformKeyWrite, PlatformKeyRevoke,
 		TenantCredentialRead, TenantCredentialRevoke, CatalogRead, CatalogWrite, CatalogPrice,
-		PlatformIssuerRead, PlatformIssuerWrite, PlatformIssuerDelete, PlatformLimitRead, PlatformLimitWrite, PlatformLimitDelete}
-	tenantAll := []string{IdentityRead, ServiceAccountRead, ServiceAccountWrite, VirtualKeyRead, VirtualKeyWrite, VirtualKeyRevoke, ModelInvoke,
+		PlatformIssuerRead, PlatformIssuerWrite, PlatformIssuerDelete, PlatformLimitRead, PlatformLimitWrite, PlatformLimitDelete, UserRead, UserWrite}
+	tenantAll := []string{IdentityRead, ServiceAccountRead, ServiceAccountWrite, MemberRead, MemberWrite, VirtualKeyRead, VirtualKeyWrite, VirtualKeyRevoke, ModelInvoke,
 		CredentialRead, CredentialWrite, CredentialRotate, CredentialDelete, CredentialUse, ModelRead, ModelRestrict, UsageRead,
 		TokenIssuerRead, TokenIssuerWrite, TokenIssuerDelete, SubjectMappingRead, SubjectMappingWrite, SubjectMappingDelete, LimitRead, LimitWrite, LimitDelete,
 		PriceListRead, PriceListWrite, PriceListDelete}
 	want := []struct {
-		name string
-		kind Kind
-		perm []string
+		name  string
+		scope Scope
+		perm  []string
 	}{
-		{RolePlatformAdmin, KindPlatform, platform},
-		{RoleTenantAdmin, KindServiceAccount, tenantAll},
-		{RoleInference, KindServiceAccount, []string{ModelInvoke, CredentialUse}},
+		{RolePlatformAdmin, ScopePlatform, platform},
+		{RoleTenantAdmin, ScopeTenant, tenantAll},
+		{RoleInference, ScopeTenant, []string{ModelInvoke, CredentialUse}},
 	}
 	roles := Roles()
 	if len(roles) != 3 {
@@ -144,8 +149,8 @@ func TestRoles(t *testing.T) {
 		r := roles[i]
 		exp := append([]string(nil), w.perm...)
 		sort.Strings(exp)
-		if r.Name != w.name || r.Kind != w.kind || !reflect.DeepEqual(r.Permissions, exp) || r.Description == "" {
-			t.Errorf("role %d = %+v, want %s %s %v", i, r, w.name, w.kind, exp)
+		if r.Name != w.name || r.Scope != w.scope || !reflect.DeepEqual(r.Permissions, exp) || r.Description == "" {
+			t.Errorf("role %d = %+v, want %s %s %v", i, r, w.name, w.scope, exp)
 		}
 		for _, p := range r.Permissions {
 			perm, ok := Lookup(p)
@@ -154,9 +159,9 @@ func TestRoles(t *testing.T) {
 				continue
 			}
 			switch {
-			case r.Kind == KindPlatform && perm.Scope == ScopeTenant:
+			case r.Scope == ScopePlatform && perm.Scope == ScopeTenant:
 				t.Errorf("%s holds the tenant permission %s", r.Name, p)
-			case r.Kind == KindServiceAccount && perm.Scope == ScopePlatform:
+			case r.Scope == ScopeTenant && perm.Scope == ScopePlatform:
 				t.Errorf("%s holds the platform permission %s", r.Name, p)
 			}
 		}
@@ -275,7 +280,7 @@ func TestEffective(t *testing.T) {
 		want []string
 	}{
 		{"union of roles", sa(id(1), tenant.StateActive, []string{RoleInference, RoleTenantAdmin}, nil),
-			[]string{CredentialDelete, CredentialRead, CredentialRotate, CredentialUse, CredentialWrite, IdentityRead, LimitDelete, LimitRead, LimitWrite, ModelInvoke,
+			[]string{CredentialDelete, CredentialRead, CredentialRotate, CredentialUse, CredentialWrite, IdentityRead, LimitDelete, LimitRead, LimitWrite, MemberRead, MemberWrite, ModelInvoke,
 				ModelRead, ModelRestrict, PriceListDelete, PriceListRead, PriceListWrite, ServiceAccountRead, ServiceAccountWrite, SubjectMappingDelete, SubjectMappingRead, SubjectMappingWrite,
 				TokenIssuerDelete, TokenIssuerRead, TokenIssuerWrite, UsageRead, VirtualKeyRead, VirtualKeyRevoke, VirtualKeyWrite}},
 		{"scopes intersect", sa(id(1), tenant.StateActive, []string{RoleTenantAdmin}, []string{VirtualKeyRead, "tenant:read", ModelInvoke}),
@@ -283,7 +288,7 @@ func TestEffective(t *testing.T) {
 		{"unknown role", sa(id(1), tenant.StateActive, []string{"ghost"}, nil), nil},
 		{"role of the other kind", sa(id(1), tenant.StateActive, []string{RolePlatformAdmin}, nil), nil},
 		{"platform role on a platform principal", Principal{Kind: KindPlatform, Roles: []string{RolePlatformAdmin, RoleInference}},
-			[]string{CatalogPrice, CatalogRead, CatalogWrite, IdentityRead, PlatformIssuerDelete, PlatformIssuerRead, PlatformIssuerWrite, PlatformKeyRead, PlatformKeyRevoke, PlatformKeyWrite, PlatformLimitDelete, PlatformLimitRead, PlatformLimitWrite, TenantRead, TenantSuspend, TenantWrite, TenantCredentialRead, TenantCredentialRevoke}},
+			[]string{CatalogPrice, CatalogRead, CatalogWrite, IdentityRead, PlatformIssuerDelete, PlatformIssuerRead, PlatformIssuerWrite, PlatformKeyRead, PlatformKeyRevoke, PlatformKeyWrite, PlatformLimitDelete, PlatformLimitRead, PlatformLimitWrite, TenantRead, TenantSuspend, TenantWrite, TenantCredentialRead, TenantCredentialRevoke, UserRead, UserWrite}},
 		{"nil scopes are no restriction", sa(id(1), tenant.StateActive, []string{RoleInference}, nil), []string{CredentialUse, ModelInvoke}},
 		{"empty scopes are a restriction to nothing", sa(id(1), tenant.StateActive, []string{RoleInference}, []string{}), nil},
 		{"duplicate roles", sa(id(1), tenant.StateActive, []string{RoleInference, RoleInference}, nil), []string{CredentialUse, ModelInvoke}},

@@ -157,3 +157,13 @@ var limitMutations = map[string]bool{
 	"createLimit": true, "updateLimit": true, "deleteLimit": true,
 	"createPlatformLimit": true, "updatePlatformLimit": true, "deletePlatformLimit": true,
 }
+
+// peopleMutations are the mutating operations of sprint 4.2 (sign-in, own sessions, users and
+// members) that the audit tests of that sprint cover (T-796, T-826), with their atomicity; the
+// enumerating tests of earlier sprints (T-281, T-282) leave them to those, as they leave the token
+// issuer and limit operations to theirs.
+var peopleMutations = map[string]bool{
+	"signIn": true, "signOut": true, "changePassword": true, "deleteOwnSession": true,
+	"createUser": true, "updateUser": true, "disableUser": true, "enableUser": true, "unlockUser": true, "resetUserPassword": true, "revokeUserSessions": true,
+	"createMember": true, "updateMember": true, "deleteMember": true, "disableMember": true, "enableMember": true, "unlockMember": true, "resetMemberPassword": true, "revokeMemberSessions": true,
+}

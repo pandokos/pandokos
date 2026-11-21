@@ -45,6 +45,7 @@ replaced by `_`.
 | `listeners.admin.tls.key_file` | `PANDOKOS_LISTENERS_ADMIN_TLS_KEY_FILE` | path | none | PEM file with the private key of the certificate |
 | `listeners.admin.tls.min_version` | `PANDOKOS_LISTENERS_ADMIN_TLS_MIN_VERSION` | `TLS1.2`, `TLS1.3` | `TLS1.2` | Lowest protocol version accepted |
 | `listeners.admin.allow_plaintext` | `PANDOKOS_LISTENERS_ADMIN_ALLOW_PLAINTEXT` | boolean | `false` | Acknowledges that the administration API is served without TLS on an address that is not loopback, because TLS ends in front of it |
+| `listeners.admin.trusted_proxies` | `PANDOKOS_LISTENERS_ADMIN_TRUSTED_PROXIES` | list | none | CIDR prefixes, separated by commas in the environment, of the proxies in front of the administration listener whose X-Forwarded-For is believed |
 | `limits.max_request_body_bytes` | `PANDOKOS_LIMITS_MAX_REQUEST_BODY_BYTES` | integer | `10485760` | Larger bodies get 413 `request_too_large` |
 | `limits.request_body_read_timeout` | `PANDOKOS_LIMITS_REQUEST_BODY_READ_TIMEOUT` | duration | `30s` | Time allowed to read the request body |
 | `limits.max_request_duration` | `PANDOKOS_LIMITS_MAX_REQUEST_DURATION` | duration | `10m` | Total time for one proxied request, stream included, measured from the end of the body read |
@@ -71,6 +72,38 @@ replaced by `_`.
 | `tokens.jwks.refresh_interval` | `PANDOKOS_TOKENS_JWKS_REFRESH_INTERVAL` | duration | `15m` | Time between background refreshes of the key set of an issuer (1m to 1h) |
 | `tokens.jwks.min_refetch_interval` | `PANDOKOS_TOKENS_JWKS_MIN_REFETCH_INTERVAL` | duration | `10s` | Shortest time between two fetches of a key set caused by an unknown key ID (1s to 5m) |
 | `tokens.jwks.max_stale` | `PANDOKOS_TOKENS_JWKS_MAX_STALE` | duration | `6h` | Time a key set is used after its last successful fetch, then calls are answered 503 (at least twice `tokens.jwks.refresh_interval`, at most 72h) |
+| `tokens.admin_listener` | `PANDOKOS_TOKENS_ADMIN_LISTENER` | boolean | `false` | Accept tokens of trusted issuers on the administration listener too; needs tokens.enabled |
+| `auth.public_origin` | `PANDOKOS_AUTH_PUBLIC_ORIGIN` | URL | none | Origin that browsers use to reach the administration API: https://host[:port], or http:// with a loopback host; required with auth.oidc.enabled |
+| `auth.local.enabled` | `PANDOKOS_AUTH_LOCAL_ENABLED` | boolean | `true` | Allow sign-in with a local account; false is refused unless auth.oidc.enabled |
+| `auth.local.password_min_length` | `PANDOKOS_AUTH_LOCAL_PASSWORD_MIN_LENGTH` | integer | `12` | Shortest password accepted, 8 to 128; below 12 warns |
+| `auth.local.generated_password_ttl` | `PANDOKOS_AUTH_LOCAL_GENERATED_PASSWORD_TTL` | duration | `72h` | Time a generated password stays valid until it is changed; 1h to 30d |
+| `auth.local.max_failures` | `PANDOKOS_AUTH_LOCAL_MAX_FAILURES` | integer | `10` | Failed sign-ins of one username in auth.local.failure_window that lock it; 3 to 100 |
+| `auth.local.failure_window` | `PANDOKOS_AUTH_LOCAL_FAILURE_WINDOW` | duration | `15m` | Window in which failed sign-ins are counted; 1m to 24h |
+| `auth.local.lock_duration` | `PANDOKOS_AUTH_LOCAL_LOCK_DURATION` | duration | `15m` | Time a username stays locked; 1m to 24h |
+| `auth.local.source_max_failures` | `PANDOKOS_AUTH_LOCAL_SOURCE_MAX_FAILURES` | integer | `50` | Failed sign-ins from one source address prefix in the window that delay it; at least auth.local.max_failures |
+| `auth.local.argon2.memory_kib` | `PANDOKOS_AUTH_LOCAL_ARGON2_MEMORY_KIB` | integer | `65536` | Argon2id memory cost of new password hashes, in KiB |
+| `auth.local.argon2.iterations` | `PANDOKOS_AUTH_LOCAL_ARGON2_ITERATIONS` | integer | `3` | Argon2id time cost of new password hashes |
+| `auth.local.argon2.parallelism` | `PANDOKOS_AUTH_LOCAL_ARGON2_PARALLELISM` | integer | `1` | Argon2id parallelism of new password hashes |
+| `auth.local.max_concurrent_hashes` | `PANDOKOS_AUTH_LOCAL_MAX_CONCURRENT_HASHES` | integer | `4` | Password hashes computed at the same time; more are answered 503; 1 to 64 |
+| `auth.session.idle_timeout` | `PANDOKOS_AUTH_SESSION_IDLE_TIMEOUT` | duration | `30m` | Time without use after which a session ends; 1m to 24h, at most auth.session.absolute_lifetime |
+| `auth.session.absolute_lifetime` | `PANDOKOS_AUTH_SESSION_ABSOLUTE_LIFETIME` | duration | `12h` | Longest life of a session; at most 168h |
+| `auth.session.max_per_user` | `PANDOKOS_AUTH_SESSION_MAX_PER_USER` | integer | `10` | Sessions a user may hold; the oldest end first; 1 to 100 |
+| `auth.oidc.enabled` | `PANDOKOS_AUTH_OIDC_ENABLED` | boolean | `false` | Allow sign-in through an OpenID Connect identity provider; needs issuer, client_id, client_secret_file and auth.public_origin |
+| `auth.oidc.issuer` | `PANDOKOS_AUTH_OIDC_ISSUER` | URL | none | Issuer of the identity provider; https |
+| `auth.oidc.client_id` | `PANDOKOS_AUTH_OIDC_CLIENT_ID` | string | none | Client ID registered at the identity provider |
+| `auth.oidc.client_secret_file` | `PANDOKOS_AUTH_OIDC_CLIENT_SECRET_FILE` | path | none | File with the client secret (at least 16 bytes); the value is a secret |
+| `auth.oidc.client_auth` | `PANDOKOS_AUTH_OIDC_CLIENT_AUTH` | basic, post | `basic` | How the client authenticates at the token endpoint |
+| `auth.oidc.scopes` | `PANDOKOS_AUTH_OIDC_SCOPES` | list | `openid profile email` | Scopes requested, separated by commas in the environment; contains openid |
+| `auth.oidc.algorithms` | `PANDOKOS_AUTH_OIDC_ALGORITHMS` | list | `RS256 ES256` | Signature algorithms accepted for the ID token, separated by commas in the environment |
+| `auth.oidc.display_name` | `PANDOKOS_AUTH_OIDC_DISPLAY_NAME` | string | `Single sign-on` | Name of the identity provider shown by the sign-in page |
+| `auth.oidc.name_claim` | `PANDOKOS_AUTH_OIDC_NAME_CLAIM` | string | `name` | Claim of the ID token that gives the display name |
+| `auth.oidc.email_claim` | `PANDOKOS_AUTH_OIDC_EMAIL_CLAIM` | string | `email` | Claim of the ID token that gives the e-mail address |
+| `auth.oidc.groups_claim` | `PANDOKOS_AUTH_OIDC_GROUPS_CLAIM` | string | `groups` | Claim of the ID token that gives the groups; a dotted path of at most four members |
+| `auth.oidc.group_mappings` | `PANDOKOS_AUTH_OIDC_GROUP_MAPPINGS` | list | none | Rules `<target>=<group>`, separated by commas in the environment; the target is `platform:<role>` or `tenant:<tenant name>:<role>` |
+| `auth.oidc.auto_provision` | `PANDOKOS_AUTH_OIDC_AUTO_PROVISION` | boolean | `false` | Create a user at the first sign-in of an unknown subject that the group rules give a role; refused without auth.oidc.group_mappings |
+| `auth.oidc.private_hosts` | `PANDOKOS_AUTH_OIDC_PRIVATE_HOSTS` | list | none | Host names, separated by commas in the environment, whose URLs may resolve to private addresses, as tokens.private_hosts |
+| `auth.oidc.post_sign_in_path` | `PANDOKOS_AUTH_OIDC_POST_SIGN_IN_PATH` | path | `/` | Where the browser goes after sign-in through the identity provider: starts with one /, no //, no \, no control character |
+| `idempotency.retention` | `PANDOKOS_IDEMPOTENCY_RETENTION` | duration | `24h` | Time an idempotency key is kept; 1h to 7d |
 | `database.address` | `PANDOKOS_DATABASE_ADDRESS` | `host:port` | none, required | Address of PostgreSQL, or of the connection pooler in front of it |
 | `database.direct_address` | `PANDOKOS_DATABASE_DIRECT_ADDRESS` | `host:port` | none | Address of PostgreSQL itself, used only by the notification listener. Set it when `database.address` is a pooler in transaction mode |
 | `database.name` | `PANDOKOS_DATABASE_NAME` | name | `pandokos` | Database name |

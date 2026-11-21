@@ -537,7 +537,7 @@ func TestEveryChangeIsAudited(t *testing.T) {
 		byOp[s.op] = true
 	}
 	for _, op := range adminapi.Operations {
-		if op.Method != "GET" && !byOp[op.ID] && !catalogueMutations[op.ID] && !issuerMutations[op.ID] && !limitMutations[op.ID] {
+		if op.Method != "GET" && !byOp[op.ID] && !catalogueMutations[op.ID] && !issuerMutations[op.ID] && !limitMutations[op.ID] && !peopleMutations[op.ID] {
 			t.Errorf("the mutating operation %s has no audit step: add it (the catalogue operations are in TestCatalogAudit, the token issuer operations in TestIssuerAudit)", op.ID)
 		}
 	}
@@ -629,8 +629,8 @@ func TestEveryChangeIsAudited(t *testing.T) {
 
 	// Reads write nothing: every GET operation, with a key that is allowed to make it.
 	for _, op := range adminapi.Operations {
-		if op.Method != "GET" {
-			continue
+		if op.Method != "GET" || op.Public || op.Permission == authz.SessionSelf {
+			continue // sprint 4.2: the public operations and those of one's own session are not made with a key
 		}
 		key := f.w.adminKey
 		if perm, _ := authz.Lookup(op.Permission); perm.Scope == authz.ScopePlatform {
@@ -750,7 +750,7 @@ func TestAuditIsAtomic(t *testing.T) {
 		},
 	}
 	for _, op := range adminapi.Operations {
-		if op.Method != "GET" && calls[op.ID] == nil && !catalogueMutations[op.ID] && !issuerMutations[op.ID] && !limitMutations[op.ID] {
+		if op.Method != "GET" && calls[op.ID] == nil && !catalogueMutations[op.ID] && !issuerMutations[op.ID] && !limitMutations[op.ID] && !peopleMutations[op.ID] {
 			t.Errorf("the mutating operation %s has no call here: add it (the catalogue operations are in TestCatalogAudit, the token issuer operations in TestIssuerAudit)", op.ID)
 		}
 	}

@@ -598,6 +598,7 @@ func TestOpenAPIDocument(t *testing.T) {
 	type op struct {
 		ID         string                       `yaml:"operationId"`
 		Permission string                       `yaml:"x-pandokos-permission"`
+		Public     bool                         `yaml:"x-pandokos-public"`
 		Responses  map[string]map[string]string `yaml:"responses"`
 	}
 	generated := map[string]adminapi.Operation{}
@@ -622,13 +623,21 @@ func TestOpenAPIDocument(t *testing.T) {
 				t.Fatal(err)
 			}
 			n++
-			if !catalogue[o.Permission] {
+			// Sprint 4.2: a public operation (sign-in) names no permission and needs no credential.
+			if o.Public != (o.Permission == "") {
+				t.Errorf("%s %s: exactly one of x-pandokos-public and x-pandokos-permission", method, path)
+			}
+			if !o.Public && !catalogue[o.Permission] {
 				t.Errorf("%s %s: the permission %q is not in the catalogue", method, path, o.Permission)
 			}
-			if g, ok := generated[o.ID]; !ok || g.Permission != o.Permission {
+			if g, ok := generated[o.ID]; !ok || g.Permission != o.Permission || g.Public != o.Public {
 				t.Errorf("%s: the document says %q, Operations says %+v", o.ID, o.Permission, g)
 			}
-			for _, code := range []string{"401", "403", "500", "503"} {
+			codes := []string{"401", "403", "500", "503"}
+			if o.Public {
+				codes = []string{"500"} // a public operation has no credential to refuse (401) and some never reach the database
+			}
+			for _, code := range codes {
 				if _, ok := o.Responses[code]; !ok {
 					t.Errorf("%s does not list %s", o.ID, code)
 				}
@@ -640,8 +649,8 @@ func TestOpenAPIDocument(t *testing.T) {
 	}
 	// Sprint 2.2: 64 operations (66 with the two of sprint 3.3), and money is never a JSON number: no schema of the document has a
 	// number type, and a rate is a string with a pattern.
-	if n != 105 {
-		t.Errorf("the document has %d operations, want 105 (35, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1, the 12 of sprint 5.2, the 2 of sprint 5.3 and the 7 of sprint 5.4)", n)
+	if n != 132 {
+		t.Errorf("the document has %d operations, want 132 (35, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1, the 12 of sprint 5.2, the 2 of sprint 5.3, the 7 of sprint 5.4 and the 27 of sprint 4.2)", n)
 	}
 	if regexp.MustCompile(`(?m)type:\s*(number|\[[^\]]*number)`).MatchString(raw) || regexp.MustCompile(`format:\s*(float|double)`).MatchString(raw) {
 		t.Error("the document uses a floating-point type: prices travel as decimal strings")
@@ -807,6 +816,10 @@ func TestCryptographyInOnePlace(t *testing.T) {
 			}
 			first, _, _ := strings.Cut(p, "/")
 			if strings.Contains(first, ".") && strings.Contains(p, "crypto") {
+				// Sprint 4.2: Argon2id, in internal/password and nowhere else.
+				if p == "golang.org/x/crypto/argon2" && strings.HasPrefix(rel, "internal/password/") {
+					continue
+				}
 				t.Errorf("%s imports %s: a cryptography module outside the standard library", rel, p)
 			}
 		}
@@ -825,7 +838,7 @@ func TestCryptographyInOnePlace(t *testing.T) {
 	}
 	// The module requires no cryptography module either.
 	for _, line := range strings.Split(read(t, "go.mod"), "\n") {
-		if strings.Contains(line, "crypto") {
+		if strings.Contains(line, "crypto") && !strings.Contains(line, "golang.org/x/crypto ") {
 			t.Errorf("go.mod requires %s", strings.TrimSpace(line))
 		}
 	}
