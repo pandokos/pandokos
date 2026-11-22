@@ -8,6 +8,13 @@ This page is a contract checked by tests: a message or a field that is not liste
 
 | Field | Type | Meaning |
 |---|---|---|
+| `Attributes` | object | The attributes of an OpenTelemetry meter scope. |
+| `Name` | string | The name of an OpenTelemetry meter scope. |
+| `Readers` | array | The readers of an OpenTelemetry meter provider, as the SDK reports them. |
+| `Resource` | array | The resource of an OpenTelemetry meter provider: the attributes of the process, no value of a secret. |
+| `SchemaURL` | string | The schema URL of an OpenTelemetry meter scope. |
+| `Version` | string | The version of an OpenTelemetry meter scope. |
+| `Views` | array | The views of an OpenTelemetry meter provider, as the SDK reports them. |
 | `address` | string | The address a listener is bound to, or an address the egress guard refused. |
 | `attributes` | object | The attributes of an OpenTelemetry scope. |
 | `audited` | boolean | Whether the failure was recorded in the audit log. |
@@ -111,6 +118,20 @@ Written by the telemetry.
 
 Level: debug
 Fields: `config`
+
+Written by the telemetry.
+
+### `Meter created`
+
+Level: debug
+Fields: `Name`, `Version`, `SchemaURL`, `Attributes`
+
+Written by the telemetry.
+
+### `MeterProvider created`
+
+Level: debug
+Fields: `Resource`, `Readers`, `Views`
 
 Written by the telemetry.
 

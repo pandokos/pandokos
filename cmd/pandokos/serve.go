@@ -188,6 +188,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		return 1
 	}
 	defer guard.CloseIdleConnections()
+	var keyCache *jwks.Cache
 	gatewayAuthOpts := authn.Options{DB: gatewayDB, Logger: logger, Kinds: []authn.Kind{authn.KindTenant}, CacheTTL: time.Duration(cfg.Cache.PrincipalTTL)}
 	if cfg.Tokens.Enabled {
 		// Keys of token issuers are fetched here and nowhere else, through the egress guard.
@@ -204,6 +205,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 			logger.Error("startup failed", "error", err.Error())
 			return 1
 		}
+		keyCache = keys
 		gatewayAuthOpts.Kinds = append(gatewayAuthOpts.Kinds, authn.KindToken)
 		gatewayAuthOpts.Tokens = authn.TokenOptions{
 			Keys: keys, MaxBytes: cfg.Tokens.MaxTokenBytes,
@@ -365,6 +367,48 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	if err := ensurePartitions(ctx, partitioner); err != nil {
 		partitioner.Warn(err)
 	}
+	// Metrics: the sources read the components' snapshots at each collection. The collector's
+	// headers are secrets, revealed here and nowhere else.
+	sources := telemetry.Sources{
+		Ledger: ledgerSource(writer), LedgerLimit: cfg.Ledger.BufferSize,
+		Egress: egressSource(guard),
+		Authn: map[string]func() telemetry.AuthnStats{
+			"inference": authnSource(gatewayAuth), "admin": authnSource(adminAuth),
+		},
+		SignIn:      signInSource(people.accounts, adminHandler),
+		Sessions:    people.sessionsOpen,
+		Hashes:      hashSource(people.hasher),
+		Idempotency: idempotencySource(people.idempotency),
+		Admin:       adminSource(adminHandler),
+		Limits:      limitsSource(memory, reconciler, events, ruleCache),
+		Resolver:    resolverSource(limitsPort, unlimited),
+	}
+	if keyCache != nil {
+		sources.JWKS = jwksSource(keyCache)
+	}
+	metricsOpts := telemetry.MetricsOptions{
+		Resource:       resource,
+		Endpoint:       cfg.Telemetry.OTLP.ParsedEndpoint,
+		OTLP:           cfg.Telemetry.Metrics.OTLP,
+		Timeout:        time.Duration(cfg.Telemetry.OTLP.Timeout),
+		Interval:       time.Duration(cfg.Telemetry.Metrics.ExportInterval),
+		Prometheus:     cfg.Telemetry.Metrics.Prometheus,
+		ServiceVersion: buildinfo.Version,
+		Logger:         logger,
+		Sources:        sources,
+	}
+	if cfg.Telemetry.OTLP.ParsedEndpoint != nil {
+		metricsOpts.Transport = guard.Transport(true)
+		metricsOpts.Headers = make(map[string]string, len(cfg.Telemetry.OTLP.Headers))
+		for name, v := range cfg.Telemetry.OTLP.Headers {
+			metricsOpts.Headers[name] = v.Reveal()
+		}
+	}
+	metrics, err := telemetry.NewMetrics(metricsOpts)
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
 	srv, err := server.New(server.Options{
 		Config: cfg, Logger: logger, Authenticator: gatewayAuth, Admin: adminHandler,
 		Catalogue:   resolver.NewCatalogue(catalogCache, logger),
@@ -374,6 +418,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		Recorder:    writer,
 		Tracer:      traces.Provider(),
 		Limits:      limitsPort,
+		Metrics:     gatewayMetrics{metrics}, MetricsHandler: metrics.Handler(), MetricsAuth: adminAuth,
 	})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
@@ -446,9 +491,10 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	flushCtx, flushCancel := context.WithDeadline(context.WithoutCancel(ctx), flushDeadline)
 	var unwritten int
 	var flush sync.WaitGroup
-	flush.Add(2)
+	flush.Add(3)
 	go func() { defer flush.Done(); unwritten = writer.Close(flushCtx) }()
 	go func() { defer flush.Done(); _ = traces.Shutdown(flushCtx) }()
+	go func() { defer flush.Done(); _ = metrics.Shutdown(flushCtx) }()
 	flush.Wait()
 	// Then the limit events, with what is left of the flush deadline (at least one second).
 	left := max(time.Until(flushDeadline), time.Second)
