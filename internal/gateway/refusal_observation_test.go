@@ -18,12 +18,17 @@ import (
 func TestRefusalObservation(t *testing.T) {
 	const limit = 7
 	const ruleID = "rule-id-canary-5b3e"
+	const providerID = "synthetic-provider-openai"
 
 	refused := func(t *testing.T, opts limitstest.Options) gateway.RequestObservation {
 		t.Helper()
 		ob := &observer{}
 		real := limitstest.NewWith(t, opts)
 		h := newHarness(t, observed(ob, func(o *gateway.Options) { o.Limits = real }))
+		// A model's rule is found through the provider of the target: the harness's targets carry none.
+		tgt := h.targets["openai/fake-basic"]
+		tgt.ProviderID = providerID
+		h.targets["openai/fake-basic"] = tgt
 		for i := 0; i <= limit+1; i++ {
 			h.sendAuthed(t, route, chat("fake-basic", false))
 		}
@@ -58,7 +63,7 @@ func TestRefusalObservation(t *testing.T) {
 	t.Run("a rule of a key, scoped to a model", func(t *testing.T) {
 		rule := limits.Rule{
 			ID: ruleID, SubjectKind: limits.SubjectKey, SubjectID: testPrincipal.KeyID, Metric: limits.RequestsPerMinute,
-			Value: limit, ModelID: "synthetic-model-openai-fake-basic", Model: "fake-basic", Enforce: true,
+			Value: limit, ProviderID: providerID, ModelID: "synthetic-model-openai-fake-basic", Model: "fake-basic", Enforce: true,
 		}
 		o := refused(t, limitstest.Options{Rules: map[tenant.ID][]limits.Rule{testPrincipal.TenantID: {rule}}})
 		want := gateway.LimitRefusalObservation{Code: "rate_limited", Metric: "requests_per_minute", Level: "tenant", SubjectKind: "key", Scope: "model"}

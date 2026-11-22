@@ -225,7 +225,13 @@ func TestObservation(t *testing.T) {
 				}
 			}},
 		{name: "a 200 answer of an unpriced model",
-			drive: func(t *testing.T, h *harness) { h.sendAuthed(t, route, chat("fake-basic", false)) },
+			drive: func(t *testing.T, h *harness) {
+				// The harness's targets are priced: this one is not.
+				tgt := h.targets["openai/fake-basic"]
+				tgt.Prices = nil
+				h.targets["openai/fake-basic"] = tgt
+				h.sendAuthed(t, route, chat("fake-basic", false))
+			},
 			check: func(t *testing.T, _ *harness, o observation) {
 				if o.CostKnown || o.CostReason != "no_price" || o.CostAmount != 0 {
 					t.Errorf("cost known %v reason %q amount %v, want unknown with reason no_price", o.CostKnown, o.CostReason, o.CostAmount)

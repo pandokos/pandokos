@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -149,8 +148,16 @@ func statusText(status int) string {
 	if status < 100 || status > 599 {
 		return ""
 	}
-	return strconv.Itoa(status)
+	return statusTexts[status]
 }
+
+// statusTexts are the texts of the statuses, built once: the text of a status is not allocated per request.
+var statusTexts = func() (t [600]string) {
+	for i := 100; i < 600; i++ {
+		t[i] = strconv.Itoa(i)
+	}
+	return t
+}()
 
 // setKey identifies an attribute set: the instrument and the values of its attributes, "" for an
 // attribute that is absent. It is comparable, so that the sets are cached (D-20).
@@ -251,12 +258,12 @@ type instruments struct {
 	refusals     metric.Int64Counter
 	estimate     metric.Float64Histogram
 
-	sets  sync.Map // setKey -> attribute.Set
-	nsets atomic.Int64
+	mu   sync.RWMutex
+	sets map[setKey]metric.MeasurementOption // the options of the attribute sets seen, kept boxed once
 }
 
 func newInstruments(k *maker) *instruments {
-	in := &instruments{}
+	in := &instruments{sets: make(map[setKey]metric.MeasurementOption)}
 	var err error
 	in.httpDuration, err = httpconv.NewServerRequestDuration(k.meter)
 	k.fail(err)
@@ -276,18 +283,21 @@ func newInstruments(k *maker) *instruments {
 	return in
 }
 
-// attrs returns the cached attribute set of the key.
+// attrs returns the cached option of the attribute set of the key.
 func (in *instruments) attrs(k setKey) metric.MeasurementOption {
-	if s, ok := in.sets.Load(k); ok {
-		return metric.WithAttributeSet(s.(attribute.Set))
+	in.mu.RLock()
+	o, ok := in.sets[k]
+	in.mu.RUnlock()
+	if ok {
+		return o
 	}
-	s := k.build()
-	if in.nsets.Load() < maxCachedSets {
-		if _, loaded := in.sets.LoadOrStore(k, s); !loaded {
-			in.nsets.Add(1)
-		}
+	o = metric.WithAttributeSet(k.build())
+	in.mu.Lock()
+	if len(in.sets) < maxCachedSets {
+		in.sets[k] = o
 	}
-	return metric.WithAttributeSet(s)
+	in.mu.Unlock()
+	return o
 }
 
 // observe records one request (T-913); it allocates nothing but what the SDK does.
