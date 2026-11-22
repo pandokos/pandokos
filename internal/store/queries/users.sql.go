@@ -117,18 +117,6 @@ func (q *Queries) CountPlatformRoleHolders(ctx context.Context, role string) (in
 	return holders, err
 }
 
-const countTenants = `-- name: CountTenants :one
-SELECT count(*)::integer AS tenants FROM pandokos.tenant
-`
-
-// Platform scope: whether any tenant exists, for the group rules of the identity provider.
-func (q *Queries) CountTenants(ctx context.Context) (int32, error) {
-	row := q.db.QueryRow(ctx, countTenants)
-	var tenants int32
-	err := row.Scan(&tenants)
-	return tenants, err
-}
-
 const createLocalAccount = `-- name: CreateLocalAccount :exec
 INSERT INTO pandokos.local_account (user_id, username, password_hash, must_change, password_expires_at)
 VALUES ($1::uuid, $2::text, $3::text,

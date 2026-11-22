@@ -633,19 +633,19 @@ func checkGroupRules(o Options) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	var rows []queries.TenantIDsByNameRow
-	var tenants int32
+	var existing []queries.PandokosTenant
 	err := o.DB.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
 		var err error
 		if rows, err = queries.New(tx).TenantIDsByName(ctx, names); err != nil {
 			return err
 		}
-		tenants, err = queries.New(tx).CountTenants(ctx)
+		existing, err = queries.New(tx).ListTenants(ctx, queries.ListTenantsParams{Sort: "created_at", AfterID: "00000000-0000-0000-0000-000000000000", PageSize: 1})
 		return err
 	})
 	if err != nil {
 		return fmt.Errorf("admin: group rules: tenants cannot be read: %w", err)
 	}
-	if tenants == 0 {
+	if len(existing) == 0 {
 		return nil // a new installation: its tenants are made through this very API, and the rules are skipped until they exist
 	}
 	found := map[string]bool{}

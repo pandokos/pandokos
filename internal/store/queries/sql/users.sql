@@ -58,10 +58,6 @@ DELETE FROM pandokos.oidc_login WHERE expires_at <= now();
 -- Platform scope: the group rules of the identity provider name tenants.
 SELECT t.name, t.id FROM pandokos.tenant t WHERE t.name = ANY (sqlc.arg(names)::text[]);
 
--- name: CountTenants :one
--- Platform scope: whether any tenant exists, for the group rules of the identity provider.
-SELECT count(*)::integer AS tenants FROM pandokos.tenant;
-
 -- name: CreateUser :one
 INSERT INTO pandokos.app_user (sign_in, tenant_id, display_name, email)
 VALUES (sqlc.arg(sign_in)::text, sqlc.narg(tenant_id)::uuid, sqlc.arg(display_name)::text, sqlc.arg(email)::text)
