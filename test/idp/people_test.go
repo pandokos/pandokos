@@ -399,13 +399,24 @@ func newKeycloakAdmin(t *testing.T) *keycloakAdmin {
 	t.Helper()
 	k := &keycloakAdmin{t: t, client: providerClient(t), base: peopleEnv(t, "ADMIN_URL")}
 	form := url.Values{"grant_type": {"password"}, "client_id": {"admin-cli"}, "username": {peopleEnv(t, "ADMIN_USER")}, "password": {peopleEnv(t, "ADMIN_PASSWORD")}}
-	// An earlier test stops Keycloak and starts it again when it ends, without waiting: ask until it answers.
+	// An earlier test stops Keycloak and starts it again when it ends, without waiting: ask until it
+	// answers 200 (while it starts it refuses the connection or answers with an error status).
 	var resp *http.Response
 	var err error
 	for deadline := time.Now().Add(90 * time.Second); ; time.Sleep(time.Second) {
 		resp, err = k.client.PostForm(k.base+"/realms/master/protocol/openid-connect/token", form)
-		if err == nil || time.Now().After(deadline) {
+		if err == nil && resp.StatusCode == http.StatusOK {
 			break
+		}
+		if time.Now().After(deadline) {
+			if err == nil {
+				resp.Body.Close()
+				err = fmt.Errorf("status %d", resp.StatusCode)
+			}
+			break
+		}
+		if err == nil {
+			resp.Body.Close()
 		}
 	}
 	if err != nil {

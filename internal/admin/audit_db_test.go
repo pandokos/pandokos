@@ -523,8 +523,7 @@ func (f *fixt) steps(t *testing.T) []step {
 				return []auditRow{f.tenantActor(auditRow{Action: "tenant_price.delete", ResourceType: "tenant_price_version", ResourceID: otherPrice.ID, RequestID: rid(r),
 					Detail: map[string]any{"provider": cat.Provider.Name, "model": cat.All.Name, "model_id": cat.All.ID, "currency": "EUR", "kind": "price", "valid_from": rfc(priceStart.Add(time.Hour))}}, tid)}
 			}},
-		// Sprint 4.3: custom roles and support actions. The deletion of a role answers 204 and is
-		// covered by TestAuditIsAtomic and TestRoleDeletionGuard (roleMutations).
+		// Sprint 4.3: custom roles and support actions.
 		{"createRole",
 			func() *apitest.Response {
 				return w.api.Do(t, "POST", "/v1/tenants/"+tid+"/roles", w.adminKey, map[string]any{
@@ -560,6 +559,13 @@ func (f *fixt) steps(t *testing.T) []step {
 			},
 			func(r *apitest.Response) []auditRow {
 				return []auditRow{f.tenantActor(auditRow{Action: "role.activate", ResourceType: "role", ResourceID: newRole.ID, RequestID: rid(r), Reason: "needed again", Detail: map[string]any{}}, tid)}
+			}},
+		{"deleteRole",
+			func() *apitest.Response {
+				return w.api.Do(t, "DELETE", "/v1/tenants/"+tid+"/roles/audited-role", w.adminKey, nil, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				return []auditRow{f.tenantActor(auditRow{Action: "role.delete", ResourceType: "role", ResourceID: newRole.ID, RequestID: rid(r), Detail: map[string]any{"permissions": []any{"usage:read"}}}, tid)}
 			}},
 		{"openSupportAction",
 			func() *apitest.Response {
@@ -624,14 +630,14 @@ func TestEveryChangeIsAudited(t *testing.T) {
 		byOp[s.op] = true
 	}
 	for _, op := range adminapi.Operations {
-		if op.Method != "GET" && !byOp[op.ID] && !catalogueMutations[op.ID] && !issuerMutations[op.ID] && !limitMutations[op.ID] && !peopleMutations[op.ID] && !roleMutations[op.ID] {
+		if op.Method != "GET" && !byOp[op.ID] && !catalogueMutations[op.ID] && !issuerMutations[op.ID] && !limitMutations[op.ID] && !peopleMutations[op.ID] {
 			t.Errorf("the mutating operation %s has no audit step: add it (the catalogue operations are in TestCatalogAudit, the token issuer operations in TestIssuerAudit)", op.ID)
 		}
 	}
 
 	for _, s := range steps {
 		resp := s.do()
-		if resp.Status != 200 && resp.Status != 201 {
+		if resp.Status != 200 && resp.Status != 201 && resp.Status != 204 {
 			t.Fatalf("%s: status %d\n%s", s.op, resp.Status, resp.Body)
 		}
 		want := s.want(resp)

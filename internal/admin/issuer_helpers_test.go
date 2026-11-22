@@ -167,8 +167,3 @@ var peopleMutations = map[string]bool{
 	"createUser": true, "updateUser": true, "disableUser": true, "enableUser": true, "unlockUser": true, "resetUserPassword": true, "revokeUserSessions": true,
 	"createMember": true, "updateMember": true, "deleteMember": true, "disableMember": true, "enableMember": true, "unlockMember": true, "resetMemberPassword": true, "revokeMemberSessions": true,
 }
-
-// roleMutations are the mutating operations of sprint 4.3 that have no step of T-281: the deletion of
-// a custom role answers 204 with no body, which the step loop does not take; TestRoleDeletionGuard
-// covers its row and TestAuditIsAtomic its atomicity (it has a call there).
-var roleMutations = map[string]bool{"deleteRole": true}

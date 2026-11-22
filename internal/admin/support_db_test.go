@@ -602,7 +602,7 @@ func TestSupportNeverReadsUsage(t *testing.T) {
 			r := apitest.Probe(t, who, op, pp)
 			checked++
 			for _, c := range canaries {
-				if c == "usage-canary" && strings.HasPrefix(op.Permission, "catalog:") {
+				if c == "usage-canary" && catalogueListings[op.ID] {
 					continue // the model is seeded in the platform's own catalogue, which the platform lists
 				}
 				if strings.Contains(string(r.Body), c) {
@@ -625,6 +625,11 @@ func TestSupportNeverReadsUsage(t *testing.T) {
 		}
 	}
 }
+
+// catalogueListings are the reads of the platform's own catalogue that name the canary model: a row
+// of the catalogue, not a record of the tenant. They are named one by one, so that no other read of
+// the catalogue is exempted from the check.
+var catalogueListings = map[string]bool{"listModels": true}
 
 func resourceOf(permission string) string { return permission[:strings.IndexByte(permission, ':')] }
 
