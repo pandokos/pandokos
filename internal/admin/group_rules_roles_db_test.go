@@ -2,8 +2,11 @@ package admin_test
 
 import (
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pandokos/pandokos/internal/admin"
 	"github.com/pandokos/pandokos/internal/oidc"
@@ -85,15 +88,14 @@ func TestGroupRulesWithRoles(t *testing.T) {
 		t.Errorf("%d lines say group rule skipped, want 2 (the inactive role and the missing one)", skipped)
 	}
 
-	// A rule that stops the start: inference, an unknown role, a role of the other scope, a custom
-	// role that the tenant does not have, a malformed name.
+	// A rule that stops the start: inference, an unknown role, a role of the other scope, a malformed
+	// name.
 	for what, rule := range map[string]string{
-		"inference":                              "tenant:acme:inference=eng",
-		"an unknown built-in-looking role":       "tenant:acme:Not_A_Role=eng",
-		"a platform role in a tenant":            "tenant:acme:platform-admin=eng",
-		"a tenant role for the platform":         "platform:usage-viewer=eng",
-		"owner for the platform":                 "platform:owner=eng",
-		"a custom role the tenant does not have": "tenant:acme:no-such-role=eng",
+		"inference":                        "tenant:acme:inference=eng",
+		"an unknown built-in-looking role": "tenant:acme:Not_A_Role=eng",
+		"a platform role in a tenant":      "tenant:acme:platform-admin=eng",
+		"a tenant role for the platform":   "platform:usage-viewer=eng",
+		"owner for the platform":           "platform:owner=eng",
 	} {
 		rules, err := oidc.ParseRules([]string{rule})
 		if err != nil {
@@ -105,17 +107,114 @@ func TestGroupRulesWithRoles(t *testing.T) {
 			t.Errorf("admin.New accepted the rule that names %s (%s)", what, rule)
 		}
 	}
-	// The rules of the test are accepted now that the tenant and its custom roles exist.
-	// The rule of the missing custom role is left out: a role that the tenant does not have stops the
-	// start (the loop above), and it is only skipped at sign-in when it goes after the start.
+	// The rules of the test are accepted now that the tenant and its custom roles exist. The rule of
+	// the missing custom role does not stop the start either: a tenant could otherwise stop the
+	// installation by deleting a role. It is skipped with a warning that names its position only.
+	var start strings.Builder
 	good := captured
-	good.Auth.GroupRules = nil
-	for _, r := range o.Rules {
-		if r.Role != "gone-role" {
-			good.Auth.GroupRules = append(good.Auth.GroupRules, r)
+	good.Logger = slog.New(slog.NewJSONHandler(&start, nil))
+	good.Auth.GroupRules = o.Rules
+	if _, err := admin.New(good); err != nil {
+		t.Errorf("admin.New with the rules of the test, one of which names a custom role the tenant does not have: %v", err)
+	}
+	gone := -1
+	for i, r := range o.Rules {
+		if r.Role == "gone-role" {
+			gone = i + 1
 		}
 	}
-	if _, err := admin.New(good); err != nil {
-		t.Errorf("admin.New with the rules of the test: %v", err)
+	warned := 0
+	for _, line := range strings.Split(strings.TrimSpace(start.String()), "\n") {
+		if !strings.Contains(line, "group rule skipped") {
+			continue
+		}
+		warned++
+		for _, name := range []string{"acme", "gone-role", "eng", p.tenant.ID} {
+			if strings.Contains(line, name) {
+				t.Errorf("the start warning names %q: %s", name, line)
+			}
+		}
+		var rec map[string]any
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Fatal(err)
+		}
+		if rec["level"] != "WARN" || rec["rule"] != float64(gone) {
+			t.Errorf("the start warning: %s, want level WARN and rule %d", line, gone)
+		}
+	}
+	if warned != 1 {
+		t.Errorf("%d start lines say group rule skipped, want 1 (the missing role; the inactive one exists): %s", warned, start.String())
+	}
+}
+
+// TestGroupRulesResolveInTheTransaction is part of T-882: the custom roles that group rules give are
+// read in the transaction that assigns them, FOR SHARE, so that a role deleted meanwhile is not
+// assigned, and all of them are found, whatever the number of roles of the tenant.
+func TestGroupRulesResolveInTheTransaction(t *testing.T) {
+	api, o := apitest.NewPeopleOIDC(t, apitest.PeopleConfig{},
+		apitest.OIDCConfig{Users: idpPeople, Mappings: []string{"tenant:acme:aa-raced=eng", "tenant:acme:zzz-last=eng"}})
+	p := peopleOn(t, api)
+	d := p.d
+	// One more than a page: zzz-last sorts after the first hundred roles.
+	d.CustomRole(t, p.tid, "aa-raced", "member:read")
+	for i := 0; i < 100; i++ {
+		d.CustomRole(t, p.tid, fmt.Sprintf("m-%03d", i), "member:read")
+	}
+	d.CustomRole(t, p.tid, "zzz-last", "member:read")
+	ada := d.FederatedUser(t, o.IDP.Issuer(), "ada", nil)
+	o.IDP.SignInAs("ada")
+
+	// A deletion of aa-raced holds the row while the sign-in runs, and commits once the sign-in
+	// waits for it (or has finished).
+	c := ctx(t)
+	tx, err := d.Super(t).Begin(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(c) }()
+	if _, err := tx.Exec(c, "SELECT 1 FROM pandokos.tenant_role WHERE tenant_id = $1::uuid AND name = 'aa-raced' FOR UPDATE", p.tenant.ID); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan apitest.Hop, 1)
+	go func() { done <- last(o.SignIn(t, api.NewBrowser())) }()
+	var end apitest.Hop
+	finished := false
+	for deadline := time.Now().Add(15 * time.Second); !finished && time.Now().Before(deadline); {
+		var waiting int
+		if err := tx.QueryRow(c, "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'").Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting > 0 {
+			break
+		}
+		select {
+		case end = <-done:
+			finished = true
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	if _, err := tx.Exec(c, "DELETE FROM pandokos.tenant_role WHERE tenant_id = $1::uuid AND name = 'aa-raced'", p.tenant.ID); err != nil {
+		t.Errorf("the role could not be deleted: the sign-in assigned it while its deletion held the row: %v", err)
+	}
+	if err := tx.Commit(c); err != nil {
+		t.Errorf("commit of the deletion: %v", err)
+	}
+	if !finished {
+		select {
+		case end = <-done:
+		case <-time.After(15 * time.Second):
+			t.Fatal("the sign-in did not finish after the deletion")
+		}
+	}
+	if end.Location != "/console" {
+		t.Fatalf("the sign-in ends with %d %q", end.Status, end.Location)
+	}
+	var got string
+	if err := d.Super(t).QueryRow(ctx(t), `SELECT COALESCE(string_agg(r.role || ':' || r.source, ',' ORDER BY r.role), '') FROM pandokos.membership_role r WHERE r.tenant_id = $1::uuid AND r.user_id = $2::uuid`,
+		p.tenant.ID, ada.ID).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != "zzz-last:idp" {
+		t.Errorf("the roles given in acme: %q, want zzz-last:idp (the role beyond the first page; not the deleted one)", got)
 	}
 }

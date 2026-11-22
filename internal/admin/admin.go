@@ -12,7 +12,6 @@ import (
 	"net/netip"
 	"regexp"
 	"runtime/debug"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -672,25 +671,39 @@ func ruleRole(r oidc.Rule) (ok, custom bool) {
 }
 
 // customRolesOf reads the state of the custom roles of the tenant that have one of the names, by
-// name. A tenant has at most maxCustomRoles of them, so one page is all of them.
+// name, in the tenant's session.
 func customRolesOf(ctx context.Context, db *store.DB, tid tenant.ID, names []string) (map[string]string, error) {
-	out := map[string]string{}
+	var out map[string]string
 	err := db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
-		rows, err := queries.New(tx).ListTenantRoles(ctx, queries.ListTenantRolesParams{Sort: "name", AfterID: afterID(false, ""), PageSize: maxCustomRoles})
-		for _, r := range rows {
-			if slices.Contains(names, r.Name) {
-				out[r.Name] = r.State
-			}
-		}
+		var err error
+		out, err = lockCustomRoles(ctx, queries.New(tx), names)
 		return err
 	})
 	return out, err
 }
 
-// checkGroupRules refuses at start a group rule that names a role that a user cannot hold in its scope,
-// a custom role that an existing tenant does not have, or a tenant that does not exist (section 5.9). An
-// installation without any tenant cannot name one yet, so nothing is refused there; a tenant created
-// later is found at each sign-in.
+// lockCustomRoles reads, FOR SHARE, the state of the custom roles of the session's tenant that have
+// one of the names, by name: a deletion waits for the transaction, or the role is not found.
+func lockCustomRoles(ctx context.Context, q *queries.Queries, names []string) (map[string]string, error) {
+	out := map[string]string{}
+	if len(names) == 0 {
+		return out, nil
+	}
+	rows, err := q.LockTenantRolesForAssignment(ctx, names)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.Name] = r.State
+	}
+	return out, nil
+}
+
+// checkGroupRules refuses at start a group rule that names a role that a user cannot hold in its scope
+// or a tenant that does not exist (section 5.9). An installation without any tenant cannot name one
+// yet, so nothing is refused there; a tenant created later is found at each sign-in. A rule that names
+// a custom role that its tenant does not have is not refused: a tenant that deletes a role would stop
+// the installation. It is skipped, as at sign-in, with a warning that gives its position only.
 func checkGroupRules(o Options) error {
 	var names []string
 	for i, r := range o.Auth.GroupRules {
@@ -754,7 +767,7 @@ func checkGroupRules(o Options) error {
 			return fmt.Errorf("admin: group rules: custom roles cannot be read: %w", err)
 		}
 		if _, ok := have[r.Role]; !ok {
-			return fmt.Errorf("admin: group rule %d names a role that the tenant does not have", i+1)
+			o.Logger.Warn("group rule skipped", "rule", i+1)
 		}
 	}
 	return nil

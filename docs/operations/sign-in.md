@@ -257,8 +257,8 @@ the rules are separated by commas. At each sign-in the rules are **reconciled**:
 (`source: idp`) and the groups no longer justify are removed, missing ones are added, each with its audit
 row; rows an administrator made are never touched. A rule may name any built-in role a user can hold in the scope of its target (`platform-auditor` on the
 platform, any tenant role but `inference` in a tenant) and, for a tenant, a custom role of that tenant;
-at sign-in a custom role that is missing or inactive is skipped with one log line that names the rule's
-position only ([roles guide](roles.md#9-group-rules-with-roles)). A rule that names a role a user cannot hold is refused
+a custom role that is missing (at start or at sign-in) or inactive (at sign-in) is skipped with one log
+line that names the rule's position only ([roles guide](roles.md#9-group-rules-with-roles)). A rule that names a role a user cannot hold is refused
 at start, and so is one that names a tenant that does not exist once tenants exist. While no tenant
 exists yet, such a rule is accepted; at a sign-in a rule whose tenant is not there (not yet created, or
 deleted since) is **skipped** with a warning that gives its position in the list and nothing else, and

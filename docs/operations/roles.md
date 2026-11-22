@@ -320,9 +320,12 @@ auth:
       - tenant:acme:identity-manager=acme-people
 ```
 
-At start the role of a tenant rule must be a built-in role or exist in the tenant; `inference`, roles of
-the wrong scope and malformed names are refused. At sign-in a custom role that is missing or inactive
-is not given, with one log line that names the position of the rule only. The operator's configuration
+At start `inference`, roles of the wrong scope and malformed names are refused. A rule that names a
+custom role its tenant does not have is not refused, since a tenant that deletes the role would
+otherwise stop the installation at its next start: `serve` logs `group rule skipped` with the position
+of the rule only, and the rule gives nothing until the role exists. At sign-in a custom role that is
+missing or inactive is not given, with the same line; the role is read in the transaction that
+assigns it, so a role deleted meanwhile is not given either. The operator's configuration
 is the grantor here: the rule against escalation does not apply to it.
 
 ## 10. What changes for an installation of v0.1

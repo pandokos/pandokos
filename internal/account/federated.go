@@ -33,6 +33,10 @@ type FederatedInput struct {
 	PlatformRoles                       []string
 	TenantRoles                         map[string][]string
 	Presented                           string // the session cookie of the request, ended by the sign-in
+	// Assignable, when set, is called in the transaction of each tenant whose roles are reconciled,
+	// with the roles that the rules give there, and returns those that may be assigned: the caller
+	// reads the custom roles in that transaction, so a role deleted meanwhile is not assigned.
+	Assignable func(ctx context.Context, q *queries.Queries, tid tenant.ID, roles []string) ([]string, error)
 }
 
 // displayName and emailAddress limit a display attribute to its column: control characters are
@@ -143,7 +147,7 @@ func (s *Service) SignInFederated(ctx context.Context, in FederatedInput) (SignI
 		return SignInResult{}, err
 	}
 	if in.Reconcile {
-		if err := s.reconcileTenants(ctx, u, member, in.TenantRoles); err != nil {
+		if err := s.reconcileTenants(ctx, u, member, in.TenantRoles, in.Assignable); err != nil {
 			return SignInResult{}, err
 		}
 	}
@@ -238,7 +242,8 @@ func (s *Service) reconcilePlatform(ctx context.Context, tx store.Tx, u User, wa
 
 // reconcileTenants runs one transaction of the tenant's own for each tenant that has something to
 // change: the tenants the user is a member of, and those that the rules give it a role in.
-func (s *Service) reconcileTenants(ctx context.Context, u User, member []string, want map[string][]string) error {
+func (s *Service) reconcileTenants(ctx context.Context, u User, member []string, want map[string][]string,
+	assignable func(context.Context, *queries.Queries, tenant.ID, []string) ([]string, error)) error {
 	ids := map[string]bool{}
 	for _, id := range member {
 		ids[id] = true
@@ -256,16 +261,23 @@ func (s *Service) reconcileTenants(ctx context.Context, u User, member []string,
 		if err != nil {
 			return err
 		}
-		if err := s.reconcileTenant(ctx, tid, u, sortedUnique(want[raw])); err != nil {
+		if err := s.reconcileTenant(ctx, tid, u, sortedUnique(want[raw]), assignable); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *Service) reconcileTenant(ctx context.Context, tid tenant.ID, u User, want []string) error {
+func (s *Service) reconcileTenant(ctx context.Context, tid tenant.ID, u User, want []string,
+	assignable func(context.Context, *queries.Queries, tenant.ID, []string) ([]string, error)) error {
 	return s.o.DB.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
 		q := queries.New(tx)
+		if assignable != nil && len(want) > 0 {
+			var err error
+			if want, err = assignable(ctx, q, tid, want); err != nil {
+				return err
+			}
+		}
 		rows, err := q.ListMembershipRoles(ctx, u.ID)
 		if err != nil {
 			return err

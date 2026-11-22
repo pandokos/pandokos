@@ -225,6 +225,7 @@ func (s *server) federatedInput(ctx context.Context, id oidc.Identity, presented
 		}
 	}
 	live := make([]oidc.Rule, 0, len(rules))
+	position := make([]int, 0, len(rules)) // of each live rule, in the configuration
 	for i, r := range rules {
 		if !r.Platform {
 			// The tenant is gone, or the custom role is missing or inactive: the rule gives nothing, and
@@ -236,12 +237,41 @@ func (s *server) federatedInput(ctx context.Context, id oidc.Identity, presented
 			}
 		}
 		live = append(live, r)
+		position = append(position, i+1)
 	}
 	platform, byName := oidc.Grants(live, id.Groups)
 	in.PlatformRoles = platform
 	in.TenantRoles = map[string][]string{}
 	for name, roles := range byName {
 		in.TenantRoles[ids[name]] = roles
+	}
+	requestID := stateOf(ctx).id
+	// The roles are read again in the transaction that assigns them: a custom role deleted or
+	// deactivated since the read above is not assigned.
+	in.Assignable = func(ctx context.Context, q *queries.Queries, tid tenant.ID, roles []string) ([]string, error) {
+		var custom []string
+		for _, role := range roles {
+			if _, builtin := authz.RoleByName(role); !builtin {
+				custom = append(custom, role)
+			}
+		}
+		states, err := lockCustomRoles(ctx, q, custom)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]string, 0, len(roles))
+		for _, role := range roles {
+			if _, builtin := authz.RoleByName(role); builtin || states[role] == "active" {
+				out = append(out, role)
+				continue
+			}
+			for i, r := range live {
+				if !r.Platform && r.Role == role && ids[r.Tenant] == tid.String() {
+					s.log.Warn("group rule skipped", "rule", position[i], "request_id", requestID)
+				}
+			}
+		}
+		return out, nil
 	}
 	return in, nil
 }
