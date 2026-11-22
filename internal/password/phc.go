@@ -32,9 +32,9 @@ func parse(s string) (p Params, salt, key []byte, err error) {
 	if len(fields) != 3 {
 		return p, nil, nil, errFormat
 	}
-	m, ok1 := number(fields[0], "m=", maxMemoryKiB)
-	t, ok2 := number(fields[1], "t=", maxIterations)
-	par, ok3 := number(fields[2], "p=", maxParallelism)
+	m, ok1 := number(fields[0], "m=", maxMemoryKiB, 32)
+	t, ok2 := number(fields[1], "t=", maxIterations, 32)
+	par, ok3 := number(fields[2], "p=", maxParallelism, 8)
 	if !ok1 || !ok2 || !ok3 {
 		return p, nil, nil, errFormat
 	}
@@ -53,8 +53,9 @@ func parse(s string) (p Params, salt, key []byte, err error) {
 }
 
 // number reads prefix followed by decimal digits only, from 1 to max, without a leading zero (the
-// PHC string format has one spelling of a number).
-func number(s, prefix string, max uint64) (uint64, bool) {
+// PHC string format has one spelling of a number). The number is parsed at the width of its
+// destination, so the conversion that follows cannot truncate.
+func number(s, prefix string, max uint64, bits int) (uint64, bool) {
 	d, ok := strings.CutPrefix(s, prefix)
 	if !ok || d == "" || len(d) > 10 || d[0] == '0' {
 		return 0, false
@@ -64,7 +65,7 @@ func number(s, prefix string, max uint64) (uint64, bool) {
 			return 0, false
 		}
 	}
-	n, err := strconv.ParseUint(d, 10, 64)
+	n, err := strconv.ParseUint(d, 10, bits)
 	if err != nil || n < 1 || n > max {
 		return 0, false
 	}
