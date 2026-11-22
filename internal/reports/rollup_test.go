@@ -118,7 +118,9 @@ func TestRollupAtomicAndConcurrent(t *testing.T) {
 		if wm0 == nil || req0 != 20 {
 			t.Fatalf("after the first pass: %d requests, watermark %v, want 20", req0, wm0)
 		}
-		insertRecords(t, d, a, aged(7, now.Add(-2*time.Hour), now.Add(-5*time.Minute))...)
+		// Recorded at the watermark: a record is recorded at the database's clock, so none can be
+		// recorded before the watermark of a pass that has run (section 5.1).
+		insertRecords(t, d, a, aged(7, now.Add(-2*time.Hour), *wm0)...)
 		// Whatever moves the watermark fails after the rollup rows were written in the same transaction.
 		for _, q := range []string{
 			`CREATE FUNCTION public.probe_boom() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'probe: the pass fails'; END $$`,
@@ -177,7 +179,8 @@ func TestRollupAtomicAndConcurrent(t *testing.T) {
 		if req, _, _ := rollupTotals(t, d, a); req != 300 {
 			t.Errorf("the rollup counts %d requests, want 300", req)
 		}
-		insertRecords(t, d, a, aged(10, now.Add(-time.Hour), now.Add(-2*time.Minute))...)
+		_, _, wmNow := rollupTotals(t, d, a)
+		insertRecords(t, d, a, aged(10, now.Add(-time.Hour), *wmNow)...) // recorded at the watermark, as above
 		var wg2 sync.WaitGroup
 		for w := 0; w < 4; w++ {
 			wg2.Add(1)

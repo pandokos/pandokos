@@ -54,7 +54,13 @@ func TestLedgerReaderUnchanged(t *testing.T) {
 			if err := roll.Pass(ctx); err != nil {
 				t.Fatal(err)
 			}
-			batch(now.Add(-20*time.Minute), 30*time.Minute)
+			// Recorded at the watermark: records are recorded at the database's clock, so none is
+			// recorded before the watermark of a pass that has run (section 5.1).
+			var wm time.Time
+			if err := d.Super(t).QueryRow(ctx, `SELECT watermark FROM pandokos.usage_rollup_state WHERE tenant_id = $1::uuid`, tid.String()).Scan(&wm); err != nil {
+				t.Fatal(err)
+			}
+			batch(wm, 30*time.Minute)
 		case "current":
 			batch(now.Add(-30*time.Minute), 3*time.Hour)
 			batch(now.Add(-20*time.Minute), 30*time.Minute)

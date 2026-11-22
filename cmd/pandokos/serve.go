@@ -26,6 +26,7 @@ import (
 	"github.com/pandokos/pandokos/internal/ledger"
 	"github.com/pandokos/pandokos/internal/limits"
 	"github.com/pandokos/pandokos/internal/pricing/genaiprices"
+	"github.com/pandokos/pandokos/internal/reports"
 	"github.com/pandokos/pandokos/internal/resolver"
 	"github.com/pandokos/pandokos/internal/server"
 	"github.com/pandokos/pandokos/internal/store"
@@ -442,11 +443,13 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	background, stopBackground := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	defer func() { stopBackground(); wg.Wait() }()
-	wg.Add(6)
+	rollup := &reports.Rollup{DB: workerDB, Interval: time.Duration(cfg.Reports.RollupInterval), Logger: logger}
+	wg.Add(7)
 	go func() { defer wg.Done(); people.runPurge(background, logger) }()
 	go func() { defer wg.Done(); listener.Run(background) }()
 	go func() { defer wg.Done(); warnBootstrap(background, logger, adminDB) }()
 	go func() { defer wg.Done(); partitioner.Run(background) }()
+	go func() { defer wg.Done(); rollup.Run(background) }()
 	go func() { defer wg.Done(); memory.Run(background) }()
 	go func() { defer wg.Done(); reconciler.Run(background) }()
 	// The writer is not stopped by the signal: it runs until Close has returned.
