@@ -16,6 +16,7 @@ import (
 	"github.com/pandokos/pandokos/internal/admin"
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/auditchain"
+	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/queries"
@@ -76,9 +77,16 @@ func auditWorld(t *testing.T) (w *pw, supportAction string) {
 			t.Fatalf("an intervention: %d %s", r.Status, r.Body)
 		}
 	}
-	// A failure of authentication on the administration listener, and two on the inference listener.
-	if r := w.api.Do(t, "GET", base+"/audit-events", "pdk_t"+strings.Repeat("a", 16)+"_"+strings.Repeat("b", 56), nil, nil); r.Status != 401 {
-		t.Fatalf("a bad key on the administration listener: %d", r.Status)
+	// A failure of authentication on the administration listener (a wrong secret for a key of the
+	// tenant: a key nobody knows is written to the platform's log), and two on the inference listener.
+	badKey, badID, _, _ := authn.Generate(authn.KindTenant)
+	_, _, otherHash, _ := authn.Generate(authn.KindTenant)
+	if _, err := w.api.Super(t).Exec(ctx(t), `INSERT INTO pandokos.virtual_key (tenant_id, service_account_id, key_id, secret_hash) VALUES ($1::uuid, $2::uuid, $3, $4)`,
+		w.a.ID, w.saA.ID, badID, otherHash[:]); err != nil {
+		t.Fatal(err)
+	}
+	if r := w.api.Do(t, "GET", base+"/audit-events", badKey.Reveal(), nil, nil); r.Status != 401 {
+		t.Fatalf("a wrong secret on the administration listener: %d", r.Status)
 	}
 	gw := w.api.DB.Open(t, store.RoleGateway)
 	for _, reason := range []string{"revoked", "unknown_key"} {
@@ -200,11 +208,12 @@ func TestListAuditEvents(t *testing.T) {
 	t.Run("the rows written under a support action", func(t *testing.T) {
 		got := auditPages(t, w, w.ka, path, "support_action_id="+support)
 		want := filter(func(e adminapi.AuditEvent) bool { return e.SupportActionID == support })
-		if !reflect.DeepEqual(seqsOf(got), want) || len(want) != 2 {
-			t.Errorf("support_action_id: seq %v, want the two interventions %v", seqsOf(got), want)
+		if !reflect.DeepEqual(seqsOf(got), want) || len(want) != 3 {
+			t.Errorf("support_action_id: seq %v, want the opening and the two interventions %v", seqsOf(got), want)
 		}
 		for _, e := range got {
-			if e.Action != "service_account.create" || e.ActorType != "platform" {
+			// The opening of the action is written under it too (support.go).
+			if (e.Action != "service_account.create" && e.Action != "support_action.open") || e.ActorType != "platform" {
 				t.Errorf("an intervention row: %+v", e)
 			}
 		}
