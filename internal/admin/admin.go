@@ -633,13 +633,14 @@ func checkGroupRules(o Options) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	var rows []queries.TenantIDsByNameRow
-	var tenants int
+	var tenants int32
 	err := o.DB.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
 		var err error
 		if rows, err = queries.New(tx).TenantIDsByName(ctx, names); err != nil {
 			return err
 		}
-		return tx.QueryRow(ctx, "SELECT count(*)::integer FROM pandokos.tenant").Scan(&tenants)
+		tenants, err = queries.New(tx).CountTenants(ctx)
+		return err
 	})
 	if err != nil {
 		return fmt.Errorf("admin: group rules: tenants cannot be read: %w", err)

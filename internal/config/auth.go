@@ -12,7 +12,6 @@ import (
 	"unicode"
 
 	"github.com/pandokos/pandokos/internal/authz"
-	"github.com/pandokos/pandokos/internal/oidc"
 	"github.com/pandokos/pandokos/internal/secret"
 )
 
@@ -260,21 +259,56 @@ func validateOIDC(c *Config) []Problem {
 		add("auth.oidc.auto_provision", "needs auth.oidc.group_mappings")
 	}
 	if len(o.GroupMappings) > 0 {
-		rules, err := oidc.ParseRules(o.GroupMappings)
+		rules, err := parseGroupMappings(o.GroupMappings)
 		if err != nil {
 			add("auth.oidc.group_mappings", err.Error())
 		}
 		for i, r := range rules {
 			scope := authz.ScopeTenant
-			if r.Platform {
+			if r.platform {
 				scope = authz.ScopePlatform
 			}
-			if role, ok := authz.RoleByName(r.Role); !ok || role.Scope != scope || (r.Role != authz.RolePlatformAdmin && r.Role != authz.RoleTenantAdmin) {
+			if role, ok := authz.RoleByName(r.role); !ok || role.Scope != scope || (r.role != authz.RolePlatformAdmin && r.role != authz.RoleTenantAdmin) {
 				add("auth.oidc.group_mappings", fmt.Sprintf("rule %d names a role that a user cannot hold in that scope", i+1))
 			}
 		}
 	}
 	return ps
+}
+
+// mappingRule is the part of a group rule that the configuration checks: its scope and role. The
+// package of the identity provider parses the same syntax for the sign-in (internal/oidc), but only
+// internal/admin and cmd/pandokos may import it, so the check is made here on its own.
+type mappingRule struct {
+	platform bool
+	role     string
+}
+
+// parseGroupMappings checks the syntax of auth.oidc.group_mappings: "<target>=<group>", the target
+// being platform:<role> or tenant:<tenant name>:<role>.
+func parseGroupMappings(mappings []string) ([]mappingRule, error) {
+	rules := make([]mappingRule, 0, len(mappings))
+	for i, m := range mappings {
+		target, group, ok := strings.Cut(m, "=")
+		if !ok || target == "" || group == "" {
+			return nil, fmt.Errorf("group mapping %d: want <target>=<group>", i+1)
+		}
+		parts := strings.Split(target, ":")
+		for _, p := range parts {
+			if p == "" {
+				return nil, fmt.Errorf("group mapping %d: an empty part in the target", i+1)
+			}
+		}
+		switch {
+		case parts[0] == "platform" && len(parts) == 2:
+			rules = append(rules, mappingRule{platform: true, role: parts[1]})
+		case parts[0] == "tenant" && len(parts) == 3:
+			rules = append(rules, mappingRule{role: parts[2]})
+		default:
+			return nil, fmt.Errorf("group mapping %d: the target is platform:<role> or tenant:<tenant>:<role>", i+1)
+		}
+	}
+	return rules, nil
 }
 
 // checkPostSignInPath returns what is wrong with a path of the same origin: one leading /, no //,
