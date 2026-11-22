@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/tenant"
 )
@@ -210,17 +213,25 @@ type UsageRow struct {
 	EstimatedOutputTokens int64
 	Cost                  string // a decimal in Currency; empty: the cost is not known
 	Currency              string
+	PriceSource           string // "catalogue" or "tenant" for a record with a cost; empty reads as the catalogue's
 	Outcome               string // "ok" when empty
+	// RecordedAt, when set, is the time the row was recorded (the column that the usage rollup
+	// reads, which the database sets at insert): the row is then written as the owner, because the
+	// gateway role has no grant on the column. For tests of the rollup.
+	RecordedAt time.Time
 }
 
 // SeedUsage inserts usage records of a tenant on the gateway role, in a session of that tenant,
 // the way the ledger writer does. The partitions of the months of the rows must exist.
 func (d *Database) SeedUsage(tb testing.TB, id tenant.ID, rows ...UsageRow) {
 	tb.Helper()
-	gw := d.Open(tb, store.RoleGateway)
 	ctx, cancel := ctx30()
 	defer cancel()
-	err := gw.WithTenant(ctx, id, func(c context.Context, tx store.Tx) error {
+	owner := false
+	for _, r := range rows {
+		owner = owner || !r.RecordedAt.IsZero()
+	}
+	insert := func(c context.Context, tx execer) error {
 		for i, r := range rows {
 			if r.StartedAt.IsZero() {
 				return fmt.Errorf("row %d has no start time", i)
@@ -254,25 +265,55 @@ func (d *Database) SeedUsage(tb testing.TB, id tenant.ID, rows ...UsageRow) {
 			case r.EstimatedOutputTokens != 0:
 				eout, outSource = r.EstimatedOutputTokens, "estimated"
 			}
-			_, err := tx.Exec(c, `INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind,
+			recorded := any(nil)
+			recordedColumn, recordedValue := "", "" // the gateway role has no grant on recorded_at: it is the database's now()
+			if !r.RecordedAt.IsZero() {
+				recorded = r.RecordedAt.UTC()
+				recordedColumn, recordedValue = "recorded_at,", "$17::timestamptz,"
+			}
+			_, err := tx.Exec(c, fmt.Sprintf(`INSERT INTO pandokos.usage_record (tenant_id, id, started_at, %s request_id, principal_kind,
 					principal_id, key_id, credential_id, provider, api_family, operation, model, model_id, outcome, duration_ms,
 					input_source, output_source, input_tokens, output_tokens, estimated_input_tokens, estimated_output_tokens,
-					cost_status, cost, currency, price_version_id)
-				VALUES ($1::uuid, pandokos.uuid_v7(), $2, md5(random()::text), 'service_account',
+					cost_status, cost, currency, price_version_id, price_source)
+				VALUES ($1::uuid, pandokos.uuid_v7(), $2, %s md5(random()::text), 'service_account',
 					COALESCE($3::text, gen_random_uuid()::text), $4, CASE WHEN $5 THEN NULL ELSE gen_random_uuid() END,
 					$6, $6, 'chat.completions', $7, (SELECT m.id FROM pandokos.model m JOIN pandokos.provider p ON p.id = m.provider_id WHERE p.name = $6 AND m.name = $7),
 					$8, 1, $9, $10, $11::bigint, $12::bigint, $13::bigint, $14::bigint,
-					CASE WHEN $15::numeric IS NULL THEN 'none' ELSE 'known' END, $15::numeric, $16::text,
-					CASE WHEN $15::numeric IS NULL THEN NULL ELSE gen_random_uuid() END)`,
+					CASE WHEN $15::numeric IS NULL OR ($17::timestamptz IS NULL AND false) THEN 'none' ELSE 'known' END, $15::numeric, $16::text,
+					CASE WHEN $15::numeric IS NULL THEN NULL ELSE gen_random_uuid() END, CASE WHEN $15::numeric IS NULL THEN NULL ELSE $18::text END)`, recordedColumn, recordedValue),
 				id.String(), r.StartedAt.UTC(), principal, r.KeyID, r.NoCredential, provider, r.Model, outcome,
-				inSource, outSource, in, out, ein, eout, cost, currency)
+				inSource, outSource, in, out, ein, eout, cost, currency, recorded, nullable(r.PriceSource))
 			if err != nil {
 				return fmt.Errorf("row %d: %w", i, err)
 			}
 		}
 		return nil
-	})
+	}
+	var err error
+	if owner {
+		var tx pgx.Tx
+		if tx, err = d.Super(tb).Begin(ctx); err == nil {
+			defer func() { _ = tx.Rollback(ctx) }()
+			if err = insert(ctx, tx); err == nil {
+				err = tx.Commit(ctx)
+			}
+		}
+	} else {
+		err = d.Open(tb, store.RoleGateway).WithTenant(ctx, id, func(c context.Context, tx store.Tx) error { return insert(c, tx) })
+	}
 	if err != nil {
 		tb.Fatalf("seed usage: %v", err)
 	}
+}
+
+// execer is what a transaction of the store and one of pgx have in common.
+type execer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+func nullable(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }

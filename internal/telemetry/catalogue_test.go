@@ -118,7 +118,7 @@ func TestInstrumentCatalogue(t *testing.T) {
 		snap := r.observe(chatRequest("model-a"))
 		for _, w := range wantCatalogue {
 			id := w.ID
-			sourced := id >= "M12" && len(id) == 3 && id <= "M38" // M12 to M38 (two digits)
+			sourced := id >= "M12" && len(id) == 3 && id <= "M38" || id >= "M42" && id <= "M46" // M12 to M38 and M42 to M46 (two digits)
 			if sourced {
 				if _, ok := snap.Series[w.Name]; ok {
 					t.Errorf("%s (%s) is exported although its source is nil", id, w.Name)

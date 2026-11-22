@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -634,6 +635,62 @@ func (f *fake) ListTenantModels(_ context.Context, in adminapi.ListTenantModelsI
 func (f *fake) GetCapability(_ context.Context, in adminapi.GetCapabilityInput) (*adminapi.Capability, error) {
 	f.rec("getCapability", in)
 	return &adminapi.Capability{}, nil
+}
+
+// The twelve operations of sprint 6.2. The exports answer with a small stream.
+func (f *fake) stream(id, contentType string) (*adminapi.Stream, error) {
+	return &adminapi.Stream{ContentType: contentType, Filename: id + ".ndjson", Write: func(_ context.Context, w io.Writer) error {
+		_, err := io.WriteString(w, `{"line":"`+id+`"}`+"\n")
+		return err
+	}}, nil
+}
+func (f *fake) GetUsageReport(_ context.Context, in adminapi.GetUsageReportInput) (*adminapi.UsageReport, error) {
+	f.rec("getUsageReport", in)
+	return &adminapi.UsageReport{}, nil
+}
+func (f *fake) ExportUsageRecords(_ context.Context, in adminapi.ExportUsageRecordsInput) (*adminapi.Stream, error) {
+	f.rec("exportUsageRecords", in)
+	return f.stream("exportUsageRecords", "application/x-ndjson")
+}
+func (f *fake) GetLimitUsage(_ context.Context, in adminapi.GetLimitUsageInput) (*adminapi.LimitUsage, error) {
+	f.rec("getLimitUsage", in)
+	return &adminapi.LimitUsage{}, nil
+}
+func (f *fake) ListAuditEvents(_ context.Context, in adminapi.ListAuditEventsInput) (*adminapi.AuditEventList, error) {
+	f.rec("listAuditEvents", in)
+	return &adminapi.AuditEventList{}, nil
+}
+func (f *fake) GetAuditHead(_ context.Context, in adminapi.GetAuditHeadInput) (*adminapi.AuditHead, error) {
+	f.rec("getAuditHead", in)
+	return &adminapi.AuditHead{}, nil
+}
+func (f *fake) ExportAuditEvents(_ context.Context, in adminapi.ExportAuditEventsInput) (*adminapi.Stream, error) {
+	f.rec("exportAuditEvents", in)
+	return f.stream("exportAuditEvents", "application/x-ndjson")
+}
+func (f *fake) ListPlatformAuditEvents(_ context.Context, in adminapi.ListPlatformAuditEventsInput) (*adminapi.AuditEventList, error) {
+	f.rec("listPlatformAuditEvents", in)
+	return &adminapi.AuditEventList{}, nil
+}
+func (f *fake) GetPlatformAuditHead(_ context.Context, in adminapi.GetPlatformAuditHeadInput) (*adminapi.AuditHead, error) {
+	f.rec("getPlatformAuditHead", in)
+	return &adminapi.AuditHead{}, nil
+}
+func (f *fake) ExportPlatformAuditEvents(_ context.Context, in adminapi.ExportPlatformAuditEventsInput) (*adminapi.Stream, error) {
+	f.rec("exportPlatformAuditEvents", in)
+	return f.stream("exportPlatformAuditEvents", "application/x-ndjson")
+}
+func (f *fake) GetMetadataKeys(_ context.Context, in adminapi.GetMetadataKeysInput) (*adminapi.MetadataKeys, error) {
+	f.rec("getMetadataKeys", in)
+	return &adminapi.MetadataKeys{Keys: []string{}}, nil
+}
+func (f *fake) SetMetadataKeys(_ context.Context, in adminapi.SetMetadataKeysInput) (*adminapi.MetadataKeys, error) {
+	f.rec("setMetadataKeys", in)
+	return &adminapi.MetadataKeys{Keys: in.Body.Keys}, nil
+}
+func (f *fake) ClearMetadataKeys(_ context.Context, in adminapi.ClearMetadataKeysInput) (*adminapi.MetadataKeys, error) {
+	f.rec("clearMetadataKeys", in)
+	return &adminapi.MetadataKeys{Keys: []string{}}, nil
 }
 func (f *fake) ListUsageRecords(_ context.Context, in adminapi.ListUsageRecordsInput) (*adminapi.UsageRecordList, error) {
 	f.rec("listUsageRecords", in)
@@ -1328,8 +1385,74 @@ func TestRouterAndClient(t *testing.T) {
 			in := adminapi.EndSupportActionInput{Tenant: tid, Action: sid, Body: adminapi.Reason{Reason: "why"}}
 			add("endSupportAction", in, func() error { _, err := c.EndSupportAction(ctx, in); return err })
 		}
-		if len(adminapi.Operations) != 148 {
-			t.Fatalf("%d operations, want 148 (the 35 of epic 1 and sprint 2.1, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1, the 12 of sprint 5.2, the 2 of sprint 5.3, the 7 of sprint 5.4, the 27 of sprint 4.2 and the 16 of sprint 4.3)", len(adminapi.Operations))
+		{
+			in := adminapi.GetUsageReportInput{Tenant: tid, From: "2026-10-01", To: "2026-11-01", Period: adminapi.ReportPeriodDay, GroupBy: "model,key", Provider: "openai", Model: "gpt-4o"}
+			add("getUsageReport", in, func() error { _, err := c.GetUsageReport(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetLimitUsageInput{Tenant: tid, Rule: sid}
+			add("getLimitUsage", in, func() error { _, err := c.GetLimitUsage(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListAuditEventsInput{Tenant: tid, Limit: 2, From: "2026-11-01T00:00:00Z", Action: "member.", ActorType: adminapi.AuditActorTypeUser, Outcome: adminapi.AuditOutcomeSuccess, SupportActionID: sid}
+			add("listAuditEvents", in, func() error { _, err := c.ListAuditEvents(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetAuditHeadInput{Tenant: tid}
+			add("getAuditHead", in, func() error { _, err := c.GetAuditHead(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListPlatformAuditEventsInput{Limit: 2, ResourceType: "tenant", Outcome: adminapi.AuditOutcomeFailure}
+			add("listPlatformAuditEvents", in, func() error { _, err := c.ListPlatformAuditEvents(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetPlatformAuditHeadInput{}
+			add("getPlatformAuditHead", in, func() error { _, err := c.GetPlatformAuditHead(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetMetadataKeysInput{Tenant: tid}
+			add("getMetadataKeys", in, func() error { _, err := c.GetMetadataKeys(ctx, in); return err })
+		}
+		{
+			in := adminapi.SetMetadataKeysInput{Tenant: tid, Body: adminapi.MetadataKeysSet{Keys: []string{"team", "project"}}}
+			add("setMetadataKeys", in, func() error { _, err := c.SetMetadataKeys(ctx, in); return err })
+		}
+		{
+			in := adminapi.ClearMetadataKeysInput{Tenant: tid}
+			add("clearMetadataKeys", in, func() error { _, err := c.ClearMetadataKeys(ctx, in); return err })
+		}
+		// The three streamed answers: the body is read to its end and holds the line the fake wrote.
+		readAll := func(id string, open func() (*adminapi.StreamBody, error)) func() error {
+			return func() error {
+				b, err := open()
+				if err != nil {
+					return err
+				}
+				defer b.Body.Close()
+				got, err := io.ReadAll(b.Body)
+				if err != nil {
+					return err
+				}
+				if b.ContentType != "application/x-ndjson" || string(got) != `{"line":"`+id+`"}`+"\n" {
+					return fmt.Errorf("the stream of %s: %q %q", id, b.ContentType, got)
+				}
+				return nil
+			}
+		}
+		{
+			in := adminapi.ExportUsageRecordsInput{Tenant: tid, From: "2026-11-01T00:00:00Z", To: "2026-11-08T00:00:00Z", Provider: "openai", Format: adminapi.ExportFormatNdjson}
+			add("exportUsageRecords", in, readAll("exportUsageRecords", func() (*adminapi.StreamBody, error) { return c.ExportUsageRecords(ctx, in) }))
+		}
+		{
+			in := adminapi.ExportAuditEventsInput{Tenant: tid, FromSeq: 3, ToSeq: 9}
+			add("exportAuditEvents", in, readAll("exportAuditEvents", func() (*adminapi.StreamBody, error) { return c.ExportAuditEvents(ctx, in) }))
+		}
+		{
+			in := adminapi.ExportPlatformAuditEventsInput{FromSeq: 1}
+			add("exportPlatformAuditEvents", in, readAll("exportPlatformAuditEvents", func() (*adminapi.StreamBody, error) { return c.ExportPlatformAuditEvents(ctx, in) }))
+		}
+		if len(adminapi.Operations) != 160 {
+			t.Fatalf("%d operations, want 160 (the 35 of epic 1 and sprint 2.1, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1, the 12 of sprint 5.2, the 2 of sprint 5.3, the 7 of sprint 5.4, the 27 of sprint 4.2, the 16 of sprint 4.3 and the 12 of sprint 6.2)", len(adminapi.Operations))
 		}
 		for _, op := range adminapi.Operations {
 			tc, ok := calls[op.ID]

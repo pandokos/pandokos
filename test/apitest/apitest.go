@@ -82,6 +82,14 @@ func New(tb testing.TB, mutate ...func(*admin.Options)) *API {
 // view of a Database.
 func NewOn(tb testing.TB, d *dbtest.Database, mutate ...func(*admin.Options)) *API {
 	tb.Helper()
+	return NewWithServer(tb, d, nil, mutate...)
+}
+
+// NewWithServer is NewOn with a function that configures the HTTP server in front of the handler
+// before it starts, as the administration listener's timeouts are (the tests of streamed exports
+// give it a short WriteTimeout). A nil function changes nothing.
+func NewWithServer(tb testing.TB, d *dbtest.Database, configure func(*http.Server), mutate ...func(*admin.Options)) *API {
+	tb.Helper()
 	a := &API{DB: d, Logs: &testutil.LogBuffer{}, root: tb}
 	a.Admin = d.Open(tb, store.RoleAdmin)
 	logger := telemetry.NewLogger(a.Logs, "debug")
@@ -113,7 +121,11 @@ func NewOn(tb testing.TB, d *dbtest.Database, mutate ...func(*admin.Options)) *A
 		tb.Fatal(err)
 	}
 	a.handler = h
-	a.srv = httptest.NewServer(a.recording(h))
+	a.srv = httptest.NewUnstartedServer(a.recording(h))
+	if configure != nil {
+		configure(a.srv.Config)
+	}
+	a.srv.Start()
 	tb.Cleanup(a.srv.Close)
 	a.URL = a.srv.URL
 
@@ -353,7 +365,9 @@ func (a *API) Snapshot(tb testing.TB, exclude ...string) string {
 	for _, name := range a.Tables(tb) {
 		skip := false
 		for _, e := range exclude {
-			skip = skip || e == name
+			// The head of a chain (sprint 6.2) moves with the rows of its log: whoever excludes
+			// the log excludes its head.
+			skip = skip || e == name || e == "audit_event" && name == "audit_chain" || e == "platform_audit_event" && name == "platform_audit_chain"
 		}
 		if skip {
 			continue

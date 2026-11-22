@@ -57,7 +57,7 @@ func TestUpgrade0013(t *testing.T) {
 		before[tbl] = snapshot(tbl)
 	}
 
-	d.Migrate(t)
+	d.MigrateTo(t, 13)
 
 	for _, tbl := range tables {
 		if got := snapshot(tbl); got != before[tbl] {

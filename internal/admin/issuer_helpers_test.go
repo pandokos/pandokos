@@ -158,6 +158,13 @@ var limitMutations = map[string]bool{
 	"createPlatformLimit": true, "updatePlatformLimit": true, "deletePlatformLimit": true,
 }
 
+// reportsMutations are the mutating operations of sprint 6.2 (the metadata keys a tenant accepts)
+// that TestMetadataKeys (T-965) covers, with their audit rows and their atomicity; the enumerating
+// tests of earlier sprints (T-281, T-282) leave them to it.
+var reportsMutations = map[string]bool{
+	"setMetadataKeys": true, "clearMetadataKeys": true,
+}
+
 // peopleMutations are the mutating operations of sprint 4.2 (sign-in, own sessions, users and
 // members) that the audit tests of that sprint cover (T-796, T-826), with their atomicity; the
 // enumerating tests of earlier sprints (T-281, T-282) leave them to those, as they leave the token

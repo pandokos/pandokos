@@ -58,6 +58,11 @@ var wantCatalogue = []want{
 	{"M39", "pandokos.telemetry.spans", "OC", "{span}", []string{"pandokos.telemetry.state"}, "pandokos_telemetry_spans_total"},
 	{"M40", "pandokos.telemetry.export_failures", "OC", "{export}", []string{"pandokos.telemetry.signal", "error.type"}, "pandokos_telemetry_export_failures_total"},
 	{"M41", "pandokos.log.redactions", "OC", "{value}", nil, "pandokos_log_redactions_total"},
+	{"M42", "pandokos.reports.rollups", "OC", "{run}", []string{"pandokos.result"}, "pandokos_reports_rollups_total"},
+	{"M43", "pandokos.reports.rollup.lag", "G", "s", nil, "pandokos_reports_rollup_lag_seconds"},
+	{"M44", "pandokos.retention.removed", "OC", "{item}", []string{"pandokos.retention.kind"}, "pandokos_retention_removed_total"},
+	{"M45", "pandokos.retention.runs", "OC", "{run}", []string{"pandokos.result"}, "pandokos_retention_runs_total"},
+	{"M46", "pandokos.exports", "OC", "{export}", []string{"pandokos.export.kind", "pandokos.result"}, "pandokos_exports_total"},
 }
 
 // wantByName indexes wantCatalogue.
@@ -165,6 +170,20 @@ func fullSources() telemetry.Sources {
 		},
 		Resolver: func() telemetry.ResolverStats {
 			return telemetry.ResolverStats{AdmittedUnpriced: 9, Unlimited: map[string]int64{"written": 40, "skipped": 3, "failed": 1}}
+		},
+		Reports: func() telemetry.ReportsStats {
+			return telemetry.ReportsStats{
+				Rollups:          map[string]int64{"ok": 61, "failed": 2},
+				RollupLag:        125 * time.Second,
+				RetentionRemoved: map[string]int64{"usage_partition": 3, "usage_record": 41, "usage_rollup": 17, "audit_event": 23, "platform_audit_event": 5},
+				RetentionRuns:    map[string]int64{"ok": 7, "failed": 1},
+				Exports: map[telemetry.ExportKey]int64{
+					{Kind: "usage", Result: "complete"}:          11,
+					{Kind: "usage", Result: "aborted"}:           1,
+					{Kind: "audit", Result: "complete"}:          4,
+					{Kind: "platform_audit", Result: "complete"}: 2,
+				},
+			}
 		},
 	}
 }

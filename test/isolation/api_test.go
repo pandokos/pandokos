@@ -262,6 +262,10 @@ var platformAndSelf = map[string]string{
 	"getPlatformKey":    "platform",
 	"revokePlatformKey": "platform",
 
+	"listPlatformAuditEvents":   "platform",
+	"getPlatformAuditHead":      "platform",
+	"exportPlatformAuditEvents": "platform",
+
 	"listTenantCredentials":   "platform",
 	"getTenantCredential":     "platform",
 	"disableTenantCredential": "platform",
@@ -600,8 +604,8 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 		}
 		n++
 	}
-	if n != 72 {
-		t.Errorf("%d tenant operations, want 72 (24, the two of sprint 3.3, the ten of sprint 4.1, the seven of sprint 5.2, the two of sprint 5.3, the seven of sprint 5.4, the ten of sprint 4.2 and the ten of sprint 4.3)", n)
+	if n != 81 {
+		t.Errorf("%d tenant operations, want 81 (24, the two of sprint 3.3, the ten of sprint 4.1, the seven of sprint 5.2, the two of sprint 5.3, the seven of sprint 5.4, the ten of sprint 4.2, the ten of sprint 4.3 and the nine of sprint 6.2)", n)
 	}
 	if _, err := c.GetTenant(ctx(t), adminapi.GetTenantInput{Tenant: w.b.tenant.ID}); err == nil {
 		t.Error("a tenant key read a tenant")

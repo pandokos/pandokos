@@ -1,0 +1,68 @@
+pandokos: v1
+kind: tenant
+settings:
+  time_zone: Europe/Rome
+  active_currency: EUR
+  metadata_keys:
+    - project
+    - team
+model_restriction:
+  models:
+    - openai/gpt-4o
+roles:
+  - name: billing-readers
+    description: Reads usage and limits for billing
+    permissions:
+      - limit:read
+      - usage:read
+service_accounts:
+  - name: billing
+    description: Billing exports
+    roles:
+      - usage-viewer
+  - name: reports
+    roles:
+      - auditor
+      - usage-viewer
+limits:
+  - subject: 'key: tkeyaaaaaaaaaaaaa'
+    provider: openai
+    model: gpt-4o
+    metric: requests_per_minute
+    limit: 30
+    enforce: true
+  - subject: 'service_account: billing'
+    metric: tokens_per_day
+    limit: 50000
+    enforce: false
+  - subject: tenant
+    metric: requests_per_day
+    limit: 1000
+    enforce: true
+    thresholds:
+      - 80
+      - 100
+price_lists:
+  - currency: EUR
+    versions:
+      - provider: openai
+        model: gpt-4o
+        valid_from: "2026-01-01T00:00:00Z"
+        note: list price 2026
+        rates:
+          - category: input
+            threshold: 0
+            rate: "2.50"
+          - category: output
+            threshold: 0
+            rate: "10.00"
+      - provider: openai
+        model: gpt-4o
+        valid_from: "2026-06-01T00:00:00Z"
+        rates:
+          - category: input
+            threshold: 0
+            rate: "2.80"
+          - category: output
+            threshold: 0
+            rate: "11.00"

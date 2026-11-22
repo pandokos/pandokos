@@ -92,6 +92,61 @@ func TestSourceValues(t *testing.T) {
 	expectValue(t, snap, "pandokos.limits.unlimited_traffic", 1, "pandokos.result", "failed")
 }
 
+// TestReportsInstruments is T-973: M42 to M46 exist with their kinds, units and closed attribute
+// values, and report the snapshot of the rollup, of retention and of the exports (T-900 covers their
+// attributes: see TestAttributesAreClosed).
+func TestReportsInstruments(t *testing.T) {
+	r := newRig(t, withFullSources)
+	snap := r.collect()
+
+	spec := map[string]telemetry.InstrumentSpec{}
+	for _, s := range telemetry.Catalogue() {
+		spec[s.Name] = s
+	}
+	for name, want := range map[string]struct{ kind, unit string }{
+		"pandokos.reports.rollups":    {"OC", "{run}"},
+		"pandokos.reports.rollup.lag": {"G", "s"},
+		"pandokos.retention.removed":  {"OC", "{item}"},
+		"pandokos.retention.runs":     {"OC", "{run}"},
+		"pandokos.exports":            {"OC", "{export}"},
+	} {
+		got, ok := spec[name]
+		if !ok || got.Kind != want.kind || got.Unit != want.unit || got.Description == "" {
+			t.Errorf("%s: %+v (in the catalogue: %v), want kind %s unit %s", name, got, ok, want.kind, want.unit)
+		}
+	}
+	expectValue(t, snap, "pandokos.reports.rollups", 61, "pandokos.result", "ok")
+	expectValue(t, snap, "pandokos.reports.rollups", 2, "pandokos.result", "failed")
+	expectValue(t, snap, "pandokos.reports.rollup.lag", 125)
+	for kind, n := range map[string]float64{"usage_partition": 3, "usage_record": 41, "usage_rollup": 17, "audit_event": 23, "platform_audit_event": 5} {
+		expectValue(t, snap, "pandokos.retention.removed", n, "pandokos.retention.kind", kind)
+	}
+	expectValue(t, snap, "pandokos.retention.runs", 7, "pandokos.result", "ok")
+	expectValue(t, snap, "pandokos.retention.runs", 1, "pandokos.result", "failed")
+	expectValue(t, snap, "pandokos.exports", 11, "pandokos.export.kind", "usage", "pandokos.result", "complete")
+	expectValue(t, snap, "pandokos.exports", 1, "pandokos.export.kind", "usage", "pandokos.result", "aborted")
+	expectValue(t, snap, "pandokos.exports", 4, "pandokos.export.kind", "audit", "pandokos.result", "complete")
+	expectValue(t, snap, "pandokos.exports", 2, "pandokos.export.kind", "platform_audit", "pandokos.result", "complete")
+
+	// No attribute names a tenant, a partition, a key or a request, and only the keys of the table.
+	allowed := map[string]bool{"pandokos.result": true, "pandokos.retention.kind": true, "pandokos.export.kind": true}
+	for _, name := range []string{"pandokos.reports.rollups", "pandokos.reports.rollup.lag", "pandokos.retention.removed", "pandokos.retention.runs", "pandokos.exports"} {
+		for _, p := range snap.points(t, name) {
+			for k := range p.Attrs {
+				if !allowed[k] {
+					t.Errorf("%s has the attribute %s", name, k)
+				}
+			}
+		}
+	}
+	// A rollup before its first pass reports a lag of zero, and an empty snapshot reports no series
+	// with attributes (nothing is invented).
+	empty := newRig(t, func(o *telemetry.MetricsOptions) {
+		o.Sources = telemetry.Sources{Reports: func() telemetry.ReportsStats { return telemetry.ReportsStats{} }}
+	}).collect()
+	expectValue(t, empty, "pandokos.reports.rollup.lag", 0)
+}
+
 // TestSourcesAreReadAtCollection: a source function is called at each collection and its values are
 // the ones of that moment (the observable instruments hold no copy).
 func TestSourcesAreReadAtCollection(t *testing.T) {
