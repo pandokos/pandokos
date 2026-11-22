@@ -217,7 +217,7 @@ pandokos tenant-support open --tenant acme \
 |---|---|
 | `reason` | required, 1 to 500 characters, not only white space |
 | `permissions` | 1 to 11 names from the list below |
-| `duration_seconds` | 60 to `support.max_duration`; default `support.max_duration` (1 h) |
+| `duration_seconds` | 60 to `support.max_duration`; absent or `0` is the default, `support.max_duration` (1 h); 1 to 59 is refused |
 
 One transaction writes the action, the event `support_action.open` in the tenant's audit log and the
 same event in the platform's. An open action of the same actor in the same tenant is closed first: there

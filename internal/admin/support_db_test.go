@@ -107,12 +107,9 @@ func TestSupportOpen(t *testing.T) {
 		}
 	})
 	t.Run("the duration", func(t *testing.T) {
-		// Zero is the absent member of the generated input (an int with omitempty): the default, not an error.
-		for what, secs := range map[string]int{"59 seconds": 59, "negative": -5, "above the bound of the schema": 86401, "above support.max_duration": 3601} {
+		// 0, like an absent member, is the default; 1 to 59 are below the bound.
+		for what, secs := range map[string]int{"1 second": 1, "59 seconds": 59, "negative": -5, "above the bound of the schema": 86401, "above support.max_duration": 3601} {
 			body := map[string]any{"reason": reasonOf(), "permissions": valid, "duration_seconds": secs}
-			if secs == 0 {
-				body["duration_seconds"] = 0
-			}
 			r := w.key.Do(t, "POST", w.sp(""), body, nil)
 			if r.Status != 400 || !hasField(problemOf(t, r), "duration_seconds") {
 				t.Errorf("%s: %d %s, want 400 on duration_seconds", what, r.Status, r.Body)
@@ -125,6 +122,10 @@ func TestSupportOpen(t *testing.T) {
 		a = w.open(t, w.key, reasonOf(), valid, nil)
 		if d := a.ExpiresAt.Sub(a.OpenedAt); d < time.Hour-2*time.Second || d > time.Hour+2*time.Second {
 			t.Errorf("the default duration is %v, want support.max_duration (1h)", d)
+		}
+		a = w.open(t, w.key, reasonOf(), valid, map[string]any{"duration_seconds": 0})
+		if d := a.ExpiresAt.Sub(a.OpenedAt); d < time.Hour-2*time.Second || d > time.Hour+2*time.Second {
+			t.Errorf("duration_seconds 0 gave %v, want the default, support.max_duration (1h)", d)
 		}
 		// The bound is the configuration's: with two hours, two hours is the default and the bound.
 		long := newSW(t, func(o *admin.Options) { o.Support.MaxDuration = 2 * time.Hour })

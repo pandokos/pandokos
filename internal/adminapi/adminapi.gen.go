@@ -4079,7 +4079,7 @@ type SupportActionOpen struct {
 	// Recorded in the audit log of the tenant and on the action.
 	Reason      string   `json:"reason"`
 	Permissions []string `json:"permissions"`
-	// Default and upper bound are support.max_duration.
+	// Absent or 0 is the default, support.max_duration; otherwise 60 to support.max_duration (1 to 59 is refused).
 	DurationSeconds int `json:"duration_seconds,omitempty"`
 }
 
@@ -4113,8 +4113,8 @@ func (v *SupportActionOpen) Validate() []FieldError {
 			errs = append(errs, FieldError{Field: "permissions", Message: "length must be at most 64"})
 		}
 	}
-	if v.DurationSeconds != 0 && v.DurationSeconds < 60 {
-		errs = append(errs, FieldError{Field: "duration_seconds", Message: "must be at least 60"})
+	if v.DurationSeconds != 0 && v.DurationSeconds < 0 {
+		errs = append(errs, FieldError{Field: "duration_seconds", Message: "must be at least 0"})
 	}
 	if v.DurationSeconds > 86400 {
 		errs = append(errs, FieldError{Field: "duration_seconds", Message: "must be at most 86400"})
