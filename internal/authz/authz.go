@@ -265,6 +265,12 @@ func (p Principal) Effective() []string {
 			}
 		}
 	}
+	if p.Kind == KindUser {
+		// A user holds the two self permissions whatever its roles. A key or a token has no
+		// session, so session:self is never in the roles and never held by them.
+		set[IdentityRead] = true
+		set[SessionSelf] = true
+	}
 	if p.Scopes != nil {
 		allowed := map[string]bool{}
 		for _, s := range p.Scopes {
@@ -314,12 +320,15 @@ func Decide(p Principal, permission string, t Target) Decision {
 		return Deny
 	}
 	if perm.Scope == ScopePlatform {
-		if p.Kind != KindPlatform || !p.holds(permission) {
+		if (p.Kind != KindPlatform && !(p.Kind == KindUser && p.TenantID.IsZero())) || !p.holds(permission) {
 			return Deny
 		}
 		return Allow
 	}
-	if p.Kind == KindServiceAccount {
+	if perm.Scope == ScopeSelf && p.Kind != KindUser && permission == SessionSelf {
+		return Deny // keys and tokens have no session
+	}
+	if p.Kind == KindServiceAccount || (p.Kind == KindUser && !p.TenantID.IsZero()) {
 		if p.TenantID.IsZero() {
 			return Deny
 		}
@@ -360,9 +369,25 @@ var (
 	ErrUnavailable     = errors.New("authz: cannot verify the credential now")
 )
 
-// Assignable reports whether p may give a user the role in the scope. Part A: a stub that allows
-// nothing; the rule is written in sprint 4.2, step C2.
+// Assignable reports whether p may give a user the role in the scope: the role exists with that
+// scope, is one a user can hold (tenant-admin, platform-admin), and p holds every permission of
+// it. This is the rule against escalation: nobody hands out more than they hold.
 func Assignable(p Principal, role string, scope Scope) bool {
-	_, _, _ = p, role, scope
-	return false
+	if role != RolePlatformAdmin && role != RoleTenantAdmin {
+		return false
+	}
+	r, ok := RoleByName(role)
+	if !ok || r.Scope != scope {
+		return false
+	}
+	held := map[string]bool{}
+	for _, e := range p.Effective() {
+		held[e] = true
+	}
+	for _, perm := range r.Permissions {
+		if !held[perm] {
+			return false
+		}
+	}
+	return true
 }

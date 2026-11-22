@@ -23,6 +23,7 @@ type ActorType string
 const (
 	ActorPlatform       ActorType = "platform"
 	ActorServiceAccount ActorType = "service_account"
+	ActorUser           ActorType = "user"
 	ActorAnonymous      ActorType = "anonymous"
 	ActorHost           ActorType = "host"
 )
@@ -38,8 +39,11 @@ type Actor struct {
 // ActorOf returns the actor of a principal.
 func ActorOf(p authz.Principal) Actor {
 	t := ActorServiceAccount
-	if p.Kind == authz.KindPlatform {
+	switch p.Kind {
+	case authz.KindPlatform:
 		t = ActorPlatform
+	case authz.KindUser:
+		t = ActorUser
 	}
 	return Actor{Type: t, ID: p.ID, Name: p.Name, KeyID: p.KeyID}
 }
