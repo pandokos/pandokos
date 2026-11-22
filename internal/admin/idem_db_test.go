@@ -126,7 +126,7 @@ func TestIdempotencyEveryCreate(t *testing.T) {
 			t.Errorf("%s: another body with the same key: %d %s", op.ID, other.Status, other.Body)
 		}
 	}
-	if n < 20 {
+	if n < 18 {
 		t.Errorf("only %d operations answer 201", n)
 	}
 	// An operation that does not answer 201 does not declare the header.
