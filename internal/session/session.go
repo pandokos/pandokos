@@ -165,6 +165,28 @@ func (s *Store) Delete(ctx context.Context, tx store.Tx, id string) error {
 	return err
 }
 
+// DeletePresented ends the session that the presented token names when it belongs to userID; a token
+// that names no session, or the session of another user, changes nothing.
+func (s *Store) DeletePresented(ctx context.Context, tx store.Tx, presented, userID string) error {
+	hash, ok := ParseToken(presented)
+	if !ok {
+		return nil
+	}
+	q := queries.New(tx)
+	row, err := q.GetSessionPrincipal(ctx, hash[:])
+	if errors.Is(err, store.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if row.SUserID != userID {
+		return nil
+	}
+	_, err = q.DeleteSession(ctx, row.SID)
+	return err
+}
+
 // DeleteOfUser ends the sessions of a user, except exceptID when it is not empty.
 func (s *Store) DeleteOfUser(ctx context.Context, tx store.Tx, userID, exceptID string) (int64, error) {
 	arg := queries.DeleteSessionsOfUserParams{UserID: userID}

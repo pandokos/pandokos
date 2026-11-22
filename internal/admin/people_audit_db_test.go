@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pandokos/pandokos/internal/account"
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/test/apitest"
 	"github.com/pandokos/pandokos/test/dbtest"
@@ -324,8 +325,11 @@ func TestSignInAudit(t *testing.T) {
 	})
 
 	t.Run("beyond the cap failures are logged only, the lock is still audited", func(t *testing.T) {
-		q := newPeople(t, apitest.PeopleConfig{})
+		// The 80 refused sign-ins come from one address: with the default of fifty the source would be
+		// locked long before the cap of the audit log is reached, so the limit of the source is raised.
+		q := newPeople(t, apitest.PeopleConfig{Account: func(o *account.Options) { o.SourceMaxFailures = 500 }})
 		victim := q.d.PlatformUser(t, "capped.person", nil)
+		started := time.Now()
 		for i := 0; i < 80; i++ { // the cap is 60 a minute per instance
 			q.d.Age(t, "signin_throttle", "", time.Minute, "last_failure_at")
 			q.api.NewBrowser().SignIn(t, fmt.Sprintf("nobody.%d", i), "wrong password here")
@@ -336,8 +340,9 @@ func TestSignInAudit(t *testing.T) {
 				failures++
 			}
 		}
-		if failures == 0 || failures > 60 {
-			t.Errorf("%d failure rows after 80 refused sign-ins, want at most the cap of 60", failures)
+		// The bucket holds 60 and gains one a second, so the rows may exceed 60 by the seconds the loop took.
+		if limit := 60 + int(time.Since(started).Seconds()) + 1; failures == 0 || failures > limit {
+			t.Errorf("%d failure rows after 80 refused sign-ins, want at most the cap of 60 and the refill of %v", failures, time.Since(started))
 		}
 		for i := 0; i < 10; i++ {
 			q.d.Age(t, "signin_throttle", "", time.Minute, "last_failure_at")

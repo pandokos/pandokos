@@ -143,6 +143,10 @@ type reqState struct {
 	// session and user are those of a request that carries a session cookie, once it is accepted.
 	session *session.Session
 	user    *account.User
+	// source is the address the request is counted against (section 5.5); presented is the session
+	// cookie of a sign-in, which the sign-in ends so that no session is fixed.
+	source    netip.Addr
+	presented string
 }
 
 // setCookie adds a Set-Cookie header to the response of the request.
@@ -260,7 +264,12 @@ func bearer(h string) (string, bool) {
 // applies wins. A public operation reads no credential; a request with an Authorization header is
 // a key (the cookie is ignored); a request with the session cookie is a session; otherwise 401.
 func (s *server) before(ctx context.Context, r *http.Request, op *adminapi.Operation, params map[string]string) (context.Context, error) {
+	st := stateOf(ctx)
+	st.source = sourceAddr(r, s.origin)
 	if op.Public {
+		if c, err := r.Cookie(session.CookieName); err == nil {
+			st.presented = c.Value
+		}
 		return s.beforePublic(ctx, r, op)
 	}
 	if _, ok := r.Header["Authorization"]; !ok {

@@ -307,7 +307,7 @@ func TestThrottle(t *testing.T) {
 				wait(31 * time.Second)
 			}
 			// The tenth failure locks the username.
-			refusal(t, "tenth failure", bad())
+			_ = refusal(t, "tenth failure", bad())
 			for _, pw := range []string{right, "wrong password here"} {
 				before := e.hasher.Computations()
 				_, err := e.signIn(t, username, pw, src1, "")
@@ -330,7 +330,7 @@ func TestThrottle(t *testing.T) {
 				t.Errorf("the right password after the lock: %v", err)
 			}
 			if !known {
-				refusal(t, "unknown username after the lock", err)
+				_ = refusal(t, "unknown username after the lock", err)
 			}
 		})
 	}
@@ -391,7 +391,7 @@ func TestSourceThrottle(t *testing.T) {
 		if len(rows) != 1 || rows[0].Failures != 3 {
 			t.Errorf("source rows %+v, want one row with 3 failures", rows)
 		}
-		e.d.Age(t, "signin_throttle", "kind = 'source'", 31*time.Second, "last_failure_at")
+		e.d.Age(t, "signin_throttle", "", 31*time.Second, "last_failure_at") // the delay of the account row passes too
 		_, _ = e.signIn(t, "v6.user", "wrong password here", netip.MustParseAddr("2001:db8:0:2::1"), "")
 		n := 0
 		for _, r := range e.d.ThrottleRows(t) {
@@ -448,16 +448,16 @@ func TestGeneratedPasswordExpiry(t *testing.T) {
 // TestChangePassword is T-787.
 func TestChangePassword(t *testing.T) {
 	e := newEnv(t)
-	u := e.d.PlatformUser(t, "change.user", nil, dbtest.MustChange(time.Now().Add(time.Hour)))
-	first, err := e.signIn(t, "change.user", u.Password, src1, "")
+	u := e.d.PlatformUser(t, "change.user.name", nil, dbtest.MustChange(time.Now().Add(time.Hour)))
+	first, err := e.signIn(t, "change.user.name", u.Password, src1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	other1, err := e.signIn(t, "change.user", u.Password, src1, "")
+	other1, err := e.signIn(t, "change.user.name", u.Password, src1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	other2, err := e.signIn(t, "change.user", u.Password, src2, "")
+	other2, err := e.signIn(t, "change.user.name", u.Password, src2, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -484,7 +484,7 @@ func TestChangePassword(t *testing.T) {
 	for name, c := range map[string]struct{ next, sentence string }{
 		"too short": {"short", "must have at least 12 characters"},
 		"too long":  {strings.Repeat("a", 257), "must have at most 256 characters"},
-		"username":  {"change.user", "must not be"},
+		"username":  {"change.user.name", "must not be the username"},
 		"the same":  {u.Password, ""},
 	} {
 		_, err := change(u.Password, c.next)
@@ -522,10 +522,10 @@ func TestChangePassword(t *testing.T) {
 	if n := e.sessionsOf(t, u.ID); n != 1 {
 		t.Errorf("%d sessions after the change, want 1", n)
 	}
-	if _, err := e.signIn(t, "change.user", u.Password, src1, ""); err == nil {
+	if _, err := e.signIn(t, "change.user.name", u.Password, src1, ""); err == nil {
 		t.Error("the old password still signs in")
 	}
-	if _, err := e.signIn(t, "change.user", next, src1, ""); err != nil {
+	if _, err := e.signIn(t, "change.user.name", next, src1, ""); err != nil {
 		t.Errorf("the new password does not sign in: %v", err)
 	}
 }

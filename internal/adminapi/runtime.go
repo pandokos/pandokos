@@ -373,9 +373,10 @@ func decodeBody(r *http.Request, limit int64, bodyRequired bool, required []stri
 	return nil
 }
 
-// carriesSecret reports whether the body type has a member named secret, password,
-// current_password or new_password: the unknown members of
-// such a body are not quoted, because a caller may have put the secret where a name belongs.
+// carriesSecret reports whether the body type has a member named secret: the unknown
+// members of such a body are not quoted, because a caller may have put the secret where a name
+// belongs. The bodies of sign-in and of a password change (members password, current_password and
+// new_password) are not among them: their unknown members are named, never their values (T-790).
 func carriesSecret(dst any) bool {
 	t := reflect.TypeOf(dst)
 	if t == nil || t.Kind() != reflect.Pointer || t.Elem().Kind() != reflect.Struct {
@@ -384,7 +385,7 @@ func carriesSecret(dst any) bool {
 	st := t.Elem()
 	for i := range st.NumField() {
 		switch name, _, _ := strings.Cut(st.Field(i).Tag.Get("json"), ","); name {
-		case "secret", "password", "current_password", "new_password":
+		case "secret":
 			return true
 		}
 	}
