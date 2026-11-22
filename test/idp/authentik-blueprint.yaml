@@ -54,6 +54,10 @@ entries:
     id: user-unmapped
     identifiers: {username: workload-unmapped}
     attrs: {name: workload-unmapped, type: service_account, path: pandokos, attributes: {pandokos_org: org-a}}
+  # A group for the service account of workload-a: T-842 reads it from a token of the profile scope.
+  - model: authentik_core.group
+    identifiers: {name: pandokos-admins}
+    attrs: {users: [!KeyOf user-a]}
   - model: authentik_core.token
     identifiers: {identifier: pandokos-workload-a}
     attrs: {user: !KeyOf user-a, intent: app_password, key: !Env PANDOKOS_APP_PASSWORD_A, expiring: false}
@@ -91,6 +95,7 @@ entries:
       access_token_validity: minutes=5
       property_mappings:
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
         - !KeyOf org-scope
   - model: authentik_core.application
     identifiers: {slug: pandokos-tests}

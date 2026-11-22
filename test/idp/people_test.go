@@ -119,7 +119,7 @@ func startPeople(t *testing.T, d *dbtest.Database, extra ...string) *peopleProc 
 	secretFile := testutil.WriteSecret(t, "oidc-client", peopleEnv(t, "PEOPLE_SECRET"))
 	e := []string{
 		"PANDOKOS_LISTENERS_ADMIN_ADDRESS=" + addr, "PANDOKOS_AUTH_PUBLIC_ORIGIN=http://" + addr,
-		"PANDOKOS_AUTH_OIDC_ENABLED=true", "PANDOKOS_AUTH_OIDC_ISSUER=" + env["PANDOKOS_TEST_IDP_KEYCLOAK_ISSUER"], "PANDOKOS_AUTH_OIDC_CLIENT_ID=" + peopleEnv(t, "PEOPLE_CLIENT"),
+		"PANDOKOS_AUTH_OIDC_ENABLED=true", "PANDOKOS_AUTH_OIDC_AUTO_PROVISION=true", "PANDOKOS_AUTH_OIDC_ISSUER=" + env["PANDOKOS_TEST_IDP_KEYCLOAK_ISSUER"], "PANDOKOS_AUTH_OIDC_CLIENT_ID=" + peopleEnv(t, "PEOPLE_CLIENT"),
 		"PANDOKOS_AUTH_OIDC_CLIENT_SECRET_FILE=" + secretFile, "PANDOKOS_AUTH_OIDC_PRIVATE_HOSTS=localhost",
 		"PANDOKOS_AUTH_OIDC_GROUP_MAPPINGS=platform:platform-admin=" + groupAdmins + ",tenant:tenant-a:tenant-admin=" + groupTenant,
 	}
