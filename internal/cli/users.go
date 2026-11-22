@@ -198,10 +198,13 @@ var peopleCommands = []command{
 
 	{[]string{"platform-user", "reset-password"}, "resetUserPassword", func(a *app, args []string) error {
 		fs := a.flags("platform-user reset-password")
-		reason := fs.String("reason", "", "recorded in the audit log")
+		reason := fs.String("reason", "", "recorded in the audit log (required)")
 		passwordOut := fs.String("password-out", "", "write the new password to this new file (mode 0600) instead of printing it")
 		pos, err := parse(fs, args, 1)
 		if err != nil {
+			return err
+		}
+		if err := requireReason("platform-user reset-password", *reason); err != nil {
 			return err
 		}
 		if err := a.connect(); err != nil {
@@ -386,10 +389,13 @@ var peopleCommands = []command{
 		fs := a.flags("member reset-password")
 		var m memberFlags
 		m.register(fs)
-		reason := fs.String("reason", "", "recorded in the audit log")
+		reason := fs.String("reason", "", "recorded in the audit log (required)")
 		passwordOut := fs.String("password-out", "", "write the new password to this new file (mode 0600) instead of printing it")
 		pos, err := parse(fs, args, 1)
 		if err != nil {
+			return err
+		}
+		if err := requireReason("member reset-password", *reason); err != nil {
 			return err
 		}
 		if err := a.connect(); err != nil {

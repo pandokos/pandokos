@@ -193,9 +193,12 @@ var commands = []command{
 
 	{[]string{"tenant", "suspend"}, "suspendTenant", func(a *app, args []string) error {
 		fs := a.flags("tenant suspend")
-		reason := fs.String("reason", "", "recorded in the audit log")
+		reason := fs.String("reason", "", "recorded in the audit log (required)")
 		pos, err := a.begin(fs, args, 1)
 		if err != nil {
+			return err
+		}
+		if err := requireReason("tenant suspend", *reason); err != nil {
 			return err
 		}
 		id, err := a.resolveTenant(pos[0])
@@ -211,9 +214,12 @@ var commands = []command{
 
 	{[]string{"tenant", "reactivate"}, "reactivateTenant", func(a *app, args []string) error {
 		fs := a.flags("tenant reactivate")
-		reason := fs.String("reason", "", "recorded in the audit log")
+		reason := fs.String("reason", "", "recorded in the audit log (required)")
 		pos, err := a.begin(fs, args, 1)
 		if err != nil {
+			return err
+		}
+		if err := requireReason("tenant reactivate", *reason); err != nil {
 			return err
 		}
 		id, err := a.resolveTenant(pos[0])
@@ -574,6 +580,7 @@ var commands = []command{
 		desc := fs.String("description", "", "description")
 		expires := fs.String("expires-at", "", "expiry (RFC 3339)")
 		keyFile := fs.String("key-out", "", "write the key to this new file")
+		role := fs.String("role", "", "platform role of the key: platform-admin (the default) or platform-auditor")
 		if _, err := parse(fs, args, 0); err != nil {
 			return err
 		}
@@ -588,7 +595,7 @@ var commands = []command{
 		if err != nil {
 			return err
 		}
-		res, err := a.client.CreatePlatformKey(a.ctx, adminapi.CreatePlatformKeyInput{Body: adminapi.PlatformKeyCreate{Description: *desc, ExpiresAt: exp}})
+		res, err := a.client.CreatePlatformKey(a.ctx, adminapi.CreatePlatformKeyInput{Body: adminapi.PlatformKeyCreate{Description: *desc, Role: *role, ExpiresAt: exp}})
 		if err != nil {
 			out.abandon()
 			return err
