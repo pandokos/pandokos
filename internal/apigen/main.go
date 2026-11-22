@@ -1080,6 +1080,14 @@ func (g *generator) operations() error {
 				g.p("if v, ok := q[%q]; ok {", p.name)
 				g.p("n, err := strconv.Atoi(v)")
 				g.p("if err != nil { errs = append(errs, FieldError{Field: %q, Message: \"must be an integer\"}) } else { %s = n }", p.name, fn)
+				if s.Default == nil {
+					// Without a default the parameter is checked only when it is given, whatever its value.
+					var checks bytes.Buffer
+					g.check(&checks, fn, p.name, p.f, true)
+					g.buf.WriteString(strings.ReplaceAll(checks.String(), "if ", "if err == nil && "))
+					g.p("}")
+					continue
+				}
 				g.p("}")
 			case "enum":
 				if s.Default != nil {

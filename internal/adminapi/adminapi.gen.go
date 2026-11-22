@@ -8160,9 +8160,9 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			} else {
 				in.FromSeq = n
 			}
-		}
-		if in.FromSeq < 1 {
-			errs = append(errs, FieldError{Field: "from_seq", Message: "must be at least 1"})
+			if err == nil && in.FromSeq < 1 {
+				errs = append(errs, FieldError{Field: "from_seq", Message: "must be at least 1"})
+			}
 		}
 		if v, ok := q["to_seq"]; ok {
 			n, err := strconv.Atoi(v)
@@ -8171,9 +8171,9 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			} else {
 				in.ToSeq = n
 			}
-		}
-		if in.ToSeq < 1 {
-			errs = append(errs, FieldError{Field: "to_seq", Message: "must be at least 1"})
+			if err == nil && in.ToSeq < 1 {
+				errs = append(errs, FieldError{Field: "to_seq", Message: "must be at least 1"})
+			}
 		}
 		if len(errs) > 0 {
 			h.fail(w, r, op, invalid(errs))
@@ -9562,9 +9562,9 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			} else {
 				in.FromSeq = n
 			}
-		}
-		if in.FromSeq < 1 {
-			errs = append(errs, FieldError{Field: "from_seq", Message: "must be at least 1"})
+			if err == nil && in.FromSeq < 1 {
+				errs = append(errs, FieldError{Field: "from_seq", Message: "must be at least 1"})
+			}
 		}
 		if v, ok := q["to_seq"]; ok {
 			n, err := strconv.Atoi(v)
@@ -9573,9 +9573,9 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			} else {
 				in.ToSeq = n
 			}
-		}
-		if in.ToSeq < 1 {
-			errs = append(errs, FieldError{Field: "to_seq", Message: "must be at least 1"})
+			if err == nil && in.ToSeq < 1 {
+				errs = append(errs, FieldError{Field: "to_seq", Message: "must be at least 1"})
+			}
 		}
 		if len(errs) > 0 {
 			h.fail(w, r, op, invalid(errs))
