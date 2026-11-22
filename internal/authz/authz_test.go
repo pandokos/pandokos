@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/pandokos/pandokos/internal/tenant"
@@ -481,7 +482,7 @@ func TestLimitPermissions(t *testing.T) {
 func TestPriceListPermissions(t *testing.T) {
 	want := map[string]string{
 		PriceListRead:   "Reading the tenant's price lists and their versions, and the tenant's active currency",
-		PriceListWrite:  "Adding a price version to one of the tenant's price lists; choosing the tenant's active currency",
+		PriceListWrite:  "Adding a price version to one of the tenant's price lists",
 		PriceListDelete: "Removing a price version of the tenant's lists that has not started",
 	}
 	for name, text := range want {
@@ -510,6 +511,25 @@ func TestPriceListPermissions(t *testing.T) {
 			if held != 0 {
 				t.Errorf("%s holds %d price list permissions", r.Name, held)
 			}
+		}
+	}
+}
+
+// TestSettingDescriptions: the time zone and the active currency are set with tenant_setting:write
+// (D-1), so the descriptions of limit:write and price_list:write do not offer them.
+func TestSettingDescriptions(t *testing.T) {
+	for _, name := range []string{LimitWrite, PriceListWrite} {
+		p, _ := Lookup(name)
+		for _, word := range []string{"time zone", "currency"} {
+			if strings.Contains(p.Description, word) {
+				t.Errorf("%s: %q names the %s, which tenant_setting:write sets", name, p.Description, word)
+			}
+		}
+	}
+	p, _ := Lookup(TenantSettingWrite)
+	for _, word := range []string{"time zone", "currency"} {
+		if !strings.Contains(p.Description, word) {
+			t.Errorf("%s: %q does not name the %s", TenantSettingWrite, p.Description, word)
 		}
 	}
 }

@@ -45,13 +45,13 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | `platform_issuer:write` | platform | - | Registering and changing a platform-level token issuer; adding and removing tenants of its list | `createPlatformIssuer`, `deletePlatformIssuerTenant`, `putPlatformIssuerTenant`, `updatePlatformIssuer` | `platform-admin` |
 | `platform_issuer:delete` | platform | - | Deleting a platform-level token issuer with its tenant list and subject mappings | `deletePlatformIssuer` | `platform-admin` |
 | `limit:read` | tenant | - | Reading and listing the tenant's limit rules, the platform ceilings that apply to it, its limit events and the tenant's time zone | `getLimit`, `getTenantTimeZone`, `listLimitEvents`, `listLimits`, `listTenantPlatformLimits` | `owner`, `tenant-admin`, `usage-viewer`, `auditor`, `developer`, `read-only` |
-| `limit:write` | tenant | - | Creating and changing a limit rule of the tenant and the tenant's time zone | `createLimit`, `updateLimit` | `owner`, `tenant-admin` |
+| `limit:write` | tenant | - | Creating and changing a limit rule of the tenant | `createLimit`, `updateLimit` | `owner`, `tenant-admin` |
 | `limit:delete` | tenant | - | Deleting a limit rule of the tenant | `deleteLimit` | `owner`, `tenant-admin` |
 | `platform_limit:read` | platform | - | Reading and listing the ceilings the platform sets for tenants | `getPlatformLimit`, `listPlatformLimits` | `platform-admin`, `platform-auditor` |
 | `platform_limit:write` | platform | - | Creating and changing the ceilings the platform sets for tenants | `createPlatformLimit`, `updatePlatformLimit` | `platform-admin` |
 | `platform_limit:delete` | platform | - | Deleting a ceiling the platform sets for tenants | `deletePlatformLimit` | `platform-admin` |
 | `price_list:read` | tenant | - | Reading the tenant's price lists and their versions, and the tenant's active currency | `getActiveCurrency`, `getPriceListVersion`, `listPriceListVersions`, `listPriceLists` | `owner`, `tenant-admin`, `usage-viewer`, `read-only` |
-| `price_list:write` | tenant | - | Adding a price version to one of the tenant's price lists; choosing the tenant's active currency | `createPriceListVersion` | `owner`, `tenant-admin` |
+| `price_list:write` | tenant | - | Adding a price version to one of the tenant's price lists | `createPriceListVersion` | `owner`, `tenant-admin` |
 | `price_list:delete` | tenant | - | Removing a price version of the tenant's lists that has not started | `deletePriceListVersion` | `owner`, `tenant-admin` |
 | `user:read` | platform | - | Reading and listing the users that the platform manages, with their platform roles | `getUser`, `listUsers` | `platform-admin`, `platform-auditor` |
 | `user:write` | platform | - | Creating and changing such users; disabling and enabling them; resetting their password; unlocking them; ending their sessions; assigning platform roles | `createUser`, `disableUser`, `enableUser`, `resetUserPassword`, `revokeUserSessions`, `unlockUser`, `updateUser` | `platform-admin` |
@@ -107,10 +107,10 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | `subject_mapping:write` | x | x | - | - | - | - | - | - | Letting a token subject act as a service account, with all its roles |
 | `subject_mapping:delete` | x | x | - | - | - | - | - | - | Deleting a subject mapping |
 | `limit:read` | x | x | - | x | x | x | - | x | Reading and listing the tenant's limit rules, the platform ceilings that apply to it, its limit events and the tenant's time zone |
-| `limit:write` | x | x | - | - | - | - | - | - | Creating and changing a limit rule of the tenant and the tenant's time zone |
+| `limit:write` | x | x | - | - | - | - | - | - | Creating and changing a limit rule of the tenant |
 | `limit:delete` | x | x | - | - | - | - | - | - | Deleting a limit rule of the tenant |
 | `price_list:read` | x | x | - | x | - | - | - | x | Reading the tenant's price lists and their versions, and the tenant's active currency |
-| `price_list:write` | x | x | - | - | - | - | - | - | Adding a price version to one of the tenant's price lists; choosing the tenant's active currency |
+| `price_list:write` | x | x | - | - | - | - | - | - | Adding a price version to one of the tenant's price lists |
 | `price_list:delete` | x | x | - | - | - | - | - | - | Removing a price version of the tenant's lists that has not started |
 | `member:read` | x | x | - | - | x | - | - | x | Reading and listing the members of the tenant and their roles |
 | `member:write` | x | x | - | - | - | - | - | - | Adding and removing members and setting their roles; creating local accounts that the tenant manages, and for those: disabling, enabling, resetting the password, unlocking, ending sessions |
