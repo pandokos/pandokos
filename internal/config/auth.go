@@ -307,6 +307,9 @@ func validateAuth(c *Config) []Problem {
 	if c.Tokens.AdminListener && !c.Tokens.Enabled {
 		add("tokens.admin_listener", "needs tokens.enabled")
 	}
+	if r := time.Duration(c.Idempotency.Retention); r < time.Hour || r > 7*hoursPerDay {
+		add("idempotency.retention", "must be between 1h and 168h")
+	}
 	a := &c.Auth
 	l := &a.Local
 	if l.PasswordMinLength < 8 || l.PasswordMinLength > 128 {

@@ -36,7 +36,7 @@ func newRig(t *testing.T) *rig {
 
 // commit plays the create operation of a claimed request: a transaction of the operation's scope
 // that marks the claim, as the audit row of a create does.
-func (r *rig) commit(t testing.TB, c context.Context, scope idem.Scope, typ, id string) error {
+func (r *rig) commit(c context.Context, t testing.TB, scope idem.Scope, typ, id string) error {
 	t.Helper()
 	run := func(c context.Context, tx store.Tx) error { return idem.Mark(c, tx, typ, id) }
 	if scope.TenantID.IsZero() {
@@ -77,7 +77,7 @@ func TestClaim(t *testing.T) {
 		}
 	}
 	// The create commits, the response is stored: a replay.
-	if err := r.commit(t, c1, user, "user", "0192f0f0-0000-7000-8000-000000000001"); err != nil {
+	if err := r.commit(c1, t, user, "user", "0192f0f0-0000-7000-8000-000000000001"); err != nil {
 		t.Fatalf("Mark: %v", err)
 	}
 	if err := r.s.Finish(c1, 201, response); err != nil {
@@ -132,10 +132,10 @@ func TestClaim(t *testing.T) {
 	if n := r.d.Count(t, "SELECT attempt FROM pandokos.idempotency_key WHERE key = 'key-2'"); n != 2 {
 		t.Errorf("attempt %d after the take-over, want 2", n)
 	}
-	if err := r.commit(t, old, platform, "tenant", "t-old"); err == nil {
+	if err := r.commit(old, t, platform, "tenant", "t-old"); err == nil {
 		t.Error("the attempt that lost the lock committed its mark")
 	}
-	if err := r.commit(t, taken, platform, "tenant", "t-new"); err != nil {
+	if err := r.commit(taken, t, platform, "tenant", "t-new"); err != nil {
 		t.Errorf("the attempt that holds the lock: %v", err)
 	}
 	// A request with a commit mark and no stored response: the resource exists, the response is lost.

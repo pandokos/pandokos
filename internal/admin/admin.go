@@ -3,6 +3,7 @@
 package admin
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -150,6 +151,11 @@ type reqState struct {
 	presented string
 	// seed is the binding cookie of a sign-in through the identity provider, read for the callback only.
 	seed secret.Secret
+	// claimed is the context that carries the idempotency claim of the request, and capture the
+	// response body kept for it (section 5.11); both are nil without an Idempotency-Key.
+	claimed         context.Context
+	capture         *bytes.Buffer
+	captureOverflow bool
 }
 
 // setCookie adds a Set-Cookie header to the response of the request.
@@ -224,6 +230,7 @@ func New(o Options) (http.Handler, error) {
 					writeProblem(rec, st.id, adminapi.ProblemCodeInternal, nil)
 				}
 			}
+			s.finishIdempotent(st, rec.status)
 			s.logRequest(r, st, rec.status, time.Since(start))
 		}()
 		api.ServeHTTP(rec, r.WithContext(context.WithValue(r.Context(), stateKey{}, st)))
@@ -270,6 +277,15 @@ func bearer(h string) (string, bool) {
 // applies wins. A public operation reads no credential; a request with an Authorization header is
 // a key (the cookie is ignored); a request with the session cookie is a session; otherwise 401.
 func (s *server) before(ctx context.Context, r *http.Request, op *adminapi.Operation, params map[string]string) (context.Context, error) {
+	ctx, err := s.authenticate(ctx, r, op, params)
+	if err != nil {
+		return ctx, err
+	}
+	return s.beginIdempotent(ctx, r, op, params)
+}
+
+// authenticate is the credential half of the hook.
+func (s *server) authenticate(ctx context.Context, r *http.Request, op *adminapi.Operation, params map[string]string) (context.Context, error) {
 	st := stateOf(ctx)
 	st.source = sourceAddr(r, s.origin)
 	if op.Public {
@@ -491,6 +507,11 @@ func (s *server) fail(w http.ResponseWriter, r *http.Request, _ *adminapi.Operat
 	var rt *retryError
 	var refusal *account.Refusal
 	var pe *account.PolicyError
+	var rp *replayError
+	if errors.As(err, &rp) {
+		writeReplay(w, rp)
+		return
+	}
 	switch {
 	case errors.As(err, &re):
 		code, fields = re.Code, re.Fields

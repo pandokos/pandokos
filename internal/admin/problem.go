@@ -130,6 +130,13 @@ func (r *statusRecorder) WriteHeader(code int) {
 }
 
 func (r *statusRecorder) Write(p []byte) (int, error) {
+	if st := r.state; st != nil && st.capture != nil && !st.captureOverflow {
+		if st.capture.Len()+len(p) > maxStoredResponse {
+			st.captureOverflow = true
+		} else {
+			st.capture.Write(p)
+		}
+	}
 	if r.status == 0 {
 		r.status = http.StatusOK
 		r.warn()
