@@ -437,3 +437,67 @@ func TestActInTenant(t *testing.T) {
 		})
 	})
 }
+
+// TestInTenant: a transaction in platform scope reads a tenant's rows on its own connection, and
+// has no tenant again afterwards.
+func TestInTenant(t *testing.T) {
+	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
+		a, b := seed(t, d)
+		admin := d.OpenSized(t, store.RoleAdmin, 1)
+
+		t.Run("the tenant is set on the same transaction, then removed", func(t *testing.T) {
+			c, cancel := context.WithTimeout(ctx(t), 20*time.Second)
+			defer cancel()
+			err := admin.Platform(c, func(c context.Context, tx store.Tx) error {
+				for _, id := range []tenant.ID{a, b} {
+					err := store.InTenant(c, tx, id, func(c context.Context) error {
+						var scope bool
+						var tid string
+						if err := tx.QueryRow(c, `SELECT pandokos.platform_scope(), COALESCE(pandokos.current_tenant_id()::text, '')`).Scan(&scope, &tid); err != nil {
+							return err
+						}
+						if !scope || tid != id.String() {
+							t.Errorf("platform scope %v, tenant %q, want true and %s", scope, tid, id)
+						}
+						if n := scalarInt(c, t, tx, "SELECT count(*) FROM pandokos.service_account"); n != 2 {
+							t.Errorf("the tenant's own service accounts: %d, want 2", n)
+						}
+						return nil
+					})
+					if err != nil {
+						return err
+					}
+					if n := scalarInt(c, t, tx, "SELECT count(*) FROM pandokos.service_account"); n != 0 {
+						t.Errorf("after InTenant the transaction sees %d service accounts, want none (no tenant)", n)
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+
+		t.Run("platform scope and a tenant only", func(t *testing.T) {
+			err := admin.Unscoped(ctx(t), func(c context.Context, tx store.Tx) error {
+				called := false
+				if err := store.InTenant(c, tx, a, func(context.Context) error { called = true; return nil }); !errors.Is(err, store.ErrNoPlatformScope) || called {
+					t.Errorf("a transaction without the platform scope: %v (called %v), want store.ErrNoPlatformScope and no call", err, called)
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = admin.Platform(ctx(t), func(c context.Context, tx store.Tx) error {
+				if err := store.InTenant(c, tx, tenant.ID{}, func(context.Context) error { return nil }); !errors.Is(err, store.ErrNoTenant) {
+					t.Errorf("a zero tenant: %v, want store.ErrNoTenant", err)
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	})
+}

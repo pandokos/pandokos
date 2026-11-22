@@ -6,10 +6,14 @@ import (
 	"net/http"
 	"reflect"
 	"testing"
+	"time"
 
+	"github.com/pandokos/pandokos/internal/admin"
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/authz"
+	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/test/apitest"
+	"github.com/pandokos/pandokos/test/dbtest"
 )
 
 func escalation(t *testing.T, what string, r *apitest.Response) {
@@ -592,4 +596,31 @@ func mustRole(t *testing.T, name string) []string {
 		t.Fatalf("no role %s", name)
 	}
 	return r.Permissions
+}
+
+// TestResetPasswordOfAMemberOnOneConnection: the guard of resetUserPassword reads the grants of the
+// user's memberships on the transaction that holds the lock of the user, not on a second connection
+// of the pool, so it completes with database.admin.max_connections 1.
+func TestResetPasswordOfAMemberOnOneConnection(t *testing.T) {
+	d := dbtest.NewMigrated(t)
+	one := d.OpenSized(t, store.RoleAdmin, 1)
+	api := apitest.NewPeopleOn(t, d, apitest.PeopleConfig{Admin: func(o *admin.Options) { o.DB = one }})
+	p := peopleOn(t, api)
+	w := &rw{people: p, owner: api.Owner(t, p.tenant.ID)}
+	w.role(t, "dormant", authz.RoleRead)
+	if r := w.owner.Do(t, "POST", w.tp("/roles/dormant/deactivate"), map[string]any{"reason": "test"}, nil); r.Status != 200 {
+		t.Fatalf("deactivate: %d %s", r.Status, r.Body)
+	}
+	member := d.PlatformUser(t, apitest.UniqueName("member"), nil)
+	d.Member(t, p.tid, member.ID, []string{"dormant"})
+
+	// The call is bounded by the 30-second timeout of the client: a second connection that never
+	// comes makes it fail, not hang.
+	start := time.Now()
+	if r := w.platform(t, "POST", "/v1/users/"+member.ID+"/reset-password", map[string]any{"reason": "locked out"}); r.Status != 200 {
+		t.Errorf("the reset of the password of a member with one connection: %d %s, want 200", r.Status, r.Body)
+	}
+	if took := time.Since(start); took > 10*time.Second {
+		t.Errorf("the reset of the password of a member with one connection took %v", took)
+	}
 }

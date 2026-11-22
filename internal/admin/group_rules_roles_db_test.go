@@ -141,6 +141,9 @@ func TestGroupRulesWithRoles(t *testing.T) {
 		if rec["level"] != "WARN" || rec["rule"] != float64(gone) {
 			t.Errorf("the start warning: %s, want level WARN and rule %d", line, gone)
 		}
+		if _, ok := rec["request_id"]; ok {
+			t.Errorf("the start warning names a request_id, but there is no request at start: %s", line)
+		}
 	}
 	if warned != 1 {
 		t.Errorf("%d start lines say group rule skipped, want 1 (the missing role; the inactive one exists): %s", warned, start.String())
