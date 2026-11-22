@@ -441,6 +441,9 @@ func (s *server) authFailed(ctx context.Context, st *reqState, f *authn.Failure)
 	s.log.Warn("authentication failed", attrs...)
 }
 
+// errNoAuditLog says that a failure names no log to be written to.
+var errNoAuditLog = errors.New("admin: failure names no audit log")
+
 func (s *server) recordFailure(ctx context.Context, st *reqState, f *authn.Failure) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
@@ -455,6 +458,18 @@ func (s *server) recordFailure(ctx context.Context, st *reqState, f *authn.Failu
 		Actor:  audit.Actor{Type: audit.ActorAnonymous, KeyID: f.KeyID},
 		Action: "auth.failure", ResourceType: resource, ResourceID: f.KeyID, Outcome: "failure", RequestID: st.id,
 		Detail: map[string]any{"reason": f.Reason, "listener": "admin"},
+	}
+	if f.IssuerID != "" {
+		// A refused token names the registration; the subject only when its signature was verified.
+		e.ResourceType, e.ResourceID = "token_issuer", f.IssuerID
+		e.Detail["issuer_scope"] = f.IssuerScope
+		if f.Subject != "" {
+			e.Detail["subject"] = f.Subject
+		}
+		if f.TenantID.IsZero() {
+			// No tenant to write to: logged only, as on the gateway.
+			return errNoAuditLog
+		}
 	}
 	if !f.TenantID.IsZero() {
 		return s.db.WithTenant(ctx, f.TenantID, func(ctx context.Context, tx store.Tx) error {

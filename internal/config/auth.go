@@ -304,6 +304,9 @@ func validateAuth(c *Config) []Problem {
 			add(key, "must be between "+text)
 		}
 	}
+	if c.Tokens.AdminListener && !c.Tokens.Enabled {
+		add("tokens.admin_listener", "needs tokens.enabled")
+	}
 	a := &c.Auth
 	l := &a.Local
 	if l.PasswordMinLength < 8 || l.PasswordMinLength > 128 {

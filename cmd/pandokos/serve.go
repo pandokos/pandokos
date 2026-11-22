@@ -215,7 +215,13 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	adminAuth, err := authn.New(authn.Options{DB: adminDB, Logger: logger, Kinds: []authn.Kind{authn.KindTenant, authn.KindPlatform}})
+	adminAuthOpts := authn.Options{DB: adminDB, Logger: logger, Kinds: []authn.Kind{authn.KindTenant, authn.KindPlatform}}
+	if cfg.Tokens.Enabled && cfg.Tokens.AdminListener {
+		// The key cache is the gateway's; the administration listener keeps no principal cache.
+		adminAuthOpts.Kinds = append(adminAuthOpts.Kinds, authn.KindToken)
+		adminAuthOpts.Tokens = gatewayAuthOpts.Tokens
+	}
+	adminAuth, err := authn.New(adminAuthOpts)
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1

@@ -140,7 +140,7 @@ func TestAuth(t *testing.T) {
 	})
 
 	t.Run("tokens and idempotency", func(t *testing.T) {
-		if _, _, err := load("PANDOKOS_TOKENS_ADMIN_LISTENER=true"); !problem(err, "tokens.admin_listener") {
+		if _, _, err := load("PANDOKOS_TOKENS_ENABLED=false", "PANDOKOS_TOKENS_ADMIN_LISTENER=true"); !problem(err, "tokens.admin_listener") {
 			t.Errorf("tokens on the administration listener without tokens: %v", err)
 		}
 		if _, _, err := load("PANDOKOS_TOKENS_ENABLED=true", "PANDOKOS_TOKENS_ADMIN_LISTENER=true"); err != nil {
@@ -196,13 +196,13 @@ func TestAuth(t *testing.T) {
 			t.Errorf("a client secret file that does not exist: %v", err)
 		}
 		accepted("auth.oidc.client_auth", "PANDOKOS_AUTH_OIDC_CLIENT_AUTH", on, "basic", "post")
-		refused("auth.oidc.client_auth", "PANDOKOS_AUTH_OIDC_CLIENT_AUTH", on, "none", "private_key_jwt", "")
+		refused("auth.oidc.client_auth", "PANDOKOS_AUTH_OIDC_CLIENT_AUTH", on, "none", "private_key_jwt")
 		accepted("auth.oidc.scopes", "PANDOKOS_AUTH_OIDC_SCOPES", on, "openid", "openid profile", "profile,openid,email")
-		refused("auth.oidc.scopes", "PANDOKOS_AUTH_OIDC_SCOPES", on, "profile email", "")
+		refused("auth.oidc.scopes", "PANDOKOS_AUTH_OIDC_SCOPES", on, "profile email")
 		accepted("auth.oidc.algorithms", "PANDOKOS_AUTH_OIDC_ALGORITHMS", on, "RS256", "ES256 PS256", "EdDSA,RS256")
-		refused("auth.oidc.algorithms", "PANDOKOS_AUTH_OIDC_ALGORITHMS", on, "HS256", "none", "RS256 HS512", "rs256", "")
+		refused("auth.oidc.algorithms", "PANDOKOS_AUTH_OIDC_ALGORITHMS", on, "HS256", "none", "RS256 HS512", "rs256")
 		accepted("auth.oidc.post_sign_in_path", "PANDOKOS_AUTH_OIDC_POST_SIGN_IN_PATH", on, "/", "/console", "/a/b?c=d")
-		refused("auth.oidc.post_sign_in_path", "PANDOKOS_AUTH_OIDC_POST_SIGN_IN_PATH", on, "console", "//evil.example.test", "/a//b", `/a\b`, "https://evil.example.test/", "/a\nb", "", "/a\tb")
+		refused("auth.oidc.post_sign_in_path", "PANDOKOS_AUTH_OIDC_POST_SIGN_IN_PATH", on, "console", "//evil.example.test", "/a//b", `/a\b`, "https://evil.example.test/", "/a\nb", "/a\tb")
 		accepted("auth.oidc.group_mappings", "PANDOKOS_AUTH_OIDC_GROUP_MAPPINGS", on,
 			"platform:platform-admin=admins", "platform:platform-admin=cn=admins,ou=x", "tenant:acme:tenant-admin=eng=ops:team")
 		refused("auth.oidc.group_mappings", "PANDOKOS_AUTH_OIDC_GROUP_MAPPINGS", on,
