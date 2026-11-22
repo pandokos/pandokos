@@ -172,7 +172,12 @@ refusal is logged without a tenant, role or permission).
   user that is a member of a tenant holds that tenant's permissions, which a platform administrator
   does not, so `resetUserPassword` refuses such a user with `403 escalation_refused`, with or without
   a support action. The user's own recovery is the host command `pandokos user reset-password`, run
-  by whoever operates the host.
+  by whoever operates the host. **Known gap:** the check is made when the password is issued. A
+  membership, a role or a reactivated custom role that the user gains in a tenant while a
+  platform-issued password (from `resetUserPassword` or `createUser`) is still pending, until it is
+  changed or expires, is not checked; whoever received that password could sign in with what was
+  gained. It is to be closed in sprint 10.2. Until then, give a membership or a role to a platform user
+  only after its platform-issued password has been changed.
 - **Token mappings are grants.** A subject mapping gives a subject every role of a service account, so
   a principal cannot map a subject to an account stronger than itself. To give a token less, put a
   custom role on a dedicated service account. For the same reason, changing what an issuer trusts is a
@@ -261,7 +266,8 @@ does not want with `support-action end`. The operations `listSupportActions`, `g
 
 **What this means for the platform administrator's role.** A platform administrator reaches a tenant's
 data only by making an identity in the tenant for somebody (a key or a member); there is no other path
-(the password of a platform user that is a member of a tenant is not reset through the API, see section 4),
+(the password of a platform user that is a member of a tenant is not reset through the API, see section 4,
+apart from the known gap of a pending platform-issued password stated there),
 it needs an open action, and each step is a row in the tenant's log with the action and its reason. The
 [security model](../architecture/security-model.md) states this as the residual exposure of the role.
 `support.enabled: false` removes it together with the recovery (`serve` warns at start).

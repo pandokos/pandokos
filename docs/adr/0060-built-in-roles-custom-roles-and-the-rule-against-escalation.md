@@ -41,8 +41,11 @@ and to be sure that nobody can hand out more than they hold.
    current and the new role set is checked. A refusal is `403 escalation_refused`. A subject mapping is a
    guarded grant and there are no scopes per mapping (this closes open point 5 of sprint 4.1). A new
    password is a grant too: `resetUserPassword` checks the platform roles of the user and its
-   effective permissions in every tenant it is a member of, so the platform cannot obtain a member's
-   sign-in through the API; the host command `pandokos user reset-password` remains the recovery.
+   effective permissions in every tenant it is a member of, so the platform cannot obtain through the
+   API the sign-in of a user that is a member when the password is issued; the host command
+   `pandokos user reset-password` remains the recovery. A membership or role gained while a
+   platform-issued password (`resetUserPassword` or `createUser`) is still pending, until it is
+   changed or expires, is not checked: a known gap, to be closed in sprint 10.2.
    Changing what a tenant's trusted issuer accepts (issuer, audience, key set, algorithms, subject or
    required claims) or enabling it again needs what the service accounts mapped under it can do.
 6. **One function builds a member's principal**, for the request hook and for `GET /v1/me`, so that what

@@ -983,4 +983,4 @@ test. IDs continue from T-845 and T-R58.
 | `updateTokenIssuer` changes what a tenant issuer trusts | A grant: changes of `issuer`, `audience`, `jwks_uri`, `algorithms`, `subject_claim`, `required_claims` and re-enabling need the permissions of every service account mapped under it. `updatePlatformIssuer` stays unguarded, an accepted residual risk recorded in ADR 0061 |
 | A missing custom role of a group rule stops the start | Skipped with one start warning naming the rule position; malformed, wrong-scope and `inference` rules still stop the start |
 | `duration_seconds: 0` | Absent or 0 is the default, `support.max_duration`; 1 to 59 is refused |
-| Known gap | A role added to an existing membership in parallel with a reset is not serialised with it; revisited in sprint 10.2 |
+| Known gap | A membership or role gained while a platform-issued password is still pending (until changed or expired) is not checked; to be closed in sprint 10.2, e.g. by refusing or invalidating a pending platform-issued password when a membership or role is added |
