@@ -36,3 +36,7 @@ updates:
     directory: /deploy/compose
     schedule:
       interval: weekly
+  - package-ecosystem: docker-compose
+    directory: /deploy/compose/observability
+    schedule:
+      interval: weekly

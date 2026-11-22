@@ -1,6 +1,7 @@
 #!/bin/sh
 # Prepares ./secrets for the Compose reference deployment: database passwords, the vault's
-# key-encryption key and a self-signed TLS certificate. Run once from this directory. Needs sh,
+# key-encryption key, the Grafana admin password of the observability overlay and a self-signed TLS
+# certificate. Run once from this directory. Needs sh,
 # head, base64, tr and openssl. Never overwrites a file that exists. Guide: docs/operations/compose.md.
 set -eu
 umask 077
@@ -8,7 +9,7 @@ dir=${PANDOKOS_COMPOSE_SECRETS:-./secrets}
 command -v openssl >/dev/null 2>&1 || { echo "setup.sh: openssl is required to create the TLS certificate" >&2; exit 1; }
 mkdir -p "$dir"
 random() { head -c 32 /dev/urandom | base64 | tr -d '\n'; }
-for name in db_superuser db_owner db_gateway db_admin db_worker pandokos_kek; do
+for name in db_superuser db_owner db_gateway db_admin db_worker pandokos_kek grafana_admin; do
   if [ ! -e "$dir/$name" ]; then
     random > "$dir/$name"
     echo >> "$dir/$name"

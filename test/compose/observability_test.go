@@ -306,12 +306,14 @@ func TestObservabilityDashboards(t *testing.T) {
 		t.Errorf("the call over the limit: status %d, want 429", status)
 	}
 
-	testutil.Eventually(t, 90*time.Second, "both models in Prometheus", func() bool {
+	// A rate needs two samples of a series: wait until the series of both models and the series born
+	// last (the refusal of the limits) have been exported twice, 10 s apart.
+	testutil.Eventually(t, 90*time.Second, "both models in Prometheus, each series with two samples", func() bool {
 		models := map[string]bool{}
-		for _, m := range promQuery(t, "gen_ai_client_operation_duration_seconds_count") {
+		for _, m := range promQuery(t, "count_over_time(gen_ai_client_operation_duration_seconds_count[5m]) >= 2") {
 			models[m["gen_ai_request_model"]] = true
 		}
-		return models[s.models[0]] && models[s.models[1]]
+		return models[s.models[0]] && models[s.models[1]] && len(promQuery(t, "count_over_time(pandokos_limits_refusals_total[5m]) >= 2")) > 0
 	})
 
 	files, err := filepath.Glob(filepath.Join(s.repo, "deploy", "compose", "observability", "grafana", "dashboards", "*.json"))

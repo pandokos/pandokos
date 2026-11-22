@@ -540,7 +540,10 @@ func TestDashboards(t *testing.T) {
 		}
 		check := func(where, q string) {
 			metrics := map[string]telemetry.InstrumentSpec{}
-			for _, m := range reName.FindAllString(q, -1) {
+			// Label names in by (...) and in matchers share the prefixes of the metric namespaces
+			// (gen_ai_request_model, pandokos_currency): they are checked below and are not metric names.
+			names := reMatcher.ReplaceAllString(reBy.ReplaceAllString(q, "by ()"), `"`)
+			for _, m := range reName.FindAllString(names, -1) {
 				n := strip(m)
 				spec, ok := byProm[n]
 				if !ok {

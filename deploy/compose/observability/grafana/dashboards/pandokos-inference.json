@@ -1,0 +1,862 @@
+{
+  "uid": "pandokos-inference",
+  "title": "Pandokos - Inference",
+  "description": "Requests, latency, tokens, cost and refusals of the inference listener, by catalogue model. No panel shows a tenant, a caller or a key.",
+  "tags": [
+    "pandokos"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "model",
+        "label": "Model",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": "label_values(gen_ai_client_operation_duration_seconds_count, gen_ai_request_model)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1,
+        "hide": 0
+      },
+      {
+        "name": "provider",
+        "label": "Provider",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": "label_values(gen_ai_client_operation_duration_seconds_count, gen_ai_provider_name)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1,
+        "hide": 0
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Requests",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Requests per second by outcome",
+      "description": "Every request of the inference listener, by how it ended (M2).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (pandokos_outcome) (rate(pandokos_gateway_requests_total{gen_ai_provider_name=~\"$provider\"}[$__rate_interval])) or on() vector(0)",
+          "legendFormat": "{{pandokos_outcome}}",
+          "editorMode": "code",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Requests per second by error code",
+      "description": "Requests answered with a Pandokos error, by error code (M2).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (pandokos_error_code) (rate(pandokos_gateway_requests_total{pandokos_error_code!=\"\", gen_ai_provider_name=~\"$provider\"}[$__rate_interval])) or on() vector(0)",
+          "legendFormat": "{{pandokos_error_code}}",
+          "editorMode": "code",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Requests by limit state",
+      "description": "How the limits treated each request: not_evaluated, unlimited, limited, unverified (M2). A share of unverified means the limits could not be read.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (pandokos_limit_state) (rate(pandokos_gateway_requests_total{gen_ai_provider_name=~\"$provider\"}[$__rate_interval])) or on() vector(0)",
+          "legendFormat": "{{pandokos_limit_state}}",
+          "editorMode": "code",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "row",
+      "title": "Latency",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "panels": []
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Whole request, p50 / p95 / p99",
+      "description": "Time from the first byte of the request to the end of the response (M1), all routes of the inference listener.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(http_server_request_duration_seconds_bucket[$__rate_interval]))) or on() vector(0)",
+          "legendFormat": "p50",
+          "editorMode": "code",
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket[$__rate_interval]))) or on() vector(0)",
+          "legendFormat": "p95",
+          "editorMode": "code",
+          "range": true
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket[$__rate_interval]))) or on() vector(0)",
+          "legendFormat": "p99",
+          "editorMode": "code",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Provider call by model, p50 / p95 / p99",
+      "description": "Duration of the successful calls to the provider (M3), by catalogue model. Failed calls are in the panel below.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le, gen_ai_request_model) (rate(gen_ai_client_operation_duration_seconds_bucket{gen_ai_request_model=~\"$model\", gen_ai_provider_name=~\"$provider\", error_type=\"\"}[$__rate_interval]))) or on() vector(0)",
+          "legendFormat": "p50 {{gen_ai_request_model}}",
+          "editorMode": "code",
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(gen_ai_client_operation_duration_seconds_bucket{gen_ai_request_model=~\"$model\", gen_ai_provider_name=~\"$provider\", error_type=\"\"}[$__rate_interval]))) or on() vector(0)",
+          "legendFormat": "p95 {{gen_ai_request_model}}",
+          "editorMode": "code",
+          "range": true
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le, gen_ai_request_model) (rate(gen_ai_client_operation_duration_seconds_bucket{gen_ai_request_model=~\"$model\", gen_ai_provider_name=~\"$provider\", error_type=\"\"}[$__rate_interval]))) or on() vector(0)",
+          "legendFormat": "p99 {{gen_ai_request_model}}",
+          "editorMode": "code",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Provider calls that failed",
+      "description": "Calls to the provider that ended in error, by class (M3 with error.type): a status, timeout, upstream_unreachable, upstream_aborted, cancelled.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 26
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (gen_ai_provider_name, error_type) (rate(gen_ai_client_operation_duration_seconds_count{error_type!=\"\", gen_ai_provider_name=~\"$provider\"}[$__rate_interval])) or on() vector(0)",
+          "legendFormat": "{{gen_ai_provider_name}} {{error_type}}",
+          "editorMode": "code",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Time to first chunk by model, p50 / p95",
+      "description": "Streams only (M4): from the call to the first chunk of the answer.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 26
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le, gen_ai_request_model) (rate(gen_ai_client_operation_time_to_first_chunk_seconds_bucket{gen_ai_request_model=~\"$model\", gen_ai_provider_name=~\"$provider\"}[$__rate_interval]))) or on() vector(0)",
+          "legendFormat": "p50 {{gen_ai_request_model}}",
+          "editorMode": "code",
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (rate(gen_ai_client_operation_time_to_first_chunk_seconds_bucket{gen_ai_request_model=~\"$model\", gen_ai_provider_name=~\"$provider\"}[$__rate_interval]))) or on() vector(0)",
+          "legendFormat": "p95 {{gen_ai_request_model}}",
+          "editorMode": "code",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Tokens and cost",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "panels": []
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Tokens per second by model and type",
+      "description": "Tokens the provider reported (M5): input includes cached tokens, output includes reasoning tokens.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 35
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (gen_ai_request_model, gen_ai_token_type) (rate(gen_ai_client_token_usage_sum{gen_ai_request_model=~\"$model\", gen_ai_provider_name=~\"$provider\"}[$__rate_interval])) or on() vector(0)",
+          "legendFormat": "{{gen_ai_request_model}} {{gen_ai_token_type}}",
+          "editorMode": "code",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Share of estimated tokens",
+      "description": "Tokens counted by Pandokos because the provider gave no usage (M6), against all tokens (M5 + M6).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 35
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sum(rate(pandokos_gen_ai_client_estimated_tokens_total[$__rate_interval])) or vector(0)) / (sum(rate(gen_ai_client_token_usage_sum[$__rate_interval])) + (sum(rate(pandokos_gen_ai_client_estimated_tokens_total[$__rate_interval])) or vector(0)))",
+          "legendFormat": "estimated share",
+          "editorMode": "code",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Cost per hour by model and currency",
+      "description": "Recorded cost of the requests (M7). Summed within a currency, never across currencies.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 43
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (gen_ai_request_model, pandokos_currency) (increase(pandokos_gen_ai_client_cost_total{gen_ai_request_model=~\"$model\"}[1h])) or on() vector(0)",
+          "legendFormat": "{{gen_ai_request_model}} {{pandokos_currency}}",
+          "editorMode": "code",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Requests with an unknown cost per hour",
+      "description": "Requests with usage whose cost could not be computed, by reason (M8): no_price, category_unpriced, inconsistent_usage.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 43
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (gen_ai_request_model, pandokos_cost_reason) (increase(pandokos_gen_ai_client_cost_unknown_total{gen_ai_request_model=~\"$model\"}[1h])) or on() vector(0)",
+          "legendFormat": "{{gen_ai_request_model}} {{pandokos_cost_reason}}",
+          "editorMode": "code",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "row",
+      "title": "Refusals",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 51
+      },
+      "panels": []
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Limit refusals by code and metric",
+      "description": "Requests refused by a limit (M10), by code and limit metric. The subject is a kind, never an ID.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 52
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (pandokos_limit_code, pandokos_limit_metric) (rate(pandokos_limits_refusals_total[$__rate_interval])) or on() vector(0)",
+          "legendFormat": "{{pandokos_limit_code}} {{pandokos_limit_metric}}",
+          "editorMode": "code",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Provider 429 by credential",
+      "description": "Answers of 429 from a provider, by provider and credential ID (M9): which credential is saturated. The ID is resolved with tenant_credential:read on a named tenant.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 52
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (gen_ai_provider_name, pandokos_credential_id) (increase(pandokos_provider_rate_limited_total{gen_ai_provider_name=~\"$provider\"}[$__rate_interval])) or on() vector(0)",
+          "legendFormat": "{{gen_ai_provider_name}} {{pandokos_credential_id}}",
+          "editorMode": "code",
+          "range": true
+        }
+      ]
+    }
+  ]
+}
