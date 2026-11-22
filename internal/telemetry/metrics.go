@@ -6,10 +6,20 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/exemplar"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
+)
+
+const (
+	meterName        = "github.com/pandokos/pandokos"
+	cardinalityLimit = 2000
 )
 
 // MetricsOptions configure the meter provider.
@@ -54,7 +64,11 @@ type InstrumentSpec struct {
 // Metrics owns the meter provider and the instruments.
 type Metrics struct {
 	provider metric.MeterProvider
+	sdk      *sdkmetric.MeterProvider // nil with the no-op provider
 	handler  http.Handler
+	reader   *sdkmetric.ManualReader // the scrape reader; nil unless Prometheus is on
+
+	h *errorHandler
 }
 
 // NewMetrics builds the meter provider from explicit options.
@@ -68,17 +82,86 @@ func NewMetrics(o MetricsOptions) (*Metrics, error) {
 	if o.Endpoint != nil && o.OTLP && o.Transport == nil {
 		return nil, errors.New("telemetry: a transport is required when an endpoint is set")
 	}
-	return &Metrics{provider: noop.NewMeterProvider()}, nil
+	exportOTLP := o.Endpoint != nil && o.OTLP
+	if !exportOTLP && !o.Prometheus {
+		return &Metrics{provider: noop.NewMeterProvider()}, nil
+	}
+	if o.Resource == nil {
+		return nil, errors.New("telemetry: a resource is required")
+	}
+	if o.Now == nil {
+		o.Now = time.Now
+	}
+
+	installDiagnostics(o.Logger)
+	m := &Metrics{h: newErrorHandler(o.Logger, "metric export failing", signalMetrics)}
+	opts := []sdkmetric.Option{
+		sdkmetric.WithResource(o.Resource),
+		sdkmetric.WithCardinalityLimit(cardinalityLimit),
+		sdkmetric.WithExemplarFilter(exemplar.AlwaysOffFilter),
+		sdkmetric.WithView(views()...),
+	}
+	if exportOTLP {
+		endpoint := *o.Endpoint
+		endpoint.Path = strings.TrimSuffix(endpoint.Path, "/") + "/v1/metrics"
+		endpoint.RawPath = ""
+		exp, err := otlpmetrichttp.New(context.Background(),
+			otlpmetrichttp.WithEndpointURL(endpoint.String()),
+			otlpmetrichttp.WithHeaders(o.Headers),
+			otlpmetrichttp.WithTimeout(o.Timeout),
+			otlpmetrichttp.WithCompression(otlpmetrichttp.NoCompression),
+			otlpmetrichttp.WithRetry(otlpmetrichttp.RetryConfig{Enabled: false}),
+			otlpmetrichttp.WithHTTPClient(&http.Client{
+				Transport:     o.Transport,
+				CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+			}),
+		)
+		if err != nil {
+			// The exporter's errors do not carry header values, but the message is not passed on.
+			return nil, errors.New("telemetry: the metric exporter could not be created")
+		}
+		popts := []sdkmetric.PeriodicReaderOption{sdkmetric.WithInterval(o.Interval)}
+		if o.Timeout > 0 {
+			popts = append(popts, sdkmetric.WithTimeout(o.Timeout))
+		}
+		opts = append(opts, sdkmetric.WithReader(sdkmetric.NewPeriodicReader(&reportingMetricExporter{Exporter: exp, h: m.h}, popts...)))
+	}
+	if o.Prometheus {
+		m.reader = sdkmetric.NewManualReader()
+		opts = append(opts, sdkmetric.WithReader(m.reader))
+		m.handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { // replaced by the exposition (C3)
+			http.Error(w, "", http.StatusServiceUnavailable)
+		})
+	}
+	m.sdk = sdkmetric.NewMeterProvider(opts...)
+	m.provider = m.sdk
+
+	meter := m.sdk.Meter(meterName,
+		metric.WithInstrumentationVersion(o.ServiceVersion),
+		metric.WithSchemaURL(semconv.SchemaURL))
+	if err := registerSelf(meter); err != nil {
+		_ = m.sdk.Shutdown(context.Background())
+		return nil, errors.New("telemetry: the instruments could not be created")
+	}
+	return m, nil
 }
 
 // ObserveRequest records one request of the inference listener.
-func (m *Metrics) ObserveRequest(r Request) {}
+func (m *Metrics) ObserveRequest(_ Request) {}
 
 // Handler returns the scrape handler; nil unless Prometheus is enabled.
 func (m *Metrics) Handler() http.Handler { return m.handler }
 
 // Shutdown flushes the readers and stops the provider, within ctx.
-func (m *Metrics) Shutdown(ctx context.Context) error { return nil }
+func (m *Metrics) Shutdown(ctx context.Context) error {
+	if m.sdk == nil {
+		return nil
+	}
+	return m.sdk.Shutdown(ctx)
+}
 
 // Catalogue returns the instrument catalogue: the table of the metrics reference.
 func Catalogue() []InstrumentSpec { return nil }
+
+// views are the explicit bucket boundaries of the histograms (C2).
+func views() []sdkmetric.View { return nil }

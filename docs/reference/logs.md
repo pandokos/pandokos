@@ -114,6 +114,20 @@ Fields: `config`
 
 Written by the telemetry.
 
+### `metric export failing`
+
+Level: warn
+Fields: `count`, `error_class`
+
+Written by the telemetry.
+
+### `telemetry error`
+
+Level: warn
+Fields: `count`, `error_class`
+
+Written by the telemetry.
+
 ### `trace export failing`
 
 Level: warn

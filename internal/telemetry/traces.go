@@ -10,11 +10,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/go-logr/logr"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -29,7 +26,6 @@ const (
 	batchDelay       = 2 * time.Second
 	spanAttrLimit    = 64
 	spanAttrValLimit = 256
-	errorLogInterval = time.Minute
 )
 
 // TracesOptions configure the trace provider.
@@ -67,9 +63,8 @@ func NewTraces(o TracesOptions) (*Traces, error) {
 	}
 
 	// The diagnostics are installed before the provider so that its own messages reach the logger.
-	otel.SetLogger(logr.FromSlogHandler(o.Logger.Handler()))
-	handler := newErrorHandler(o.Logger)
-	otel.SetErrorHandler(handler)
+	installDiagnostics(o.Logger)
+	handler := newErrorHandler(o.Logger, "trace export failing", signalTraces)
 
 	opts := []sdktrace.TracerProviderOption{
 		sdktrace.WithResource(o.Resource),
@@ -107,6 +102,7 @@ func NewTraces(o TracesOptions) (*Traces, error) {
 	}
 	opts = append(opts,
 		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(o.SampleRatio))),
+		sdktrace.WithSpanProcessor(countingProcessor{}),
 		sdktrace.WithBatcher(&reportingExporter{SpanExporter: exporter, h: handler},
 			sdktrace.WithMaxQueueSize(queueSize),
 			sdktrace.WithMaxExportBatchSize(batchSize),
@@ -153,43 +149,16 @@ type reportingExporter struct {
 	h *errorHandler
 }
 
-// ExportSpans exports the spans; a failure is reported and not returned.
+// ExportSpans exports the spans; a failure is reported and not returned. The spans of a batch are
+// counted as exported or failed (M39).
 func (e *reportingExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	if err := e.SpanExporter.ExportSpans(ctx, spans); err != nil {
+		selfStats.failed.Add(int64(len(spans)))
 		e.h.Handle(err)
+		return nil
 	}
+	selfStats.exported.Add(int64(len(spans)))
 	return nil
-}
-
-// errorHandler logs SDK errors as "trace export failing", at most once a minute, with the number
-// of errors since the last line and a class. The error text is never logged: it may quote the
-// endpoint or the collector's answer.
-type errorHandler struct {
-	log *slog.Logger
-
-	mu      sync.Mutex
-	count   int64
-	lastLog time.Time
-}
-
-func newErrorHandler(l *slog.Logger) *errorHandler { return &errorHandler{log: l} }
-
-// Handle implements otel.ErrorHandler.
-func (h *errorHandler) Handle(err error) {
-	if err == nil {
-		return
-	}
-	h.mu.Lock()
-	h.count++
-	if !h.lastLog.IsZero() && time.Since(h.lastLog) < errorLogInterval {
-		h.mu.Unlock()
-		return
-	}
-	n := h.count
-	h.count = 0
-	h.lastLog = time.Now()
-	h.mu.Unlock()
-	h.log.Warn("trace export failing", "count", n, "error_class", errorClass(err))
 }
 
 func errorClass(err error) string {
@@ -198,7 +167,7 @@ func errorClass(err error) string {
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
 		return "timeout"
-	case strings.Contains(err.Error(), "retry-able request failure"), strings.Contains(err.Error(), "failed to send to "):
+	case strings.Contains(err.Error(), "retry-able request failure"), strings.Contains(err.Error(), "failed to send "):
 		return "status"
 	case errors.As(err, &ue):
 		if ue.Timeout() {
