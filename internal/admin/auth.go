@@ -124,7 +124,11 @@ func (s *server) CompleteOidcSignIn(ctx context.Context, in adminapi.CompleteOid
 		var r *account.Refusal
 		if errors.As(err, &r) {
 			// The token was validated: the subject is the provider's word and goes to the audit row.
-			s.stats.oidc.Add("oidc", account.SignInRefused)
+			result := account.SignInRefused
+			if r.Reason == "user_disabled" {
+				result = account.SignInDisabled
+			}
+			s.stats.oidc.Add("oidc", result)
 			s.oidcFailed(ctx, st, r.Reason, r.UserID, id.Subject, r.TenantID)
 			return s.postSignIn("sign_in_failed"), nil
 		}

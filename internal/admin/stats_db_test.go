@@ -91,7 +91,7 @@ func TestSupportAndGrantStats(t *testing.T) {
 
 // TestOIDCSignInStats is T-920 (OIDC part): a sign-in through the identity provider is counted as
 // the method oidc, ok when it opened a session and refused when the state, the token or the mapping
-// was refused.
+// was refused, disabled when the user is disabled.
 func TestOIDCSignInStats(t *testing.T) {
 	api, o := apitest.NewPeopleOIDC(t, apitest.PeopleConfig{}, apitest.OIDCConfig{Users: idpPeople})
 	p := peopleOn(t, api)
@@ -121,11 +121,11 @@ func TestOIDCSignInStats(t *testing.T) {
 		t.Fatalf("bob: %d %q", end.Status, end.Location)
 	}
 	got := api.AdminStats(t).OIDC
-	if got["ok"] != 1 || got["refused"] != 2 {
-		t.Errorf("after two refusals: %v, want ok 1 refused 2", got)
+	if got["ok"] != 1 || got["refused"] != 1 || got["disabled"] != 1 {
+		t.Errorf("after two refusals: %v, want ok 1 refused 1 disabled 1 (a disabled user is counted as disabled)", got)
 	}
 	for k := range got {
-		if k != "ok" && k != "refused" && k != "unavailable" {
+		if k != "ok" && k != "refused" && k != "disabled" && k != "unavailable" {
 			t.Errorf("the result %q is not in the closed list", k)
 		}
 	}

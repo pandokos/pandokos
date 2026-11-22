@@ -100,6 +100,7 @@ func (a *UnlimitedAuditor) Note(t tenant.ID, day, zone, provider, model, request
 	case a.q <- unlimitedEntry{tenant: t, day: day, zone: zone, provider: provider, model: model, requestID: requestID}:
 		a.seen[t] = seenDay{day: day}
 	default:
+		a.failed.Add(1) // the day is dropped: it is not written now
 		a.seen[t] = seenDay{retry: now.Add(unlimitedBackoff)}
 	}
 }

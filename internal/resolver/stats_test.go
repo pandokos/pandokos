@@ -8,6 +8,9 @@ import (
 	"github.com/pandokos/pandokos/internal/gateway"
 	"github.com/pandokos/pandokos/internal/limits"
 	"github.com/pandokos/pandokos/internal/pricing"
+	"github.com/pandokos/pandokos/internal/resolver"
+	"github.com/pandokos/pandokos/internal/store"
+	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/test/dbtest"
 	"github.com/pandokos/pandokos/test/testutil"
 )
@@ -98,6 +101,22 @@ func TestUnlimitedStats(t *testing.T) {
 		testutil.Eventually(t, 5*time.Second, "the second instance to skip", func() bool { return second.Stats().Skipped == 1 })
 		if st := second.Stats(); st.Written != 0 || st.Failed != 0 {
 			t.Errorf("the second instance: %+v", st)
+		}
+	})
+
+	t.Run("dropped day is failed", func(t *testing.T) {
+		// An auditor that is never run: its queue (256 entries) fills and the next day offered is
+		// dropped, which is a day that will not be written now.
+		aud := resolver.NewUnlimitedAuditor(d.Open(t, store.RoleGateway), nil, clk.now)
+		for i := 1; i <= 256; i++ {
+			aud.Note(tenant.ID{byte(i), byte(i >> 8), 1}, today, "UTC", "openai", "gpt-4o", reqID(i))
+		}
+		if st := aud.Stats(); st.Failed != 0 {
+			t.Fatalf("a queue that is not full: %+v", st)
+		}
+		aud.Note(tenant.ID{0, 0, 2}, today, "UTC", "openai", "gpt-4o", reqID(999))
+		if st := aud.Stats(); st.Failed != 1 || st.Written != 0 || st.Skipped != 0 {
+			t.Errorf("after one dropped day: %+v", st)
 		}
 	})
 

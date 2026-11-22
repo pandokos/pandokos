@@ -153,6 +153,8 @@ func TestRedactionKeepsOperationalValues(t *testing.T) {
 		"the scheme is bearer.",
 		"bearer: not accepted here",
 		"Bearer",
+		"the bearer token was refused",
+		"Bearer authentication failed for this request",
 		"1.5s",
 		"250ms",
 		"23505",
