@@ -43,45 +43,80 @@ func ParseRules(mappings []string) ([]Rule, error) {
 // (at most four members), as an array of strings or as one string; any other shape gives none. At
 // most 256 groups are read.
 func Groups(claims map[string]json.RawMessage, path string) []string {
+	list, _ := readGroups(claims, path)
+	return list
+}
+
+// readGroups is Groups and, when the claim is there with a shape that gives no group, the name of
+// that shape (a JSON type, never any content of the claim).
+func readGroups(claims map[string]json.RawMessage, path string) (groups []string, badShape string) {
 	if path == "" {
-		return nil
+		return nil, ""
 	}
 	names := strings.Split(path, ".")
 	if len(names) > maxClaimDepth {
-		return nil
+		return nil, ""
 	}
 	raw, ok := claims[names[0]]
 	for _, name := range names[1:] {
 		if !ok {
-			return nil
+			return nil, ""
 		}
 		var obj map[string]json.RawMessage
 		if len(raw) == 0 || raw[0] != '{' || json.Unmarshal(raw, &obj) != nil {
-			return nil
+			return nil, shapeOf(raw)
 		}
 		raw, ok = obj[name]
 	}
 	if !ok || len(raw) == 0 {
-		return nil
+		return nil, ""
 	}
 	switch raw[0] {
 	case '"':
 		var one string
-		if json.Unmarshal(raw, &one) != nil || one == "" {
-			return nil
+		if json.Unmarshal(raw, &one) != nil {
+			return nil, "string"
 		}
-		return []string{one}
+		if one == "" {
+			return nil, ""
+		}
+		return []string{one}, ""
 	case '[':
 		var list []string
-		if err := json.Unmarshal(raw, &list); err != nil || len(list) == 0 {
-			return nil
+		if err := json.Unmarshal(raw, &list); err != nil {
+			return nil, "array of other values"
+		}
+		if len(list) == 0 {
+			return nil, ""
 		}
 		if len(list) > maxGroups {
 			list = list[:maxGroups]
 		}
-		return list
+		return list, ""
+	case 'n': // null is a claim that is not there
+		return nil, ""
 	}
-	return nil
+	return nil, shapeOf(raw)
+}
+
+// shapeOf names the JSON type of a value; "" for a missing value or null.
+func shapeOf(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	switch raw[0] {
+	case '{':
+		return "object"
+	case '[':
+		return "array"
+	case '"':
+		return "string"
+	case 't', 'f':
+		return "boolean"
+	case 'n':
+		return ""
+	}
+	return "number"
 }
 
 // Grants returns the platform roles and the roles per tenant name that rules give to groups. A

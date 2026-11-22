@@ -248,6 +248,48 @@ func TestCompleteSignsIn(t *testing.T) {
 	}
 }
 
+// TestGroupsClaimShapeLogged: a groups claim of another shape gives no group and a warning that says
+// the shape and nothing of the claim (section 5.9).
+func TestGroupsClaimShapeLogged(t *testing.T) {
+	canary := "canary-" + b64([]byte(t.Name()))
+	idp := fakeidp.Start(t, fakeidp.Options{Users: map[string]fakeidp.Claims{
+		"ada":    {"groups": []string{"admins"}},
+		"none":   {"name": "None"},
+		"object": {"groups": map[string]any{"k": canary}},
+		"number": {"groups": 3},
+		"mixed":  {"groups": []any{"a", 1}},
+	}})
+	r := newRigOn(t, idp)
+	signIn := func(sub string) oidc.Identity {
+		t.Helper()
+		idp.SignInAs(sub)
+		seed, q, _ := r.flow(t)
+		id, err := r.p.Complete(ctx(t), seed, q)
+		if err != nil {
+			t.Fatalf("%s: %v", sub, err)
+		}
+		return id
+	}
+	for _, sub := range []string{"ada", "none"} {
+		signIn(sub)
+	}
+	if strings.Contains(r.logs.String(), "groups claim") {
+		t.Errorf("a warning for a usable or an absent claim: %s", r.logs.String())
+	}
+	for _, sub := range []string{"object", "number", "mixed"} {
+		before := strings.Count(r.logs.String(), "groups claim has an unexpected shape")
+		if id := signIn(sub); len(id.Groups) != 0 {
+			t.Errorf("%s: groups %v", sub, id.Groups)
+		}
+		if got := strings.Count(r.logs.String(), "groups claim has an unexpected shape"); got != before+1 {
+			t.Errorf("%s: %d warnings, want 1 more than %d", sub, got, before)
+		}
+	}
+	if strings.Contains(r.logs.String(), canary) {
+		t.Error("the log holds the content of the claim")
+	}
+}
+
 // TestCodeExchange is T-809.
 func TestCodeExchange(t *testing.T) {
 	t.Run("the token request, in both client authentication modes", func(t *testing.T) {

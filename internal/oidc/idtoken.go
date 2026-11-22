@@ -49,7 +49,13 @@ func (p *Provider) identity(ctx context.Context, jwksURI, idToken, nonce string)
 	if !ok || sub == "" || utf8.RuneCountInString(sub) > maxSubjectLength || strings.ContainsFunc(sub, unicode.IsControl) {
 		return Identity{}, &Failure{Reason: "subject_missing"}
 	}
-	id := Identity{Subject: sub, Groups: Groups(claims, p.o.GroupsClaim)}
+	groups, shape := readGroups(claims, p.o.GroupsClaim)
+	if shape != "" {
+		// The roles that the rules gave through this claim are removed at reconciliation: say so, and
+		// say only what shape the claim has.
+		p.o.Logger.Warn("groups claim has an unexpected shape: no group is read", "shape", shape)
+	}
+	id := Identity{Subject: sub, Groups: groups}
 	id.Name, _ = stringClaim(claims[p.o.NameClaim])
 	id.Email, _ = stringClaim(claims[p.o.EmailClaim])
 	return id, nil
