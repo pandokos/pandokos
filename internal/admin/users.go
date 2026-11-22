@@ -71,15 +71,26 @@ func mapPeopleConstraint(err error) error {
 	return err
 }
 
-// checkRolesIn refuses a role that does not exist in the scope, that a user cannot hold, or that the
-// caller does not hold itself (the rule against escalation).
-func checkRolesIn(p authz.Principal, field string, roles []string, scope authz.Scope) error {
+// checkPlatformRoles refuses a role that does not exist as a platform role that a user can hold. That
+// the caller may hand it out is the guard's question, asked in the transaction that writes.
+func checkPlatformRoles(field string, roles []string) error {
 	for _, r := range roles {
-		if !authz.Assignable(p, r, scope) {
-			return invalid(field, "must name roles that users can hold and that the caller holds")
+		if def, ok := authz.RoleByName(r); !ok || def.Scope != authz.ScopePlatform || !def.Members {
+			return invalid(field, "must name platform roles that users can hold")
 		}
 	}
 	return nil
+}
+
+// platformRolePermissions is the union of the permissions of built-in platform roles.
+func platformRolePermissions(roles []string) []string {
+	byRole := map[string][]string{}
+	for _, r := range roles {
+		if def, ok := authz.RoleByName(r); ok {
+			byRole[r] = def.Permissions
+		}
+	}
+	return permissionsOf(roles, byRole)
 }
 
 var reSubject = regexp.MustCompile(`^[^\x00-\x1f\x7f]{1,255}$`)
@@ -205,7 +216,7 @@ func (s *server) CreateUser(ctx context.Context, in adminapi.CreateUserInput) (*
 	b := in.Body
 	p := principalOf(ctx)
 	st := stateOf(ctx)
-	if err := checkRolesIn(p, "platform_roles", b.PlatformRoles, authz.ScopePlatform); err != nil {
+	if err := checkPlatformRoles("platform_roles", b.PlatformRoles); err != nil {
 		return nil, err
 	}
 	var gen account.Generated
@@ -243,6 +254,9 @@ func (s *server) CreateUser(ctx context.Context, in adminapi.CreateUserInput) (*
 	var id string
 	err := s.db.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
 		q := queries.New(tx)
+		if err := s.guardGrant(ctx, p, platformRolePermissions(b.PlatformRoles)); err != nil {
+			return err
+		}
 		u, err := q.CreateUser(ctx, queries.CreateUserParams{SignIn: string(b.SignIn), DisplayName: b.DisplayName, Email: b.Email})
 		if err != nil {
 			return err
@@ -290,7 +304,7 @@ func (s *server) UpdateUser(ctx context.Context, in adminapi.UpdateUserInput) (*
 	}
 	p := principalOf(ctx)
 	st := stateOf(ctx)
-	if err := checkRolesIn(p, "platform_roles", b.PlatformRoles.Value, authz.ScopePlatform); err != nil {
+	if err := checkPlatformRoles("platform_roles", b.PlatformRoles.Value); err != nil {
 		return nil, err
 	}
 	err := s.platformUser(ctx, in.User, func(ctx context.Context, tx store.Tx, q *queries.Queries, cur queries.GetUserRow) error {
@@ -309,6 +323,9 @@ func (s *server) UpdateUser(ctx context.Context, in adminapi.UpdateUserInput) (*
 			want := sortedCopy(b.PlatformRoles.Value)
 			have := sortedCopy(cur.PlatformRoles)
 			added, removed = difference(want, have), difference(have, want)
+			if err := s.guardGrant(ctx, p, platformRolePermissions(added), platformRolePermissions(removed)); err != nil {
+				return err
+			}
 			if p.Kind == authz.KindUser && p.ID == cur.ID && len(want) == 0 && len(have) > 0 {
 				return invalidState("platform_roles", "a user cannot remove its own last platform role")
 			}
@@ -407,6 +424,10 @@ func (s *server) ResetUserPassword(ctx context.Context, in adminapi.ResetUserPas
 		return nil, err
 	}
 	err = s.platformUser(ctx, in.User, func(ctx context.Context, tx store.Tx, _ *queries.Queries, cur queries.GetUserRow) error {
+		target := authz.Principal{Kind: authz.KindUser, Roles: cur.PlatformRoles}
+		if err := s.guardGrant(ctx, p, target.Effective()); err != nil {
+			return err
+		}
 		pw, expires, err := s.accounts.ResetPassword(ctx, tx, cur.ID, g)
 		if errors.Is(err, account.ErrNotLocal) {
 			return invalidState("user", "has no password")

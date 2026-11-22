@@ -377,26 +377,3 @@ var (
 	ErrUnauthenticated = errors.New("authz: unauthenticated")
 	ErrUnavailable     = errors.New("authz: cannot verify the credential now")
 )
-
-// Assignable reports whether p may give a user the role in the scope: the role exists with that
-// scope, is one a user can hold (tenant-admin, platform-admin), and p holds every permission of
-// it. This is the rule against escalation: nobody hands out more than they hold.
-func Assignable(p Principal, role string, scope Scope) bool {
-	if role != RolePlatformAdmin && role != RoleTenantAdmin {
-		return false
-	}
-	r, ok := RoleByName(role)
-	if !ok || r.Scope != scope {
-		return false
-	}
-	held := map[string]bool{}
-	for _, e := range p.Effective() {
-		held[e] = true
-	}
-	for _, perm := range r.Permissions {
-		if !held[perm] {
-			return false
-		}
-	}
-	return true
-}

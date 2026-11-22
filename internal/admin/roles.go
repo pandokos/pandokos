@@ -148,9 +148,13 @@ func (s *server) CreateRole(ctx context.Context, in adminapi.CreateRoleInput) (*
 	if reservedRoleName(b.Name) {
 		return nil, invalid("name", "is the name of a built-in role or starts with a prefix that is kept for roles of the product")
 	}
+	p := principalOf(ctx)
 	var out adminapi.Role
 	err = s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
 		q := queries.New(tx)
+		if err := s.guardGrant(ctx, p, perms); err != nil {
+			return err
+		}
 		n, err := q.CountTenantRoles(ctx)
 		if err != nil {
 			return err
@@ -216,6 +220,7 @@ func (s *server) UpdateRole(ctx context.Context, in adminapi.UpdateRoleInput) (*
 			return nil, err
 		}
 	}
+	p := principalOf(ctx)
 	var out adminapi.Role
 	err = s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
 		q := queries.New(tx)
@@ -224,6 +229,14 @@ func (s *server) UpdateRole(ctx context.Context, in adminapi.UpdateRoleInput) (*
 			return errNotFound
 		}
 		if err != nil {
+			return err
+		}
+		// The role as it is, and as it will be; before any shortcut for a change that is none.
+		sets := [][]string{cur.Permissions}
+		if b.Permissions.Set {
+			sets = append(sets, perms)
+		}
+		if err := s.guardGrant(ctx, p, sets...); err != nil {
 			return err
 		}
 		par := queries.UpdateTenantRoleParams{ID: cur.ID, Description: cur.Description, Permissions: cur.Permissions}
@@ -266,6 +279,7 @@ func (s *server) setRoleState(ctx context.Context, tenantText, name, reason, to,
 	if err := checkReasonText(reason); err != nil {
 		return nil, err
 	}
+	p := principalOf(ctx)
 	var out adminapi.Role
 	err = s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
 		q := queries.New(tx)
@@ -274,6 +288,9 @@ func (s *server) setRoleState(ctx context.Context, tenantText, name, reason, to,
 			return errNotFound
 		}
 		if err != nil {
+			return err
+		}
+		if err := s.guardGrant(ctx, p, cur.Permissions); err != nil {
 			return err
 		}
 		if cur.State != to {
@@ -313,6 +330,7 @@ func (s *server) DeleteRole(ctx context.Context, in adminapi.DeleteRoleInput) (*
 	if err != nil {
 		return nil, err
 	}
+	p := principalOf(ctx)
 	err = s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
 		q := queries.New(tx)
 		cur, err := q.LockTenantRole(ctx, in.Role)
@@ -320,6 +338,9 @@ func (s *server) DeleteRole(ctx context.Context, in adminapi.DeleteRoleInput) (*
 			return errNotFound
 		}
 		if err != nil {
+			return err
+		}
+		if err := s.guardGrant(ctx, p, cur.Permissions); err != nil {
 			return err
 		}
 		holders, err := q.CountRoleHolders(ctx, cur.Name)

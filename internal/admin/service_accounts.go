@@ -100,7 +100,11 @@ func (s *server) CreateServiceAccount(ctx context.Context, in adminapi.CreateSer
 	var out adminapi.ServiceAccount
 	err = s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
 		q := queries.New(tx)
-		if _, err := s.resolveRoles(ctx, q, b.Roles, false); err != nil {
+		perms, err := s.resolveRoles(ctx, q, b.Roles, false)
+		if err != nil {
+			return err
+		}
+		if err := s.guardAssignment(ctx, q, p, nil, b.Roles, perms); err != nil {
 			return err
 		}
 		sa, err := q.CreateServiceAccount(ctx, queries.CreateServiceAccountParams{
@@ -164,14 +168,21 @@ func (s *server) UpdateServiceAccount(ctx context.Context, in adminapi.UpdateSer
 			}
 			return err
 		}
+		var perms map[string][]string
 		if b.Roles.Set {
-			if _, err := s.resolveRoles(ctx, q, b.Roles.Value, false); err != nil {
+			var err error
+			if perms, err = s.resolveRoles(ctx, q, b.Roles.Value, false); err != nil {
 				return err
 			}
 		}
 		cur, err := q.GetServiceAccount(ctx, in.ServiceAccount)
 		if err != nil {
 			return err
+		}
+		if b.Roles.Set {
+			if err := s.guardAssignment(ctx, q, p, cur.Roles, b.Roles.Value, perms); err != nil {
+				return err
+			}
 		}
 		detail := map[string]any{}
 		par := queries.UpdateServiceAccountParams{ID: cur.ID}

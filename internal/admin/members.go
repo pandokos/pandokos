@@ -166,7 +166,11 @@ func (s *server) CreateMember(ctx context.Context, in adminapi.CreateMemberInput
 	var userID string
 	err = s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
 		q := queries.New(tx)
-		if _, err := s.resolveRoles(ctx, q, b.Roles, true); err != nil {
+		perms, err := s.resolveRoles(ctx, q, b.Roles, true)
+		if err != nil {
+			return err
+		}
+		if err := s.guardAssignment(ctx, q, p, nil, b.Roles, perms); err != nil {
 			return err
 		}
 		roleDetail := map[string]any{"roles": sortedCopy(b.Roles), "source": "manual"}
@@ -227,7 +231,11 @@ func (s *server) UpdateMember(ctx context.Context, in adminapi.UpdateMemberInput
 	st := stateOf(ctx)
 	err = s.member(ctx, tid, in.User, false, func(ctx context.Context, tx store.Tx, q *queries.Queries, cur queries.GetMemberRow) error {
 		if b.Roles.Set {
-			if _, err := s.resolveRoles(ctx, q, b.Roles.Value, true); err != nil {
+			perms, err := s.resolveRoles(ctx, q, b.Roles.Value, true)
+			if err != nil {
+				return err
+			}
+			if err := s.guardAssignment(ctx, q, p, cur.Roles, b.Roles.Value, perms); err != nil {
 				return err
 			}
 		}
@@ -296,6 +304,9 @@ func (s *server) DeleteMember(ctx context.Context, in adminapi.DeleteMemberInput
 	err = s.member(ctx, tid, in.User, false, func(ctx context.Context, tx store.Tx, q *queries.Queries, cur queries.GetMemberRow) error {
 		if p.Kind == authz.KindUser && p.ID == cur.UserID {
 			return invalidState("user", "a user cannot remove itself")
+		}
+		if err := s.guardHeld(ctx, q, p, cur.Roles); err != nil {
+			return err
 		}
 		managed := cur.ManagingTenantID != nil
 		if managed {
@@ -391,7 +402,14 @@ func (s *server) ResetMemberPassword(ctx context.Context, in adminapi.ResetMembe
 	if err != nil {
 		return nil, err
 	}
-	err = s.member(ctx, tid, in.User, true, func(ctx context.Context, tx store.Tx, _ *queries.Queries, cur queries.GetMemberRow) error {
+	err = s.member(ctx, tid, in.User, true, func(ctx context.Context, tx store.Tx, q *queries.Queries, cur queries.GetMemberRow) error {
+		grant, err := q.GetMemberGrant(ctx, cur.UserID)
+		if err != nil {
+			return err
+		}
+		if err := s.guardGrant(ctx, p, targetPrincipal(authz.KindUser, tid, grant.Roles, grant.Granted, nil).Effective()); err != nil {
+			return err
+		}
 		username = cur.Username
 		pw, expires, err := s.accounts.ResetPassword(ctx, tx, cur.UserID, g)
 		if errors.Is(err, account.ErrNotLocal) {

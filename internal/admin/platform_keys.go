@@ -6,6 +6,7 @@ import (
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/audit"
 	"github.com/pandokos/pandokos/internal/authn"
+	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/queries"
 )
@@ -59,11 +60,18 @@ func (s *server) GetPlatformKey(ctx context.Context, in adminapi.GetPlatformKeyI
 	return &o, nil
 }
 
-// CreatePlatformKey issues a platform key with the role platform-admin.
+// CreatePlatformKey issues a platform key with a platform role (default platform-admin).
 func (s *server) CreatePlatformKey(ctx context.Context, in adminapi.CreatePlatformKeyInput) (*adminapi.PlatformKeyCreated, error) {
 	b := in.Body
 	if b.ExpiresAt != nil && !b.ExpiresAt.After(s.now()) {
 		return nil, invalid("expires_at", "must be in the future")
+	}
+	role := b.Role
+	if role == "" {
+		role = authz.RolePlatformAdmin
+	}
+	if def, ok := authz.RoleByName(role); !ok || def.Scope != authz.ScopePlatform {
+		return nil, invalid("role", "must name a platform role")
 	}
 	p := principalOf(ctx)
 	st := stateOf(ctx)
@@ -74,8 +82,11 @@ func (s *server) CreatePlatformKey(ctx context.Context, in adminapi.CreatePlatfo
 			return nil, gerr
 		}
 		err := s.db.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
+			if err := s.guardGrant(ctx, p, platformRolePermissions([]string{role})); err != nil {
+				return err
+			}
 			row, err := queries.New(tx).CreatePlatformKey(ctx, queries.CreatePlatformKeyParams{
-				KeyID: keyID, Description: b.Description, Role: "platform-admin", SecretHash: hash[:], ExpiresAt: utcPtr(b.ExpiresAt),
+				KeyID: keyID, Description: b.Description, Role: role, SecretHash: hash[:], ExpiresAt: utcPtr(b.ExpiresAt),
 			})
 			if err != nil {
 				return err

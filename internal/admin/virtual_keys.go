@@ -113,6 +113,18 @@ func (s *server) CreateVirtualKey(ctx context.Context, in adminapi.CreateVirtual
 				}
 				return err
 			}
+			// What the key will be able to do, computed by the function the gateway uses.
+			grant, err := q.GetServiceAccountGrant(ctx, b.ServiceAccountID)
+			if err != nil {
+				return err
+			}
+			var scopes []string
+			if len(b.Scopes) > 0 {
+				scopes = b.Scopes
+			}
+			if err := s.guardGrant(ctx, p, targetPrincipal(authz.KindServiceAccount, tid, grant.Roles, grant.Granted, scopes).Effective()); err != nil {
+				return err
+			}
 			var pin *string
 			if b.CredentialID != "" {
 				// The credential must be one of the tenant (the session sees no other) and not
