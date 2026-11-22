@@ -82,8 +82,14 @@ The users that the platform manages are `listUsers`, `createUser`, `getUser`, `u
 `disableUser`, `enableUser`, `unlockUser`, `resetUserPassword` and `revokeUserSessions`; the members
 of a tenant are `listMembers`, `createMember`, `getMember`, `updateMember`, `deleteMember`,
 `disableMember`, `enableMember`, `unlockMember`, `resetMemberPassword` and `revokeMemberSessions`.
-Every operation that answers 201 takes an `Idempotency-Key` header. Part A of the sprint adds the
-document and the generated code; the handlers follow in the next steps.
+Every operation that answers 201 takes an `Idempotency-Key` header.
+
+A user is global, with one sign-in method and one managing side. The platform operations show the
+users that the platform manages only; a tenant's members are shown by the tenant's operations, and a
+user that a tenant manages is reset, disabled, unlocked or signed out by that tenant's administrators
+only (a platform-managed member: `409 invalid_state`). A generated password is shown once, in the
+response of the creation or the reset; a user cannot disable itself or remove its own last platform
+role (`409 invalid_state`).
 
 ## The accepted subset of OpenAPI 3.1
 
@@ -97,8 +103,11 @@ error, so the document cannot state a rule the generated code does not enforce.
 
 ## Commands
 
-Every operation has one CLI command that only calls the generated client. `TENANT` and
-`SERVICE_ACCOUNT` accept an ID or a name.
+Every operation has one CLI command that only calls the generated client, except the public
+operations and the operations on the caller's own session: the CLI authenticates with a key.
+`TENANT` and `SERVICE_ACCOUNT` accept an ID or a name; a user or a member also a username. The
+commands that return a generated password print it once on standard output, or write it with
+`--password-out FILE` to a new file of mode 0600.
 
 | Command | Operation |
 |---|---|
@@ -122,6 +131,8 @@ Every operation has one CLI command that only calls the generated client. `TENAN
 | `token-issuer list`, `create`, `get`, `update`, `delete`, `platform` | `listTokenIssuers`, `createTokenIssuer`, `getTokenIssuer`, `updateTokenIssuer`, `deleteTokenIssuer`, `listTenantPlatformIssuers` |
 | `subject-mapping list`, `create`, `get`, `delete` | `listSubjectMappings`, `createSubjectMapping`, `getSubjectMapping`, `deleteSubjectMapping` |
 | `platform-issuer list`, `create`, `get`, `update`, `delete`, `tenants`, `add-tenant`, `remove-tenant` | `listPlatformIssuers`, `createPlatformIssuer`, `getPlatformIssuer`, `updatePlatformIssuer`, `deletePlatformIssuer`, `listPlatformIssuerTenants`, `putPlatformIssuerTenant`, `deletePlatformIssuerTenant` |
+| `platform-user list`, `create`, `get`, `update`, `disable`, `enable`, `reset-password`, `unlock`, `revoke-sessions` | `listUsers`, `createUser`, `getUser`, `updateUser`, `disableUser`, `enableUser`, `resetUserPassword`, `unlockUser`, `revokeUserSessions` |
+| `member list`, `add`, `get`, `update`, `remove`, `disable`, `enable`, `reset-password`, `unlock`, `revoke-sessions` (with `--tenant`) | `listMembers`, `createMember`, `getMember`, `updateMember`, `deleteMember`, `disableMember`, `enableMember`, `resetMemberPassword`, `unlockMember`, `revokeMemberSessions` |
 | `import-prices (--file FILE \| --embedded) [--dry-run]` | none: a host command that reads a price dataset and writes through the database ([catalogue guide](../operations/catalogue.md)) |
 | `kek generate --out FILE` | none: a local command that writes a key-encryption key ([vault guide](../operations/vault.md)) |
 

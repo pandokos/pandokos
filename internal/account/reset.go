@@ -56,3 +56,34 @@ func (s *Service) Unlock(ctx context.Context, tx store.Tx, username string) erro
 	_, err := queries.New(tx).DeleteThrottle(ctx, UsernameKey(username))
 	return err
 }
+
+// Generated is a first password: the password itself, shown once, its hash and the time it stops
+// working. The hash is computed outside any transaction.
+type Generated struct {
+	Password  secret.Secret
+	Hash      string
+	ExpiresAt time.Time
+}
+
+// Generate makes a first password for a new local account (section 5.4).
+func (s *Service) Generate(ctx context.Context) (Generated, error) {
+	pw, err := password.Generate()
+	if err != nil {
+		return Generated{}, err
+	}
+	hctx, cancel := context.WithTimeout(ctx, hashWait)
+	defer cancel()
+	hash, err := s.o.Hasher.Hash(hctx, pw)
+	if err != nil {
+		return Generated{}, err
+	}
+	return Generated{Password: pw, Hash: hash, ExpiresAt: s.o.Now().Add(s.o.GeneratedPasswordTTL).UTC().Truncate(time.Second)}, nil
+}
+
+// CreateAccount gives the user a local account with the generated password, which must be changed.
+func (s *Service) CreateAccount(ctx context.Context, tx store.Tx, userID, username string, g Generated) error {
+	exp := g.ExpiresAt
+	return queries.New(tx).CreateLocalAccount(ctx, queries.CreateLocalAccountParams{
+		UserID: userID, Username: username, PasswordHash: g.Hash, MustChange: true, PasswordExpiresAt: &exp,
+	})
+}

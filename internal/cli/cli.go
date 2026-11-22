@@ -384,17 +384,20 @@ func cell(row []pair, key string) string {
 	return ""
 }
 
-// keyOut creates the file for a new key before the key exists, so that an existing file is an
+// keyOut creates the file for a new key or password before it exists, so that an existing file is an
 // error before anything is issued.
 type keyOut struct{ path string }
 
-func openKeyOut(path string) (*keyOut, error) {
+func openKeyOut(path string) (*keyOut, error) { return openSecretOut(path, "key") }
+
+// openSecretOut creates the out-file of a secret of the kind named (key, password).
+func openSecretOut(path, what string) (*keyOut, error) {
 	if path == "" {
 		return nil, nil //nolint:nilnil // no out-file was asked for
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // the path is a flag of the operator
 	if err != nil {
-		return nil, fmt.Errorf("cannot create the key file: %w", err)
+		return nil, fmt.Errorf("cannot create the %s file: %w", what, err)
 	}
 	_ = f.Close()
 	return &keyOut{path}, nil
@@ -414,6 +417,12 @@ func (k *keyOut) write(key string) error {
 // secret blanked when it went to an out-file), else the resource through text and then the key or
 // a note that it was written to the out-file.
 func (a *app) printCreated(text func() error, full any, secretText string, out *keyOut, blank func()) error {
+	return a.printSecretCreated("key", text, full, secretText, out, blank)
+}
+
+// printSecretCreated is printCreated for a secret of the kind named: a key shows as "key:", a
+// password as "password:".
+func (a *app) printSecretCreated(what string, text func() error, full any, secretText string, out *keyOut, blank func()) error {
 	if out != nil {
 		if err := out.write(secretText); err != nil {
 			return err
@@ -427,9 +436,11 @@ func (a *app) printCreated(text func() error, full any, secretText string, out *
 		return err
 	}
 	if out != nil {
-		fmt.Fprintf(a.stdout, "key written to %s\n", out.path)
-	} else {
+		fmt.Fprintf(a.stdout, "%s written to %s\n", what, out.path)
+	} else if what == "key" {
 		fmt.Fprintf(a.stdout, "key:     %s\n", secretText)
+	} else {
+		fmt.Fprintf(a.stdout, "%s: %s\n", what, secretText)
 	}
 	return nil
 }

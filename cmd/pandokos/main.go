@@ -32,7 +32,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, environ [
 		return runImportPrices(ctx, args[1:], stdout, stderr, environ)
 	case "whoami", "tenant", "service-account", "key", "platform-key", "credential", "tenant-credential",
 		"provider", "endpoint", "model", "price", "price-import", "tenant-model", "model-restriction", "capability", "usage",
-		"token-issuer", "subject-mapping", "platform-issuer", "limit", "platform-limit", "price-list":
+		"token-issuer", "subject-mapping", "platform-issuer", "limit", "platform-limit", "price-list",
+		"platform-user", "member":
 		return runClient(ctx, args, stdout, stderr, environ)
 	case "user":
 		return runUser(ctx, args[1:], stdout, stderr, environ)

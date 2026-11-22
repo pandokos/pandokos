@@ -95,7 +95,7 @@ func newSide(t *testing.T, api *apitest.API, name string) side {
 
 func newAPIWorld(t *testing.T) *apiWorld {
 	t.Helper()
-	w := &apiWorld{api: apitest.New(t)}
+	w := &apiWorld{api: apitest.NewPeople(t, apitest.PeopleConfig{})} // the member operations need local accounts
 	w.a, w.b = newSide(t, w.api, "tenant-a"), newSide(t, w.api, "tenant-b")
 
 	// The catalogue of sprint 2.2: a provider with a model for everybody and a model granted to
@@ -167,6 +167,15 @@ func (w *apiWorld) fresh(t *testing.T, s side, op adminapi.Operation) apitest.Pa
 			t.Fatal(err)
 		}
 		p.Model = m.ID
+	}
+	// The operations on a member get a member of their own that the tenant manages, so that the
+	// ones that remove or disable it leave the others.
+	if strings.Contains(op.Path, "/members/{user}") {
+		id, err := tenant.ParseID(s.tenant.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p.User = w.api.DB.TenantUser(t, id, apitest.UniqueName("member"), []string{"tenant-admin"}).ID
 	}
 	// The operations of sprint 4.1 that delete a registration or a mapping get one of their own, so
 	// that the ones the other operations name are still there.

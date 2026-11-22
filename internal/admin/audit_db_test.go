@@ -636,7 +636,22 @@ func TestEveryChangeIsAudited(t *testing.T) {
 		if perm, _ := authz.Lookup(op.Permission); perm.Scope == authz.ScopePlatform {
 			key = api.PlatformKey()
 		}
-		if resp := f.w.call(t, op, key); resp.Status != 200 {
+		// The reads of a user or a member (sprint 4.2) name a user that exists: a platform user, or a
+		// member that the tenant manages.
+		params := f.w.params()
+		if strings.Contains(op.Path, "{user}") {
+			if strings.HasPrefix(op.Path, "/v1/users") {
+				params.User = api.DB.PlatformUser(t, apitest.UniqueName("reader"), nil).ID
+			} else {
+				tid, err := tenant.ParseID(f.w.tenant.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				params.User = api.DB.TenantUser(t, tid, apitest.UniqueName("reader"), []string{"tenant-admin"}).ID
+			}
+		}
+		c := apitest.CallFor(t, op, params)
+		if resp := api.Do(t, c.Method, c.Path, key, c.Body, nil); resp.Status != 200 {
 			t.Errorf("%s: status %d\n%s", op.ID, resp.Status, resp.Body)
 		}
 	}
