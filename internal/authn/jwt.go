@@ -3,7 +3,6 @@ package authn
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"time"
 )
 
@@ -17,9 +16,16 @@ type JWTCheck struct {
 }
 
 // VerifyJWT checks the signature and the claims of token against c and returns its claims. It is
-// the validation of tokens of trusted issuers, exported for the OpenID Connect relying party
-// (sprint 4.2); its behaviour for tokens does not change. Part A gives it no body.
+// the validation of tokens of trusted issuers (checks 1 to 9 of sprint 4.1, section 5.4), exported
+// for the OpenID Connect relying party (sprint 4.2). A refusal is a *Failure; keys that cannot be
+// obtained are an error that wraps authz.ErrUnavailable.
 func VerifyJWT(ctx context.Context, keys KeySource, now time.Time, token string, c JWTCheck) (map[string]json.RawMessage, error) {
-	_, _, _, _, _ = ctx, keys, now, token, c
-	return nil, errors.New("authn: VerifyJWT is not implemented")
+	if c.MaxBytes <= 0 || !looksLikeToken(token, c.MaxBytes) {
+		return nil, &Failure{Reason: "malformed"}
+	}
+	alg, kid, _, _, err := peek(token)
+	if err != nil {
+		return nil, err
+	}
+	return verifyJWT(ctx, keys, now, token, alg, kid, c)
 }

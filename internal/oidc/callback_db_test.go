@@ -37,7 +37,7 @@ func (r *admRig) sessions(t *testing.T) int {
 
 // refusedAt checks that a callback ended as a refusal: the failure redirect, the seed cookie cleared,
 // no session, and no code redeemed.
-func (r *admRig) refused(t *testing.T, what string, hops []apitest.Hop, b *apitest.Browser, tokenRequests int) {
+func (r *admRig) refused(t *testing.T, what string, hops []apitest.Hop, _ *apitest.Browser, tokenRequests int) {
 	t.Helper()
 	end := hops[len(hops)-1]
 	u, err := url.Parse(end.Location)

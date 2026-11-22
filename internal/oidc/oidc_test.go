@@ -423,7 +423,7 @@ func TestIDToken(t *testing.T) {
 		}, []string{"issuer_mismatch"}},
 		"audience without the client": {nil, func(_ *fakeidp.Server, c fakeidp.Claims) fakeidp.Claims { return c.With("aud", "someone-else") }, []string{"wrong_audience"}},
 		"no audience":                 {nil, func(_ *fakeidp.Server, c fakeidp.Claims) fakeidp.Claims { return c.Without("aud") }, []string{"wrong_audience"}},
-		"expired": {nil, func(s *fakeidp.Server, c fakeidp.Claims) fakeidp.Claims {
+		"expired": {nil, func(_ *fakeidp.Server, c fakeidp.Claims) fakeidp.Claims {
 			return c.With("iat", time.Now().Add(-2*time.Hour).Unix()).With("exp", time.Now().Add(-time.Hour).Unix())
 		}, []string{"expired"}},
 		"no exp": {nil, func(_ *fakeidp.Server, c fakeidp.Claims) fakeidp.Claims { return c.Without("exp") }, []string{"expired"}},

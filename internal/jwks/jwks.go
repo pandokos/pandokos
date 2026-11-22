@@ -56,6 +56,8 @@ type Cache struct {
 	mu           sync.Mutex // guards lru and byKey
 	lru          *list.List // of *entry, most recently used first
 	byKey        map[Source]*list.Element
+	metaMu       sync.Mutex // guards meta
+	meta         map[string]*metaEntry
 }
 
 // entry is the state of one source. Its mutex guards every field; a fetch in flight runs without
