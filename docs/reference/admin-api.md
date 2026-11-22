@@ -41,6 +41,9 @@ time).
   `replaceCredentialSecret` and never returned, not even by create. A response shows its label,
   `fingerprint` and `hint` instead. For a request body that has a `secret` member, an unknown member
   is reported as the field `body` without naming the member, because the name could be a secret.
+  Only a member named `secret` makes a body count as carrying one (`carriesSecret`); in any other body
+  an unknown member is named in the problem, because the name is what the caller must fix. The value of
+  an unknown member is never echoed in either case.
 - Every response carries `X-Pandokos-Request-Id` and `Cache-Control: no-store`.
 
 ## Collections

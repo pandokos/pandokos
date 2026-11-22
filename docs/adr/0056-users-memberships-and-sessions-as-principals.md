@@ -85,3 +85,9 @@ API, and IAM-22 says only sessions carry people.
 
 - 2026-11-22: proposed with sprint 4.2. Maintainer decisions of 2026-11-21: a bearer token never acts
   as a user (O-1); sign-in events of a tenant-managed user go to its tenant's log (O-3).
+- 2026-11-22: after review of sprint 4.2: for a user that a tenant manages, the tenant's audit row of a
+  sign-in, a lock, a password change or a reset is written in a second transaction right after the
+  commit of the platform one, because the session of a tenant cannot insert sessions or touch the
+  throttle rows. A crash between the two leaves the change without its tenant row (the host commands
+  report `ErrAuditIncomplete`). AUD-03 holds for the platform log and for every operation of a tenant's
+  administrator; it does not hold for these four actions of a tenant-managed user.

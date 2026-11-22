@@ -72,7 +72,8 @@ also an administrator of tenant B, and sign in as them. A person who works in se
 therefore a platform-managed user, which a tenant can only add as a member and never touch.
 
 A user can hold `tenant-admin` in a tenant or `platform-admin`; whoever assigns a role holds every
-permission of it. A user cannot disable itself or remove its own last platform role. Users are never
+permission of it. A user cannot disable itself or remove its own last platform role; a tenant administrator who is a
+user cannot disable or remove its own membership either (`409 invalid_state`). Users are never
 deleted in this release; disabling ends their sessions at once and enabling does not bring one back.
 Usernames are **unique in the installation**, so `409 conflict` on a username tells a tenant
 administrator that the name is taken somewhere (possibly in another tenant); choose e-mail-shaped
@@ -83,7 +84,11 @@ usernames to avoid collisions. Usernames are lower case.
 A user record holds the display name and e-mail address, a local account a username and the hash of its
 password, a federated user an issuer and a subject. No address, no user agent, no place of last sign-in.
 Sign-in failures are audited without the typed username, because people type passwords into username
-fields: a row names the user ID when the account exists and nothing otherwise.
+fields: a row names the user ID when the account exists and nothing otherwise. For a user that a
+tenant manages, the sign-in, lock, password change and reset rows go to the tenant's log, which the
+platform scope cannot write: they are written in a second transaction right after the commit of the
+change itself, so a crash in between leaves the change without its row in the tenant's log (the host
+commands then report it). Everything else is written in the transaction of the change.
 
 ## 5. Passwords
 
@@ -248,7 +253,12 @@ compared exactly. A user can hold `platform-admin` and `tenant-admin` through ru
 the rules are separated by commas. At each sign-in the rules are **reconciled**: rows that a rule gave
 (`source: idp`) and the groups no longer justify are removed, missing ones are added, each with its audit
 row; rows an administrator made are never touched. A rule that names a role a user cannot hold is refused
-at start, and so is one that names a tenant that does not exist once tenants exist.
+at start, and so is one that names a tenant that does not exist once tenants exist. While no tenant
+exists yet, such a rule is accepted; at a sign-in a rule whose tenant is not there (not yet created, or
+deleted since) is **skipped** with a warning that gives its position in the list and nothing else, and
+the other rules apply. A groups claim that is there with a shape that gives no group (an object, a
+number, an array with other values than strings) is logged as a warning that names the shape only and
+never the claim; the user then has no group, and reconciliation removes the roles that rules gave.
 
 Keycloak, with the group membership mapper (claim name `groups`, full path off, in the ID token) and the
 groups `pandokos-admins` and `tenant-a-admins`:
@@ -287,7 +297,10 @@ There is no provider-initiated or back-channel logout and no refresh token.
 
 Failures are audited as `auth.failure` with `method: oidc` and a reason (`state_mismatch`,
 `state_unknown`, `provider_error`, `code_rejected`, `nonce_mismatch`, `unmapped_subject`, or a reason of
-the token validation); the subject is recorded only after the signature verified.
+the token validation); the subject is recorded only after the token was validated, in the audit row of
+the refusals that follow (`unmapped_subject`, `user_disabled`) and never in the operational log.
+Local sign-in switched off (`auth.local.enabled: false`) is audited as `auth.failure` with the reason
+`local_disabled`, within the same cap and without a user or a username.
 
 ## 10. Building a browser client
 
@@ -336,8 +349,10 @@ characters). A retry with the same key, the same operation and the same request 
 resource:
 
 - the first request's response is stored and replayed with `Idempotency-Replayed: true`, **without** the
-  members that are shown once (`key`, `secret`, `password`, `initial_password`): a retry after a lost
-  response learns the ID of the resource and can revoke or reset it;
+  text members that are shown once (a member named `key`, `secret`, `password`, `initial_password`, or
+  with another name that the audit log treats as sensitive): nothing else is removed, so the body is
+  the first one minus those members, and a retry after a lost response learns the ID of the resource
+  and can revoke or reset it;
 - the same key with another request: `422 idempotency_key_reused`;
 - the first request still running: `409 idempotency_in_progress` with `Retry-After`;
 - the first request succeeded but its response was not kept (the process stopped in between):

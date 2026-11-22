@@ -92,3 +92,9 @@ lifetimes.
 
 - 2026-11-22: proposed with sprint 4.2. Maintainer decisions of 2026-11-21: defaults confirmed (O-10);
   `auth.local.enabled: false` lets no password in (O-5); the breached-password list is not built (O-9).
+- 2026-11-22: after review of sprint 4.2: the audit row of a tenant-managed user's sign-in, lock,
+  password change or reset is written in the tenant's log in a second transaction right after the
+  commit of the change (see ADR 0056), so the test of "the same transaction" holds for the platform log
+  only. A sign-in that overlaps a password change, a reset or a disable creates no session: the success
+  transaction locks the user and its account and requires the hash that was verified and the state
+  `active`.
