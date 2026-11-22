@@ -257,6 +257,18 @@ func TestSignInEndpoint(t *testing.T) {
 		if c := code(t, b.SignIn(t, "good.person", "whatever password 123"), 403); c != "sign_in_disabled" {
 			t.Errorf("code %s", c)
 		}
+		failures := 0
+		for _, r := range off.d.FailureRows(t, tenant.ID{}) {
+			if r.Detail["reason"] == "local_disabled" {
+				failures++
+				if r.Detail["method"] != "local" || r.ResourceID != "" || strings.Contains(r.Raw, "good.person") {
+					t.Errorf("failure row %+v", r)
+				}
+			}
+		}
+		if failures != 1 {
+			t.Errorf("%d auth.failure rows with the reason local_disabled, want 1", failures)
+		}
 		m := decode[adminapi.AuthMethods](t, b.Do(t, "GET", "/v1/auth/methods", nil, nil), 200)
 		if m.Local.Enabled || m.Oidc.Enabled {
 			t.Errorf("methods %+v", m)

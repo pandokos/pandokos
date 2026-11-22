@@ -80,7 +80,7 @@ func (s *server) CompleteOidcSignIn(ctx context.Context, in adminapi.CompleteOid
 	st := stateOf(ctx)
 	setCookie(ctx, oidc.ClearSeedCookie())
 	failed := func(reason, userID string, tid tenant.ID) (*adminapi.Redirect, error) {
-		s.oidcFailed(ctx, st, reason, userID, tid)
+		s.oidcFailed(ctx, st, reason, userID, "", tid)
 		return s.postSignIn("sign_in_failed"), nil
 	}
 	query := url.Values{}
@@ -121,7 +121,9 @@ func (s *server) CompleteOidcSignIn(ctx context.Context, in adminapi.CompleteOid
 	if err != nil {
 		var r *account.Refusal
 		if errors.As(err, &r) {
-			return failed(r.Reason, r.UserID, r.TenantID)
+			// The token was validated: the subject is the provider's word and goes to the audit row.
+			s.oidcFailed(ctx, st, r.Reason, r.UserID, id.Subject, r.TenantID)
+			return s.postSignIn("sign_in_failed"), nil
 		}
 		return s.oidcUnavailable(st, err), nil
 	}
@@ -222,11 +224,12 @@ func (s *server) federatedInput(ctx context.Context, id oidc.Identity, presented
 }
 
 // oidcFailed logs and audits a refused sign-in through the identity provider, within the cap. The
-// subject is never recorded; the user is, when the failure is about one.
-func (s *server) oidcFailed(ctx context.Context, st *reqState, reason, userID string, tid tenant.ID) {
+// user is recorded when the failure is about one. The subject is recorded, in the audit row only,
+// when the ID token was valid (section 5.8, step 4); before that it is not the provider's word.
+func (s *server) oidcFailed(ctx context.Context, st *reqState, reason, userID, subject string, tid tenant.ID) {
 	audited := false
 	if s.limiter.allow() {
-		audited = s.recordAuthFailure(ctx, st, "oidc", reason, userID, tid) == nil
+		audited = s.recordAuthFailure(ctx, st, "oidc", reason, userID, subject, tid) == nil
 		if !audited {
 			s.log.Debug("authentication failure not recorded", "request_id", st.id)
 		}
@@ -237,13 +240,14 @@ func (s *server) oidcFailed(ctx context.Context, st *reqState, reason, userID st
 // SignIn checks a username and a password (section 5.5). A refusal is a 401 whatever the reason, a
 // delayed or locked attempt a 429; neither says anything about the account.
 func (s *server) SignIn(ctx context.Context, in adminapi.SignInInput) (*adminapi.Session, error) {
+	st := stateOf(ctx)
 	if !s.authOpts.LocalEnabled {
+		s.signInFailed(ctx, st, &account.Refusal{Reason: "local_disabled"})
 		return nil, errSignInDisabled
 	}
 	if s.accounts == nil {
 		return nil, errSignInDisabled
 	}
-	st := stateOf(ctx)
 	res, err := s.accounts.SignIn(ctx, in.Body.Username, secret.New(in.Body.Password), st.source, st.presented)
 	if err != nil {
 		var r *account.Refusal
@@ -270,18 +274,21 @@ func (s *server) signInFailed(ctx context.Context, st *reqState, r *account.Refu
 }
 
 func (s *server) recordSignInFailure(ctx context.Context, st *reqState, r *account.Refusal) error {
-	return s.recordAuthFailure(ctx, st, "local", r.Reason, r.UserID, r.TenantID)
+	return s.recordAuthFailure(ctx, st, "local", r.Reason, r.UserID, "", r.TenantID)
 }
 
 // recordAuthFailure writes the auth.failure row of a refused sign-in: in the log of the tenant that
 // manages the user, else in the platform's.
-func (s *server) recordAuthFailure(ctx context.Context, st *reqState, method, reason, userID string, tid tenant.ID) error {
+func (s *server) recordAuthFailure(ctx context.Context, st *reqState, method, reason, userID, subject string, tid tenant.ID) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
 	e := audit.Event{
 		Actor:  audit.Actor{Type: audit.ActorAnonymous},
 		Action: "auth.failure", ResourceType: "user", ResourceID: userID, Outcome: "failure", RequestID: st.id,
 		Detail: map[string]any{"reason": reason, "method": method, "listener": "admin"},
+	}
+	if subject != "" {
+		e.Detail["subject"] = subject
 	}
 	if !tid.IsZero() {
 		return s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {

@@ -104,8 +104,8 @@ func TestOidcSignIn(t *testing.T) {
 		for _, r := range d.FailureRows(t, tenant.ID{}) {
 			if r.ResourceID == bob.ID {
 				reasons = append(reasons, r.Detail["reason"])
-				if r.Detail["method"] != "oidc" || r.Detail["listener"] != "admin" {
-					t.Errorf("failure row %+v", r)
+				if r.Detail["method"] != "oidc" || r.Detail["listener"] != "admin" || r.Detail["subject"] != "bob" {
+					t.Errorf("failure row %+v, want the verified subject in the detail", r)
 				}
 			}
 		}
@@ -132,13 +132,20 @@ func TestOidcSignIn(t *testing.T) {
 		for _, r := range d.FailureRows(t, tenant.ID{}) {
 			if r.Detail["reason"] == "unmapped_subject" {
 				found = true
-				if r.ResourceID != "" || strings.Contains(r.Raw, "carl") {
-					t.Errorf("the row of an unmapped subject names it: %+v", r)
+				// The subject was verified (section 5.8, step 4): the audit row names it, no user.
+				if r.ResourceID != "" || r.Detail["subject"] != "carl" {
+					t.Errorf("the row of an unmapped subject: %+v, want the subject in the detail and no user", r)
 				}
 			}
 		}
 		if !found {
 			t.Error("no auth.failure row with the reason unmapped_subject")
+		}
+		// The subject is for the audit log only, never for the operational log.
+		for _, sub := range []string{"bob", "carl"} {
+			if strings.Contains(api.Logs.String(), sub) {
+				t.Errorf("the operational log holds the subject %q", sub)
+			}
 		}
 	})
 }
