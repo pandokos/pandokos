@@ -89,11 +89,11 @@ func (g *Guard) transport(o Options, control func(string, string, syscall.RawCon
 func (g *Guard) control(max AddrClass) func(string, string, syscall.RawConn) error {
 	return func(network, address string, _ syscall.RawConn) error {
 		if network != "tcp4" && network != "tcp6" {
-			return &BlockedError{Reason: "not_tcp"}
+			return &BlockedError{Reason: BlockNotTCP}
 		}
 		ap, err := netip.ParseAddrPort(address)
 		if err != nil {
-			return &BlockedError{Reason: "unparsable"}
+			return &BlockedError{Reason: BlockUnparsable}
 		}
 		return g.check(ap.Addr(), max)
 	}
@@ -104,9 +104,9 @@ func (g *Guard) check(a netip.Addr, max AddrClass) error {
 	a = a.Unmap().WithZone("")
 	switch c := g.classify(a); {
 	case c == AddrForbidden:
-		return &BlockedError{Reason: "forbidden_address", Addr: a}
+		return &BlockedError{Reason: BlockForbiddenAddress, Addr: a}
 	case c > max:
-		return &BlockedError{Reason: "private_address", Addr: a}
+		return &BlockedError{Reason: BlockPrivateAddress, Addr: a}
 	}
 	return nil
 }
@@ -147,16 +147,16 @@ func (t *guardedTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 func (t *guardedTransport) preflight(req *http.Request) error {
 	u := req.URL
 	if u == nil {
-		return &BlockedError{Reason: "scheme"}
+		return &BlockedError{Reason: BlockScheme}
 	}
 	switch {
 	case u.Scheme == "https":
 	case u.Scheme == "http" && t.private:
 	default:
-		return &BlockedError{Reason: "scheme"}
+		return &BlockedError{Reason: BlockScheme}
 	}
 	if u.User != nil {
-		return &BlockedError{Reason: "user_info"}
+		return &BlockedError{Reason: BlockUserInfo}
 	}
 	if a, err := netip.ParseAddr(u.Hostname()); err == nil {
 		max := AddrPublic
@@ -176,6 +176,20 @@ type BlockedError struct {
 
 // Error returns a constant text built from the reason; it never holds an address.
 func (e *BlockedError) Error() string { return "egress: blocked: " + e.Reason }
+
+// The values of BlockedError.Reason: the closed list behind the pandokos.egress.reason attribute
+// of the metrics. No other value is used.
+const (
+	BlockNotTCP           = "not_tcp"
+	BlockUnparsable       = "unparsable"
+	BlockForbiddenAddress = "forbidden_address"
+	BlockPrivateAddress   = "private_address"
+	BlockScheme           = "scheme"
+	BlockUserInfo         = "user_info"
+)
+
+// BlockReasons lists every reason a connection or URL is refused, in a fixed order.
+var BlockReasons = []string{BlockNotTCP, BlockUnparsable, BlockForbiddenAddress, BlockPrivateAddress, BlockScheme, BlockUserInfo}
 
 // BlockedReason returns the reason of the refusal.
 func (e *BlockedError) BlockedReason() string { return e.Reason }

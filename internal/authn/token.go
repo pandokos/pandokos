@@ -171,7 +171,7 @@ func audiences(raw json.RawMessage, present bool) ([]string, bool) {
 // the payload, which only select a registration, and nothing else of the payload. A missing iss
 // or aud is returned empty: selection finds no registration for it.
 func peek(presented string) (alg, kid, iss string, aud []string, err error) {
-	malformed := &Failure{Reason: "malformed"}
+	malformed := &Failure{Reason: ReasonMalformed}
 	parts := strings.Split(presented, ".")
 	if len(parts) != 3 {
 		return "", "", "", nil, malformed
@@ -190,7 +190,7 @@ func peek(presented string) (alg, kid, iss string, aud []string, err error) {
 	}
 	alg, ok := asString(hdr["alg"])
 	if _, crit := hdr["crit"]; crit || !ok || !productAlgorithms[alg] {
-		return "", "", "", nil, &Failure{Reason: "algorithm_not_allowed"}
+		return "", "", "", nil, &Failure{Reason: ReasonAlgorithmNotAllowed}
 	}
 	if raw, present := hdr["kid"]; present {
 		if kid, ok = asString(raw); !ok {
@@ -262,71 +262,71 @@ func verifyJWT(ctx context.Context, keys KeySource, now time.Time, presented, al
 		listed = listed || x == alg
 	}
 	if !productAlgorithms[alg] || !listed {
-		return nil, fail("algorithm_not_allowed")
+		return nil, fail(ReasonAlgorithmNotAllowed)
 	}
 	// 5: the key, from the check's source only.
 	jws, err := jose.ParseSignedCompact(presented, []jose.SignatureAlgorithm{jose.SignatureAlgorithm(alg)})
 	if err != nil || len(jws.Signatures) != 1 || jws.Signatures[0].Header.Algorithm != alg {
-		return nil, fail("malformed")
+		return nil, fail(ReasonMalformed)
 	}
 	pub, err := keys.Key(ctx, jwks.Source{Issuer: c.Issuer, JWKSURI: c.JWKSURI}, kid, alg)
 	switch {
 	case errors.Is(err, jwks.ErrKeyNotFound):
-		return nil, fail("unknown_signing_key")
+		return nil, fail(ReasonUnknownSigningKey)
 	case err != nil && errors.Is(err, authz.ErrUnavailable):
 		return nil, err
 	case err != nil:
 		return nil, errors.Join(authz.ErrUnavailable, err)
 	case !jwks.Fits(pub, alg): // whatever the source hands over, the type and size must fit
-		return nil, fail("unknown_signing_key")
+		return nil, fail(ReasonUnknownSigningKey)
 	}
 	// 6: the signature, over the first two segments as received.
 	payload, err := jws.Verify(pub)
 	if err != nil {
-		return nil, fail("bad_signature")
+		return nil, fail(ReasonBadSignature)
 	}
 	claims, err := decodeObject(payload)
 	if err != nil {
-		return nil, fail("malformed")
+		return nil, fail(ReasonMalformed)
 	}
 	// 7: issuer and audience, again, from the verified payload.
 	if iss, _ := asString(claims["iss"]); iss != c.Issuer {
-		return nil, fail("issuer_mismatch")
+		return nil, fail(ReasonIssuerMismatch)
 	}
 	raw, present := claims["aud"]
 	auds, ok := audiences(raw, present)
 	if !ok {
-		return nil, fail("malformed")
+		return nil, fail(ReasonMalformed)
 	}
 	found := false
 	for _, x := range auds {
 		found = found || x == c.Audience
 	}
 	if !found {
-		return nil, fail("wrong_audience")
+		return nil, fail(ReasonWrongAudience)
 	}
 	// 8: exp is required; nbf and iat are honoured when present.
 	skew := c.ClockSkew
 	exp, ok := seconds(claims["exp"])
 	if !ok || !now.Before(exp.Add(skew)) {
-		return nil, fail("expired")
+		return nil, fail(ReasonExpired)
 	}
 	if raw, present := claims["nbf"]; present {
 		if nbf, ok := seconds(raw); !ok || now.Before(nbf.Add(-skew)) {
-			return nil, fail("not_yet_valid")
+			return nil, fail(ReasonNotYetValid)
 		}
 	}
 	start := now
 	if raw, present := claims["iat"]; present {
 		iat, ok := seconds(raw)
 		if !ok || iat.After(now.Add(skew)) {
-			return nil, fail("not_yet_valid")
+			return nil, fail(ReasonNotYetValid)
 		}
 		start = iat
 	}
 	// 9: the lifetime.
 	if exp.Sub(start) > c.MaxLifetime {
-		return nil, fail("lifetime_too_long")
+		return nil, fail(ReasonLifetimeTooLong)
 	}
 	return claims, nil
 }
@@ -339,7 +339,7 @@ func (a *Authenticator) validate(ctx context.Context, presented, alg, kid string
 		return &Failure{Reason: reason, IssuerID: r.ID, IssuerScope: r.Scope, TenantID: r.TenantID}
 	}
 	if !r.Enabled {
-		return verified{}, fail("issuer_disabled")
+		return verified{}, fail(ReasonIssuerDisabled)
 	}
 	claims, err := verifyJWT(ctx, a.tok.Keys, a.now(), presented, alg, kid, JWTCheck{
 		Issuer: r.Issuer, Audience: r.Audience, JWKSURI: r.JWKSURI, Algorithms: r.Algorithms,
@@ -355,19 +355,19 @@ func (a *Authenticator) validate(ctx context.Context, presented, alg, kid string
 	// 10: the required claims.
 	for name, want := range r.RequiredClaims {
 		if !hasClaim(claims[name], want) {
-			return verified{}, fail("required_claim_missing")
+			return verified{}, fail(ReasonRequiredClaimMissing)
 		}
 	}
 	// 11: the subject.
 	subject, ok := claimString(claims, r.SubjectClaim)
 	if !ok || strings.ContainsFunc(subject, unicode.IsControl) {
-		return verified{}, fail("subject_missing")
+		return verified{}, fail(ReasonSubjectMissing)
 	}
 	v := verified{Subject: subject}
 	// 12: the tenant claim of a platform-level registration.
 	if r.Scope == "platform" {
 		if v.TenantClaimValue, ok = claimString(claims, r.TenantClaim); !ok || strings.ContainsFunc(v.TenantClaimValue, unicode.IsControl) {
-			f := fail("tenant_claim_missing")
+			f := fail(ReasonTenantClaimMissing)
 			f.Subject = subject
 			return verified{}, f
 		}

@@ -226,6 +226,9 @@ func TestDefaults(t *testing.T) {
 		{"telemetry.otlp.timeout", time.Duration(d.Telemetry.OTLP.Timeout), 10 * time.Second},
 		{"telemetry.traces.sample_ratio", d.Telemetry.Traces.SampleRatio, 1.0},
 		{"telemetry.traces.propagate", d.Telemetry.Traces.Propagate, false},
+		{"telemetry.metrics.otlp", d.Telemetry.Metrics.OTLP, true},
+		{"telemetry.metrics.export_interval", time.Duration(d.Telemetry.Metrics.ExportInterval), 60 * time.Second},
+		{"telemetry.metrics.prometheus", d.Telemetry.Metrics.Prometheus, false},
 		{"telemetry.resource.attributes", d.Telemetry.Resource.Attributes, ""},
 	}
 	for _, c := range checks {
@@ -304,6 +307,9 @@ var wantKeys = []string{
 	"telemetry.otlp.timeout",
 	"telemetry.traces.sample_ratio",
 	"telemetry.traces.propagate",
+	"telemetry.metrics.otlp",
+	"telemetry.metrics.export_interval",
+	"telemetry.metrics.prometheus",
 	"telemetry.resource.attributes",
 	"tokens.enabled",
 	"tokens.max_token_bytes",
@@ -356,7 +362,7 @@ var wantDefaultText = []string{"info", "0.0.0.0:8080", "10s", "120s", "65536", "
 	"", "", "pandokos", "verify-full", "", "5s", "pandokos_gateway", "", "10", "pandokos_admin", "", "10", "pandokos_worker", "", "5", "pandokos_owner", "",
 	"local", "",
 	"true", "USD", "false", "https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json", "24h",
-	"50ms", "500", "10000", "10s", "", "http/protobuf", "", "10s", "1", "false", "",
+	"50ms", "500", "10000", "10s", "", "http/protobuf", "", "10s", "1", "false", "true", "60s", "false", "",
 	"true", "8192", "60s", "24h", "", "5s", "15m", "10s", "6h",
 	"false", "", "true", "12", "72h", "10", "15m", "15m", "50", "65536", "3", "1", "4", "30m", "12h", "10",
 	"false", "", "", "", "basic", "openid profile email", "RS256 ES256", "Single sign-on", "name", "email", "groups", "", "false", "", "/", "24h", "true", "1h"}

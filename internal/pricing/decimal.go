@@ -109,6 +109,13 @@ func (d Decimal) num() *big.Int {
 	return d.unscaled
 }
 
+// Float64 returns the nearest float64, for metrics only: the exact decimal stays in the record.
+func (d Decimal) Float64() float64 {
+	den := new(big.Int).Exp(bigTen, big.NewInt(int64(d.scale)), nil)
+	f, _ := new(big.Rat).SetFrac(d.num(), den).Float64()
+	return f
+}
+
 // String is the canonical text: no exponent, no trailing zeros in the fraction, "0" for zero.
 func (d Decimal) String() string {
 	if d.unscaled == nil || d.unscaled.Sign() == 0 {

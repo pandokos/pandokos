@@ -76,7 +76,7 @@ func (a *Authenticator) selectRegistration(ctx context.Context, iss string, aud 
 	auds = slices.DeleteFunc(auds, func(s string) bool { return s == "" })
 	// PostgreSQL text cannot hold NUL; such a value names no registration.
 	if iss == "" || len(auds) == 0 || strings.ContainsRune(iss, 0) || slices.ContainsFunc(auds, func(s string) bool { return strings.ContainsRune(s, 0) }) {
-		return registration{}, &Failure{Reason: "unknown_issuer"}
+		return registration{}, &Failure{Reason: ReasonUnknownIssuer}
 	}
 	key := selectionKey(iss, auds)
 	if reason, _, ok := a.regs.negative(key); ok {
@@ -96,11 +96,11 @@ func (a *Authenticator) selectRegistration(ctx context.Context, iss string, aud 
 	case err != nil:
 		return registration{}, unavailable(err)
 	case len(rows) == 0:
-		a.regs.putNegativeAt(key, "unknown_issuer", "", start)
-		return registration{}, &Failure{Reason: "unknown_issuer"}
+		a.regs.putNegativeAt(key, ReasonUnknownIssuer, "", start)
+		return registration{}, &Failure{Reason: ReasonUnknownIssuer}
 	case len(rows) > 1:
-		a.regs.putNegativeAt(key, "ambiguous_audience", "", start)
-		return registration{}, &Failure{Reason: "ambiguous_audience"}
+		a.regs.putNegativeAt(key, ReasonAmbiguousAudience, "", start)
+		return registration{}, &Failure{Reason: ReasonAmbiguousAudience}
 	}
 	r, err := a.loadRegistration(ctx, rows[0])
 	if err != nil {
@@ -117,7 +117,7 @@ func (a *Authenticator) selectRegistration(ctx context.Context, iss string, aud 
 // loadRegistration reads the row the directory pointed at: of a tenant-bound registration in the
 // session of the tenant the directory names, of a platform-level one without a tenant.
 func (a *Authenticator) loadRegistration(ctx context.Context, d queries.LookupIssuersRow) (registration, error) {
-	gone := &Failure{Reason: "unknown_issuer"}
+	gone := &Failure{Reason: ReasonUnknownIssuer}
 	var r registration
 	var claims string
 	switch d.Scope {
@@ -196,8 +196,8 @@ func (a *Authenticator) tokenPrincipal(ctx context.Context, r registration, v ve
 			}
 			var perr error
 			if tid, perr = tenant.ParseID(text); text == "" || perr != nil {
-				a.principals.putNegativeAt(key, "tenant_not_listed", "", start)
-				return authz.Principal{}, fail("tenant_not_listed", tenant.ID{})
+				a.principals.putNegativeAt(key, ReasonTenantNotListed, "", start)
+				return authz.Principal{}, fail(ReasonTenantNotListed, tenant.ID{})
 			}
 		}
 		err := a.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
@@ -208,8 +208,8 @@ func (a *Authenticator) tokenPrincipal(ctx context.Context, r registration, v ve
 		})
 		switch {
 		case errors.Is(err, store.ErrNoRows):
-			a.principals.putNegativeAt(key, "subject_not_mapped", tid.String(), start)
-			return authz.Principal{}, fail("subject_not_mapped", tid)
+			a.principals.putNegativeAt(key, ReasonSubjectNotMapped, tid.String(), start)
+			return authz.Principal{}, fail(ReasonSubjectNotMapped, tid)
 		case err != nil:
 			return authz.Principal{}, unavailable(err)
 		}

@@ -36,6 +36,7 @@ func TestCatalogue(t *testing.T) {
 		{"platform_key:read", ScopePlatform},
 		{"platform_key:write", ScopePlatform},
 		{"platform_key:revoke", ScopePlatform},
+		{"metrics:read", ScopePlatform},
 		{"service_account:read", ScopeTenant},
 		{"service_account:write", ScopeTenant},
 		{"virtual_key:read", ScopeTenant},
@@ -88,8 +89,8 @@ func TestCatalogue(t *testing.T) {
 		{"tenant_support:read", ScopePlatform},
 	}
 	got := Catalogue()
-	if len(got) != 57 {
-		t.Fatalf("%d permissions, want 57", len(got))
+	if len(got) != 58 {
+		t.Fatalf("%d permissions, want 58", len(got))
 	}
 	re := regexp.MustCompile(`^[a-z_]+:[a-z_]+$`)
 	seen := map[string]bool{}
@@ -135,7 +136,7 @@ func TestCatalogue(t *testing.T) {
 // three platform catalogue permissions, tenant-admin the two tenant ones, inference nothing).
 func TestRoles(t *testing.T) {
 	platform := []string{IdentityRead, TenantRead, TenantWrite, TenantSuspend, PlatformKeyRead, PlatformKeyWrite, PlatformKeyRevoke,
-		TenantCredentialRead, TenantCredentialRevoke, CatalogRead, CatalogWrite, CatalogPrice,
+		TenantCredentialRead, TenantCredentialRevoke, CatalogRead, CatalogWrite, CatalogPrice, MetricsRead,
 		PlatformIssuerRead, PlatformIssuerWrite, PlatformIssuerDelete, PlatformLimitRead, PlatformLimitWrite, PlatformLimitDelete, UserRead, UserWrite,
 		TenantSupportOpen, TenantSupportRead}
 	tenantAll := []string{IdentityRead, ServiceAccountRead, ServiceAccountWrite, MemberRead, MemberWrite, VirtualKeyRead, VirtualKeyWrite, VirtualKeyRevoke, ModelInvoke,
@@ -319,7 +320,7 @@ func TestEffective(t *testing.T) {
 		{"unknown role", sa(id(1), tenant.StateActive, []string{"ghost"}, nil), nil},
 		{"role of the other kind", sa(id(1), tenant.StateActive, []string{RolePlatformAdmin}, nil), nil},
 		{"platform role on a platform principal", Principal{Kind: KindPlatform, Roles: []string{RolePlatformAdmin, RoleInference}},
-			[]string{CatalogPrice, CatalogRead, CatalogWrite, IdentityRead, PlatformIssuerDelete, PlatformIssuerRead, PlatformIssuerWrite, PlatformKeyRead, PlatformKeyRevoke, PlatformKeyWrite, PlatformLimitDelete, PlatformLimitRead, PlatformLimitWrite, TenantRead, TenantSuspend, TenantWrite, TenantCredentialRead, TenantCredentialRevoke, TenantSupportOpen, TenantSupportRead, UserRead, UserWrite}},
+			[]string{CatalogPrice, CatalogRead, CatalogWrite, IdentityRead, MetricsRead, PlatformIssuerDelete, PlatformIssuerRead, PlatformIssuerWrite, PlatformKeyRead, PlatformKeyRevoke, PlatformKeyWrite, PlatformLimitDelete, PlatformLimitRead, PlatformLimitWrite, TenantRead, TenantSuspend, TenantWrite, TenantCredentialRead, TenantCredentialRevoke, TenantSupportOpen, TenantSupportRead, UserRead, UserWrite}},
 		{"nil scopes are no restriction", sa(id(1), tenant.StateActive, []string{RoleInference}, nil), []string{CredentialUse, ModelInvoke}},
 		{"empty scopes are a restriction to nothing", sa(id(1), tenant.StateActive, []string{RoleInference}, []string{}), nil},
 		{"duplicate roles", sa(id(1), tenant.StateActive, []string{RoleInference, RoleInference}, nil), []string{CredentialUse, ModelInvoke}},

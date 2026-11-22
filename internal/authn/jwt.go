@@ -21,7 +21,7 @@ type JWTCheck struct {
 // obtained are an error that wraps authz.ErrUnavailable.
 func VerifyJWT(ctx context.Context, keys KeySource, now time.Time, token string, c JWTCheck) (map[string]json.RawMessage, error) {
 	if c.MaxBytes <= 0 || !looksLikeToken(token, c.MaxBytes) {
-		return nil, &Failure{Reason: "malformed"}
+		return nil, &Failure{Reason: ReasonMalformed}
 	}
 	alg, kid, _, _, err := peek(token)
 	if err != nil {

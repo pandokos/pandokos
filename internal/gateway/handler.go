@@ -57,6 +57,7 @@ type Options struct {
 	Tracer                 trace.TracerProvider      // required
 	PropagateTrace         bool                      // send traceparent and tracestate to the provider
 	Limits                 Limits                    // optional: nil enforces no limit
+	Metrics                Metrics                   // optional: nil records nothing
 	DefaultOutputTokens    int64                     // output tokens reserved per choice when the caller sets no limit; positive
 	Now                    func() time.Time          // optional: the clock of the start of a request (default time.Now); a seam for tests
 }

@@ -119,10 +119,10 @@ func (a *Authenticator) Authenticate(ctx context.Context, presented string) (aut
 	}
 	keyID, kind, hash, err := Parse(presented)
 	if err != nil {
-		return authz.Principal{}, &Failure{Reason: "malformed"}
+		return authz.Principal{}, &Failure{Reason: ReasonMalformed}
 	}
 	if !a.kinds[kind] {
-		return authz.Principal{}, &Failure{Reason: "kind_not_accepted", KeyID: keyID}
+		return authz.Principal{}, &Failure{Reason: ReasonKindNotAccepted, KeyID: keyID}
 	}
 	if kind == KindPlatform {
 		return a.platform(ctx, keyID, hash)
@@ -139,18 +139,18 @@ func (a *Authenticator) platform(ctx context.Context, keyID string, hash [32]byt
 	})
 	switch {
 	case errors.Is(err, store.ErrNoRows):
-		return authz.Principal{}, &Failure{Reason: "unknown_key", KeyID: keyID}
+		return authz.Principal{}, &Failure{Reason: ReasonUnknownKey, KeyID: keyID}
 	case err != nil:
 		return authz.Principal{}, unavailable(err)
 	}
 	now := a.now()
 	switch {
 	case subtle.ConstantTimeCompare(row.SecretHash, hash[:]) != 1:
-		return authz.Principal{}, &Failure{Reason: "wrong_secret", KeyID: keyID}
+		return authz.Principal{}, &Failure{Reason: ReasonWrongSecret, KeyID: keyID}
 	case row.RevokedAt != nil:
-		return authz.Principal{}, &Failure{Reason: "revoked", KeyID: keyID}
+		return authz.Principal{}, &Failure{Reason: ReasonRevoked, KeyID: keyID}
 	case row.ExpiresAt != nil && !row.ExpiresAt.After(now):
-		return authz.Principal{}, &Failure{Reason: "expired", KeyID: keyID}
+		return authz.Principal{}, &Failure{Reason: ReasonExpired, KeyID: keyID}
 	}
 	return authz.Principal{Kind: authz.KindPlatform, ID: keyID, Name: row.Description, KeyID: keyID, Bootstrap: row.Bootstrap, Roles: []string{row.Role}}, nil
 }
@@ -159,7 +159,7 @@ func (a *Authenticator) virtual(ctx context.Context, keyID string, hash [32]byte
 	var e *entry
 	if a.cache != nil {
 		if a.cache.negative(keyID) {
-			return authz.Principal{}, &Failure{Reason: "unknown_key", KeyID: keyID}
+			return authz.Principal{}, &Failure{Reason: ReasonUnknownKey, KeyID: keyID}
 		}
 		e, _ = a.cache.get(keyID)
 	}
@@ -179,7 +179,7 @@ func (a *Authenticator) virtual(ctx context.Context, keyID string, hash [32]byte
 			if a.cache != nil {
 				a.cache.putNegativeAt(keyID, start)
 			}
-			return authz.Principal{}, &Failure{Reason: "unknown_key", KeyID: keyID}
+			return authz.Principal{}, &Failure{Reason: ReasonUnknownKey, KeyID: keyID}
 		}
 		var row queries.GetKeyPrincipalRow
 		err = a.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
@@ -192,7 +192,7 @@ func (a *Authenticator) virtual(ctx context.Context, keyID string, hash [32]byte
 			if a.cache != nil {
 				a.cache.putNegativeAt(keyID, start)
 			}
-			return authz.Principal{}, &Failure{Reason: "unknown_key", KeyID: keyID}
+			return authz.Principal{}, &Failure{Reason: ReasonUnknownKey, KeyID: keyID}
 		case err != nil:
 			return authz.Principal{}, unavailable(err)
 		}
@@ -216,11 +216,11 @@ func (a *Authenticator) check(e *entry, keyID string, hash [32]byte) (authz.Prin
 	now := a.now()
 	switch {
 	case subtle.ConstantTimeCompare(row.SecretHash, hash[:]) != 1:
-		return fail("wrong_secret")
+		return fail(ReasonWrongSecret)
 	case row.RevokedAt != nil:
-		return fail("revoked")
+		return fail(ReasonRevoked)
 	case row.ExpiresAt != nil && !row.ExpiresAt.After(now):
-		return fail("expired")
+		return fail(ReasonExpired)
 	}
 	if reason := serviceAccountRefusal(row.ServiceAccountState, row.ValidFrom, row.ValidUntil, now); reason != "" {
 		return fail(reason)
@@ -247,9 +247,9 @@ func (a *Authenticator) check(e *entry, keyID string, hash [32]byte) (authz.Prin
 func serviceAccountRefusal(state string, validFrom, validUntil *time.Time, now time.Time) string {
 	switch {
 	case state != "active":
-		return "service_account_disabled"
+		return ReasonServiceAccountDisabled
 	case validFrom != nil && now.Before(*validFrom), validUntil != nil && !now.Before(*validUntil):
-		return "service_account_not_valid"
+		return ReasonServiceAccountNotValid
 	}
 	return ""
 }

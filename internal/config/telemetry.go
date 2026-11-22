@@ -91,6 +91,11 @@ func validateTelemetry(c *Config) []Problem {
 	if d := time.Duration(t.OTLP.Timeout); d < time.Second || d > time.Minute {
 		add("telemetry.otlp.timeout", "must be between 1s and 60s")
 	}
+	if d := time.Duration(t.Metrics.ExportInterval); d < 5*time.Second || d > 10*time.Minute {
+		add("telemetry.metrics.export_interval", "must be between 5s and 10m")
+	} else if d < time.Duration(t.OTLP.Timeout) {
+		add("telemetry.metrics.export_interval", "must be at least telemetry.otlp.timeout")
+	}
 	if r := t.Traces.SampleRatio; !(r >= 0 && r <= 1) {
 		add("telemetry.traces.sample_ratio", "must be between 0 and 1")
 	}
@@ -236,6 +241,19 @@ func otelEnvironmentWarnings(c *Config, environ []string) []Warning {
 				ws = append(ws, Warning{Key: "telemetry.otlp.endpoint", Message: name + " is set in the environment and is not used; set telemetry.otlp.endpoint to export traces"})
 			}
 		}
+	}
+	if c.Telemetry.OTLP.Endpoint == "" && set["OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"] {
+		ws = append(ws, Warning{Key: "telemetry.otlp.endpoint", Message: "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT is set in the environment and is not used; set telemetry.otlp.endpoint to export metrics"})
+	}
+	if set["OTEL_METRIC_EXPORT_INTERVAL"] {
+		ws = append(ws, Warning{Key: "telemetry.metrics.export_interval", Message: "OTEL_METRIC_EXPORT_INTERVAL is set in the environment and is ignored; set telemetry.metrics.export_interval"})
+	}
+	if set["OTEL_METRIC_EXPORT_TIMEOUT"] {
+		ws = append(ws, Warning{Key: "telemetry.otlp.timeout", Message: "OTEL_METRIC_EXPORT_TIMEOUT is set in the environment and is ignored; set telemetry.otlp.timeout"})
+	}
+	if m := c.Telemetry.Metrics; time.Duration(m.ExportInterval) != 60*time.Second && (c.Telemetry.OTLP.Endpoint == "" || !m.OTLP) {
+		// The key cannot tell "set" from "default": a value other than the default counts as set.
+		ws = append(ws, Warning{Key: "telemetry.metrics.export_interval", Message: "has no effect without telemetry.otlp.endpoint and telemetry.metrics.otlp"})
 	}
 	return ws
 }

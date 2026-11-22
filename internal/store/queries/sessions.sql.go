@@ -12,6 +12,20 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countOpenSessions = `-- name: CountOpenSessions :one
+SELECT count(*)::bigint AS sessions
+  FROM pandokos.user_session
+ WHERE expires_at > now() AND last_used_at > now() - $1::interval
+`
+
+// Platform scope. The sessions PurgeSessions would keep; counted by the purge loop (sprint 6.1, D-19).
+func (q *Queries) CountOpenSessions(ctx context.Context, idle pgtype.Interval) (int64, error) {
+	row := q.db.QueryRow(ctx, countOpenSessions, idle)
+	var sessions int64
+	err := row.Scan(&sessions)
+	return sessions, err
+}
+
 const createSession = `-- name: CreateSession :one
 INSERT INTO pandokos.user_session (token_hash, user_id, method, expires_at)
 VALUES ($1::bytea, $2::uuid, $3::text, $4::timestamptz)

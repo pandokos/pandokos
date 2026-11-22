@@ -71,6 +71,11 @@ func TestPricingIsPure(t *testing.T) {
 				t.Fatal(err)
 			}
 			ast.Inspect(f, func(n ast.Node) bool {
+				// The one exception: Decimal.Float64, the lossy view that metrics take of a cost
+				// (sprint 6.1); the record and the counters keep the exact decimal.
+				if fd, ok := n.(*ast.FuncDecl); ok && fd.Name.Name == "Float64" && e.Name() == "decimal.go" {
+					return false
+				}
 				if id, ok := n.(*ast.Ident); ok && (id.Name == "float32" || id.Name == "float64") {
 					t.Errorf("internal/%s/%s:%d names %s: money is exact (CAT-08)", pkg, e.Name(), fset.Position(id.Pos()).Line, id.Name)
 				}

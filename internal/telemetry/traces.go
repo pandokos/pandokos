@@ -34,14 +34,13 @@ const (
 
 // TracesOptions configure the trace provider.
 type TracesOptions struct {
-	Endpoint       *url.URL          // nil: nothing is exported
-	Headers        map[string]string // sent with every export; values are secrets
-	Timeout        time.Duration     // one export
-	SampleRatio    float64           // 0 to 1
-	Attributes     map[string]string // extra resource attributes
-	ServiceVersion string
-	Transport      http.RoundTripper // required when Endpoint is set
-	Logger         *slog.Logger      // required
+	Endpoint    *url.URL          // nil: nothing is exported
+	Headers     map[string]string // sent with every export; values are secrets
+	Timeout     time.Duration     // one export
+	SampleRatio float64           // 0 to 1
+	Resource    *Resource         // NewResource; shared with MetricsOptions.Resource
+	Transport   http.RoundTripper // required when Endpoint is set
+	Logger      *slog.Logger      // required
 }
 
 // Traces owns the trace provider and its exporter.
@@ -57,6 +56,9 @@ func NewTraces(o TracesOptions) (*Traces, error) {
 	if o.Logger == nil {
 		return nil, errors.New("telemetry: a logger is required")
 	}
+	if o.Resource == nil {
+		return nil, errors.New("telemetry: a resource is required")
+	}
 	if o.Endpoint != nil && o.Transport == nil {
 		return nil, errors.New("telemetry: a transport is required when an endpoint is set")
 	}
@@ -69,12 +71,8 @@ func NewTraces(o TracesOptions) (*Traces, error) {
 	handler := newErrorHandler(o.Logger)
 	otel.SetErrorHandler(handler)
 
-	res, err := newResource(o)
-	if err != nil {
-		return nil, fmt.Errorf("telemetry: resource: %w", err)
-	}
 	opts := []sdktrace.TracerProviderOption{
-		sdktrace.WithResource(res),
+		sdktrace.WithResource(o.Resource),
 		sdktrace.WithRawSpanLimits(sdktrace.SpanLimits{
 			AttributeCountLimit:         spanAttrLimit,
 			AttributeValueLengthLimit:   spanAttrValLimit,
@@ -119,7 +117,12 @@ func NewTraces(o TracesOptions) (*Traces, error) {
 	return &Traces{tp: sdktrace.NewTracerProvider(opts...)}, nil
 }
 
-func newResource(o TracesOptions) (*resource.Resource, error) {
+// Resource describes this process in every signal it exports.
+type Resource = resource.Resource
+
+// NewResource builds the resource shared by the traces and the metrics of one process: the service
+// name, the version and a fresh service.instance.id, then attrs, which may replace service.name.
+func NewResource(attrs map[string]string, version string) (*Resource, error) {
 	id := make([]byte, 16)
 	if _, err := rand.Read(id); err != nil {
 		return nil, err
@@ -128,16 +131,16 @@ func newResource(o TracesOptions) (*resource.Resource, error) {
 	id[8] = id[8]&0x3f | 0x80
 	instance := fmt.Sprintf("%x-%x-%x-%x-%x", id[0:4], id[4:6], id[6:8], id[8:10], id[10:])
 
-	attrs := map[string]string{
+	all := map[string]string{
 		"service.name":        serviceName,
-		"service.version":     o.ServiceVersion,
+		"service.version":     version,
 		"service.instance.id": instance,
 	}
-	for k, v := range o.Attributes {
-		attrs[k] = v
-	}
-	kvs := make([]attribute.KeyValue, 0, len(attrs))
 	for k, v := range attrs {
+		all[k] = v
+	}
+	kvs := make([]attribute.KeyValue, 0, len(all))
+	for k, v := range all {
 		kvs = append(kvs, attribute.String(k, v))
 	}
 	return resource.NewSchemaless(kvs...), nil

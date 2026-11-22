@@ -43,10 +43,13 @@ func (c *countingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 func newTraces(t *testing.T, endpoint *url.URL, mutate func(*telemetry.TracesOptions)) (*telemetry.Traces, *testutil.LogBuffer) {
 	t.Helper()
 	logs := &testutil.LogBuffer{}
+	res, err := telemetry.NewResource(map[string]string{"deployment.environment": "test"}, serviceVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
 	o := telemetry.TracesOptions{
 		Endpoint: endpoint, Headers: map[string]string{headerName: headerCanary}, Timeout: time.Second, SampleRatio: 1,
-		Attributes: map[string]string{"deployment.environment": "test"}, ServiceVersion: serviceVersion,
-		Logger: telemetry.NewLogger(logs, "debug"),
+		Resource: res, Logger: telemetry.NewLogger(logs, "debug"),
 	}
 	if endpoint != nil {
 		o.Transport = testutil.TestGuard(t).Transport(true)
@@ -146,7 +149,13 @@ func TestExport(t *testing.T) {
 		c := otlptest.New(t)
 		ids := map[string]bool{}
 		for i := 0; i < 2; i++ {
-			tr, _ := newTraces(t, c.URL(), func(o *telemetry.TracesOptions) { o.Attributes = map[string]string{"service.name": "custom-name"} })
+			tr, _ := newTraces(t, c.URL(), func(o *telemetry.TracesOptions) {
+				res, err := telemetry.NewResource(map[string]string{"service.name": "custom-name"}, serviceVersion)
+				if err != nil {
+					t.Fatal(err)
+				}
+				o.Resource = res
+			})
 			emit(tr, "x")
 			shutdown(t, tr)
 		}
@@ -182,16 +191,23 @@ func TestExport(t *testing.T) {
 	t.Run("the options are checked", func(t *testing.T) {
 		logs := telemetry.NewLogger(&testutil.LogBuffer{}, "info")
 		c := otlptest.New(t)
-		if _, err := telemetry.NewTraces(telemetry.TracesOptions{Endpoint: c.URL(), Timeout: time.Second, SampleRatio: 1, Logger: logs}); err == nil {
+		res, err := telemetry.NewResource(nil, serviceVersion)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := telemetry.NewTraces(telemetry.TracesOptions{Endpoint: c.URL(), Timeout: time.Second, SampleRatio: 1, Resource: res, Logger: logs}); err == nil {
 			t.Error("an endpoint without a transport was accepted")
 		}
-		if _, err := telemetry.NewTraces(telemetry.TracesOptions{SampleRatio: 1}); err == nil {
+		if _, err := telemetry.NewTraces(telemetry.TracesOptions{SampleRatio: 1, Resource: res}); err == nil {
 			t.Error("no logger was accepted")
 		}
-		if _, err := telemetry.NewTraces(telemetry.TracesOptions{SampleRatio: 1.5, Logger: logs}); err == nil {
+		if _, err := telemetry.NewTraces(telemetry.TracesOptions{SampleRatio: 1, Logger: logs}); err == nil {
+			t.Error("no resource was accepted")
+		}
+		if _, err := telemetry.NewTraces(telemetry.TracesOptions{SampleRatio: 1.5, Resource: res, Logger: logs}); err == nil {
 			t.Error("a ratio over 1 was accepted")
 		}
-		if _, err := telemetry.NewTraces(telemetry.TracesOptions{SampleRatio: -0.1, Logger: logs}); err == nil {
+		if _, err := telemetry.NewTraces(telemetry.TracesOptions{SampleRatio: -0.1, Resource: res, Logger: logs}); err == nil {
 			t.Error("a negative ratio was accepted")
 		}
 	})
@@ -298,7 +314,11 @@ func TestEnvironment(t *testing.T) {
 	}
 	c := otlptest.New(t)
 	tr, _ := newTraces(t, c.URL(), func(o *telemetry.TracesOptions) {
-		o.Attributes = map[string]string{"deployment.environment": "configured"}
+		res, err := telemetry.NewResource(map[string]string{"deployment.environment": "configured"}, serviceVersion)
+		if err != nil {
+			t.Fatal(err)
+		}
+		o.Resource = res
 	})
 	emit(tr, "one", "two", "three")
 	shutdown(t, tr)

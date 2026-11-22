@@ -227,7 +227,7 @@ func TestPermissionsReferenceListsPeople(t *testing.T) {
 			t.Errorf("permissions.md has no row that starts %q", row)
 		}
 	}
-	if len(Catalogue()) != 57 {
-		t.Errorf("the catalogue holds %d permissions, want 57 (the 49 of sprint 4.2 and the eight of sprint 4.3)", len(Catalogue()))
+	if len(Catalogue()) != 58 {
+		t.Errorf("the catalogue holds %d permissions, want 58 (the 49 of sprint 4.2, the eight of sprint 4.3 and metrics:read of sprint 6.1)", len(Catalogue()))
 	}
 }

@@ -29,6 +29,10 @@ const (
 	classNetwork         = "network"
 )
 
+// FetchClasses lists every class of a failed fetch, in a fixed order (the values of the
+// pandokos.result attribute of the metrics besides ok).
+var FetchClasses = []string{classBlocked, classTimeout, classStatus, classTooLarge, classInvalidDocument, classIssuerMismatch, classNoUsableKey, classNetwork}
+
 // fetchError is a failed fetch: its class, and for a refusal by the egress guard its reason.
 type fetchError struct{ class, reason string }
 

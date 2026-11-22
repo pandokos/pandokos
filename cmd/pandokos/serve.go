@@ -302,14 +302,19 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
+	// One resource for every signal of this process (one service.instance.id).
+	resource, err := telemetry.NewResource(cfg.Telemetry.ResourceAttributes, buildinfo.Version)
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
 	// Traces: the collector's headers are secrets, revealed here and nowhere else.
 	tracesOpts := telemetry.TracesOptions{
-		Endpoint:       cfg.Telemetry.OTLP.ParsedEndpoint,
-		Timeout:        time.Duration(cfg.Telemetry.OTLP.Timeout),
-		SampleRatio:    cfg.Telemetry.Traces.SampleRatio,
-		Attributes:     cfg.Telemetry.ResourceAttributes,
-		ServiceVersion: buildinfo.Version,
-		Logger:         logger,
+		Endpoint:    cfg.Telemetry.OTLP.ParsedEndpoint,
+		Timeout:     time.Duration(cfg.Telemetry.OTLP.Timeout),
+		SampleRatio: cfg.Telemetry.Traces.SampleRatio,
+		Resource:    resource,
+		Logger:      logger,
 	}
 	if cfg.Telemetry.OTLP.ParsedEndpoint != nil {
 		tracesOpts.Transport = guard.Transport(true)

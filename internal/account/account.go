@@ -24,6 +24,20 @@ var ErrNoUser = errors.New("account: no such user")
 // ErrThrottled is what a Refusal wraps when the sign-in is delayed or locked.
 var ErrThrottled = errors.New("account: too many attempts")
 
+// The results of a sign-in as the metrics count them (pandokos.result of pandokos.signin.attempts):
+// the closed list the components map their errors to. No other value is used.
+const (
+	SignInOK          = "ok"          // a session was opened
+	SignInFailed      = "failed"      // wrong credentials or unknown user
+	SignInLocked      = "locked"      // the account or the source is locked
+	SignInDisabled    = "disabled"    // the account or the user is disabled
+	SignInUnavailable = "unavailable" // the hasher or the database could not answer
+	SignInRefused     = "refused"     // OIDC: state, nonce, token or mapping refused
+)
+
+// SignInResults lists every result of a sign-in, in a fixed order.
+var SignInResults = []string{SignInOK, SignInFailed, SignInLocked, SignInDisabled, SignInUnavailable, SignInRefused}
+
 // User is a person as the administration API knows it.
 type User struct {
 	ID, SignIn, DisplayName, Email, State, Username string

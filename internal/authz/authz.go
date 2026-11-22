@@ -40,6 +40,7 @@ const (
 	PlatformKeyRead     = "platform_key:read"
 	PlatformKeyWrite    = "platform_key:write"
 	PlatformKeyRevoke   = "platform_key:revoke"
+	MetricsRead         = "metrics:read"
 	ServiceAccountRead  = "service_account:read"
 	ServiceAccountWrite = "service_account:write"
 	VirtualKeyRead      = "virtual_key:read"
@@ -107,6 +108,7 @@ var catalogue = []Permission{
 	{PlatformKeyRead, ScopePlatform, "Reading and listing platform keys (metadata)", false, false},
 	{PlatformKeyWrite, ScopePlatform, "Issuing a platform key", false, false},
 	{PlatformKeyRevoke, ScopePlatform, "Revoking a platform key", false, false},
+	{MetricsRead, ScopePlatform, "Reading the installation's metrics on the scrape endpoint", false, false},
 	{ServiceAccountRead, ScopeTenant, "Reading and listing service accounts and their roles", false, true},
 	{ServiceAccountWrite, ScopeTenant, "Creating, changing, disabling and enabling service accounts; assigning roles", false, true},
 	{VirtualKeyRead, ScopeTenant, "Reading and listing virtual keys (metadata)", false, true},

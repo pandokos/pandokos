@@ -1,5 +1,6 @@
-// Package otlptest is an OTLP/HTTP trace collector on loopback for tests: it decodes
-// ExportTraceServiceRequest bodies and keeps the spans and the raw requests.
+// Package otlptest is an OTLP/HTTP collector on loopback for tests: it decodes
+// ExportTraceServiceRequest bodies (path ending /v1/traces) and ExportMetricsServiceRequest bodies
+// (path ending /v1/metrics) and keeps the spans, the metrics and the raw requests.
 package otlptest
 
 import (
@@ -7,10 +8,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 
+	collectormetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	collectorpb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 	"google.golang.org/protobuf/proto"
 )
@@ -30,6 +34,7 @@ type Collector struct {
 	requests []Request
 	spans    []*tracepb.Span
 	resource []*tracepb.ResourceSpans
+	metrics  []*metricspb.ResourceMetrics
 	stall    chan struct{}
 	fail     int
 }
@@ -43,7 +48,7 @@ func New(tb testing.TB) *Collector {
 	return c
 }
 
-// URL returns the base URL of the collector (the exporter appends /v1/traces).
+// URL returns the base URL of the collector (the exporters append /v1/traces and /v1/metrics).
 func (c *Collector) URL() *url.URL {
 	u, err := url.Parse(c.srv.URL)
 	if err != nil {
@@ -66,7 +71,14 @@ func (c *Collector) ResourceSpans() []*tracepb.ResourceSpans {
 	return append([]*tracepb.ResourceSpans(nil), c.resource...)
 }
 
-// Requests returns the exports received so far with their headers and raw bodies.
+// Metrics returns the resource blocks of metrics received so far, in order.
+func (c *Collector) Metrics() []*metricspb.ResourceMetrics {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]*metricspb.ResourceMetrics(nil), c.metrics...)
+}
+
+// Requests returns the exports (of both signals) received so far with their headers and raw bodies.
 func (c *Collector) Requests() []Request {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -129,6 +141,20 @@ func (c *Collector) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	if failing {
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if strings.HasSuffix(r.URL.Path, "/v1/metrics") {
+		var req collectormetricspb.ExportMetricsServiceRequest
+		if err := proto.Unmarshal(body, &req); err != nil {
+			http.Error(w, "decode", http.StatusBadRequest)
+			return
+		}
+		c.mu.Lock()
+		c.metrics = append(c.metrics, req.GetResourceMetrics()...)
+		c.mu.Unlock()
+		out, _ := proto.Marshal(&collectormetricspb.ExportMetricsServiceResponse{})
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		_, _ = w.Write(out)
 		return
 	}
 	var req collectorpb.ExportTraceServiceRequest
