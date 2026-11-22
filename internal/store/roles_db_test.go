@@ -497,6 +497,60 @@ func TestInTenant(t *testing.T) {
 			}
 		})
 
+		tenantSetting := func(t *testing.T, tx store.Tx) string {
+			t.Helper()
+			c, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			var v string
+			if err := tx.QueryRow(c, "SELECT COALESCE(pg_catalog.current_setting('app.tenant_id', true), '')").Scan(&v); err != nil {
+				t.Fatalf("read the tenant setting: %v", err)
+			}
+			return v
+		}
+
+		t.Run("the tenant is removed when the function cancels the context and fails", func(t *testing.T) {
+			boom := errors.New("boom")
+			err := admin.Platform(ctx(t), func(c context.Context, tx store.Tx) error {
+				cc, cancel := context.WithCancel(c)
+				defer cancel()
+				err := store.InTenant(cc, tx, a, func(c context.Context) error {
+					cancel()
+					return boom
+				})
+				if !errors.Is(err, boom) {
+					t.Errorf("the error of the function: %v, want it wrapped", err)
+				}
+				if v := tenantSetting(t, tx); v != "" {
+					t.Errorf("after a cancelled context the tenant setting is %q, want empty", v)
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+
+		t.Run("the tenant is removed when the function panics", func(t *testing.T) {
+			err := admin.Platform(ctx(t), func(c context.Context, tx store.Tx) error {
+				func() {
+					defer func() {
+						if r := recover(); r != "kaboom" {
+							t.Errorf("recovered %v, want the panic of the function", r)
+						}
+					}()
+					_ = store.InTenant(c, tx, a, func(context.Context) error { panic("kaboom") })
+					t.Error("InTenant returned after a panic of the function")
+				}()
+				if v := tenantSetting(t, tx); v != "" {
+					t.Errorf("after a panic the tenant setting is %q, want empty", v)
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+
 		t.Run("platform scope and a tenant only", func(t *testing.T) {
 			err := admin.Unscoped(ctx(t), func(c context.Context, tx store.Tx) error {
 				called := false
