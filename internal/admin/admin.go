@@ -427,19 +427,11 @@ func (s *server) beforeSession(ctx context.Context, r *http.Request, op *adminap
 		if perr != nil {
 			return ctx, errNotFound
 		}
-		var row queries.GetMemberPrincipalRow
-		err := s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
-			var err error
-			row, err = queries.New(tx).GetMemberPrincipal(ctx, user.ID)
-			return err
-		})
-		if errors.Is(err, store.ErrNoRows) {
-			return ctx, errNotFound // not a member: the answer for a tenant that does not exist
-		}
+		mp, err := s.memberPrincipal(ctx, user, sess, tid)
 		if err != nil {
 			return ctx, err
 		}
-		p.TenantID, p.TenantName, p.TenantState, p.Roles = tid, row.TenantName, tenant.State(row.TenantState), row.Roles
+		p = mp
 	} else {
 		p.Roles = user.PlatformRoles
 	}
@@ -676,4 +668,28 @@ func checkGroupRules(o Options) error {
 		}
 	}
 	return nil
+}
+
+// memberPrincipal builds the principal of a user that is a member of the tenant: its roles and the
+// permissions of its active custom roles, read in the tenant's session. errNotFound: the user is
+// not a member. No other code builds a member's principal.
+func (s *server) memberPrincipal(ctx context.Context, u account.User, sess session.Session, tid tenant.ID) (authz.Principal, error) {
+	var row queries.GetMemberPrincipalRow
+	err := s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
+		var err error
+		row, err = queries.New(tx).GetMemberPrincipal(ctx, u.ID)
+		return err
+	})
+	if errors.Is(err, store.ErrNoRows) {
+		return authz.Principal{}, errNotFound
+	}
+	if err != nil {
+		return authz.Principal{}, err
+	}
+	p := authz.Principal{Kind: authz.KindUser, ID: u.ID, Name: u.Username, SessionID: sess.ID, MustChangePassword: u.MustChange,
+		TenantID: tid, TenantName: row.TenantName, TenantState: tenant.State(row.TenantState), Roles: row.Roles, Granted: row.Granted}
+	if p.Name == "" {
+		p.Name = u.DisplayName
+	}
+	return p, nil
 }

@@ -228,7 +228,7 @@ func (a *Authenticator) check(e *entry, keyID string, hash [32]byte) (authz.Prin
 	p := authz.Principal{
 		Kind: authz.KindServiceAccount, ID: row.ServiceAccountID, Name: row.ServiceAccountName, KeyID: keyID,
 		TenantID: tid, TenantName: row.TenantName, TenantState: tenant.State(row.TenantState),
-		Roles: append([]string{}, row.Roles...),
+		Roles: append([]string{}, row.Roles...), Granted: append([]string{}, row.Granted...),
 	}
 	if row.Scoped {
 		p.Scopes = append([]string{}, row.Scopes...)

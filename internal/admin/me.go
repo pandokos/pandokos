@@ -67,21 +67,16 @@ func (s *server) GetMe(ctx context.Context, _ adminapi.GetMeInput) (*adminapi.Me
 		if err != nil {
 			return nil, err
 		}
-		var row queries.GetMemberPrincipalRow
-		err = s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
-			var err error
-			row, err = queries.New(tx).GetMemberPrincipal(ctx, p.ID)
-			return err
-		})
-		if errors.Is(err, store.ErrNoRows) {
+		mp, err := s.memberPrincipal(ctx, *st.user, *st.session, tid)
+		if errors.Is(err, errNotFound) {
 			continue // removed since the first read
 		}
 		if err != nil {
 			return nil, err
 		}
 		m.Memberships = append(m.Memberships, adminapi.Membership{
-			Tenant: adminapi.TenantRef{ID: tid.String(), Name: row.TenantName, State: adminapi.TenantState(row.TenantState)},
-			Roles:  nonNil(row.Roles),
+			Tenant: adminapi.TenantRef{ID: tid.String(), Name: mp.TenantName, State: adminapi.TenantState(mp.TenantState)},
+			Roles:  nonNil(mp.Roles),
 			// Step C5 fills the effective permissions; until then an empty list keeps the member valid.
 			Permissions: []string{},
 		})
