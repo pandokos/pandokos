@@ -58,3 +58,4 @@ environment configuration (settings outside ADR 0019).
 - 2026-11-18: accepted by the maintainer after review.
 - 2026-11-18: sprint 5.4: the cost attributes of the client span are set only with `telemetry.tenant_usage_details`
 - 2026-11-20: point 6 is superseded: the attributes are only those the OpenTelemetry conventions mark Required (`http.request.method`, `url.path`, `url.scheme` on the server span; `gen_ai.operation.name`, `gen_ai.provider.name` on the provider span), with no `pandokos.*` attribute and no model in a span name; token counts never come to spans ([ADR 0055](0055-operational-telemetry-holds-no-tenant-data.md)).
+- 2026-11-22: sprint 6.1: the resource and the collector connection are shared with metrics; the process-wide SDK error line is `telemetry error` ([ADR 0062](0062-metrics-instruments-attributes-cardinality-and-scrape.md), [ADR 0063](0063-the-log-redaction-and-the-log-reference.md)).

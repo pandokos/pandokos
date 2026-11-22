@@ -54,3 +54,4 @@ protect the database itself.
 ## History
 
 - 2026-11: sprint 3.2: OTEL_* variables are not configuration; the SDK still reads OTEL_RESOURCE_ATTRIBUTES, which is warned about.
+- 2026-11-22: sprint 6.1: `telemetry.metrics.otlp`, `telemetry.metrics.export_interval`, `telemetry.metrics.prometheus` ([ADR 0062](0062-metrics-instruments-attributes-cardinality-and-scrape.md)).

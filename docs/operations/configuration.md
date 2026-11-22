@@ -134,13 +134,16 @@ replaced by `_`.
 | `ledger.batch_size` | `PANDOKOS_LEDGER_BATCH_SIZE` | integer | `500` | Most usage records written in one transaction (1 to 5000) |
 | `ledger.buffer_size` | `PANDOKOS_LEDGER_BUFFER_SIZE` | integer | `10000` | Usage records held in memory, admitted requests included; when it is full the gateway answers 503 (100 to 1000000, at least `ledger.batch_size`) |
 | `ledger.shutdown_flush_timeout` | `PANDOKOS_LEDGER_SHUTDOWN_FLUSH_TIMEOUT` | duration | `10s` | Time allowed to write the records still in memory when the process stops (1s to 5m) |
-| `telemetry.otlp.endpoint` | `PANDOKOS_TELEMETRY_OTLP_ENDPOINT` | URL | none | Base URL of the OTLP/HTTP collector; `/v1/traces` is appended to its path; empty means no export |
+| `telemetry.otlp.endpoint` | `PANDOKOS_TELEMETRY_OTLP_ENDPOINT` | URL | none | Base URL of the OTLP/HTTP collector; `/v1/traces` and `/v1/metrics` are appended to its path; empty means no export |
 | `telemetry.otlp.protocol` | `PANDOKOS_TELEMETRY_OTLP_PROTOCOL` | `http/protobuf` | `http/protobuf` | Export protocol; only `http/protobuf` exists |
 | `telemetry.otlp.headers_file` | `PANDOKOS_TELEMETRY_OTLP_HEADERS_FILE` | path | none | File with the headers sent to the collector, one `Name: value` per line; the values are secrets |
 | `telemetry.otlp.timeout` | `PANDOKOS_TELEMETRY_OTLP_TIMEOUT` | duration | `10s` | Time allowed for one export (1s to 60s) |
 | `telemetry.traces.sample_ratio` | `PANDOKOS_TELEMETRY_TRACES_SAMPLE_RATIO` | decimal | `1` | Share of the traces started here that is sampled (0 to 1); the sampled flag of a caller's `traceparent` is followed |
 | `telemetry.traces.propagate` | `PANDOKOS_TELEMETRY_TRACES_PROPAGATE` | boolean | `false` | Send the trace context to the provider in a `traceparent` header |
-| `telemetry.resource.attributes` | `PANDOKOS_TELEMETRY_RESOURCE_ATTRIBUTES` | list | none | Resource attributes of the traces: `key=value` pairs separated by commas, in YAML and in the environment |
+| `telemetry.resource.attributes` | `PANDOKOS_TELEMETRY_RESOURCE_ATTRIBUTES` | list | none | Resource attributes of the traces and the metrics: `key=value` pairs separated by commas, in YAML and in the environment |
+| `telemetry.metrics.otlp` | `PANDOKOS_TELEMETRY_METRICS_OTLP` | boolean | `true` | Export metrics over OTLP to `telemetry.otlp.endpoint` (`/v1/metrics` is appended), when that is set |
+| `telemetry.metrics.export_interval` | `PANDOKOS_TELEMETRY_METRICS_EXPORT_INTERVAL` | duration | `60s` | Time between two OTLP metric exports (5s to 10m) |
+| `telemetry.metrics.prometheus` | `PANDOKOS_TELEMETRY_METRICS_PROMETHEUS` | boolean | `false` | Serve `GET /metrics` on the administration listener, for a platform key holding `metrics:read` |
 
 Durations are strings in Go syntax (`"30s"`, `"10m"`); a YAML number is rejected for a duration.
 Sizes are integers in bytes.
@@ -233,6 +236,7 @@ All problems are reported together, not only the first. Each is attached to a ke
 | `telemetry.otlp.headers_file` | when set: a readable file of at most 131072 bytes; lines `Name: value`, blank lines and lines starting with `#` ignored; at most 16 headers; names are HTTP tokens and none of `Host`, `Content-Type`, `Content-Length`, `Content-Encoding`, `User-Agent`; values 1 to 4096 printable ASCII bytes. A problem names the line, never its content |
 | `telemetry.otlp.timeout` | 1s to 60s |
 | `telemetry.traces.sample_ratio` | 0 to 1 |
+| `telemetry.metrics.export_interval` | 5s to 10m, and at least `telemetry.otlp.timeout` |
 | `telemetry.resource.attributes` | at most 32 `key=value` pairs; keys `[a-z][a-z0-9._-]{0,62}`, values 1 to 256 printable ASCII bytes without `,` and `=` |
 | `tokens.max_token_bytes` | 1024 to 16384, and at most half of `listeners.inference.max_header_bytes`; `serve` refuses to start otherwise (all `tokens.*` rules are checked for `serve` and `config check --for serve`) |
 | `tokens.clock_skew` | 0 to 5m (zero allowed) |
@@ -251,6 +255,10 @@ they do not prevent start.
 | `upstream.proxy.url` | `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY` (or the lower-case name) is set in the environment and the key is not (`serve` only) | `<VARIABLE>` is set in the environment and is not used; set upstream.proxy.url to send provider traffic through a proxy |
 | `telemetry.resource.attributes` | `OTEL_RESOURCE_ATTRIBUTES` is set in the environment (`serve` only) | `OTEL_RESOURCE_ATTRIBUTES` is set in the environment: the OpenTelemetry SDK adds its attributes to the resource; they never replace those Pandokos sets. The value is never shown |
 | `telemetry.otlp.endpoint` | `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set in the environment and the key is not (`serve` only) | `<VARIABLE>` is set in the environment and is not used; set telemetry.otlp.endpoint to export traces |
+| `telemetry.otlp.endpoint` | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` is set in the environment and the key is not (`serve` only) | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` is set in the environment and is not used; set telemetry.otlp.endpoint to export metrics |
+| `telemetry.metrics.export_interval` | `OTEL_METRIC_EXPORT_INTERVAL` is set in the environment (`serve` only) | `OTEL_METRIC_EXPORT_INTERVAL` is set in the environment and is ignored; set telemetry.metrics.export_interval |
+| `telemetry.otlp.timeout` | `OTEL_METRIC_EXPORT_TIMEOUT` is set in the environment (`serve` only) | `OTEL_METRIC_EXPORT_TIMEOUT` is set in the environment and is ignored; set telemetry.otlp.timeout |
+| `telemetry.metrics.export_interval` | the interval is not the default while no OTLP export runs (no endpoint, or `telemetry.metrics.otlp` false) | has no effect without telemetry.otlp.endpoint and telemetry.metrics.otlp |
 | `listeners.inference.address` | no TLS and the host is not a loopback address or `localhost` | the listener serves plain HTTP; set listeners.inference.tls.cert_file and key_file, or terminate TLS in front of it |
 | `listeners.admin.address` | no TLS, host not loopback, `allow_plaintext` true | the administration API is served without TLS; keys travel in clear text unless TLS ends in front of it |
 | `listeners.admin.allow_plaintext` | true while TLS is configured or the host is loopback | has no effect |

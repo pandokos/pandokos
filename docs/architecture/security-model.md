@@ -15,7 +15,7 @@
 | Provider credentials of tenants | They are spendable money and access to the tenant's provider account. They cannot be recreated by the platform |
 | Tenant separation | One tenant must not see or affect another's configuration, usage or spend |
 | Usage ledger and audit log | They are the evidence for what was spent and for investigations |
-| A tenant's usage records, limit events and price lists | They describe what a tenant consumes and what it pays. Through the product only the tenant reads them: row-level security on their tables, tenant-scoped permissions that no platform role holds, no platform operation or definer function that returns them, and a request log and traces that hold no tenant data: no tenant or caller identifier, model, usage, cost or limit rule ([ADR 0054](../adr/0054-usage-data-is-the-tenants.md), [ADR 0055](../adr/0055-operational-telemetry-holds-no-tenant-data.md)). The platform sees operational indicators of the installation, with no tenant and no cost |
+| A tenant's usage records, limit events and price lists | They describe what a tenant consumes and what it pays. Through the product only the tenant reads them: row-level security on their tables, tenant-scoped permissions that no platform role holds, no platform operation or definer function that returns them, and a request log and traces that hold no tenant data: no tenant or caller identifier, model, usage, cost or limit rule ([ADR 0054](../adr/0054-usage-data-is-the-tenants.md), [ADR 0055](../adr/0055-operational-telemetry-holds-no-tenant-data.md)). The platform sees operational indicators of the installation, with no tenant and no cost. The metrics are aggregates per installation, model and currency with no tenant, caller, key or request attribute; the one identifier is the provider credential ID on the counter of the provider's 429 answers, which leads to a tenant only through the audited `tenant_credential:read`; and where a single tenant uses a model or a currency, the total for it is that tenant's, a residual the operator accepts ([ADR 0062](../adr/0062-metrics-instruments-attributes-cardinality-and-scrape.md)) |
 | Content in transit | Prompts and completions pass through memory and must leave no trace |
 | Availability and spend | A caller must not exhaust the service or a budget that is not theirs |
 
@@ -51,6 +51,10 @@ flowchart LR
    loopback refuses to sign anyone in until the operator names the HTTPS origin in front of it
    (`auth.public_origin`). Every operation is authorized. A client that runs in the user's browser is
    untrusted: what it hides is not a control. The admin port is not meant for the public internet.
+   The optional scrape endpoint `GET /metrics` (`telemetry.metrics.prometheus`) is on this listener, outside
+   the API document, and is never anonymous: it needs a platform key (or a platform-level issuer's
+   token) whose role holds the platform permission `metrics:read`, held by `platform-admin` and
+   `platform-auditor`; tenant principals and sessions are refused ([telemetry guide](../operations/telemetry.md#10-the-scrape-endpoint)).
 3. **Process to database.** Each role connects with its own least-privileged database role. The
    database enforces tenant isolation independently of the application.
 4. **Process to KEK provider.** Whoever holds the key-encryption key and the database can decrypt
@@ -90,11 +94,12 @@ flowchart LR
    issuer only; the ID token is validated, its subject read and every provider token dropped at once
    ([ADR 0058](../adr/0058-openid-connect-relying-party.md)).
 7. **Infrastructure operator.** See the next section.
-8. **Gateway to trace collector.** Outbound only, to the one URL the operator configured, through
+8. **Gateway to trace and metrics collector.** Outbound only, to the one URL the operator configured, through
    the same guard as provider calls (certificates verified, no proxy, no redirect, forbidden
    addresses refused). It receives spans that carry only the attributes the OpenTelemetry conventions make Required, never a tenant identifier or content,
-   a header value or caller metadata ([telemetry guide](../operations/telemetry.md),
-   [ADR 0040](../adr/0040-traces.md)); what each destination receives is listed in
+   a header value or caller metadata, and the metrics of the [metrics reference](../reference/metrics.md), which
+   name no tenant, caller, key, request or trace ([telemetry guide](../operations/telemetry.md),
+   [ADR 0040](../adr/0040-traces.md), [ADR 0062](../adr/0062-metrics-instruments-attributes-cardinality-and-scrape.md)); what each destination receives is listed in
    [data flows](../reference/data-flows.md).
 
 **The capability check** (`getCapability`, [ADR 0043](../adr/0043-tenant-capability-check-and-usage-list.md))
@@ -197,7 +202,9 @@ disk the operator's database administrators can read, and by auditing every admi
 | A caller forges trace or metadata to mislead | Metadata headers and trace context are read only after authentication, so an anonymous caller causes no span and no stored value. Both are recorded as declared by the caller, within bounds (eight short ASCII entries; a sampled flag only makes the caller's own requests sampled), and never used in a decision or forwarded (GW-13, OBS-02, [ADR 0039](../adr/0039-usage-record-admission-and-ledger-writer.md)) |
 | The gateway is used to rewrite or read the usage ledger | The gateway role holds `INSERT` on the listed columns of `usage_record` and nothing else: it cannot read, change or delete a row, even one it wrote; triggers stop the owner too. Rows of every tenant are written in that tenant's session under forced row-level security |
 | A provider smuggles text into the ledger through its usage object | Only non-negative integer members, at most 32, are kept, under keys of a fixed alphabet; every text column of a record is format-checked by the database |
-| The trace collector is used as a way out | The exporter uses the egress guard: one operator-configured URL, certificates verified, no proxy, no redirect, forbidden and metadata addresses refused |
+| Someone reads the metrics without a right to | `GET /metrics` is off by default and, when on, needs a platform credential holding `metrics:read`; a tenant principal, a session and an anonymous request are refused, and the authentication failures are counted and logged |
+| A secret reaches the log inside an error text | One handler builds every logger and redacts values of sensitive keys and anything with the shape of a Pandokos secret; each redaction is counted and a test keeps the log reference and the shapes current ([ADR 0063](../adr/0063-the-log-redaction-and-the-log-reference.md)) |
+| The trace or metrics collector is used as a way out | The exporter uses the egress guard: one operator-configured URL, certificates verified, no proxy, no redirect, forbidden and metadata addresses refused |
 
 ## Replay exposure
 

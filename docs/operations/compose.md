@@ -120,6 +120,35 @@ pdk usage list
 A cut Anthropic stream, for example, shows the provider's input figures and an estimated output. The
 capability check and the list need no SQL and no database password.
 
+## The observability overlay
+
+`deploy/compose/observability/` adds an OpenTelemetry Collector, Prometheus and Grafana to the
+reference deployment, with two dashboards, to look at the [metrics](telemetry.md#9-metrics). It is an
+example for trying and for learning what the metrics show, not a hardened monitoring stack: it has
+no authentication of its own beyond Grafana's anonymous viewer, no alerting and two days of retention.
+
+```sh
+./setup.sh        # also creates secrets/grafana_admin; never overwrites a secret that exists
+docker compose -f compose.yaml -f observability/compose.yaml up -d --wait
+```
+
+- **Ports.** Grafana at `http://127.0.0.1:3000` and Prometheus at `http://127.0.0.1:9090`, on the
+  host's loopback only. The collector publishes nothing.
+- **What it does.** `pandokos` gets three settings: the collector as `telemetry.otlp.endpoint`, an
+  export interval of 10 s and `telemetry.metrics.prometheus`. The collector, which is on the `egress`
+  network so that Pandokos reaches it through the egress guard, forwards the metrics to Prometheus and
+  writes a summary of the traces to its own log. Prometheus and Grafana are on a network marked
+  `internal` that no one else joins; they also join a second network because Docker publishes a port
+  only for a container with a route out.
+- **Secrets.** The admin password of Grafana is `secrets/grafana_admin`, made by `setup.sh` like the
+  others. Anonymous visitors are viewers.
+- **Images** are pinned by digest, run with a read-only root file system, no capabilities and
+  `no-new-privileges`; Prometheus and Grafana write to the named volumes `prometheus-data` and
+  `grafana-data`.
+- **Stop.** `docker compose -f compose.yaml -f observability/compose.yaml down` (add `-v` to remove the
+  volumes too). Stopping the collector only is harmless: Pandokos logs `metric export failing` and goes
+  on.
+
 ## What the choices are, and why
 
 | Concern | Choice |
