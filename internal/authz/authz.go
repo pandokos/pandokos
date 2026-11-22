@@ -320,13 +320,10 @@ func Decide(p Principal, permission string, t Target) Decision {
 		return Deny
 	}
 	if perm.Scope == ScopePlatform {
-		if (p.Kind != KindPlatform && !(p.Kind == KindUser && p.TenantID.IsZero())) || !p.holds(permission) {
+		if !p.holds(permission) || (p.Kind != KindPlatform && (p.Kind != KindUser || !p.TenantID.IsZero())) {
 			return Deny
 		}
 		return Allow
-	}
-	if perm.Scope == ScopeSelf && p.Kind != KindUser && permission == SessionSelf {
-		return Deny // keys and tokens have no session
 	}
 	if p.Kind == KindServiceAccount || (p.Kind == KindUser && !p.TenantID.IsZero()) {
 		if p.TenantID.IsZero() {

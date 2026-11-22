@@ -13,6 +13,7 @@ import (
 	"github.com/pandokos/pandokos/internal/password"
 	"github.com/pandokos/pandokos/internal/secret"
 	"github.com/pandokos/pandokos/internal/store"
+	"github.com/pandokos/pandokos/internal/store/queries"
 	"github.com/pandokos/pandokos/internal/tenant"
 )
 
@@ -26,6 +27,7 @@ type User struct {
 	ID, SignIn, DisplayName, Email, State, Username string
 	TenantID                                        tenant.ID // the tenant that manages the account; zero: the platform
 	MustChange                                      bool
+	PlatformRoles                                   []string // the roles of platform_role_assignment; filled by a session lookup
 }
 
 // Session is one sign-in of a user. internal/session stores it; the type is defined here because
@@ -129,6 +131,13 @@ func BootstrapAdmin(ctx context.Context, tx store.Tx, h *password.Hasher, userna
 // Purge removes the throttle rows older than the failure window plus the lock duration and the
 // sign-in transactions that have expired.
 func (s *Service) Purge(ctx context.Context) error {
-	_, _ = ctx, s
-	return errNotImplemented
+	keep := store.Interval(s.o.FailureWindow + s.o.LockDuration)
+	return s.o.DB.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
+		q := queries.New(tx)
+		if _, err := q.PurgeThrottle(ctx, keep); err != nil {
+			return err
+		}
+		_, err := q.PurgeOidcLogins(ctx)
+		return err
+	})
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/pandokos/pandokos/internal/adminapi"
 )
@@ -34,6 +35,15 @@ var problems = map[adminapi.ProblemCode]problemSpec{
 	// Sprint 2.2, section 5.8: the two outcomes of a price import that fails before anything is written.
 	adminapi.ProblemCodePriceSourceUnavailable: {502, "Price source unavailable", "The price dataset could not be downloaded. Nothing was imported."},
 	adminapi.ProblemCodePriceDatasetInvalid:    {422, "Price dataset invalid", "The price dataset could not be read. Nothing was imported."},
+
+	// Sprint 4.2, section 5.14: sign-in, sessions and idempotency keys.
+	adminapi.ProblemCodeTooManyAttempts:         {429, "Too many attempts", "Too many attempts. Try again later."},
+	adminapi.ProblemCodePasswordChangeRequired:  {403, "Password change required", "The password must be changed before anything else."},
+	adminapi.ProblemCodeCsrfRejected:            {403, "Request rejected", "The request does not come from this site."},
+	adminapi.ProblemCodeSignInDisabled:          {403, "Sign-in disabled", "Sign-in is not available here."},
+	adminapi.ProblemCodeIdempotencyKeyReused:    {422, "Idempotency key reused", "The Idempotency-Key was used with another request."},
+	adminapi.ProblemCodeIdempotencyInProgress:   {409, "Request in progress", "The first request with this Idempotency-Key is still running."},
+	adminapi.ProblemCodeIdempotencyResponseLost: {409, "Response lost", "The first request with this Idempotency-Key succeeded and its response was not kept."},
 }
 
 // The errors of the handlers and of the hooks; the Error hook turns each into a problem.
@@ -45,11 +55,24 @@ var (
 	errForbidden       = errors.New("admin: forbidden")
 	errTenantState     = errors.New("admin: tenant not active")
 
+	// The errors of the hook for sessions (sprint 4.2, sections 5.3 and 5.7).
+	errCSRF           = errors.New("admin: request rejected as forged")
+	errSignInDisabled = errors.New("admin: sign-in is not available")
+	errMustChange     = errors.New("admin: the password must be changed first")
+
 	// errCredentialRejected: the provider answered 401 or 403 to a credential presented with validate.
 	errCredentialRejected = errors.New("admin: the provider rejected the credential")
 	// errValidationUnavailable: the provider could not confirm the credential.
 	errValidationUnavailable = errors.New("admin: the provider could not confirm the credential")
 )
+
+// retryError is a problem that tells the caller when to come back (Retry-After, in whole seconds).
+type retryError struct {
+	code  adminapi.ProblemCode
+	after time.Duration
+}
+
+func (e *retryError) Error() string { return "admin: " + string(e.code) }
 
 // invalidError is an invalid_request with the members that are at fault.
 type invalidError struct{ fields []adminapi.FieldError }
@@ -76,6 +99,20 @@ type statusRecorder struct {
 	state  *reqState
 }
 
+// flush copies the headers and cookies that a handler or the hook added (reqState.header) into the
+// response, once, before the status line.
+func (r *statusRecorder) flush() {
+	if r.state == nil {
+		return
+	}
+	for k, vs := range r.state.header {
+		for _, v := range vs {
+			r.Header().Add(k, v)
+		}
+	}
+	r.state.header = nil
+}
+
 // warn marks every response to the bootstrap key (IAM-14).
 func (r *statusRecorder) warn() {
 	if r.state != nil && r.state.principal != nil && r.state.principal.Bootstrap {
@@ -87,6 +124,7 @@ func (r *statusRecorder) WriteHeader(code int) {
 	if r.status == 0 {
 		r.status = code
 		r.warn()
+		r.flush()
 	}
 	r.ResponseWriter.WriteHeader(code)
 }
@@ -95,6 +133,7 @@ func (r *statusRecorder) Write(p []byte) (int, error) {
 	if r.status == 0 {
 		r.status = http.StatusOK
 		r.warn()
+		r.flush()
 	}
 	return r.ResponseWriter.Write(p)
 }

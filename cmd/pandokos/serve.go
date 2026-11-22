@@ -260,6 +260,13 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	adminOpts.Limits.Zones, adminOpts.Limits.OnUnknownPrice = zones, cfg.Limits.OnUnknownPrice
 	adminOpts.DefaultCurrency = cfg.Pricing.DefaultCurrency
 	adminOpts.Limits.Ledger = limits.NewLedger(workerDB)
+	people, err := newPeople(cfg, adminDB)
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
+	adminOpts.Sessions, adminOpts.Accounts, adminOpts.Idempotency = people.sessions, people.accounts, people.idempotency
+	adminOpts.Origin, adminOpts.Auth = adminOrigin(cfg), adminAuthOptions(cfg)
 	adminHandler, err := admin.New(adminOpts)
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
@@ -354,7 +361,8 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	background, stopBackground := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	defer func() { stopBackground(); wg.Wait() }()
-	wg.Add(5)
+	wg.Add(6)
+	go func() { defer wg.Done(); people.runPurge(background, logger) }()
 	go func() { defer wg.Done(); listener.Run(background) }()
 	go func() { defer wg.Done(); warnBootstrap(background, logger, adminDB) }()
 	go func() { defer wg.Done(); partitioner.Run(background) }()

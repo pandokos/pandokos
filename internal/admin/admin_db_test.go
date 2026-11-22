@@ -260,6 +260,9 @@ func TestEveryOperationNeedsACredential(t *testing.T) {
 	seenAudit := seenIDs(t, w.api)
 	var want *apitest.Response
 	for _, op := range adminapi.Operations {
+		if op.Public {
+			continue // sprint 4.2: a public operation reads no credential
+		}
 		for _, c := range creds {
 			call := apitest.CallFor(t, op, w.params())
 			r := w.api.Do(t, call.Method, call.Path, c.key, call.Body, c.hdr)

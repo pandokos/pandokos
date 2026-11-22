@@ -1,6 +1,9 @@
 package config
 
 import (
+	"net"
+	"net/netip"
+	"strconv"
 	"strings"
 	"time"
 
@@ -232,6 +235,26 @@ func validateAuth(c *Config) []Problem {
 	if l.MaxConcurrentHashes < 1 || l.MaxConcurrentHashes > 64 {
 		add("auth.local.max_concurrent_hashes", "must be between 1 and 64")
 	}
+	s := &a.Session
+	inRange("auth.session.idle_timeout", s.IdleTimeout, time.Minute, hoursPerDay, "1m and 24h")
+	inRange("auth.session.absolute_lifetime", s.AbsoluteLifetime, time.Minute, maxSessionH, "1m and 168h")
+	if time.Duration(s.IdleTimeout) > time.Duration(s.AbsoluteLifetime) {
+		add("auth.session.absolute_lifetime", "must not be shorter than auth.session.idle_timeout")
+	}
+	if s.MaxPerUser < 1 || s.MaxPerUser > 100 {
+		add("auth.session.max_per_user", "must be between 1 and 100")
+	}
+	if a.PublicOrigin != "" {
+		if msg := checkPublicOrigin(a.PublicOrigin); msg != "" {
+			add("auth.public_origin", msg)
+		}
+	}
+	for _, e := range c.Listeners.Admin.TrustedProxies {
+		if _, err := netip.ParsePrefix(e); err != nil {
+			add("listeners.admin.trusted_proxies", "every entry must be a CIDR prefix such as 10.0.0.0/8")
+			break
+		}
+	}
 	if !l.Enabled && !a.OIDC.Enabled {
 		add("auth.local.enabled", "local accounts cannot be switched off unless auth.oidc.enabled is true: nobody could sign in")
 	}
@@ -244,5 +267,62 @@ func authWarnings(c *Config) []Warning {
 	if c.Auth.Local.PasswordMinLength < 12 {
 		ws = append(ws, Warning{Key: "auth.local.password_min_length", Message: "a minimum below 12 characters weakens local passwords"})
 	}
+	a := c.Listeners.Admin
+	if host, _, err := net.SplitHostPort(a.Address); err == nil && a.AllowPlaintext && !isLoopback(host) && (a.TLS.CertFile == "" || a.TLS.KeyFile == "") && c.Auth.PublicOrigin == "" {
+		ws = append(ws, Warning{Key: "auth.public_origin", Message: "the administration listener is served without TLS and no HTTPS origin is named: nobody can sign in; set auth.public_origin to the origin that browsers use"})
+	}
 	return ws
+}
+
+// checkPublicOrigin returns what is wrong with an origin: https://host[:port], or http:// with a
+// loopback host; lower case, no path, query, fragment or user information, and no default port
+// (a browser never writes one, so the value could not be equal to its Origin header).
+func checkPublicOrigin(v string) string {
+	const form = "must be https://host[:port], or http:// with a loopback host"
+	var scheme, rest string
+	switch {
+	case strings.HasPrefix(v, "https://"):
+		scheme, rest = "https", v[len("https://"):]
+	case strings.HasPrefix(v, "http://"):
+		scheme, rest = "http", v[len("http://"):]
+	default:
+		return form
+	}
+	if rest == "" || rest != strings.ToLower(rest) || strings.ContainsAny(rest, "/?#@\\ \t\r\n%") {
+		return form + ", in lower case, without path, query, fragment or user information"
+	}
+	host, port := rest, ""
+	if strings.HasPrefix(rest, "[") {
+		end := strings.Index(rest, "]")
+		if end < 0 {
+			return form
+		}
+		host, port = rest[:end+1], rest[end+1:]
+		if port != "" && !strings.HasPrefix(port, ":") {
+			return form
+		}
+		if ip, err := netip.ParseAddr(host[1 : len(host)-1]); err != nil || !ip.Is6() {
+			return form
+		}
+	} else {
+		if i := strings.LastIndex(rest, ":"); i >= 0 {
+			host, port = rest[:i], rest[i:]
+		}
+		if host == "" || !hostName.MatchString(host) {
+			return form
+		}
+	}
+	if port != "" {
+		n, err := strconv.Atoi(port[1:])
+		if err != nil || port[1:] != strconv.Itoa(n) || n < 1 || n > 65535 {
+			return "the port must be between 1 and 65535"
+		}
+		if (scheme == "https" && n == 443) || (scheme == "http" && n == 80) {
+			return "must not name the default port of the scheme"
+		}
+	}
+	if scheme == "http" && host != "localhost" && host != "127.0.0.1" && host != "[::1]" {
+		return "http is allowed for a loopback host only (localhost, 127.0.0.1, [::1])"
+	}
+	return ""
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pandokos/pandokos/internal/store"
+	"github.com/pandokos/pandokos/internal/store/queries"
 	"github.com/pandokos/pandokos/internal/tenant"
 )
 
@@ -72,6 +73,8 @@ func (s *Store) Finish(ctx context.Context, status int, body []byte) error {
 
 // Purge removes the keys whose retention has passed.
 func (s *Store) Purge(ctx context.Context) error {
-	_, _ = ctx, s
-	return errNotImplemented
+	return s.o.DB.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
+		_, err := queries.New(tx).PurgeIdempotencyKeys(ctx)
+		return err
+	})
 }
