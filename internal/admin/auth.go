@@ -278,9 +278,13 @@ func (s *server) federatedInput(ctx context.Context, id oidc.Identity, presented
 }
 
 // ruleSkipped is the line of a group rule that gives nothing: at start (no request) or at a sign-in.
-// It names the position of the rule in the configuration and the request, nothing else.
+// It names the position of the rule in the configuration and the request, nothing else; at start
+// there is no request, and the line has no request_id.
 func ruleSkipped(log *slog.Logger, position int, requestID string) {
-	log.Warn("group rule skipped", "rule", position, "request_id", requestID)
+	if requestID != "" {
+		log = log.With("request_id", requestID)
+	}
+	log.Warn("group rule skipped", "rule", position)
 }
 
 // oidcFailed logs and audits a refused sign-in through the identity provider, within the cap. The

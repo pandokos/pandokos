@@ -151,6 +151,32 @@ func (db *DB) ActInTenant(ctx context.Context, id tenant.ID, fn func(ctx context
 	return db.inTx(ctx, []setting{{settingScope, scopePlatform}, {settingTenant, id.String()}}, fn)
 }
 
+// InTenant runs fn on t, a transaction in platform scope, with the tenant of the transaction set
+// to id: what ActInTenant gives, on the transaction and the connection that are already held. The
+// tenant the transaction had is restored when fn returns, also with an error that leaves the
+// transaction usable (no row); fn's error is the one returned. A transaction without the platform scope is ErrNoPlatformScope, a zero id ErrNoTenant.
+func InTenant(ctx context.Context, t Tx, id tenant.ID, fn func(ctx context.Context) error) error {
+	if id.IsZero() {
+		return ErrNoTenant
+	}
+	var scope, prev string
+	if err := t.QueryRow(ctx, "SELECT COALESCE(pg_catalog.current_setting($1, true), ''), COALESCE(pg_catalog.current_setting($2, true), '')",
+		settingScope, settingTenant).Scan(&scope, &prev); err != nil {
+		return fmt.Errorf("store: read the transaction context: %w", err)
+	}
+	if scope != scopePlatform {
+		return ErrNoPlatformScope
+	}
+	if _, err := t.Exec(ctx, "SELECT pg_catalog.set_config($1, $2, true)", settingTenant, id.String()); err != nil {
+		return fmt.Errorf("store: set the transaction context: %w", err)
+	}
+	ferr := fn(ctx)
+	if _, err := t.Exec(ctx, "SELECT pg_catalog.set_config($1, $2, true)", settingTenant, prev); err != nil && ferr == nil {
+		return fmt.Errorf("store: set the transaction context: %w", err)
+	}
+	return ferr
+}
+
 // Interval returns d as the value of an interval parameter of a query.
 func Interval(d time.Duration) pgtype.Interval {
 	return pgtype.Interval{Microseconds: d.Microseconds(), Valid: true}

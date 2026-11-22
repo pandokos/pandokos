@@ -478,6 +478,25 @@ func TestInTenant(t *testing.T) {
 			}
 		})
 
+		t.Run("the tenant is removed after an error of the function too", func(t *testing.T) {
+			err := admin.Platform(ctx(t), func(c context.Context, tx store.Tx) error {
+				err := store.InTenant(c, tx, a, func(c context.Context) error {
+					var id string
+					return tx.QueryRow(c, "SELECT id::text FROM pandokos.service_account WHERE name = 'none'").Scan(&id)
+				})
+				if !errors.Is(err, store.ErrNoRows) {
+					t.Errorf("the error of the function: %v, want store.ErrNoRows", err)
+				}
+				if n := scalarInt(c, t, tx, "SELECT count(*) FROM pandokos.service_account"); n != 0 {
+					t.Errorf("after an error the transaction sees %d service accounts, want none (no tenant)", n)
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+
 		t.Run("platform scope and a tenant only", func(t *testing.T) {
 			err := admin.Unscoped(ctx(t), func(c context.Context, tx store.Tx) error {
 				called := false

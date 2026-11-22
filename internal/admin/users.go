@@ -429,7 +429,7 @@ func (s *server) ResetUserPassword(ctx context.Context, in adminapi.ResetUserPas
 		if err := s.guardGrant(ctx, p, target.Effective()); err != nil {
 			return err
 		}
-		if err := s.guardMemberships(ctx, q, p, cur.ID); err != nil {
+		if err := s.guardMemberships(ctx, tx, q, p, cur.ID); err != nil {
 			return err
 		}
 		pw, expires, err := s.accounts.ResetPassword(ctx, tx, cur.ID, g)
@@ -451,10 +451,11 @@ func (s *server) ResetUserPassword(ctx context.Context, in adminapi.ResetUserPas
 // guardMemberships applies the guard to the memberships of a platform user whose sign-in the
 // caller would obtain (a new password): the permissions the user holds in each of its tenants,
 // as the hook builds them, must all be the caller's. The platform reaches a tenant's data only
-// under a support action (section 5.6); the recovery of such an account is the host command. q is
+// under a support action (section 5.6); the recovery of such an account is the host command. tx is
 // the platform transaction that holds the lock of the user, so that no membership is added
-// meanwhile (a new membership waits for the lock); each tenant is read in its own session.
-func (s *server) guardMemberships(ctx context.Context, q *queries.Queries, p authz.Principal, userID string) error {
+// meanwhile (a new membership waits for the lock); each tenant is read on that same transaction,
+// as the session of the tenant (store.InTenant), so that no second connection is taken.
+func (s *server) guardMemberships(ctx context.Context, tx store.Tx, q *queries.Queries, p authz.Principal, userID string) error {
 	ids, err := q.UserTenants(ctx, userID)
 	if err != nil {
 		return err
@@ -465,13 +466,13 @@ func (s *server) guardMemberships(ctx context.Context, q *queries.Queries, p aut
 			return err
 		}
 		var grant queries.GetMemberGrantRow
-		err = s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
+		err = store.InTenant(ctx, tx, tid, func(ctx context.Context) error {
 			var err error
-			grant, err = queries.New(tx).GetMemberGrant(ctx, userID)
+			grant, err = q.GetMemberGrant(ctx, userID)
 			return err
 		})
 		if isNoRowsErr(err) {
-			continue // removed since the directory was read
+			continue // no membership of this tenant after all
 		}
 		if err != nil {
 			return err
