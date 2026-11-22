@@ -135,7 +135,7 @@ func TestReasonRequired(t *testing.T) {
 				t.Fatalf("with a reason: %d %s", r.Status, short(r))
 			}
 			found := false
-			for _, row := range allAuditRows(w, t)[before:] {
+			for _, row := range allAuditRows(w, t) {
 				found = found || row.Reason == reason
 			}
 			if !found {

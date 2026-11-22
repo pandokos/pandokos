@@ -106,8 +106,15 @@ func TestGroupRulesWithRoles(t *testing.T) {
 		}
 	}
 	// The rules of the test are accepted now that the tenant and its custom roles exist.
+	// The rule of the missing custom role is left out: a role that the tenant does not have stops the
+	// start (the loop above), and it is only skipped at sign-in when it goes after the start.
 	good := captured
-	good.Auth.GroupRules = o.Rules
+	good.Auth.GroupRules = nil
+	for _, r := range o.Rules {
+		if r.Role != "gone-role" {
+			good.Auth.GroupRules = append(good.Auth.GroupRules, r)
+		}
+	}
 	if _, err := admin.New(good); err != nil {
 		t.Errorf("admin.New with the rules of the test: %v", err)
 	}

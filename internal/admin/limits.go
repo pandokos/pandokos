@@ -150,8 +150,10 @@ func (s *server) CreateLimit(ctx context.Context, in adminapi.CreateLimitInput) 
 			return err
 		}
 		detail := map[string]any{"subject_kind": row.SubjectKind, "subject_id": row.SubjectID, "provider": row.Provider, "model": row.Model}
-		return audit.RecordTenant(ctx, tx, tid, tenantEvent(ctx, "limit.create", "limit_rule", row.ID,
-			ruleDetail(detail, row.ProviderID, row.ModelID, row.Metric, row.LimitValue, row.Currency, row.Enforce, row.Thresholds)))
+		ev := tenantEvent(ctx, "limit.create", "limit_rule", row.ID,
+			ruleDetail(detail, row.ProviderID, row.ModelID, row.Metric, row.LimitValue, row.Currency, row.Enforce, row.Thresholds))
+		ev.Reason = b.Reason
+		return audit.RecordTenant(ctx, tx, tid, ev)
 	})
 	if err != nil {
 		return nil, mapLimitError(err)
@@ -224,7 +226,9 @@ func (s *server) UpdateLimit(ctx context.Context, in adminapi.UpdateLimitInput) 
 		}
 		detail["subject_kind"], detail["subject_id"], detail["provider"], detail["model"], detail["metric"] =
 			cur.SubjectKind, cur.SubjectID, cur.Provider, cur.Model, cur.Metric
-		return audit.RecordTenant(ctx, tx, tid, tenantEvent(ctx, "limit.update", "limit_rule", cur.ID, detail))
+		ev := tenantEvent(ctx, "limit.update", "limit_rule", cur.ID, detail)
+		ev.Reason = in.Body.Reason.Value
+		return audit.RecordTenant(ctx, tx, tid, ev)
 	})
 	if isNoRowsErr(err) {
 		return nil, errNotFound

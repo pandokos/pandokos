@@ -10,7 +10,9 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"regexp"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -651,21 +653,52 @@ func retryAfter(d time.Duration) int {
 	return n
 }
 
+// roleNameFormat is the format of a role name (the RoleName schema of the API).
+var roleNameFormat = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
+
+// ruleRole says what a group rule's role is: a built-in role that a person can hold in the scope of
+// the rule (ok, not custom), a name that only a tenant's database can vouch for (ok, custom) or
+// neither. A custom role is known to the database, not to the configuration, so for a tenant target
+// only the format is checked here.
+func ruleRole(r oidc.Rule) (ok, custom bool) {
+	scope := authz.ScopeTenant
+	if r.Platform {
+		scope = authz.ScopePlatform
+	}
+	if def, found := authz.RoleByName(r.Role); found {
+		return def.Scope == scope && def.Members, false
+	}
+	return !r.Platform && roleNameFormat.MatchString(r.Role), true
+}
+
+// customRolesOf reads the state of the custom roles of the tenant that have one of the names, by
+// name. A tenant has at most maxCustomRoles of them, so one page is all of them.
+func customRolesOf(ctx context.Context, db *store.DB, tid tenant.ID, names []string) (map[string]string, error) {
+	out := map[string]string{}
+	err := db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
+		rows, err := queries.New(tx).ListTenantRoles(ctx, queries.ListTenantRolesParams{Sort: "name", AfterID: afterID(false, ""), PageSize: maxCustomRoles})
+		for _, r := range rows {
+			if slices.Contains(names, r.Name) {
+				out[r.Name] = r.State
+			}
+		}
+		return err
+	})
+	return out, err
+}
+
 // checkGroupRules refuses at start a group rule that names a role that a user cannot hold in its scope,
-// or a tenant that does not exist (section 5.9). An installation without any tenant cannot name one yet,
-// so nothing is refused there; a tenant created later is found at each sign-in.
+// a custom role that an existing tenant does not have, or a tenant that does not exist (section 5.9). An
+// installation without any tenant cannot name one yet, so nothing is refused there; a tenant created
+// later is found at each sign-in.
 func checkGroupRules(o Options) error {
 	var names []string
 	for i, r := range o.Auth.GroupRules {
-		scope, role := authz.ScopeTenant, r.Role
-		if r.Platform {
-			scope = authz.ScopePlatform
-		} else {
-			names = append(names, r.Tenant)
-		}
-		def, ok := authz.RoleByName(role)
-		if !ok || def.Scope != scope || (role != authz.RolePlatformAdmin && role != authz.RoleTenantAdmin) {
+		if ok, _ := ruleRole(r); !ok {
 			return fmt.Errorf("admin: group rule %d names a role that a user cannot hold in that scope", i+1)
+		}
+		if !r.Platform {
+			names = append(names, r.Tenant)
 		}
 	}
 	if len(names) == 0 {
@@ -689,13 +722,39 @@ func checkGroupRules(o Options) error {
 	if len(existing) == 0 {
 		return nil // a new installation: its tenants are made through this very API, and the rules are skipped until they exist
 	}
-	found := map[string]bool{}
+	found := map[string]string{}
 	for _, r := range rows {
-		found[r.Name] = true
+		found[r.Name] = r.ID
+	}
+	customOf := map[string][]string{}
+	for i, r := range o.Auth.GroupRules {
+		if r.Platform {
+			continue
+		}
+		if _, ok := found[r.Tenant]; !ok {
+			return fmt.Errorf("admin: group rule %d names a tenant that does not exist", i+1)
+		}
+		if _, custom := ruleRole(r); custom {
+			customOf[r.Tenant] = append(customOf[r.Tenant], r.Role)
+		}
 	}
 	for i, r := range o.Auth.GroupRules {
-		if !r.Platform && !found[r.Tenant] {
-			return fmt.Errorf("admin: group rule %d names a tenant that does not exist", i+1)
+		if r.Platform {
+			continue
+		}
+		if _, custom := ruleRole(r); !custom {
+			continue
+		}
+		tid, err := tenant.ParseID(found[r.Tenant])
+		if err != nil {
+			return fmt.Errorf("admin: group rules: %w", err)
+		}
+		have, err := customRolesOf(ctx, o.DB, tid, customOf[r.Tenant])
+		if err != nil {
+			return fmt.Errorf("admin: group rules: custom roles cannot be read: %w", err)
+		}
+		if _, ok := have[r.Role]; !ok {
+			return fmt.Errorf("admin: group rule %d names a role that the tenant does not have", i+1)
 		}
 	}
 	return nil

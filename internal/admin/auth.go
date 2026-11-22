@@ -204,11 +204,34 @@ func (s *server) federatedInput(ctx context.Context, id oidc.Identity, presented
 			ids[r.Name] = r.ID
 		}
 	}
+	// The custom roles that the rules name, by tenant: a rule whose role the tenant lacks or has
+	// deactivated gives nothing (section 5.3).
+	customOf := map[string][]string{}
+	for _, r := range rules {
+		if _, ok := ids[r.Tenant]; !r.Platform && ok {
+			if _, custom := ruleRole(r); custom {
+				customOf[r.Tenant] = append(customOf[r.Tenant], r.Role)
+			}
+		}
+	}
+	states := map[string]map[string]string{}
+	for name, roles := range customOf {
+		tid, err := tenant.ParseID(ids[name])
+		if err != nil {
+			return in, err
+		}
+		if states[name], err = customRolesOf(ctx, s.db, tid, roles); err != nil {
+			return in, err
+		}
+	}
 	live := make([]oidc.Rule, 0, len(rules))
 	for i, r := range rules {
 		if !r.Platform {
-			if _, ok := ids[r.Tenant]; !ok {
-				s.log.Warn("group rule skipped: its tenant does not exist", "rule", i+1)
+			// The tenant is gone, or the custom role is missing or inactive: the rule gives nothing, and
+			// the line names the position of the rule only.
+			_, ok := ids[r.Tenant]
+			if _, custom := ruleRole(r); !ok || (custom && states[r.Tenant][r.Role] != "active") {
+				s.log.Warn("group rule skipped", "rule", i+1, "request_id", stateOf(ctx).id)
 				continue
 			}
 		}

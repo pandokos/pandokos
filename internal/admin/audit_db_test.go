@@ -194,6 +194,9 @@ func (f *fixt) steps(t *testing.T) []step {
 	var newPlat adminapi.PlatformKeyCreated
 	var newTenant adminapi.TenantCreated
 	var cred1, cred2, rotated adminapi.Credential
+	var newRole adminapi.Role
+	var newAction adminapi.SupportAction
+	var endedAction string
 	var pinnedKey adminapi.VirtualKeyCreated
 	kek := kekVersion(t, w.api)
 	decode := func(resp *apitest.Response, into any) {
@@ -462,7 +465,7 @@ func (f *fixt) steps(t *testing.T) []step {
 				return w.api.Do(t, "POST", "/v1/tenants/"+tid+"/reactivate", w.platform, map[string]any{"reason": "test"}, nil)
 			},
 			func(r *apitest.Response) []auditRow {
-				return []auditRow{f.platActor(auditRow{Action: "tenant.reactivate", ResourceType: "tenant", ResourceID: tid, RequestID: rid(r),
+				return []auditRow{f.platActor(auditRow{Action: "tenant.reactivate", ResourceType: "tenant", ResourceID: tid, RequestID: rid(r), Reason: "test",
 					Detail: map[string]any{"from": "suspended", "to": "active"}})}
 			}},
 		{"setTenantTimeZone", // sprint 5.3: the tenant changes its own time zone; the change is pending, the zone in force is the default
@@ -520,6 +523,90 @@ func (f *fixt) steps(t *testing.T) []step {
 				return []auditRow{f.tenantActor(auditRow{Action: "tenant_price.delete", ResourceType: "tenant_price_version", ResourceID: otherPrice.ID, RequestID: rid(r),
 					Detail: map[string]any{"provider": cat.Provider.Name, "model": cat.All.Name, "model_id": cat.All.ID, "currency": "EUR", "kind": "price", "valid_from": rfc(priceStart.Add(time.Hour))}}, tid)}
 			}},
+		// Sprint 4.3: custom roles and support actions. The deletion of a role answers 204 and is
+		// covered by TestAuditIsAtomic and TestRoleDeletionGuard (roleMutations).
+		{"createRole",
+			func() *apitest.Response {
+				return w.api.Do(t, "POST", "/v1/tenants/"+tid+"/roles", w.adminKey, map[string]any{
+					"name": "audited-role", "description": "for the audit", "permissions": []string{"usage:read", "member:read"}}, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				decode(r, &newRole)
+				return []auditRow{f.tenantActor(auditRow{Action: "role.create", ResourceType: "role", ResourceID: newRole.ID, RequestID: rid(r),
+					Detail: map[string]any{"name": "audited-role", "permissions": []any{"member:read", "usage:read"}}}, tid)}
+			}},
+		{"updateRole",
+			func() *apitest.Response {
+				return w.api.Do(t, "PATCH", "/v1/tenants/"+tid+"/roles/audited-role", w.adminKey, map[string]any{
+					"description": "changed", "permissions": []string{"usage:read"}, "reason": "narrowed"}, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				return []auditRow{f.tenantActor(auditRow{Action: "role.update", ResourceType: "role", ResourceID: newRole.ID, RequestID: rid(r), Reason: "narrowed",
+					Detail: map[string]any{
+						"description": map[string]any{"from": "for the audit", "to": "changed"},
+						"permissions": map[string]any{"added": []any{}, "removed": []any{"member:read"}},
+					}}, tid)}
+			}},
+		{"deactivateRole",
+			func() *apitest.Response {
+				return w.api.Do(t, "POST", "/v1/tenants/"+tid+"/roles/audited-role/deactivate", w.adminKey, map[string]any{"reason": "not needed now"}, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				return []auditRow{f.tenantActor(auditRow{Action: "role.deactivate", ResourceType: "role", ResourceID: newRole.ID, RequestID: rid(r), Reason: "not needed now", Detail: map[string]any{}}, tid)}
+			}},
+		{"activateRole",
+			func() *apitest.Response {
+				return w.api.Do(t, "POST", "/v1/tenants/"+tid+"/roles/audited-role/activate", w.adminKey, map[string]any{"reason": "needed again"}, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				return []auditRow{f.tenantActor(auditRow{Action: "role.activate", ResourceType: "role", ResourceID: newRole.ID, RequestID: rid(r), Reason: "needed again", Detail: map[string]any{}}, tid)}
+			}},
+		{"openSupportAction",
+			func() *apitest.Response {
+				return w.api.Do(t, "POST", "/v1/tenant-support/"+tid+"/actions", w.platform, map[string]any{
+					"permissions": []string{"member:read"}, "reason": "audited visit", "duration_seconds": 600}, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				decode(r, &newAction)
+				detail := map[string]any{"permissions": []any{"member:read"}, "expires_at": rfc(newAction.ExpiresAt)}
+				return []auditRow{
+					f.platActor(auditRow{Action: "support_action.open", ResourceType: "support_action", ResourceID: newAction.ID, RequestID: rid(r), Reason: "audited visit",
+						Detail: map[string]any{"permissions": detail["permissions"], "expires_at": detail["expires_at"], "tenant_id": tid}}),
+					func() auditRow {
+						row := f.platActor(auditRow{Action: "support_action.open", ResourceType: "support_action", ResourceID: newAction.ID, RequestID: rid(r), Reason: "audited visit", Detail: detail})
+						row.Log, row.TenantID = "tenant", tid
+						return row
+					}(),
+				}
+			}},
+		{"closeSupportAction",
+			func() *apitest.Response {
+				return w.api.Do(t, "POST", "/v1/tenant-support/"+tid+"/actions/"+newAction.ID+"/close", w.platform, map[string]any{"reason": "done"}, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				return []auditRow{
+					f.platActor(auditRow{Action: "support_action.close", ResourceType: "support_action", ResourceID: newAction.ID, RequestID: rid(r), Reason: "done",
+						Detail: map[string]any{"tenant_id": tid}}),
+					func() auditRow {
+						row := f.platActor(auditRow{Action: "support_action.close", ResourceType: "support_action", ResourceID: newAction.ID, RequestID: rid(r), Reason: "done", Detail: map[string]any{}})
+						row.Log, row.TenantID = "tenant", tid
+						return row
+					}(),
+				}
+			}},
+		{"endSupportAction",
+			func() *apitest.Response {
+				// An action of the platform that the audited steps did not open, for the tenant to end.
+				id, err := tenant.ParseID(tid)
+				if err != nil {
+					t.Fatal(err)
+				}
+				endedAction = w.api.DB.SupportAction(t, id, "platform", f.platID, "to be ended", time.Hour, "member:read")
+				return w.api.Do(t, "POST", "/v1/tenants/"+tid+"/support-actions/"+endedAction+"/end", w.adminKey, map[string]any{"reason": "enough"}, nil)
+			},
+			func(r *apitest.Response) []auditRow {
+				return []auditRow{f.tenantActor(auditRow{Action: "support_action.end", ResourceType: "support_action", ResourceID: endedAction, RequestID: rid(r), Reason: "enough", Detail: map[string]any{}}, tid)}
+			}},
 	}
 }
 
@@ -537,7 +624,7 @@ func TestEveryChangeIsAudited(t *testing.T) {
 		byOp[s.op] = true
 	}
 	for _, op := range adminapi.Operations {
-		if op.Method != "GET" && !byOp[op.ID] && !catalogueMutations[op.ID] && !issuerMutations[op.ID] && !limitMutations[op.ID] && !peopleMutations[op.ID] {
+		if op.Method != "GET" && !byOp[op.ID] && !catalogueMutations[op.ID] && !issuerMutations[op.ID] && !limitMutations[op.ID] && !peopleMutations[op.ID] && !roleMutations[op.ID] {
 			t.Errorf("the mutating operation %s has no audit step: add it (the catalogue operations are in TestCatalogAudit, the token issuer operations in TestIssuerAudit)", op.ID)
 		}
 	}
@@ -627,7 +714,15 @@ func TestEveryChangeIsAudited(t *testing.T) {
 		}
 	}
 
-	// Reads write nothing: every GET operation, with a key that is allowed to make it.
+	// Reads write nothing: every GET operation, with a key that is allowed to make it. The role and the
+	// support action that the reads of sprint 4.3 name are made without an audit row.
+	readTenant, err := tenant.ParseID(f.w.tenant.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readRole := api.DB.CustomRole(t, readTenant, "read-only-probe", authz.MemberRead)
+	readAction := api.DB.SupportAction(t, readTenant, "platform", f.platID, "probe", time.Hour, authz.MemberRead)
+	newRows(t, api, seen)
 	for _, op := range adminapi.Operations {
 		if op.Method != "GET" || op.Public || op.Permission == authz.SessionSelf {
 			continue // sprint 4.2: the public operations and those of one's own session are not made with a key
@@ -639,6 +734,7 @@ func TestEveryChangeIsAudited(t *testing.T) {
 		// The reads of a user or a member (sprint 4.2) name a user that exists: a platform user, or a
 		// member that the tenant manages.
 		params := f.w.params()
+		params.Role, params.SupportAction = readRole, readAction
 		if strings.Contains(op.Path, "{user}") {
 			if strings.HasPrefix(op.Path, "/v1/users") {
 				params.User = api.DB.PlatformUser(t, apitest.UniqueName("reader"), nil).ID
@@ -683,7 +779,47 @@ func TestAuditIsAtomic(t *testing.T) {
 	}
 	scheduled := seededPrice() // for the deletion, and a list in EUR for the change of the currency
 
+	// What the role and support calls act on, made before the failing trigger exists.
+	if r := api.Do(t, "POST", "/v1/tenants/"+tid+"/roles", f.w.adminKey, map[string]any{"name": "atomic-role", "permissions": []string{"usage:read"}}, nil); r.Status != 201 {
+		t.Fatalf("creating the role: %d %s", r.Status, r.Body)
+	}
+	if r := api.Do(t, "POST", "/v1/tenants/"+tid+"/roles", f.w.adminKey, map[string]any{"name": "atomic-off", "permissions": []string{"usage:read"}}, nil); r.Status != 201 {
+		t.Fatalf("creating the second role: %d %s", r.Status, r.Body)
+	}
+	if r := api.Do(t, "POST", "/v1/tenants/"+tid+"/roles/atomic-off/deactivate", f.w.adminKey, map[string]any{"reason": "atomic"}, nil); r.Status != 200 {
+		t.Fatalf("deactivating the second role: %d %s", r.Status, r.Body)
+	}
+	parsed, err := tenant.ParseID(tid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	openAction := api.DB.SupportAction(t, parsed, "platform", f.platID, "atomic", time.Hour, "member:read")
+
 	calls := map[string]func() *apitest.Response{
+		"createRole": func() *apitest.Response {
+			return api.Do(t, "POST", "/v1/tenants/"+tid+"/roles", f.w.adminKey, map[string]any{"name": "atomic-new-role", "permissions": []string{"usage:read"}}, nil)
+		},
+		"updateRole": func() *apitest.Response {
+			return api.Do(t, "PATCH", "/v1/tenants/"+tid+"/roles/atomic-role", f.w.adminKey, map[string]any{"description": "changed"}, nil)
+		},
+		"deactivateRole": func() *apitest.Response {
+			return api.Do(t, "POST", "/v1/tenants/"+tid+"/roles/atomic-role/deactivate", f.w.adminKey, map[string]any{"reason": "atomic"}, nil)
+		},
+		"activateRole": func() *apitest.Response {
+			return api.Do(t, "POST", "/v1/tenants/"+tid+"/roles/atomic-off/activate", f.w.adminKey, map[string]any{"reason": "atomic"}, nil)
+		},
+		"deleteRole": func() *apitest.Response {
+			return api.Do(t, "DELETE", "/v1/tenants/"+tid+"/roles/atomic-role", f.w.adminKey, nil, nil)
+		},
+		"openSupportAction": func() *apitest.Response {
+			return api.Do(t, "POST", "/v1/tenant-support/"+tid+"/actions", api.PlatformKey(), map[string]any{"permissions": []string{"member:read"}, "reason": "atomic"}, nil)
+		},
+		"closeSupportAction": func() *apitest.Response {
+			return api.Do(t, "POST", "/v1/tenant-support/"+tid+"/actions/"+openAction+"/close", api.PlatformKey(), map[string]any{"reason": "atomic"}, nil)
+		},
+		"endSupportAction": func() *apitest.Response {
+			return api.Do(t, "POST", "/v1/tenants/"+tid+"/support-actions/"+openAction+"/end", f.w.adminKey, map[string]any{"reason": "atomic"}, nil)
+		},
 		"createPriceListVersion": func() *apitest.Response {
 			return api.Do(t, "POST", "/v1/tenants/"+tid+"/prices", f.w.adminKey, map[string]any{"provider": cat.Provider.Name, "model": cat.All.Name, "currency": "EUR",
 				"valid_from": rfc(time.Now().Add(96 * time.Hour)), "rates": []map[string]any{{"category": "input", "threshold": 0, "rate": "1"}}}, nil)

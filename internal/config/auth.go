@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -274,16 +275,30 @@ func validateOIDC(c *Config) []Problem {
 			add("auth.oidc.group_mappings", err.Error())
 		}
 		for i, r := range rules {
-			scope := authz.ScopeTenant
-			if r.platform {
-				scope = authz.ScopePlatform
-			}
-			if role, ok := authz.RoleByName(r.role); !ok || role.Scope != scope || (r.role != authz.RolePlatformAdmin && r.role != authz.RoleTenantAdmin) {
+			if !ruleRoleAllowed(r) {
 				add("auth.oidc.group_mappings", fmt.Sprintf("rule %d names a role that a user cannot hold in that scope", i+1))
 			}
 		}
 	}
 	return ps
+}
+
+// roleNameFormat is the format of a role name: a custom role is known to the database, not to the
+// configuration, so a tenant target is checked for it only.
+var roleNameFormat = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
+
+// ruleRoleAllowed says whether the role of a rule can be held in its scope: a platform target must
+// name a platform role a person can hold; a tenant target a tenant role a person can hold or the
+// name of a custom role.
+func ruleRoleAllowed(r mappingRule) bool {
+	scope := authz.ScopeTenant
+	if r.platform {
+		scope = authz.ScopePlatform
+	}
+	if def, ok := authz.RoleByName(r.role); ok {
+		return def.Scope == scope && def.Members
+	}
+	return !r.platform && roleNameFormat.MatchString(r.role)
 }
 
 // mappingRule is the part of a group rule that the configuration checks: its scope and role. The

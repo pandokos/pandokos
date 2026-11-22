@@ -123,8 +123,10 @@ func (s *server) CreatePlatformLimit(ctx context.Context, in adminapi.CreatePlat
 		}
 		out = platformRuleOut(queries.GetPlatformLimitRuleRow(row))
 		detail := map[string]any{"tenant": tenantOfRule(row.TenantID), "provider": row.Provider, "model": row.Model}
-		return audit.RecordPlatform(ctx, tx, s.platformEvent(ctx, "platform_limit.create", "platform_limit_rule", row.ID,
-			ruleDetail(detail, row.ProviderID, row.ModelID, row.Metric, row.LimitValue, row.Currency, row.Enforce, row.Thresholds)))
+		ev := s.platformEvent(ctx, "platform_limit.create", "platform_limit_rule", row.ID,
+			ruleDetail(detail, row.ProviderID, row.ModelID, row.Metric, row.LimitValue, row.Currency, row.Enforce, row.Thresholds))
+		ev.Reason = b.Reason
+		return audit.RecordPlatform(ctx, tx, ev)
 	})
 	if err != nil {
 		return nil, mapLimitError(err)
@@ -191,7 +193,9 @@ func (s *server) UpdatePlatformLimit(ctx context.Context, in adminapi.UpdatePlat
 		}
 		out = platformRuleOut(queries.GetPlatformLimitRuleRow(row))
 		detail["tenant"], detail["provider"], detail["model"], detail["metric"] = tenantOfRule(cur.TenantID), cur.Provider, cur.Model, cur.Metric
-		return audit.RecordPlatform(ctx, tx, s.platformEvent(ctx, "platform_limit.update", "platform_limit_rule", cur.ID, detail))
+		ev := s.platformEvent(ctx, "platform_limit.update", "platform_limit_rule", cur.ID, detail)
+		ev.Reason = in.Body.Reason.Value
+		return audit.RecordPlatform(ctx, tx, ev)
 	})
 	if isNoRowsErr(err) {
 		return nil, errNotFound

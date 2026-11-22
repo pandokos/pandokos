@@ -752,11 +752,11 @@ func TestRouterAndClient(t *testing.T) {
 			add("updateTenant", in, func() error { _, err := c.UpdateTenant(ctx, in); return err })
 		}
 		{
-			in := adminapi.SuspendTenantInput{Tenant: tid, Body: adminapi.Reason{Reason: "why"}}
+			in := adminapi.SuspendTenantInput{Tenant: tid, Body: adminapi.RequiredReason{Reason: "why"}}
 			add("suspendTenant", in, func() error { _, err := c.SuspendTenant(ctx, in); return err })
 		}
 		{
-			in := adminapi.ReactivateTenantInput{Tenant: tid, Body: adminapi.Reason{Reason: "why"}}
+			in := adminapi.ReactivateTenantInput{Tenant: tid, Body: adminapi.RequiredReason{Reason: "why"}}
 			add("reactivateTenant", in, func() error { _, err := c.ReactivateTenant(ctx, in); return err })
 		}
 		{
@@ -1217,7 +1217,7 @@ func TestRouterAndClient(t *testing.T) {
 			add("unlockUser", in, func() error { _, err := c.UnlockUser(ctx, in); return err })
 		}
 		{
-			in := adminapi.ResetUserPasswordInput{User: sid, Body: adminapi.Reason{Reason: "why"}}
+			in := adminapi.ResetUserPasswordInput{User: sid, Body: adminapi.RequiredReason{Reason: "why"}}
 			add("resetUserPassword", in, func() error { _, err := c.ResetUserPassword(ctx, in); return err })
 		}
 		{
@@ -1257,7 +1257,7 @@ func TestRouterAndClient(t *testing.T) {
 			add("unlockMember", in, func() error { _, err := c.UnlockMember(ctx, in); return err })
 		}
 		{
-			in := adminapi.ResetMemberPasswordInput{Tenant: tid, User: sid, Body: adminapi.Reason{Reason: "why"}}
+			in := adminapi.ResetMemberPasswordInput{Tenant: tid, User: sid, Body: adminapi.RequiredReason{Reason: "why"}}
 			add("resetMemberPassword", in, func() error { _, err := c.ResetMemberPassword(ctx, in); return err })
 		}
 		{
@@ -1509,11 +1509,11 @@ func TestRouterAndClient(t *testing.T) {
 
 	t.Run("an optional body may be empty", func(t *testing.T) {
 		r := newRig(t, 1<<20)
-		status, _, text := r.raw(t, "POST", "/v1/tenants/"+tid+"/suspend", "", "")
+		status, _, text := r.raw(t, "POST", "/v1/tenants/"+tid+"/service-accounts/"+sid+"/disable", "", "")
 		if status != 200 {
 			t.Fatalf("%d %s", status, text)
 		}
-		if got := r.f.last("suspendTenant"); !reflect.DeepEqual(got, adminapi.SuspendTenantInput{Tenant: tid}) {
+		if got := r.f.last("disableServiceAccount"); !reflect.DeepEqual(got, adminapi.DisableServiceAccountInput{Tenant: tid, ServiceAccount: sid}) {
 			t.Errorf("got %+v", got)
 		}
 		if status, _, text := r.raw(t, "POST", "/v1/tenants", "", ""); status != 400 {

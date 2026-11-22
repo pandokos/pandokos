@@ -216,7 +216,7 @@ var peopleCommands = []command{
 			out.abandon()
 			return err
 		}
-		res, err := a.client.ResetUserPassword(a.ctx, adminapi.ResetUserPasswordInput{User: id, Body: adminapi.Reason{Reason: *reason}})
+		res, err := a.client.ResetUserPassword(a.ctx, adminapi.ResetUserPasswordInput{User: id, Body: adminapi.RequiredReason{Reason: *reason}})
 		if err != nil {
 			out.abandon()
 			return err
@@ -408,7 +408,7 @@ var peopleCommands = []command{
 			out.abandon()
 			return err
 		}
-		res, err := a.client.ResetMemberPassword(a.ctx, adminapi.ResetMemberPasswordInput{Tenant: tid, User: id, Body: adminapi.Reason{Reason: *reason}})
+		res, err := a.client.ResetMemberPassword(a.ctx, adminapi.ResetMemberPasswordInput{Tenant: tid, User: id, Body: adminapi.RequiredReason{Reason: *reason}})
 		if err != nil {
 			out.abandon()
 			return err

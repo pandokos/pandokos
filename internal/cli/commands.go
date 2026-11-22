@@ -202,7 +202,7 @@ var commands = []command{
 		if err != nil {
 			return err
 		}
-		t, err := a.client.SuspendTenant(a.ctx, adminapi.SuspendTenantInput{Tenant: id, Body: adminapi.Reason{Reason: *reason}})
+		t, err := a.client.SuspendTenant(a.ctx, adminapi.SuspendTenantInput{Tenant: id, Body: adminapi.RequiredReason{Reason: *reason}})
 		if err != nil {
 			return err
 		}
@@ -220,7 +220,7 @@ var commands = []command{
 		if err != nil {
 			return err
 		}
-		t, err := a.client.ReactivateTenant(a.ctx, adminapi.ReactivateTenantInput{Tenant: id, Body: adminapi.Reason{Reason: *reason}})
+		t, err := a.client.ReactivateTenant(a.ctx, adminapi.ReactivateTenantInput{Tenant: id, Body: adminapi.RequiredReason{Reason: *reason}})
 		if err != nil {
 			return err
 		}

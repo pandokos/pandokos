@@ -159,11 +159,12 @@ paths:
         Blocks inference and administration by the tenant's identities and keeps its data.
         Suspending a suspended tenant succeeds and changes nothing.
       x-pandokos-permission: tenant:suspend
+      x-pandokos-reason: required
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
-            schema: {$ref: '#/components/schemas/Reason'}
+            schema: {$ref: '#/components/schemas/RequiredReason'}
       responses:
         "200": {$ref: '#/components/responses/Tenant'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
@@ -184,11 +185,12 @@ paths:
       summary: Reactivate a suspended tenant
       description: Reactivating an active tenant succeeds and changes nothing.
       x-pandokos-permission: tenant:suspend
+      x-pandokos-reason: required
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
-            schema: {$ref: '#/components/schemas/Reason'}
+            schema: {$ref: '#/components/schemas/RequiredReason'}
       responses:
         "200": {$ref: '#/components/responses/Tenant'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
@@ -755,6 +757,7 @@ paths:
         The reason is mandatory and is recorded in the audit log of the tenant and on the
         credential, where the tenant reads it. The tenant can enable the credential again.
       x-pandokos-permission: tenant_credential:revoke
+      x-pandokos-reason: required
       requestBody:
         required: true
         content:
@@ -783,6 +786,7 @@ paths:
         Destroys the sealed secret; it cannot be undone. The reason is mandatory and is recorded
         in the audit log of the tenant and on the credential.
       x-pandokos-permission: tenant_credential:revoke
+      x-pandokos-reason: required
       requestBody:
         required: true
         content:
@@ -1528,7 +1532,7 @@ paths:
         effective_from says when. Setting the currency in force again withdraws a pending change.
         An empty currency is the default of the installation. From the change on, only budgets and
         ceilings in the new currency apply; inactive_limits names the others.
-      x-pandokos-permission: price_list:write
+      x-pandokos-permission: tenant_setting:write
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ActiveCurrencySet'}}}}
       responses:
         "200": {$ref: '#/components/responses/ActiveCurrency'}
@@ -1964,7 +1968,7 @@ paths:
         The change takes effect at the start of the next month in the zone in force; until then
         effective_from says when. Setting the zone in force again withdraws a pending change. An
         empty time_zone is the default of the installation.
-      x-pandokos-permission: limit:write
+      x-pandokos-permission: tenant_setting:write
       requestBody:
         required: true
         content:
@@ -2538,11 +2542,12 @@ paths:
         Replaces the password with a generated one, shown once, that must be changed at the next sign-in, and ends the sessions of the user.
         Refused with escalation_refused when it would give or take a permission the caller does not hold.
       x-pandokos-permission: user:write
+      x-pandokos-reason: required
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
-            schema: {$ref: '#/components/schemas/Reason'}
+            schema: {$ref: '#/components/schemas/RequiredReason'}
       responses:
         "200": {$ref: '#/components/responses/PasswordReset'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
@@ -2764,11 +2769,12 @@ paths:
       summary: Reset the password of a member
       description: Refused with escalation_refused when it would give or take a permission the caller does not hold.
       x-pandokos-permission: member:write
+      x-pandokos-reason: required
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
-            schema: {$ref: '#/components/schemas/Reason'}
+            schema: {$ref: '#/components/schemas/RequiredReason'}
       responses:
         "200": {$ref: '#/components/responses/PasswordReset'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
@@ -5512,6 +5518,7 @@ components:
       additionalProperties: false
       required: [metric]
       properties:
+        reason: {type: string, maxLength: 500, description: Recorded in the audit log.}
         subject_kind: {$ref: '#/components/schemas/LimitSubjectKind'}
         subject_id: {type: string, minLength: 1, maxLength: 64}
         provider: {$ref: '#/components/schemas/ProviderName'}
@@ -5526,6 +5533,7 @@ components:
       type: object
       additionalProperties: false
       properties:
+        reason: {type: string, maxLength: 500, description: Recorded in the audit log.}
         limit: {type: integer, minimum: 1, maximum: 1000000000000}
         amount: {$ref: '#/components/schemas/LimitAmount'}
         enforce: {type: boolean}
@@ -5576,6 +5584,7 @@ components:
       additionalProperties: false
       required: [metric]
       properties:
+        reason: {type: string, maxLength: 500, description: Recorded in the audit log.}
         tenant: {$ref: '#/components/schemas/ID'}
         provider: {$ref: '#/components/schemas/ProviderName'}
         model: {$ref: '#/components/schemas/ModelName'}
