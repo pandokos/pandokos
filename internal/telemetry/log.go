@@ -1,4 +1,5 @@
-// Package telemetry provides the structured logger and its redaction, and the trace provider.
+// Package telemetry provides the structured logger and its redaction, the trace provider and the
+// metrics.
 package telemetry
 
 import (
@@ -48,12 +49,12 @@ func parseLevel(level string) slog.Level {
 // NewLogger returns a JSON logger writing to w at the given level ("debug", "info", "warn",
 // "error"). An unknown level means info.
 func NewLogger(w io.Writer, level string) *slog.Logger {
-	return slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{
+	return slog.New(redactingHandler{next: slog.NewJSONHandler(w, &slog.HandlerOptions{
 		Level: parseLevel(level),
 		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
 			return replaceAttr(len(groups), a)
 		},
-	}))
+	})})
 }
 
 func replaceAttr(depth int, a slog.Attr) slog.Attr {
