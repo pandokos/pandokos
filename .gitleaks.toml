@@ -18,3 +18,11 @@ keywords = ["pdk_"]
 description = "Synthetic secrets of the test suites"
 regexTarget = "secret"
 regexes = ['''^\s*synthetic-[a-z0-9-]*(\\x07)?[a-z0-9-]*(\\n)?\s*$''']
+
+# False positive: the generic rule reads a list of package names in a repository test as a key
+# (commit 7fcccb6, already in history). Only that file and that statement are allowed.
+[[allowlists]]
+description = "Package list of the people imports test"
+paths = ['''^test/repo/people_test\.go$''']
+regexTarget = "line"
+regexes = ['''^\s*forbidden := \[\]string\{"internal/gateway", "internal/resolver",''']
