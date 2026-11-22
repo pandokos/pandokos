@@ -19,7 +19,7 @@ UPDATE pandokos.support_action
    AND actor_type = $3::text
    AND actor_id = $4::text
    AND closed_at IS NULL
-RETURNING id
+RETURNING id, closed_by
 `
 
 type CloseOpenSupportActionsParams struct {
@@ -29,8 +29,13 @@ type CloseOpenSupportActionsParams struct {
 	ActorID    string
 }
 
+type CloseOpenSupportActionsRow struct {
+	ID       string
+	ClosedBy string
+}
+
 // ActInTenant. Run before OpenSupportAction: one open action per actor and tenant.
-func (q *Queries) CloseOpenSupportActions(ctx context.Context, arg CloseOpenSupportActionsParams) ([]string, error) {
+func (q *Queries) CloseOpenSupportActions(ctx context.Context, arg CloseOpenSupportActionsParams) ([]CloseOpenSupportActionsRow, error) {
 	rows, err := q.db.Query(ctx, closeOpenSupportActions,
 		arg.ClosedByID,
 		arg.TenantID,
@@ -41,13 +46,13 @@ func (q *Queries) CloseOpenSupportActions(ctx context.Context, arg CloseOpenSupp
 		return nil, err
 	}
 	defer rows.Close()
-	items := []string{}
+	items := []CloseOpenSupportActionsRow{}
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var i CloseOpenSupportActionsRow
+		if err := rows.Scan(&i.ID, &i.ClosedBy); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

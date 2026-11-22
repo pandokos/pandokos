@@ -221,7 +221,9 @@ pandokos tenant-support open --tenant acme \
 
 One transaction writes the action, the event `support_action.open` in the tenant's audit log and the
 same event in the platform's. An open action of the same actor in the same tenant is closed first: there
-is one per actor and tenant. With `support.enabled: false` the answer is `403 support_disabled` and
+is one per actor and tenant (two openings of one actor at the same moment: one of them is `409
+conflict`; the audit detail `replaces` names only an action that was open, not one that had expired).
+With `support.enabled: false` the answer is `403 support_disabled` and
 nothing is written.
 
 **Permissions a support action can carry**: `service_account:read`, `service_account:write`,

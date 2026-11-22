@@ -241,11 +241,18 @@ func (s *server) OpenSupportAction(ctx context.Context, in adminapi.OpenSupportA
 		if ok, err := q.TenantExists(ctx, tid.String()); err != nil || !ok {
 			return notFoundOr(err)
 		}
-		replaced, err := q.CloseOpenSupportActions(ctx, queries.CloseOpenSupportActionsParams{
+		closed, err := q.CloseOpenSupportActions(ctx, queries.CloseOpenSupportActionsParams{
 			ClosedByID: actor.ID, TenantID: tid.String(), ActorType: string(actor.Type), ActorID: actor.ID,
 		})
 		if err != nil {
 			return err
+		}
+		// An action that had expired is closed as expiry: it was not replaced.
+		var replaced []string
+		for _, c := range closed {
+			if c.ClosedBy == "platform" {
+				replaced = append(replaced, c.ID)
+			}
 		}
 		row, err := q.OpenSupportAction(ctx, queries.OpenSupportActionParams{
 			TenantID: tid.String(), ActorType: string(actor.Type), ActorID: actor.ID, ActorName: actor.Name, KeyID: actor.KeyID,
@@ -263,9 +270,18 @@ func (s *server) OpenSupportAction(ctx context.Context, in adminapi.OpenSupportA
 			ResourceID: row.ID, Outcome: "success", RequestID: st.id, Reason: b.Reason, Detail: detail, SupportActionID: row.ID})
 	})
 	if err != nil {
-		return nil, err
+		return nil, mapSupportConstraint(err)
 	}
 	return &out, nil
+}
+
+// mapSupportConstraint maps the unique violation of an opening that met another opening of the same
+// actor in the same tenant, committed meanwhile, to 409 conflict.
+func mapSupportConstraint(err error) error {
+	if kind, name, ok := store.ConstraintViolation(err); ok && kind == "unique" && name == "support_action_open_key" {
+		return errConflict
+	}
+	return err
 }
 
 // CloseSupportAction closes a support action of a tenant, for the platform; closing an action that is

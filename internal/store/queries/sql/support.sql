@@ -21,7 +21,7 @@ UPDATE pandokos.support_action
    AND actor_type = sqlc.arg(actor_type)::text
    AND actor_id = sqlc.arg(actor_id)::text
    AND closed_at IS NULL
-RETURNING id;
+RETURNING id, closed_by;
 
 -- name: GetOpenSupportAction :one
 -- Platform. The look-up of the hook: the open action of an actor in a tenant.

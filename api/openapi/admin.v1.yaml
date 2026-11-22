@@ -3036,7 +3036,8 @@ paths:
         the tenant's audit log; the tenant sees the action and its owner can end it. An open action
         of the same caller in the tenant is closed first. No permission that reads usage, prices or
         secrets can be listed. Refused with support_disabled when the installation switched support
-        actions off.
+        actions off, and with conflict when another opening of the same caller in the tenant commits
+        at the same time.
       x-pandokos-permission: tenant_support:open
       x-pandokos-reason: required
       parameters:
@@ -3052,6 +3053,7 @@ paths:
         "401": {$ref: '#/components/responses/Unauthenticated'}
         "403": {$ref: '#/components/responses/Forbidden'}
         "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
         "413": {$ref: '#/components/responses/RequestTooLarge'}
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
         "422": {$ref: '#/components/responses/IdempotencyKeyReused'}

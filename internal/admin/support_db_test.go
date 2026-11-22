@@ -196,6 +196,66 @@ func TestSupportOpen(t *testing.T) {
 			t.Errorf("two actors, two open actions: %d (%s)", len(list.Items), c.ID)
 		}
 	})
+	t.Run("an expired action is not replaced; a concurrent opening is a conflict", func(t *testing.T) {
+		v := newSW(t)
+		old := v.open(t, v.key, reasonOf(), []string{authz.RoleRead}, nil)
+		v.d.ExpireSupportAction(t, old.ID)
+		v.open(t, v.key, reasonOf(), []string{authz.RoleRead}, nil)
+		rows := v.audit(t, "support_action.open")
+		if len(rows) != 2 {
+			t.Fatalf("%d openings", len(rows))
+		}
+		if r, ok := rows[1].Detail["replaces"]; ok {
+			t.Errorf("an opening after an expired action names it as replaced: %v (it was closed as expiry)", r)
+		}
+		if got := decode[adminapi.SupportAction](t, v.key.Do(t, "GET", v.sp("/"+old.ID), nil, nil), 200); got.ClosedBy != adminapi.SupportActionClosedByExpiry {
+			t.Errorf("the expired action is closed by %q, want expiry", got.ClosedBy)
+		}
+
+		// Another opening of the same actor commits while this one inserts: 409 conflict, not 500.
+		x := newSW(t)
+		c := ctx(t)
+		tx, err := x.api.Super(t).Begin(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tx.Rollback(c) }()
+		if _, err := tx.Exec(c, `INSERT INTO pandokos.support_action (tenant_id, actor_type, actor_id, actor_name, key_id, reason, permissions, request_id, expires_at)
+			VALUES ($1::uuid, 'platform', $2, 'other request', $2, 'the other request', '{role:read}', '', now() + interval '1 hour')`, x.tenant.ID, x.keyID); err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan *apitest.Response, 1)
+		go func() {
+			done <- x.key.Do(t, "POST", x.sp(""), map[string]any{"reason": reasonOf(), "permissions": []string{authz.RoleRead}}, nil)
+		}()
+		var r *apitest.Response
+		for deadline := time.Now().Add(15 * time.Second); r == nil && time.Now().Before(deadline); {
+			var waiting int
+			if err := tx.QueryRow(c, "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'").Scan(&waiting); err != nil {
+				t.Fatal(err)
+			}
+			if waiting > 0 {
+				break
+			}
+			select {
+			case r = <-done:
+			case <-time.After(50 * time.Millisecond):
+			}
+		}
+		if err := tx.Commit(c); err != nil {
+			t.Fatal(err)
+		}
+		if r == nil {
+			select {
+			case r = <-done:
+			case <-time.After(15 * time.Second):
+				t.Fatal("the opening did not finish")
+			}
+		}
+		if r.Status != 409 || r.Problem() != "conflict" {
+			t.Errorf("an opening that meets another of the same actor: %d %s, want 409 conflict", r.Status, r.Body)
+		}
+	})
 	t.Run("who may open one", func(t *testing.T) {
 		auditor, _ := w.api.PlatformAs(t, authz.RolePlatformAuditor)
 		body := map[string]any{"reason": reasonOf(), "permissions": valid}
