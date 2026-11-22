@@ -14,7 +14,7 @@ FUZZTIME ?= 30s
 # Loads local/testdb/env (written by make db-up) unless the variable is already set.
 DBENV = set -a; if [ -z "$$PANDOKOS_TEST_DATABASE_URL" ] && [ -f local/testdb/env ]; then . ./local/testdb/env; fi; set +a;
 
-.PHONY: help build test test-sdk test-sdk-python sdk-python-env test-sdk-ts test-compose test-container fuzz bench fmt fmt-check vet lint tidy vuln image check clean db-up db-down idp-up idp-down test-idp test-nodb migrations-sum generate generate-check secrets
+.PHONY: help build test test-sdk test-sdk-python sdk-python-env test-sdk-ts test-compose test-container test-browser fuzz bench fmt fmt-check vet lint tidy vuln image check clean db-up db-down idp-up idp-down test-idp test-nodb migrations-sum generate generate-check secrets
 
 help: ## Show the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -49,6 +49,9 @@ test-compose: ## The Compose quick-start against a built image: make image first
 
 test-container: ## Tests against a built image: make image and make db-up first
 	@$(DBENV) PANDOKOS_TEST_IMAGE=$(IMAGE) go test -tags container -count=1 ./test/container/
+
+test-browser: ## Browser tests with headless Chrome against the binary: make build and make db-up first (fails without Chrome)
+	@$(DBENV) go test -tags browser -count=1 ./test/browser/...
 
 db-up: ## Start the test PostgreSQL and PgBouncer (Docker)
 	sh test/db/up.sh
