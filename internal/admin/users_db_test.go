@@ -487,6 +487,25 @@ func TestMembers(t *testing.T) {
 		}
 	})
 
+	t.Run("a member cannot disable or remove itself", func(t *testing.T) {
+		q := newPeople(t, apitest.PeopleConfig{})
+		self := q.d.TenantUser(t, q.tid, "self.admin", []string{"tenant-admin"})
+		b := q.signIn(t, self)
+		if c := code(t, b.Do(t, "POST", q.membersPath("/"+self.ID+"/disable"), map[string]any{}, nil), 409); c != "invalid_state" {
+			t.Errorf("disabling itself: %s", c)
+		}
+		if c := code(t, b.Do(t, "DELETE", q.membersPath("/"+self.ID), nil, nil), 409); c != "invalid_state" {
+			t.Errorf("removing itself: %s", c)
+		}
+		if n := q.d.Count(t, "SELECT count(*) FROM pandokos.app_user u JOIN pandokos.membership m ON m.user_id = u.id WHERE u.id = $1::uuid AND u.state = 'active'", self.ID); n != 1 {
+			t.Error("the member lost its account or its membership")
+		}
+		// An administrator key is not a user, and another administrator may.
+		if r := q.tenantKey(t, "POST", q.membersPath("/"+self.ID+"/disable"), map[string]any{}); r.Status != 200 {
+			t.Errorf("disabling it with a key: %d %s", r.Status, r.Body)
+		}
+	})
+
 	t.Run("who may do what", func(t *testing.T) {
 		q := newPeople(t, apitest.PeopleConfig{})
 		member := q.d.TenantUser(t, q.tid, "plain.member", []string{"tenant-admin"})

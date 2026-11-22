@@ -292,6 +292,9 @@ func (s *server) DeleteMember(ctx context.Context, in adminapi.DeleteMemberInput
 	st := stateOf(ctx)
 	var out adminapi.Member
 	err = s.member(ctx, tid, in.User, false, func(ctx context.Context, tx store.Tx, q *queries.Queries, cur queries.GetMemberRow) error {
+		if p.Kind == authz.KindUser && p.ID == cur.UserID {
+			return invalidState("user", "a user cannot remove itself")
+		}
 		managed := cur.ManagingTenantID != nil
 		if managed {
 			if _, err := q.LockUser(ctx, cur.UserID); err != nil {
@@ -334,6 +337,9 @@ func (s *server) setMemberState(ctx context.Context, tenantText, userID, reason,
 	p := principalOf(ctx)
 	st := stateOf(ctx)
 	err = s.member(ctx, tid, userID, true, func(ctx context.Context, tx store.Tx, q *queries.Queries, cur queries.GetMemberRow) error {
+		if to == "disabled" && p.Kind == authz.KindUser && p.ID == cur.UserID {
+			return invalidState("user", "a user cannot disable itself")
+		}
 		if cur.State == to {
 			return nil
 		}
