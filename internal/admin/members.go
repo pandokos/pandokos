@@ -137,9 +137,6 @@ func (s *server) CreateMember(ctx context.Context, in adminapi.CreateMemberInput
 	b := in.Body
 	p := principalOf(ctx)
 	st := stateOf(ctx)
-	if err := checkRolesIn(p, "roles", b.Roles, authz.ScopeTenant); err != nil {
-		return nil, err
-	}
 	var gen account.Generated
 	switch b.Account {
 	case adminapi.MemberAccountKindNew:
@@ -169,6 +166,9 @@ func (s *server) CreateMember(ctx context.Context, in adminapi.CreateMemberInput
 	var userID string
 	err = s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
 		q := queries.New(tx)
+		if _, err := s.resolveRoles(ctx, q, b.Roles, true); err != nil {
+			return err
+		}
 		roleDetail := map[string]any{"roles": sortedCopy(b.Roles), "source": "manual"}
 		if b.Account == adminapi.MemberAccountKindNew {
 			managing := tid.String()
@@ -225,10 +225,12 @@ func (s *server) UpdateMember(ctx context.Context, in adminapi.UpdateMemberInput
 	}
 	p := principalOf(ctx)
 	st := stateOf(ctx)
-	if err := checkRolesIn(p, "roles", b.Roles.Value, authz.ScopeTenant); err != nil {
-		return nil, err
-	}
 	err = s.member(ctx, tid, in.User, false, func(ctx context.Context, tx store.Tx, q *queries.Queries, cur queries.GetMemberRow) error {
+		if b.Roles.Set {
+			if _, err := s.resolveRoles(ctx, q, b.Roles.Value, true); err != nil {
+				return err
+			}
+		}
 		attributes := b.DisplayName.Set || b.Email.Set
 		if attributes && cur.ManagingTenantID == nil {
 			return invalidState("user", "is managed by the platform: its attributes are not the tenant's to change")
