@@ -651,12 +651,28 @@ func TestTenantAdminIsEnoughAndNoMore(t *testing.T) {
 	}
 }
 
-// TestEveryRouteDeclaresAPermission is T-274.
-func TestEveryRouteDeclaresAPermission(t *testing.T) {
+// TestRoutesArePublicOrPermitted is T-825 (T-274, TestEveryRouteDeclaresAPermission, in sprint 4.2): every
+// operation declares a permission or is one of exactly four public operations; without a credential
+// every operation that is not public is 401.
+func TestRoutesArePublicOrPermitted(t *testing.T) {
 	w := newAPIWorld(t)
 	catalogue := map[string]bool{}
 	for _, p := range authz.Catalogue() {
 		catalogue[p.Name] = true
+	}
+	public := map[string]bool{}
+	for _, op := range adminapi.Operations {
+		if op.Public {
+			public[op.ID] = true
+			if op.Permission != "" {
+				t.Errorf("the public operation %s names the permission %q", op.ID, op.Permission)
+			}
+		} else if !catalogue[op.Permission] {
+			t.Errorf("%s is not public and names %q, which is not in the catalogue", op.ID, op.Permission)
+		}
+	}
+	if len(public) != 4 || !public["getAuthMethods"] || !public["signIn"] || !public["startOidcSignIn"] || !public["completeOidcSignIn"] {
+		t.Errorf("the public operations are %v, want exactly getAuthMethods, signIn, startOidcSignIn and completeOidcSignIn", public)
 	}
 	// A service account with no role at all.
 	c := w.api.Client(w.a.adminKey)

@@ -17,10 +17,9 @@ func TestEveryOperationHasACommand(t *testing.T) {
 	for _, op := range adminapi.Operations {
 		ops[op.ID] = true
 		// Sprint 4.2 (section 5.12): the CLI authenticates with a key, so the public operations
-		// and the ones of the caller's own session have no command. The user and member
-		// commands are written in step C5; until then they are exempt too.
+		// and the ones of the caller's own session have no command; the user and member operations do.
 		switch op.Permission {
-		case "", authz.SessionSelf, authz.UserRead, authz.UserWrite, authz.MemberRead, authz.MemberWrite:
+		case "", authz.SessionSelf:
 			exempt[op.ID] = true
 		}
 	}

@@ -6,9 +6,14 @@ package oidc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
+	"net/http"
 	"net/url"
+	"time"
 
+	"github.com/pandokos/pandokos/internal/jwks"
 	"github.com/pandokos/pandokos/internal/secret"
 )
 
@@ -20,8 +25,59 @@ type Failure struct{ Reason string }
 
 func (f *Failure) Error() string { return "oidc: sign-in refused: " + f.Reason }
 
+// Options configure a Provider. Cache gives both the provider's metadata and the keys that verify
+// the ID token; HTTP is the client of the token endpoint (the transport of the egress guard, no
+// redirect, 10 s).
+type Options struct {
+	Issuer, ClientID                   string
+	ClientSecret                       secret.Secret
+	ClientAuth                         string // "basic" (default) or "post"
+	RedirectURI                        string // the expected origin of the listener + /v1/auth/oidc/callback
+	Scopes, Algorithms                 []string
+	NameClaim, EmailClaim, GroupsClaim string
+	Cache                              *jwks.Cache
+	HTTP                               *http.Client
+	Now                                func() time.Time
+	Logger                             *slog.Logger
+}
+
 // Provider is the relying party of one identity provider.
-type Provider struct{}
+type Provider struct{ o Options }
+
+// New returns the relying party of the provider that o describes.
+func New(o Options) (*Provider, error) {
+	_ = o
+	return nil, errNotImplemented
+}
+
+// Issuer returns the issuer of the provider: the one every user_identity row of the installation
+// names.
+func (p *Provider) Issuer() string { return "" }
+
+// SeedCookieName is the name of the cookie that binds a sign-in to the browser that started it;
+// SeedCookie returns the cookie that carries seed.
+const SeedCookieName = "__Host-pandokos_oidc"
+
+// SeedCookie returns the cookie that binds the flow of seed to the browser.
+func SeedCookie(seed secret.Secret) *http.Cookie { _ = seed; return &http.Cookie{Name: SeedCookieName} }
+
+// ClearSeedCookie returns the cookie that makes the browser forget the seed.
+func ClearSeedCookie() *http.Cookie { return &http.Cookie{Name: SeedCookieName, MaxAge: -1} }
+
+// ParseRules parses the rules of auth.oidc.group_mappings: "<target>=<group>", the target being
+// platform:<role> or tenant:<tenant name>:<role>; the group is everything after the first "=".
+func ParseRules(mappings []string) ([]Rule, error) {
+	_ = mappings
+	return nil, errNotImplemented
+}
+
+// Groups reads the groups of a user from the claims of the ID token: the claim at the dotted path
+// (at most four members), as an array of strings or as one string; any other shape gives none. At
+// most 256 groups are read.
+func Groups(claims map[string]json.RawMessage, path string) []string {
+	_, _ = claims, path
+	return nil
+}
 
 // Identity is what is kept of an ID token.
 type Identity struct {

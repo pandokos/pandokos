@@ -69,6 +69,12 @@ func (r *Refusal) Unwrap() error {
 	return authz.ErrUnauthenticated
 }
 
+// PolicyError is a refusal of a password change that the API answers 400 invalid_request on the
+// member Field (current_password or new_password), with Violation as the fixed sentence.
+type PolicyError struct{ Field, Violation string }
+
+func (e *PolicyError) Error() string { return "account: " + e.Field + " " + e.Violation }
+
 // Options configure a Service.
 type Options struct {
 	DB       *store.DB
@@ -118,4 +124,11 @@ func (s *Service) Unlock(ctx context.Context, tx store.Tx, username string) erro
 func BootstrapAdmin(ctx context.Context, tx store.Tx, h *password.Hasher, username string, ttl time.Duration) (secret.Secret, string, error) {
 	_, _, _, _, _ = ctx, tx, h, username, ttl
 	return secret.Secret{}, "", errNotImplemented
+}
+
+// Purge removes the throttle rows older than the failure window plus the lock duration and the
+// sign-in transactions that have expired.
+func (s *Service) Purge(ctx context.Context) error {
+	_, _ = ctx, s
+	return errNotImplemented
 }

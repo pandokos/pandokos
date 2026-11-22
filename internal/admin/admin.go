@@ -8,17 +8,22 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"runtime/debug"
 	"strings"
 	"time"
 
+	"github.com/pandokos/pandokos/internal/account"
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/audit"
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/catalog"
+	"github.com/pandokos/pandokos/internal/idem"
 	"github.com/pandokos/pandokos/internal/limits"
+	"github.com/pandokos/pandokos/internal/oidc"
 	"github.com/pandokos/pandokos/internal/requestid"
+	"github.com/pandokos/pandokos/internal/session"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/internal/vault"
@@ -46,6 +51,15 @@ type Options struct {
 	// DefaultCurrency is pricing.default_currency: the active currency of a tenant that chose
 	// none; USD when empty.
 	DefaultCurrency string
+	// Sessions, Accounts, OIDC and Idempotency are the services of sprint 4.2; Origin and Auth
+	// are the settings of section 5.15 that the handlers read. OIDC is nil when the identity
+	// provider is off. Part B declares them; step C3 reads them.
+	Sessions    *session.Store
+	Accounts    *account.Service
+	OIDC        *oidc.Provider
+	Idempotency *idem.Store
+	Origin      OriginOptions
+	Auth        AuthOptions
 	// Limits are the settings of the capability check: limits.on_unknown_price ("refuse", the
 	// default, or "allow") and the zones that give the calendar of each tenant.
 	Limits struct {
@@ -57,6 +71,24 @@ type Options struct {
 		// builds it (T-R43). Required.
 		Ledger limits.Ledger
 	}
+}
+
+// OriginOptions say which origin the administration listener is reached at (section 5.7): Public
+// is auth.public_origin, TLS says that the listener terminates TLS, Loopback that it listens on a
+// loopback address, and TrustedProxies are listeners.admin.trusted_proxies.
+type OriginOptions struct {
+	Public         string
+	TLS, Loopback  bool
+	TrustedProxies []netip.Prefix
+}
+
+// AuthOptions are the sign-in settings of section 5.15 that the handlers use.
+type AuthOptions struct {
+	LocalEnabled    bool        // auth.local.enabled
+	OIDCDisplayName string      // auth.oidc.display_name
+	PostSignInPath  string      // auth.oidc.post_sign_in_path; "/" when empty
+	GroupRules      []oidc.Rule // auth.oidc.group_mappings, parsed
+	AutoProvision   bool        // auth.oidc.auto_provision
 }
 
 // RefreshOptions say whether and from where the price dataset may be downloaded.

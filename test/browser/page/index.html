@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Pandokos sign-in test page</title></head>
+<body>
+<pre id="result">pending</pre>
+<script>
+// The credentials come from the URL fragment: #username=...&password=...
+// The page uses fetch only, and writes what happened to the element above, as JSON.
+(async () => {
+  const out = {};
+  const params = new URLSearchParams(location.hash.slice(1));
+  const csrf = {"Content-Type": "application/json", "X-Pandokos-Csrf": "1"};
+  const call = async (name, method, path, body, headers) => {
+    try {
+      const r = await fetch(path, {method, headers: headers || csrf, credentials: "same-origin",
+        body: body === undefined ? undefined : JSON.stringify(body)});
+      let json = null;
+      try { json = await r.json(); } catch (e) { json = null; }
+      out[name] = {status: r.status, body: json};
+    } catch (e) {
+      out[name] = {error: String(e)};
+    }
+  };
+  await call("signIn", "POST", "/v1/auth/sign-in", {username: params.get("username"), password: params.get("password")});
+  out.cookieVisible = document.cookie.includes("__Host-pandokos_session");
+  await call("me", "GET", "/v1/me");
+  await call("create", "POST", "/v1/users", {sign_in: "local", username: params.get("create") || "page.created"});
+  await call("noHeader", "POST", "/v1/users", {sign_in: "local", username: "page.noheader"}, {"Content-Type": "application/json"});
+  if (params.get("signout") !== "0") { // the cross-site test leaves the victim signed in
+    await call("signOut", "POST", "/v1/auth/sign-out", {});
+    await call("meAfter", "GET", "/v1/me");
+  }
+  document.getElementById("result").textContent = JSON.stringify(out);
+})();
+</script>
+</body>
+</html>

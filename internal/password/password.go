@@ -46,6 +46,11 @@ func (h *Hasher) Verify(ctx context.Context, phc string, pw secret.Secret) (ok, 
 	return false, false, errNotImplemented
 }
 
+// Computations returns the number of Argon2id computations the hasher has started: the counter
+// that the tests of sprint 4.2 read to prove that a refusal computes nothing and that an answer
+// for an unknown username costs what an answer for a known one costs.
+func (h *Hasher) Computations() uint64 { return 0 }
+
 // Dummy costs what Verify costs and returns no result: it answers for an unknown username.
 func (h *Hasher) Dummy(ctx context.Context, pw secret.Secret) error {
 	_, _ = ctx, pw

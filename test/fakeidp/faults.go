@@ -118,7 +118,7 @@ func (f Fault) apply(s *Server, w http.ResponseWriter, r *http.Request, doc []by
 		http.Redirect(w, r, f.to, http.StatusFound)
 	case faultWrongIssuer:
 		if discovery {
-			ok(bytes.Replace(doc, []byte(s.Issuer()), []byte("https://other.example.test/"), 1))
+			ok(bytes.Replace(doc, []byte(`"issuer":"`+s.Issuer()+`"`), []byte(`"issuer":"https://other.example.test/"`), 1))
 			return
 		}
 		ok(doc)

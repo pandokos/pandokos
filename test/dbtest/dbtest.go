@@ -38,6 +38,7 @@ type shared struct {
 	kekFile   string // made by the first call of Env, for the life of the database
 	mu        sync.Mutex
 	helper    *pgx.Conn // the connection of Count, made by its first call
+	adminDB   *store.DB // the admin pool of the people seeds, made by the first of them
 }
 
 // Database is one test database with its four login users.

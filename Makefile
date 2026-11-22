@@ -92,6 +92,9 @@ fuzz: ## Run each fuzz target for FUZZTIME
 	go test ./internal/family/sse/ -run '^$$' -fuzz '^FuzzFraming$$' -fuzztime $(FUZZTIME)
 	go test ./internal/family/openai/ -run '^$$' -fuzz '^FuzzOutputBound$$' -fuzztime $(FUZZTIME)
 	go test ./internal/family/anthropic/ -run '^$$' -fuzz '^FuzzOutputBound$$' -fuzztime $(FUZZTIME)
+	go test ./internal/password/ -run '^$$' -fuzz '^FuzzParsePHC$$' -fuzztime $(FUZZTIME)
+	go test ./internal/session/ -run '^$$' -fuzz '^FuzzParseToken$$' -fuzztime $(FUZZTIME)
+	go test ./internal/oidc/ -run '^$$' -fuzz '^FuzzGroups$$' -fuzztime $(FUZZTIME)
 
 bench: ## Usage reader and limits benchmarks
 	go test ./internal/family/openai/ -run '^$$' -bench . -benchmem

@@ -39,6 +39,9 @@ import (
 type Options struct {
 	Path        string // issuer path, default "/"; the issuer is https://localhost:<port><Path>
 	NoDiscovery bool   // serve only the key set (for an explicit jwks_uri)
+	// Users are the people of the authorization code flow (sprint 4.2): subject to the claims the
+	// ID token carries besides the standard ones (name, email, groups, ...).
+	Users map[string]Claims
 }
 
 // Claims is the payload of a token.
@@ -98,6 +101,8 @@ type Server struct {
 	srv         *http.Server
 	running     bool
 
+	flow flowState // the authorization code flow (code.go)
+
 	discoveryHits atomic.Int64
 	jwksHits      atomic.Int64
 	bytesSent     atomic.Int64
@@ -119,6 +124,7 @@ func Start(tb testing.TB, o Options) *Server {
 		tb.Fatal(err)
 	}
 	s := &Server{tb: tb, opt: o, base: strings.TrimSuffix(o.Path, "/"), caFile: caFile, cert: cert}
+	s.initFlow()
 	s.keys = newKeySet(tb, false)
 	ln, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
@@ -632,6 +638,11 @@ func (s *Server) Discovery() []byte {
 	b, err := json.Marshal(map[string]any{
 		"issuer":                                s.Issuer(),
 		"jwks_uri":                              uri,
+		"authorization_endpoint":                s.AuthorizeURL(),
+		"token_endpoint":                        s.TokenURL(),
+		"response_types_supported":              []string{"code"},
+		"code_challenge_methods_supported":      []string{"S256"},
+		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"},
 		"id_token_signing_alg_values_supported": Algorithms,
 	})
 	if err != nil {
@@ -644,6 +655,12 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	var doc []byte
 	var isDiscovery bool
 	switch {
+	case r.URL.Path == s.base+"/authorize":
+		s.handleAuthorize(w, r)
+		return
+	case r.URL.Path == s.base+"/token":
+		s.handleToken(w, r)
+		return
 	case !s.opt.NoDiscovery && r.URL.Path == s.base+"/.well-known/openid-configuration":
 		s.discoveryHits.Add(1)
 		doc, isDiscovery = s.Discovery(), true

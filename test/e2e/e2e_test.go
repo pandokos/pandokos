@@ -989,6 +989,10 @@ func TestInit(t *testing.T) {
 	if !strings.Contains(errs, `warning: this is a bootstrap key: create a platform key with "pandokos platform-key create", then revoke this one`) {
 		t.Errorf("stderr: %q", errs)
 	}
+	// Sprint 4.2: without --admin-username no user is created and the hint says how to create the first one.
+	if !regexp.MustCompile(`(?m)^hint: .*pandokos init --admin-username`).MatchString(errs) || tableCount(t, d, "app_user") != 0 {
+		t.Errorf("the hint about --admin-username is missing, or a user was created: %q", errs)
+	}
 	key := reKeyLine.FindStringSubmatch(out)[1]
 	exp, _ := time.Parse(time.RFC3339, strings.TrimPrefix(lines[2], "expires: "))
 	if d := time.Until(exp); d < 23*time.Hour || d > 24*time.Hour+time.Minute {

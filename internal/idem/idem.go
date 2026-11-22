@@ -13,6 +13,14 @@ import (
 
 var errNotImplemented = errors.New("idem: not implemented")
 
+// The refusals of Begin: the key was used with another request (422), the first request with the key
+// is still running (409), and the first request committed but its response was not kept (409).
+var (
+	ErrKeyReused    = errors.New("idem: the key was used with another request")
+	ErrInProgress   = errors.New("idem: the first request with the key is still running")
+	ErrResponseLost = errors.New("idem: the first request committed and its response was not kept")
+)
+
 // Scope says where a key lives: a tenant (zero: the platform) and one principal.
 type Scope struct {
 	TenantID      tenant.ID
@@ -59,5 +67,11 @@ func Mark(ctx context.Context, tx store.Tx, resourceType, resourceID string) err
 // Finish stores the response of the claim of ctx, without the members that are shown once.
 func (s *Store) Finish(ctx context.Context, status int, body []byte) error {
 	_, _, _, _ = ctx, status, body, s
+	return errNotImplemented
+}
+
+// Purge removes the keys whose retention has passed.
+func (s *Store) Purge(ctx context.Context) error {
+	_, _ = ctx, s
 	return errNotImplemented
 }
