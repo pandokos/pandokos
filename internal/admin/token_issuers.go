@@ -5,6 +5,7 @@ import (
 
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/audit"
+	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/queries"
 	"github.com/pandokos/pandokos/internal/tenant"
@@ -156,6 +157,11 @@ func (s *server) UpdateTokenIssuer(ctx context.Context, in adminapi.UpdateTokenI
 			out = tiRow(cur).out()
 			return nil
 		}
+		if changesTrust(change) {
+			if err := s.guardMappedAccounts(ctx, q, tid, cur.ID); err != nil {
+				return err
+			}
+		}
 		row, err := q.UpdateTrustedIssuer(ctx, queries.UpdateTrustedIssuerParams{
 			ID: cur.ID, Name: change.Name, Description: change.Description, Issuer: change.Issuer, Audience: change.Audience, JwksUri: change.JwksURI,
 			Algorithms: derefStrings(change.Algorithms), SubjectClaim: change.SubjectClaim, RequiredClaims: claimsPtr(change.RequiredClaims), Enabled: change.Enabled,
@@ -173,6 +179,30 @@ func (s *server) UpdateTokenIssuer(ctx context.Context, in adminapi.UpdateTokenI
 		return nil, mapIssuerError(err)
 	}
 	return &out, nil
+}
+
+// changesTrust reports whether a change of a trusted issuer decides which tokens it accepts: the
+// issuer, the audience, the key set, the algorithms, the subject claim and the required claims, or
+// enabling it. Whoever controls these controls the tokens that act as the mapped service accounts,
+// so the change is a grant (sprint 4.3, section 5.4). Name, description and disabling are not.
+func changesTrust(c issuerPatch) bool {
+	return c.Issuer != nil || c.Audience != nil || c.JwksURI != nil || c.Algorithms != nil ||
+		c.SubjectClaim != nil || c.RequiredClaims != nil || (c.Enabled != nil && *c.Enabled)
+}
+
+// guardMappedAccounts applies the guard to the service accounts that subjects of the trusted issuer
+// act as: the caller must hold the union of what they can do. The issuer's lock is held, so no
+// mapping is added meanwhile.
+func (s *server) guardMappedAccounts(ctx context.Context, q *queries.Queries, tid tenant.ID, issuerID string) error {
+	rows, err := q.ListMappedServiceAccountGrants(ctx, issuerID)
+	if err != nil {
+		return err
+	}
+	sets := make([][]string, 0, len(rows))
+	for _, r := range rows {
+		sets = append(sets, targetPrincipal(authz.KindServiceAccount, tid, r.Roles, r.Granted, nil).Effective())
+	}
+	return s.guardGrant(ctx, principalOf(ctx), sets...)
 }
 
 func derefStrings(p *[]string) []string {

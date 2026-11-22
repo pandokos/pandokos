@@ -204,7 +204,7 @@ pandokos tenant update acme --time-zone ""                    # the platform: ""
 ```
 
 The platform sets it with `tenant:write` (`createTenant`, `updateTenant`), the tenant's administrator
-with `limit:write` (`setTenantTimeZone`, `limit time-zone set`; `limit:read` reads it with
+with `tenant_setting:write` (`setTenantTimeZone`, `limit time-zone set`; before sprint 4.3 it was `limit:write`, and a key scoped to `limit:write` alone no longer sets it; `limit:read` reads it with
 `getTenantTimeZone`). Every change is audited: `tenant.time_zone_update` in the tenant's log (detail
 `from`, `to`, `in_force`, `effective_from`) and `tenant.update` in the platform's log. The resource has
 `time_zone` (as set; empty for the default), `in_force` (the name of the zone in force now, the default
@@ -632,7 +632,8 @@ returns an error:
 Rules are written through the administration API ([reference](../reference/admin-api.md)) and the
 CLI; each command maps to one operation. A tenant administrator manages the tenant's rules with
 `limit:read`, `limit:write` and `limit:delete`; a platform administrator manages ceilings with the
-`platform_limit:*` permissions ([permissions](../reference/permissions.md)). Every change is audited
+`platform_limit:*` permissions ([permissions](../reference/permissions.md)). A rule body may carry an optional
+`reason` (`--reason`), recorded in the audit row of the change; a reason alone, without a change, is refused. Every change is audited
 in the transaction of the change. A change reaches the gateway at once through a database
 notification and at the latest after `cache.limits_ttl`; counters are not reset by it.
 

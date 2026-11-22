@@ -62,6 +62,7 @@ func DefaultSpec() Spec {
 			"signin_throttle":          {Reason: "failed sign-ins per username and source; platform scope only", Restricted: true},
 			"oidc_login":               {Reason: "sign-in transactions of the identity provider; platform scope only", Restricted: true},
 			"idempotency_key":          {Reason: "idempotency keys of create operations; a tenant's session sees its own, the platform scope those of the platform; protected by its own policies", Restricted: true},
+			"support_action":           {Reason: "Support actions of the platform inside tenants; protected by its own policies", Restricted: true},
 			"membership_directory":     {Reason: "which tenants a user is a member of, for the lookup function; no runtime role has any privilege on it"},
 		},
 		Grants: map[string]map[string][]string{
@@ -124,7 +125,14 @@ func DefaultSpec() Spec {
 				},
 			},
 			"audit_event": {
-				"pandokos_admin": {"INSERT(action,actor_id,actor_name,actor_type,detail,key_id,outcome,reason,request_id,resource_id,resource_type,tenant_id)"},
+				"pandokos_admin": {"INSERT(action,actor_id,actor_name,actor_type,detail,key_id,outcome,reason,request_id,resource_id,resource_type,support_action_id,tenant_id)"},
+			},
+			"tenant_role": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin":   {"DELETE", "INSERT(description,name,permissions,tenant_id)", "SELECT", "UPDATE(description,permissions,state)"},
+			},
+			"support_action": {
+				"pandokos_admin": {"INSERT(actor_id,actor_name,actor_type,expires_at,key_id,permissions,reason,request_id,tenant_id)", "SELECT", "UPDATE(close_reason,closed_at,closed_by,closed_by_id)"},
 			},
 			"platform_audit_event": {
 				"pandokos_admin":  {"INSERT(action,actor_id,actor_name,actor_type,detail,key_id,outcome,reason,request_id,resource_id,resource_type)"},
@@ -295,6 +303,10 @@ VALUES ($1::uuid, 'test-fixture', decode(repeat('00', 61), 'hex')) RETURNING id:
 			"provider_credential": {
 				Insert: `INSERT INTO pandokos.provider_credential (tenant_id, provider, label, key_version, secret, fingerprint)
 VALUES ($1::uuid, 'openai', 'c-' || substr(md5(random()::text), 1, 12), 1, decode(repeat('00', 61), 'hex'), md5(random()::text)) RETURNING id::text`,
+				Update: `description = 'changed'`,
+			},
+			"tenant_role": {
+				Insert: `INSERT INTO pandokos.tenant_role (tenant_id, name, permissions) VALUES ($1::uuid, 'fixture-' || substr(md5(random()::text), 1, 12), ARRAY['member:read']) RETURNING id::text`,
 				Update: `description = 'changed'`,
 			},
 			"audit_event": {

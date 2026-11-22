@@ -138,6 +138,13 @@ func issuerStatements(c context.Context, t *testing.T, admin, gateway *store.DB,
 		if n, err := q.CountSubjectMappingsOfIssuer(c, issuer.ID); err != nil || n != 1 {
 			t.Errorf("CountSubjectMappingsOfIssuer: %d %v", n, err)
 		}
+		mark("ListMappedServiceAccountGrants")
+		if g, err := q.ListMappedServiceAccountGrants(c, issuer.ID); err != nil || len(g) != 1 || g[0].ID != serviceAccountID || g[0].Roles == nil || g[0].Granted == nil {
+			t.Errorf("ListMappedServiceAccountGrants: %+v %v", g, err)
+		}
+		if g, err := q.ListMappedServiceAccountGrants(c, zeroID); err != nil || len(g) != 0 {
+			t.Errorf("ListMappedServiceAccountGrants of an issuer without mappings: %+v %v", g, err)
+		}
 		mark("GetSubjectMapping")
 		gm, err := q.GetSubjectMapping(c, mappingTenant.ID)
 		if err != nil || gm.ID != mappingTenant.ID || gm.IssuerName != "idp-uni" || gm.Subject != mappingTenant.Subject {

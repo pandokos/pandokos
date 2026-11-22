@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -73,6 +74,12 @@ type AuthOIDC struct {
 	PostSignInPath   string   `yaml:"post_sign_in_path"`
 
 	ClientSecret secret.Secret `yaml:"-"` // read from ClientSecretFile when the purpose is serve and OIDC is enabled
+}
+
+// Support configures the support actions of the platform inside a tenant (sprint 4.3).
+type Support struct {
+	Enabled     bool     `yaml:"enabled"`
+	MaxDuration Duration `yaml:"max_duration"`
 }
 
 // Idempotency configures the retention of idempotency keys.
@@ -197,6 +204,10 @@ func authKeys() []keyDef {
 			setString(func(c *Config) *string { return &c.Auth.OIDC.PostSignInPath })),
 		serveDef("idempotency.retention", "duration", "24h", "Time an idempotency key is kept; 1h to 7d",
 			setDuration(func(c *Config) *Duration { return &c.Idempotency.Retention })),
+		serveDef("support.enabled", "boolean", "true", "Allow the platform to open support actions inside a tenant ; false: none can be opened and none is honoured",
+			setBool(func(c *Config) *bool { return &c.Support.Enabled })),
+		serveDef("support.max_duration", "duration", "1h", "Default and longest life of a support action; 1m to 24h",
+			setDuration(func(c *Config) *Duration { return &c.Support.MaxDuration })),
 	}
 }
 
@@ -264,16 +275,30 @@ func validateOIDC(c *Config) []Problem {
 			add("auth.oidc.group_mappings", err.Error())
 		}
 		for i, r := range rules {
-			scope := authz.ScopeTenant
-			if r.platform {
-				scope = authz.ScopePlatform
-			}
-			if role, ok := authz.RoleByName(r.role); !ok || role.Scope != scope || (r.role != authz.RolePlatformAdmin && r.role != authz.RoleTenantAdmin) {
+			if !ruleRoleAllowed(r) {
 				add("auth.oidc.group_mappings", fmt.Sprintf("rule %d names a role that a user cannot hold in that scope", i+1))
 			}
 		}
 	}
 	return ps
+}
+
+// roleNameFormat is the format of a role name: a custom role is known to the database, not to the
+// configuration, so a tenant target is checked for it only.
+var roleNameFormat = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
+
+// ruleRoleAllowed says whether the role of a rule can be held in its scope: a platform target must
+// name a platform role a person can hold; a tenant target a tenant role a person can hold or the
+// name of a custom role.
+func ruleRoleAllowed(r mappingRule) bool {
+	scope := authz.ScopeTenant
+	if r.platform {
+		scope = authz.ScopePlatform
+	}
+	if def, ok := authz.RoleByName(r.role); ok {
+		return def.Scope == scope && def.Members
+	}
+	return !r.platform && roleNameFormat.MatchString(r.role)
 }
 
 // mappingRule is the part of a group rule that the configuration checks: its scope and role. The
@@ -344,6 +369,7 @@ func validateAuth(c *Config) []Problem {
 	if r := time.Duration(c.Idempotency.Retention); r < time.Hour || r > 7*hoursPerDay {
 		add("idempotency.retention", "must be between 1h and 168h")
 	}
+	inRange("support.max_duration", c.Support.MaxDuration, time.Minute, hoursPerDay, "1m and 24h")
 	a := &c.Auth
 	l := &a.Local
 	if l.PasswordMinLength < 8 || l.PasswordMinLength > 128 {
@@ -406,6 +432,9 @@ func authWarnings(c *Config) []Warning {
 	a := c.Listeners.Admin
 	if host, _, err := net.SplitHostPort(a.Address); err == nil && a.AllowPlaintext && !isLoopback(host) && (a.TLS.CertFile == "" || a.TLS.KeyFile == "") && c.Auth.PublicOrigin == "" {
 		ws = append(ws, Warning{Key: "auth.public_origin", Message: "the administration listener is served without TLS and no HTTPS origin is named: nobody can sign in; set auth.public_origin to the origin that browsers use"})
+	}
+	if !c.Support.Enabled {
+		ws = append(ws, Warning{Key: "support.enabled", Message: "support actions are off: a tenant that loses its administrators cannot be recovered through the API"})
 	}
 	if o := c.Auth.OIDC; o.Enabled && len(o.GroupMappings) == 0 && !o.AutoProvision {
 		ws = append(ws, Warning{Key: "auth.oidc.group_mappings", Message: "no group mappings and no auto_provision: every user of the identity provider must be linked by hand"})

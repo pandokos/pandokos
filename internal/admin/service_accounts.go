@@ -7,20 +7,9 @@ import (
 
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/audit"
-	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/queries"
 )
-
-// checkRoles refuses a role that does not exist or is not a role of service accounts.
-func checkRoles(roles []string) error {
-	for _, r := range roles {
-		if role, ok := authz.RoleByName(r); !ok || role.Scope != authz.ScopeTenant {
-			return invalid("roles", "must name built-in roles of service accounts")
-		}
-	}
-	return nil
-}
 
 func sortedCopy(s []string) []string {
 	out := append([]string{}, s...)
@@ -106,14 +95,18 @@ func (s *server) CreateServiceAccount(ctx context.Context, in adminapi.CreateSer
 		return nil, err
 	}
 	b := in.Body
-	if err := checkRoles(b.Roles); err != nil {
-		return nil, err
-	}
 	p := principalOf(ctx)
 	st := stateOf(ctx)
 	var out adminapi.ServiceAccount
 	err = s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
 		q := queries.New(tx)
+		perms, err := s.resolveRoles(ctx, q, b.Roles, false)
+		if err != nil {
+			return err
+		}
+		if err := s.guardAssignment(ctx, q, p, nil, b.Roles, perms); err != nil {
+			return err
+		}
 		sa, err := q.CreateServiceAccount(ctx, queries.CreateServiceAccountParams{
 			TenantID: tid.String(), Name: b.Name, Description: b.Description, ValidFrom: utcPtr(b.ValidFrom), ValidUntil: utcPtr(b.ValidUntil),
 		})
@@ -164,9 +157,6 @@ func (s *server) UpdateServiceAccount(ctx context.Context, in adminapi.UpdateSer
 	if !b.Name.Set && !b.Description.Set && !b.ValidFrom.Set && !b.ValidUntil.Set && !b.Roles.Set {
 		return nil, invalid("body", "must change at least one member")
 	}
-	if err := checkRoles(b.Roles.Value); err != nil {
-		return nil, err
-	}
 	p := principalOf(ctx)
 	st := stateOf(ctx)
 	var out adminapi.ServiceAccount
@@ -178,9 +168,21 @@ func (s *server) UpdateServiceAccount(ctx context.Context, in adminapi.UpdateSer
 			}
 			return err
 		}
+		var perms map[string][]string
+		if b.Roles.Set {
+			var err error
+			if perms, err = s.resolveRoles(ctx, q, b.Roles.Value, false); err != nil {
+				return err
+			}
+		}
 		cur, err := q.GetServiceAccount(ctx, in.ServiceAccount)
 		if err != nil {
 			return err
+		}
+		if b.Roles.Set {
+			if err := s.guardAssignment(ctx, q, p, cur.Roles, b.Roles.Value, perms); err != nil {
+				return err
+			}
 		}
 		detail := map[string]any{}
 		par := queries.UpdateServiceAccountParams{ID: cur.ID}

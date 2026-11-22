@@ -284,6 +284,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	}
 	adminOpts.Limits.Zones, adminOpts.Limits.OnUnknownPrice = zones, cfg.Limits.OnUnknownPrice
 	adminOpts.DefaultCurrency = cfg.Pricing.DefaultCurrency
+	adminOpts.Support.Enabled, adminOpts.Support.MaxDuration = cfg.Support.Enabled, time.Duration(cfg.Support.MaxDuration)
 	adminOpts.Limits.Ledger = limits.NewLedger(workerDB)
 	people, err := newPeople(cfg, adminDB)
 	if err != nil {

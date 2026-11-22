@@ -60,3 +60,5 @@ direct connection.
 - 2026-11: sprint 3.2 adds the definer function ensure_usage_partitions, executable by the worker role only, and lint rule L-20 for partitions.
 - 2026-11-18: recorded as accepted by the maintainer.
 - 2026-11-18: sprint 5.3: two definer functions, `delete_platform_issuer_limit_rules` (admin role) and `record_unlimited_traffic` (gateway role); a tenant's session may update the time zone of its own tenant row ([ADR 0052](0052-administration-of-limits.md)).
+- 2026-11-22: sprint 4.3 generalises the transaction that holds both settings, from provisioning to `store.ActInTenant`: the platform's scope and one tenant's, for what the platform does inside a tenant ([ADR 0061](0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md)).
+- 2026-11-22: sprint 4.3 adds `store.InTenant`, the same pair of settings on a platform transaction that is already open, for reads of a tenant that must stay on the connection and under the locks the transaction holds (the guard of `resetUserPassword`); the tenant setting it had is restored afterwards.

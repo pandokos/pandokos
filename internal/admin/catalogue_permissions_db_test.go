@@ -134,7 +134,7 @@ func TestCatalogPermissions(t *testing.T) {
 		}
 		// Issuing a key with models needs only virtual_key:write.
 		onlyKeys := scoped(authz.VirtualKeyWrite, authz.IdentityRead)
-		r = api.Do(t, "POST", "/v1/tenants/"+w.tenant.ID+"/virtual-keys", onlyKeys, map[string]any{"service_account_id": sa.ID, "models": []string{"openai/gpt-4o"}}, nil)
+		r = api.Do(t, "POST", "/v1/tenants/"+w.tenant.ID+"/virtual-keys", onlyKeys, map[string]any{"service_account_id": sa.ID, "models": []string{"openai/gpt-4o"}, "scopes": []string{authz.VirtualKeyWrite}}, nil) // sprint 4.3: a key may not hold more than its issuer, so the new key is scoped to what the issuer holds
 		if r.Status != 201 {
 			t.Errorf("a key with models, issued with virtual_key:write alone: %d\n%s", r.Status, r.Body)
 		}

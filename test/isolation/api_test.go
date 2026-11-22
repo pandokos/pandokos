@@ -194,6 +194,13 @@ func (w *apiWorld) fresh(t *testing.T, s side, op adminapi.Operation) apitest.Pa
 	if strings.Contains(op.Path, "{price}") {
 		p.TenantPrice = w.seedTenantPrice(t, s)
 	}
+	// The operations of sprint 4.3 on a custom role or on a support action get one of their own.
+	if strings.Contains(op.Path, "{role}") {
+		p.Role = w.api.CustomRole(t, s.tenant.ID, "member:read")
+	}
+	if strings.Contains(op.Path, "/support-actions/{action}") {
+		p.SupportAction = apitest.OpenSupport(t, &apitest.Caller{API: w.api, Key: w.api.PlatformKey(), Name: "platform"}, s.tenant.ID, "member:read")
+	}
 	return p
 }
 
@@ -308,6 +315,10 @@ var platformAndSelf = map[string]string{
 	"listUsers": "platform", "createUser": "platform", "getUser": "platform", "updateUser": "platform", "disableUser": "platform",
 	"enableUser": "platform", "unlockUser": "platform", "resetUserPassword": "platform", "revokeUserSessions": "platform",
 	"signOut": "self", "changePassword": "self", "listOwnSessions": "self", "deleteOwnSession": "self",
+
+	// Sprint 4.3: the catalogue and the built-in roles, and the four platform operations on the support actions of a tenant.
+	"listPermissions": "self", "listBuiltinRoles": "self",
+	"listTenantSupportActions": "platform", "openSupportAction": "platform", "getTenantSupportAction": "platform", "closeSupportAction": "platform",
 }
 
 func scopeOf(t *testing.T, op adminapi.Operation) authz.Scope {
@@ -576,7 +587,7 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 		// The positive control: A's key does it in A.
 		own := apitest.CallFor(t, op, w.fresh(t, w.a, op))
 		r := w.api.Do(t, own.Method, own.Path, w.a.adminKey, own.Body, nil)
-		if r.Status != 200 && r.Status != 201 {
+		if r.Status != 200 && r.Status != 201 && r.Status != 204 { // deleteRole answers 204
 			t.Errorf("%s in A: status %d\n%s", op.ID, r.Status, r.Body)
 		}
 		// And none in B.
@@ -589,8 +600,8 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 		}
 		n++
 	}
-	if n != 62 {
-		t.Errorf("%d tenant operations, want 62 (24, the two of sprint 3.3, the ten of sprint 4.1, the seven of sprint 5.2, the two of sprint 5.3, the seven of sprint 5.4 and the ten of sprint 4.2)", n)
+	if n != 72 {
+		t.Errorf("%d tenant operations, want 72 (24, the two of sprint 3.3, the ten of sprint 4.1, the seven of sprint 5.2, the two of sprint 5.3, the seven of sprint 5.4, the ten of sprint 4.2 and the ten of sprint 4.3)", n)
 	}
 	if _, err := c.GetTenant(ctx(t), adminapi.GetTenantInput{Tenant: w.b.tenant.ID}); err == nil {
 		t.Error("a tenant key read a tenant")
@@ -639,24 +650,53 @@ func TestPlatformKeyHasNoTenantPermission(t *testing.T) {
 	}
 }
 
-// TestTenantAdminIsEnoughAndNoMore is T-273.
+// TestTenantAdminIsEnoughAndNoMore is T-273 (changed in sprint 4.3: it runs for the owner, and the
+// tenant-admin is enough for everything but endSupportAction, which is kept for owners).
 func TestTenantAdminIsEnoughAndNoMore(t *testing.T) {
-	w := newAPIWorld(t)
-	for _, op := range apiOperations() {
-		call := apitest.CallFor(t, op, w.fresh(t, w.a, op))
-		r := w.api.Do(t, call.Method, call.Path, w.a.adminKey, call.Body, nil)
-		switch scopeOf(t, op) {
-		case authz.ScopeTenant, authz.ScopeSelf:
-			if op.Permission == authz.SessionSelf {
-				expect403(t, op, r) // sprint 4.2: a key has no session
-				continue
+	for _, who := range []struct {
+		name string
+		key  func(w *apiWorld) string
+	}{
+		{"owner", func(w *apiWorld) string { return w.a.adminKey }},
+		{"tenant-admin", func(w *apiWorld) string { return w.api.AsRole(t, w.a.tenant.ID, "tenant-admin").Key }},
+	} {
+		t.Run(who.name, func(t *testing.T) {
+			// A world of its own: the operations that delete or create leave the next run a different tenant.
+			w := newAPIWorld(t)
+			plat := &apitest.Caller{API: w.api, Key: w.api.PlatformKey(), Name: "platform"}
+			who := struct {
+				name string
+				key  string
+			}{who.name, who.key(w)}
+			for _, op := range apiOperations() {
+				p := w.fresh(t, w.a, op)
+				// The operations on a custom role and on a support action get ones of their own.
+				if strings.Contains(op.Path, "{role}") {
+					p.Role = w.api.CustomRole(t, w.a.tenant.ID, "member:read")
+				}
+				if strings.Contains(op.Path, "/support-actions/{action}") {
+					p.SupportAction = apitest.OpenSupport(t, plat, w.a.tenant.ID, "member:read")
+				}
+				call := apitest.CallFor(t, op, p)
+				r := w.api.Do(t, call.Method, call.Path, who.key, call.Body, nil)
+				switch scopeOf(t, op) {
+				case authz.ScopeTenant, authz.ScopeSelf:
+					if op.Permission == authz.SessionSelf {
+						expect403(t, op, r) // sprint 4.2: a key has no session
+						continue
+					}
+					if who.name == "tenant-admin" && op.ID == "endSupportAction" {
+						expect403(t, op, r) // sprint 4.3: kept for owners
+						continue
+					}
+					if r.Status != 200 && r.Status != 201 && r.Status != 204 {
+						t.Errorf("%s: a %s key got %d\n%s", op.ID, who.name, r.Status, r.Body)
+					}
+				default:
+					expect403(t, op, r)
+				}
 			}
-			if r.Status != 200 && r.Status != 201 {
-				t.Errorf("%s: a tenant-admin key got %d\n%s", op.ID, r.Status, r.Body)
-			}
-		default:
-			expect403(t, op, r)
-		}
+		})
 	}
 }
 

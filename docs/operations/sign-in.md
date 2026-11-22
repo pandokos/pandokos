@@ -64,15 +64,18 @@ rule**:
   manages is a member of that tenant only and holds no platform role.
 - Only the administrators of the managing side reset the password of an account, disable it, unlock it
   or end its sessions. For a platform-managed member a tenant administrator gets `409 invalid_state`;
-  platform administrators cannot act on a tenant's users until the support action of sprint 4.3 (the
-  host commands work on any account).
+  platform administrators act on a tenant's users only under a **support action** with `member:write`
+  (and `member:read`): they open one with a reason, and every reset, unlock or disable is written to the
+  tenant's log with the action's ID ([roles guide](roles.md#6-support-actions)); the host commands work
+  on any account. The reset of a password needs a reason (`resetUserPassword`, `resetMemberPassword`)
+  and the caller must hold every permission of the person whose password it resets.
 
 The reason: without the rule the administrator of tenant A could reset the password of a person who is
 also an administrator of tenant B, and sign in as them. A person who works in several tenants is
 therefore a platform-managed user, which a tenant can only add as a member and never touch.
 
-A user can hold `tenant-admin` in a tenant or `platform-admin`; whoever assigns a role holds every
-permission of it. A user cannot disable itself or remove its own last platform role; a tenant administrator who is a
+A user can hold any tenant role but `inference` in a tenant (a custom role of the tenant too), and `platform-admin` or `platform-auditor` on the platform; whoever gives or takes a role holds every
+permission of it (`403 escalation_refused` otherwise; [roles](roles.md)). A user cannot disable itself or remove its own last platform role; a tenant administrator who is a
 user cannot disable or remove its own membership either (`409 invalid_state`). Users are never
 deleted in this release; disabling ends their sessions at once and enabling does not bring one back.
 Usernames are **unique in the installation**, so `409 conflict` on a username tells a tenant
@@ -252,7 +255,10 @@ is refused (`unmapped_subject`, audited):
 compared exactly. A user can hold `platform-admin` and `tenant-admin` through rules. In the environment
 the rules are separated by commas. At each sign-in the rules are **reconciled**: rows that a rule gave
 (`source: idp`) and the groups no longer justify are removed, missing ones are added, each with its audit
-row; rows an administrator made are never touched. A rule that names a role a user cannot hold is refused
+row; rows an administrator made are never touched. A rule may name any built-in role a user can hold in the scope of its target (`platform-auditor` on the
+platform, any tenant role but `inference` in a tenant) and, for a tenant, a custom role of that tenant;
+a custom role that is missing (at start or at sign-in) or inactive (at sign-in) is skipped with one log
+line that names the rule's position only ([roles guide](roles.md#9-group-rules-with-roles)). A rule that names a role a user cannot hold is refused
 at start, and so is one that names a tenant that does not exist once tenants exist. While no tenant
 exists yet, such a rule is accepted; at a sign-in a rule whose tenant is not there (not yet created, or
 deleted since) is **skipped** with a warning that gives its position in the list and nothing else, and

@@ -67,6 +67,13 @@ be changed: delete it and create it again. A token whose subject has no mapping 
 principal is the service account, with its roles: authorization, the model check, the vault and the
 usage record work as for a virtual key.
 
+Creating a mapping is a grant: the principal that creates it must hold every permission of the service
+account the subject will act as, else `403 escalation_refused` ([roles guide](roles.md#4-the-rule-against-escalation)).
+Changing what a registration trusts (issuer, audience, key set, algorithms, subject or required claims)
+or enabling it again is a grant to every account mapped under it, guarded the same way; renaming,
+describing and disabling it are not. There are no scopes per mapping; to give a token less than an account's administrator role, map it to a
+dedicated service account that holds a custom role with only what the workload needs.
+
 ### Worked example: a tenant-bound issuer
 
 The tenant `acme` runs its own identity provider at `https://idp.acme.example/`. Its workload

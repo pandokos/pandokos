@@ -3,11 +3,13 @@ package admin
 import (
 	"context"
 	"errors"
+	"slices"
 	"sort"
 	"time"
 
 	"github.com/pandokos/pandokos/internal/account"
 	"github.com/pandokos/pandokos/internal/adminapi"
+	"github.com/pandokos/pandokos/internal/audit"
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/session"
 	"github.com/pandokos/pandokos/internal/store"
@@ -44,6 +46,13 @@ func (s *server) GetMe(ctx context.Context, _ adminapi.GetMeInput) (*adminapi.Me
 	if p.Kind == authz.KindServiceAccount {
 		m.Tenant = &adminapi.TenantRef{ID: p.TenantID.String(), Name: p.TenantName, State: adminapi.TenantState(p.TenantState)}
 	}
+	if p.Kind != authz.KindServiceAccount && p.TenantID.IsZero() {
+		actions, err := s.openSupportActions(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+		m.SupportActions = actions
+	}
 	if p.Kind != authz.KindUser {
 		return m, nil
 	}
@@ -67,21 +76,18 @@ func (s *server) GetMe(ctx context.Context, _ adminapi.GetMeInput) (*adminapi.Me
 		if err != nil {
 			return nil, err
 		}
-		var row queries.GetMemberPrincipalRow
-		err = s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
-			var err error
-			row, err = queries.New(tx).GetMemberPrincipal(ctx, p.ID)
-			return err
-		})
-		if errors.Is(err, store.ErrNoRows) {
+		mp, err := s.memberPrincipal(ctx, *st.user, *st.session, tid)
+		if errors.Is(err, errNotFound) {
 			continue // removed since the first read
 		}
 		if err != nil {
 			return nil, err
 		}
 		m.Memberships = append(m.Memberships, adminapi.Membership{
-			Tenant: adminapi.TenantRef{ID: tid.String(), Name: row.TenantName, State: adminapi.TenantState(row.TenantState)},
-			Roles:  nonNil(row.Roles),
+			Tenant: adminapi.TenantRef{ID: tid.String(), Name: mp.TenantName, State: adminapi.TenantState(mp.TenantState)},
+			Roles:  nonNil(mp.Roles),
+			// What the hook enforces in this tenant: both are built by memberPrincipal.
+			Permissions: nonNil(mp.Effective()),
 		})
 	}
 	sort.Slice(m.Memberships, func(i, j int) bool { return m.Memberships[i].Tenant.Name < m.Memberships[j].Tenant.Name })
@@ -99,4 +105,30 @@ func (s *server) sessionBody(sess session.Session, u account.User, current bool)
 		User:      adminapi.SessionUser{ID: u.ID, SignIn: adminapi.SignInMethod(u.SignIn), Username: u.Username, DisplayName: u.DisplayName},
 		CreatedAt: sess.CreatedAt, LastUsedAt: sess.LastUsedAt, ExpiresAt: sess.ExpiresAt, IdleTimeoutSeconds: idle,
 	}
+}
+
+// openSupportActions lists the open support actions of a platform principal: the actions of the caller
+// in each tenant, for a principal that may open them while support actions are on. Nothing otherwise.
+func (s *server) openSupportActions(ctx context.Context, p authz.Principal) ([]adminapi.SupportGrant, error) {
+	if !s.support.enabled || !slices.Contains(p.Effective(), authz.TenantSupportOpen) {
+		return nil, nil
+	}
+	actor := audit.ActorOf(p)
+	var rows []queries.ListOpenSupportActionsOfActorRow
+	err := s.db.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
+		var err error
+		rows, err = queries.New(tx).ListOpenSupportActionsOfActor(ctx, queries.ListOpenSupportActionsOfActorParams{ActorType: string(actor.Type), ActorID: actor.ID})
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	var out []adminapi.SupportGrant
+	for _, r := range rows {
+		out = append(out, adminapi.SupportGrant{
+			ID: r.ID, Tenant: adminapi.TenantRef{ID: r.TenantID, Name: r.TenantName, State: adminapi.TenantState(r.TenantState)},
+			Permissions: nonNil(r.Permissions), ExpiresAt: r.ExpiresAt.UTC(),
+		})
+	}
+	return out, nil
 }

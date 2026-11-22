@@ -207,7 +207,7 @@ func TestGatewayExitScenario(t *testing.T) {
 		if status, _ := p.chatCall(t, e.key, fakeprovider.ModelBasic, false); status != 200 {
 			t.Fatalf("before the suspension: %d", status)
 		}
-		p.mustCLI(t, boot, "tenant", "suspend", e.id)
+		p.mustCLI(t, boot, "tenant", "suspend", "--reason", "test", e.id)
 		testutil.Eventually(t, 3*time.Second, "the suspended tenant to be refused", func() bool {
 			s, text := p.chatCall(t, e.key, fakeprovider.ModelBasic, false)
 			if s == 403 && strings.Contains(text, "tenant_suspended") {

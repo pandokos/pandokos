@@ -488,7 +488,10 @@ func TestEveryStatement(t *testing.T) {
 		// Sprint 4.2: users, accounts, memberships, sessions, throttling, OIDC transactions, idempotency keys.
 		peopleStatements(c, t, admin, tid, ten.ID, called)
 
-		// The 223 statements, and nothing was prepared on the server.
+		// Sprint 4.3: custom roles and support actions.
+		roleStatements(c, t, d, admin, tid, ten.ID, sa.ID, called)
+
+		// The 245 statements, and nothing was prepared on the server.
 		var names []string
 		typ := reflect.TypeOf(&queries.Queries{})
 		for i := 0; i < typ.NumMethod(); i++ {
@@ -497,8 +500,8 @@ func TestEveryStatement(t *testing.T) {
 			}
 		}
 		sort.Strings(names)
-		if len(names) != 223 {
-			t.Errorf("the generated package has %d statements, want 223: %v", len(names), names)
+		if len(names) != 245 {
+			t.Errorf("the generated package has %d statements, want 245: %v", len(names), names)
 		}
 		for _, name := range names {
 			if !called[name] {

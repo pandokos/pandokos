@@ -90,7 +90,7 @@ func TestResetPassword(t *testing.T) {
 			t.Fatalf("wrong password: %d", r.Status)
 		}
 		before := len(d.PlatformAuditRows(t))
-		out := decode[adminapi.PasswordReset](t, p.platform(t, "POST", "/v1/users/"+plat.ID+"/reset-password", map[string]any{}), 200)
+		out := decode[adminapi.PasswordReset](t, p.platform(t, "POST", "/v1/users/"+plat.ID+"/reset-password", map[string]any{"reason": "test"}), 200)
 		if out.UserID != plat.ID || !reGenerated.MatchString(out.Password) || out.ExpiresAt.Before(time.Now().Add(71*time.Hour)) || out.ExpiresAt.After(time.Now().Add(73*time.Hour)) {
 			t.Fatalf("response %+v", out)
 		}
@@ -130,7 +130,7 @@ func TestResetPassword(t *testing.T) {
 
 	t.Run("a member the tenant manages, by the tenant", func(t *testing.T) {
 		b := p.signIn(t, member)
-		out := decode[adminapi.PasswordReset](t, p.tenantKey(t, "POST", p.membersPath("/"+member.ID+"/reset-password"), map[string]any{}), 200)
+		out := decode[adminapi.PasswordReset](t, p.tenantKey(t, "POST", p.membersPath("/"+member.ID+"/reset-password"), map[string]any{"reason": "test"}), 200)
 		if !reGenerated.MatchString(out.Password) || out.UserID != member.ID {
 			t.Fatalf("response %+v", out)
 		}
@@ -151,23 +151,23 @@ func TestResetPassword(t *testing.T) {
 
 	t.Run("refused across the managing rule", func(t *testing.T) {
 		// A platform-managed member: the tenant cannot reset it.
-		if c := code(t, p.tenantKey(t, "POST", p.membersPath("/"+shared.ID+"/reset-password"), map[string]any{}), 409); c != "invalid_state" {
+		if c := code(t, p.tenantKey(t, "POST", p.membersPath("/"+shared.ID+"/reset-password"), map[string]any{"reason": "test"}), 409); c != "invalid_state" {
 			t.Errorf("code %s", c)
 		}
 		// The administrator of another tenant does not see this tenant's member.
-		r := p.api.Do(t, "POST", p.membersPath("/"+member.ID+"/reset-password"), otherKey, map[string]any{}, nil)
+		r := p.api.Do(t, "POST", p.membersPath("/"+member.ID+"/reset-password"), otherKey, map[string]any{"reason": "test"}, nil)
 		if c := code(t, r, 404); c != "not_found" {
 			t.Errorf("code %s", c)
 		}
 		// Platform operations see platform-managed users only.
-		if c := code(t, p.platform(t, "POST", "/v1/users/"+member.ID+"/reset-password", map[string]any{}), 404); c != "not_found" {
+		if c := code(t, p.platform(t, "POST", "/v1/users/"+member.ID+"/reset-password", map[string]any{"reason": "test"}), 404); c != "not_found" {
 			t.Errorf("code %s", c)
 		}
 		// A federated user has no password.
-		if c := code(t, p.platform(t, "POST", "/v1/users/"+fed.ID+"/reset-password", map[string]any{}), 409); c != "invalid_state" {
+		if c := code(t, p.platform(t, "POST", "/v1/users/"+fed.ID+"/reset-password", map[string]any{"reason": "test"}), 409); c != "invalid_state" {
 			t.Errorf("code %s", c)
 		}
-		if c := code(t, p.platform(t, "POST", "/v1/users/"+apitest.NoUser+"/reset-password", map[string]any{}), 404); c != "not_found" {
+		if c := code(t, p.platform(t, "POST", "/v1/users/"+apitest.NoUser+"/reset-password", map[string]any{"reason": "test"}), 404); c != "not_found" {
 			t.Errorf("code %s", c)
 		}
 	})
@@ -334,7 +334,7 @@ func TestSessionPrincipal(t *testing.T) {
 	p := newPeople(t, apitest.PeopleConfig{})
 	d := p.d
 	suspended, _ := p.api.Tenant(t, "frozen")
-	if r := p.platform(t, "POST", "/v1/tenants/"+suspended.ID+"/suspend", map[string]any{}); r.Status != 200 {
+	if r := p.platform(t, "POST", "/v1/tenants/"+suspended.ID+"/suspend", map[string]any{"reason": "test"}); r.Status != 200 {
 		t.Fatalf("suspend: %d", r.Status)
 	}
 	stid, _ := tenant.ParseID(suspended.ID)

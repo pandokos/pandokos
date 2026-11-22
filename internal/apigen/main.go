@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -51,6 +52,9 @@ type operation struct {
 	Summary     string   `yaml:"summary"`
 	Description string   `yaml:"description"`
 	Permission  string   `yaml:"x-pandokos-permission"`
+	// Reason is "required" on an operation whose request body is a required object with a required
+	// string member reason that must not be empty or only white space (sprint 4.3).
+	Reason string `yaml:"x-pandokos-reason"`
 	// Public marks an operation that needs no credential (sign-in): it names no permission and
 	// says security: [].
 	Public bool `yaml:"x-pandokos-public"`
@@ -791,6 +795,13 @@ func (g *generator) successBody(op *operation) (int, string, error) {
 			status, name = n, "Redirect"
 			continue
 		}
+		if n == http.StatusNoContent {
+			if len(t.Content) != 0 || status != 0 {
+				return 0, "", errors.New("a 204 response has no content and is the only success response")
+			}
+			status, name = n, "NoContent"
+			continue
+		}
 		if n >= 300 {
 			m, ok := t.Content["application/problem+json"]
 			if !ok || len(t.Content) != 1 || m.Schema == nil || m.Schema.Ref != "#/components/schemas/Problem" {
@@ -823,7 +834,7 @@ func (g *generator) operations() error {
 		bodyRequired                                      bool
 		pathParams, queryParams                           []param
 		doc                                               string
-		public, lenient, idempotent                       bool
+		public, lenient, idempotent, reasonRequired       bool
 	}
 	var ops []opInfo
 	seen := map[string]bool{}
@@ -903,6 +914,29 @@ func (g *generator) operations() error {
 				}
 				info.body, info.bodyRequired = sn, op.RequestBody.Required
 			}
+			if op.Reason != "" {
+				if op.Reason != "required" {
+					return fail(errors.New(`x-pandokos-reason must be "required"`))
+				}
+				if op.RequestBody == nil || !op.RequestBody.Required || info.body == "" {
+					return fail(errors.New("x-pandokos-reason needs a required request body"))
+				}
+				if m.method == "GET" || m.method == "DELETE" {
+					return fail(errors.New("x-pandokos-reason is not for a GET or a DELETE"))
+				}
+				bs, _, err := g.resolve(op.RequestBody.Content["application/json"].Schema)
+				if err != nil {
+					return fail(err)
+				}
+				member, ok := bs.Properties.By["reason"]
+				if !ok || !slices.Contains(bs.Required, "reason") {
+					return fail(errors.New("x-pandokos-reason needs a required member reason in the body"))
+				}
+				if ms, _, err := g.resolve(member); err != nil || ms.Type.Name != "string" || ms.Type.Nullable {
+					return fail(errors.New("x-pandokos-reason needs a member reason that is a string"))
+				}
+				info.reasonRequired = true
+			}
 			ops = append(ops, info)
 		}
 	}
@@ -915,8 +949,8 @@ func (g *generator) operations() error {
 		for _, p := range o.pathParams {
 			pp = append(pp, fmt.Sprintf("{Name: %q, Pattern: %s}", p.name, g.re(p.f.s.Pattern)))
 		}
-		g.p("{ID: %q, Method: %q, Path: %q, Permission: %q, Public: %t, Idempotent: %t, Status: %d, HasBody: %t, PathParams: []PathParam{%s}},",
-			o.id, o.method, o.path, o.permission, o.public, o.idempotent, o.status, o.body != "", strings.Join(pp, ", "))
+		g.p("{ID: %q, Method: %q, Path: %q, Permission: %q, Public: %t, Idempotent: %t, ReasonRequired: %t, Status: %d, HasBody: %t, PathParams: []PathParam{%s}},",
+			o.id, o.method, o.path, o.permission, o.public, o.idempotent, o.reasonRequired, o.status, o.body != "", strings.Join(pp, ", "))
 	}
 	g.p("}\n")
 
@@ -949,6 +983,8 @@ func (g *generator) operations() error {
 	g.p("}\n")
 	g.p("// Redirect is the answer of an operation whose only success is a 303 with a Location header.")
 	g.p("type Redirect struct{ Location string }\n")
+	g.p("// NoContent is the answer of an operation whose only success is a 204 with no body.")
+	g.p("type NoContent struct{}\n")
 
 	// Dispatch.
 	g.p("func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, params map[string]string) {")
@@ -1013,13 +1049,20 @@ func (g *generator) operations() error {
 				g.p("in.Body.%s = true", fn)
 			}
 			g.p("if err := decodeBody(r, h.hooks.MaxBodyBytes, %t, required%s, nested%s, &in.Body); err != nil { h.fail(w, r, op, err); return }", o.bodyRequired, o.body, o.body)
+			if o.reasonRequired {
+				g.p("if err := requireReason(in.Body.Reason); err != nil { h.fail(w, r, op, err); return }")
+			}
 			g.p("if errs := in.Body.Validate(); len(errs) > 0 { h.fail(w, r, op, invalid(errs)); return }")
 		}
 		g.p("out, err := h.server.%s(r.Context(), in)", goName(o.id))
 		g.p("if err != nil { h.fail(w, r, op, err); return }")
-		if o.output == "Redirect" {
+		switch o.output {
+		case "Redirect":
 			g.p("writeRedirect(w, out)")
-		} else {
+		case "NoContent":
+			g.p("_ = out")
+			g.p("writeNoContent(w)")
+		default:
 			g.p("writeJSON(w, %d, out)", o.status)
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"sync"
 
 	"github.com/pandokos/pandokos/internal/tenant"
 )
@@ -26,6 +27,8 @@ type Permission struct {
 	Name        string // "resource:action"
 	Scope       Scope
 	Description string
+	InTenant    bool // a platform permission whose operations read or change one tenant
+	Support     bool // a tenant permission that a support action may carry
 }
 
 // The permissions of the catalogue.
@@ -85,58 +88,75 @@ const (
 	MemberRead  = "member:read"
 	MemberWrite = "member:write"
 	SessionSelf = "session:self"
+
+	RoleRead           = "role:read"
+	RoleWrite          = "role:write"
+	RoleDelete         = "role:delete"
+	SupportActionRead  = "support_action:read"
+	SupportActionEnd   = "support_action:end"
+	TenantSettingWrite = "tenant_setting:write"
+	TenantSupportOpen  = "tenant_support:open"
+	TenantSupportRead  = "tenant_support:read"
 )
 
 var catalogue = []Permission{
-	{IdentityRead, ScopeSelf, "Reading one's own identity, roles and permissions"},
-	{TenantRead, ScopePlatform, "Reading and listing tenants, with their time zone and active currency"},
-	{TenantWrite, ScopePlatform, "Creating a tenant with its first administrator; changing its name and display name"},
-	{TenantSuspend, ScopePlatform, "Suspending and reactivating a tenant"},
-	{PlatformKeyRead, ScopePlatform, "Reading and listing platform keys (metadata)"},
-	{PlatformKeyWrite, ScopePlatform, "Issuing a platform key"},
-	{PlatformKeyRevoke, ScopePlatform, "Revoking a platform key"},
-	{ServiceAccountRead, ScopeTenant, "Reading and listing service accounts and their roles"},
-	{ServiceAccountWrite, ScopeTenant, "Creating, changing, disabling and enabling service accounts; assigning roles"},
-	{VirtualKeyRead, ScopeTenant, "Reading and listing virtual keys (metadata)"},
-	{VirtualKeyWrite, ScopeTenant, "Issuing a virtual key"},
-	{VirtualKeyRevoke, ScopeTenant, "Revoking a virtual key"},
-	{ModelInvoke, ScopeTenant, "Calling a model through the inference listener"},
-	{CredentialRead, ScopeTenant, "Reading and listing provider credentials (metadata)"},
-	{CredentialWrite, ScopeTenant, "Registering a credential; changing its label, description and expiry; disabling and enabling it; choosing the default"},
-	{CredentialRotate, ScopeTenant, "Replacing the secret of a credential"},
-	{CredentialDelete, ScopeTenant, "Revoking and deleting a credential"},
-	{CredentialUse, ScopeTenant, "Having one's model calls authenticated to the provider with a credential of the tenant"},
-	{TenantCredentialRead, ScopePlatform, "Reading and listing the credentials of a tenant (metadata)"},
-	{TenantCredentialRevoke, ScopePlatform, "Disabling or revoking a credential of a tenant, with a reason"},
-	{CatalogRead, ScopePlatform, "Reading providers, endpoints, models, model grants, price versions and price imports"},
-	{CatalogWrite, ScopePlatform, "Creating, changing and deleting providers, endpoints and models; granting models to tenants and revoking grants"},
-	{CatalogPrice, ScopePlatform, "Setting and removing price overrides; running a price import"},
-	{ModelRead, ScopeTenant, "Listing the models available to the tenant, with the prices that apply to it; reading the tenant's model restriction"},
-	{ModelRestrict, ScopeTenant, "Setting and clearing the tenant's model restriction"},
-	{UsageRead, ScopeTenant, "Listing the tenant's usage records"},
-	{TokenIssuerRead, ScopeTenant, "Reading and listing the tenant's trusted token issuers and the platform-level issuers that list the tenant"},
-	{TokenIssuerWrite, ScopeTenant, "Registering a trusted token issuer; changing, disabling and enabling it"},
-	{TokenIssuerDelete, ScopeTenant, "Deleting a trusted token issuer with its subject mappings"},
-	{SubjectMappingRead, ScopeTenant, "Reading and listing subject mappings"},
-	{SubjectMappingWrite, ScopeTenant, "Letting a token subject act as a service account, with all its roles"},
-	{SubjectMappingDelete, ScopeTenant, "Deleting a subject mapping"},
-	{PlatformIssuerRead, ScopePlatform, "Reading and listing platform-level token issuers and their tenant lists"},
-	{PlatformIssuerWrite, ScopePlatform, "Registering and changing a platform-level token issuer; adding and removing tenants of its list"},
-	{PlatformIssuerDelete, ScopePlatform, "Deleting a platform-level token issuer with its tenant list and subject mappings"},
-	{LimitRead, ScopeTenant, "Reading and listing the tenant's limit rules, the platform ceilings that apply to it, its limit events and the tenant's time zone"},
-	{LimitWrite, ScopeTenant, "Creating and changing a limit rule of the tenant and the tenant's time zone"},
-	{LimitDelete, ScopeTenant, "Deleting a limit rule of the tenant"},
-	{PlatformLimitRead, ScopePlatform, "Reading and listing the ceilings the platform sets for tenants"},
-	{PlatformLimitWrite, ScopePlatform, "Creating and changing the ceilings the platform sets for tenants"},
-	{PlatformLimitDelete, ScopePlatform, "Deleting a ceiling the platform sets for tenants"},
-	{PriceListRead, ScopeTenant, "Reading the tenant's price lists and their versions, and the tenant's active currency"},
-	{PriceListWrite, ScopeTenant, "Adding a price version to one of the tenant's price lists; choosing the tenant's active currency"},
-	{PriceListDelete, ScopeTenant, "Removing a price version of the tenant's lists that has not started"},
-	{UserRead, ScopePlatform, "Reading and listing the users that the platform manages, with their platform roles"},
-	{UserWrite, ScopePlatform, "Creating and changing such users; disabling and enabling them; resetting their password; unlocking them; ending their sessions; assigning platform roles"},
-	{MemberRead, ScopeTenant, "Reading and listing the members of the tenant and their roles"},
-	{MemberWrite, ScopeTenant, "Adding and removing members and setting their roles; creating local accounts that the tenant manages, and for those: disabling, enabling, resetting the password, unlocking, ending sessions"},
-	{SessionSelf, ScopeSelf, "Signing out, changing one's own password, listing and ending one's own sessions"},
+	{IdentityRead, ScopeSelf, "Reading one's own identity, roles and permissions", false, false},
+	{TenantRead, ScopePlatform, "Reading and listing tenants, with their time zone and active currency", false, false},
+	{TenantWrite, ScopePlatform, "Creating a tenant with its first administrator; changing its name and display name", false, false},
+	{TenantSuspend, ScopePlatform, "Suspending and reactivating a tenant", false, false},
+	{PlatformKeyRead, ScopePlatform, "Reading and listing platform keys (metadata)", false, false},
+	{PlatformKeyWrite, ScopePlatform, "Issuing a platform key", false, false},
+	{PlatformKeyRevoke, ScopePlatform, "Revoking a platform key", false, false},
+	{ServiceAccountRead, ScopeTenant, "Reading and listing service accounts and their roles", false, true},
+	{ServiceAccountWrite, ScopeTenant, "Creating, changing, disabling and enabling service accounts; assigning roles", false, true},
+	{VirtualKeyRead, ScopeTenant, "Reading and listing virtual keys (metadata)", false, true},
+	{VirtualKeyWrite, ScopeTenant, "Issuing a virtual key", false, true},
+	{VirtualKeyRevoke, ScopeTenant, "Revoking a virtual key", false, true},
+	{ModelInvoke, ScopeTenant, "Calling a model through the inference listener", false, false},
+	{CredentialRead, ScopeTenant, "Reading and listing provider credentials (metadata)", false, false},
+	{CredentialWrite, ScopeTenant, "Registering a credential; changing its label, description and expiry; disabling and enabling it; choosing the default", false, false},
+	{CredentialRotate, ScopeTenant, "Replacing the secret of a credential", false, false},
+	{CredentialDelete, ScopeTenant, "Revoking and deleting a credential", false, false},
+	{CredentialUse, ScopeTenant, "Having one's model calls authenticated to the provider with a credential of the tenant", false, false},
+	{TenantCredentialRead, ScopePlatform, "Reading and listing the credentials of a tenant (metadata)", true, false},
+	{TenantCredentialRevoke, ScopePlatform, "Disabling or revoking a credential of a tenant, with a reason", true, false},
+	{CatalogRead, ScopePlatform, "Reading providers, endpoints, models, model grants, price versions and price imports", false, false},
+	{CatalogWrite, ScopePlatform, "Creating, changing and deleting providers, endpoints and models; granting models to tenants and revoking grants", false, false},
+	{CatalogPrice, ScopePlatform, "Setting and removing price overrides; running a price import", false, false},
+	{ModelRead, ScopeTenant, "Listing the models available to the tenant, with the prices that apply to it; reading the tenant's model restriction", false, false},
+	{ModelRestrict, ScopeTenant, "Setting and clearing the tenant's model restriction", false, false},
+	{UsageRead, ScopeTenant, "Listing the tenant's usage records", false, false},
+	{TokenIssuerRead, ScopeTenant, "Reading and listing the tenant's trusted token issuers and the platform-level issuers that list the tenant", false, false},
+	{TokenIssuerWrite, ScopeTenant, "Registering a trusted token issuer; changing, disabling and enabling it", false, false},
+	{TokenIssuerDelete, ScopeTenant, "Deleting a trusted token issuer with its subject mappings", false, false},
+	{SubjectMappingRead, ScopeTenant, "Reading and listing subject mappings", false, false},
+	{SubjectMappingWrite, ScopeTenant, "Letting a token subject act as a service account, with all its roles", false, false},
+	{SubjectMappingDelete, ScopeTenant, "Deleting a subject mapping", false, false},
+	{PlatformIssuerRead, ScopePlatform, "Reading and listing platform-level token issuers and their tenant lists", false, false},
+	{PlatformIssuerWrite, ScopePlatform, "Registering and changing a platform-level token issuer; adding and removing tenants of its list", false, false},
+	{PlatformIssuerDelete, ScopePlatform, "Deleting a platform-level token issuer with its tenant list and subject mappings", false, false},
+	{LimitRead, ScopeTenant, "Reading and listing the tenant's limit rules, the platform ceilings that apply to it, its limit events and the tenant's time zone", false, false},
+	{LimitWrite, ScopeTenant, "Creating and changing a limit rule of the tenant", false, false},
+	{LimitDelete, ScopeTenant, "Deleting a limit rule of the tenant", false, false},
+	{PlatformLimitRead, ScopePlatform, "Reading and listing the ceilings the platform sets for tenants", false, false},
+	{PlatformLimitWrite, ScopePlatform, "Creating and changing the ceilings the platform sets for tenants", false, false},
+	{PlatformLimitDelete, ScopePlatform, "Deleting a ceiling the platform sets for tenants", false, false},
+	{PriceListRead, ScopeTenant, "Reading the tenant's price lists and their versions, and the tenant's active currency", false, false},
+	{PriceListWrite, ScopeTenant, "Adding a price version to one of the tenant's price lists", false, false},
+	{PriceListDelete, ScopeTenant, "Removing a price version of the tenant's lists that has not started", false, false},
+	{UserRead, ScopePlatform, "Reading and listing the users that the platform manages, with their platform roles", false, false},
+	{UserWrite, ScopePlatform, "Creating and changing such users; disabling and enabling them; resetting their password; unlocking them; ending their sessions; assigning platform roles", false, false},
+	{MemberRead, ScopeTenant, "Reading and listing the members of the tenant and their roles", false, true},
+	{MemberWrite, ScopeTenant, "Adding and removing members and setting their roles; creating local accounts that the tenant manages, and for those: disabling, enabling, resetting the password, unlocking, ending sessions", false, true},
+	{SessionSelf, ScopeSelf, "Signing out, changing one's own password, listing and ending one's own sessions", false, false},
+	{RoleRead, ScopeTenant, "Reading and listing the custom roles of the tenant", false, true},
+	{RoleWrite, ScopeTenant, "Defining and changing a custom role; deactivating and activating it", false, true},
+	{RoleDelete, ScopeTenant, "Deleting a custom role that nobody holds", false, true},
+	{SupportActionRead, ScopeTenant, "Reading the support actions that the platform opened in the tenant", false, true},
+	{SupportActionEnd, ScopeTenant, "Ending a support action of the platform in the tenant", false, false},
+	{TenantSettingWrite, ScopeTenant, "Setting the tenant's time zone and its active currency", false, false},
+	{TenantSupportOpen, ScopePlatform, "Opening a support action in a tenant, with a reason, and closing support actions", true, false},
+	{TenantSupportRead, ScopePlatform, "Reading and listing the support actions of a tenant", true, false},
 }
 
 // Catalogue returns the permissions, in a fixed order.
@@ -144,13 +164,18 @@ func Catalogue() []Permission { return append([]Permission(nil), catalogue...) }
 
 // Lookup returns the permission with the given name.
 func Lookup(name string) (Permission, bool) {
-	for _, p := range catalogue {
-		if p.Name == name {
-			return p, true
-		}
-	}
-	return Permission{}, false
+	p, ok := byName()[name]
+	return p, ok
 }
+
+// byName indexes the catalogue by name, built once.
+var byName = sync.OnceValue(func() map[string]Permission {
+	m := make(map[string]Permission, len(catalogue))
+	for _, p := range catalogue {
+		m[p.Name] = p
+	}
+	return m
+})
 
 // Kind is the kind of a principal.
 type Kind string
@@ -161,52 +186,6 @@ const (
 	KindServiceAccount Kind = "service_account"
 	KindUser           Kind = "user"
 )
-
-// Role is a built-in role. Roles are defined in code and immutable (AZ-03).
-type Role struct {
-	Name        string
-	Scope       Scope    // ScopePlatform or ScopeTenant: where a principal holds it
-	Permissions []string // sorted
-	Description string
-}
-
-// The names of the built-in roles.
-const (
-	RolePlatformAdmin = "platform-admin"
-	RoleTenantAdmin   = "tenant-admin"
-	RoleInference     = "inference"
-)
-
-func sorted(names ...string) []string {
-	out := append([]string(nil), names...)
-	sort.Strings(out)
-	return out
-}
-
-// Roles returns the three built-in roles, in a fixed order; the slices are copies.
-func Roles() []Role {
-	return []Role{
-		{RolePlatformAdmin, ScopePlatform, sorted(IdentityRead, TenantRead, TenantWrite, TenantSuspend, PlatformKeyRead, PlatformKeyWrite, PlatformKeyRevoke, TenantCredentialRead, TenantCredentialRevoke, CatalogRead, CatalogWrite, CatalogPrice,
-			PlatformIssuerRead, PlatformIssuerWrite, PlatformIssuerDelete, PlatformLimitRead, PlatformLimitWrite, PlatformLimitDelete, UserRead, UserWrite),
-			"Administers the installation: tenants and platform keys"},
-		{RoleTenantAdmin, ScopeTenant, sorted(IdentityRead, ServiceAccountRead, ServiceAccountWrite, MemberRead, MemberWrite, VirtualKeyRead, VirtualKeyWrite, VirtualKeyRevoke, ModelInvoke,
-			CredentialRead, CredentialWrite, CredentialRotate, CredentialDelete, CredentialUse, ModelRead, ModelRestrict, UsageRead,
-			TokenIssuerRead, TokenIssuerWrite, TokenIssuerDelete, SubjectMappingRead, SubjectMappingWrite, SubjectMappingDelete, LimitRead, LimitWrite, LimitDelete,
-			PriceListRead, PriceListWrite, PriceListDelete),
-			"Administers one tenant: service accounts and virtual keys; may call models"},
-		{RoleInference, ScopeTenant, sorted(ModelInvoke, CredentialUse), "Calls models through the inference listener"},
-	}
-}
-
-// RoleByName returns the built-in role with the given name.
-func RoleByName(name string) (Role, bool) {
-	for _, r := range Roles() {
-		if r.Name == name {
-			return r, true
-		}
-	}
-	return Role{}, false
-}
 
 // Principal is who a request acts as. Every authentication mechanism produces one (ADR 0005).
 type Principal struct {
@@ -234,6 +213,12 @@ type Principal struct {
 	// Models is the allow-list of the key in use, as model references (provider/name); nil: the
 	// key has no list. An empty, non-nil list allows nothing.
 	Models []string
+	// Granted holds the permissions that come from data: those of the active custom roles of the
+	// principal, or, for a platform principal under a support action, those of the action. It
+	// has no effect until Effective reads it.
+	Granted []string
+	// SupportActionID is the support action the request runs under; empty otherwise.
+	SupportActionID string
 }
 
 // holdsRole reports whether a role of the given scope counts for p: a platform role for a
@@ -254,14 +239,33 @@ func (p Principal) holdsRole(scope Scope) bool {
 	return false
 }
 
-// Effective returns the permissions p holds: the union of the permissions of its roles that
-// exist and whose scope counts for p, intersected with Scopes when Scopes is not nil. Sorted.
+// Effective returns the permissions p holds, sorted, in four steps: the permissions of the built-in
+// roles among Roles whose scope counts for p; for a principal that holds tenant roles, the names
+// of Granted that are tenant permissions of the catalogue (anything else is dropped); for a user,
+// identity:read and session:self; all intersected with Scopes when Scopes is not nil. A principal
+// that runs under a support action has instead the permissions of the action that carry the
+// attribute Support (sprint 4.3, sections 5.3 and 5.6).
 func (p Principal) Effective() []string {
 	set := map[string]bool{}
-	for _, name := range p.Roles {
-		if r, ok := RoleByName(name); ok && p.holdsRole(r.Scope) {
-			for _, perm := range r.Permissions {
-				set[perm] = true
+	if p.SupportActionID != "" {
+		for _, name := range p.Granted {
+			if perm, ok := Lookup(name); ok && perm.Scope == ScopeTenant && perm.Support {
+				set[name] = true
+			}
+		}
+	} else {
+		for _, name := range p.Roles {
+			if r, ok := RoleByName(name); ok && p.holdsRole(r.Scope) {
+				for _, perm := range r.Permissions {
+					set[perm] = true
+				}
+			}
+		}
+		if len(p.Roles) > 0 && p.holdsRole(ScopeTenant) {
+			for _, name := range p.Granted {
+				if perm, ok := Lookup(name); ok && perm.Scope == ScopeTenant {
+					set[name] = true
+				}
 			}
 		}
 	}
@@ -288,6 +292,12 @@ func (p Principal) Effective() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// supportsTenant is true for a platform key that runs under a support action: it is treated as a
+// principal of the tenant of the action.
+func (p Principal) supportsTenant() bool {
+	return p.Kind == KindPlatform && p.SupportActionID != ""
 }
 
 func (p Principal) holds(permission string) bool {
@@ -320,12 +330,14 @@ func Decide(p Principal, permission string, t Target) Decision {
 		return Deny
 	}
 	if perm.Scope == ScopePlatform {
-		if !p.holds(permission) || (p.Kind != KindPlatform && (p.Kind != KindUser || !p.TenantID.IsZero())) {
+		// Only a principal without a tenant: a platform key without a support action, or a user
+		// without a tenant.
+		if !p.holds(permission) || (p.Kind != KindPlatform && p.Kind != KindUser) || !p.TenantID.IsZero() {
 			return Deny
 		}
 		return Allow
 	}
-	if p.Kind == KindServiceAccount || (p.Kind == KindUser && !p.TenantID.IsZero()) {
+	if p.Kind == KindServiceAccount || (p.Kind == KindUser && !p.TenantID.IsZero()) || p.supportsTenant() {
 		if p.TenantID.IsZero() {
 			return Deny
 		}
@@ -335,7 +347,7 @@ func Decide(p Principal, permission string, t Target) Decision {
 	}
 	if perm.Scope == ScopeTenant {
 		switch {
-		case p.Kind == KindPlatform, t.TenantID.IsZero():
+		case p.Kind == KindPlatform && p.SupportActionID == "", t.TenantID.IsZero():
 			return Deny
 		case t.TenantID != p.TenantID:
 			return DenyNotFound
@@ -365,26 +377,3 @@ var (
 	ErrUnauthenticated = errors.New("authz: unauthenticated")
 	ErrUnavailable     = errors.New("authz: cannot verify the credential now")
 )
-
-// Assignable reports whether p may give a user the role in the scope: the role exists with that
-// scope, is one a user can hold (tenant-admin, platform-admin), and p holds every permission of
-// it. This is the rule against escalation: nobody hands out more than they hold.
-func Assignable(p Principal, role string, scope Scope) bool {
-	if role != RolePlatformAdmin && role != RoleTenantAdmin {
-		return false
-	}
-	r, ok := RoleByName(role)
-	if !ok || r.Scope != scope {
-		return false
-	}
-	held := map[string]bool{}
-	for _, e := range p.Effective() {
-		held[e] = true
-	}
-	for _, perm := range r.Permissions {
-		if !held[perm] {
-			return false
-		}
-	}
-	return true
-}

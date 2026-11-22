@@ -29,6 +29,10 @@ Requirements: GW-17, OPS-11 (tested).
 
 - Independent security assessment, on top of the review of sprint 12.2; fixes for its findings.
 - Optional check of authentication-strength claims on sensitive operations.
+- Carried forward from sprint 4.3: a membership or role gained while a platform-issued password
+  (`resetUserPassword` or `createUser`) is still pending, until changed or expired, is not checked.
+  Close it, for example by refusing or invalidating a pending platform-issued password when a
+  membership or role is added.
 
 Requirements: SEC-09, IAM-17.
 

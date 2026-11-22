@@ -31,9 +31,12 @@ type Operation struct {
 	Public bool
 	// Idempotent marks an operation that takes the Idempotency-Key header (it answers 201).
 	Idempotent bool
-	Status     int // status of the successful response
-	HasBody    bool
-	PathParams []PathParam
+	// ReasonRequired marks an operation whose body carries a reason that must not be empty
+	// (x-pandokos-reason: required).
+	ReasonRequired bool
+	Status         int // status of the successful response
+	HasBody        bool
+	PathParams     []PathParam
 }
 
 // PathParam is one {name} segment and the pattern its value must match.
@@ -116,6 +119,14 @@ func (e *RequestError) Error() string { return "adminapi: " + string(e.Code) }
 
 // ErrNoRoute is passed to Hooks.Error when no operation matches the method and the path.
 var ErrNoRoute = &RequestError{Status: http.StatusNotFound, Code: ProblemCodeNotFound}
+
+// requireReason refuses an empty reason, or one that is only white space.
+func requireReason(reason string) error {
+	if strings.TrimSpace(reason) == "" {
+		return invalidField("reason", "must not be empty")
+	}
+	return nil
+}
 
 func invalid(fields []FieldError) *RequestError {
 	return &RequestError{Status: http.StatusBadRequest, Code: ProblemCodeInvalidRequest, Fields: fields}
@@ -425,6 +436,12 @@ func writeRedirect(w http.ResponseWriter, out *Redirect) {
 	w.WriteHeader(http.StatusSeeOther)
 }
 
+// writeNoContent answers 204 with no body.
+func writeNoContent(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -545,6 +562,9 @@ func (c *Client) do(ctx context.Context, method, path string, q url.Values, body
 			return fmt.Errorf("adminapi: unexpected response with status %d", resp.StatusCode)
 		}
 		return &ProblemError{Problem: p}
+	}
+	if want == http.StatusNoContent {
+		return nil
 	}
 	if err := json.Unmarshal(raw, out); err != nil {
 		return fmt.Errorf("adminapi: decode the response: %w", err)

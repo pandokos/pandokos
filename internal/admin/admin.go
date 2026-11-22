@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"regexp"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -65,6 +66,12 @@ type Options struct {
 	Idempotency *idem.Store
 	Origin      OriginOptions
 	Auth        AuthOptions
+	// Support is the configuration of support actions (sprint 4.3): support.enabled and
+	// support.max_duration.
+	Support struct {
+		Enabled     bool
+		MaxDuration time.Duration
+	}
 	// Limits are the settings of the capability check: limits.on_unknown_price ("refuse", the
 	// default, or "allow") and the zones that give the calendar of each tenant.
 	Limits struct {
@@ -131,6 +138,11 @@ type server struct {
 	idempotency *idem.Store
 	origin      OriginOptions
 	authOpts    AuthOptions
+	// support is Options.Support.
+	support struct {
+		enabled     bool
+		maxDuration time.Duration
+	}
 }
 
 // reqState is the state of one request, shared by the outer handler and the hooks.
@@ -202,6 +214,7 @@ func New(o Options) (http.Handler, error) {
 		sessions: o.Sessions, accounts: o.Accounts, oidc: o.OIDC, idempotency: o.Idempotency, origin: o.Origin, authOpts: o.Auth}
 	s.limits.OnUnknownPrice, s.limits.Ledger = o.Limits.OnUnknownPrice, o.Limits.Ledger
 	s.limits.Zones = o.Limits.Zones
+	s.support.enabled, s.support.maxDuration = o.Support.Enabled, o.Support.MaxDuration
 	if s.defaultCurrency = o.DefaultCurrency; s.defaultCurrency == "" {
 		s.defaultCurrency = "USD"
 	}
@@ -254,7 +267,13 @@ func (s *server) logRequest(r *http.Request, st *reqState, status int, d time.Du
 	// is not, nor its tenant (ADR 0055).
 	if p := st.principal; p != nil {
 		attrs = append(attrs, "principal_type", string(p.Kind))
-		if p.Kind == authz.KindPlatform || (p.Kind == authz.KindUser && p.TenantID.IsZero()) {
+		// A support principal is logged as the platform principal it is, and says so; the line
+		// names neither its tenant nor its action.
+		support := p.SupportActionID != ""
+		if support {
+			attrs = append(attrs, "support", true)
+		}
+		if support || p.Kind == authz.KindPlatform || (p.Kind == authz.KindUser && p.TenantID.IsZero()) {
 			attrs = append(attrs, "principal_id", p.ID)
 			if p.Kind == authz.KindPlatform {
 				attrs = append(attrs, "key_id", p.KeyID)
@@ -351,6 +370,19 @@ func (s *server) beforeKey(ctx context.Context, r *http.Request, op *adminapi.Op
 		}
 		return ctx, err
 	}
+	if perm, ok := authz.Lookup(op.Permission); ok && perm.Scope == authz.ScopeTenant && p.Kind == authz.KindPlatform {
+		// The one place where a platform key has nothing to do in a tenant: unless it has an open
+		// support action there (section 5.6). A path that names no tenant keeps its old answer.
+		if tid, perr := tenant.ParseID(params["tenant"]); perr == nil {
+			sp, ok, err := s.supportPrincipal(ctx, p, tid)
+			if err != nil {
+				return ctx, err
+			}
+			if ok {
+				p = sp
+			}
+		}
+	}
 	st.principal = &p
 	return s.decide(ctx, p, op, params)
 }
@@ -415,19 +447,23 @@ func (s *server) beforeSession(ctx context.Context, r *http.Request, op *adminap
 		if perr != nil {
 			return ctx, errNotFound
 		}
-		var row queries.GetMemberPrincipalRow
-		err := s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
-			var err error
-			row, err = queries.New(tx).GetMemberPrincipal(ctx, user.ID)
-			return err
-		})
-		if errors.Is(err, store.ErrNoRows) {
-			return ctx, errNotFound // not a member: the answer for a tenant that does not exist
+		mp, err := s.memberPrincipal(ctx, user, sess, tid)
+		if errors.Is(err, errNotFound) {
+			// Not a member: the platform user's support action in this tenant, if it has one.
+			base := p
+			base.Roles = user.PlatformRoles
+			sp, ok, serr := s.supportPrincipal(ctx, base, tid)
+			if serr != nil {
+				return ctx, serr
+			}
+			if ok {
+				mp, err = sp, nil
+			}
 		}
 		if err != nil {
 			return ctx, err
 		}
-		p.TenantID, p.TenantName, p.TenantState, p.Roles = tid, row.TenantName, tenant.State(row.TenantState), row.Roles
+		p = mp
 	} else {
 		p.Roles = user.PlatformRoles
 	}
@@ -553,6 +589,12 @@ func (s *server) fail(w http.ResponseWriter, r *http.Request, _ *adminapi.Operat
 		code = adminapi.ProblemCodeForbidden
 	case errors.Is(err, errTenantState):
 		code = adminapi.ProblemCodeTenantSuspended
+	case errors.Is(err, errEscalation):
+		code = adminapi.ProblemCodeEscalationRefused
+	case errors.Is(err, errSupportDisabled):
+		code = adminapi.ProblemCodeSupportDisabled
+	case errors.Is(err, errRoleInUse):
+		code = adminapi.ProblemCodeRoleInUse
 	case errors.Is(err, errNotFound):
 		code = adminapi.ProblemCodeNotFound
 	case errors.Is(err, errConflict):
@@ -610,21 +652,66 @@ func retryAfter(d time.Duration) int {
 	return n
 }
 
-// checkGroupRules refuses at start a group rule that names a role that a user cannot hold in its scope,
-// or a tenant that does not exist (section 5.9). An installation without any tenant cannot name one yet,
-// so nothing is refused there; a tenant created later is found at each sign-in.
+// roleNameFormat is the format of a role name (the RoleName schema of the API).
+var roleNameFormat = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
+
+// ruleRole says what a group rule's role is: a built-in role that a person can hold in the scope of
+// the rule (ok, not custom), a name that only a tenant's database can vouch for (ok, custom) or
+// neither. A custom role is known to the database, not to the configuration, so for a tenant target
+// only the format is checked here.
+func ruleRole(r oidc.Rule) (ok, custom bool) {
+	scope := authz.ScopeTenant
+	if r.Platform {
+		scope = authz.ScopePlatform
+	}
+	if def, found := authz.RoleByName(r.Role); found {
+		return def.Scope == scope && def.Members, false
+	}
+	return !r.Platform && roleNameFormat.MatchString(r.Role), true
+}
+
+// customRolesOf reads the state of the custom roles of the tenant that have one of the names, by
+// name, in the tenant's session.
+func customRolesOf(ctx context.Context, db *store.DB, tid tenant.ID, names []string) (map[string]string, error) {
+	var out map[string]string
+	err := db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
+		var err error
+		out, err = lockCustomRoles(ctx, queries.New(tx), names)
+		return err
+	})
+	return out, err
+}
+
+// lockCustomRoles reads, FOR SHARE, the state of the custom roles of the session's tenant that have
+// one of the names, by name: a deletion waits for the transaction, or the role is not found.
+func lockCustomRoles(ctx context.Context, q *queries.Queries, names []string) (map[string]string, error) {
+	out := map[string]string{}
+	if len(names) == 0 {
+		return out, nil
+	}
+	rows, err := q.LockTenantRolesForAssignment(ctx, names)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.Name] = r.State
+	}
+	return out, nil
+}
+
+// checkGroupRules refuses at start a group rule that names a role that a user cannot hold in its scope
+// or a tenant that does not exist (section 5.9). An installation without any tenant cannot name one
+// yet, so nothing is refused there; a tenant created later is found at each sign-in. A rule that names
+// a custom role that its tenant does not have is not refused: a tenant that deletes a role would stop
+// the installation. It is skipped, as at sign-in, with a warning that gives its position only.
 func checkGroupRules(o Options) error {
 	var names []string
 	for i, r := range o.Auth.GroupRules {
-		scope, role := authz.ScopeTenant, r.Role
-		if r.Platform {
-			scope = authz.ScopePlatform
-		} else {
-			names = append(names, r.Tenant)
-		}
-		def, ok := authz.RoleByName(role)
-		if !ok || def.Scope != scope || (role != authz.RolePlatformAdmin && role != authz.RoleTenantAdmin) {
+		if ok, _ := ruleRole(r); !ok {
 			return fmt.Errorf("admin: group rule %d names a role that a user cannot hold in that scope", i+1)
+		}
+		if !r.Platform {
+			names = append(names, r.Tenant)
 		}
 	}
 	if len(names) == 0 {
@@ -648,14 +735,64 @@ func checkGroupRules(o Options) error {
 	if len(existing) == 0 {
 		return nil // a new installation: its tenants are made through this very API, and the rules are skipped until they exist
 	}
-	found := map[string]bool{}
+	found := map[string]string{}
 	for _, r := range rows {
-		found[r.Name] = true
+		found[r.Name] = r.ID
+	}
+	customOf := map[string][]string{}
+	for i, r := range o.Auth.GroupRules {
+		if r.Platform {
+			continue
+		}
+		if _, ok := found[r.Tenant]; !ok {
+			return fmt.Errorf("admin: group rule %d names a tenant that does not exist", i+1)
+		}
+		if _, custom := ruleRole(r); custom {
+			customOf[r.Tenant] = append(customOf[r.Tenant], r.Role)
+		}
 	}
 	for i, r := range o.Auth.GroupRules {
-		if !r.Platform && !found[r.Tenant] {
-			return fmt.Errorf("admin: group rule %d names a tenant that does not exist", i+1)
+		if r.Platform {
+			continue
+		}
+		if _, custom := ruleRole(r); !custom {
+			continue
+		}
+		tid, err := tenant.ParseID(found[r.Tenant])
+		if err != nil {
+			return fmt.Errorf("admin: group rules: %w", err)
+		}
+		have, err := customRolesOf(ctx, o.DB, tid, customOf[r.Tenant])
+		if err != nil {
+			return fmt.Errorf("admin: group rules: custom roles cannot be read: %w", err)
+		}
+		if _, ok := have[r.Role]; !ok {
+			ruleSkipped(o.Logger, i+1, "")
 		}
 	}
 	return nil
+}
+
+// memberPrincipal builds the principal of a user that is a member of the tenant: its roles and the
+// permissions of its active custom roles, read in the tenant's session. errNotFound: the user is
+// not a member. No other code builds a member's principal.
+func (s *server) memberPrincipal(ctx context.Context, u account.User, sess session.Session, tid tenant.ID) (authz.Principal, error) {
+	var row queries.GetMemberPrincipalRow
+	err := s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
+		var err error
+		row, err = queries.New(tx).GetMemberPrincipal(ctx, u.ID)
+		return err
+	})
+	if errors.Is(err, store.ErrNoRows) {
+		return authz.Principal{}, errNotFound
+	}
+	if err != nil {
+		return authz.Principal{}, err
+	}
+	p := authz.Principal{Kind: authz.KindUser, ID: u.ID, Name: u.Username, SessionID: sess.ID, MustChangePassword: u.MustChange,
+		TenantID: tid, TenantName: row.TenantName, TenantState: tenant.State(row.TenantState), Roles: row.Roles, Granted: row.Granted}
+	if p.Name == "" {
+		p.Name = u.DisplayName
+	}
+	return p, nil
 }

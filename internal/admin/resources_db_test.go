@@ -45,7 +45,7 @@ func TestTenants(t *testing.T) {
 			t.Errorf("tenant: %+v", out.Tenant)
 		}
 		sa := out.AdminServiceAccount
-		if sa.Name != "root" || sa.TenantID != out.Tenant.ID || len(sa.Roles) != 1 || sa.Roles[0] != "tenant-admin" || sa.State != adminapi.ServiceAccountStateActive {
+		if sa.Name != "root" || sa.TenantID != out.Tenant.ID || len(sa.Roles) != 1 || sa.Roles[0] != "owner" || sa.State != adminapi.ServiceAccountStateActive {
 			t.Errorf("service account: %+v", sa)
 		}
 		k := out.AdminKey
@@ -59,7 +59,7 @@ func TestTenants(t *testing.T) {
 		if m.PrincipalType != adminapi.PrincipalTypeServiceAccount || m.ID != sa.ID || m.Tenant == nil || m.Tenant.ID != out.Tenant.ID || m.Tenant.State != adminapi.TenantStateActive || m.Bootstrap {
 			t.Errorf("me: %+v", m)
 		}
-		if strings.Join(m.Roles, ",") != "tenant-admin" || len(m.Permissions) != 29 {
+		if strings.Join(m.Roles, ",") != "owner" || len(m.Permissions) != 35 { // sprint 4.3: the first service account is an owner: the 34 tenant permissions and identity:read
 			t.Errorf("roles %v, permissions %v", m.Roles, m.Permissions)
 		}
 		// The default name of the first service account is admin; no expiry means none.
@@ -133,7 +133,7 @@ func TestTenants(t *testing.T) {
 		}
 		id := out.Tenant.ID
 		for i := 0; i < 2; i++ { // the second call is idempotent
-			s, err := plat.SuspendTenant(ctx(t), adminapi.SuspendTenantInput{Tenant: id, Body: adminapi.Reason{Reason: "unpaid"}})
+			s, err := api.SuspendTenant(t, api.PlatformKey(), id)
 			if err != nil || s.State != adminapi.TenantStateSuspended {
 				t.Fatalf("suspend %d: %+v %v", i, s, err)
 			}
@@ -143,7 +143,7 @@ func TestTenants(t *testing.T) {
 			t.Errorf("get: %+v %v", g, err)
 		}
 		for i := 0; i < 2; i++ {
-			s, err := plat.ReactivateTenant(ctx(t), adminapi.ReactivateTenantInput{Tenant: id})
+			s, err := api.ReactivateTenant(t, api.PlatformKey(), id)
 			if err != nil || s.State != adminapi.TenantStateActive {
 				t.Fatalf("reactivate %d: %+v %v", i, s, err)
 			}
@@ -155,14 +155,14 @@ func TestTenants(t *testing.T) {
 		if err := super.QueryRow(ctx(t), "INSERT INTO pandokos.tenant (name) VALUES ('stuck') RETURNING id::text").Scan(&provisioning); err != nil {
 			t.Fatal(err)
 		}
-		expect(t, api.Do(t, "POST", "/v1/tenants/"+provisioning+"/suspend", api.PlatformKey(), nil, nil), 409, adminapi.ProblemCodeInvalidState)
-		expect(t, api.Do(t, "POST", "/v1/tenants/"+provisioning+"/reactivate", api.PlatformKey(), nil, nil), 409, adminapi.ProblemCodeInvalidState)
+		expect(t, api.Do(t, "POST", "/v1/tenants/"+provisioning+"/suspend", api.PlatformKey(), map[string]any{"reason": "test"}, nil), 409, adminapi.ProblemCodeInvalidState)
+		expect(t, api.Do(t, "POST", "/v1/tenants/"+provisioning+"/reactivate", api.PlatformKey(), map[string]any{"reason": "test"}, nil), 409, adminapi.ProblemCodeInvalidState)
 		for _, st := range []string{"deleting", "deleted"} {
 			if _, err := super.Exec(ctx(t), "UPDATE pandokos.tenant SET state = $1 WHERE id = $2::uuid", st, id); err != nil {
 				t.Fatal(err)
 			}
-			expect(t, api.Do(t, "POST", "/v1/tenants/"+id+"/suspend", api.PlatformKey(), nil, nil), 409, adminapi.ProblemCodeInvalidState)
-			expect(t, api.Do(t, "POST", "/v1/tenants/"+id+"/reactivate", api.PlatformKey(), nil, nil), 409, adminapi.ProblemCodeInvalidState)
+			expect(t, api.Do(t, "POST", "/v1/tenants/"+id+"/suspend", api.PlatformKey(), map[string]any{"reason": "test"}, nil), 409, adminapi.ProblemCodeInvalidState)
+			expect(t, api.Do(t, "POST", "/v1/tenants/"+id+"/reactivate", api.PlatformKey(), map[string]any{"reason": "test"}, nil), 409, adminapi.ProblemCodeInvalidState)
 		}
 		expect(t, api.Do(t, "POST", "/v1/tenants/"+provisioning+"/suspend", api.PlatformKey(), map[string]any{"reason": strings.Repeat("r", 501)}, nil), 400, adminapi.ProblemCodeInvalidRequest)
 	})
@@ -210,7 +210,7 @@ func TestServiceAccounts(t *testing.T) {
 
 	path := "/v1/tenants/" + w.tenant.ID + "/service-accounts"
 	for name, body := range map[string]map[string]any{
-		"unknown role":     {"name": "x1", "roles": []string{"owner"}},
+		"unknown role":     {"name": "x1", "roles": []string{"ghost"}},
 		"a platform role":  {"name": "x2", "roles": []string{"platform-admin"}},
 		"bad role format":  {"name": "x3", "roles": []string{"Not A Role"}},
 		"duplicate roles":  {"name": "x4", "roles": []string{"inference", "inference"}},
@@ -224,7 +224,7 @@ func TestServiceAccounts(t *testing.T) {
 			t.Errorf("%s: no member named", name)
 		}
 	}
-	p := expect(t, w.api.Do(t, "POST", path, w.adminKey, map[string]any{"name": "x", "roles": []string{"owner"}}, nil), 400, adminapi.ProblemCodeInvalidRequest)
+	p := expect(t, w.api.Do(t, "POST", path, w.adminKey, map[string]any{"name": "x", "roles": []string{"ghost"}}, nil), 400, adminapi.ProblemCodeInvalidRequest)
 	if len(p.Errors) != 1 || p.Errors[0].Field != "roles" {
 		t.Errorf("an unknown role names the member roles: %+v", p.Errors)
 	}
@@ -269,7 +269,7 @@ func TestServiceAccounts(t *testing.T) {
 	// Validity order is checked against what is stored, too.
 	expect(t, w.api.Do(t, "PATCH", path+"/"+sa.ID, w.adminKey, map[string]any{"valid_from": until.Format(time.RFC3339), "valid_until": from.Format(time.RFC3339)}, nil), 400, adminapi.ProblemCodeInvalidRequest)
 	expect(t, w.api.Do(t, "PATCH", path+"/"+sa.ID, w.adminKey, map[string]any{}, nil), 400, adminapi.ProblemCodeInvalidRequest)
-	expect(t, w.api.Do(t, "PATCH", path+"/"+sa.ID, w.adminKey, map[string]any{"roles": []string{"owner"}}, nil), 400, adminapi.ProblemCodeInvalidRequest)
+	expect(t, w.api.Do(t, "PATCH", path+"/"+sa.ID, w.adminKey, map[string]any{"roles": []string{"ghost"}}, nil), 400, adminapi.ProblemCodeInvalidRequest)
 	expect(t, w.api.Do(t, "PATCH", path+"/"+sa.ID, w.adminKey, map[string]any{"name": "worker"}, nil), 409, adminapi.ProblemCodeConflict)
 	// A bound that is set to its stored value is not an error.
 	upd(map[string]any{"valid_until": later.Format(time.RFC3339)})
@@ -491,7 +491,7 @@ func TestPlatformKeys(t *testing.T) {
 	c := api.Client(boot)
 
 	m := me(t, api, boot)
-	if m.PrincipalType != adminapi.PrincipalTypePlatform || !m.Bootstrap || m.Tenant != nil || strings.Join(m.Roles, ",") != "platform-admin" || len(m.Permissions) != 20 {
+	if m.PrincipalType != adminapi.PrincipalTypePlatform || !m.Bootstrap || m.Tenant != nil || strings.Join(m.Roles, ",") != "platform-admin" || len(m.Permissions) != 22 {
 		t.Errorf("me: %+v", m)
 	}
 	r := api.Do(t, "GET", "/v1/me", boot, nil, nil)
@@ -535,7 +535,7 @@ func TestPlatformKeys(t *testing.T) {
 		t.Errorf("revoked: %+v %v", rv, err)
 	}
 	expect(t, api.Do(t, "GET", "/v1/platform-keys/pzzzzzzzzzzzzzzzz", created.Secret, nil, nil), 404, adminapi.ProblemCodeNotFound)
-	expect(t, api.Do(t, "POST", "/v1/platform-keys", created.Secret, map[string]any{"role": "platform-admin"}, nil), 400, adminapi.ProblemCodeInvalidRequest)
+	expect(t, api.Do(t, "POST", "/v1/platform-keys", created.Secret, map[string]any{"role": "Not A Role"}, nil), 400, adminapi.ProblemCodeInvalidRequest)
 	expect(t, api.Do(t, "POST", "/v1/platform-keys", created.Secret, map[string]any{"bootstrap": true}, nil), 400, adminapi.ProblemCodeInvalidRequest)
 
 	// A platform key is refused on the inference side without a database lookup: the gateway
@@ -578,8 +578,7 @@ func mustJSON(t *testing.T, v any) string {
 // TestSuspensionBlocksAdministration is T-264.
 func TestSuspensionBlocksAdministration(t *testing.T) {
 	w := newWorld(t, "suspended-admin")
-	plat := w.api.Client(w.platform)
-	if _, err := plat.SuspendTenant(ctx(t), adminapi.SuspendTenantInput{Tenant: w.tenant.ID}); err != nil {
+	if _, err := w.api.SuspendTenant(t, w.platform, w.tenant.ID); err != nil {
 		t.Fatal(err)
 	}
 	before := w.api.SnapshotTenant(t, w.tenant.ID)
@@ -596,13 +595,13 @@ func TestSuspensionBlocksAdministration(t *testing.T) {
 			}
 		}
 	}
-	if n != 67 {
-		t.Errorf("only %d operations were exercised, want 67 (getMe, the twenty tenant operations of epic 2.1, the four of sprint 2.2, the two of sprint 3.3, the ten of sprint 4.1, the seven of sprint 5.2, the two of sprint 5.3, the seven of sprint 5.4, and the ten members and the four own-session operations of sprint 4.2)", n)
+	if n != 79 {
+		t.Errorf("only %d operations were exercised, want 79 (getMe, the twenty tenant operations of epic 2.1, the four of sprint 2.2, the two of sprint 3.3, the ten of sprint 4.1, the seven of sprint 5.2, the two of sprint 5.3, the seven of sprint 5.4, the ten members and the four own-session operations of sprint 4.2, and the twelve of sprint 4.3)", n)
 	}
 	if after := w.api.SnapshotTenant(t, w.tenant.ID); after != before {
 		t.Error("a row of the suspended tenant changed")
 	}
-	if _, err := plat.ReactivateTenant(ctx(t), adminapi.ReactivateTenantInput{Tenant: w.tenant.ID}); err != nil {
+	if _, err := w.api.ReactivateTenant(t, w.platform, w.tenant.ID); err != nil {
 		t.Fatal(err)
 	}
 	if m := me(t, w.api, w.adminKey); m.Tenant == nil || m.Tenant.State != adminapi.TenantStateActive {

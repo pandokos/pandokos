@@ -362,4 +362,62 @@ func TestNoPeopleInTelemetry(t *testing.T) {
 	if len(keys) != 1 {
 		t.Errorf("the admin request line names principal_id %d times, want once, in the platform branch", len(keys))
 	}
+
+	// Sprint 4.3 (T-R58, changed): the line of a support principal says support: true and names no role,
+	// permission, reason, action or tenant; the two new lines name nothing but what their section lists.
+	if n := len(regexp.MustCompile(`"support", true`).FindAllString(src, -1)); n != 1 {
+		t.Errorf("the admin request line says support: true %d times, want once, for a principal with a support action", n)
+	}
+	for _, key := range []string{"roles", "permissions", "support_action_id", "action_id", "support_action", "role_name", "custom_role", "tenant_name", "tenant_id", "tenant"} {
+		for _, file := range goFiles(t, "internal/admin", "internal/audit") {
+			b, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i, line := range strings.Split(string(b), "\n") {
+				if regexp.MustCompile(`\b(Debug|Info|Warn|Error)(Context)?\(.*"` + key + `"`).MatchString(line) {
+					t.Errorf("%s:%d: a log call names %q (ADR 0055)", file, i+1, key)
+				}
+			}
+		}
+	}
+	for message, allowed := range map[string][]string{
+		"grant refused":      {"request_id", "operation"},
+		"group rule skipped": {"rule", "request_id"},
+	} {
+		found := 0
+		for _, file := range goFiles(t, "internal") {
+			f, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ast.Inspect(f, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok || len(call.Args) == 0 {
+					return true
+				}
+				lit, ok := call.Args[0].(*ast.BasicLit)
+				if !ok || lit.Kind != token.STRING || lit.Value != strconv.Quote(message) {
+					return true
+				}
+				found++
+				for _, a := range call.Args[1:] {
+					if l, ok := a.(*ast.BasicLit); ok && l.Kind == token.STRING {
+						key, _ := strconv.Unquote(l.Value)
+						ok := false
+						for _, w := range allowed {
+							ok = ok || key == w
+						}
+						if !ok {
+							t.Errorf("the log line %q names %q, which is not one of %v", message, key, allowed)
+						}
+					}
+				}
+				return true
+			})
+		}
+		if found != 1 {
+			t.Errorf("the log line %q is written in %d places, want one", message, found)
+		}
+	}
 }

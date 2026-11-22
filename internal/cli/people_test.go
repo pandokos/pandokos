@@ -217,15 +217,15 @@ func TestPeopleCommands(t *testing.T) {
 		r := newRig(t)
 		const pw = "zyxwvutsrqponmlkjihgfedc"
 		r.f.out["resetUserPassword"] = &adminapi.PasswordReset{UserID: uid, Password: pw, ExpiresAt: t1}
-		out, errs := mustRun(t, r, "platform-user", "reset-password", uid)
-		if got := r.f.only(t, "resetUserPassword"); !reflect.DeepEqual(got, adminapi.ResetUserPasswordInput{User: uid}) {
-			t.Errorf("reset-password: %+v", got)
+		out, errs := mustRun(t, r, "platform-user", "reset-password", "--reason", "lost the device", uid)
+		if in, ok := r.f.only(t, "resetUserPassword").(adminapi.ResetUserPasswordInput); !ok || in.User != uid || bodyReason(in) != "lost the device" {
+			t.Errorf("reset-password: %+v", in) // the reason is required since sprint 4.3
 		}
 		if strings.Count(out, pw) != 1 || strings.Contains(errs, pw) {
 			t.Errorf("stdout %q stderr %q", out, errs)
 		}
 		file := filepath.Join(t.TempDir(), "reset.password")
-		out, errs = mustRun(t, r, "platform-user", "reset-password", "--password-out", file, uid)
+		out, errs = mustRun(t, r, "platform-user", "reset-password", "--reason", "lost the device", "--password-out", file, uid)
 		if strings.Contains(out+errs, pw) {
 			t.Errorf("the password is printed although an out-file was given: %q %q", out, errs)
 		}
@@ -292,7 +292,11 @@ func TestPeopleCommands(t *testing.T) {
 		}
 		for _, c := range []struct{ verb, id string }{{"disable", "disableMember"}, {"enable", "enableMember"}, {"unlock", "unlockMember"}, {"revoke-sessions", "revokeMemberSessions"}, {"reset-password", "resetMemberPassword"}} {
 			r.f.got = map[string][]any{}
-			out, errs := mustRun(t, r, "member", c.verb, "--tenant", tid, uid2)
+			args := []string{"member", c.verb, "--tenant", tid, uid2}
+			if c.verb == "reset-password" {
+				args = append(args, "--reason", "lost the device") // required since sprint 4.3
+			}
+			out, errs := mustRun(t, r, args...)
 			if n := len(r.f.calls(c.id)); n != 1 {
 				t.Errorf("%s: %d calls", c.verb, n)
 			}
@@ -306,4 +310,17 @@ func TestPeopleCommands(t *testing.T) {
 			t.Errorf("member list without a tenant: exit %d, stderr %q", code, errs2)
 		}
 	})
+}
+
+// bodyReason returns the Reason member of the Body of a generated input: the body is Reason or
+// RequiredReason according to the operation, and the tests ask for the text only.
+func bodyReason(in any) string {
+	body := reflect.ValueOf(in).FieldByName("Body")
+	if !body.IsValid() {
+		return ""
+	}
+	if f := body.FieldByName("Reason"); f.IsValid() && f.Kind() == reflect.String {
+		return f.String()
+	}
+	return ""
 }

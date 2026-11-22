@@ -434,7 +434,7 @@ func TestFilters(t *testing.T) {
 	plat := w.api.Client(w.platform)
 	adm := w.api.Client(w.adminKey)
 	other, _ := w.api.Tenant(t, "filters-other")
-	if _, err := plat.SuspendTenant(ctx(t), adminapi.SuspendTenantInput{Tenant: other.ID}); err != nil {
+	if _, err := w.api.SuspendTenant(t, w.platform, other.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -555,7 +555,7 @@ func TestProblems(t *testing.T) {
 	}
 	suspendedName := "problems-suspended"
 	suspended, suspendedKey := w.api.Tenant(t, suspendedName)
-	if _, err := w.api.Client(w.platform).SuspendTenant(ctx(t), adminapi.SuspendTenantInput{Tenant: suspended.ID}); err != nil {
+	if _, err := w.api.SuspendTenant(t, w.platform, suspended.ID); err != nil {
 		t.Fatal(err)
 	}
 	deleting, _ := w.api.Tenant(t, "problems-deleting")
@@ -590,7 +590,7 @@ func TestProblems(t *testing.T) {
 			}},
 		{adminapi.ProblemCodeInvalidState, 409, "Invalid state", "The resource is in a state that does not allow this operation.",
 			func() *apitest.Response {
-				return w.api.Do(t, "POST", "/v1/tenants/"+deleting.ID+"/suspend", w.platform, map[string]any{}, nil)
+				return w.api.Do(t, "POST", "/v1/tenants/"+deleting.ID+"/suspend", w.platform, map[string]any{"reason": "test"}, nil)
 			}},
 		{adminapi.ProblemCodeRequestTooLarge, 413, "Request too large", "The request body exceeds 1048576 bytes.",
 			func() *apitest.Response {

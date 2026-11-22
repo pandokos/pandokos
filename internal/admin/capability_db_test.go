@@ -366,7 +366,7 @@ func TestCapabilityIsolation(t *testing.T) {
 		}
 	})
 	t.Run("a suspended tenant: 403 tenant_suspended", func(t *testing.T) {
-		if r := c.platform(t, "POST", "/v1/tenants/"+c.a.ID+"/suspend", nil); r.Status/100 != 2 {
+		if r := c.platform(t, "POST", "/v1/tenants/"+c.a.ID+"/suspend", map[string]any{"reason": "test"}); r.Status/100 != 2 {
 			t.Fatalf("suspend: %d %s", r.Status, r.Body)
 		}
 		expect(t, capCall(t, c, c.ka, c.a.ID, p.Name, m.Name), 403, adminapi.ProblemCodeTenantSuspended)

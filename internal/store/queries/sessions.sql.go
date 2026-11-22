@@ -122,7 +122,13 @@ func (q *Queries) DeleteSessionsOfUser(ctx context.Context, arg DeleteSessionsOf
 const getMemberPrincipal = `-- name: GetMemberPrincipal :one
 SELECT t.name AS tenant_name, t.state AS tenant_state,
        COALESCE((SELECT array_agg(r.role ORDER BY r.role) FROM pandokos.membership_role r
-                  WHERE r.user_id = m.user_id), '{}')::text[] AS roles
+                  WHERE r.user_id = m.user_id), '{}')::text[] AS roles,
+       COALESCE((SELECT array_agg(DISTINCT p ORDER BY p)
+                   FROM pandokos.membership_role r
+                   JOIN pandokos.tenant_role c
+                     ON c.tenant_id = r.tenant_id AND c.name = r.role AND c.state = 'active'
+                  CROSS JOIN LATERAL unnest(c.permissions) AS p
+                  WHERE r.user_id = m.user_id), '{}')::text[] AS granted
   FROM pandokos.membership m
   JOIN pandokos.tenant t ON t.id = m.tenant_id
  WHERE m.user_id = $1
@@ -132,13 +138,19 @@ type GetMemberPrincipalRow struct {
 	TenantName  string
 	TenantState string
 	Roles       []string
+	Granted     []string
 }
 
 // The tenant's session. No row: the user is not a member (404).
 func (q *Queries) GetMemberPrincipal(ctx context.Context, userID string) (GetMemberPrincipalRow, error) {
 	row := q.db.QueryRow(ctx, getMemberPrincipal, userID)
 	var i GetMemberPrincipalRow
-	err := row.Scan(&i.TenantName, &i.TenantState, &i.Roles)
+	err := row.Scan(
+		&i.TenantName,
+		&i.TenantState,
+		&i.Roles,
+		&i.Granted,
+	)
 	return i, err
 }
 

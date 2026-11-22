@@ -374,18 +374,18 @@ func TestCommands(t *testing.T) {
 			}
 		}
 		mustRun(t, r, "tenant", "suspend", "--reason", "invoice unpaid", tid)
-		if got := r.f.only(t, "suspendTenant"); !reflect.DeepEqual(got, adminapi.SuspendTenantInput{Tenant: tid, Body: adminapi.Reason{Reason: "invoice unpaid"}}) {
-			t.Errorf("suspend: %+v", got)
+		if in, ok := r.f.only(t, "suspendTenant").(adminapi.SuspendTenantInput); !ok || in.Tenant != tid || bodyReason(in) != "invoice unpaid" {
+			t.Errorf("suspend: %+v", in) // the reason is required since sprint 4.3
 		}
-		mustRun(t, r, "tenant", "reactivate", tid)
-		if got := r.f.only(t, "reactivateTenant"); !reflect.DeepEqual(got, adminapi.ReactivateTenantInput{Tenant: tid}) {
-			t.Errorf("reactivate: %+v", got)
+		mustRun(t, r, "tenant", "reactivate", "--reason", "restored", tid)
+		if in, ok := r.f.only(t, "reactivateTenant").(adminapi.ReactivateTenantInput); !ok || in.Tenant != tid || bodyReason(in) != "restored" {
+			t.Errorf("reactivate: %+v", in)
 		}
 		// Flags may also follow the argument.
 		r.f.got = map[string][]any{}
 		mustRun(t, r, "tenant", "suspend", tid, "--reason", "after")
-		if got := r.f.only(t, "suspendTenant"); !reflect.DeepEqual(got, adminapi.SuspendTenantInput{Tenant: tid, Body: adminapi.Reason{Reason: "after"}}) {
-			t.Errorf("suspend with a trailing flag: %+v", got)
+		if in, ok := r.f.only(t, "suspendTenant").(adminapi.SuspendTenantInput); !ok || in.Tenant != tid || bodyReason(in) != "after" {
+			t.Errorf("suspend with a trailing flag: %+v", in)
 		}
 	})
 

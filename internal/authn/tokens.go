@@ -226,6 +226,6 @@ func (a *Authenticator) tokenPrincipal(ctx context.Context, r registration, v ve
 		Kind: authz.KindServiceAccount, ID: row.ServiceAccountID, Name: row.ServiceAccountName, KeyID: row.MappingID,
 		IssuerID: r.ID, Subject: v.Subject,
 		TenantID: tid, TenantName: row.TenantName, TenantState: tenant.State(row.TenantState),
-		Roles: append([]string{}, row.Roles...),
+		Roles: append([]string{}, row.Roles...), Granted: append([]string{}, row.Granted...),
 	}, nil
 }

@@ -72,7 +72,7 @@ flowchart LR
 | 5.4 | Tenant price lists | Price versions per tenant in its own currency, taking precedence over the catalogue price for that tenant; budgets in the tenant currency | done |
 | **4** | **Identity federation and RBAC** (continued) | | |
 | 4.2 | Users, local accounts and sessions | People sign in to the administration API with a local account or through an external OIDC provider and obtain a session; memberships in several tenants; local disable | done |
-| 4.3 | Roles | All built-in roles, custom roles, platform roles, support actions with reason; the API reports a user's effective permissions | |
+| 4.3 | Roles | All built-in roles, custom roles, platform roles, support actions with reason; the API reports a user's effective permissions | done |
 | **6** | **[Observability, reports and lifecycle](epics/06-observability-reports-lifecycle/epic.md)** | | |
 | 6.1 | Metrics and conventions | OTLP metrics, GenAI attributes at a pinned version, Prometheus endpoint, cardinality policy | |
 | 6.2 | Reports and audit reading | Usage rollups and report API; audit reading with hash chain and verification; retention; exports | |

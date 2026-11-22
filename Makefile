@@ -8,7 +8,7 @@ LDFLAGS := -s -w -buildid= -X $(PKG)/internal/buildinfo.Version=$(VERSION) -X $(
 GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.9.0
 GITLEAKS := github.com/zricethezav/gitleaks/v8@v8.30.1
 SQLC := github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
-GENERATED := internal/adminapi internal/store/queries
+GENERATED := internal/adminapi internal/store/queries docs/reference/permissions.md
 FUZZTIME ?= 30s
 
 # Loads local/testdb/env (written by make db-up) unless the variable is already set.
@@ -23,7 +23,7 @@ build: ## Build bin/pandokos
 	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o bin/pandokos ./cmd/pandokos
 
 test: ## All tests of the root module, with the race detector (needs make db-up)
-	@$(DBENV) go test -race -count=1 ./...
+	@$(DBENV) go test -race -count=1 -timeout 30m ./...
 
 test-nodb: ## The same without the tests that need PostgreSQL (local use only, refused in CI)
 	PANDOKOS_TEST_NO_DATABASE=1 PANDOKOS_TEST_NO_POOLER=1 PANDOKOS_TEST_NO_DATABASE_TLS=1 go test -race -count=1 ./...
@@ -71,8 +71,9 @@ test-idp: ## Trusted issuer tests against Keycloak, Hydra and Authentik (needs m
 migrations-sum: ## Rewrite the checksum file of the migrations
 	@cd internal/store/migrations/sql && for f in *.sql; do printf '%s %s\n' "$$f" "$$(sha256sum "$$f" | cut -d' ' -f1)"; done > ../migrations.sum
 
-generate: ## Regenerate internal/adminapi (apigen) and internal/store/queries (sqlc)
+generate: ## Regenerate internal/adminapi (apigen), docs/reference/permissions.md (permdoc) and internal/store/queries (sqlc)
 	go run ./internal/apigen -spec api/openapi/admin.v1.yaml -out internal/adminapi/adminapi.gen.go
+	go run ./internal/permdoc -out docs/reference/permissions.md
 	CGO_ENABLED=0 GOTOOLCHAIN=go$(RELEASE_GO) go run $(SQLC) generate
 
 generate-check: generate ## Fail if the generated code is not what is committed
@@ -98,6 +99,7 @@ fuzz: ## Run each fuzz target for FUZZTIME
 	go test ./internal/password/ -run '^$$' -fuzz '^FuzzParsePHC$$' -fuzztime $(FUZZTIME)
 	go test ./internal/session/ -run '^$$' -fuzz '^FuzzParseToken$$' -fuzztime $(FUZZTIME)
 	go test ./internal/oidc/ -run '^$$' -fuzz '^FuzzGroups$$' -fuzztime $(FUZZTIME)
+	go test ./internal/authz/ -run '^$$' -fuzz '^FuzzEffective$$' -fuzztime $(FUZZTIME)
 
 bench: ## Usage reader and limits benchmarks
 	go test ./internal/family/openai/ -run '^$$' -bench . -benchmem

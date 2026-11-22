@@ -6,6 +6,7 @@ package admin
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/url"
 	"strings"
 	"time"
@@ -204,15 +205,40 @@ func (s *server) federatedInput(ctx context.Context, id oidc.Identity, presented
 			ids[r.Name] = r.ID
 		}
 	}
+	// The custom roles that the rules name, by tenant: a rule whose role the tenant lacks or has
+	// deactivated gives nothing (section 5.3).
+	customOf := map[string][]string{}
+	for _, r := range rules {
+		if _, ok := ids[r.Tenant]; !r.Platform && ok {
+			if _, custom := ruleRole(r); custom {
+				customOf[r.Tenant] = append(customOf[r.Tenant], r.Role)
+			}
+		}
+	}
+	states := map[string]map[string]string{}
+	for name, roles := range customOf {
+		tid, err := tenant.ParseID(ids[name])
+		if err != nil {
+			return in, err
+		}
+		if states[name], err = customRolesOf(ctx, s.db, tid, roles); err != nil {
+			return in, err
+		}
+	}
 	live := make([]oidc.Rule, 0, len(rules))
+	position := make([]int, 0, len(rules)) // of each live rule, in the configuration
 	for i, r := range rules {
 		if !r.Platform {
-			if _, ok := ids[r.Tenant]; !ok {
-				s.log.Warn("group rule skipped: its tenant does not exist", "rule", i+1)
+			// The tenant is gone, or the custom role is missing or inactive: the rule gives nothing, and
+			// the line names the position of the rule only.
+			_, ok := ids[r.Tenant]
+			if _, custom := ruleRole(r); !ok || (custom && states[r.Tenant][r.Role] != "active") {
+				ruleSkipped(s.log, i+1, stateOf(ctx).id)
 				continue
 			}
 		}
 		live = append(live, r)
+		position = append(position, i+1)
 	}
 	platform, byName := oidc.Grants(live, id.Groups)
 	in.PlatformRoles = platform
@@ -220,7 +246,45 @@ func (s *server) federatedInput(ctx context.Context, id oidc.Identity, presented
 	for name, roles := range byName {
 		in.TenantRoles[ids[name]] = roles
 	}
+	requestID := stateOf(ctx).id
+	// The roles are read again in the transaction that assigns them: a custom role deleted or
+	// deactivated since the read above is not assigned.
+	in.Assignable = func(ctx context.Context, q *queries.Queries, tid tenant.ID, roles []string) ([]string, error) {
+		var custom []string
+		for _, role := range roles {
+			if _, builtin := authz.RoleByName(role); !builtin {
+				custom = append(custom, role)
+			}
+		}
+		states, err := lockCustomRoles(ctx, q, custom)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]string, 0, len(roles))
+		for _, role := range roles {
+			if _, builtin := authz.RoleByName(role); builtin || states[role] == "active" {
+				out = append(out, role)
+				continue
+			}
+			for i, r := range live {
+				if !r.Platform && r.Role == role && ids[r.Tenant] == tid.String() {
+					ruleSkipped(s.log, position[i], requestID)
+				}
+			}
+		}
+		return out, nil
+	}
 	return in, nil
+}
+
+// ruleSkipped is the line of a group rule that gives nothing: at start (no request) or at a sign-in.
+// It names the position of the rule in the configuration and the request, nothing else; at start
+// there is no request, and the line has no request_id.
+func ruleSkipped(log *slog.Logger, position int, requestID string) {
+	if requestID != "" {
+		log = log.With("request_id", requestID)
+	}
+	log.Warn("group rule skipped", "rule", position)
 }
 
 // oidcFailed logs and audits a refused sign-in through the identity provider, within the cap. The

@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/pandokos/pandokos/internal/tenant"
@@ -77,10 +78,18 @@ func TestCatalogue(t *testing.T) {
 		{"member:read", ScopeTenant},
 		{"member:write", ScopeTenant},
 		{"session:self", ScopeSelf},
+		{"role:read", ScopeTenant},
+		{"role:write", ScopeTenant},
+		{"role:delete", ScopeTenant},
+		{"support_action:read", ScopeTenant},
+		{"support_action:end", ScopeTenant},
+		{"tenant_setting:write", ScopeTenant},
+		{"tenant_support:open", ScopePlatform},
+		{"tenant_support:read", ScopePlatform},
 	}
 	got := Catalogue()
-	if len(got) != 49 {
-		t.Fatalf("%d permissions, want 49", len(got))
+	if len(got) != 57 {
+		t.Fatalf("%d permissions, want 57", len(got))
 	}
 	re := regexp.MustCompile(`^[a-z_]+:[a-z_]+$`)
 	seen := map[string]bool{}
@@ -127,11 +136,13 @@ func TestCatalogue(t *testing.T) {
 func TestRoles(t *testing.T) {
 	platform := []string{IdentityRead, TenantRead, TenantWrite, TenantSuspend, PlatformKeyRead, PlatformKeyWrite, PlatformKeyRevoke,
 		TenantCredentialRead, TenantCredentialRevoke, CatalogRead, CatalogWrite, CatalogPrice,
-		PlatformIssuerRead, PlatformIssuerWrite, PlatformIssuerDelete, PlatformLimitRead, PlatformLimitWrite, PlatformLimitDelete, UserRead, UserWrite}
+		PlatformIssuerRead, PlatformIssuerWrite, PlatformIssuerDelete, PlatformLimitRead, PlatformLimitWrite, PlatformLimitDelete, UserRead, UserWrite,
+		TenantSupportOpen, TenantSupportRead}
 	tenantAll := []string{IdentityRead, ServiceAccountRead, ServiceAccountWrite, MemberRead, MemberWrite, VirtualKeyRead, VirtualKeyWrite, VirtualKeyRevoke, ModelInvoke,
 		CredentialRead, CredentialWrite, CredentialRotate, CredentialDelete, CredentialUse, ModelRead, ModelRestrict, UsageRead,
 		TokenIssuerRead, TokenIssuerWrite, TokenIssuerDelete, SubjectMappingRead, SubjectMappingWrite, SubjectMappingDelete, LimitRead, LimitWrite, LimitDelete,
-		PriceListRead, PriceListWrite, PriceListDelete}
+		PriceListRead, PriceListWrite, PriceListDelete,
+		RoleRead, RoleWrite, RoleDelete, SupportActionRead, TenantSettingWrite}
 	want := []struct {
 		name  string
 		scope Scope
@@ -142,15 +153,19 @@ func TestRoles(t *testing.T) {
 		{RoleInference, ScopeTenant, []string{ModelInvoke, CredentialUse}},
 	}
 	roles := Roles()
-	if len(roles) != 3 {
-		t.Fatalf("%d roles, want 3", len(roles))
+	if len(roles) != 10 {
+		t.Fatalf("%d roles, want 10 (the three of sprint 1.3 and the seven of sprint 4.3)", len(roles))
 	}
-	for i, w := range want {
-		r := roles[i]
+	byName := map[string]Role{}
+	for _, r := range roles {
+		byName[r.Name] = r
+	}
+	for _, w := range want {
+		r := byName[w.name]
 		exp := append([]string(nil), w.perm...)
 		sort.Strings(exp)
 		if r.Name != w.name || r.Scope != w.scope || !reflect.DeepEqual(r.Permissions, exp) || r.Description == "" {
-			t.Errorf("role %d = %+v, want %s %s %v", i, r, w.name, w.scope, exp)
+			t.Errorf("role %s = %+v, want %s %s %v", w.name, r, w.name, w.scope, exp)
 		}
 		for _, p := range r.Permissions {
 			perm, ok := Lookup(p)
@@ -170,16 +185,31 @@ func TestRoles(t *testing.T) {
 			t.Errorf("RoleByName(%s) = %+v, %v", w.name, got, ok)
 		}
 	}
-	if _, ok := RoleByName("owner"); ok {
+	if _, ok := RoleByName("ghost"); ok {
 		t.Error("RoleByName found a role that does not exist")
 	}
 	// The returned slices are copies.
-	roles[2].Permissions[0] = "changed:changed"
-	roles[0].Name = "changed"
+	for i := range roles {
+		switch roles[i].Name {
+		case RoleInference:
+			roles[i].Permissions[0] = "changed:changed"
+		case RolePlatformAdmin:
+			roles[i].Name = "changed"
+		}
+	}
 	again := Roles()
-	if again[2].Permissions[0] != CredentialUse || again[0].Name != RolePlatformAdmin {
+	if byNameOf(again, RoleInference).Permissions[0] != CredentialUse || byNameOf(again, RolePlatformAdmin).Name != RolePlatformAdmin {
 		t.Error("changing a returned slice changed the next call")
 	}
+}
+
+func byNameOf(roles []Role, name string) Role {
+	for _, r := range roles {
+		if r.Name == name {
+			return r
+		}
+	}
+	return Role{}
 }
 
 // TestDecide is T-203.
@@ -281,14 +311,15 @@ func TestEffective(t *testing.T) {
 	}{
 		{"union of roles", sa(id(1), tenant.StateActive, []string{RoleInference, RoleTenantAdmin}, nil),
 			[]string{CredentialDelete, CredentialRead, CredentialRotate, CredentialUse, CredentialWrite, IdentityRead, LimitDelete, LimitRead, LimitWrite, MemberRead, MemberWrite, ModelInvoke,
-				ModelRead, ModelRestrict, PriceListDelete, PriceListRead, PriceListWrite, ServiceAccountRead, ServiceAccountWrite, SubjectMappingDelete, SubjectMappingRead, SubjectMappingWrite,
+				ModelRead, ModelRestrict, PriceListDelete, PriceListRead, PriceListWrite, RoleDelete, RoleRead, RoleWrite, ServiceAccountRead, ServiceAccountWrite, SubjectMappingDelete, SubjectMappingRead, SubjectMappingWrite,
+				SupportActionRead, TenantSettingWrite,
 				TokenIssuerDelete, TokenIssuerRead, TokenIssuerWrite, UsageRead, VirtualKeyRead, VirtualKeyRevoke, VirtualKeyWrite}},
 		{"scopes intersect", sa(id(1), tenant.StateActive, []string{RoleTenantAdmin}, []string{VirtualKeyRead, "tenant:read", ModelInvoke}),
 			[]string{ModelInvoke, VirtualKeyRead}},
 		{"unknown role", sa(id(1), tenant.StateActive, []string{"ghost"}, nil), nil},
 		{"role of the other kind", sa(id(1), tenant.StateActive, []string{RolePlatformAdmin}, nil), nil},
 		{"platform role on a platform principal", Principal{Kind: KindPlatform, Roles: []string{RolePlatformAdmin, RoleInference}},
-			[]string{CatalogPrice, CatalogRead, CatalogWrite, IdentityRead, PlatformIssuerDelete, PlatformIssuerRead, PlatformIssuerWrite, PlatformKeyRead, PlatformKeyRevoke, PlatformKeyWrite, PlatformLimitDelete, PlatformLimitRead, PlatformLimitWrite, TenantRead, TenantSuspend, TenantWrite, TenantCredentialRead, TenantCredentialRevoke, UserRead, UserWrite}},
+			[]string{CatalogPrice, CatalogRead, CatalogWrite, IdentityRead, PlatformIssuerDelete, PlatformIssuerRead, PlatformIssuerWrite, PlatformKeyRead, PlatformKeyRevoke, PlatformKeyWrite, PlatformLimitDelete, PlatformLimitRead, PlatformLimitWrite, TenantRead, TenantSuspend, TenantWrite, TenantCredentialRead, TenantCredentialRevoke, TenantSupportOpen, TenantSupportRead, UserRead, UserWrite}},
 		{"nil scopes are no restriction", sa(id(1), tenant.StateActive, []string{RoleInference}, nil), []string{CredentialUse, ModelInvoke}},
 		{"empty scopes are a restriction to nothing", sa(id(1), tenant.StateActive, []string{RoleInference}, []string{}), nil},
 		{"duplicate roles", sa(id(1), tenant.StateActive, []string{RoleInference, RoleInference}, nil), []string{CredentialUse, ModelInvoke}},
@@ -342,8 +373,11 @@ func TestUsageRead(t *testing.T) {
 			}
 		}
 	}
-	if len(holders) != 1 || !holders[RoleTenantAdmin] {
-		t.Errorf("usage:read is held by %v, want tenant-admin only", holders)
+	// Sprint 4.3: the roles that read usage are the owner, the administrator, the usage viewer, the
+	// developer and the read-only role (sprint 4.3, section 5.2).
+	wantHolders := map[string]bool{RoleOwner: true, RoleTenantAdmin: true, RoleUsageViewer: true, RoleDeveloper: true, RoleReadOnly: true}
+	if !reflect.DeepEqual(holders, wantHolders) {
+		t.Errorf("usage:read is held by %v, want %v", holders, wantHolders)
 	}
 
 	a, b := id(1), id(2)
@@ -448,7 +482,7 @@ func TestLimitPermissions(t *testing.T) {
 func TestPriceListPermissions(t *testing.T) {
 	want := map[string]string{
 		PriceListRead:   "Reading the tenant's price lists and their versions, and the tenant's active currency",
-		PriceListWrite:  "Adding a price version to one of the tenant's price lists; choosing the tenant's active currency",
+		PriceListWrite:  "Adding a price version to one of the tenant's price lists",
 		PriceListDelete: "Removing a price version of the tenant's lists that has not started",
 	}
 	for name, text := range want {
@@ -465,14 +499,37 @@ func TestPriceListPermissions(t *testing.T) {
 			}
 		}
 		switch r.Name {
-		case RoleTenantAdmin:
+		case RoleTenantAdmin, RoleOwner:
 			if held != 3 {
-				t.Errorf("tenant-admin holds %d of the three", held)
+				t.Errorf("%s holds %d of the three", r.Name, held)
+			}
+		case RoleUsageViewer, RoleReadOnly:
+			if held != 1 {
+				t.Errorf("%s holds %d price list permissions, want price_list:read", r.Name, held)
 			}
 		default:
 			if held != 0 {
 				t.Errorf("%s holds %d price list permissions", r.Name, held)
 			}
+		}
+	}
+}
+
+// TestSettingDescriptions: the time zone and the active currency are set with tenant_setting:write
+// (D-1), so the descriptions of limit:write and price_list:write do not offer them.
+func TestSettingDescriptions(t *testing.T) {
+	for _, name := range []string{LimitWrite, PriceListWrite} {
+		p, _ := Lookup(name)
+		for _, word := range []string{"time zone", "currency"} {
+			if strings.Contains(p.Description, word) {
+				t.Errorf("%s: %q names the %s, which tenant_setting:write sets", name, p.Description, word)
+			}
+		}
+	}
+	p, _ := Lookup(TenantSettingWrite)
+	for _, word := range []string{"time zone", "currency"} {
+		if !strings.Contains(p.Description, word) {
+			t.Errorf("%s: %q does not name the %s", TenantSettingWrite, p.Description, word)
 		}
 	}
 }

@@ -71,7 +71,15 @@ flowchart LR
    tenant A present an audience that A has not registered or no longer registers, another tenant can
    register that pair and its mapping would then receive those calls (the residual case of the
    [tokens guide](../operations/tokens.md), section 5; the guide requires an audience naming the
-   installation and the tenant). Second, a token cannot be revoked before it expires.
+   installation and the tenant). Second, a token cannot be revoked before it expires. Changing what a
+   tenant's issuer trusts (issuer, audience, key set, algorithms, subject or required claims) or enabling
+   it again is a grant: the caller must hold what the mapped service accounts can do (`403
+   escalation_refused` otherwise, [ADR 0060](../adr/0060-built-in-roles-custom-roles-and-the-rule-against-escalation.md)).
+   A platform-level issuer is not guarded this way: a platform administrator can repoint one that
+   tenants map subjects to and act as those service accounts. This is an accepted residual exposure,
+   since the platform runs the installation and already holds its database and keys
+   ([ADR 0061](../adr/0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md)); every
+   change is in the platform's audit log.
 
    **The identity provider for people** is a second use of this boundary. The operator configures one
    provider (`auth.oidc.*`); Pandokos is its confidential client with PKCE, state and nonce, and trusts it
@@ -164,7 +172,15 @@ disk the operator's database administrators can read, and by auditing every admi
 | The key-encryption key leaks | Rotation by re-wrapping (VLT-10). The leak alone exposes nothing without the database |
 | A ciphertext is copied onto another tenant's row | The tenant and credential IDs are bound into the ciphertext as associated data, so decryption fails (VLT-07) |
 | An attacker with the database guesses a credential from its fingerprint or hint | The fingerprint is a keyed hash under a key derived from the tenant's data key, which needs the key-encryption key; fingerprints differ between tenants. The hint is four characters and absent for short secrets |
-| A platform administrator abuses the role | No read path for secrets in API or database grants (AZ-08). Support actions inside a tenant need a reason and are audited in the tenant's log (AZ-09) |
+| A platform administrator abuses the role | No read path for secrets, usage, limit events or prices in API or database grants (AZ-08, ADR 0054). The platform holds no tenant permission. It acts inside a tenant only under a **support action**: a reason, a closed set of eleven permissions that read no usage, price or secret, at most 24 h (1 h by default), one transaction for the row and both audit events, visible to the tenant and ended by its owner, and switched by `support.enabled` (AZ-09, [ADR 0061](../adr/0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md)). **The residual path:** under an action the platform grants with the tenant's authority, so an administrator can make an identity in the tenant (a key, a member) and act as it; there is no other path (`resetUserPassword` refuses a platform user that holds permissions in a tenant, whose recovery is the host command `pandokos user reset-password`) but the known gap below, a membership or role gained while a platform-issued password is pending, each step names the action in the tenant's log, and `support.enabled: false` removes the path together with the recovery |
+| A principal hands out more than it holds | One function, `CanGrant`, over a closed table of operations that confer power: defining roles, giving and taking roles, issuing keys, mapping subjects, resetting passwords; removal is covered, containment is free; `escalation_refused` ([ADR 0060](../adr/0060-built-in-roles-custom-roles-and-the-rule-against-escalation.md)) |
+| A custom role smuggles a platform permission | Refused at write; dropped when the permissions of a principal are computed |
+| A deactivated or deleted role keeps working on the inference listener | `tenant_role` notifies the gateways' cache on every change; the cache's own bound (ADR 0030) |
+| An administrator removes the owners and takes their place | Removal needs the role's permissions, and so do password resets and key issuing for an owner's account |
+| A support action outlives its need | Expiry by constraint; closed by the platform; ended by the tenant; honoured only while the actor still holds the permission and the switch is on |
+| The answer for "no membership" reveals which tenants exist | Without an open action the answers are those of sprint 4.2, byte for byte |
+| What `GET /v1/me` says differs from what is enforced | One function builds the principal for both; hiding a control in a client is never the control |
+| A future built-in role takes the name of a tenant's custom role | Built-in names and the prefixes `platform-` and `pandokos-` are refused for custom roles |
 | The proxy is used to reach internal services (SSRF) | Destinations come from the catalogue only: scheme, host, port and path of the outbound request are catalogue values. Redirects are not followed. The address actually dialled is classified in the dialer's control hook, after name resolution, for every connection attempt; forbidden addresses (unspecified, multicast, reserved, instance-metadata) are refused for every endpoint. Behind `upstream.proxy.url` the connection checked is the one to the proxy and target names are resolved by the proxy, which is then the control point (GW-05, GW-06, [ADR 0038](../adr/0038-egress-guard-upstream-tls-and-proxy.md)) |
 | A private endpoint is used to reach internal services | An endpoint may use `http` or a private address only when an administrator declared it `private`; a public endpoint is refused any private address when it is dialled, whatever its name resolved to when it was written. Private endpoints never use the proxy and can never be on a metadata address |
 | A body with two `model` members is used to pass the model check | Refused with `invalid_request`: exactly one top-level string member `model` is accepted, so the model that is authorized is the one the provider sees ([ADR 0037](../adr/0037-request-pipeline-and-resolution.md)) |
@@ -208,7 +224,10 @@ names, e-mail addresses, usernames, hashes). A throttle row is a digest of a typ
 at most the window plus the lock. New passwords are not checked against a list of breached passwords (the
 one unmet row of the ASVS 4.0.3 chapters V2 and V3 table of the sprint design, which a reviewer reads
 against the code). Concurrent attempts that passed the throttle together are all verified. What a group
-gave lasts until the next sign-in.
+gave lasts until the next sign-in. A membership or role gained while a platform-issued password
+(`resetUserPassword` or `createUser`) is still pending, until it is changed or expires, is not checked
+against the caller that obtained the password: a known gap, to be closed in sprint 10.2, for example by
+refusing or invalidating a pending platform-issued password when a membership or role is added.
 
 ## Key hierarchy
 

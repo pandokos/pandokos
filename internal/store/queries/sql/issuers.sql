@@ -38,7 +38,13 @@ SELECT m.id AS mapping_id,
        s.valid_from, s.valid_until,
        t.id AS tenant_id, t.name AS tenant_name, t.state AS tenant_state,
        COALESCE((SELECT array_agg(r.role ORDER BY r.role) FROM pandokos.role_assignment r
-                  WHERE r.service_account_id = m.service_account_id), '{}')::text[] AS roles
+                  WHERE r.service_account_id = m.service_account_id), '{}')::text[] AS roles,
+       COALESCE((SELECT array_agg(DISTINCT p ORDER BY p)
+                   FROM pandokos.role_assignment r
+                   JOIN pandokos.tenant_role c
+                     ON c.tenant_id = r.tenant_id AND c.name = r.role AND c.state = 'active'
+                  CROSS JOIN LATERAL unnest(c.permissions) AS p
+                  WHERE r.service_account_id = m.service_account_id), '{}')::text[] AS granted
   FROM pandokos.subject_mapping m
   JOIN pandokos.service_account s ON s.tenant_id = m.tenant_id AND s.id = m.service_account_id
   JOIN pandokos.tenant t ON t.id = m.tenant_id
@@ -129,6 +135,24 @@ SELECT count(*)::bigint AS mappings
   FROM pandokos.subject_mapping m
  WHERE m.trusted_issuer_id = sqlc.arg(issuer_id)::uuid
     OR m.platform_issuer_id = sqlc.arg(issuer_id)::uuid;
+
+-- name: ListMappedServiceAccountGrants :many
+-- The service accounts that subjects of a trusted issuer act as, each with its roles and the
+-- permissions of its active custom roles, as GetServiceAccountGrant reads them. Run after
+-- LockTrustedIssuer, which keeps a mapping from being added meanwhile.
+SELECT s.id,
+       COALESCE((SELECT array_agg(r.role ORDER BY r.role) FROM pandokos.role_assignment r
+                  WHERE r.service_account_id = s.id), '{}')::text[] AS roles,
+       COALESCE((SELECT array_agg(DISTINCT p ORDER BY p)
+                   FROM pandokos.role_assignment r
+                   JOIN pandokos.tenant_role c
+                     ON c.tenant_id = r.tenant_id AND c.name = r.role AND c.state = 'active'
+                  CROSS JOIN LATERAL unnest(c.permissions) AS p
+                  WHERE r.service_account_id = s.id), '{}')::text[] AS granted
+  FROM pandokos.service_account s
+ WHERE s.id IN (SELECT m.service_account_id FROM pandokos.subject_mapping m
+                 WHERE m.trusted_issuer_id = sqlc.arg(issuer_id)::uuid)
+ ORDER BY s.id;
 
 -- Subject mappings. Tenant session. Every row carries the scope, ID and name of its registration
 -- and the name of its service account.

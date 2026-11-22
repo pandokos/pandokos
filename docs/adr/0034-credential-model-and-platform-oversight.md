@@ -53,3 +53,4 @@ principals holding tenant permissions (contradicts ADR 0031); deleting instead o
 
 - 2026-11: sprint 3.1 replaces point 6: validation presents the secret to the default enabled endpoint of the credential's catalogue provider, in the way of its API family (openai, anthropic), through the egress guard ([ADR 0038](0038-egress-guard-upstream-tls-and-proxy.md)); it shares the guard's connection pools. The pin rule of point 2 is confirmed with the model check in the request path.
 - 2026-11-18: recorded as accepted by the maintainer.
+- 2026-11-22: sprint 4.3: the two oversight permissions carry the attribute `InTenant`; they are not behind the support switch ([ADR 0061](0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md)).

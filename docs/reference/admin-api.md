@@ -26,7 +26,7 @@ time).
 - JSON only; members are `snake_case`; times are RFC 3339 in UTC. An absent optional member is left
   out of responses. Bodies and queries are strict: an unknown member or parameter is an error.
 - Verb sub-resources (`suspend`, `reactivate`, `disable`, `enable`, `revoke`) take an optional
-  `{"reason": "..."}`, return the resource and are idempotent.
+  `{"reason": "..."}` (required where the operation declares `x-pandokos-reason`, see below), return the resource and are idempotent.
 - `PATCH` changes the members that are present (an optional member is *presence-aware*: absent leaves
   the value alone, a value sets it, and `null` is refused as `must not be null` except where the
   document allows it); `valid_from` and `valid_until` accept `null`; `roles` replaces the set. For a
@@ -75,6 +75,9 @@ Errors are RFC 9457 problems (`application/problem+json`) with a fixed sentence 
 | `password_change_required` | 403 | the session must change its password first |
 | `csrf_rejected` | 403 | the checks of origin and request forgery failed |
 | `sign_in_disabled` | 403 | the sign-in method is switched off, or the origin of the listener is not known |
+| `escalation_refused` | 403 | the operation would give, or take, a permission the caller does not hold ([roles guide](../operations/roles.md#4-the-rule-against-escalation)) |
+| `support_disabled` | 403 | `openSupportAction` while `support.enabled` is false |
+| `role_in_use` | 409 | `deleteRole` for a custom role that a member or a service account still holds |
 | `idempotency_key_reused` | 422 | the `Idempotency-Key` was used with another request |
 | `idempotency_in_progress` | 409 | the first request with the key is still running (`Retry-After`) |
 | `idempotency_response_lost` | 409 | the first request succeeded and its response was not kept |
@@ -103,6 +106,39 @@ role (`409 invalid_state`).
 The behaviour that the schemas cannot say, and the settings behind it, are in the
 [sign-in guide](../operations/sign-in.md).
 
+## Roles and support actions (sprint 4.3)
+
+Sixteen operations are added. `listPermissions` (`GET /v1/permissions`) and `listBuiltinRoles`
+(`GET /v1/roles`) return the catalogue and the ten built-in roles to any authenticated caller
+(`identity:read`). A tenant's custom roles are `listRoles`, `getRole` (`role:read`), `createRole`,
+`updateRole`, `deactivateRole`, `activateRole` (`role:write`) and `deleteRole` (`role:delete`), under
+`/v1/tenants/{tenant}/roles`, a role addressed by its name. `deleteRole` answers `204` and
+`409 role_in_use` while the role is held. The platform opens and closes support actions with
+`openSupportAction` and `closeSupportAction` (`tenant_support:open`) and reads them with
+`listTenantSupportActions` and `getTenantSupportAction` (`tenant_support:read`), under
+`/v1/tenant-support/{tenant}/actions`; the platform-side operations answer `404 not_found` for a tenant that
+does not exist. The tenant reads the actions of its tenant with `listSupportActions` and
+`getSupportAction` (`support_action:read`) and ends one with `endSupportAction` (`support_action:end`), under
+`/v1/tenants/{tenant}/support-actions`. `createRole` and `openSupportAction` answer 201 and take an
+`Idempotency-Key`. `support_disabled` is answered by `openSupportAction` only: reading and closing work
+with `support.enabled` off.
+
+`createPlatformKey` takes an optional `role`, a platform role (default `platform-admin`). The bodies of
+the limit-rule operations take an optional `reason`. In `Me`, each `Membership` carries `permissions` and
+a platform caller's `support_actions` lists its open actions. Under a support action the platform
+principal acts with the tenant's authority, within the permissions of the action, and the guard
+`escalation_refused` does not apply to it.
+
+**The construct `x-pandokos-reason: required`.** An operation of the API document may declare it. The
+generator then demands a request body with a required string member `reason`, and the generated handler
+refuses a reason that is empty after trimming (`400 invalid_request` on `reason`). Nine operations declare
+it: `suspendTenant`, `reactivateTenant`, `disableTenantCredential`, `revokeTenantCredential`,
+`openSupportAction`, `resetUserPassword`, `resetMemberPassword`, `deactivateRole` and `activateRole`.
+The required reason on `suspendTenant` and `reactivateTenant` changes the v0.1 contract, as does
+`tenant_setting:write` for `setTenantTimeZone` and `setActiveCurrency`
+([roles guide](../operations/roles.md#10-what-changes-for-an-installation-of-v01)). The permissions and
+roles are in the [permission reference](permissions.md).
+
 ## The accepted subset of OpenAPI 3.1
 
 `internal/apigen` accepts a deliberate subset and fails on anything else: `openapi: 3.1.0`; path
@@ -124,12 +160,12 @@ commands that return a generated password print it once on standard output, or w
 | Command | Operation |
 |---|---|
 | `whoami` | `getMe` |
-| `tenant list`, `create` (`--time-zone`), `get` (shows `active_currency`, `active_currency_in_force`, `active_currency_effective_from`), `update` (`--time-zone`), `suspend`, `reactivate` | `listTenants`, `createTenant`, `getTenant`, `updateTenant`, `suspendTenant`, `reactivateTenant` |
+| `tenant list`, `create` (`--time-zone`), `get` (shows `active_currency`, `active_currency_in_force`, `active_currency_effective_from`), `update` (`--time-zone`), `suspend` and `reactivate` (`--reason` required) | `listTenants`, `createTenant`, `getTenant`, `updateTenant`, `suspendTenant`, `reactivateTenant` |
 | `service-account list`, `create`, `get`, `update`, `disable`, `enable` | `listServiceAccounts`, `createServiceAccount`, `getServiceAccount`, `updateServiceAccount`, `disableServiceAccount`, `enableServiceAccount` |
 | `key list`, `create`, `get`, `revoke` | `listVirtualKeys`, `createVirtualKey`, `getVirtualKey`, `revokeVirtualKey` |
-| `platform-key list`, `create`, `get`, `revoke` | `listPlatformKeys`, `createPlatformKey`, `getPlatformKey`, `revokePlatformKey` |
+| `platform-key list`, `create` (`--role platform-admin\|platform-auditor`), `get`, `revoke` | `listPlatformKeys`, `createPlatformKey`, `getPlatformKey`, `revokePlatformKey` |
 | `credential list`, `create`, `get`, `update`, `replace`, `disable`, `enable`, `set-default`, `revoke`, `delete` | `listCredentials`, `createCredential`, `getCredential`, `updateCredential`, `replaceCredentialSecret`, `disableCredential`, `enableCredential`, `setDefaultCredential`, `revokeCredential`, `deleteCredential` |
-| `tenant-credential list`, `get`, `disable`, `revoke` | `listTenantCredentials`, `getTenantCredential`, `disableTenantCredential`, `revokeTenantCredential` |
+| `tenant-credential list`, `get`, `disable`, `revoke` (`--reason` required on the last two) | `listTenantCredentials`, `getTenantCredential`, `disableTenantCredential`, `revokeTenantCredential` |
 | `provider list`, `create`, `get`, `update`, `delete` | `listProviders`, `createProvider`, `getProvider`, `updateProvider`, `deleteProvider` |
 | `endpoint list`, `create`, `get`, `update`, `delete` (after `PROVIDER`) | `listEndpoints`, `createEndpoint`, `getEndpoint`, `updateEndpoint`, `deleteEndpoint` |
 | `model list`, `create`, `get`, `update`, `delete`, `grants`, `grant`, `revoke-grant` | `listModels`, `createModel`, `getModel`, `updateModel`, `deleteModel`, `listModelGrants`, `grantModel`, `revokeModelGrant` |
@@ -143,8 +179,12 @@ commands that return a generated password print it once on standard output, or w
 | `token-issuer list`, `create`, `get`, `update`, `delete`, `platform` | `listTokenIssuers`, `createTokenIssuer`, `getTokenIssuer`, `updateTokenIssuer`, `deleteTokenIssuer`, `listTenantPlatformIssuers` |
 | `subject-mapping list`, `create`, `get`, `delete` | `listSubjectMappings`, `createSubjectMapping`, `getSubjectMapping`, `deleteSubjectMapping` |
 | `platform-issuer list`, `create`, `get`, `update`, `delete`, `tenants`, `add-tenant`, `remove-tenant` | `listPlatformIssuers`, `createPlatformIssuer`, `getPlatformIssuer`, `updatePlatformIssuer`, `deletePlatformIssuer`, `listPlatformIssuerTenants`, `putPlatformIssuerTenant`, `deletePlatformIssuerTenant` |
-| `platform-user list`, `create`, `get`, `update`, `disable`, `enable`, `reset-password`, `unlock`, `revoke-sessions` | `listUsers`, `createUser`, `getUser`, `updateUser`, `disableUser`, `enableUser`, `resetUserPassword`, `unlockUser`, `revokeUserSessions` |
-| `member list`, `add`, `get`, `update`, `remove`, `disable`, `enable`, `reset-password`, `unlock`, `revoke-sessions` (with `--tenant`) | `listMembers`, `createMember`, `getMember`, `updateMember`, `deleteMember`, `disableMember`, `enableMember`, `resetMemberPassword`, `unlockMember`, `revokeMemberSessions` |
+| `platform-user list`, `create`, `get`, `update`, `disable`, `enable`, `reset-password` (`--reason` required), `unlock`, `revoke-sessions` | `listUsers`, `createUser`, `getUser`, `updateUser`, `disableUser`, `enableUser`, `resetUserPassword`, `unlockUser`, `revokeUserSessions` |
+| `member list`, `add`, `get`, `update`, `remove`, `disable`, `enable`, `reset-password` (`--reason` required), `unlock`, `revoke-sessions` (with `--tenant`) | `listMembers`, `createMember`, `getMember`, `updateMember`, `deleteMember`, `disableMember`, `enableMember`, `resetMemberPassword`, `unlockMember`, `revokeMemberSessions` |
+| `permission list` | `listPermissions` |
+| `role builtin`, `role list`, `create`, `get`, `update`, `deactivate`, `activate`, `delete` (with `--tenant`; `--permission` repeatable, on `update` it replaces the set; `--reason` required on `deactivate` and `activate`) | `listBuiltinRoles`, `listRoles`, `createRole`, `getRole`, `updateRole`, `deactivateRole`, `activateRole`, `deleteRole` |
+| `tenant-support open` (`--reason` required, `--permission` repeatable, `--duration`), `list`, `get`, `close` (with `--tenant`) | `openSupportAction`, `listTenantSupportActions`, `getTenantSupportAction`, `closeSupportAction` |
+| `support-action list`, `get`, `end` (with `--tenant`) | `listSupportActions`, `getSupportAction`, `endSupportAction` |
 | `import-prices (--file FILE \| --embedded) [--dry-run]` | none: a host command that reads a price dataset and writes through the database ([catalogue guide](../operations/catalogue.md)) |
 | `kek generate --out FILE` | none: a local command that writes a key-encryption key ([vault guide](../operations/vault.md)) |
 

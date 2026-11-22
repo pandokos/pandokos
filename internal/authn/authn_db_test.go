@@ -473,14 +473,14 @@ func TestRevocationByNotification(t *testing.T) {
 	if p, err := auth.Authenticate(ctx(t), s.key); err != nil || authz.Decide(p, authz.ModelInvoke, authz.Target{TenantID: p.TenantID}) != authz.Allow {
 		t.Fatalf("%+v %v", p, err)
 	}
-	if _, err := api.Client(api.PlatformKey()).SuspendTenant(ctx(t), adminapi.SuspendTenantInput{Tenant: s.tenant.ID}); err != nil {
+	if _, err := api.SuspendTenant(t, api.PlatformKey(), s.tenant.ID); err != nil {
 		t.Fatal(err)
 	}
 	testutil.Eventually(t, 2*time.Second, "the suspended tenant to be refused", func() bool {
 		p, err := auth.Authenticate(ctx(t), s.key)
 		return err == nil && authz.Decide(p, authz.ModelInvoke, authz.Target{TenantID: p.TenantID}) == authz.DenyTenantState
 	})
-	if _, err := api.Client(api.PlatformKey()).ReactivateTenant(ctx(t), adminapi.ReactivateTenantInput{Tenant: s.tenant.ID}); err != nil {
+	if _, err := api.ReactivateTenant(t, api.PlatformKey(), s.tenant.ID); err != nil {
 		t.Fatal(err)
 	}
 	testutil.Eventually(t, 2*time.Second, "the reactivated tenant to work again", func() bool {

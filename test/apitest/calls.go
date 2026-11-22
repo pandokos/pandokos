@@ -34,7 +34,12 @@ type Params struct {
 	TenantPrice    string // {price} of a scheduled price version of the tenant's price lists
 	User           string // {user}; NoUser when empty
 	Session        string // {session}; NoUser when empty
+	Role           string // {role}, a custom role name; NoRole when empty
+	SupportAction  string // {action}; NoUser when empty (a well-formed identifier that no row has)
 }
+
+// NoRole is the {role} of a call whose Params name none: a well-formed name that no role has.
+const NoRole = "no-such-role"
 
 // NoUser is the {user} and {session} of a call whose Params name none: a well-formed identifier
 // that no row has.
@@ -84,8 +89,7 @@ func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 		body = map[string]any{"name": UniqueName("created")}
 	case "updateTenant":
 		body = map[string]any{"display_name": "changed by a test"}
-	case "suspendTenant", "reactivateTenant", "disableServiceAccount", "enableServiceAccount",
-		"revokeVirtualKey", "revokePlatformKey":
+	case "disableServiceAccount", "enableServiceAccount", "revokeVirtualKey", "revokePlatformKey":
 		body = map[string]any{}
 	case "createServiceAccount":
 		body = map[string]any{"name": UniqueName("sa"), "roles": []string{"inference"}}
@@ -104,7 +108,8 @@ func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 		body = map[string]any{"description": "changed by a test"}
 	case "disableCredential", "enableCredential", "setDefaultCredential", "revokeCredential":
 		body = map[string]any{}
-	case "disableTenantCredential", "revokeTenantCredential":
+	case "disableTenantCredential", "revokeTenantCredential", "suspendTenant", "reactivateTenant", "resetUserPassword", "resetMemberPassword":
+		// The nine operations with a required reason (sprint 4.3): the other four are below.
 		body = map[string]any{"reason": "test"}
 	case "listProviders", "getProvider", "deleteProvider", "listEndpoints", "getEndpoint", "deleteEndpoint",
 		"listModels", "getModel", "deleteModel", "listModelGrants", "grantModel", "revokeModelGrant",
@@ -174,8 +179,20 @@ func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 		body = map[string]any{"account": "new", "username": UniqueName("member"), "roles": []string{"tenant-admin"}}
 	case "updateUser", "updateMember":
 		body = map[string]any{"display_name": "changed by a test"}
-	case "disableUser", "enableUser", "unlockUser", "resetUserPassword", "revokeUserSessions",
-		"disableMember", "enableMember", "unlockMember", "resetMemberPassword", "revokeMemberSessions":
+	case "disableUser", "enableUser", "unlockUser", "revokeUserSessions",
+		"disableMember", "enableMember", "unlockMember", "revokeMemberSessions":
+		body = map[string]any{}
+	case "listPermissions", "listBuiltinRoles", "listRoles", "getRole", "deleteRole",
+		"listTenantSupportActions", "getTenantSupportAction", "listSupportActions", "getSupportAction":
+	case "createRole":
+		body = map[string]any{"name": UniqueName("role"), "permissions": []string{"member:read"}}
+	case "updateRole":
+		body = map[string]any{"description": "changed by a test"}
+	case "deactivateRole", "activateRole":
+		body = map[string]any{"reason": "test"}
+	case "openSupportAction":
+		body = map[string]any{"reason": "test", "permissions": []string{"member:read"}}
+	case "closeSupportAction", "endSupportAction":
 		body = map[string]any{}
 	default:
 		tb.Fatalf("apitest.CallFor does not know the operation %s: add it", op.ID)
@@ -192,6 +209,8 @@ func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 	path = strings.ReplaceAll(path, "{mapping}", p.SubjectMapping)
 	path = strings.ReplaceAll(path, "{user}", orDefault(p.User, NoUser))
 	path = strings.ReplaceAll(path, "{session}", orDefault(p.Session, NoUser))
+	path = strings.ReplaceAll(path, "{role}", orDefault(p.Role, NoRole))
+	path = strings.ReplaceAll(path, "{action}", orDefault(p.SupportAction, NoUser))
 	rule := p.LimitRule
 	if strings.HasPrefix(op.Path, "/v1/platform-limits/") {
 		rule = p.PlatformLimit

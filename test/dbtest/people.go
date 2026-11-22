@@ -301,7 +301,10 @@ func (d *Database) Age(tb testing.TB, table, where string, by time.Duration, col
 type AuditRow struct {
 	Action, Outcome, ActorType, ActorID, ActorName, KeyID string
 	ResourceType, ResourceID, Reason, RequestID           string
-	Detail                                                map[string]any
+	// SupportActionID is the support action a tenant's row was written under (sprint 4.3); empty
+	// for none, and always empty in the platform's log.
+	SupportActionID string
+	Detail          map[string]any
 	// Raw is the whole row as JSON, for the tests that search the log for a value.
 	Raw string
 }
@@ -311,14 +314,14 @@ type AuditRow struct {
 func (d *Database) AuditRows(tb testing.TB, tid tenant.ID) []AuditRow {
 	tb.Helper()
 	return d.auditRows(tb, `SELECT action, outcome, actor_type, actor_id, actor_name, key_id, resource_type, resource_id, reason, request_id, detail::text,
-		to_jsonb(e)::text FROM pandokos.audit_event e WHERE tenant_id = $1::uuid ORDER BY id`, tid.String())
+		COALESCE(support_action_id::text, ''), to_jsonb(e)::text FROM pandokos.audit_event e WHERE tenant_id = $1::uuid ORDER BY id`, tid.String())
 }
 
 // PlatformAuditRows returns the rows of the platform's audit log, oldest first.
 func (d *Database) PlatformAuditRows(tb testing.TB) []AuditRow {
 	tb.Helper()
 	return d.auditRows(tb, `SELECT action, outcome, actor_type, actor_id, actor_name, key_id, resource_type, resource_id, reason, request_id, detail::text,
-		to_jsonb(e)::text FROM pandokos.platform_audit_event e ORDER BY id`)
+		'', to_jsonb(e)::text FROM pandokos.platform_audit_event e ORDER BY id`)
 }
 
 // AllAuditText returns every audit row of every log as JSON text, for the searches of the canary
@@ -377,7 +380,7 @@ func (d *Database) auditRows(tb testing.TB, sql string, args ...any) []AuditRow 
 	for rows.Next() {
 		var r AuditRow
 		var detail string
-		if err := rows.Scan(&r.Action, &r.Outcome, &r.ActorType, &r.ActorID, &r.ActorName, &r.KeyID, &r.ResourceType, &r.ResourceID, &r.Reason, &r.RequestID, &detail, &r.Raw); err != nil {
+		if err := rows.Scan(&r.Action, &r.Outcome, &r.ActorType, &r.ActorID, &r.ActorName, &r.KeyID, &r.ResourceType, &r.ResourceID, &r.Reason, &r.RequestID, &detail, &r.SupportActionID, &r.Raw); err != nil {
 			tb.Fatal(err)
 		}
 		if err := json.Unmarshal([]byte(detail), &r.Detail); err != nil {

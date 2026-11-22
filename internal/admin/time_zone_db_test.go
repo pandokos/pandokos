@@ -297,6 +297,7 @@ func TestTimeZonePermissions(t *testing.T) {
 	inference := mkKey([]string{"inference"}, nil)
 	scopedNoWrite := mkKey([]string{"tenant-admin"}, []string{"limit:read"})
 	scopedNoRead := mkKey([]string{"tenant-admin"}, []string{"limit:write"})
+	scopedSetting := mkKey([]string{"tenant-admin"}, []string{"tenant_setting:write"}) // sprint 4.3: setting the time zone has a permission of its own
 	snap := api.SnapshotTenant(t, w.a.ID)
 
 	t.Run("getTenantTimeZone needs limit:read", func(t *testing.T) {
@@ -312,15 +313,15 @@ func TestTimeZonePermissions(t *testing.T) {
 		}
 	})
 
-	t.Run("setTenantTimeZone needs limit:write", func(t *testing.T) {
-		for _, key := range []string{inference, scopedNoWrite, w.plat} {
+	t.Run("setTenantTimeZone needs tenant_setting:write", func(t *testing.T) {
+		for _, key := range []string{inference, scopedNoWrite, scopedNoRead, w.plat} { // a key scoped to limit:write loses the setting (release note of sprint 4.3)
 			expect(t, w.do(t, key, "PUT", path, map[string]any{"time_zone": "Asia/Tokyo"}), 403, adminapi.ProblemCodeForbidden)
 		}
 		if api.SnapshotTenant(t, w.a.ID) != snap {
 			t.Error("a refused change altered the tenant")
 		}
-		if r := w.do(t, scopedNoRead, "PUT", path, map[string]any{"time_zone": "Asia/Tokyo"}); r.Status != 200 {
-			t.Errorf("a key scoped to limit:write: %d\n%s", r.Status, r.Body)
+		if r := w.do(t, scopedSetting, "PUT", path, map[string]any{"time_zone": "Asia/Tokyo"}); r.Status != 200 {
+			t.Errorf("a key scoped to tenant_setting:write: %d\n%s", r.Status, r.Body)
 		}
 	})
 

@@ -26,3 +26,4 @@ A platform permission inside tenants; provisioning in several transactions; self
 - 2026-11-18: recorded as accepted by the maintainer.
 - 2026-11-18: sprint 5.4: three tenant permissions, `price_list:read|write|delete`; no platform permission reads a tenant's usage, limit events or prices
 - 2026-11-22: sprint 4.2 adds five permissions (`user:read|write`, `member:read|write`, `session:self`), the principal kind `user` and roles with a scope (`platform` or `tenant`) instead of a holder kind; `authz.Assignable` is the no-escalation rule for the two roles a user can hold ([ADR 0056](0056-users-memberships-and-sessions-as-principals.md)).
+- 2026-11-22: sprint 4.3: `owner` holds every tenant permission and is the role of a tenant's first identity; `tenant-admin` is a reviewed list; the catalogue has eight more permissions; `authz.Assignable` is replaced by `Principal.CanGrant` ([ADR 0060](0060-built-in-roles-custom-roles-and-the-rule-against-escalation.md)).

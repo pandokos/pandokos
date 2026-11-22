@@ -1,7 +1,7 @@
 ---
 id: EPIC-4
 title: Identity federation and RBAC
-status: in-progress
+status: done
 release: v0.1 (sprint 4.1), v0.2
 depends_on: [EPIC-1]
 ---
@@ -17,7 +17,7 @@ only that.
 
 ## Decisions it implements
 
-ADR 0005 (trusted issuers), 0006, 0007, 0022; written by sprint 4.2: 0056, 0057, 0058, 0059 (proposed).
+ADR 0005 (trusted issuers), 0006, 0007, 0022; written by sprint 4.2: 0056, 0057, 0058, 0059 (proposed); by sprint 4.3: 0060, 0061 (proposed).
 
 ## Sprints
 
@@ -120,6 +120,23 @@ later without reworking the role model:
 The platform support action is therefore designed as a general mechanism (explicit permission,
 mandatory reason, audit record in the tenant, configuration switch), not as a one-off for support
 inside a tenant.
+
+Decided at design (2026-11-22, maintainer decisions O-1 to O-13 in the
+[sprint design](4.3-roles/sprint.md), section 12): `owner` holds every tenant permission and is the
+first identity of a tenant, `tenant-admin` is that minus owner-only permissions; no platform role carries
+`usage:read`, not even under a support action, and `audit:read` under support is decided in 6.2; under a
+support action the platform grants with the tenant's authority, which is what recovers a tenant without
+administrators; nine operations require a reason, including `suspendTenant` and `reactivateTenant`, a
+change of the v0.1 contract recorded in the release notes of v0.2.0 together with `tenant_setting:write`
+for the time zone and the active currency; limit-rule reasons stay optional; `support.enabled` is on by
+default with a 1 h default and a 24 h cap; the owner can end a support action; platform keys may hold
+`platform-auditor`; no scopes per subject mapping. Records:
+[ADR 0060](../../../docs/adr/0060-built-in-roles-custom-roles-and-the-rule-against-escalation.md) and
+[0061](../../../docs/adr/0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md)
+(proposed), with history lines on fourteen older records. Guide:
+[roles, custom roles and support actions](../../../docs/operations/roles.md). Issues #31, #35 and #52
+stay open: the mechanism they reuse is in place (`x-pandokos-reason`, the attributes `InTenant` and
+`Support`, `store.ActInTenant`, `audit.RecordIntervention`; sprint design, section 11).
 
 Starting point from sprint 4.2 (its design, section 11). A role has a scope (`platform` or `tenant`); a
 principal is built per request; a member's roles are rows of `membership_role`, a service account's of

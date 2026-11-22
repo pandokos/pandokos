@@ -5,6 +5,7 @@ import (
 
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/audit"
+	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/queries"
 	"github.com/pandokos/pandokos/internal/tenant"
@@ -83,10 +84,14 @@ func (s *server) CreateSubjectMapping(ctx context.Context, in adminapi.CreateSub
 		if err != nil {
 			return err
 		}
-		if _, err := q.GetServiceAccount(ctx, b.ServiceAccountID); err != nil {
-			if isNoRowsErr(err) {
-				return errMappingServiceAccount
-			}
+		grant, err := q.GetServiceAccountGrant(ctx, b.ServiceAccountID)
+		if isNoRowsErr(err) {
+			return errMappingServiceAccount
+		}
+		if err != nil {
+			return err
+		}
+		if err := s.guardGrant(ctx, principalOf(ctx), targetPrincipal(authz.KindServiceAccount, tid, grant.Roles, grant.Granted, nil).Effective()); err != nil {
 			return err
 		}
 		row, err := q.CreateSubjectMapping(ctx, par)

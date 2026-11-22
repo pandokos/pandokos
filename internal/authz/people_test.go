@@ -184,35 +184,31 @@ func TestPeoplePermissions(t *testing.T) {
 		return p
 	}
 
+	// Changed in sprint 4.3 (the rule against escalation): Assignable is gone, and what it decided about
+	// the permissions of a role is CanGrant's (T-850); whether a role can be assigned at all (it exists,
+	// has the scope, a person can hold it) is decided where it is assigned (T-866).
 	for name, c := range map[string]struct {
-		p     Principal
-		role  string
-		scope Scope
-		want  bool
+		p    Principal
+		role string
+		want bool
 	}{
-		"platform key assigns platform-admin":           {platform, RolePlatformAdmin, ScopePlatform, true},
-		"platform administrator assigns platform-admin": {adminUser, RolePlatformAdmin, ScopePlatform, true},
-		"tenant administrator assigns tenant-admin":     {tenantAdmin, RoleTenantAdmin, ScopeTenant, true},
-		"service account assigns tenant-admin":          {saAdmin, RoleTenantAdmin, ScopeTenant, true},
-		"inference is never held by a user (tenant)":    {tenantAdmin, RoleInference, ScopeTenant, false},
-		"inference is never held by a user (platform)":  {platform, RoleInference, ScopePlatform, false},
-		"unknown role": {platform, "ghost", ScopePlatform, false},
-		"empty role":   {platform, "", ScopePlatform, false},
-		"scope that does not fit the role (platform-admin)": {platform, RolePlatformAdmin, ScopeTenant, false},
-		"scope that does not fit the role (tenant-admin)":   {tenantAdmin, RoleTenantAdmin, ScopePlatform, false},
-		"self is not a scope of a role":                     {platform, RolePlatformAdmin, ScopeSelf, false},
-		"tenant administrator assigns platform-admin":       {tenantAdmin, RolePlatformAdmin, ScopePlatform, false},
-		"platform key assigns tenant-admin":                 {platform, RoleTenantAdmin, ScopeTenant, false},
-		"platform key without user:write":                   {withoutOne(platform, UserWrite), RolePlatformAdmin, ScopePlatform, false},
-		"platform administrator without user:read":          {withoutOne(adminUser, UserRead), RolePlatformAdmin, ScopePlatform, false},
-		"platform administrator without tenant:suspend":     {withoutOne(adminUser, TenantSuspend), RolePlatformAdmin, ScopePlatform, false},
-		"tenant administrator without member:write":         {withoutOne(tenantAdmin, MemberWrite), RoleTenantAdmin, ScopeTenant, false},
-		"tenant administrator without virtual_key:revoke":   {withoutOne(tenantAdmin, VirtualKeyRevoke), RoleTenantAdmin, ScopeTenant, false},
-		"a principal with no role":                          {user(a, tenant.StateActive), RoleTenantAdmin, ScopeTenant, false},
-		"a principal that is nobody":                        {Principal{}, RolePlatformAdmin, ScopePlatform, false},
+		"platform key grants platform-admin":              {platform, RolePlatformAdmin, true},
+		"platform administrator grants platform-admin":    {adminUser, RolePlatformAdmin, true},
+		"tenant administrator grants tenant-admin":        {tenantAdmin, RoleTenantAdmin, true},
+		"service account grants tenant-admin":             {saAdmin, RoleTenantAdmin, true},
+		"tenant administrator grants platform-admin":      {tenantAdmin, RolePlatformAdmin, false},
+		"platform key grants tenant-admin":                {platform, RoleTenantAdmin, false},
+		"platform key without user:write":                 {withoutOne(platform, UserWrite), RolePlatformAdmin, false},
+		"platform administrator without user:read":        {withoutOne(adminUser, UserRead), RolePlatformAdmin, false},
+		"platform administrator without tenant:suspend":   {withoutOne(adminUser, TenantSuspend), RolePlatformAdmin, false},
+		"tenant administrator without member:write":       {withoutOne(tenantAdmin, MemberWrite), RoleTenantAdmin, false},
+		"tenant administrator without virtual_key:revoke": {withoutOne(tenantAdmin, VirtualKeyRevoke), RoleTenantAdmin, false},
+		"a principal with no role":                        {user(a, tenant.StateActive), RoleTenantAdmin, false},
+		"a principal that is nobody":                      {Principal{}, RolePlatformAdmin, false},
 	} {
-		if got := Assignable(c.p, c.role, c.scope); got != c.want {
-			t.Errorf("%s: Assignable = %v, want %v", name, got, c.want)
+		role, _ := RoleByName(c.role)
+		if got := c.p.CanGrant(role.Permissions); got != c.want {
+			t.Errorf("%s: CanGrant of %s = %v, want %v", name, c.role, got, c.want)
 		}
 	}
 }
@@ -231,7 +227,7 @@ func TestPermissionsReferenceListsPeople(t *testing.T) {
 			t.Errorf("permissions.md has no row that starts %q", row)
 		}
 	}
-	if len(Catalogue()) != 49 {
-		t.Errorf("the catalogue holds %d permissions, want 49 (44 of sprint 4.1 and the five of sprint 4.2)", len(Catalogue()))
+	if len(Catalogue()) != 57 {
+		t.Errorf("the catalogue holds %d permissions, want 57 (the 49 of sprint 4.2 and the eight of sprint 4.3)", len(Catalogue()))
 	}
 }

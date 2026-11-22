@@ -278,8 +278,14 @@ func (d *Database) ConnOptions(role string) store.ConnOptions {
 // Open returns a checked store.DB for the role (store.Open, then Check), closed at cleanup.
 func (d *Database) Open(tb testing.TB, role store.Role) *store.DB {
 	tb.Helper()
+	return d.OpenSized(tb, role, 4)
+}
+
+// OpenSized is Open with a pool of at most maxConns connections.
+func (d *Database) OpenSized(tb testing.TB, role store.Role, maxConns int) *store.DB {
+	tb.Helper()
 	db, err := store.Open(store.Options{
-		Conn: d.ConnOptions(string(role)), Role: role, MaxConns: 4, Migrations: embedded(tb),
+		Conn: d.ConnOptions(string(role)), Role: role, MaxConns: maxConns, Migrations: embedded(tb),
 	})
 	if err != nil {
 		tb.Fatal(err)

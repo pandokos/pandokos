@@ -44,6 +44,11 @@ var problems = map[adminapi.ProblemCode]problemSpec{
 	adminapi.ProblemCodeIdempotencyKeyReused:    {422, "Idempotency key reused", "The Idempotency-Key was used with another request."},
 	adminapi.ProblemCodeIdempotencyInProgress:   {409, "Request in progress", "The first request with this Idempotency-Key is still running."},
 	adminapi.ProblemCodeIdempotencyResponseLost: {409, "Response lost", "The first request with this Idempotency-Key succeeded and its response was not kept."},
+
+	// Sprint 4.3, section 5.4 and 5.6: the rule against escalation, support actions, assigned roles.
+	adminapi.ProblemCodeEscalationRefused: {403, "Escalation refused", "The credential may not give or take a permission it does not hold."},
+	adminapi.ProblemCodeSupportDisabled:   {403, "Support actions disabled", "Support actions are switched off."},
+	adminapi.ProblemCodeRoleInUse:         {409, "Role in use", "The role is still assigned."},
 }
 
 // The errors of the handlers and of the hooks; the Error hook turns each into a problem.
@@ -54,6 +59,11 @@ var (
 	errInvalidState    = errors.New("admin: invalid state")
 	errForbidden       = errors.New("admin: forbidden")
 	errTenantState     = errors.New("admin: tenant not active")
+
+	// The errors of sprint 4.3.
+	errEscalation      = errors.New("admin: escalation refused")
+	errSupportDisabled = errors.New("admin: support actions are disabled")
+	errRoleInUse       = errors.New("admin: the role is in use")
 
 	// The errors of the hook for sessions (sprint 4.2, sections 5.3 and 5.7).
 	errCSRF           = errors.New("admin: request rejected as forged")
