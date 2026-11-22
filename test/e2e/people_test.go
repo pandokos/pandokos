@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -209,8 +210,12 @@ func TestSessionNotOnInference(t *testing.T) {
 	up := fakeprovider.New(t)
 	d := dbtest.NewMigrated(t)
 	env := baseEnv(t, d.Env(t))
-	password := initAdmin(t, env, "infer.admin")
+	// init issues the bootstrap key too: the process uses it for the tenant of the control request,
+	// since a second init without --recover is refused.
+	platformFile := filepath.Join(t.TempDir(), "bootstrap.key")
+	password := initAdmin(t, env, "infer.admin", "--key-out", platformFile)
 	p := startBinary(t, opts{level: "info", up: up, db: d, noMigrate: true})
+	p.platformFile = platformFile
 	b := p.browser()
 	get[adminapi.Session](t, b.SignIn(t, "infer.admin", password), 200)
 	token := b.Token()

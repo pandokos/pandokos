@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pandokos/pandokos/internal/account"
 	"github.com/pandokos/pandokos/internal/admin"
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/buildinfo"
@@ -53,6 +54,24 @@ func warnBootstrap(ctx context.Context, logger *slog.Logger, db *store.DB) {
 			return
 		case <-t.C:
 		}
+	}
+}
+
+// warnNoAdministrator logs, once at start, that local sign-in is on and no active user holds a platform
+// role (section 5.15). The query failing is logged at debug: the warning is a hint, not a gate.
+func warnNoAdministrator(ctx context.Context, logger *slog.Logger, cfg *config.Config, db *store.DB) {
+	if !cfg.Auth.Local.Enabled {
+		return
+	}
+	qctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	has, err := account.HasAdministrator(qctx, db)
+	if err != nil {
+		logger.Debug("administrator check failed", "error", err.Error())
+		return
+	}
+	if !has {
+		logger.Warn("no user with a platform role exists", "hint", `create the first administrator with "pandokos init --admin-username NAME"`)
 	}
 }
 
@@ -358,6 +377,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		return 1
 	}
 
+	warnNoAdministrator(ctx, logger, cfg, adminDB)
 	background, stopBackground := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	defer func() { stopBackground(); wg.Wait() }()

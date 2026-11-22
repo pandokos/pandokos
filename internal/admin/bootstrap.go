@@ -5,8 +5,10 @@ import (
 	"errors"
 	"time"
 
+	"github.com/pandokos/pandokos/internal/account"
 	"github.com/pandokos/pandokos/internal/audit"
 	"github.com/pandokos/pandokos/internal/authn"
+	"github.com/pandokos/pandokos/internal/password"
 	"github.com/pandokos/pandokos/internal/secret"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/queries"
@@ -23,13 +25,28 @@ type BootstrapOptions struct {
 	Now         func() time.Time
 	// BeforeCommit is called inside the transaction after the audit record; an error rolls back.
 	BeforeCommit func(key secret.Secret, keyID string, expiresAt time.Time) error
+
+	// AdminUsername, when it is not empty, makes the same transaction create a platform-managed local
+	// user with that username and the role platform-admin (sprint 4.2, section 5.13). Hasher computes
+	// its password hash and AdminPasswordTTL is how long the generated password lasts. It is refused
+	// when an active user already holds a platform role, and nothing is issued then. PasswordOut is
+	// called inside the transaction, after the user is created and before BeforeCommit, with the
+	// password; an error rolls back.
+	AdminUsername    string
+	Hasher           *password.Hasher
+	AdminPasswordTTL time.Duration
+	PasswordOut      func(pw secret.Secret) error
 }
 
-// BootstrapResult is the key that Bootstrap issued.
+// BootstrapResult is the key that Bootstrap issued and, with AdminUsername, the first administrator.
 type BootstrapResult struct {
 	Key       secret.Secret
 	KeyID     string
 	ExpiresAt time.Time
+	// AdminPassword is the generated password of the user AdminUsername, shown once; AdminUserID is
+	// the user's ID. Both are empty without AdminUsername.
+	AdminPassword secret.Secret
+	AdminUserID   string
 }
 
 // Bootstrap issues the bootstrap platform key (sprint 1.3, section 5.14, step 2). It is used by
@@ -76,6 +93,18 @@ func Bootstrap(ctx context.Context, db *store.DB, o BootstrapOptions) (Bootstrap
 			return err
 		}
 		res = BootstrapResult{Key: key, KeyID: keyID, ExpiresAt: expires}
+		if o.AdminUsername != "" {
+			pw, id, err := account.BootstrapAdmin(ctx, tx, o.Hasher, o.AdminUsername, o.AdminPasswordTTL)
+			if err != nil {
+				return err
+			}
+			res.AdminPassword, res.AdminUserID = pw, id
+			if o.PasswordOut != nil {
+				if err := o.PasswordOut(pw); err != nil {
+					return err
+				}
+			}
+		}
 		if o.BeforeCommit != nil {
 			return o.BeforeCommit(key, keyID, expires)
 		}
