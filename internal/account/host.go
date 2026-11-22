@@ -92,10 +92,14 @@ func HasAdministrator(ctx context.Context, db *store.DB) (bool, error) {
 // roll the change back when it cannot. It returns ErrNoUser when no account has the username, and the
 // password together with ErrAuditIncomplete when the change was made.
 func (s *Service) HostReset(ctx context.Context, username string, beforeCommit func(pw secret.Secret) error) (secret.Secret, error) {
+	g, err := s.Generate(ctx)
+	if err != nil {
+		return secret.Secret{}, err
+	}
 	var pw secret.Secret
-	err := s.host(ctx, username, "user.password_reset", func(ctx context.Context, tx store.Tx, userID string) error {
+	err = s.host(ctx, username, "user.password_reset", func(ctx context.Context, tx store.Tx, userID string) error {
 		var err error
-		if pw, _, err = s.ResetPassword(ctx, tx, userID); err != nil {
+		if pw, _, err = s.ResetPassword(ctx, tx, userID, g); err != nil {
 			return err
 		}
 		return beforeCommit(pw)

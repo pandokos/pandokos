@@ -742,6 +742,27 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUse
 	return items, nil
 }
 
+const lockLocalAccount = `-- name: LockLocalAccount :one
+SELECT u.state, a.password_hash
+  FROM pandokos.app_user u JOIN pandokos.local_account a ON a.user_id = u.id
+ WHERE u.id = $1::uuid
+   FOR UPDATE OF u, a
+`
+
+type LockLocalAccountRow struct {
+	State        string
+	PasswordHash string
+}
+
+// Locks the user and its local account, in this order, and returns the state and the hash as they
+// are now: a sign-in or a change of password that verified a hash earlier checks them again.
+func (q *Queries) LockLocalAccount(ctx context.Context, id string) (LockLocalAccountRow, error) {
+	row := q.db.QueryRow(ctx, lockLocalAccount, id)
+	var i LockLocalAccountRow
+	err := row.Scan(&i.State, &i.PasswordHash)
+	return i, err
+}
+
 const lockUser = `-- name: LockUser :one
 SELECT u.id, u.sign_in, u.tenant_id, u.state
   FROM pandokos.app_user u

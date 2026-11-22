@@ -402,8 +402,12 @@ func (s *server) ResetUserPassword(ctx context.Context, in adminapi.ResetUserPas
 	p := principalOf(ctx)
 	st := stateOf(ctx)
 	var out adminapi.PasswordReset
-	err := s.platformUser(ctx, in.User, func(ctx context.Context, tx store.Tx, _ *queries.Queries, cur queries.GetUserRow) error {
-		pw, expires, err := s.accounts.ResetPassword(ctx, tx, cur.ID)
+	g, err := s.accounts.Generate(ctx) // hashed before the transaction, which holds the lock of the user
+	if err != nil {
+		return nil, err
+	}
+	err = s.platformUser(ctx, in.User, func(ctx context.Context, tx store.Tx, _ *queries.Queries, cur queries.GetUserRow) error {
+		pw, expires, err := s.accounts.ResetPassword(ctx, tx, cur.ID, g)
 		if errors.Is(err, account.ErrNotLocal) {
 			return invalidState("user", "has no password")
 		}

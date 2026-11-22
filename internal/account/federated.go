@@ -150,6 +150,14 @@ func (s *Service) SignInFederated(ctx context.Context, in FederatedInput) (SignI
 
 	var res SignInResult
 	err = s.o.DB.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
+		// A disable that committed after the first read ended the sessions of the user: no new one.
+		lock, err := queries.New(tx).LockUser(ctx, u.ID)
+		if err != nil {
+			return err
+		}
+		if lock.State != "active" {
+			return &Refusal{Reason: "user_disabled", UserID: u.ID, TenantID: u.TenantID}
+		}
 		if in.Presented != "" {
 			if err := s.o.Sessions.DeletePresented(ctx, tx, in.Presented, u.ID); err != nil {
 				return err

@@ -82,6 +82,14 @@ SELECT u.id, u.sign_in, u.tenant_id, u.state
  WHERE u.id = sqlc.arg(id)::uuid
    FOR UPDATE;
 
+-- name: LockLocalAccount :one
+-- Locks the user and its local account, in this order, and returns the state and the hash as they
+-- are now: a sign-in or a change of password that verified a hash earlier checks them again.
+SELECT u.state, a.password_hash
+  FROM pandokos.app_user u JOIN pandokos.local_account a ON a.user_id = u.id
+ WHERE u.id = sqlc.arg(id)::uuid
+   FOR UPDATE OF u, a;
+
 -- name: ListUsers :many
 -- Platform scope; the users that the platform manages only.
 SELECT u.id, u.sign_in, u.tenant_id, u.display_name, u.email, u.state, u.state_changed_at, u.created_at, u.updated_at,

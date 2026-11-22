@@ -379,9 +379,13 @@ func (s *server) ResetMemberPassword(ctx context.Context, in adminapi.ResetMembe
 	st := stateOf(ctx)
 	var out adminapi.PasswordReset
 	var username string
+	g, err := s.accounts.Generate(ctx) // hashed before the transaction, which holds the lock of the user
+	if err != nil {
+		return nil, err
+	}
 	err = s.member(ctx, tid, in.User, true, func(ctx context.Context, tx store.Tx, _ *queries.Queries, cur queries.GetMemberRow) error {
 		username = cur.Username
-		pw, expires, err := s.accounts.ResetPassword(ctx, tx, cur.UserID)
+		pw, expires, err := s.accounts.ResetPassword(ctx, tx, cur.UserID, g)
 		if errors.Is(err, account.ErrNotLocal) {
 			return invalidState("user", "has no password")
 		}

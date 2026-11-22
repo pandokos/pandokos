@@ -53,6 +53,28 @@ func parseManaging(raw string) (tenant.ID, error) {
 	return tenant.ParseID(raw)
 }
 
+// errChanged ends a transaction that found the account other than the one that was verified.
+var errChanged = errors.New("account: the account changed during the sign-in")
+
+// stillVerified locks the user and its local account and checks that the account is active and still
+// holds the hash that the password was verified against: a change, a reset or a disable that
+// committed meanwhile ended the sessions and must not be followed by a new one. It returns the
+// reason of the refusal, empty when the account is as verified.
+func stillVerified(ctx context.Context, q *queries.Queries, userID, hash string) (string, error) {
+	cur, err := q.LockLocalAccount(ctx, userID)
+	switch {
+	case errors.Is(err, store.ErrNoRows):
+		return "unknown_user", nil
+	case err != nil:
+		return "", err
+	case cur.State != "active":
+		return "user_disabled", nil
+	case cur.PasswordHash != hash:
+		return "wrong_password", nil
+	}
+	return "", nil
+}
+
 func userOf(a queries.GetAccountForSignInRow, managing tenant.ID) User {
 	return User{
 		ID: a.UID, SignIn: "local", DisplayName: a.DisplayName, State: a.State, Username: a.Username,
@@ -138,9 +160,17 @@ func (s *Service) SignIn(ctx context.Context, username string, pw secret.Secret,
 	u := userOf(acct, managing)
 	var res SignInResult
 	var later afterCommit
+	changed := ""
 	err = s.o.DB.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
 		later = nil
 		q := queries.New(tx)
+		var err error
+		if changed, err = stillVerified(ctx, q, u.ID, acct.PasswordHash); err != nil {
+			return err
+		}
+		if changed != "" {
+			return errChanged
+		}
 		if _, err := q.DeleteThrottle(ctx, akey); err != nil {
 			return err
 		}
@@ -162,6 +192,9 @@ func (s *Service) SignIn(ctx context.Context, username string, pw secret.Secret,
 		return s.record(ctx, tx, &later, managing, audit.Event{Actor: actorOf(u), Action: "auth.sign_in", ResourceType: "user", ResourceID: u.ID,
 			Outcome: "success", Detail: map[string]any{"method": "local"}})
 	})
+	if errors.Is(err, errChanged) {
+		return SignInResult{}, s.failSignIn(ctx, akey, skey, changed, acct, managing, found)
+	}
 	if err != nil {
 		return SignInResult{}, err
 	}
@@ -282,9 +315,17 @@ func (s *Service) ChangePassword(ctx context.Context, sess Session, current, nex
 	user.MustChange = false
 	var res SignInResult
 	var later afterCommit
+	changed := ""
 	err = s.o.DB.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
 		later = nil
 		q := queries.New(tx)
+		var err error
+		if changed, err = stillVerified(ctx, q, u.ID, acct.PasswordHash); err != nil {
+			return err
+		}
+		if changed != "" {
+			return errChanged
+		}
 		if _, err := q.SetPassword(ctx, queries.SetPasswordParams{PasswordHash: hash, MustChange: false, UserID: u.ID}); err != nil {
 			return err
 		}
@@ -301,6 +342,11 @@ func (s *Service) ChangePassword(ctx context.Context, sess Session, current, nex
 		res = SignInResult{User: user, Token: tok, Session: created}
 		return s.record(ctx, tx, &later, managing, audit.Event{Actor: actorOf(user), Action: "user.password_change", ResourceType: "user", ResourceID: u.ID, Outcome: "success"})
 	})
+	if errors.Is(err, errChanged) {
+		// The password or the state changed while the new hash was computed: the current password is
+		// not the one that was verified, and nothing is written.
+		return SignInResult{}, &PolicyError{Field: "current_password", Violation: "is not the current password"}
+	}
 	if err != nil {
 		return SignInResult{}, err
 	}
