@@ -130,7 +130,16 @@ flowchart TB
   [ADR 0056](../adr/0056-users-memberships-and-sessions-as-principals.md)). The gateway uses none of
   the people's packages.
 - **authz** evaluates `resource:action` permissions in process
-  ([ADR 0007](../adr/0007-authorization-rbac.md)).
+  ([ADR 0007](../adr/0007-authorization-rbac.md)). The catalogue and the ten built-in roles are code;
+  a tenant's custom roles are data. A principal carries the names of its roles and the permissions that
+  come from data (the active custom roles of the tenant, or a support action), and one function,
+  `Effective`, decides what it holds. The gateway reads the permissions of custom roles in the statement
+  that already reads a key's roles and holds them in its principal cache, which `tenant_role` flushes by
+  notification; nothing else of roles is on the gateway. Giving a permission is checked by one rule,
+  `CanGrant`: nobody gives what they do not hold
+  ([ADR 0060](../adr/0060-built-in-roles-custom-roles-and-the-rule-against-escalation.md)). The platform
+  acts inside a tenant only through a support action
+  ([ADR 0061](../adr/0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md)).
 - **limits** reserves capacity before forwarding and settles after: requests, tokens and cost per
   minute, day and month, and requests in flight, with rules scoped to a provider or model
   ([ADR 0012](../adr/0012-limits-and-budget-reservation.md), [ADR 0050](../adr/0050-quotas-and-budgets-periods-attribution-currencies.md),
@@ -418,7 +427,8 @@ and client authors is [signing people in](../operations/sign-in.md).
 they hold, platform-wide and in each tenant, as the same `resource:action` strings the API
 operations require. A client can use the answer to offer only what is allowed. This is a
 convenience, not the control: the API authorizes each call on its own, so a modified client gains
-nothing.
+nothing. The permissions listed for a tenant come from the same function that decides the request, so the
+list and the decision cannot differ ([roles guide](../operations/roles.md#5-what-v1me-returns-and-how-a-client-uses-it)).
 
 ## 13. Open questions
 

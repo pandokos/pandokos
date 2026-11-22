@@ -90,3 +90,4 @@ tenant's usage; the conventions do not require them.
 - 2026-11-20: proposed after the maintainer's review of the code-scanning alerts on the request line
   and on the ledger writer.
 - 2026-11-22: sprint 4.2 applies the decision to people: logs and traces name no user, username, subject, group or address; a user is named in the `admin request` line only when acting on the platform.
+- 2026-11-22: sprint 4.3 (D-17): the request line of a support principal says `support: true` and names no tenant, role, permission, reason or action; the line `grant refused` names the request and the operation only ([ADR 0061](0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md)).

@@ -68,3 +68,4 @@ There is one rule per subject, scope, metric and currency (decision 1). The rule
 - 2026-11-18: accepted by the maintainer after review. Amendments planned in sprint 5.3: existence checks of subject and scope become foreign keys; automatic deletions of rules are audited as `limit.delete` with the actor and the reason.
 - 2026-11-18: amended by sprint 5.3 (see Amendment).
 - 2026-11-18: amended by sprint 5.4 (see Amendment); [ADR 0053](0053-tenant-price-lists-and-active-currency.md).
+- 2026-11-22: sprint 4.3: the tenant's time zone is set with `tenant_setting:write`, no longer with `limit:write` ([ADR 0060](0060-built-in-roles-custom-roles-and-the-rule-against-escalation.md)).

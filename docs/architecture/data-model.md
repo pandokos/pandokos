@@ -19,8 +19,11 @@ erDiagram
     USER ||--o{ USER_SESSION : opens
     USER ||--o{ PLATFORM_ROLE_ASSIGNMENT : holds
     SERVICE_ACCOUNT ||--o{ VIRTUAL_KEY : has
-    TENANT ||--o{ ROLE : defines
-    ROLE ||--o{ ROLE_ASSIGNMENT : granted
+    TENANT ||--o{ TENANT_ROLE : defines
+    TENANT_ROLE ||--o{ ROLE_ASSIGNMENT : named_by
+    TENANT_ROLE ||--o{ MEMBERSHIP_ROLE : named_by
+    TENANT ||--o{ SUPPORT_ACTION : receives
+    SUPPORT_ACTION ||--o{ AUDIT_EVENT : named_by
     TENANT ||--|| TENANT_DATA_KEY : has
     TENANT ||--o{ PROVIDER_CREDENTIAL : owns
     PROVIDER ||--o{ ENDPOINT : exposes
@@ -42,7 +45,8 @@ erDiagram
 | Group | Tables | Scope |
 |---|---|---|
 | Platform | `tenant`, `platform_key`, `virtual_key_directory` (no grant to any runtime role), `platform_role_assignment`, `provider`, `provider_endpoint`, `model`, `model_tenant_grant`, `price_version`, `price_rate`, `price_import`, `platform_issuer`, `platform_issuer_tenant` (a tenant's session sees its own rows), `platform_limit_rule` (a tenant's session sees the defaults and its own rows), `issuer_directory` (no grant to any runtime role), `kek_version` | global |
-| Identity | `service_account`, `virtual_key`, `trusted_issuer`, `subject_mapping`, `role`, `role_permission`, `role_assignment` (service accounts), `membership`, `membership_role` | tenant |
+| Identity | `service_account`, `virtual_key`, `trusted_issuer`, `subject_mapping`, `tenant_role` (custom roles), `role_assignment` (service accounts), `membership`, `membership_role` | tenant |
+| Support | `support_action` (global, three policies, a grant to the admin role only) | platform scope and the tenant of the row |
 | People | `app_user`, `local_account`, `user_identity`, `user_session`, `signin_throttle`, `oidc_login`, `idempotency_key` (global, with explicit policies and a grant to the admin role only), `membership_directory` (global, no grant to any runtime role) | global; the gateway and worker roles hold nothing on them |
 | Vault | `tenant_data_key`, `provider_credential` | tenant |
 | Policy | `tenant_model_restriction`, `limit_rule` | tenant |
@@ -194,6 +198,37 @@ session sees nothing. Sessions, identities, throttle rows and platform roles are
 scope only. The gateway and worker roles have no privilege on any of these tables or functions in any
 session, which is what makes "a session never authenticates inference" a property of the database and not
 only of the code. The audit constraint accepts the actor type `host`, for the commands run on the host.
+
+## Custom roles and support actions (sprint 4.3)
+
+Migration 0014 ([ADR 0060](../adr/0060-built-in-roles-custom-roles-and-the-rule-against-escalation.md),
+[ADR 0061](../adr/0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md)) adds two
+tables and one column. No function of it is `SECURITY DEFINER`.
+
+**Custom roles.** The catalogue and the built-in roles are in code. `tenant_role` is a tenant-scoped table
+with the one policy `tenant_isolation`: `name` (unique in the tenant, immutable, never the name of a
+built-in role or starting with `platform-` or `pandokos-`), `description`, `permissions` (1 to 64 names,
+sorted, checked by format), `state` (`active` or `inactive`). `role_assignment.role` and
+`membership_role.role` hold the name of a built-in role or of a row of this table, as they always held
+a name; **there is no foreign key**, because built-in roles are not rows. This departs from the plan of
+sprint 4.2 that three tables would reference the roles: `platform_role_assignment` holds built-in platform
+roles only, since custom roles are the tenant's. A trigger refuses to rename a role and to delete one that
+is assigned (the handler checks first, under a row lock); another sends the tenant's cache notification on
+every change, because the **gateway role reads `tenant_role`** (`SELECT` and nothing else) in the statement
+that already reads the roles of a service account. The worker has no privilege on it. A name without a
+row gives nothing: the default is deny.
+
+**Support actions.** `support_action` is global: the actor (a platform key or a user, with the key's ID
+and the actor's name as they were), the tenant, the reason, the permissions, the request ID, the times of
+opening and expiry (at most 24 hours after opening, by constraint) and, once, of closing, with who closed
+it (`platform`, `tenant` or `expiry`) and why. One open action per actor and tenant (a unique index). A
+trigger lets a row change once, when it is closed. Three policies: the platform scope sees and writes
+every row; a tenant's session reads its tenant's rows and may close them as the tenant. A row is never
+deleted before tenant deletion (sprint 6.3).
+
+**Audit.** `audit_event` gains the nullable column `support_action_id`, filled for what a support
+principal changes in a tenant. Opening and closing write one event in the tenant's chain and one in the
+platform's, in the same transaction as the action's row.
 
 ## Trusted issuers, the directory and subject mappings (sprint 4.1)
 

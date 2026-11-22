@@ -72,3 +72,4 @@ the estimate, the settlement, the ledger and the counters.
 ## History
 
 - 2026-11-18: proposed with sprint 5.4, after the maintainer's review of the same day.
+- 2026-11-22: sprint 4.3: the active currency is set with `tenant_setting:write`, no longer with `price_list:write` ([ADR 0060](0060-built-in-roles-custom-roles-and-the-rule-against-escalation.md)).

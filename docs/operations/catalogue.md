@@ -303,7 +303,7 @@ added (never convert, never add). The usage record says which list the price cam
    under an active budget meets `limits.on_unknown_price` (409 `no_price` by default). The tenant adds
    it to the list, or does not use the model.
 
-**Changing the active currency** (`PUT /v1/tenants/{tenant}/active-currency`, `price_list:write`;
+**Changing the active currency** (`PUT /v1/tenants/{tenant}/active-currency`, `tenant_setting:write`, no longer `price_list:write`;
 `price-list currency set --tenant T CCC` or `--default`; `price-list currency get`).
 
 - Only when **a list in that currency exists**: a price of the tenant's own in it, or a catalogue price in

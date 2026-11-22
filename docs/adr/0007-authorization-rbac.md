@@ -43,3 +43,7 @@ not have.
 
 **Roles only, without a permission layer.** Makes custom roles impossible and ties every check to
 role names.
+
+## History
+
+- 2026-11-22: sprint 4.3 gives the roles, custom roles and the rule against escalation their contents ([ADR 0060](0060-built-in-roles-custom-roles-and-the-rule-against-escalation.md)) and how the platform acts inside a tenant ([ADR 0061](0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md)).

@@ -257,6 +257,7 @@ they do not prevent start.
 | `listeners.<l>.tls.cert_file` | the certificate expires in less than 14 days | the certificate expires on `<date>` |
 | `database.tls.mode` | the mode is `disable` and the host of `database.address` is not a loopback address or `localhost` | the database connection is not encrypted |
 | `vault.kek.local.key_file` | the file grants any permission to other users (mode `& 0007`) | the file can be accessed by other users; restrict it to the service user (chmod 600) |
+| `support.enabled` | false | support actions are off: a tenant that loses its administrators cannot be recovered through the API |
 | `tokens.private_hosts` | the list is not empty (`serve` only) | issuer and key URLs of these hosts may resolve to private addresses: `<hosts>` |
 | `tokens.jwks.max_stale` | more than 24h | keys of an issuer are used for more than 24h after the last successful fetch: a key withdrawn by the issuer stays trusted that long while it is unreachable |
 | `environment` | an unknown `PANDOKOS_` variable | unknown variable `<NAME>` ignored (the value is never printed) |

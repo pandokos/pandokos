@@ -65,6 +65,8 @@ A record is *proposed* until the maintainer accepts it, by merging its pull requ
 | [0057](0057-local-accounts-and-sessions-formats-and-numbers.md) | Local accounts and sessions: formats and numbers | proposed |
 | [0058](0058-openid-connect-relying-party.md) | The OpenID Connect relying party | proposed |
 | [0059](0059-idempotency-keys.md) | Idempotency keys | proposed |
+| [0060](0060-built-in-roles-custom-roles-and-the-rule-against-escalation.md) | Built-in roles, custom roles and the rule against escalation | proposed |
+| [0061](0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md) | Support actions and reasons: how the platform acts inside a tenant | proposed |
 
 ## Questions from SOW 0.1 and where they were decided
 
@@ -77,7 +79,7 @@ A record is *proposed* until the maintainer accepts it, by merging its pull requ
 | 5. Separation of control and data plane | 0003 |
 | 6, 7. Service-account authentication, mTLS, JWT, SPIFFE, DPoP | 0005 |
 | 8. Federated identity, tenants and roles | 0006, 0022, 0056, 0057, 0058 |
-| 9. RBAC model and granularity | 0007 |
+| 9. RBAC model and granularity | 0007, 0060, 0061 |
 | 10. What the platform admin can do with credentials | 0007, 0008 |
 | 11, 12. Provider APIs and degree of transparency | 0009 |
 | 13. Token extraction, streaming | 0010 |

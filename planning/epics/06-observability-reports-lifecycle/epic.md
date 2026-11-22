@@ -46,6 +46,10 @@ collector stopped, inference latency is unchanged.
   across currencies (5.4 §11).
 - Usage export as newline-delimited JSON and CSV.
 - Audit reading API with filters; per-tenant hash chain; `pandokos audit verify`; audit export.
+  *Note:* `audit:read` is one tenant permission, given to `owner`, `tenant-admin` and `auditor` and not to `read-only`
+  (4.3 §11); whether a support action may carry it is decided here by giving it the attribute `Support` or not. The
+  read API can filter by `support_action_id`. Refused grants and refused support attempts, logged but not audited
+  in 4.3, can become events here.
 - Retention settings for usage and audit; partition dropping through the audited function.
 - Restriction of accepted metadata keys per tenant.
 - `pandokos export` and `pandokos apply` for declarative configuration.

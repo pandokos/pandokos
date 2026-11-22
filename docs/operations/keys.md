@@ -160,4 +160,4 @@ wait for it to be enabled again.
 - A bearer key that is seen can be replayed until it is revoked or expires. Serve both listeners
   with TLS, or terminate TLS in front of them ([TLS](tls.md)).
 - Platform administrators have no permission inside a tenant. A tenant that loses its last
-  `tenant-admin` key cannot be administered until the support actions of a later sprint.
+  `tenant-admin` key is recovered by a platform administrator under a support action ([roles guide](roles.md#7-recovering-a-tenant-that-lost-its-administrators)).

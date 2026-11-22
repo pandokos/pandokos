@@ -57,3 +57,4 @@ problem (issue #33) with other costs.
 
 - 2026-11-18: proposed with sprint 5.4, after the maintainer's review of the same day.
 - 2026-11-20: point 3 and the consequence "the tenant ID stays in logs and traces" are superseded: logs and traces hold no tenant data at all, and `telemetry.tenant_usage_details` is removed ([ADR 0055](0055-operational-telemetry-holds-no-tenant-data.md)).
+- 2026-11-22: sprint 4.3: no support action carries a permission that reads usage, limit events or prices; the strong form of this decision holds under a support action ([ADR 0061](0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md)).

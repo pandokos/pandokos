@@ -708,3 +708,49 @@ a person through the identity provider.
 
 **What the administration role does at run time.** It purges expired sessions, throttle rows, sign-in
 transactions and idempotency keys every five minutes. The worker is not involved.
+
+## 19. Grants of migration 0014
+
+Migration `0014_roles_support` adds custom roles, support actions and the role `owner`
+([roles guide](roles.md), [data model](../architecture/data-model.md),
+[ADR 0060](../adr/0060-built-in-roles-custom-roles-and-the-rule-against-escalation.md),
+[ADR 0061](../adr/0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md)). It runs in
+one transaction as the owner role. **The worker role receives no privilege on anything of this
+migration**, and no function of it is `SECURITY DEFINER`.
+
+**What changes.**
+
+- `tenant_role`, a tenant-scoped table with the one policy `tenant_isolation`: the name, description,
+  sorted permissions and state of a tenant's custom role. The admin role reads, inserts (name,
+  description, permissions), updates (description, permissions, state) and deletes; the **gateway role
+  receives `SELECT` and nothing else**, because it reads the permissions of the custom roles of a key's
+  service account in the statement that already reads its roles. Checks refuse the name of a built-in
+  role and the prefixes `platform-` and `pandokos-`; a trigger refuses to rename a role or delete one
+  that a service account or a member holds; another sends the tenant's cache notification on every
+  change (ADR 0030).
+- `support_action`, a global table with three policies (the platform scope sees and writes every row; a
+  tenant's session reads the rows of its tenant and may end them). One open action per actor and tenant
+  (a unique index); a row changes once, when it is closed; it is never deleted before tenant deletion.
+  Granted to the admin role only.
+- `audit_event` gains the nullable column `support_action_id` (no row is rewritten; the admin role may
+  insert it). The audit log is still append-only.
+- Two indexes on `role_assignment` and `membership_role` by (tenant, role), for the check that a role is
+  unused.
+
+**The owner step.** Until this migration `tenant-admin` held every tenant permission. The migration adds
+the role `owner` to every service account and every member that holds `tenant-admin` by an
+administrator's hand (they keep `tenant-admin`), so that every tenant has an owner and nobody holds
+less. Rows that group rules wrote (source `idp`) are left to the rules. To do it the migration lifts
+`FORCE ROW LEVEL SECURITY` on `role_assignment` and `membership_role`, as migration 0011 does, and forces
+it again before it ends.
+
+**Locks and duration.** New tables, two indexes and one nullable column; the inserts of the owner step
+are proportional to the number of administrators. A failure rolls everything back to the schema of 0013.
+
+**Upgrade: stop, migrate, start.** An earlier binary does not start against the new schema and a new
+binary does not start against the schema of 0013. There is no down migration; restore a backup taken
+before to go back. **Contract changes of v0.2 that the upgrade brings** (also in the release notes of
+v0.2.0 and in the [roles guide](roles.md#10-what-changes-for-an-installation-of-v01)): a required reason
+on `suspendTenant` and `reactivateTenant`; the time zone and the active currency are set with
+`tenant_setting:write`, so keys scoped to `limit:write` or `price_list:write` lose the two settings; the
+first service account of a tenant is `owner`.

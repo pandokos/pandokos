@@ -164,11 +164,11 @@ The request body must carry a `reason` that is not empty after trimming; it is r
 
 ## Notes
 
-The six limit permissions are held by two roles: `tenant-admin` has `limit:read`, `limit:write` and
+The six limit permissions: `owner` and `tenant-admin` have `limit:read`, `limit:write` and
 `limit:delete`; `platform-admin` has `platform_limit:read`, `platform_limit:write` and
 `platform_limit:delete`. The role `inference` has none. A platform principal cannot write a tenant's own
 rules and a tenant principal can neither read nor write platform rules beyond the ceilings that apply to
-its own tenant (`listTenantPlatformLimits`, under `limit:read`). The holders are those of the tables above ([limits guide](../operations/limits.md)). The platform sets a tenant's time zone with `tenant:write` (`createTenant`, `updateTenant`). No permission was added in sprint 5.3. Sprint 5.4 adds three, `price_list:read`, `price_list:write` and `price_list:delete`, all tenant-scoped and held by `tenant-admin`; the active currency is chosen with `price_list:write`. **No platform permission reads or writes a tenant's usage records, limit events or price lists**, and no platform role is a usage viewer ([ADR 0054](../adr/0054-usage-data-is-the-tenants.md)): what a platform principal reads of a tenant is its setting (the active currency on the `Tenant` resource), never what it consumes or pays.
+its own tenant (`listTenantPlatformLimits`, under `limit:read`). The holders are those of the tables above ([limits guide](../operations/limits.md)). The platform sets a tenant's time zone with `tenant:write` (`createTenant`, `updateTenant`). A tenant sets its own time zone and its active currency with `tenant_setting:write`, which sprint 4.3 split from `limit:write` and `price_list:write`. **No platform permission reads or writes a tenant's usage records, limit events or price lists**, and no platform role is a usage viewer, not even under a support action ([ADR 0054](../adr/0054-usage-data-is-the-tenants.md)): what a platform principal reads of a tenant is its setting (the active currency on the `Tenant` resource), never what it consumes or pays.
 
 Every operation of an inference family needs the same pair of permissions, `model:invoke` and `credential:use`, and both are
 required: `chat.completions`, `responses` and `embeddings` for `openai`; `messages` and `messages.count_tokens` for `anthropic`.
@@ -176,7 +176,12 @@ required: `chat.completions`, `responses` and `embeddings` for `openai`; `messag
 Scope *platform*: held by platform principals only. Scope *tenant*: held by principals of that
 tenant only, and checked against the tenant of the request. Scope *self*: the caller itself.
 
-Roles are defined in code and cannot be changed; `role_assignment.role` holds a name.
+Built-in roles are defined in code and cannot be changed; `role_assignment.role` and `membership_role.role`
+hold a name, which is a built-in role or a custom role of the tenant. A tenant defines custom roles from the
+tenant permissions of the catalogue ([roles guide](../operations/roles.md#2-custom-roles)); they are not
+possible for the platform. The attribute *in tenant* marks a platform permission whose operations read or
+change one tenant; *support* marks a tenant permission that a support action can carry, a closed list of
+eleven that includes no permission that reads usage, prices, limits or secrets.
 
 
 ## Decision
@@ -189,7 +194,8 @@ The first rule that applies wins:
 3. for a service account, and for a user with a tenant: no tenant is denied, and a tenant that is not
    `active` is refused with `tenant_suspended` (403);
 4. a tenant permission is denied to a platform principal (a platform role implies no tenant
-   permission); a request for another tenant is `not_found` (404), whether or not the caller holds
+   permission) unless the principal has an open support action in that tenant, which then acts as a
+   principal of the tenant with the permissions of the action; a request for another tenant is `not_found` (404), whether or not the caller holds
    the permission and whether or not that tenant exists; otherwise the permission must be held;
 5. a self permission is allowed when held. Every user holds `identity:read` and `session:self`
    whatever its roles; `session:self` is never held by a key or a token, which have no session.
@@ -198,11 +204,14 @@ A user is identified by its session, not by a tenant: the principal is built for
 platform roles of the user for a platform permission and from its membership of the tenant of the path
 for a tenant permission (no membership is `not_found`). A role counts for a principal when its scope
 fits: a platform role for a principal without a tenant that is not a service account, a tenant role for a
-principal with a tenant that is not a platform key. A role may be given to a user only by a principal
-that holds every permission of it.
+principal with a tenant that is not a platform key. Nobody gives or takes a role whose permissions they do not hold
+(`escalation_refused`): the rule is the same for roles of people, service accounts, keys, mappings and
+password resets, and containment (disabling, revoking) is free ([roles guide](../operations/roles.md#4-the-rule-against-escalation)).
 
-The permissions a principal holds are the union of its roles' permissions, narrowed to the scopes
-of the key when the key has any. A role that is unknown, or of the other kind, grants nothing.
+The permissions a principal holds are the union of the permissions of its built-in roles and of its active
+custom roles, narrowed to the scopes of the key when the key has any. A role that is unknown, inactive or of
+the other kind grants nothing. A principal under a support action holds the permissions of the action that
+have the attribute *support*.
 
 A platform administrator holds no tenant permission, `credential:*` included, and no permission that
 returns or replaces a secret: the platform credential operations name a tenant, return metadata only
