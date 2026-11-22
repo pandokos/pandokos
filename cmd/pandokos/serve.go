@@ -286,6 +286,10 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	}
 	adminOpts.Sessions, adminOpts.Accounts, adminOpts.Idempotency = people.sessions, people.accounts, people.idempotency
 	adminOpts.Origin, adminOpts.Auth = adminOrigin(cfg), adminAuthOptions(cfg)
+	if adminOpts.OIDC, adminOpts.Auth.GroupRules, err = newOIDC(cfg, guard, logger); err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
 	adminHandler, err := admin.New(adminOpts)
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())

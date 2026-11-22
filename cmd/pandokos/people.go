@@ -5,13 +5,18 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net"
+	"net/http"
 	"net/netip"
+	"strings"
 	"time"
 
 	"github.com/pandokos/pandokos/internal/account"
 	"github.com/pandokos/pandokos/internal/admin"
 	"github.com/pandokos/pandokos/internal/config"
+	"github.com/pandokos/pandokos/internal/egress"
 	"github.com/pandokos/pandokos/internal/idem"
+	"github.com/pandokos/pandokos/internal/jwks"
+	"github.com/pandokos/pandokos/internal/oidc"
 	"github.com/pandokos/pandokos/internal/password"
 	"github.com/pandokos/pandokos/internal/session"
 	"github.com/pandokos/pandokos/internal/store"
@@ -45,6 +50,61 @@ func newPeople(cfg *config.Config, db *store.DB) (*people, error) {
 		idempotency: idem.NewStore(idem.Options{DB: db, Retention: time.Duration(cfg.Idempotency.Retention)}),
 	}, nil
 }
+
+// newOIDC builds the relying party of the identity provider and its group rules, or nil when it is off.
+// It has a key cache of its own (the timings of tokens.jwks.*, the hosts of auth.oidc.private_hosts)
+// and a client for the token endpoint whose transport is the egress guard's: no redirect, 10 s.
+func newOIDC(cfg *config.Config, guard *egress.Guard, logger *slog.Logger) (*oidc.Provider, []oidc.Rule, error) {
+	o := cfg.Auth.OIDC
+	if !o.Enabled {
+		return nil, nil, nil
+	}
+	rules, err := oidc.ParseRules(o.GroupMappings)
+	if err != nil && len(o.GroupMappings) > 0 {
+		return nil, nil, err
+	}
+	hosts := make([]string, 0, len(o.PrivateHosts))
+	private := map[string]bool{}
+	for _, h := range o.PrivateHosts {
+		h = strings.ToLower(h)
+		hosts = append(hosts, h)
+		private[h] = true
+	}
+	cache, err := jwks.New(jwks.Options{
+		Transport: guard.Transport, PrivateHosts: hosts,
+		FetchTimeout:       time.Duration(cfg.Tokens.JWKS.FetchTimeout),
+		RefreshInterval:    time.Duration(cfg.Tokens.JWKS.RefreshInterval),
+		MinRefetchInterval: time.Duration(cfg.Tokens.JWKS.MinRefetchInterval),
+		MaxStale:           time.Duration(cfg.Tokens.JWKS.MaxStale),
+		Logger:             logger,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	pub, priv := guard.Transport(false), guard.Transport(true)
+	p, err := oidc.New(oidc.Options{
+		Issuer: o.Issuer, ClientID: o.ClientID, ClientSecret: o.ClientSecret, ClientAuth: o.ClientAuth,
+		RedirectURI: cfg.Auth.PublicOrigin + "/v1/auth/oidc/callback",
+		Scopes:      o.Scopes, Algorithms: o.Algorithms,
+		NameClaim: o.NameClaim, EmailClaim: o.EmailClaim, GroupsClaim: o.GroupsClaim,
+		Cache: cache, Logger: logger,
+		HTTP: &http.Client{
+			Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				if private[strings.ToLower(r.URL.Hostname())] {
+					return priv.RoundTrip(r)
+				}
+				return pub.RoundTrip(r)
+			}),
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+			Timeout:       10 * time.Second,
+		},
+	})
+	return p, rules, err
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 // adminOrigin gives the handler the facts about the administration listener that the origin rule of
 // section 5.7 needs.

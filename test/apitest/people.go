@@ -151,6 +151,7 @@ type Browser struct {
 func (a *API) NewBrowser() *Browser {
 	b := NewBrowserAt(a.URL, a.srv.Client().Transport)
 	b.API = a
+	b.Origin = a.PublicOrigin
 	return b
 }
 
@@ -272,7 +273,7 @@ func (b *Browser) MustSignIn(tb testing.TB, username, pw string) *Response {
 
 // Navigate does what a navigation does: a GET, and each 303 followed by hand on the same origin,
 // without the CSRF header, with the Origin the browser sends to its own origin. It returns every hop;
-// a redirect to another origin is the last hop.
+// a redirect to another origin, or to a page that is not of the API (/v1/), is the last hop.
 func (b *Browser) Navigate(tb testing.TB, path string) []Hop {
 	tb.Helper()
 	var hops []Hop
@@ -287,8 +288,8 @@ func (b *Browser) Navigate(tb testing.TB, path string) []Hop {
 			return hops
 		}
 		u, err := url.Parse(h.Location)
-		if err != nil || u.IsAbs() || u.Host != "" {
-			return hops
+		if err != nil || u.IsAbs() || u.Host != "" || !strings.HasPrefix(u.Path, "/v1/") {
+			return hops // another origin, or a page of the console: the API does not serve it
 		}
 		path = h.Location
 	}

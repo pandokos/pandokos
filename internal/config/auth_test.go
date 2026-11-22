@@ -121,7 +121,7 @@ func TestAuth(t *testing.T) {
 		refused("auth.session.max_per_user", p+"MAX_PER_USER", nil, "0", "101")
 	})
 
-	t.Run("the origin", func(t *testing.T) {
+	t.Run("the origin", func(_ *testing.T) {
 		accepted("auth.public_origin", "PANDOKOS_AUTH_PUBLIC_ORIGIN", nil,
 			"https://admin.example.test", "https://admin.example.test:8443", "http://127.0.0.1:8081", "http://localhost:8081", "http://[::1]:8081", "https://[2001:db8::1]:8443")
 		refused("auth.public_origin", "PANDOKOS_AUTH_PUBLIC_ORIGIN", nil,
@@ -277,7 +277,7 @@ func TestAuth(t *testing.T) {
 			}
 		}
 		b, _ := os.ReadFile(secretFile)
-		if string(b) != value {
+		if strings.TrimSpace(string(b)) != value { // WriteSecret ends the file with a newline
 			t.Fatal("the test file")
 		}
 	})

@@ -3,7 +3,6 @@ package admin_test
 import (
 	"context"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strings"
 	"testing"
@@ -114,15 +113,5 @@ func clearsSession(r *apitest.Response) bool {
 }
 
 func since(t time.Time) time.Duration { return time.Since(t) }
-
-// queryOf returns the query of a Location.
-func queryOf(t testing.TB, loc string) url.Values {
-	t.Helper()
-	u, err := url.Parse(loc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return u.Query()
-}
 
 var _ = http.StatusOK

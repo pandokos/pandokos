@@ -1,12 +1,18 @@
 package config
 
 import (
+	"fmt"
 	"net"
 	"net/netip"
+	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
+	"github.com/pandokos/pandokos/internal/authz"
+	"github.com/pandokos/pandokos/internal/oidc"
 	"github.com/pandokos/pandokos/internal/secret"
 )
 
@@ -107,6 +113,21 @@ func authDefaults() Auth {
 // listValue splits a list given in the environment: entries are separated by commas.
 func listValue(v string) []string { return strings.Split(v, ",") }
 
+// mappingList splits a list of group mappings given in the environment. Entries are separated by
+// commas, but a group may contain one (cn=admins,ou=x), so a comma separates only when what follows
+// starts a new target, platform: or tenant:.
+func mappingList(v string) []string {
+	var out []string
+	start := 0
+	for i := 0; i < len(v); i++ {
+		if v[i] == ',' && (strings.HasPrefix(v[i+1:], "platform:") || strings.HasPrefix(v[i+1:], "tenant:")) {
+			out = append(out, v[start:i])
+			start = i + 1
+		}
+	}
+	return append(out, v[start:])
+}
+
 // wordList splits a list whose entries are single words (scopes, algorithms): commas or spaces.
 func wordList(v string) []string {
 	return strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ' ' })
@@ -168,7 +189,7 @@ func authKeys() []keyDef {
 		serveDef("auth.oidc.groups_claim", "string", "groups", "Claim of the ID token that gives the groups; a dotted path of at most four members",
 			setString(func(c *Config) *string { return &c.Auth.OIDC.GroupsClaim })),
 		serveDef("auth.oidc.group_mappings", "list", "", "Rules <target>=<group>, separated by commas in the environment; the target is platform:<role> or tenant:<tenant name>:<role>",
-			func(c *Config, v string) error { c.Auth.OIDC.GroupMappings = listValue(v); return nil }),
+			func(c *Config, v string) error { c.Auth.OIDC.GroupMappings = mappingList(v); return nil }),
 		serveDef("auth.oidc.auto_provision", "boolean", "false", "Create a user at the first sign-in of an unknown subject that the group rules give a role; refused without auth.oidc.group_mappings",
 			setBool(func(c *Config) *bool { return &c.Auth.OIDC.AutoProvision })),
 		serveDef("auth.oidc.private_hosts", "list", "", "Host names, separated by commas in the environment, whose URLs may resolve to private addresses, as tokens.private_hosts",
@@ -190,8 +211,82 @@ func loadOIDCSecret(c *Config) []Problem {
 	if err != nil {
 		return []Problem{{Key: key, Message: err.Error()}}
 	}
+	if len(s.Reveal()) < minClientSecretBytes {
+		return []Problem{{Key: key, Message: "the client secret must be at least 16 bytes"}}
+	}
 	c.Auth.OIDC.ClientSecret = s
 	return nil
+}
+
+const minClientSecretBytes = 16
+
+// validateOIDC applies the rules of section 5.15 to the identity provider; they hold when it is on.
+func validateOIDC(c *Config) []Problem {
+	o := &c.Auth.OIDC
+	if !o.Enabled {
+		return nil
+	}
+	var ps []Problem
+	add := func(key, msg string) { ps = append(ps, Problem{Key: key, Message: msg}) }
+	if u, err := url.Parse(o.Issuer); o.Issuer == "" {
+		add("auth.oidc.issuer", "must be set when auth.oidc.enabled is true")
+	} else if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || strings.Contains(o.Issuer, "#") || strings.Contains(o.Issuer, "?") {
+		add("auth.oidc.issuer", "must be an https URL with a host, without user information, query or fragment")
+	}
+	if o.ClientID == "" {
+		add("auth.oidc.client_id", "must be set when auth.oidc.enabled is true")
+	}
+	if c.Auth.PublicOrigin == "" {
+		add("auth.public_origin", "must be set when auth.oidc.enabled is true")
+	}
+	if o.ClientAuth != "basic" && o.ClientAuth != "post" {
+		add("auth.oidc.client_auth", "must be basic or post")
+	}
+	if !slices.Contains(o.Scopes, "openid") {
+		add("auth.oidc.scopes", "must contain openid")
+	}
+	allowed := []string{"RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512", "EdDSA"}
+	bad := len(o.Algorithms) == 0
+	for _, a := range o.Algorithms {
+		bad = bad || !slices.Contains(allowed, a)
+	}
+	if bad {
+		add("auth.oidc.algorithms", "must be one or more of "+strings.Join(allowed, ", "))
+	}
+	if msg := checkPostSignInPath(o.PostSignInPath); msg != "" {
+		add("auth.oidc.post_sign_in_path", msg)
+	}
+	if o.AutoProvision && len(o.GroupMappings) == 0 {
+		add("auth.oidc.auto_provision", "needs auth.oidc.group_mappings")
+	}
+	if len(o.GroupMappings) > 0 {
+		rules, err := oidc.ParseRules(o.GroupMappings)
+		if err != nil {
+			add("auth.oidc.group_mappings", err.Error())
+		}
+		for i, r := range rules {
+			scope := authz.ScopeTenant
+			if r.Platform {
+				scope = authz.ScopePlatform
+			}
+			if role, ok := authz.RoleByName(r.Role); !ok || role.Scope != scope || (r.Role != authz.RolePlatformAdmin && r.Role != authz.RoleTenantAdmin) {
+				add("auth.oidc.group_mappings", fmt.Sprintf("rule %d names a role that a user cannot hold in that scope", i+1))
+			}
+		}
+	}
+	return ps
+}
+
+// checkPostSignInPath returns what is wrong with a path of the same origin: one leading /, no //,
+// no backslash, no control character.
+func checkPostSignInPath(v string) string {
+	switch {
+	case !strings.HasPrefix(v, "/") || strings.HasPrefix(v, "//") || strings.Contains(v, "//") || strings.Contains(v, `\`):
+		return "must start with one / and contain no // and no backslash"
+	case strings.ContainsFunc(v, unicode.IsControl):
+		return "must not contain a control character"
+	}
+	return ""
 }
 
 const (
@@ -255,6 +350,7 @@ func validateAuth(c *Config) []Problem {
 			break
 		}
 	}
+	ps = append(ps, validateOIDC(c)...)
 	if !l.Enabled && !a.OIDC.Enabled {
 		add("auth.local.enabled", "local accounts cannot be switched off unless auth.oidc.enabled is true: nobody could sign in")
 	}
@@ -270,6 +366,9 @@ func authWarnings(c *Config) []Warning {
 	a := c.Listeners.Admin
 	if host, _, err := net.SplitHostPort(a.Address); err == nil && a.AllowPlaintext && !isLoopback(host) && (a.TLS.CertFile == "" || a.TLS.KeyFile == "") && c.Auth.PublicOrigin == "" {
 		ws = append(ws, Warning{Key: "auth.public_origin", Message: "the administration listener is served without TLS and no HTTPS origin is named: nobody can sign in; set auth.public_origin to the origin that browsers use"})
+	}
+	if o := c.Auth.OIDC; o.Enabled && len(o.GroupMappings) == 0 && !o.AutoProvision {
+		ws = append(ws, Warning{Key: "auth.oidc.group_mappings", Message: "no group mappings and no auto_provision: every user of the identity provider must be linked by hand"})
 	}
 	return ws
 }

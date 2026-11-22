@@ -102,7 +102,9 @@ func NewPeopleOIDC(tb testing.TB, cfg PeopleConfig, oc OIDCConfig) (*API, *OIDC)
 			inner(a)
 		}
 	}
-	return NewPeople(tb, cfg), o
+	api := NewPeople(tb, cfg)
+	api.PublicOrigin = PublicOrigin
+	return api, o
 }
 
 type discard struct{}

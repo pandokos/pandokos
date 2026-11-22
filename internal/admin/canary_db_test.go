@@ -85,7 +85,7 @@ func TestPeopleCanary(t *testing.T) {
 	for i, h := range hops {
 		responses = append(responses, output{fmt.Sprintf("callback hop %d", i), h.Header.Get("Location") + fmt.Sprint(h.Header) + string(h.Body)})
 	}
-	plant(ob.Token(), "callback")
+	plant(ob.Token(), "callback hop 0") // the first hop is the callback itself, which sets the cookie
 	plant(o.IDP.LastIDToken(), "")
 	// A refused one: the provider reports an error; and a replayed state.
 	o.IDP.SignInAs("dan")

@@ -160,7 +160,7 @@ func TestGroupReconciliation(t *testing.T) {
 	d.Member(t, p.tid, bob.ID, []string{"tenant-admin"}) // manual rows
 	d.Member(t, gtid, bob.ID, []string{"tenant-admin"})  // a tenant that no rule names
 
-	roles := func(table, id string) string {
+	roles := func(_, id string) string {
 		var s string
 		if err := d.Super(t).QueryRow(ctx(t), "SELECT COALESCE(string_agg(role || ':' || source, ',' ORDER BY role), '') FROM pandokos.platform_role_assignment WHERE user_id = $1::uuid", id).Scan(&s); err != nil {
 			t.Fatal(err)

@@ -25,6 +25,7 @@ import (
 	"github.com/pandokos/pandokos/internal/oidc"
 	"github.com/pandokos/pandokos/internal/password"
 	"github.com/pandokos/pandokos/internal/requestid"
+	"github.com/pandokos/pandokos/internal/secret"
 	"github.com/pandokos/pandokos/internal/session"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/queries"
@@ -147,6 +148,8 @@ type reqState struct {
 	// cookie of a sign-in, which the sign-in ends so that no session is fixed.
 	source    netip.Addr
 	presented string
+	// seed is the binding cookie of a sign-in through the identity provider, read for the callback only.
+	seed secret.Secret
 }
 
 // setCookie adds a Set-Cookie header to the response of the request.
@@ -184,6 +187,9 @@ func New(o Options) (http.Handler, error) {
 		return nil, errors.New("admin: Snapshot is required")
 	case o.Refresh.Enabled && (o.Refresh.URL == "" || o.Refresh.Fetch == nil):
 		return nil, errors.New("admin: Refresh needs a URL and a Fetch function when enabled")
+	}
+	if err := checkGroupRules(o); err != nil {
+		return nil, err
 	}
 	s := &server{log: o.Logger, db: o.DB, auth: o.Authenticator, now: o.Now, sealer: o.Sealer, validator: o.Validator,
 		snapshot: o.Snapshot, refresh: o.Refresh,
@@ -269,6 +275,9 @@ func (s *server) before(ctx context.Context, r *http.Request, op *adminapi.Opera
 	if op.Public {
 		if c, err := r.Cookie(session.CookieName); err == nil {
 			st.presented = c.Value
+		}
+		if c, err := r.Cookie(oidc.SeedCookieName); err == nil && op.ID == "completeOidcSignIn" {
+			st.seed = secret.New(c.Value)
 		}
 		return s.beforePublic(ctx, r, op)
 	}
@@ -563,4 +572,53 @@ func retryAfter(d time.Duration) int {
 		return 1
 	}
 	return n
+}
+
+// checkGroupRules refuses at start a group rule that names a role that a user cannot hold in its scope,
+// or a tenant that does not exist (section 5.9). An installation without any tenant cannot name one yet,
+// so nothing is refused there; a tenant created later is found at each sign-in.
+func checkGroupRules(o Options) error {
+	var names []string
+	for i, r := range o.Auth.GroupRules {
+		scope, role := authz.ScopeTenant, r.Role
+		if r.Platform {
+			scope = authz.ScopePlatform
+		} else {
+			names = append(names, r.Tenant)
+		}
+		def, ok := authz.RoleByName(role)
+		if !ok || def.Scope != scope || (role != authz.RolePlatformAdmin && role != authz.RoleTenantAdmin) {
+			return fmt.Errorf("admin: group rule %d names a role that a user cannot hold in that scope", i+1)
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var rows []queries.TenantIDsByNameRow
+	var tenants int
+	err := o.DB.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
+		var err error
+		if rows, err = queries.New(tx).TenantIDsByName(ctx, names); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, "SELECT count(*)::integer FROM pandokos.tenant").Scan(&tenants)
+	})
+	if err != nil {
+		return fmt.Errorf("admin: group rules: tenants cannot be read: %w", err)
+	}
+	if tenants == 0 {
+		return nil // a new installation: its tenants are made through this very API, and the rules are skipped until they exist
+	}
+	found := map[string]bool{}
+	for _, r := range rows {
+		found[r.Name] = true
+	}
+	for i, r := range o.Auth.GroupRules {
+		if !r.Platform && !found[r.Tenant] {
+			return fmt.Errorf("admin: group rule %d names a tenant that does not exist", i+1)
+		}
+	}
+	return nil
 }
