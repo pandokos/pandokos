@@ -71,7 +71,15 @@ flowchart LR
    tenant A present an audience that A has not registered or no longer registers, another tenant can
    register that pair and its mapping would then receive those calls (the residual case of the
    [tokens guide](../operations/tokens.md), section 5; the guide requires an audience naming the
-   installation and the tenant). Second, a token cannot be revoked before it expires.
+   installation and the tenant). Second, a token cannot be revoked before it expires. Changing what a
+   tenant's issuer trusts (issuer, audience, key set, algorithms, subject or required claims) or enabling
+   it again is a grant: the caller must hold what the mapped service accounts can do (`403
+   escalation_refused` otherwise, [ADR 0060](../adr/0060-built-in-roles-custom-roles-and-the-rule-against-escalation.md)).
+   A platform-level issuer is not guarded this way: a platform administrator can repoint one that
+   tenants map subjects to and act as those service accounts. This is an accepted residual exposure,
+   since the platform runs the installation and already holds its database and keys
+   ([ADR 0061](../adr/0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md)); every
+   change is in the platform's audit log.
 
    **The identity provider for people** is a second use of this boundary. The operator configures one
    provider (`auth.oidc.*`); Pandokos is its confidential client with PKCE, state and nonce, and trusts it

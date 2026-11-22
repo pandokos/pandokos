@@ -38,6 +38,11 @@ ingredients: a reason, a record in the tenant's log, a bounded time, a switch.
    `resetUserPassword` is not a second path: it refuses (`403 escalation_refused`, with or without an
    action) a platform user that holds permissions in a tenant, since the new password would be a
    session of a member; such a user is recovered with the host command `pandokos user reset-password`.
+   One residual path is accepted rather than closed: `updatePlatformIssuer` is not guarded, so a
+   platform administrator can change what a platform-level issuer trusts (its issuer, key set or claims)
+   and act as the service accounts that tenants mapped under it. The platform runs the installation
+   (its database, its keys, the host), so the guard would not bound it; the change is in the platform's
+   audit log, and a tenant that does not accept it maps its subjects under its own issuer.
 4. **The construct `x-pandokos-reason: required`.** The generator demands a required `reason` in the body
    and the generated handler refuses an empty one. Nine operations declare it, by three criteria: the
    platform acts on a tenant (`suspendTenant`, `reactivateTenant`, `disableTenantCredential`,

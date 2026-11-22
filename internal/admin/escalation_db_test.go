@@ -86,6 +86,19 @@ type grantWorld struct {
 	strongSA     string
 	strongMember string
 	strongKey    string // the key ID of a key of strongSA
+	issuerKey    *apitest.Caller
+}
+
+// issuerManager is a weaker caller that may change the tenant's token issuers and holds nothing
+// that reads usage; it is made on first use.
+func (g *grantWorld) issuerManager(t *testing.T) *apitest.Caller {
+	t.Helper()
+	if g.issuerKey == nil {
+		g.role(t, "issuer-manager", authz.RoleRead, authz.TokenIssuerRead, authz.TokenIssuerWrite)
+		_, key := g.sa(t, "issuer-manager")
+		g.issuerKey = &apitest.Caller{API: g.api, Key: key, Name: "issuer-manager"}
+	}
+	return g.issuerKey
 }
 
 func newGrantWorld(t *testing.T) *grantWorld {
@@ -324,6 +337,41 @@ func TestNoEscalationCredentials(t *testing.T) {
 			t.Errorf("the password of a member that holds no permission of the tenant: %d %s", r.Status, r.Body)
 		}
 	})
+	t.Run("updateTokenIssuer", func(t *testing.T) {
+		im := g.issuerManager(t)
+		issuer := w.api.SeedTokenIssuer(t, w.tenant.ID)
+		w.api.SeedSubjectMapping(t, w.tenant.ID, issuer, g.strongSA)
+		path := w.tp("/token-issuers/" + issuer)
+		// Who controls the issuer's trust controls the tokens that act as the mapped accounts.
+		for name, body := range map[string]map[string]any{
+			"issuer":          {"issuer": "https://attacker.example.test"},
+			"audience":        {"audience": "another-audience"},
+			"jwks_uri":        {"jwks_uri": "https://attacker.example.test/jwks"},
+			"subject_claim":   {"subject_claim": "azp"},
+			"required_claims": {"required_claims": map[string]any{"env": "attacker"}},
+			"algorithms":      {"algorithms": []string{"ES256"}},
+		} {
+			escalation(t, "changing "+name+" of an issuer mapped to a stronger account", im.Do(t, "PATCH", path, body, nil))
+		}
+		// Containment and labels are free.
+		if r := im.Do(t, "PATCH", path, map[string]any{"description": "relabelled"}, nil); r.Status != 200 {
+			t.Errorf("the description of an issuer mapped to a stronger account: %d %s", r.Status, r.Body)
+		}
+		if r := im.Do(t, "PATCH", path, map[string]any{"enabled": false}, nil); r.Status != 200 {
+			t.Errorf("disabling an issuer mapped to a stronger account: %d %s", r.Status, r.Body)
+		}
+		escalation(t, "enabling an issuer mapped to a stronger account", im.Do(t, "PATCH", path, map[string]any{"enabled": true}, nil))
+		// An issuer mapped only to accounts inside the caller's permissions is the caller's to change.
+		weakSA, _ := w.sa(t, g.weakRole)
+		mine := w.api.SeedTokenIssuer(t, w.tenant.ID)
+		w.api.SeedSubjectMapping(t, w.tenant.ID, mine, weakSA)
+		if r := im.Do(t, "PATCH", w.tp("/token-issuers/"+mine), map[string]any{"jwks_uri": "https://idp.example.test/jwks", "enabled": false}, nil); r.Status != 200 {
+			t.Errorf("an issuer mapped to a weaker account: %d %s", r.Status, r.Body)
+		}
+		if r := im.Do(t, "PATCH", w.tp("/token-issuers/"+mine), map[string]any{"enabled": true}, nil); r.Status != 200 {
+			t.Errorf("enabling an issuer mapped to a weaker account: %d %s", r.Status, r.Body)
+		}
+	})
 	t.Run("the containment operations work on a stronger identity", func(t *testing.T) {
 		issuer := w.api.SeedTokenIssuer(t, w.tenant.ID)
 		mapping := w.api.SeedSubjectMapping(t, w.tenant.ID, issuer, g.strongSA)
@@ -399,6 +447,11 @@ func TestGrantSurfaceIsClosed(t *testing.T) {
 		},
 		"resetMemberPassword": func() *apitest.Response {
 			return k.Do(t, "POST", w.tp("/members/"+g.strongMember+"/reset-password"), map[string]any{"reason": "t"}, nil)
+		},
+		"updateTokenIssuer": func() *apitest.Response {
+			issuer := w.api.SeedTokenIssuer(t, w.tenant.ID)
+			w.api.SeedSubjectMapping(t, w.tenant.ID, issuer, g.strongSA)
+			return g.issuerManager(t).Do(t, "PATCH", w.tp("/token-issuers/"+issuer), map[string]any{"jwks_uri": "https://attacker.example.test/jwks"}, nil)
 		},
 		// The platform operations: nobody is weaker than the one role that may use them (checked below).
 		"createUser": nil, "updateUser": nil, "createPlatformKey": nil, "resetUserPassword": nil,

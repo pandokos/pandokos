@@ -154,6 +154,7 @@ refusal is logged without a tenant, role or permission).
 | `createPlatformKey` | the role of the key |
 | `createVirtualKey` | what the key will be able to do: the permissions of the service account, intersected with the key's scope list |
 | `createSubjectMapping` | the permissions of the service account the subject will act as |
+| `updateTokenIssuer` | when it changes `issuer`, `audience`, `jwks_uri`, `algorithms`, `subject_claim` or `required_claims`, or enables the issuer: the permissions of every service account mapped under it |
 | `resetMemberPassword`, `resetUserPassword` | the permissions of the person whose password is reset; for `resetUserPassword`, its platform roles and its permissions in every tenant it is a member of |
 
 - **Roles that stay are not checked.** `roles` replaces the whole set; only the difference with the
@@ -174,7 +175,10 @@ refusal is logged without a tenant, role or permission).
   by whoever operates the host.
 - **Token mappings are grants.** A subject mapping gives a subject every role of a service account, so
   a principal cannot map a subject to an account stronger than itself. To give a token less, put a
-  custom role on a dedicated service account.
+  custom role on a dedicated service account. For the same reason, changing what an issuer trusts is a
+  grant to the accounts mapped under it; its name, its description and disabling it are free. A
+  platform-level issuer is the platform's: its changes are not guarded, an accepted residual exposure
+  stated in the [security model](../architecture/security-model.md).
 
 For a client, `escalation_refused` means: do not retry; the caller is not allowed to hand out that
 role or key. Ask somebody who holds more, or change what is requested.

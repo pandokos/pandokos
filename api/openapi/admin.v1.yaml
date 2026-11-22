@@ -1665,6 +1665,8 @@ paths:
       summary: Change, disable or enable a trusted token issuer
       description: >-
         Members that are absent are left as they are. required_claims and algorithms replace the whole value.
+        A change of issuer, audience, jwks_uri, algorithms, subject_claim or required_claims, or enabling the issuer, is a grant to the service accounts mapped under it.
+        Refused with escalation_refused when it would give or take a permission the caller does not hold.
       x-pandokos-permission: token_issuer:write
       requestBody:
         required: true
@@ -2540,6 +2542,7 @@ paths:
       summary: Reset the password of a user
       description: >-
         Replaces the password with a generated one, shown once, that must be changed at the next sign-in, and ends the sessions of the user.
+        The caller must hold the permissions of the user's platform roles and those the user holds in each tenant it is a member of.
         Refused with escalation_refused when it would give or take a permission the caller does not hold.
       x-pandokos-permission: user:write
       x-pandokos-reason: required

@@ -757,6 +757,51 @@ func (q *Queries) GetTrustedIssuerForAuth(ctx context.Context, id string) (GetTr
 	return i, err
 }
 
+const listMappedServiceAccountGrants = `-- name: ListMappedServiceAccountGrants :many
+SELECT s.id,
+       COALESCE((SELECT array_agg(r.role ORDER BY r.role) FROM pandokos.role_assignment r
+                  WHERE r.service_account_id = s.id), '{}')::text[] AS roles,
+       COALESCE((SELECT array_agg(DISTINCT p ORDER BY p)
+                   FROM pandokos.role_assignment r
+                   JOIN pandokos.tenant_role c
+                     ON c.tenant_id = r.tenant_id AND c.name = r.role AND c.state = 'active'
+                  CROSS JOIN LATERAL unnest(c.permissions) AS p
+                  WHERE r.service_account_id = s.id), '{}')::text[] AS granted
+  FROM pandokos.service_account s
+ WHERE s.id IN (SELECT m.service_account_id FROM pandokos.subject_mapping m
+                 WHERE m.trusted_issuer_id = $1::uuid)
+ ORDER BY s.id
+`
+
+type ListMappedServiceAccountGrantsRow struct {
+	ID      string
+	Roles   []string
+	Granted []string
+}
+
+// The service accounts that subjects of a trusted issuer act as, each with its roles and the
+// permissions of its active custom roles, as GetServiceAccountGrant reads them. Run after
+// LockTrustedIssuer, which keeps a mapping from being added meanwhile.
+func (q *Queries) ListMappedServiceAccountGrants(ctx context.Context, issuerID string) ([]ListMappedServiceAccountGrantsRow, error) {
+	rows, err := q.db.Query(ctx, listMappedServiceAccountGrants, issuerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListMappedServiceAccountGrantsRow{}
+	for rows.Next() {
+		var i ListMappedServiceAccountGrantsRow
+		if err := rows.Scan(&i.ID, &i.Roles, &i.Granted); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPlatformIssuerTenants = `-- name: ListPlatformIssuerTenants :many
 
 SELECT l.issuer_id, l.tenant_id, t.name AS tenant_name, l.claim_value, l.created_at

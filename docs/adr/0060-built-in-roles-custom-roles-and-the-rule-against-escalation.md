@@ -43,6 +43,8 @@ and to be sure that nobody can hand out more than they hold.
    password is a grant too: `resetUserPassword` checks the platform roles of the user and its
    effective permissions in every tenant it is a member of, so the platform cannot obtain a member's
    sign-in through the API; the host command `pandokos user reset-password` remains the recovery.
+   Changing what a tenant's trusted issuer accepts (issuer, audience, key set, algorithms, subject or
+   required claims) or enabling it again needs what the service accounts mapped under it can do.
 6. **One function builds a member's principal**, for the request hook and for `GET /v1/me`, so that what
    the API reports and what it enforces cannot differ.
 7. **The permission reference is generated** by `internal/permdoc` from the catalogue, the roles and the

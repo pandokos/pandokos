@@ -153,7 +153,7 @@ func grantClassification() map[string]kind {
 		"updateRole":                 grantConfers,
 		"updateServiceAccount":       grantConfers,
 		"updateTenant":               grantNone,
-		"updateTokenIssuer":          grantNone,
+		"updateTokenIssuer":          grantConfers,
 		"updateUser":                 grantConfers,
 	}
 }
