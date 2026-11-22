@@ -28,19 +28,20 @@ var (
 	re7  = regexp.MustCompile("^[a-z0-9][a-z0-9-]{0,62}$")
 	re8  = regexp.MustCompile("^([a-z0-9][a-z0-9-]{0,62})?$")
 	re9  = regexp.MustCompile("^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,6})?$")
-	re10 = regexp.MustCompile("^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$")
-	re11 = regexp.MustCompile("^[!-~]+$")
-	re12 = regexp.MustCompile("^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$")
-	re13 = regexp.MustCompile("^https://[^\\s?#@]+$")
-	re14 = regexp.MustCompile("^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$")
-	re15 = regexp.MustCompile("^[A-Za-z0-9_.:/-]{1,64}$")
-	re16 = regexp.MustCompile("^p[a-z2-7]{16}$")
-	re17 = regexp.MustCompile("^(0|[1-9][0-9]{0,6})(\\.[0-9]{1,12})?$")
-	re18 = regexp.MustCompile("^[a-z0-9][a-z0-9_.-]{0,62}$")
-	re19 = regexp.MustCompile("^([a-z0-9][a-z0-9_.-]{0,62})?$")
-	re20 = regexp.MustCompile("^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$")
-	re21 = regexp.MustCompile("^t[a-z2-7]{16}$")
-	re22 = regexp.MustCompile("^[a-z_]+:[a-z_]+$")
+	re10 = regexp.MustCompile("^[a-z0-9][a-z0-9._@+-]{1,62}[a-z0-9]$")
+	re11 = regexp.MustCompile("^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$")
+	re12 = regexp.MustCompile("^[!-~]+$")
+	re13 = regexp.MustCompile("^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$")
+	re14 = regexp.MustCompile("^https://[^\\s?#@]+$")
+	re15 = regexp.MustCompile("^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$")
+	re16 = regexp.MustCompile("^[A-Za-z0-9_.:/-]{1,64}$")
+	re17 = regexp.MustCompile("^p[a-z2-7]{16}$")
+	re18 = regexp.MustCompile("^(0|[1-9][0-9]{0,6})(\\.[0-9]{1,12})?$")
+	re19 = regexp.MustCompile("^[a-z0-9][a-z0-9_.-]{0,62}$")
+	re20 = regexp.MustCompile("^([a-z0-9][a-z0-9_.-]{0,62})?$")
+	re21 = regexp.MustCompile("^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$")
+	re22 = regexp.MustCompile("^t[a-z2-7]{16}$")
+	re23 = regexp.MustCompile("^[a-z_]+:[a-z_]+$")
 )
 
 // ActiveCurrency is a schema of the administration API.
@@ -55,7 +56,7 @@ type ActiveCurrency struct {
 
 var requiredActiveCurrency = []string{"currency", "in_force"}
 
-var nestedActiveCurrency = []nestedMember{{Name: "inactive_limits", Many: true, Required: requiredInactiveLimit, Nested: nestedInactiveLimit}}
+var nestedActiveCurrency = []nestedSpec{{Name: "inactive_limits", Many: true, Required: requiredInactiveLimit, Nested: nestedInactiveLimit}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ActiveCurrency) Validate() []FieldError {
@@ -84,7 +85,7 @@ type ActiveCurrencySet struct {
 
 var requiredActiveCurrencySet = []string{"currency"}
 
-var nestedActiveCurrencySet []nestedMember
+var nestedActiveCurrencySet []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ActiveCurrencySet) Validate() []FieldError {
@@ -111,6 +112,28 @@ func (v ApiFamily) Valid() bool {
 		return true
 	}
 	return false
+}
+
+// AuthMethods is a schema of the administration API.
+type AuthMethods struct {
+	Local LocalAuthMethod `json:"local"`
+	Oidc  OidcAuthMethod  `json:"oidc"`
+}
+
+var requiredAuthMethods = []string{"local", "oidc"}
+
+var nestedAuthMethods = []nestedSpec{{Name: "local", Required: requiredLocalAuthMethod, Nested: nestedLocalAuthMethod}, {Name: "oidc", Required: requiredOidcAuthMethod, Nested: nestedOidcAuthMethod}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *AuthMethods) Validate() []FieldError {
+	var errs []FieldError
+	for _, e := range v.Local.Validate() {
+		errs = append(errs, FieldError{Field: "local." + e.Field, Message: e.Message})
+	}
+	for _, e := range v.Oidc.Validate() {
+		errs = append(errs, FieldError{Field: "oidc." + e.Field, Message: e.Message})
+	}
+	return errs
 }
 
 // BudgetAvailability: not_enforced when no enforced quota or budget in force matches (a budget in another currency than the tenant's active currency is not in force); unpriced when a budget matches and the model has no price in the active currency; exhausted when a matching quota or budget is used up for the current period.
@@ -146,7 +169,7 @@ type Capability struct {
 
 var requiredCapability = []string{"provider", "model", "callable", "reasons", "checks", "checked_at"}
 
-var nestedCapability = []nestedMember{{Name: "checks", Required: requiredCapabilityChecks, Nested: nestedCapabilityChecks}}
+var nestedCapability = []nestedSpec{{Name: "checks", Required: requiredCapabilityChecks, Nested: nestedCapabilityChecks}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Capability) Validate() []FieldError {
@@ -177,7 +200,7 @@ type CapabilityChecks struct {
 
 var requiredCapabilityChecks = []string{"provider_available", "model_allowed", "credential", "credential_validated", "budget"}
 
-var nestedCapabilityChecks []nestedMember
+var nestedCapabilityChecks []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *CapabilityChecks) Validate() []FieldError {
@@ -221,7 +244,7 @@ type Credential struct {
 
 var requiredCredential = []string{"id", "tenant_id", "provider", "label", "description", "owner", "state", "is_default", "fingerprint", "hint", "state_changed_at", "state_changed_by", "created_at"}
 
-var nestedCredential []nestedMember
+var nestedCredential []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Credential) Validate() []FieldError {
@@ -302,7 +325,7 @@ type CredentialCreate struct {
 
 var requiredCredentialCreate = []string{"provider", "label", "secret"}
 
-var nestedCredentialCreate []nestedMember
+var nestedCredentialCreate []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *CredentialCreate) Validate() []FieldError {
@@ -334,7 +357,7 @@ type CredentialList struct {
 
 var requiredCredentialList = []string{"items"}
 
-var nestedCredentialList = []nestedMember{{Name: "items", Many: true, Required: requiredCredential, Nested: nestedCredential}}
+var nestedCredentialList = []nestedSpec{{Name: "items", Many: true, Required: requiredCredential, Nested: nestedCredential}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *CredentialList) Validate() []FieldError {
@@ -375,7 +398,7 @@ type CredentialSecret struct {
 
 var requiredCredentialSecret = []string{"secret"}
 
-var nestedCredentialSecret []nestedMember
+var nestedCredentialSecret []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *CredentialSecret) Validate() []FieldError {
@@ -417,7 +440,7 @@ type CredentialUpdate struct {
 
 var requiredCredentialUpdate = []string{}
 
-var nestedCredentialUpdate []nestedMember
+var nestedCredentialUpdate []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *CredentialUpdate) Validate() []FieldError {
@@ -473,7 +496,7 @@ type Endpoint struct {
 
 var requiredEndpoint = []string{"id", "provider", "name", "base_url", "region", "private", "enabled", "is_default", "description", "created_at", "updated_at"}
 
-var nestedEndpoint []nestedMember
+var nestedEndpoint []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Endpoint) Validate() []FieldError {
@@ -502,7 +525,7 @@ type EndpointCreate struct {
 
 var requiredEndpointCreate = []string{"name", "base_url"}
 
-var nestedEndpointCreate []nestedMember
+var nestedEndpointCreate []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *EndpointCreate) Validate() []FieldError {
@@ -537,7 +560,7 @@ type EndpointList struct {
 
 var requiredEndpointList = []string{"items"}
 
-var nestedEndpointList = []nestedMember{{Name: "items", Many: true, Required: requiredEndpoint, Nested: nestedEndpoint}}
+var nestedEndpointList = []nestedSpec{{Name: "items", Many: true, Required: requiredEndpoint, Nested: nestedEndpoint}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *EndpointList) Validate() []FieldError {
@@ -563,7 +586,7 @@ type EndpointUpdate struct {
 
 var requiredEndpointUpdate = []string{}
 
-var nestedEndpointUpdate []nestedMember
+var nestedEndpointUpdate []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *EndpointUpdate) Validate() []FieldError {
@@ -608,7 +631,7 @@ type FieldError struct {
 
 var requiredFieldError = []string{"field", "message"}
 
-var nestedFieldError []nestedMember
+var nestedFieldError []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *FieldError) Validate() []FieldError {
@@ -627,7 +650,7 @@ type InactiveLimit struct {
 
 var requiredInactiveLimit = []string{"level", "rule_id", "metric", "currency"}
 
-var nestedInactiveLimit []nestedMember
+var nestedInactiveLimit []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *InactiveLimit) Validate() []FieldError {
@@ -654,7 +677,7 @@ type IssuerRef struct {
 
 var requiredIssuerRef = []string{"scope", "id"}
 
-var nestedIssuerRef []nestedMember
+var nestedIssuerRef []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *IssuerRef) Validate() []FieldError {
@@ -735,7 +758,7 @@ type LimitEvent struct {
 
 var requiredLimitEvent = []string{"id", "kind", "rule_id", "rule_level", "subject_kind", "subject_id", "provider", "model", "metric", "currency", "period_start", "period_end", "percent", "limit", "amount", "observed", "occurred_at"}
 
-var nestedLimitEvent []nestedMember
+var nestedLimitEvent []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *LimitEvent) Validate() []FieldError {
@@ -788,7 +811,7 @@ type LimitEventList struct {
 
 var requiredLimitEventList = []string{"items"}
 
-var nestedLimitEventList = []nestedMember{{Name: "items", Many: true, Required: requiredLimitEvent, Nested: nestedLimitEvent}}
+var nestedLimitEventList = []nestedSpec{{Name: "items", Many: true, Required: requiredLimitEvent, Nested: nestedLimitEvent}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *LimitEventList) Validate() []FieldError {
@@ -859,7 +882,7 @@ type LimitRule struct {
 
 var requiredLimitRule = []string{"id", "subject_kind", "subject_id", "provider", "provider_id", "model", "model_id", "metric", "limit", "amount", "currency", "enforce", "thresholds", "active", "created_at", "updated_at"}
 
-var nestedLimitRule []nestedMember
+var nestedLimitRule []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *LimitRule) Validate() []FieldError {
@@ -905,7 +928,7 @@ type LimitRuleCreate struct {
 
 var requiredLimitRuleCreate = []string{"metric"}
 
-var nestedLimitRuleCreate []nestedMember
+var nestedLimitRuleCreate []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *LimitRuleCreate) Validate() []FieldError {
@@ -982,7 +1005,7 @@ type LimitRuleList struct {
 
 var requiredLimitRuleList = []string{"items"}
 
-var nestedLimitRuleList = []nestedMember{{Name: "items", Many: true, Required: requiredLimitRule, Nested: nestedLimitRule}}
+var nestedLimitRuleList = []nestedSpec{{Name: "items", Many: true, Required: requiredLimitRule, Nested: nestedLimitRule}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *LimitRuleList) Validate() []FieldError {
@@ -1006,7 +1029,7 @@ type LimitRuleUpdate struct {
 
 var requiredLimitRuleUpdate = []string{}
 
-var nestedLimitRuleUpdate []nestedMember
+var nestedLimitRuleUpdate []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *LimitRuleUpdate) Validate() []FieldError {
@@ -1082,35 +1105,316 @@ func (v LimitSubjectKind) Valid() bool {
 	return false
 }
 
+// LocalAuthMethod is a schema of the administration API.
+type LocalAuthMethod struct {
+	Enabled bool `json:"enabled"`
+}
+
+var requiredLocalAuthMethod = []string{"enabled"}
+
+var nestedLocalAuthMethod []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *LocalAuthMethod) Validate() []FieldError {
+	var errs []FieldError
+	return errs
+}
+
+// ManagedBy is an enumeration of the administration API.
+type ManagedBy string
+
+// Values of ManagedBy.
+const (
+	ManagedByTenant   ManagedBy = "tenant"
+	ManagedByPlatform ManagedBy = "platform"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v ManagedBy) Valid() bool {
+	switch v {
+	case ManagedByTenant, ManagedByPlatform:
+		return true
+	}
+	return false
+}
+
 // Me is a schema of the administration API.
 type Me struct {
 	PrincipalType PrincipalType `json:"principal_type"`
 	// Service account ID
 	ID   string `json:"id"`
 	Name string `json:"name"`
-	// Key ID of the credential in use.
+	// Key ID of the credential in use; empty for a user.
 	KeyID string `json:"key_id"`
-	// True when the credential is the bootstrap key created by pandokos init.
-	Bootstrap bool       `json:"bootstrap"`
-	Tenant    *TenantRef `json:"tenant,omitempty"`
-	Roles     []string   `json:"roles"`
+	// True when the credential is the bootstrap key created by pandokos init; false for a user.
+	Bootstrap bool `json:"bootstrap"`
+	// Present for a user.
+	MustChangePassword bool     `json:"must_change_password,omitempty"`
+	Session            *Session `json:"session,omitempty"`
+	// The tenants a user is a member of, with its roles in each; present for a user.
+	Memberships []Membership `json:"memberships,omitempty"`
+	Tenant      *TenantRef   `json:"tenant,omitempty"`
+	Roles       []string     `json:"roles"`
 	// Effective permissions, after the scopes of the key are applied.
 	Permissions []string `json:"permissions"`
 }
 
 var requiredMe = []string{"principal_type", "id", "name", "key_id", "bootstrap", "roles", "permissions"}
 
-var nestedMe = []nestedMember{{Name: "tenant", Required: requiredTenantRef, Nested: nestedTenantRef}}
+var nestedMe = []nestedSpec{{Name: "session", Required: requiredSession, Nested: nestedSession}, {Name: "memberships", Many: true, Required: requiredMembership, Nested: nestedMembership}, {Name: "tenant", Required: requiredTenantRef, Nested: nestedTenantRef}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Me) Validate() []FieldError {
 	var errs []FieldError
 	if !v.PrincipalType.Valid() {
-		errs = append(errs, FieldError{Field: "principal_type", Message: "must be one of platform, service_account"})
+		errs = append(errs, FieldError{Field: "principal_type", Message: "must be one of platform, service_account, user"})
+	}
+	if v.Session != nil {
+		for _, e := range v.Session.Validate() {
+			errs = append(errs, FieldError{Field: "session." + e.Field, Message: e.Message})
+		}
+	}
+	for i := range v.Memberships {
+		for _, e := range v.Memberships[i].Validate() {
+			errs = append(errs, FieldError{Field: "memberships[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
 	}
 	if v.Tenant != nil {
 		for _, e := range v.Tenant.Validate() {
 			errs = append(errs, FieldError{Field: "tenant." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// Member is a schema of the administration API.
+type Member struct {
+	UserID      string       `json:"user_id"`
+	SignIn      SignInMethod `json:"sign_in"`
+	Username    string       `json:"username,omitempty"`
+	DisplayName string       `json:"display_name"`
+	Email       string       `json:"email"`
+	State       UserState    `json:"state"`
+	ManagedBy   ManagedBy    `json:"managed_by"`
+	// Members the tenant manages only.
+	MustChangePassword bool `json:"must_change_password,omitempty"`
+	// Members the tenant manages only.
+	LockedUntil *time.Time `json:"locked_until,omitempty"`
+	Roles       []string   `json:"roles"`
+	Source      RoleSource `json:"source"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
+var requiredMember = []string{"user_id", "sign_in", "display_name", "email", "state", "managed_by", "roles", "source", "created_at", "updated_at"}
+
+var nestedMember []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *Member) Validate() []FieldError {
+	var errs []FieldError
+	if !re4.MatchString(v.UserID) {
+		errs = append(errs, FieldError{Field: "user_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !v.SignIn.Valid() {
+		errs = append(errs, FieldError{Field: "sign_in", Message: "must be one of local, oidc"})
+	}
+	if v.Username != "" && !re10.MatchString(v.Username) {
+		errs = append(errs, FieldError{Field: "username", Message: "must match ^[a-z0-9][a-z0-9._@+-]{1,62}[a-z0-9]$"})
+	}
+	if runeCount(v.DisplayName) > 200 {
+		errs = append(errs, FieldError{Field: "display_name", Message: "length must be at most 200"})
+	}
+	if runeCount(v.Email) > 254 {
+		errs = append(errs, FieldError{Field: "email", Message: "length must be at most 254"})
+	}
+	if !v.State.Valid() {
+		errs = append(errs, FieldError{Field: "state", Message: "must be one of active, disabled"})
+	}
+	if !v.ManagedBy.Valid() {
+		errs = append(errs, FieldError{Field: "managed_by", Message: "must be one of tenant, platform"})
+	}
+	for _, item := range v.Roles {
+		if !re2.MatchString(item) {
+			errs = append(errs, FieldError{Field: "roles", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+		}
+	}
+	if !v.Source.Valid() {
+		errs = append(errs, FieldError{Field: "source", Message: "must be one of manual, idp"})
+	}
+	return errs
+}
+
+// MemberAccountKind is an enumeration of the administration API.
+type MemberAccountKind string
+
+// Values of MemberAccountKind.
+const (
+	MemberAccountKindNew      MemberAccountKind = "new"
+	MemberAccountKindExisting MemberAccountKind = "existing"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v MemberAccountKind) Valid() bool {
+	switch v {
+	case MemberAccountKindNew, MemberAccountKindExisting:
+		return true
+	}
+	return false
+}
+
+// MemberCreate is a schema of the administration API.
+type MemberCreate struct {
+	Account     MemberAccountKind `json:"account"`
+	Username    string            `json:"username,omitempty"`
+	UserID      string            `json:"user_id,omitempty"`
+	DisplayName string            `json:"display_name,omitempty"`
+	Email       string            `json:"email,omitempty"`
+	Roles       []string          `json:"roles"`
+}
+
+var requiredMemberCreate = []string{"account", "roles"}
+
+var nestedMemberCreate []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *MemberCreate) Validate() []FieldError {
+	var errs []FieldError
+	if !v.Account.Valid() {
+		errs = append(errs, FieldError{Field: "account", Message: "must be one of new, existing"})
+	}
+	if v.Username != "" && !re10.MatchString(v.Username) {
+		errs = append(errs, FieldError{Field: "username", Message: "must match ^[a-z0-9][a-z0-9._@+-]{1,62}[a-z0-9]$"})
+	}
+	if v.UserID != "" && !re4.MatchString(v.UserID) {
+		errs = append(errs, FieldError{Field: "user_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if runeCount(v.DisplayName) > 200 {
+		errs = append(errs, FieldError{Field: "display_name", Message: "length must be at most 200"})
+	}
+	if runeCount(v.Email) > 254 {
+		errs = append(errs, FieldError{Field: "email", Message: "length must be at most 254"})
+	}
+	if v.Roles != nil && len(v.Roles) < 1 {
+		errs = append(errs, FieldError{Field: "roles", Message: "must have at least 1 items"})
+	}
+	if len(v.Roles) > 8 {
+		errs = append(errs, FieldError{Field: "roles", Message: "must have at most 8 items"})
+	}
+	if !unique(v.Roles) {
+		errs = append(errs, FieldError{Field: "roles", Message: "must not repeat an item"})
+	}
+	for _, item := range v.Roles {
+		if !re2.MatchString(item) {
+			errs = append(errs, FieldError{Field: "roles", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+		}
+	}
+	return errs
+}
+
+// MemberCreated is a schema of the administration API.
+type MemberCreated struct {
+	Member Member `json:"member"`
+	// Shown once, for a new account; absent on an idempotent replay.
+	InitialPassword string `json:"initial_password,omitempty"`
+}
+
+var requiredMemberCreated = []string{"member"}
+
+var nestedMemberCreated = []nestedSpec{{Name: "member", Required: requiredMember, Nested: nestedMember}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *MemberCreated) Validate() []FieldError {
+	var errs []FieldError
+	for _, e := range v.Member.Validate() {
+		errs = append(errs, FieldError{Field: "member." + e.Field, Message: e.Message})
+	}
+	return errs
+}
+
+// MemberList is a schema of the administration API.
+type MemberList struct {
+	Items      []Member `json:"items"`
+	NextCursor string   `json:"next_cursor,omitempty"`
+}
+
+var requiredMemberList = []string{"items"}
+
+var nestedMemberList = []nestedSpec{{Name: "items", Many: true, Required: requiredMember, Nested: nestedMember}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *MemberList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// MemberUpdate is a schema of the administration API.
+type MemberUpdate struct {
+	Roles       Optional[[]string] `json:"roles,omitzero"`
+	DisplayName Optional[string]   `json:"display_name,omitzero"`
+	Email       Optional[string]   `json:"email,omitzero"`
+}
+
+var requiredMemberUpdate = []string{}
+
+var nestedMemberUpdate []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *MemberUpdate) Validate() []FieldError {
+	var errs []FieldError
+	if v.Roles.Set {
+		if v.Roles.Value != nil && len(v.Roles.Value) < 1 {
+			errs = append(errs, FieldError{Field: "roles", Message: "must have at least 1 items"})
+		}
+		if len(v.Roles.Value) > 8 {
+			errs = append(errs, FieldError{Field: "roles", Message: "must have at most 8 items"})
+		}
+		if !unique(v.Roles.Value) {
+			errs = append(errs, FieldError{Field: "roles", Message: "must not repeat an item"})
+		}
+		for _, item := range v.Roles.Value {
+			if !re2.MatchString(item) {
+				errs = append(errs, FieldError{Field: "roles", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+			}
+		}
+	}
+	if v.DisplayName.Set {
+		if runeCount(v.DisplayName.Value) > 200 {
+			errs = append(errs, FieldError{Field: "display_name", Message: "length must be at most 200"})
+		}
+	}
+	if v.Email.Set {
+		if runeCount(v.Email.Value) > 254 {
+			errs = append(errs, FieldError{Field: "email", Message: "length must be at most 254"})
+		}
+	}
+	return errs
+}
+
+// Membership is a schema of the administration API.
+type Membership struct {
+	Tenant TenantRef `json:"tenant"`
+	Roles  []string  `json:"roles"`
+}
+
+var requiredMembership = []string{"tenant", "roles"}
+
+var nestedMembership = []nestedSpec{{Name: "tenant", Required: requiredTenantRef, Nested: nestedTenantRef}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *Membership) Validate() []FieldError {
+	var errs []FieldError
+	for _, e := range v.Tenant.Validate() {
+		errs = append(errs, FieldError{Field: "tenant." + e.Field, Message: e.Message})
+	}
+	for _, item := range v.Roles {
+		if !re2.MatchString(item) {
+			errs = append(errs, FieldError{Field: "roles", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 		}
 	}
 	return errs
@@ -1124,7 +1428,7 @@ type MetadataEntry struct {
 
 var requiredMetadataEntry = []string{"key", "value"}
 
-var nestedMetadataEntry []nestedMember
+var nestedMetadataEntry []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *MetadataEntry) Validate() []FieldError {
@@ -1160,7 +1464,7 @@ type Model struct {
 
 var requiredModel = []string{"id", "provider", "api_family", "name", "ref", "upstream_id", "display_name", "description", "status", "availability", "capabilities", "context_window", "max_output_tokens", "default_output_tokens", "price_override", "created_at", "updated_at"}
 
-var nestedModel []nestedMember
+var nestedModel []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Model) Validate() []FieldError {
@@ -1177,7 +1481,7 @@ func (v *Model) Validate() []FieldError {
 	if !re3.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 	}
-	if !re10.MatchString(v.Ref) {
+	if !re11.MatchString(v.Ref) {
 		errs = append(errs, FieldError{Field: "ref", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 	}
 	if !v.Status.Valid() {
@@ -1224,7 +1528,7 @@ type ModelCreate struct {
 
 var requiredModelCreate = []string{"provider", "name"}
 
-var nestedModelCreate []nestedMember
+var nestedModelCreate []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ModelCreate) Validate() []FieldError {
@@ -1235,7 +1539,7 @@ func (v *ModelCreate) Validate() []FieldError {
 	if !re3.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 	}
-	if v.UpstreamID != "" && !re11.MatchString(v.UpstreamID) {
+	if v.UpstreamID != "" && !re12.MatchString(v.UpstreamID) {
 		errs = append(errs, FieldError{Field: "upstream_id", Message: "must match ^[!-~]+$"})
 	}
 	if runeCount(v.UpstreamID) > 256 {
@@ -1260,7 +1564,7 @@ func (v *ModelCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "capabilities", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Capabilities {
-		if !re12.MatchString(item) {
+		if !re13.MatchString(item) {
 			errs = append(errs, FieldError{Field: "capabilities", Message: "must match ^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$"})
 		}
 	}
@@ -1295,7 +1599,7 @@ type ModelGrant struct {
 
 var requiredModelGrant = []string{"model_id", "tenant_id", "tenant_name", "created_at"}
 
-var nestedModelGrant []nestedMember
+var nestedModelGrant []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ModelGrant) Validate() []FieldError {
@@ -1321,7 +1625,7 @@ type ModelGrantList struct {
 
 var requiredModelGrantList = []string{"items"}
 
-var nestedModelGrantList = []nestedMember{{Name: "items", Many: true, Required: requiredModelGrant, Nested: nestedModelGrant}}
+var nestedModelGrantList = []nestedSpec{{Name: "items", Many: true, Required: requiredModelGrant, Nested: nestedModelGrant}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ModelGrantList) Validate() []FieldError {
@@ -1343,7 +1647,7 @@ type ModelList struct {
 
 var requiredModelList = []string{"items"}
 
-var nestedModelList = []nestedMember{{Name: "items", Many: true, Required: requiredModel, Nested: nestedModel}}
+var nestedModelList = []nestedSpec{{Name: "items", Many: true, Required: requiredModel, Nested: nestedModel}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ModelList) Validate() []FieldError {
@@ -1366,13 +1670,13 @@ type ModelRestriction struct {
 
 var requiredModelRestriction = []string{"restricted", "models"}
 
-var nestedModelRestriction []nestedMember
+var nestedModelRestriction []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ModelRestriction) Validate() []FieldError {
 	var errs []FieldError
 	for _, item := range v.Models {
-		if !re10.MatchString(item) {
+		if !re11.MatchString(item) {
 			errs = append(errs, FieldError{Field: "models", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 		}
 	}
@@ -1386,7 +1690,7 @@ type ModelRestrictionSet struct {
 
 var requiredModelRestrictionSet = []string{"models"}
 
-var nestedModelRestrictionSet []nestedMember
+var nestedModelRestrictionSet []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ModelRestrictionSet) Validate() []FieldError {
@@ -1398,7 +1702,7 @@ func (v *ModelRestrictionSet) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "models", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Models {
-		if !re10.MatchString(item) {
+		if !re11.MatchString(item) {
 			errs = append(errs, FieldError{Field: "models", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 		}
 	}
@@ -1442,13 +1746,13 @@ type ModelUpdate struct {
 
 var requiredModelUpdate = []string{}
 
-var nestedModelUpdate []nestedMember
+var nestedModelUpdate []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ModelUpdate) Validate() []FieldError {
 	var errs []FieldError
 	if v.UpstreamID.Set {
-		if !re11.MatchString(v.UpstreamID.Value) {
+		if !re12.MatchString(v.UpstreamID.Value) {
 			errs = append(errs, FieldError{Field: "upstream_id", Message: "must match ^[!-~]+$"})
 		}
 		if runeCount(v.UpstreamID.Value) > 256 {
@@ -1483,7 +1787,7 @@ func (v *ModelUpdate) Validate() []FieldError {
 			errs = append(errs, FieldError{Field: "capabilities", Message: "must not repeat an item"})
 		}
 		for _, item := range v.Capabilities.Value {
-			if !re12.MatchString(item) {
+			if !re13.MatchString(item) {
 				errs = append(errs, FieldError{Field: "capabilities", Message: "must match ^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$"})
 			}
 		}
@@ -1535,6 +1839,73 @@ func (v NamedSort) Valid() bool {
 	return false
 }
 
+// OidcAuthMethod is a schema of the administration API.
+type OidcAuthMethod struct {
+	Enabled     bool   `json:"enabled"`
+	DisplayName string `json:"display_name,omitempty"`
+	// Navigate the browser here: /v1/auth/oidc/start.
+	StartPath string `json:"start_path,omitempty"`
+}
+
+var requiredOidcAuthMethod = []string{"enabled"}
+
+var nestedOidcAuthMethod []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *OidcAuthMethod) Validate() []FieldError {
+	var errs []FieldError
+	return errs
+}
+
+// PasswordChange is a schema of the administration API.
+type PasswordChange struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+var requiredPasswordChange = []string{"current_password", "new_password"}
+
+var nestedPasswordChange []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *PasswordChange) Validate() []FieldError {
+	var errs []FieldError
+	if runeCount(v.CurrentPassword) < 1 {
+		errs = append(errs, FieldError{Field: "current_password", Message: "length must be at least 1"})
+	}
+	if runeCount(v.CurrentPassword) > 1024 {
+		errs = append(errs, FieldError{Field: "current_password", Message: "length must be at most 1024"})
+	}
+	if runeCount(v.NewPassword) < 1 {
+		errs = append(errs, FieldError{Field: "new_password", Message: "length must be at least 1"})
+	}
+	if runeCount(v.NewPassword) > 1024 {
+		errs = append(errs, FieldError{Field: "new_password", Message: "length must be at most 1024"})
+	}
+	return errs
+}
+
+// PasswordReset is a schema of the administration API.
+type PasswordReset struct {
+	UserID string `json:"user_id"`
+	// Shown once. It must be changed at the next sign-in.
+	Password  string    `json:"password"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+var requiredPasswordReset = []string{"user_id", "password", "expires_at"}
+
+var nestedPasswordReset []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *PasswordReset) Validate() []FieldError {
+	var errs []FieldError
+	if !re4.MatchString(v.UserID) {
+		errs = append(errs, FieldError{Field: "user_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	return errs
+}
+
 // PlatformIssuer is a schema of the administration API.
 type PlatformIssuer struct {
 	ID          string `json:"id"`
@@ -1559,7 +1930,7 @@ type PlatformIssuer struct {
 
 var requiredPlatformIssuer = []string{"id", "name", "description", "issuer", "audience", "jwks_uri", "algorithms", "subject_claim", "tenant_claim", "required_claims", "tenant_count", "enabled", "created_at", "updated_at"}
 
-var nestedPlatformIssuer []nestedMember
+var nestedPlatformIssuer []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformIssuer) Validate() []FieldError {
@@ -1573,7 +1944,7 @@ func (v *PlatformIssuer) Validate() []FieldError {
 	if runeCount(v.Description) > 200 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
 	}
-	if !re13.MatchString(v.Issuer) {
+	if !re14.MatchString(v.Issuer) {
 		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 	}
 	if runeCount(v.Issuer) > 255 {
@@ -1598,14 +1969,14 @@ func (v *PlatformIssuer) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Algorithms {
-		if !re14.MatchString(item) {
+		if !re15.MatchString(item) {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 		}
 	}
-	if !re15.MatchString(v.SubjectClaim) {
+	if !re16.MatchString(v.SubjectClaim) {
 		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
-	if !re15.MatchString(v.TenantClaim) {
+	if !re16.MatchString(v.TenantClaim) {
 		errs = append(errs, FieldError{Field: "tenant_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
 	if len(v.RequiredClaims) > 16 {
@@ -1642,7 +2013,7 @@ type PlatformIssuerCreate struct {
 
 var requiredPlatformIssuerCreate = []string{"name", "issuer", "audience", "tenant_claim"}
 
-var nestedPlatformIssuerCreate []nestedMember
+var nestedPlatformIssuerCreate []nestedSpec
 
 // sentEmpty names the optional members that the document does not allow to be empty.
 func (*PlatformIssuerCreate) sentEmpty() []string { return []string{"subject_claim"} }
@@ -1656,7 +2027,7 @@ func (v *PlatformIssuerCreate) Validate() []FieldError {
 	if runeCount(v.Description) > 200 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
 	}
-	if !re13.MatchString(v.Issuer) {
+	if !re14.MatchString(v.Issuer) {
 		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 	}
 	if runeCount(v.Issuer) > 255 {
@@ -1681,14 +2052,14 @@ func (v *PlatformIssuerCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Algorithms {
-		if !re14.MatchString(item) {
+		if !re15.MatchString(item) {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 		}
 	}
-	if v.SubjectClaim != "" && !re15.MatchString(v.SubjectClaim) {
+	if v.SubjectClaim != "" && !re16.MatchString(v.SubjectClaim) {
 		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
-	if !re15.MatchString(v.TenantClaim) {
+	if !re16.MatchString(v.TenantClaim) {
 		errs = append(errs, FieldError{Field: "tenant_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
 	if len(v.RequiredClaims) > 16 {
@@ -1714,7 +2085,7 @@ type PlatformIssuerList struct {
 
 var requiredPlatformIssuerList = []string{"items"}
 
-var nestedPlatformIssuerList = []nestedMember{{Name: "items", Many: true, Required: requiredPlatformIssuer, Nested: nestedPlatformIssuer}}
+var nestedPlatformIssuerList = []nestedSpec{{Name: "items", Many: true, Required: requiredPlatformIssuer, Nested: nestedPlatformIssuer}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformIssuerList) Validate() []FieldError {
@@ -1738,7 +2109,7 @@ type PlatformIssuerTenant struct {
 
 var requiredPlatformIssuerTenant = []string{"issuer_id", "tenant_id", "tenant_name", "claim_value", "created_at"}
 
-var nestedPlatformIssuerTenant []nestedMember
+var nestedPlatformIssuerTenant []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformIssuerTenant) Validate() []FieldError {
@@ -1770,7 +2141,7 @@ type PlatformIssuerTenantList struct {
 
 var requiredPlatformIssuerTenantList = []string{"items"}
 
-var nestedPlatformIssuerTenantList = []nestedMember{{Name: "items", Many: true, Required: requiredPlatformIssuerTenant, Nested: nestedPlatformIssuerTenant}}
+var nestedPlatformIssuerTenantList = []nestedSpec{{Name: "items", Many: true, Required: requiredPlatformIssuerTenant, Nested: nestedPlatformIssuerTenant}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformIssuerTenantList) Validate() []FieldError {
@@ -1791,7 +2162,7 @@ type PlatformIssuerTenantPut struct {
 
 var requiredPlatformIssuerTenantPut = []string{}
 
-var nestedPlatformIssuerTenantPut []nestedMember
+var nestedPlatformIssuerTenantPut []nestedSpec
 
 // sentEmpty names the optional members that the document does not allow to be empty.
 func (*PlatformIssuerTenantPut) sentEmpty() []string { return []string{"claim_value"} }
@@ -1824,7 +2195,7 @@ type PlatformIssuerUpdate struct {
 
 var requiredPlatformIssuerUpdate = []string{}
 
-var nestedPlatformIssuerUpdate []nestedMember
+var nestedPlatformIssuerUpdate []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformIssuerUpdate) Validate() []FieldError {
@@ -1840,7 +2211,7 @@ func (v *PlatformIssuerUpdate) Validate() []FieldError {
 		}
 	}
 	if v.Issuer.Set {
-		if !re13.MatchString(v.Issuer.Value) {
+		if !re14.MatchString(v.Issuer.Value) {
 			errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 		}
 		if runeCount(v.Issuer.Value) > 255 {
@@ -1871,18 +2242,18 @@ func (v *PlatformIssuerUpdate) Validate() []FieldError {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 		}
 		for _, item := range v.Algorithms.Value {
-			if !re14.MatchString(item) {
+			if !re15.MatchString(item) {
 				errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 			}
 		}
 	}
 	if v.SubjectClaim.Set {
-		if !re15.MatchString(v.SubjectClaim.Value) {
+		if !re16.MatchString(v.SubjectClaim.Value) {
 			errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 		}
 	}
 	if v.TenantClaim.Set {
-		if !re15.MatchString(v.TenantClaim.Value) {
+		if !re16.MatchString(v.TenantClaim.Value) {
 			errs = append(errs, FieldError{Field: "tenant_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 		}
 	}
@@ -1918,12 +2289,12 @@ type PlatformKey struct {
 
 var requiredPlatformKey = []string{"id", "description", "role", "bootstrap", "state", "created_at"}
 
-var nestedPlatformKey []nestedMember
+var nestedPlatformKey []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformKey) Validate() []FieldError {
 	var errs []FieldError
-	if !re16.MatchString(v.ID) {
+	if !re17.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^p[a-z2-7]{16}$"})
 	}
 	if !v.State.Valid() {
@@ -1940,7 +2311,7 @@ type PlatformKeyCreate struct {
 
 var requiredPlatformKeyCreate = []string{}
 
-var nestedPlatformKeyCreate []nestedMember
+var nestedPlatformKeyCreate []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformKeyCreate) Validate() []FieldError {
@@ -1954,13 +2325,13 @@ func (v *PlatformKeyCreate) Validate() []FieldError {
 // PlatformKeyCreated is a schema of the administration API.
 type PlatformKeyCreated struct {
 	Key PlatformKey `json:"key"`
-	// The complete key (pdk_…). It is returned by this response only.
-	Secret string `json:"secret"`
+	// The complete key (pdk_…). It is returned by the first response only; absent on an idempotent replay.
+	Secret string `json:"secret,omitempty"`
 }
 
-var requiredPlatformKeyCreated = []string{"key", "secret"}
+var requiredPlatformKeyCreated = []string{"key"}
 
-var nestedPlatformKeyCreated = []nestedMember{{Name: "key", Required: requiredPlatformKey, Nested: nestedPlatformKey}}
+var nestedPlatformKeyCreated = []nestedSpec{{Name: "key", Required: requiredPlatformKey, Nested: nestedPlatformKey}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformKeyCreated) Validate() []FieldError {
@@ -1980,7 +2351,7 @@ type PlatformKeyList struct {
 
 var requiredPlatformKeyList = []string{"items"}
 
-var nestedPlatformKeyList = []nestedMember{{Name: "items", Many: true, Required: requiredPlatformKey, Nested: nestedPlatformKey}}
+var nestedPlatformKeyList = []nestedSpec{{Name: "items", Many: true, Required: requiredPlatformKey, Nested: nestedPlatformKey}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformKeyList) Validate() []FieldError {
@@ -2023,7 +2394,7 @@ type PlatformLimitRule struct {
 
 var requiredPlatformLimitRule = []string{"id", "tenant", "provider", "provider_id", "model", "model_id", "metric", "limit", "amount", "currency", "enforce", "thresholds", "created_at", "updated_at"}
 
-var nestedPlatformLimitRule []nestedMember
+var nestedPlatformLimitRule []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformLimitRule) Validate() []FieldError {
@@ -2065,7 +2436,7 @@ type PlatformLimitRuleCreate struct {
 
 var requiredPlatformLimitRuleCreate = []string{"metric"}
 
-var nestedPlatformLimitRuleCreate []nestedMember
+var nestedPlatformLimitRuleCreate []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformLimitRuleCreate) Validate() []FieldError {
@@ -2118,7 +2489,7 @@ type PlatformLimitRuleList struct {
 
 var requiredPlatformLimitRuleList = []string{"items"}
 
-var nestedPlatformLimitRuleList = []nestedMember{{Name: "items", Many: true, Required: requiredPlatformLimitRule, Nested: nestedPlatformLimitRule}}
+var nestedPlatformLimitRuleList = []nestedSpec{{Name: "items", Many: true, Required: requiredPlatformLimitRule, Nested: nestedPlatformLimitRule}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformLimitRuleList) Validate() []FieldError {
@@ -2183,7 +2554,7 @@ type PriceImport struct {
 
 var requiredPriceImport = []string{"source", "dataset_format", "outcome", "models_seen", "versions_created", "unchanged", "overridden", "unmatched", "skipped", "started_at"}
 
-var nestedPriceImport = []nestedMember{{Name: "items", Many: true, Required: requiredPriceImportItem, Nested: nestedPriceImportItem}}
+var nestedPriceImport = []nestedSpec{{Name: "items", Many: true, Required: requiredPriceImportItem, Nested: nestedPriceImportItem}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceImport) Validate() []FieldError {
@@ -2210,7 +2581,7 @@ type PriceImportIssue struct {
 
 var requiredPriceImportIssue = []string{"reason"}
 
-var nestedPriceImportIssue []nestedMember
+var nestedPriceImportIssue []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceImportIssue) Validate() []FieldError {
@@ -2230,7 +2601,7 @@ type PriceImportItem struct {
 
 var requiredPriceImportItem = []string{"provider", "model", "outcome"}
 
-var nestedPriceImportItem = []nestedMember{{Name: "issues", Many: true, Required: requiredPriceImportIssue, Nested: nestedPriceImportIssue}}
+var nestedPriceImportItem = []nestedSpec{{Name: "issues", Many: true, Required: requiredPriceImportIssue, Nested: nestedPriceImportIssue}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceImportItem) Validate() []FieldError {
@@ -2258,7 +2629,7 @@ type PriceImportList struct {
 
 var requiredPriceImportList = []string{"items"}
 
-var nestedPriceImportList = []nestedMember{{Name: "items", Many: true, Required: requiredPriceImport, Nested: nestedPriceImport}}
+var nestedPriceImportList = []nestedSpec{{Name: "items", Many: true, Required: requiredPriceImport, Nested: nestedPriceImport}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceImportList) Validate() []FieldError {
@@ -2279,7 +2650,7 @@ type PriceImportRun struct {
 
 var requiredPriceImportRun = []string{"source"}
 
-var nestedPriceImportRun []nestedMember
+var nestedPriceImportRun []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceImportRun) Validate() []FieldError {
@@ -2338,7 +2709,7 @@ type PriceOverride struct {
 
 var requiredPriceOverride = []string{"currency", "rates"}
 
-var nestedPriceOverride = []nestedMember{{Name: "rates", Many: true, Required: requiredPriceRate, Nested: nestedPriceRate}}
+var nestedPriceOverride = []nestedSpec{{Name: "rates", Many: true, Required: requiredPriceRate, Nested: nestedPriceRate}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceOverride) Validate() []FieldError {
@@ -2374,7 +2745,7 @@ type PriceRate struct {
 
 var requiredPriceRate = []string{"category", "threshold", "rate"}
 
-var nestedPriceRate []nestedMember
+var nestedPriceRate []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceRate) Validate() []FieldError {
@@ -2388,7 +2759,7 @@ func (v *PriceRate) Validate() []FieldError {
 	if v.Threshold > 100000000 {
 		errs = append(errs, FieldError{Field: "threshold", Message: "must be at most 100000000"})
 	}
-	if !re17.MatchString(v.Rate) {
+	if !re18.MatchString(v.Rate) {
 		errs = append(errs, FieldError{Field: "rate", Message: "must match ^(0|[1-9][0-9]{0,6})(\\.[0-9]{1,12})?$"})
 	}
 	return errs
@@ -2428,7 +2799,7 @@ type PriceVersion struct {
 
 var requiredPriceVersion = []string{"id", "model_id", "valid_from", "currency", "source", "note", "rates", "created_at"}
 
-var nestedPriceVersion = []nestedMember{{Name: "rates", Many: true, Required: requiredPriceRate, Nested: nestedPriceRate}}
+var nestedPriceVersion = []nestedSpec{{Name: "rates", Many: true, Required: requiredPriceRate, Nested: nestedPriceRate}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceVersion) Validate() []FieldError {
@@ -2462,7 +2833,7 @@ type PriceVersionList struct {
 
 var requiredPriceVersionList = []string{"items"}
 
-var nestedPriceVersionList = []nestedMember{{Name: "items", Many: true, Required: requiredPriceVersion, Nested: nestedPriceVersion}}
+var nestedPriceVersionList = []nestedSpec{{Name: "items", Many: true, Required: requiredPriceVersion, Nested: nestedPriceVersion}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PriceVersionList) Validate() []FieldError {
@@ -2482,12 +2853,13 @@ type PrincipalType string
 const (
 	PrincipalTypePlatform       PrincipalType = "platform"
 	PrincipalTypeServiceAccount PrincipalType = "service_account"
+	PrincipalTypeUser           PrincipalType = "user"
 )
 
 // Valid reports whether v is a value of the enumeration.
 func (v PrincipalType) Valid() bool {
 	switch v {
-	case PrincipalTypePlatform, PrincipalTypeServiceAccount:
+	case PrincipalTypePlatform, PrincipalTypeServiceAccount, PrincipalTypeUser:
 		return true
 	}
 	return false
@@ -2509,13 +2881,13 @@ type Problem struct {
 
 var requiredProblem = []string{"type", "title", "status", "code", "detail", "request_id"}
 
-var nestedProblem = []nestedMember{{Name: "errors", Many: true, Required: requiredFieldError, Nested: nestedFieldError}}
+var nestedProblem = []nestedSpec{{Name: "errors", Many: true, Required: requiredFieldError, Nested: nestedFieldError}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Problem) Validate() []FieldError {
 	var errs []FieldError
 	if !v.Code.Valid() {
-		errs = append(errs, FieldError{Field: "code", Message: "must be one of invalid_request, unauthenticated, forbidden, tenant_suspended, not_found, conflict, invalid_state, request_too_large, unsupported_media_type, internal, unavailable, credential_rejected, validation_unavailable, price_source_unavailable, price_dataset_invalid"})
+		errs = append(errs, FieldError{Field: "code", Message: "must be one of invalid_request, unauthenticated, forbidden, tenant_suspended, not_found, conflict, invalid_state, request_too_large, unsupported_media_type, internal, unavailable, credential_rejected, validation_unavailable, price_source_unavailable, price_dataset_invalid, too_many_attempts, password_change_required, csrf_rejected, sign_in_disabled, idempotency_key_reused, idempotency_in_progress, idempotency_response_lost"})
 	}
 	for i := range v.Errors {
 		for _, e := range v.Errors[i].Validate() {
@@ -2530,27 +2902,34 @@ type ProblemCode string
 
 // Values of ProblemCode.
 const (
-	ProblemCodeInvalidRequest         ProblemCode = "invalid_request"
-	ProblemCodeUnauthenticated        ProblemCode = "unauthenticated"
-	ProblemCodeForbidden              ProblemCode = "forbidden"
-	ProblemCodeTenantSuspended        ProblemCode = "tenant_suspended"
-	ProblemCodeNotFound               ProblemCode = "not_found"
-	ProblemCodeConflict               ProblemCode = "conflict"
-	ProblemCodeInvalidState           ProblemCode = "invalid_state"
-	ProblemCodeRequestTooLarge        ProblemCode = "request_too_large"
-	ProblemCodeUnsupportedMediaType   ProblemCode = "unsupported_media_type"
-	ProblemCodeInternal               ProblemCode = "internal"
-	ProblemCodeUnavailable            ProblemCode = "unavailable"
-	ProblemCodeCredentialRejected     ProblemCode = "credential_rejected"
-	ProblemCodeValidationUnavailable  ProblemCode = "validation_unavailable"
-	ProblemCodePriceSourceUnavailable ProblemCode = "price_source_unavailable"
-	ProblemCodePriceDatasetInvalid    ProblemCode = "price_dataset_invalid"
+	ProblemCodeInvalidRequest          ProblemCode = "invalid_request"
+	ProblemCodeUnauthenticated         ProblemCode = "unauthenticated"
+	ProblemCodeForbidden               ProblemCode = "forbidden"
+	ProblemCodeTenantSuspended         ProblemCode = "tenant_suspended"
+	ProblemCodeNotFound                ProblemCode = "not_found"
+	ProblemCodeConflict                ProblemCode = "conflict"
+	ProblemCodeInvalidState            ProblemCode = "invalid_state"
+	ProblemCodeRequestTooLarge         ProblemCode = "request_too_large"
+	ProblemCodeUnsupportedMediaType    ProblemCode = "unsupported_media_type"
+	ProblemCodeInternal                ProblemCode = "internal"
+	ProblemCodeUnavailable             ProblemCode = "unavailable"
+	ProblemCodeCredentialRejected      ProblemCode = "credential_rejected"
+	ProblemCodeValidationUnavailable   ProblemCode = "validation_unavailable"
+	ProblemCodePriceSourceUnavailable  ProblemCode = "price_source_unavailable"
+	ProblemCodePriceDatasetInvalid     ProblemCode = "price_dataset_invalid"
+	ProblemCodeTooManyAttempts         ProblemCode = "too_many_attempts"
+	ProblemCodePasswordChangeRequired  ProblemCode = "password_change_required"
+	ProblemCodeCsrfRejected            ProblemCode = "csrf_rejected"
+	ProblemCodeSignInDisabled          ProblemCode = "sign_in_disabled"
+	ProblemCodeIdempotencyKeyReused    ProblemCode = "idempotency_key_reused"
+	ProblemCodeIdempotencyInProgress   ProblemCode = "idempotency_in_progress"
+	ProblemCodeIdempotencyResponseLost ProblemCode = "idempotency_response_lost"
 )
 
 // Valid reports whether v is a value of the enumeration.
 func (v ProblemCode) Valid() bool {
 	switch v {
-	case ProblemCodeInvalidRequest, ProblemCodeUnauthenticated, ProblemCodeForbidden, ProblemCodeTenantSuspended, ProblemCodeNotFound, ProblemCodeConflict, ProblemCodeInvalidState, ProblemCodeRequestTooLarge, ProblemCodeUnsupportedMediaType, ProblemCodeInternal, ProblemCodeUnavailable, ProblemCodeCredentialRejected, ProblemCodeValidationUnavailable, ProblemCodePriceSourceUnavailable, ProblemCodePriceDatasetInvalid:
+	case ProblemCodeInvalidRequest, ProblemCodeUnauthenticated, ProblemCodeForbidden, ProblemCodeTenantSuspended, ProblemCodeNotFound, ProblemCodeConflict, ProblemCodeInvalidState, ProblemCodeRequestTooLarge, ProblemCodeUnsupportedMediaType, ProblemCodeInternal, ProblemCodeUnavailable, ProblemCodeCredentialRejected, ProblemCodeValidationUnavailable, ProblemCodePriceSourceUnavailable, ProblemCodePriceDatasetInvalid, ProblemCodeTooManyAttempts, ProblemCodePasswordChangeRequired, ProblemCodeCsrfRejected, ProblemCodeSignInDisabled, ProblemCodeIdempotencyKeyReused, ProblemCodeIdempotencyInProgress, ProblemCodeIdempotencyResponseLost:
 		return true
 	}
 	return false
@@ -2573,7 +2952,7 @@ type Provider struct {
 
 var requiredProvider = []string{"id", "name", "display_name", "description", "api_family", "enabled", "dataset_provider", "stream_usage_option", "created_at", "updated_at"}
 
-var nestedProvider []nestedMember
+var nestedProvider []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Provider) Validate() []FieldError {
@@ -2605,7 +2984,7 @@ type ProviderCreate struct {
 
 var requiredProviderCreate = []string{"name", "api_family"}
 
-var nestedProviderCreate []nestedMember
+var nestedProviderCreate []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ProviderCreate) Validate() []FieldError {
@@ -2622,7 +3001,7 @@ func (v *ProviderCreate) Validate() []FieldError {
 	if runeCount(v.Description) > 500 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 500"})
 	}
-	if v.DatasetProvider != "" && !re18.MatchString(v.DatasetProvider) {
+	if v.DatasetProvider != "" && !re19.MatchString(v.DatasetProvider) {
 		errs = append(errs, FieldError{Field: "dataset_provider", Message: "must match ^[a-z0-9][a-z0-9_.-]{0,62}$"})
 	}
 	if v.StreamUsageOption != "" && !v.StreamUsageOption.Valid() {
@@ -2640,7 +3019,7 @@ type ProviderList struct {
 
 var requiredProviderList = []string{"items"}
 
-var nestedProviderList = []nestedMember{{Name: "items", Many: true, Required: requiredProvider, Nested: nestedProvider}}
+var nestedProviderList = []nestedSpec{{Name: "items", Many: true, Required: requiredProvider, Nested: nestedProvider}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ProviderList) Validate() []FieldError {
@@ -2665,7 +3044,7 @@ type ProviderUpdate struct {
 
 var requiredProviderUpdate = []string{}
 
-var nestedProviderUpdate []nestedMember
+var nestedProviderUpdate []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ProviderUpdate) Validate() []FieldError {
@@ -2683,7 +3062,7 @@ func (v *ProviderUpdate) Validate() []FieldError {
 	if v.Enabled.Set {
 	}
 	if v.DatasetProvider.Set {
-		if !re19.MatchString(v.DatasetProvider.Value) {
+		if !re20.MatchString(v.DatasetProvider.Value) {
 			errs = append(errs, FieldError{Field: "dataset_provider", Message: "must match ^([a-z0-9][a-z0-9_.-]{0,62})?$"})
 		}
 	}
@@ -2703,7 +3082,7 @@ type Reason struct {
 
 var requiredReason = []string{}
 
-var nestedReason []nestedMember
+var nestedReason []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Reason) Validate() []FieldError {
@@ -2722,7 +3101,7 @@ type RequiredReason struct {
 
 var requiredRequiredReason = []string{"reason"}
 
-var nestedRequiredReason []nestedMember
+var nestedRequiredReason []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *RequiredReason) Validate() []FieldError {
@@ -2734,6 +3113,24 @@ func (v *RequiredReason) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "reason", Message: "length must be at most 500"})
 	}
 	return errs
+}
+
+// RoleSource is an enumeration of the administration API.
+type RoleSource string
+
+// Values of RoleSource.
+const (
+	RoleSourceManual RoleSource = "manual"
+	RoleSourceIdp    RoleSource = "idp"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v RoleSource) Valid() bool {
+	switch v {
+	case RoleSourceManual, RoleSourceIdp:
+		return true
+	}
+	return false
 }
 
 // ServiceAccount is a schema of the administration API.
@@ -2752,7 +3149,7 @@ type ServiceAccount struct {
 
 var requiredServiceAccount = []string{"id", "tenant_id", "name", "description", "state", "roles", "created_at", "updated_at"}
 
-var nestedServiceAccount []nestedMember
+var nestedServiceAccount []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ServiceAccount) Validate() []FieldError {
@@ -2784,7 +3181,7 @@ type ServiceAccountCreate struct {
 
 var requiredServiceAccountCreate = []string{"name"}
 
-var nestedServiceAccountCreate []nestedMember
+var nestedServiceAccountCreate []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ServiceAccountCreate) Validate() []FieldError {
@@ -2818,7 +3215,7 @@ type ServiceAccountList struct {
 
 var requiredServiceAccountList = []string{"items"}
 
-var nestedServiceAccountList = []nestedMember{{Name: "items", Many: true, Required: requiredServiceAccount, Nested: nestedServiceAccount}}
+var nestedServiceAccountList = []nestedSpec{{Name: "items", Many: true, Required: requiredServiceAccount, Nested: nestedServiceAccount}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ServiceAccountList) Validate() []FieldError {
@@ -2860,7 +3257,7 @@ type ServiceAccountUpdate struct {
 
 var requiredServiceAccountUpdate = []string{}
 
-var nestedServiceAccountUpdate []nestedMember
+var nestedServiceAccountUpdate []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ServiceAccountUpdate) Validate() []FieldError {
@@ -2888,6 +3285,166 @@ func (v *ServiceAccountUpdate) Validate() []FieldError {
 			}
 		}
 	}
+	return errs
+}
+
+// Session is a schema of the administration API.
+type Session struct {
+	ID                 string       `json:"id"`
+	User               SessionUser  `json:"user"`
+	Method             SignInMethod `json:"method"`
+	MustChangePassword bool         `json:"must_change_password"`
+	// True for the session of the request.
+	Current            bool      `json:"current"`
+	CreatedAt          time.Time `json:"created_at"`
+	LastUsedAt         time.Time `json:"last_used_at"`
+	ExpiresAt          time.Time `json:"expires_at"`
+	IdleTimeoutSeconds int       `json:"idle_timeout_seconds"`
+}
+
+var requiredSession = []string{"id", "user", "method", "must_change_password", "current", "created_at", "last_used_at", "expires_at", "idle_timeout_seconds"}
+
+var nestedSession = []nestedSpec{{Name: "user", Required: requiredSessionUser, Nested: nestedSessionUser}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *Session) Validate() []FieldError {
+	var errs []FieldError
+	if !re4.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	for _, e := range v.User.Validate() {
+		errs = append(errs, FieldError{Field: "user." + e.Field, Message: e.Message})
+	}
+	if !v.Method.Valid() {
+		errs = append(errs, FieldError{Field: "method", Message: "must be one of local, oidc"})
+	}
+	return errs
+}
+
+// SessionList is a schema of the administration API.
+type SessionList struct {
+	Items []Session `json:"items"`
+}
+
+var requiredSessionList = []string{"items"}
+
+var nestedSessionList = []nestedSpec{{Name: "items", Many: true, Required: requiredSession, Nested: nestedSession}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *SessionList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// SessionUser is a schema of the administration API.
+type SessionUser struct {
+	ID          string       `json:"id"`
+	SignIn      SignInMethod `json:"sign_in"`
+	Username    string       `json:"username,omitempty"`
+	DisplayName string       `json:"display_name"`
+}
+
+var requiredSessionUser = []string{"id", "sign_in", "display_name"}
+
+var nestedSessionUser []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *SessionUser) Validate() []FieldError {
+	var errs []FieldError
+	if !re4.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !v.SignIn.Valid() {
+		errs = append(errs, FieldError{Field: "sign_in", Message: "must be one of local, oidc"})
+	}
+	if v.Username != "" && !re10.MatchString(v.Username) {
+		errs = append(errs, FieldError{Field: "username", Message: "must match ^[a-z0-9][a-z0-9._@+-]{1,62}[a-z0-9]$"})
+	}
+	if runeCount(v.DisplayName) > 200 {
+		errs = append(errs, FieldError{Field: "display_name", Message: "length must be at most 200"})
+	}
+	return errs
+}
+
+// SessionsRevoked is a schema of the administration API.
+type SessionsRevoked struct {
+	Revoked int `json:"revoked"`
+}
+
+var requiredSessionsRevoked = []string{"revoked"}
+
+var nestedSessionsRevoked []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *SessionsRevoked) Validate() []FieldError {
+	var errs []FieldError
+	return errs
+}
+
+// SignInMethod is an enumeration of the administration API.
+type SignInMethod string
+
+// Values of SignInMethod.
+const (
+	SignInMethodLocal SignInMethod = "local"
+	SignInMethodOidc  SignInMethod = "oidc"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v SignInMethod) Valid() bool {
+	switch v {
+	case SignInMethodLocal, SignInMethodOidc:
+		return true
+	}
+	return false
+}
+
+// SignInRequest is a schema of the administration API.
+type SignInRequest struct {
+	// Compared without regard to case.
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+var requiredSignInRequest = []string{"username", "password"}
+
+var nestedSignInRequest []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *SignInRequest) Validate() []FieldError {
+	var errs []FieldError
+	if runeCount(v.Username) < 1 {
+		errs = append(errs, FieldError{Field: "username", Message: "length must be at least 1"})
+	}
+	if runeCount(v.Username) > 64 {
+		errs = append(errs, FieldError{Field: "username", Message: "length must be at most 64"})
+	}
+	if runeCount(v.Password) < 1 {
+		errs = append(errs, FieldError{Field: "password", Message: "length must be at least 1"})
+	}
+	if runeCount(v.Password) > 1024 {
+		errs = append(errs, FieldError{Field: "password", Message: "length must be at most 1024"})
+	}
+	return errs
+}
+
+// SignedOut is a schema of the administration API.
+type SignedOut struct {
+	SignedOut bool `json:"signed_out"`
+}
+
+var requiredSignedOut = []string{"signed_out"}
+
+var nestedSignedOut []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *SignedOut) Validate() []FieldError {
+	var errs []FieldError
 	return errs
 }
 
@@ -2941,7 +3498,7 @@ type SubjectMapping struct {
 
 var requiredSubjectMapping = []string{"id", "tenant_id", "issuer", "subject", "service_account_id", "service_account_name", "description", "created_at"}
 
-var nestedSubjectMapping = []nestedMember{{Name: "issuer", Required: requiredIssuerRef, Nested: nestedIssuerRef}}
+var nestedSubjectMapping = []nestedSpec{{Name: "issuer", Required: requiredIssuerRef, Nested: nestedIssuerRef}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *SubjectMapping) Validate() []FieldError {
@@ -2983,7 +3540,7 @@ type SubjectMappingCreate struct {
 
 var requiredSubjectMappingCreate = []string{"issuer", "subject", "service_account_id"}
 
-var nestedSubjectMappingCreate = []nestedMember{{Name: "issuer", Required: requiredIssuerRef, Nested: nestedIssuerRef}}
+var nestedSubjectMappingCreate = []nestedSpec{{Name: "issuer", Required: requiredIssuerRef, Nested: nestedIssuerRef}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *SubjectMappingCreate) Validate() []FieldError {
@@ -3015,7 +3572,7 @@ type SubjectMappingList struct {
 
 var requiredSubjectMappingList = []string{"items"}
 
-var nestedSubjectMappingList = []nestedMember{{Name: "items", Many: true, Required: requiredSubjectMapping, Nested: nestedSubjectMapping}}
+var nestedSubjectMappingList = []nestedSpec{{Name: "items", Many: true, Required: requiredSubjectMapping, Nested: nestedSubjectMapping}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *SubjectMappingList) Validate() []FieldError {
@@ -3047,7 +3604,7 @@ type Tenant struct {
 
 var requiredTenant = []string{"id", "name", "display_name", "state", "created_at", "updated_at", "state_changed_at", "time_zone", "time_zone_in_force", "active_currency", "active_currency_in_force"}
 
-var nestedTenant []nestedMember
+var nestedTenant []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *Tenant) Validate() []FieldError {
@@ -3061,7 +3618,7 @@ func (v *Tenant) Validate() []FieldError {
 	if !v.State.Valid() {
 		errs = append(errs, FieldError{Field: "state", Message: "must be one of provisioning, active, suspended, deleting, deleted"})
 	}
-	if !re20.MatchString(v.TimeZone) {
+	if !re21.MatchString(v.TimeZone) {
 		errs = append(errs, FieldError{Field: "time_zone", Message: "must match ^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$"})
 	}
 	if runeCount(v.TimeZone) > 64 {
@@ -3086,7 +3643,7 @@ type TenantCreate struct {
 
 var requiredTenantCreate = []string{"name"}
 
-var nestedTenantCreate []nestedMember
+var nestedTenantCreate []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantCreate) Validate() []FieldError {
@@ -3097,7 +3654,7 @@ func (v *TenantCreate) Validate() []FieldError {
 	if runeCount(v.DisplayName) > 200 {
 		errs = append(errs, FieldError{Field: "display_name", Message: "length must be at most 200"})
 	}
-	if v.TimeZone != "" && !re20.MatchString(v.TimeZone) {
+	if v.TimeZone != "" && !re21.MatchString(v.TimeZone) {
 		errs = append(errs, FieldError{Field: "time_zone", Message: "must match ^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$"})
 	}
 	if runeCount(v.TimeZone) > 64 {
@@ -3111,14 +3668,15 @@ func (v *TenantCreate) Validate() []FieldError {
 
 // TenantCreated is a schema of the administration API.
 type TenantCreated struct {
-	Tenant              Tenant            `json:"tenant"`
-	AdminServiceAccount ServiceAccount    `json:"admin_service_account"`
-	AdminKey            VirtualKeyCreated `json:"admin_key"`
+	Tenant              Tenant         `json:"tenant"`
+	AdminServiceAccount ServiceAccount `json:"admin_service_account"`
+	// Absent on an idempotent replay.
+	AdminKey *VirtualKeyCreated `json:"admin_key,omitempty"`
 }
 
-var requiredTenantCreated = []string{"tenant", "admin_service_account", "admin_key"}
+var requiredTenantCreated = []string{"tenant", "admin_service_account"}
 
-var nestedTenantCreated = []nestedMember{{Name: "tenant", Required: requiredTenant, Nested: nestedTenant}, {Name: "admin_service_account", Required: requiredServiceAccount, Nested: nestedServiceAccount}, {Name: "admin_key", Required: requiredVirtualKeyCreated, Nested: nestedVirtualKeyCreated}}
+var nestedTenantCreated = []nestedSpec{{Name: "tenant", Required: requiredTenant, Nested: nestedTenant}, {Name: "admin_service_account", Required: requiredServiceAccount, Nested: nestedServiceAccount}, {Name: "admin_key", Required: requiredVirtualKeyCreated, Nested: nestedVirtualKeyCreated}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantCreated) Validate() []FieldError {
@@ -3129,8 +3687,10 @@ func (v *TenantCreated) Validate() []FieldError {
 	for _, e := range v.AdminServiceAccount.Validate() {
 		errs = append(errs, FieldError{Field: "admin_service_account." + e.Field, Message: e.Message})
 	}
-	for _, e := range v.AdminKey.Validate() {
-		errs = append(errs, FieldError{Field: "admin_key." + e.Field, Message: e.Message})
+	if v.AdminKey != nil {
+		for _, e := range v.AdminKey.Validate() {
+			errs = append(errs, FieldError{Field: "admin_key." + e.Field, Message: e.Message})
+		}
 	}
 	return errs
 }
@@ -3144,7 +3704,7 @@ type TenantList struct {
 
 var requiredTenantList = []string{"items"}
 
-var nestedTenantList = []nestedMember{{Name: "items", Many: true, Required: requiredTenant, Nested: nestedTenant}}
+var nestedTenantList = []nestedSpec{{Name: "items", Many: true, Required: requiredTenant, Nested: nestedTenant}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantList) Validate() []FieldError {
@@ -3171,7 +3731,7 @@ type TenantModel struct {
 
 var requiredTenantModel = []string{"model", "allowed"}
 
-var nestedTenantModel = []nestedMember{{Name: "model", Required: requiredModel, Nested: nestedModel}, {Name: "price", Required: requiredPriceVersion, Nested: nestedPriceVersion}, {Name: "tenant_price", Required: requiredTenantPriceVersion, Nested: nestedTenantPriceVersion}}
+var nestedTenantModel = []nestedSpec{{Name: "model", Required: requiredModel, Nested: nestedModel}, {Name: "price", Required: requiredPriceVersion, Nested: nestedPriceVersion}, {Name: "tenant_price", Required: requiredTenantPriceVersion, Nested: nestedTenantPriceVersion}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantModel) Validate() []FieldError {
@@ -3201,7 +3761,7 @@ type TenantModelList struct {
 
 var requiredTenantModelList = []string{"items"}
 
-var nestedTenantModelList = []nestedMember{{Name: "items", Many: true, Required: requiredTenantModel, Nested: nestedTenantModel}}
+var nestedTenantModelList = []nestedSpec{{Name: "items", Many: true, Required: requiredTenantModel, Nested: nestedTenantModel}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantModelList) Validate() []FieldError {
@@ -3230,7 +3790,7 @@ type TenantPlatformIssuer struct {
 
 var requiredTenantPlatformIssuer = []string{"id", "name", "description", "issuer", "audience", "subject_claim", "tenant_claim", "claim_value", "enabled"}
 
-var nestedTenantPlatformIssuer []nestedMember
+var nestedTenantPlatformIssuer []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantPlatformIssuer) Validate() []FieldError {
@@ -3241,16 +3801,16 @@ func (v *TenantPlatformIssuer) Validate() []FieldError {
 	if !re5.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
-	if !re13.MatchString(v.Issuer) {
+	if !re14.MatchString(v.Issuer) {
 		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 	}
 	if runeCount(v.Issuer) > 255 {
 		errs = append(errs, FieldError{Field: "issuer", Message: "length must be at most 255"})
 	}
-	if !re15.MatchString(v.SubjectClaim) {
+	if !re16.MatchString(v.SubjectClaim) {
 		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
-	if !re15.MatchString(v.TenantClaim) {
+	if !re16.MatchString(v.TenantClaim) {
 		errs = append(errs, FieldError{Field: "tenant_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
 	return errs
@@ -3265,7 +3825,7 @@ type TenantPlatformIssuerList struct {
 
 var requiredTenantPlatformIssuerList = []string{"items"}
 
-var nestedTenantPlatformIssuerList = []nestedMember{{Name: "items", Many: true, Required: requiredTenantPlatformIssuer, Nested: nestedTenantPlatformIssuer}}
+var nestedTenantPlatformIssuerList = []nestedSpec{{Name: "items", Many: true, Required: requiredTenantPlatformIssuer, Nested: nestedTenantPlatformIssuer}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantPlatformIssuerList) Validate() []FieldError {
@@ -3310,7 +3870,7 @@ type TenantPlatformLimitRule struct {
 
 var requiredTenantPlatformLimitRule = []string{"id", "tenant", "provider", "provider_id", "model", "model_id", "metric", "limit", "amount", "currency", "enforce", "thresholds", "active", "created_at", "updated_at"}
 
-var nestedTenantPlatformLimitRule []nestedMember
+var nestedTenantPlatformLimitRule []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantPlatformLimitRule) Validate() []FieldError {
@@ -3345,7 +3905,7 @@ type TenantPlatformLimitRuleList struct {
 
 var requiredTenantPlatformLimitRuleList = []string{"items"}
 
-var nestedTenantPlatformLimitRuleList = []nestedMember{{Name: "items", Many: true, Required: requiredTenantPlatformLimitRule, Nested: nestedTenantPlatformLimitRule}}
+var nestedTenantPlatformLimitRuleList = []nestedSpec{{Name: "items", Many: true, Required: requiredTenantPlatformLimitRule, Nested: nestedTenantPlatformLimitRule}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantPlatformLimitRuleList) Validate() []FieldError {
@@ -3372,7 +3932,7 @@ type TenantPriceCreate struct {
 
 var requiredTenantPriceCreate = []string{"provider", "model", "currency"}
 
-var nestedTenantPriceCreate = []nestedMember{{Name: "rates", Many: true, Required: requiredPriceRate, Nested: nestedPriceRate}}
+var nestedTenantPriceCreate = []nestedSpec{{Name: "rates", Many: true, Required: requiredPriceRate, Nested: nestedPriceRate}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantPriceCreate) Validate() []FieldError {
@@ -3434,7 +3994,7 @@ type TenantPriceList struct {
 
 var requiredTenantPriceList = []string{"currency", "versions", "models_priced", "active"}
 
-var nestedTenantPriceList []nestedMember
+var nestedTenantPriceList []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantPriceList) Validate() []FieldError {
@@ -3452,7 +4012,7 @@ type TenantPriceListList struct {
 
 var requiredTenantPriceListList = []string{"items"}
 
-var nestedTenantPriceListList = []nestedMember{{Name: "items", Many: true, Required: requiredTenantPriceList, Nested: nestedTenantPriceList}}
+var nestedTenantPriceListList = []nestedSpec{{Name: "items", Many: true, Required: requiredTenantPriceList, Nested: nestedTenantPriceList}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantPriceListList) Validate() []FieldError {
@@ -3483,7 +4043,7 @@ type TenantPriceVersion struct {
 
 var requiredTenantPriceVersion = []string{"id", "model_id", "provider", "model", "kind", "valid_from", "currency", "rates", "note", "in_force", "created_at"}
 
-var nestedTenantPriceVersion = []nestedMember{{Name: "rates", Many: true, Required: requiredPriceRate, Nested: nestedPriceRate}}
+var nestedTenantPriceVersion = []nestedSpec{{Name: "rates", Many: true, Required: requiredPriceRate, Nested: nestedPriceRate}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantPriceVersion) Validate() []FieldError {
@@ -3523,7 +4083,7 @@ type TenantPriceVersionList struct {
 
 var requiredTenantPriceVersionList = []string{"items"}
 
-var nestedTenantPriceVersionList = []nestedMember{{Name: "items", Many: true, Required: requiredTenantPriceVersion, Nested: nestedTenantPriceVersion}}
+var nestedTenantPriceVersionList = []nestedSpec{{Name: "items", Many: true, Required: requiredTenantPriceVersion, Nested: nestedTenantPriceVersion}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantPriceVersionList) Validate() []FieldError {
@@ -3545,7 +4105,7 @@ type TenantRef struct {
 
 var requiredTenantRef = []string{"id", "name", "state"}
 
-var nestedTenantRef []nestedMember
+var nestedTenantRef []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantRef) Validate() []FieldError {
@@ -3594,12 +4154,12 @@ type TenantTimeZone struct {
 
 var requiredTenantTimeZone = []string{"time_zone", "in_force"}
 
-var nestedTenantTimeZone []nestedMember
+var nestedTenantTimeZone []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantTimeZone) Validate() []FieldError {
 	var errs []FieldError
-	if !re20.MatchString(v.TimeZone) {
+	if !re21.MatchString(v.TimeZone) {
 		errs = append(errs, FieldError{Field: "time_zone", Message: "must match ^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$"})
 	}
 	if runeCount(v.TimeZone) > 64 {
@@ -3615,12 +4175,12 @@ type TenantTimeZoneSet struct {
 
 var requiredTenantTimeZoneSet = []string{"time_zone"}
 
-var nestedTenantTimeZoneSet []nestedMember
+var nestedTenantTimeZoneSet []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantTimeZoneSet) Validate() []FieldError {
 	var errs []FieldError
-	if !re20.MatchString(v.TimeZone) {
+	if !re21.MatchString(v.TimeZone) {
 		errs = append(errs, FieldError{Field: "time_zone", Message: "must match ^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$"})
 	}
 	if runeCount(v.TimeZone) > 64 {
@@ -3638,7 +4198,7 @@ type TenantUpdate struct {
 
 var requiredTenantUpdate = []string{}
 
-var nestedTenantUpdate []nestedMember
+var nestedTenantUpdate []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantUpdate) Validate() []FieldError {
@@ -3654,7 +4214,7 @@ func (v *TenantUpdate) Validate() []FieldError {
 		}
 	}
 	if v.TimeZone.Set {
-		if !re20.MatchString(v.TimeZone.Value) {
+		if !re21.MatchString(v.TimeZone.Value) {
 			errs = append(errs, FieldError{Field: "time_zone", Message: "must match ^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$"})
 		}
 		if runeCount(v.TimeZone.Value) > 64 {
@@ -3686,7 +4246,7 @@ type TokenIssuer struct {
 
 var requiredTokenIssuer = []string{"id", "tenant_id", "name", "description", "issuer", "audience", "jwks_uri", "algorithms", "subject_claim", "required_claims", "enabled", "created_at", "updated_at"}
 
-var nestedTokenIssuer []nestedMember
+var nestedTokenIssuer []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TokenIssuer) Validate() []FieldError {
@@ -3703,7 +4263,7 @@ func (v *TokenIssuer) Validate() []FieldError {
 	if runeCount(v.Description) > 200 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
 	}
-	if !re13.MatchString(v.Issuer) {
+	if !re14.MatchString(v.Issuer) {
 		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 	}
 	if runeCount(v.Issuer) > 255 {
@@ -3728,11 +4288,11 @@ func (v *TokenIssuer) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Algorithms {
-		if !re14.MatchString(item) {
+		if !re15.MatchString(item) {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 		}
 	}
-	if !re15.MatchString(v.SubjectClaim) {
+	if !re16.MatchString(v.SubjectClaim) {
 		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
 	if len(v.RequiredClaims) > 16 {
@@ -3765,7 +4325,7 @@ type TokenIssuerCreate struct {
 
 var requiredTokenIssuerCreate = []string{"name", "issuer", "audience"}
 
-var nestedTokenIssuerCreate []nestedMember
+var nestedTokenIssuerCreate []nestedSpec
 
 // sentEmpty names the optional members that the document does not allow to be empty.
 func (*TokenIssuerCreate) sentEmpty() []string { return []string{"subject_claim"} }
@@ -3779,7 +4339,7 @@ func (v *TokenIssuerCreate) Validate() []FieldError {
 	if runeCount(v.Description) > 200 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
 	}
-	if !re13.MatchString(v.Issuer) {
+	if !re14.MatchString(v.Issuer) {
 		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 	}
 	if runeCount(v.Issuer) > 255 {
@@ -3804,11 +4364,11 @@ func (v *TokenIssuerCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Algorithms {
-		if !re14.MatchString(item) {
+		if !re15.MatchString(item) {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 		}
 	}
-	if v.SubjectClaim != "" && !re15.MatchString(v.SubjectClaim) {
+	if v.SubjectClaim != "" && !re16.MatchString(v.SubjectClaim) {
 		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
 	if len(v.RequiredClaims) > 16 {
@@ -3834,7 +4394,7 @@ type TokenIssuerList struct {
 
 var requiredTokenIssuerList = []string{"items"}
 
-var nestedTokenIssuerList = []nestedMember{{Name: "items", Many: true, Required: requiredTokenIssuer, Nested: nestedTokenIssuer}}
+var nestedTokenIssuerList = []nestedSpec{{Name: "items", Many: true, Required: requiredTokenIssuer, Nested: nestedTokenIssuer}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TokenIssuerList) Validate() []FieldError {
@@ -3862,7 +4422,7 @@ type TokenIssuerUpdate struct {
 
 var requiredTokenIssuerUpdate = []string{}
 
-var nestedTokenIssuerUpdate []nestedMember
+var nestedTokenIssuerUpdate []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TokenIssuerUpdate) Validate() []FieldError {
@@ -3878,7 +4438,7 @@ func (v *TokenIssuerUpdate) Validate() []FieldError {
 		}
 	}
 	if v.Issuer.Set {
-		if !re13.MatchString(v.Issuer.Value) {
+		if !re14.MatchString(v.Issuer.Value) {
 			errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 		}
 		if runeCount(v.Issuer.Value) > 255 {
@@ -3909,13 +4469,13 @@ func (v *TokenIssuerUpdate) Validate() []FieldError {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 		}
 		for _, item := range v.Algorithms.Value {
-			if !re14.MatchString(item) {
+			if !re15.MatchString(item) {
 				errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 			}
 		}
 	}
 	if v.SubjectClaim.Set {
-		if !re15.MatchString(v.SubjectClaim.Value) {
+		if !re16.MatchString(v.SubjectClaim.Value) {
 			errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 		}
 	}
@@ -3945,7 +4505,7 @@ type UsageCounter struct {
 
 var requiredUsageCounter = []string{"name", "value"}
 
-var nestedUsageCounter []nestedMember
+var nestedUsageCounter []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *UsageCounter) Validate() []FieldError {
@@ -4019,7 +4579,7 @@ type UsageRecord struct {
 
 var requiredUsageRecord = []string{"id", "request_id", "trace_id", "started_at", "duration_ms", "principal_kind", "principal_id", "key_id", "credential_id", "provider", "api_family", "operation", "endpoint", "model", "model_id", "upstream_model", "stream", "outcome", "error_code", "upstream_status", "ttfb_ms", "request_bytes", "response_bytes", "input_source", "output_source", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens", "estimated_input_tokens", "estimated_output_tokens", "other_units", "provider_usage", "cost_status", "cost_reason", "currency", "price_version_id", "price_source", "cost_fallbacks", "metadata", "metadata_dropped", "limit_state"}
 
-var nestedUsageRecord = []nestedMember{{Name: "other_units", Many: true, Required: requiredUsageCounter, Nested: nestedUsageCounter}, {Name: "provider_usage", Many: true, Required: requiredUsageCounter, Nested: nestedUsageCounter}, {Name: "metadata", Many: true, Required: requiredMetadataEntry, Nested: nestedMetadataEntry}}
+var nestedUsageRecord = []nestedSpec{{Name: "other_units", Many: true, Required: requiredUsageCounter, Nested: nestedUsageCounter}, {Name: "provider_usage", Many: true, Required: requiredUsageCounter, Nested: nestedUsageCounter}, {Name: "metadata", Many: true, Required: requiredMetadataEntry, Nested: nestedMetadataEntry}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *UsageRecord) Validate() []FieldError {
@@ -4054,7 +4614,7 @@ type UsageRecordList struct {
 
 var requiredUsageRecordList = []string{"items"}
 
-var nestedUsageRecordList = []nestedMember{{Name: "items", Many: true, Required: requiredUsageRecord, Nested: nestedUsageRecord}}
+var nestedUsageRecordList = []nestedSpec{{Name: "items", Many: true, Required: requiredUsageRecord, Nested: nestedUsageRecord}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *UsageRecordList) Validate() []FieldError {
@@ -4062,6 +4622,226 @@ func (v *UsageRecordList) Validate() []FieldError {
 	for i := range v.Items {
 		for _, e := range v.Items[i].Validate() {
 			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// User is a schema of the administration API.
+type User struct {
+	ID       string       `json:"id"`
+	SignIn   SignInMethod `json:"sign_in"`
+	Username string       `json:"username,omitempty"`
+	// Subject at the identity provider; federated users only.
+	Subject            string    `json:"subject,omitempty"`
+	DisplayName        string    `json:"display_name"`
+	Email              string    `json:"email"`
+	State              UserState `json:"state"`
+	StateChangedAt     time.Time `json:"state_changed_at"`
+	MustChangePassword bool      `json:"must_change_password,omitempty"`
+	// Present while sign-in is locked.
+	LockedUntil   *time.Time `json:"locked_until,omitempty"`
+	PlatformRoles []string   `json:"platform_roles"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+var requiredUser = []string{"id", "sign_in", "display_name", "email", "state", "state_changed_at", "platform_roles", "created_at", "updated_at"}
+
+var nestedUser []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *User) Validate() []FieldError {
+	var errs []FieldError
+	if !re4.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !v.SignIn.Valid() {
+		errs = append(errs, FieldError{Field: "sign_in", Message: "must be one of local, oidc"})
+	}
+	if v.Username != "" && !re10.MatchString(v.Username) {
+		errs = append(errs, FieldError{Field: "username", Message: "must match ^[a-z0-9][a-z0-9._@+-]{1,62}[a-z0-9]$"})
+	}
+	if runeCount(v.DisplayName) > 200 {
+		errs = append(errs, FieldError{Field: "display_name", Message: "length must be at most 200"})
+	}
+	if runeCount(v.Email) > 254 {
+		errs = append(errs, FieldError{Field: "email", Message: "length must be at most 254"})
+	}
+	if !v.State.Valid() {
+		errs = append(errs, FieldError{Field: "state", Message: "must be one of active, disabled"})
+	}
+	for _, item := range v.PlatformRoles {
+		if !re2.MatchString(item) {
+			errs = append(errs, FieldError{Field: "platform_roles", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+		}
+	}
+	return errs
+}
+
+// UserCreate is a schema of the administration API.
+type UserCreate struct {
+	SignIn        SignInMethod `json:"sign_in"`
+	Username      string       `json:"username,omitempty"`
+	Subject       string       `json:"subject,omitempty"`
+	DisplayName   string       `json:"display_name,omitempty"`
+	Email         string       `json:"email,omitempty"`
+	PlatformRoles []string     `json:"platform_roles,omitempty"`
+}
+
+var requiredUserCreate = []string{"sign_in"}
+
+var nestedUserCreate []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *UserCreate) Validate() []FieldError {
+	var errs []FieldError
+	if !v.SignIn.Valid() {
+		errs = append(errs, FieldError{Field: "sign_in", Message: "must be one of local, oidc"})
+	}
+	if v.Username != "" && !re10.MatchString(v.Username) {
+		errs = append(errs, FieldError{Field: "username", Message: "must match ^[a-z0-9][a-z0-9._@+-]{1,62}[a-z0-9]$"})
+	}
+	if v.Subject != "" && runeCount(v.Subject) < 1 {
+		errs = append(errs, FieldError{Field: "subject", Message: "length must be at least 1"})
+	}
+	if runeCount(v.Subject) > 255 {
+		errs = append(errs, FieldError{Field: "subject", Message: "length must be at most 255"})
+	}
+	if runeCount(v.DisplayName) > 200 {
+		errs = append(errs, FieldError{Field: "display_name", Message: "length must be at most 200"})
+	}
+	if runeCount(v.Email) > 254 {
+		errs = append(errs, FieldError{Field: "email", Message: "length must be at most 254"})
+	}
+	if len(v.PlatformRoles) > 8 {
+		errs = append(errs, FieldError{Field: "platform_roles", Message: "must have at most 8 items"})
+	}
+	if !unique(v.PlatformRoles) {
+		errs = append(errs, FieldError{Field: "platform_roles", Message: "must not repeat an item"})
+	}
+	for _, item := range v.PlatformRoles {
+		if !re2.MatchString(item) {
+			errs = append(errs, FieldError{Field: "platform_roles", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+		}
+	}
+	return errs
+}
+
+// UserCreated is a schema of the administration API.
+type UserCreated struct {
+	User User `json:"user"`
+	// Shown once, for a local account; absent on an idempotent replay.
+	InitialPassword string `json:"initial_password,omitempty"`
+}
+
+var requiredUserCreated = []string{"user"}
+
+var nestedUserCreated = []nestedSpec{{Name: "user", Required: requiredUser, Nested: nestedUser}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *UserCreated) Validate() []FieldError {
+	var errs []FieldError
+	for _, e := range v.User.Validate() {
+		errs = append(errs, FieldError{Field: "user." + e.Field, Message: e.Message})
+	}
+	return errs
+}
+
+// UserList is a schema of the administration API.
+type UserList struct {
+	Items      []User `json:"items"`
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredUserList = []string{"items"}
+
+var nestedUserList = []nestedSpec{{Name: "items", Many: true, Required: requiredUser, Nested: nestedUser}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *UserList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// UserSort is an enumeration of the administration API.
+type UserSort string
+
+// Values of UserSort.
+const (
+	UserSortCreatedAt      UserSort = "created_at"
+	UserSortMinusCreatedAt UserSort = "-created_at"
+	UserSortUsername       UserSort = "username"
+	UserSortMinusUsername  UserSort = "-username"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v UserSort) Valid() bool {
+	switch v {
+	case UserSortCreatedAt, UserSortMinusCreatedAt, UserSortUsername, UserSortMinusUsername:
+		return true
+	}
+	return false
+}
+
+// UserState is an enumeration of the administration API.
+type UserState string
+
+// Values of UserState.
+const (
+	UserStateActive   UserState = "active"
+	UserStateDisabled UserState = "disabled"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v UserState) Valid() bool {
+	switch v {
+	case UserStateActive, UserStateDisabled:
+		return true
+	}
+	return false
+}
+
+// UserUpdate is a schema of the administration API.
+type UserUpdate struct {
+	DisplayName   Optional[string]   `json:"display_name,omitzero"`
+	Email         Optional[string]   `json:"email,omitzero"`
+	PlatformRoles Optional[[]string] `json:"platform_roles,omitzero"`
+}
+
+var requiredUserUpdate = []string{}
+
+var nestedUserUpdate []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *UserUpdate) Validate() []FieldError {
+	var errs []FieldError
+	if v.DisplayName.Set {
+		if runeCount(v.DisplayName.Value) > 200 {
+			errs = append(errs, FieldError{Field: "display_name", Message: "length must be at most 200"})
+		}
+	}
+	if v.Email.Set {
+		if runeCount(v.Email.Value) > 254 {
+			errs = append(errs, FieldError{Field: "email", Message: "length must be at most 254"})
+		}
+	}
+	if v.PlatformRoles.Set {
+		if len(v.PlatformRoles.Value) > 8 {
+			errs = append(errs, FieldError{Field: "platform_roles", Message: "must have at most 8 items"})
+		}
+		if !unique(v.PlatformRoles.Value) {
+			errs = append(errs, FieldError{Field: "platform_roles", Message: "must not repeat an item"})
+		}
+		for _, item := range v.PlatformRoles.Value {
+			if !re2.MatchString(item) {
+				errs = append(errs, FieldError{Field: "platform_roles", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
+			}
 		}
 	}
 	return errs
@@ -4086,12 +4866,12 @@ type VirtualKey struct {
 
 var requiredVirtualKey = []string{"id", "tenant_id", "service_account_id", "description", "state", "created_at"}
 
-var nestedVirtualKey []nestedMember
+var nestedVirtualKey []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *VirtualKey) Validate() []FieldError {
 	var errs []FieldError
-	if !re21.MatchString(v.ID) {
+	if !re22.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^t[a-z2-7]{16}$"})
 	}
 	if !re4.MatchString(v.TenantID) {
@@ -4104,7 +4884,7 @@ func (v *VirtualKey) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "credential_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	for _, item := range v.Models {
-		if !re10.MatchString(item) {
+		if !re11.MatchString(item) {
 			errs = append(errs, FieldError{Field: "models", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 		}
 	}
@@ -4126,7 +4906,7 @@ type VirtualKeyCreate struct {
 
 var requiredVirtualKeyCreate = []string{"service_account_id"}
 
-var nestedVirtualKeyCreate []nestedMember
+var nestedVirtualKeyCreate []nestedSpec
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *VirtualKeyCreate) Validate() []FieldError {
@@ -4150,7 +4930,7 @@ func (v *VirtualKeyCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "models", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Models {
-		if !re10.MatchString(item) {
+		if !re11.MatchString(item) {
 			errs = append(errs, FieldError{Field: "models", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 		}
 	}
@@ -4164,7 +4944,7 @@ func (v *VirtualKeyCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "scopes", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Scopes {
-		if !re22.MatchString(item) {
+		if !re23.MatchString(item) {
 			errs = append(errs, FieldError{Field: "scopes", Message: "must match ^[a-z_]+:[a-z_]+$"})
 		}
 	}
@@ -4174,13 +4954,13 @@ func (v *VirtualKeyCreate) Validate() []FieldError {
 // VirtualKeyCreated is a schema of the administration API.
 type VirtualKeyCreated struct {
 	Key VirtualKey `json:"key"`
-	// The complete key (pdk_…). It is returned by this response only.
-	Secret string `json:"secret"`
+	// The complete key (pdk_…). It is returned by the first response only; absent on an idempotent replay.
+	Secret string `json:"secret,omitempty"`
 }
 
-var requiredVirtualKeyCreated = []string{"key", "secret"}
+var requiredVirtualKeyCreated = []string{"key"}
 
-var nestedVirtualKeyCreated = []nestedMember{{Name: "key", Required: requiredVirtualKey, Nested: nestedVirtualKey}}
+var nestedVirtualKeyCreated = []nestedSpec{{Name: "key", Required: requiredVirtualKey, Nested: nestedVirtualKey}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *VirtualKeyCreated) Validate() []FieldError {
@@ -4200,7 +4980,7 @@ type VirtualKeyList struct {
 
 var requiredVirtualKeyList = []string{"items"}
 
-var nestedVirtualKeyList = []nestedMember{{Name: "items", Many: true, Required: requiredVirtualKey, Nested: nestedVirtualKey}}
+var nestedVirtualKeyList = []nestedSpec{{Name: "items", Many: true, Required: requiredVirtualKey, Nested: nestedVirtualKey}}
 
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *VirtualKeyList) Validate() []FieldError {
@@ -4215,111 +4995,177 @@ func (v *VirtualKeyList) Validate() []FieldError {
 
 // Operations lists every operation of the document, sorted by path and method.
 var Operations = []Operation{
-	{ID: "getMe", Method: "GET", Path: "/v1/me", Permission: "identity:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
-	{ID: "listModels", Method: "GET", Path: "/v1/models", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
-	{ID: "createModel", Method: "POST", Path: "/v1/models", Permission: "catalog:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getModel", Method: "GET", Path: "/v1/models/{model}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re4}}},
-	{ID: "updateModel", Method: "PATCH", Path: "/v1/models/{model}", Permission: "catalog:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re4}}},
-	{ID: "deleteModel", Method: "DELETE", Path: "/v1/models/{model}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re4}}},
-	{ID: "clearPriceOverride", Method: "POST", Path: "/v1/models/{model}/clear-price-override", Permission: "catalog:price", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re4}}},
-	{ID: "listModelGrants", Method: "GET", Path: "/v1/models/{model}/grants", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re4}}},
-	{ID: "grantModel", Method: "PUT", Path: "/v1/models/{model}/grants/{tenant}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re4}, {Name: "tenant", Pattern: re4}}},
-	{ID: "revokeModelGrant", Method: "DELETE", Path: "/v1/models/{model}/grants/{tenant}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re4}, {Name: "tenant", Pattern: re4}}},
-	{ID: "listPriceVersions", Method: "GET", Path: "/v1/models/{model}/prices", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re4}}},
-	{ID: "createPriceOverride", Method: "POST", Path: "/v1/models/{model}/prices", Permission: "catalog:price", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re4}}},
-	{ID: "deletePriceVersion", Method: "DELETE", Path: "/v1/models/{model}/prices/{price_version}", Permission: "catalog:price", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re4}, {Name: "price_version", Pattern: re4}}},
-	{ID: "listPlatformIssuers", Method: "GET", Path: "/v1/platform-issuers", Permission: "platform_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
-	{ID: "createPlatformIssuer", Method: "POST", Path: "/v1/platform-issuers", Permission: "platform_issuer:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getPlatformIssuer", Method: "GET", Path: "/v1/platform-issuers/{issuer}", Permission: "platform_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re4}}},
-	{ID: "updatePlatformIssuer", Method: "PATCH", Path: "/v1/platform-issuers/{issuer}", Permission: "platform_issuer:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "issuer", Pattern: re4}}},
-	{ID: "deletePlatformIssuer", Method: "DELETE", Path: "/v1/platform-issuers/{issuer}", Permission: "platform_issuer:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re4}}},
-	{ID: "listPlatformIssuerTenants", Method: "GET", Path: "/v1/platform-issuers/{issuer}/tenants", Permission: "platform_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re4}}},
-	{ID: "putPlatformIssuerTenant", Method: "PUT", Path: "/v1/platform-issuers/{issuer}/tenants/{tenant}", Permission: "platform_issuer:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "issuer", Pattern: re4}, {Name: "tenant", Pattern: re4}}},
-	{ID: "deletePlatformIssuerTenant", Method: "DELETE", Path: "/v1/platform-issuers/{issuer}/tenants/{tenant}", Permission: "platform_issuer:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re4}, {Name: "tenant", Pattern: re4}}},
-	{ID: "listPlatformKeys", Method: "GET", Path: "/v1/platform-keys", Permission: "platform_key:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
-	{ID: "createPlatformKey", Method: "POST", Path: "/v1/platform-keys", Permission: "platform_key:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getPlatformKey", Method: "GET", Path: "/v1/platform-keys/{key}", Permission: "platform_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "key", Pattern: re16}}},
-	{ID: "revokePlatformKey", Method: "POST", Path: "/v1/platform-keys/{key}/revoke", Permission: "platform_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "key", Pattern: re16}}},
-	{ID: "listPlatformLimits", Method: "GET", Path: "/v1/platform-limits", Permission: "platform_limit:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
-	{ID: "createPlatformLimit", Method: "POST", Path: "/v1/platform-limits", Permission: "platform_limit:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getPlatformLimit", Method: "GET", Path: "/v1/platform-limits/{rule}", Permission: "platform_limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "rule", Pattern: re4}}},
-	{ID: "updatePlatformLimit", Method: "PATCH", Path: "/v1/platform-limits/{rule}", Permission: "platform_limit:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "rule", Pattern: re4}}},
-	{ID: "deletePlatformLimit", Method: "DELETE", Path: "/v1/platform-limits/{rule}", Permission: "platform_limit:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "rule", Pattern: re4}}},
-	{ID: "listPriceImports", Method: "GET", Path: "/v1/price-imports", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
-	{ID: "runPriceImport", Method: "POST", Path: "/v1/price-imports", Permission: "catalog:price", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getPriceImport", Method: "GET", Path: "/v1/price-imports/{price_import}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "price_import", Pattern: re4}}},
-	{ID: "listProviders", Method: "GET", Path: "/v1/providers", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
-	{ID: "createProvider", Method: "POST", Path: "/v1/providers", Permission: "catalog:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getProvider", Method: "GET", Path: "/v1/providers/{provider}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re2}}},
-	{ID: "updateProvider", Method: "PATCH", Path: "/v1/providers/{provider}", Permission: "catalog:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re2}}},
-	{ID: "deleteProvider", Method: "DELETE", Path: "/v1/providers/{provider}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re2}}},
-	{ID: "listEndpoints", Method: "GET", Path: "/v1/providers/{provider}/endpoints", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re2}}},
-	{ID: "createEndpoint", Method: "POST", Path: "/v1/providers/{provider}/endpoints", Permission: "catalog:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re2}}},
-	{ID: "getEndpoint", Method: "GET", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re2}, {Name: "endpoint", Pattern: re5}}},
-	{ID: "updateEndpoint", Method: "PATCH", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re2}, {Name: "endpoint", Pattern: re5}}},
-	{ID: "deleteEndpoint", Method: "DELETE", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:write", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re2}, {Name: "endpoint", Pattern: re5}}},
-	{ID: "listTenantCredentials", Method: "GET", Path: "/v1/tenant-credentials/{tenant}", Permission: "tenant_credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "getTenantCredential", Method: "GET", Path: "/v1/tenant-credentials/{tenant}/{credential}", Permission: "tenant_credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
-	{ID: "disableTenantCredential", Method: "POST", Path: "/v1/tenant-credentials/{tenant}/{credential}/disable", Permission: "tenant_credential:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
-	{ID: "revokeTenantCredential", Method: "POST", Path: "/v1/tenant-credentials/{tenant}/{credential}/revoke", Permission: "tenant_credential:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
-	{ID: "listTenants", Method: "GET", Path: "/v1/tenants", Permission: "tenant:read", Status: 200, HasBody: false, PathParams: []PathParam{}},
-	{ID: "createTenant", Method: "POST", Path: "/v1/tenants", Permission: "tenant:write", Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getTenant", Method: "GET", Path: "/v1/tenants/{tenant}", Permission: "tenant:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "updateTenant", Method: "PATCH", Path: "/v1/tenants/{tenant}", Permission: "tenant:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "getActiveCurrency", Method: "GET", Path: "/v1/tenants/{tenant}/active-currency", Permission: "price_list:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "setActiveCurrency", Method: "PUT", Path: "/v1/tenants/{tenant}/active-currency", Permission: "price_list:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "getCapability", Method: "GET", Path: "/v1/tenants/{tenant}/capability", Permission: "model:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "listCredentials", Method: "GET", Path: "/v1/tenants/{tenant}/credentials", Permission: "credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "createCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials", Permission: "credential:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "getCredential", Method: "GET", Path: "/v1/tenants/{tenant}/credentials/{credential}", Permission: "credential:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
-	{ID: "updateCredential", Method: "PATCH", Path: "/v1/tenants/{tenant}/credentials/{credential}", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
-	{ID: "deleteCredential", Method: "DELETE", Path: "/v1/tenants/{tenant}/credentials/{credential}", Permission: "credential:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
-	{ID: "disableCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/disable", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
-	{ID: "enableCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/enable", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
-	{ID: "revokeCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/revoke", Permission: "credential:delete", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
-	{ID: "replaceCredentialSecret", Method: "PUT", Path: "/v1/tenants/{tenant}/credentials/{credential}/secret", Permission: "credential:rotate", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
-	{ID: "setDefaultCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/set-default", Permission: "credential:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
-	{ID: "listLimitEvents", Method: "GET", Path: "/v1/tenants/{tenant}/limit-events", Permission: "limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "listLimits", Method: "GET", Path: "/v1/tenants/{tenant}/limits", Permission: "limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "createLimit", Method: "POST", Path: "/v1/tenants/{tenant}/limits", Permission: "limit:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "getLimit", Method: "GET", Path: "/v1/tenants/{tenant}/limits/{rule}", Permission: "limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "rule", Pattern: re4}}},
-	{ID: "updateLimit", Method: "PATCH", Path: "/v1/tenants/{tenant}/limits/{rule}", Permission: "limit:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "rule", Pattern: re4}}},
-	{ID: "deleteLimit", Method: "DELETE", Path: "/v1/tenants/{tenant}/limits/{rule}", Permission: "limit:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "rule", Pattern: re4}}},
-	{ID: "getModelRestriction", Method: "GET", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "setModelRestriction", Method: "PUT", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:restrict", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "clearModelRestriction", Method: "DELETE", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:restrict", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "listTenantModels", Method: "GET", Path: "/v1/tenants/{tenant}/models", Permission: "model:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "listTenantPlatformIssuers", Method: "GET", Path: "/v1/tenants/{tenant}/platform-issuers", Permission: "token_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "listTenantPlatformLimits", Method: "GET", Path: "/v1/tenants/{tenant}/platform-limits", Permission: "limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "listPriceLists", Method: "GET", Path: "/v1/tenants/{tenant}/price-lists", Permission: "price_list:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "listPriceListVersions", Method: "GET", Path: "/v1/tenants/{tenant}/prices", Permission: "price_list:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "createPriceListVersion", Method: "POST", Path: "/v1/tenants/{tenant}/prices", Permission: "price_list:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "getPriceListVersion", Method: "GET", Path: "/v1/tenants/{tenant}/prices/{price}", Permission: "price_list:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "price", Pattern: re4}}},
-	{ID: "deletePriceListVersion", Method: "DELETE", Path: "/v1/tenants/{tenant}/prices/{price}", Permission: "price_list:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "price", Pattern: re4}}},
-	{ID: "reactivateTenant", Method: "POST", Path: "/v1/tenants/{tenant}/reactivate", Permission: "tenant:suspend", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "listServiceAccounts", Method: "GET", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "createServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "getServiceAccount", Method: "GET", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}", Permission: "service_account:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "service_account", Pattern: re4}}},
-	{ID: "updateServiceAccount", Method: "PATCH", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "service_account", Pattern: re4}}},
-	{ID: "disableServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}/disable", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "service_account", Pattern: re4}}},
-	{ID: "enableServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}/enable", Permission: "service_account:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "service_account", Pattern: re4}}},
-	{ID: "listSubjectMappings", Method: "GET", Path: "/v1/tenants/{tenant}/subject-mappings", Permission: "subject_mapping:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "createSubjectMapping", Method: "POST", Path: "/v1/tenants/{tenant}/subject-mappings", Permission: "subject_mapping:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "getSubjectMapping", Method: "GET", Path: "/v1/tenants/{tenant}/subject-mappings/{mapping}", Permission: "subject_mapping:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "mapping", Pattern: re4}}},
-	{ID: "deleteSubjectMapping", Method: "DELETE", Path: "/v1/tenants/{tenant}/subject-mappings/{mapping}", Permission: "subject_mapping:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "mapping", Pattern: re4}}},
-	{ID: "suspendTenant", Method: "POST", Path: "/v1/tenants/{tenant}/suspend", Permission: "tenant:suspend", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "getTenantTimeZone", Method: "GET", Path: "/v1/tenants/{tenant}/time-zone", Permission: "limit:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "setTenantTimeZone", Method: "PUT", Path: "/v1/tenants/{tenant}/time-zone", Permission: "limit:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "listTokenIssuers", Method: "GET", Path: "/v1/tenants/{tenant}/token-issuers", Permission: "token_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "createTokenIssuer", Method: "POST", Path: "/v1/tenants/{tenant}/token-issuers", Permission: "token_issuer:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "getTokenIssuer", Method: "GET", Path: "/v1/tenants/{tenant}/token-issuers/{issuer}", Permission: "token_issuer:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "issuer", Pattern: re4}}},
-	{ID: "updateTokenIssuer", Method: "PATCH", Path: "/v1/tenants/{tenant}/token-issuers/{issuer}", Permission: "token_issuer:write", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "issuer", Pattern: re4}}},
-	{ID: "deleteTokenIssuer", Method: "DELETE", Path: "/v1/tenants/{tenant}/token-issuers/{issuer}", Permission: "token_issuer:delete", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "issuer", Pattern: re4}}},
-	{ID: "listUsageRecords", Method: "GET", Path: "/v1/tenants/{tenant}/usage-records", Permission: "usage:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "listVirtualKeys", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "createVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:write", Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
-	{ID: "getVirtualKey", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys/{key}", Permission: "virtual_key:read", Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "key", Pattern: re21}}},
-	{ID: "revokeVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys/{key}/revoke", Permission: "virtual_key:revoke", Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "key", Pattern: re21}}},
+	{ID: "getAuthMethods", Method: "GET", Path: "/v1/auth/methods", Permission: "", Public: true, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
+	{ID: "completeOidcSignIn", Method: "GET", Path: "/v1/auth/oidc/callback", Permission: "", Public: true, Idempotent: false, Status: 303, HasBody: false, PathParams: []PathParam{}},
+	{ID: "startOidcSignIn", Method: "GET", Path: "/v1/auth/oidc/start", Permission: "", Public: true, Idempotent: false, Status: 303, HasBody: false, PathParams: []PathParam{}},
+	{ID: "changePassword", Method: "POST", Path: "/v1/auth/password", Permission: "session:self", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{}},
+	{ID: "listOwnSessions", Method: "GET", Path: "/v1/auth/sessions", Permission: "session:self", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
+	{ID: "deleteOwnSession", Method: "DELETE", Path: "/v1/auth/sessions/{session}", Permission: "session:self", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "session", Pattern: re4}}},
+	{ID: "signIn", Method: "POST", Path: "/v1/auth/sign-in", Permission: "", Public: true, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{}},
+	{ID: "signOut", Method: "POST", Path: "/v1/auth/sign-out", Permission: "session:self", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
+	{ID: "getMe", Method: "GET", Path: "/v1/me", Permission: "identity:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
+	{ID: "listModels", Method: "GET", Path: "/v1/models", Permission: "catalog:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
+	{ID: "createModel", Method: "POST", Path: "/v1/models", Permission: "catalog:write", Public: false, Idempotent: true, Status: 201, HasBody: true, PathParams: []PathParam{}},
+	{ID: "getModel", Method: "GET", Path: "/v1/models/{model}", Permission: "catalog:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re4}}},
+	{ID: "updateModel", Method: "PATCH", Path: "/v1/models/{model}", Permission: "catalog:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re4}}},
+	{ID: "deleteModel", Method: "DELETE", Path: "/v1/models/{model}", Permission: "catalog:write", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re4}}},
+	{ID: "clearPriceOverride", Method: "POST", Path: "/v1/models/{model}/clear-price-override", Permission: "catalog:price", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re4}}},
+	{ID: "listModelGrants", Method: "GET", Path: "/v1/models/{model}/grants", Permission: "catalog:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re4}}},
+	{ID: "grantModel", Method: "PUT", Path: "/v1/models/{model}/grants/{tenant}", Permission: "catalog:write", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re4}, {Name: "tenant", Pattern: re4}}},
+	{ID: "revokeModelGrant", Method: "DELETE", Path: "/v1/models/{model}/grants/{tenant}", Permission: "catalog:write", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re4}, {Name: "tenant", Pattern: re4}}},
+	{ID: "listPriceVersions", Method: "GET", Path: "/v1/models/{model}/prices", Permission: "catalog:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re4}}},
+	{ID: "createPriceOverride", Method: "POST", Path: "/v1/models/{model}/prices", Permission: "catalog:price", Public: false, Idempotent: true, Status: 201, HasBody: true, PathParams: []PathParam{{Name: "model", Pattern: re4}}},
+	{ID: "deletePriceVersion", Method: "DELETE", Path: "/v1/models/{model}/prices/{price_version}", Permission: "catalog:price", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "model", Pattern: re4}, {Name: "price_version", Pattern: re4}}},
+	{ID: "listPlatformIssuers", Method: "GET", Path: "/v1/platform-issuers", Permission: "platform_issuer:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
+	{ID: "createPlatformIssuer", Method: "POST", Path: "/v1/platform-issuers", Permission: "platform_issuer:write", Public: false, Idempotent: true, Status: 201, HasBody: true, PathParams: []PathParam{}},
+	{ID: "getPlatformIssuer", Method: "GET", Path: "/v1/platform-issuers/{issuer}", Permission: "platform_issuer:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re4}}},
+	{ID: "updatePlatformIssuer", Method: "PATCH", Path: "/v1/platform-issuers/{issuer}", Permission: "platform_issuer:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "issuer", Pattern: re4}}},
+	{ID: "deletePlatformIssuer", Method: "DELETE", Path: "/v1/platform-issuers/{issuer}", Permission: "platform_issuer:delete", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re4}}},
+	{ID: "listPlatformIssuerTenants", Method: "GET", Path: "/v1/platform-issuers/{issuer}/tenants", Permission: "platform_issuer:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re4}}},
+	{ID: "putPlatformIssuerTenant", Method: "PUT", Path: "/v1/platform-issuers/{issuer}/tenants/{tenant}", Permission: "platform_issuer:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "issuer", Pattern: re4}, {Name: "tenant", Pattern: re4}}},
+	{ID: "deletePlatformIssuerTenant", Method: "DELETE", Path: "/v1/platform-issuers/{issuer}/tenants/{tenant}", Permission: "platform_issuer:write", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re4}, {Name: "tenant", Pattern: re4}}},
+	{ID: "listPlatformKeys", Method: "GET", Path: "/v1/platform-keys", Permission: "platform_key:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
+	{ID: "createPlatformKey", Method: "POST", Path: "/v1/platform-keys", Permission: "platform_key:write", Public: false, Idempotent: true, Status: 201, HasBody: true, PathParams: []PathParam{}},
+	{ID: "getPlatformKey", Method: "GET", Path: "/v1/platform-keys/{key}", Permission: "platform_key:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "key", Pattern: re17}}},
+	{ID: "revokePlatformKey", Method: "POST", Path: "/v1/platform-keys/{key}/revoke", Permission: "platform_key:revoke", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "key", Pattern: re17}}},
+	{ID: "listPlatformLimits", Method: "GET", Path: "/v1/platform-limits", Permission: "platform_limit:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
+	{ID: "createPlatformLimit", Method: "POST", Path: "/v1/platform-limits", Permission: "platform_limit:write", Public: false, Idempotent: true, Status: 201, HasBody: true, PathParams: []PathParam{}},
+	{ID: "getPlatformLimit", Method: "GET", Path: "/v1/platform-limits/{rule}", Permission: "platform_limit:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "rule", Pattern: re4}}},
+	{ID: "updatePlatformLimit", Method: "PATCH", Path: "/v1/platform-limits/{rule}", Permission: "platform_limit:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "rule", Pattern: re4}}},
+	{ID: "deletePlatformLimit", Method: "DELETE", Path: "/v1/platform-limits/{rule}", Permission: "platform_limit:delete", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "rule", Pattern: re4}}},
+	{ID: "listPriceImports", Method: "GET", Path: "/v1/price-imports", Permission: "catalog:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
+	{ID: "runPriceImport", Method: "POST", Path: "/v1/price-imports", Permission: "catalog:price", Public: false, Idempotent: true, Status: 201, HasBody: true, PathParams: []PathParam{}},
+	{ID: "getPriceImport", Method: "GET", Path: "/v1/price-imports/{price_import}", Permission: "catalog:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "price_import", Pattern: re4}}},
+	{ID: "listProviders", Method: "GET", Path: "/v1/providers", Permission: "catalog:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
+	{ID: "createProvider", Method: "POST", Path: "/v1/providers", Permission: "catalog:write", Public: false, Idempotent: true, Status: 201, HasBody: true, PathParams: []PathParam{}},
+	{ID: "getProvider", Method: "GET", Path: "/v1/providers/{provider}", Permission: "catalog:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re2}}},
+	{ID: "updateProvider", Method: "PATCH", Path: "/v1/providers/{provider}", Permission: "catalog:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re2}}},
+	{ID: "deleteProvider", Method: "DELETE", Path: "/v1/providers/{provider}", Permission: "catalog:write", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re2}}},
+	{ID: "listEndpoints", Method: "GET", Path: "/v1/providers/{provider}/endpoints", Permission: "catalog:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re2}}},
+	{ID: "createEndpoint", Method: "POST", Path: "/v1/providers/{provider}/endpoints", Permission: "catalog:write", Public: false, Idempotent: true, Status: 201, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re2}}},
+	{ID: "getEndpoint", Method: "GET", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re2}, {Name: "endpoint", Pattern: re5}}},
+	{ID: "updateEndpoint", Method: "PATCH", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re2}, {Name: "endpoint", Pattern: re5}}},
+	{ID: "deleteEndpoint", Method: "DELETE", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:write", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re2}, {Name: "endpoint", Pattern: re5}}},
+	{ID: "listTenantCredentials", Method: "GET", Path: "/v1/tenant-credentials/{tenant}", Permission: "tenant_credential:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getTenantCredential", Method: "GET", Path: "/v1/tenant-credentials/{tenant}/{credential}", Permission: "tenant_credential:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
+	{ID: "disableTenantCredential", Method: "POST", Path: "/v1/tenant-credentials/{tenant}/{credential}/disable", Permission: "tenant_credential:revoke", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
+	{ID: "revokeTenantCredential", Method: "POST", Path: "/v1/tenant-credentials/{tenant}/{credential}/revoke", Permission: "tenant_credential:revoke", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
+	{ID: "listTenants", Method: "GET", Path: "/v1/tenants", Permission: "tenant:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
+	{ID: "createTenant", Method: "POST", Path: "/v1/tenants", Permission: "tenant:write", Public: false, Idempotent: true, Status: 201, HasBody: true, PathParams: []PathParam{}},
+	{ID: "getTenant", Method: "GET", Path: "/v1/tenants/{tenant}", Permission: "tenant:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "updateTenant", Method: "PATCH", Path: "/v1/tenants/{tenant}", Permission: "tenant:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getActiveCurrency", Method: "GET", Path: "/v1/tenants/{tenant}/active-currency", Permission: "price_list:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "setActiveCurrency", Method: "PUT", Path: "/v1/tenants/{tenant}/active-currency", Permission: "price_list:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getCapability", Method: "GET", Path: "/v1/tenants/{tenant}/capability", Permission: "model:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "listCredentials", Method: "GET", Path: "/v1/tenants/{tenant}/credentials", Permission: "credential:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "createCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials", Permission: "credential:write", Public: false, Idempotent: true, Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getCredential", Method: "GET", Path: "/v1/tenants/{tenant}/credentials/{credential}", Permission: "credential:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
+	{ID: "updateCredential", Method: "PATCH", Path: "/v1/tenants/{tenant}/credentials/{credential}", Permission: "credential:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
+	{ID: "deleteCredential", Method: "DELETE", Path: "/v1/tenants/{tenant}/credentials/{credential}", Permission: "credential:delete", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
+	{ID: "disableCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/disable", Permission: "credential:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
+	{ID: "enableCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/enable", Permission: "credential:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
+	{ID: "revokeCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/revoke", Permission: "credential:delete", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
+	{ID: "replaceCredentialSecret", Method: "PUT", Path: "/v1/tenants/{tenant}/credentials/{credential}/secret", Permission: "credential:rotate", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
+	{ID: "setDefaultCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/set-default", Permission: "credential:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "credential", Pattern: re4}}},
+	{ID: "listLimitEvents", Method: "GET", Path: "/v1/tenants/{tenant}/limit-events", Permission: "limit:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "listLimits", Method: "GET", Path: "/v1/tenants/{tenant}/limits", Permission: "limit:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "createLimit", Method: "POST", Path: "/v1/tenants/{tenant}/limits", Permission: "limit:write", Public: false, Idempotent: true, Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getLimit", Method: "GET", Path: "/v1/tenants/{tenant}/limits/{rule}", Permission: "limit:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "rule", Pattern: re4}}},
+	{ID: "updateLimit", Method: "PATCH", Path: "/v1/tenants/{tenant}/limits/{rule}", Permission: "limit:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "rule", Pattern: re4}}},
+	{ID: "deleteLimit", Method: "DELETE", Path: "/v1/tenants/{tenant}/limits/{rule}", Permission: "limit:delete", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "rule", Pattern: re4}}},
+	{ID: "listMembers", Method: "GET", Path: "/v1/tenants/{tenant}/members", Permission: "member:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "createMember", Method: "POST", Path: "/v1/tenants/{tenant}/members", Permission: "member:write", Public: false, Idempotent: true, Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getMember", Method: "GET", Path: "/v1/tenants/{tenant}/members/{user}", Permission: "member:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "user", Pattern: re4}}},
+	{ID: "updateMember", Method: "PATCH", Path: "/v1/tenants/{tenant}/members/{user}", Permission: "member:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "user", Pattern: re4}}},
+	{ID: "deleteMember", Method: "DELETE", Path: "/v1/tenants/{tenant}/members/{user}", Permission: "member:write", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "user", Pattern: re4}}},
+	{ID: "disableMember", Method: "POST", Path: "/v1/tenants/{tenant}/members/{user}/disable", Permission: "member:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "user", Pattern: re4}}},
+	{ID: "enableMember", Method: "POST", Path: "/v1/tenants/{tenant}/members/{user}/enable", Permission: "member:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "user", Pattern: re4}}},
+	{ID: "resetMemberPassword", Method: "POST", Path: "/v1/tenants/{tenant}/members/{user}/reset-password", Permission: "member:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "user", Pattern: re4}}},
+	{ID: "revokeMemberSessions", Method: "POST", Path: "/v1/tenants/{tenant}/members/{user}/revoke-sessions", Permission: "member:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "user", Pattern: re4}}},
+	{ID: "unlockMember", Method: "POST", Path: "/v1/tenants/{tenant}/members/{user}/unlock", Permission: "member:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "user", Pattern: re4}}},
+	{ID: "getModelRestriction", Method: "GET", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "setModelRestriction", Method: "PUT", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:restrict", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "clearModelRestriction", Method: "DELETE", Path: "/v1/tenants/{tenant}/model-restriction", Permission: "model:restrict", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "listTenantModels", Method: "GET", Path: "/v1/tenants/{tenant}/models", Permission: "model:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "listTenantPlatformIssuers", Method: "GET", Path: "/v1/tenants/{tenant}/platform-issuers", Permission: "token_issuer:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "listTenantPlatformLimits", Method: "GET", Path: "/v1/tenants/{tenant}/platform-limits", Permission: "limit:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "listPriceLists", Method: "GET", Path: "/v1/tenants/{tenant}/price-lists", Permission: "price_list:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "listPriceListVersions", Method: "GET", Path: "/v1/tenants/{tenant}/prices", Permission: "price_list:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "createPriceListVersion", Method: "POST", Path: "/v1/tenants/{tenant}/prices", Permission: "price_list:write", Public: false, Idempotent: true, Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getPriceListVersion", Method: "GET", Path: "/v1/tenants/{tenant}/prices/{price}", Permission: "price_list:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "price", Pattern: re4}}},
+	{ID: "deletePriceListVersion", Method: "DELETE", Path: "/v1/tenants/{tenant}/prices/{price}", Permission: "price_list:delete", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "price", Pattern: re4}}},
+	{ID: "reactivateTenant", Method: "POST", Path: "/v1/tenants/{tenant}/reactivate", Permission: "tenant:suspend", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "listServiceAccounts", Method: "GET", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "createServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts", Permission: "service_account:write", Public: false, Idempotent: true, Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getServiceAccount", Method: "GET", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}", Permission: "service_account:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "service_account", Pattern: re4}}},
+	{ID: "updateServiceAccount", Method: "PATCH", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}", Permission: "service_account:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "service_account", Pattern: re4}}},
+	{ID: "disableServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}/disable", Permission: "service_account:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "service_account", Pattern: re4}}},
+	{ID: "enableServiceAccount", Method: "POST", Path: "/v1/tenants/{tenant}/service-accounts/{service_account}/enable", Permission: "service_account:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "service_account", Pattern: re4}}},
+	{ID: "listSubjectMappings", Method: "GET", Path: "/v1/tenants/{tenant}/subject-mappings", Permission: "subject_mapping:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "createSubjectMapping", Method: "POST", Path: "/v1/tenants/{tenant}/subject-mappings", Permission: "subject_mapping:write", Public: false, Idempotent: true, Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getSubjectMapping", Method: "GET", Path: "/v1/tenants/{tenant}/subject-mappings/{mapping}", Permission: "subject_mapping:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "mapping", Pattern: re4}}},
+	{ID: "deleteSubjectMapping", Method: "DELETE", Path: "/v1/tenants/{tenant}/subject-mappings/{mapping}", Permission: "subject_mapping:delete", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "mapping", Pattern: re4}}},
+	{ID: "suspendTenant", Method: "POST", Path: "/v1/tenants/{tenant}/suspend", Permission: "tenant:suspend", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getTenantTimeZone", Method: "GET", Path: "/v1/tenants/{tenant}/time-zone", Permission: "limit:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "setTenantTimeZone", Method: "PUT", Path: "/v1/tenants/{tenant}/time-zone", Permission: "limit:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "listTokenIssuers", Method: "GET", Path: "/v1/tenants/{tenant}/token-issuers", Permission: "token_issuer:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "createTokenIssuer", Method: "POST", Path: "/v1/tenants/{tenant}/token-issuers", Permission: "token_issuer:write", Public: false, Idempotent: true, Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getTokenIssuer", Method: "GET", Path: "/v1/tenants/{tenant}/token-issuers/{issuer}", Permission: "token_issuer:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "issuer", Pattern: re4}}},
+	{ID: "updateTokenIssuer", Method: "PATCH", Path: "/v1/tenants/{tenant}/token-issuers/{issuer}", Permission: "token_issuer:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "issuer", Pattern: re4}}},
+	{ID: "deleteTokenIssuer", Method: "DELETE", Path: "/v1/tenants/{tenant}/token-issuers/{issuer}", Permission: "token_issuer:delete", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "issuer", Pattern: re4}}},
+	{ID: "listUsageRecords", Method: "GET", Path: "/v1/tenants/{tenant}/usage-records", Permission: "usage:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "listVirtualKeys", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "createVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:write", Public: false, Idempotent: true, Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}}},
+	{ID: "getVirtualKey", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys/{key}", Permission: "virtual_key:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "key", Pattern: re22}}},
+	{ID: "revokeVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys/{key}/revoke", Permission: "virtual_key:revoke", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re4}, {Name: "key", Pattern: re22}}},
+	{ID: "listUsers", Method: "GET", Path: "/v1/users", Permission: "user:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
+	{ID: "createUser", Method: "POST", Path: "/v1/users", Permission: "user:write", Public: false, Idempotent: true, Status: 201, HasBody: true, PathParams: []PathParam{}},
+	{ID: "getUser", Method: "GET", Path: "/v1/users/{user}", Permission: "user:read", Public: false, Idempotent: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "user", Pattern: re4}}},
+	{ID: "updateUser", Method: "PATCH", Path: "/v1/users/{user}", Permission: "user:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "user", Pattern: re4}}},
+	{ID: "disableUser", Method: "POST", Path: "/v1/users/{user}/disable", Permission: "user:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "user", Pattern: re4}}},
+	{ID: "enableUser", Method: "POST", Path: "/v1/users/{user}/enable", Permission: "user:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "user", Pattern: re4}}},
+	{ID: "resetUserPassword", Method: "POST", Path: "/v1/users/{user}/reset-password", Permission: "user:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "user", Pattern: re4}}},
+	{ID: "revokeUserSessions", Method: "POST", Path: "/v1/users/{user}/revoke-sessions", Permission: "user:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "user", Pattern: re4}}},
+	{ID: "unlockUser", Method: "POST", Path: "/v1/users/{user}/unlock", Permission: "user:write", Public: false, Idempotent: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "user", Pattern: re4}}},
+}
+
+// GetAuthMethodsInput is the input of getAuthMethods.
+type GetAuthMethodsInput struct {
+}
+
+// CompleteOidcSignInInput is the input of completeOidcSignIn.
+type CompleteOidcSignInInput struct {
+	Code  string // query; the zero value means absent
+	State string // query; the zero value means absent
+	Error string // query; the zero value means absent
+	Iss   string // query; the zero value means absent
+}
+
+// StartOidcSignInInput is the input of startOidcSignIn.
+type StartOidcSignInInput struct {
+}
+
+// ChangePasswordInput is the input of changePassword.
+type ChangePasswordInput struct {
+	Body PasswordChange
+}
+
+// ListOwnSessionsInput is the input of listOwnSessions.
+type ListOwnSessionsInput struct {
+}
+
+// DeleteOwnSessionInput is the input of deleteOwnSession.
+type DeleteOwnSessionInput struct {
+	Session string // path
+}
+
+// SignInInput is the input of signIn.
+type SignInInput struct {
+	Body SignInRequest
+}
+
+// SignOutInput is the input of signOut.
+type SignOutInput struct {
 }
 
 // GetMeInput is the input of getMe.
@@ -4339,7 +5185,8 @@ type ListModelsInput struct {
 
 // CreateModelInput is the input of createModel.
 type CreateModelInput struct {
-	Body ModelCreate
+	IdempotencyKey string // header Idempotency-Key; checked by the hook, not by the router
+	Body           ModelCreate
 }
 
 // GetModelInput is the input of getModel.
@@ -4393,8 +5240,9 @@ type ListPriceVersionsInput struct {
 
 // CreatePriceOverrideInput is the input of createPriceOverride.
 type CreatePriceOverrideInput struct {
-	Model string // path
-	Body  PriceOverride
+	Model          string // path
+	IdempotencyKey string // header Idempotency-Key; checked by the hook, not by the router
+	Body           PriceOverride
 }
 
 // DeletePriceVersionInput is the input of deletePriceVersion.
@@ -4414,7 +5262,8 @@ type ListPlatformIssuersInput struct {
 
 // CreatePlatformIssuerInput is the input of createPlatformIssuer.
 type CreatePlatformIssuerInput struct {
-	Body PlatformIssuerCreate
+	IdempotencyKey string // header Idempotency-Key; checked by the hook, not by the router
+	Body           PlatformIssuerCreate
 }
 
 // GetPlatformIssuerInput is the input of getPlatformIssuer.
@@ -4464,7 +5313,8 @@ type ListPlatformKeysInput struct {
 
 // CreatePlatformKeyInput is the input of createPlatformKey.
 type CreatePlatformKeyInput struct {
-	Body PlatformKeyCreate
+	IdempotencyKey string // header Idempotency-Key; checked by the hook, not by the router
+	Body           PlatformKeyCreate
 }
 
 // GetPlatformKeyInput is the input of getPlatformKey.
@@ -4489,7 +5339,8 @@ type ListPlatformLimitsInput struct {
 
 // CreatePlatformLimitInput is the input of createPlatformLimit.
 type CreatePlatformLimitInput struct {
-	Body PlatformLimitRuleCreate
+	IdempotencyKey string // header Idempotency-Key; checked by the hook, not by the router
+	Body           PlatformLimitRuleCreate
 }
 
 // GetPlatformLimitInput is the input of getPlatformLimit.
@@ -4516,7 +5367,8 @@ type ListPriceImportsInput struct {
 
 // RunPriceImportInput is the input of runPriceImport.
 type RunPriceImportInput struct {
-	Body PriceImportRun
+	IdempotencyKey string // header Idempotency-Key; checked by the hook, not by the router
+	Body           PriceImportRun
 }
 
 // GetPriceImportInput is the input of getPriceImport.
@@ -4532,7 +5384,8 @@ type ListProvidersInput struct {
 
 // CreateProviderInput is the input of createProvider.
 type CreateProviderInput struct {
-	Body ProviderCreate
+	IdempotencyKey string // header Idempotency-Key; checked by the hook, not by the router
+	Body           ProviderCreate
 }
 
 // GetProviderInput is the input of getProvider.
@@ -4560,8 +5413,9 @@ type ListEndpointsInput struct {
 
 // CreateEndpointInput is the input of createEndpoint.
 type CreateEndpointInput struct {
-	Provider string // path
-	Body     EndpointCreate
+	Provider       string // path
+	IdempotencyKey string // header Idempotency-Key; checked by the hook, not by the router
+	Body           EndpointCreate
 }
 
 // GetEndpointInput is the input of getEndpoint.
@@ -4624,7 +5478,8 @@ type ListTenantsInput struct {
 
 // CreateTenantInput is the input of createTenant.
 type CreateTenantInput struct {
-	Body TenantCreate
+	IdempotencyKey string // header Idempotency-Key; checked by the hook, not by the router
+	Body           TenantCreate
 }
 
 // GetTenantInput is the input of getTenant.
@@ -4668,8 +5523,9 @@ type ListCredentialsInput struct {
 
 // CreateCredentialInput is the input of createCredential.
 type CreateCredentialInput struct {
-	Tenant string // path
-	Body   CredentialCreate
+	Tenant         string // path
+	IdempotencyKey string // header Idempotency-Key; checked by the hook, not by the router
+	Body           CredentialCreate
 }
 
 // GetCredentialInput is the input of getCredential.
@@ -4750,8 +5606,9 @@ type ListLimitsInput struct {
 
 // CreateLimitInput is the input of createLimit.
 type CreateLimitInput struct {
-	Tenant string // path
-	Body   LimitRuleCreate
+	Tenant         string // path
+	IdempotencyKey string // header Idempotency-Key; checked by the hook, not by the router
+	Body           LimitRuleCreate
 }
 
 // GetLimitInput is the input of getLimit.
@@ -4771,6 +5628,76 @@ type UpdateLimitInput struct {
 type DeleteLimitInput struct {
 	Tenant string // path
 	Rule   string // path
+}
+
+// ListMembersInput is the input of listMembers.
+type ListMembersInput struct {
+	Tenant   string // path
+	Limit    int    // query; the zero value means absent
+	Cursor   string // query; the zero value means absent
+	Sort     Sort   // query; the zero value means absent
+	Username string // query; the zero value means absent
+}
+
+// CreateMemberInput is the input of createMember.
+type CreateMemberInput struct {
+	Tenant         string // path
+	IdempotencyKey string // header Idempotency-Key; checked by the hook, not by the router
+	Body           MemberCreate
+}
+
+// GetMemberInput is the input of getMember.
+type GetMemberInput struct {
+	Tenant string // path
+	User   string // path
+}
+
+// UpdateMemberInput is the input of updateMember.
+type UpdateMemberInput struct {
+	Tenant string // path
+	User   string // path
+	Body   MemberUpdate
+}
+
+// DeleteMemberInput is the input of deleteMember.
+type DeleteMemberInput struct {
+	Tenant string // path
+	User   string // path
+}
+
+// DisableMemberInput is the input of disableMember.
+type DisableMemberInput struct {
+	Tenant string // path
+	User   string // path
+	Body   Reason
+}
+
+// EnableMemberInput is the input of enableMember.
+type EnableMemberInput struct {
+	Tenant string // path
+	User   string // path
+	Body   Reason
+}
+
+// ResetMemberPasswordInput is the input of resetMemberPassword.
+type ResetMemberPasswordInput struct {
+	Tenant string // path
+	User   string // path
+	Body   Reason
+}
+
+// RevokeMemberSessionsInput is the input of revokeMemberSessions.
+type RevokeMemberSessionsInput struct {
+	Tenant string // path
+	User   string // path
+	Body   Reason
+}
+
+// UnlockMemberInput is the input of unlockMember.
+type UnlockMemberInput struct {
+	Tenant string // path
+	User   string // path
+	Body   Reason
 }
 
 // GetModelRestrictionInput is the input of getModelRestriction.
@@ -4830,8 +5757,9 @@ type ListPriceListVersionsInput struct {
 
 // CreatePriceListVersionInput is the input of createPriceListVersion.
 type CreatePriceListVersionInput struct {
-	Tenant string // path
-	Body   TenantPriceCreate
+	Tenant         string // path
+	IdempotencyKey string // header Idempotency-Key; checked by the hook, not by the router
+	Body           TenantPriceCreate
 }
 
 // GetPriceListVersionInput is the input of getPriceListVersion.
@@ -4864,8 +5792,9 @@ type ListServiceAccountsInput struct {
 
 // CreateServiceAccountInput is the input of createServiceAccount.
 type CreateServiceAccountInput struct {
-	Tenant string // path
-	Body   ServiceAccountCreate
+	Tenant         string // path
+	IdempotencyKey string // header Idempotency-Key; checked by the hook, not by the router
+	Body           ServiceAccountCreate
 }
 
 // GetServiceAccountInput is the input of getServiceAccount.
@@ -4908,8 +5837,9 @@ type ListSubjectMappingsInput struct {
 
 // CreateSubjectMappingInput is the input of createSubjectMapping.
 type CreateSubjectMappingInput struct {
-	Tenant string // path
-	Body   SubjectMappingCreate
+	Tenant         string // path
+	IdempotencyKey string // header Idempotency-Key; checked by the hook, not by the router
+	Body           SubjectMappingCreate
 }
 
 // GetSubjectMappingInput is the input of getSubjectMapping.
@@ -4953,8 +5883,9 @@ type ListTokenIssuersInput struct {
 
 // CreateTokenIssuerInput is the input of createTokenIssuer.
 type CreateTokenIssuerInput struct {
-	Tenant string // path
-	Body   TokenIssuerCreate
+	Tenant         string // path
+	IdempotencyKey string // header Idempotency-Key; checked by the hook, not by the router
+	Body           TokenIssuerCreate
 }
 
 // GetTokenIssuerInput is the input of getTokenIssuer.
@@ -4999,8 +5930,9 @@ type ListVirtualKeysInput struct {
 
 // CreateVirtualKeyInput is the input of createVirtualKey.
 type CreateVirtualKeyInput struct {
-	Tenant string // path
-	Body   VirtualKeyCreate
+	Tenant         string // path
+	IdempotencyKey string // header Idempotency-Key; checked by the hook, not by the router
+	Body           VirtualKeyCreate
 }
 
 // GetVirtualKeyInput is the input of getVirtualKey.
@@ -5016,8 +5948,80 @@ type RevokeVirtualKeyInput struct {
 	Body   Reason
 }
 
+// ListUsersInput is the input of listUsers.
+type ListUsersInput struct {
+	Limit    int       // query; the zero value means absent
+	Cursor   string    // query; the zero value means absent
+	Sort     UserSort  // query; the zero value means absent
+	State    UserState // query; the zero value means absent
+	Username string    // query; the zero value means absent
+}
+
+// CreateUserInput is the input of createUser.
+type CreateUserInput struct {
+	IdempotencyKey string // header Idempotency-Key; checked by the hook, not by the router
+	Body           UserCreate
+}
+
+// GetUserInput is the input of getUser.
+type GetUserInput struct {
+	User string // path
+}
+
+// UpdateUserInput is the input of updateUser.
+type UpdateUserInput struct {
+	User string // path
+	Body UserUpdate
+}
+
+// DisableUserInput is the input of disableUser.
+type DisableUserInput struct {
+	User string // path
+	Body Reason
+}
+
+// EnableUserInput is the input of enableUser.
+type EnableUserInput struct {
+	User string // path
+	Body Reason
+}
+
+// ResetUserPasswordInput is the input of resetUserPassword.
+type ResetUserPasswordInput struct {
+	User string // path
+	Body Reason
+}
+
+// RevokeUserSessionsInput is the input of revokeUserSessions.
+type RevokeUserSessionsInput struct {
+	User string // path
+	Body Reason
+}
+
+// UnlockUserInput is the input of unlockUser.
+type UnlockUserInput struct {
+	User string // path
+	Body Reason
+}
+
 // Server is implemented by the handlers of the administration API: one method per operation.
 type Server interface {
+	// GetAuthMethods: GET /v1/auth/methods. Which ways of signing in are on
+	GetAuthMethods(ctx context.Context, in GetAuthMethodsInput) (*AuthMethods, error)
+	// CompleteOidcSignIn: GET /v1/auth/oidc/callback. Finish the sign-in through the identity provider
+	CompleteOidcSignIn(ctx context.Context, in CompleteOidcSignInInput) (*Redirect, error)
+	// StartOidcSignIn: GET /v1/auth/oidc/start. Start the sign-in through the identity provider
+	StartOidcSignIn(ctx context.Context, in StartOidcSignInInput) (*Redirect, error)
+	// ChangePassword: POST /v1/auth/password. Change one's own password
+	ChangePassword(ctx context.Context, in ChangePasswordInput) (*Session, error)
+	// ListOwnSessions: GET /v1/auth/sessions. List one's own sessions
+	ListOwnSessions(ctx context.Context, in ListOwnSessionsInput) (*SessionList, error)
+	// DeleteOwnSession: DELETE /v1/auth/sessions/{session}. End one's own session
+	DeleteOwnSession(ctx context.Context, in DeleteOwnSessionInput) (*Session, error)
+	// SignIn: POST /v1/auth/sign-in. Sign in with a local account
+	SignIn(ctx context.Context, in SignInInput) (*Session, error)
+	// SignOut: POST /v1/auth/sign-out. Sign out
+	SignOut(ctx context.Context, in SignOutInput) (*SignedOut, error)
 	// GetMe: GET /v1/me. Who the caller is and what it may do
 	GetMe(ctx context.Context, in GetMeInput) (*Me, error)
 	// ListModels: GET /v1/models. List the models of the catalogue
@@ -5158,6 +6162,26 @@ type Server interface {
 	UpdateLimit(ctx context.Context, in UpdateLimitInput) (*LimitRule, error)
 	// DeleteLimit: DELETE /v1/tenants/{tenant}/limits/{rule}. Delete a limit rule
 	DeleteLimit(ctx context.Context, in DeleteLimitInput) (*LimitRule, error)
+	// ListMembers: GET /v1/tenants/{tenant}/members. List the members of a tenant
+	ListMembers(ctx context.Context, in ListMembersInput) (*MemberList, error)
+	// CreateMember: POST /v1/tenants/{tenant}/members. Add a member to a tenant
+	CreateMember(ctx context.Context, in CreateMemberInput) (*MemberCreated, error)
+	// GetMember: GET /v1/tenants/{tenant}/members/{user}. Read a member
+	GetMember(ctx context.Context, in GetMemberInput) (*Member, error)
+	// UpdateMember: PATCH /v1/tenants/{tenant}/members/{user}. Change the roles or the attributes of a member
+	UpdateMember(ctx context.Context, in UpdateMemberInput) (*Member, error)
+	// DeleteMember: DELETE /v1/tenants/{tenant}/members/{user}. Remove a member from a tenant
+	DeleteMember(ctx context.Context, in DeleteMemberInput) (*Member, error)
+	// DisableMember: POST /v1/tenants/{tenant}/members/{user}/disable. Disable a member
+	DisableMember(ctx context.Context, in DisableMemberInput) (*Member, error)
+	// EnableMember: POST /v1/tenants/{tenant}/members/{user}/enable. Enable a member
+	EnableMember(ctx context.Context, in EnableMemberInput) (*Member, error)
+	// ResetMemberPassword: POST /v1/tenants/{tenant}/members/{user}/reset-password. Reset the password of a member
+	ResetMemberPassword(ctx context.Context, in ResetMemberPasswordInput) (*PasswordReset, error)
+	// RevokeMemberSessions: POST /v1/tenants/{tenant}/members/{user}/revoke-sessions. End every session of a member
+	RevokeMemberSessions(ctx context.Context, in RevokeMemberSessionsInput) (*SessionsRevoked, error)
+	// UnlockMember: POST /v1/tenants/{tenant}/members/{user}/unlock. Unlock the sign-in of a member
+	UnlockMember(ctx context.Context, in UnlockMemberInput) (*Member, error)
 	// GetModelRestriction: GET /v1/tenants/{tenant}/model-restriction. Read the model restriction of the tenant
 	GetModelRestriction(ctx context.Context, in GetModelRestrictionInput) (*ModelRestriction, error)
 	// SetModelRestriction: PUT /v1/tenants/{tenant}/model-restriction. Restrict the tenant to the models named
@@ -5228,10 +6252,186 @@ type Server interface {
 	GetVirtualKey(ctx context.Context, in GetVirtualKeyInput) (*VirtualKey, error)
 	// RevokeVirtualKey: POST /v1/tenants/{tenant}/virtual-keys/{key}/revoke. Revoke a virtual key
 	RevokeVirtualKey(ctx context.Context, in RevokeVirtualKeyInput) (*VirtualKey, error)
+	// ListUsers: GET /v1/users. List the users that the platform manages
+	ListUsers(ctx context.Context, in ListUsersInput) (*UserList, error)
+	// CreateUser: POST /v1/users. Create a user
+	CreateUser(ctx context.Context, in CreateUserInput) (*UserCreated, error)
+	// GetUser: GET /v1/users/{user}. Read a user
+	GetUser(ctx context.Context, in GetUserInput) (*User, error)
+	// UpdateUser: PATCH /v1/users/{user}. Change a user
+	UpdateUser(ctx context.Context, in UpdateUserInput) (*User, error)
+	// DisableUser: POST /v1/users/{user}/disable. Disable a user
+	DisableUser(ctx context.Context, in DisableUserInput) (*User, error)
+	// EnableUser: POST /v1/users/{user}/enable. Enable a user
+	EnableUser(ctx context.Context, in EnableUserInput) (*User, error)
+	// ResetUserPassword: POST /v1/users/{user}/reset-password. Reset the password of a user
+	ResetUserPassword(ctx context.Context, in ResetUserPasswordInput) (*PasswordReset, error)
+	// RevokeUserSessions: POST /v1/users/{user}/revoke-sessions. End every session of a user
+	RevokeUserSessions(ctx context.Context, in RevokeUserSessionsInput) (*SessionsRevoked, error)
+	// UnlockUser: POST /v1/users/{user}/unlock. Unlock the sign-in of a user
+	UnlockUser(ctx context.Context, in UnlockUserInput) (*User, error)
 }
+
+// Redirect is the answer of an operation whose only success is a 303 with a Location header.
+type Redirect struct{ Location string }
 
 func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, params map[string]string) {
 	switch op.ID {
+	case "getAuthMethods":
+		var in GetAuthMethodsInput
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GetAuthMethods(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "completeOidcSignIn":
+		var in CompleteOidcSignInInput
+		q, err := parseQueryLenient(r, "code", "state", "error", "iss")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		if v, ok := q["code"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "code", Message: "must not be empty"})
+			}
+			in.Code = v
+		}
+		if runeCount(in.Code) > 4096 {
+			errs = append(errs, FieldError{Field: "code", Message: "length must be at most 4096"})
+		}
+		if v, ok := q["state"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "state", Message: "must not be empty"})
+			}
+			in.State = v
+		}
+		if runeCount(in.State) > 4096 {
+			errs = append(errs, FieldError{Field: "state", Message: "length must be at most 4096"})
+		}
+		if v, ok := q["error"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "error", Message: "must not be empty"})
+			}
+			in.Error = v
+		}
+		if runeCount(in.Error) > 4096 {
+			errs = append(errs, FieldError{Field: "error", Message: "length must be at most 4096"})
+		}
+		if v, ok := q["iss"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "iss", Message: "must not be empty"})
+			}
+			in.Iss = v
+		}
+		if runeCount(in.Iss) > 4096 {
+			errs = append(errs, FieldError{Field: "iss", Message: "length must be at most 4096"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.CompleteOidcSignIn(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeRedirect(w, out)
+	case "startOidcSignIn":
+		var in StartOidcSignInInput
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.StartOidcSignIn(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeRedirect(w, out)
+	case "changePassword":
+		var in ChangePasswordInput
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredPasswordChange, nestedPasswordChange, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ChangePassword(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "listOwnSessions":
+		var in ListOwnSessionsInput
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.ListOwnSessions(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "deleteOwnSession":
+		var in DeleteOwnSessionInput
+		in.Session = params["session"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.DeleteOwnSession(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "signIn":
+		var in SignInInput
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredSignInRequest, nestedSignInRequest, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.SignIn(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "signOut":
+		var in SignOutInput
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.SignOut(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
 	case "getMe":
 		var in GetMeInput
 		if _, err := parseQuery(r); err != nil {
@@ -5332,6 +6532,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
+		in.IdempotencyKey = r.Header.Get("Idempotency-Key")
 		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredModelCreate, nestedModelCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -5553,6 +6754,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
+		in.IdempotencyKey = r.Header.Get("Idempotency-Key")
 		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredPriceOverride, nestedPriceOverride, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -5654,6 +6856,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
+		in.IdempotencyKey = r.Header.Get("Idempotency-Key")
 		in.Body.Enabled = true
 		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredPlatformIssuerCreate, nestedPlatformIssuerCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
@@ -5869,6 +7072,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
+		in.IdempotencyKey = r.Header.Get("Idempotency-Key")
 		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredPlatformKeyCreate, nestedPlatformKeyCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -5993,6 +7197,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
+		in.IdempotencyKey = r.Header.Get("Idempotency-Key")
 		in.Body.Enforce = true
 		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredPlatformLimitRuleCreate, nestedPlatformLimitRuleCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
@@ -6106,6 +7311,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
+		in.IdempotencyKey = r.Header.Get("Idempotency-Key")
 		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredPriceImportRun, nestedPriceImportRun, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -6184,6 +7390,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
+		in.IdempotencyKey = r.Header.Get("Idempotency-Key")
 		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredProviderCreate, nestedProviderCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -6298,6 +7505,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
+		in.IdempotencyKey = r.Header.Get("Idempotency-Key")
 		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredEndpointCreate, nestedEndpointCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -6561,6 +7769,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
+		in.IdempotencyKey = r.Header.Get("Idempotency-Key")
 		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredTenantCreate, nestedTenantCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -6755,6 +7964,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
+		in.IdempotencyKey = r.Header.Get("Idempotency-Key")
 		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredCredentialCreate, nestedCredentialCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -7092,6 +8302,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
+		in.IdempotencyKey = r.Header.Get("Idempotency-Key")
 		in.Body.Enforce = true
 		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredLimitRuleCreate, nestedLimitRuleCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
@@ -7152,6 +8363,250 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		out, err := h.server.DeleteLimit(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "listMembers":
+		var in ListMembersInput
+		in.Tenant = params["tenant"]
+		q, err := parseQuery(r, "limit", "cursor", "sort", "username")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		in.Sort = Sort("created_at")
+		if v, ok := q["sort"]; ok {
+			in.Sort = Sort(v)
+		}
+		if in.Sort != "" && !in.Sort.Valid() {
+			errs = append(errs, FieldError{Field: "sort", Message: "must be one of created_at, -created_at"})
+		}
+		if v, ok := q["username"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "username", Message: "must not be empty"})
+			}
+			in.Username = v
+		}
+		if in.Username != "" && !re10.MatchString(in.Username) {
+			errs = append(errs, FieldError{Field: "username", Message: "must match ^[a-z0-9][a-z0-9._@+-]{1,62}[a-z0-9]$"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListMembers(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "createMember":
+		var in CreateMemberInput
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		in.IdempotencyKey = r.Header.Get("Idempotency-Key")
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredMemberCreate, nestedMemberCreate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.CreateMember(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 201, out)
+	case "getMember":
+		var in GetMemberInput
+		in.Tenant = params["tenant"]
+		in.User = params["user"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GetMember(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "updateMember":
+		var in UpdateMemberInput
+		in.Tenant = params["tenant"]
+		in.User = params["user"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredMemberUpdate, nestedMemberUpdate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.UpdateMember(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "deleteMember":
+		var in DeleteMemberInput
+		in.Tenant = params["tenant"]
+		in.User = params["user"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.DeleteMember(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "disableMember":
+		var in DisableMemberInput
+		in.Tenant = params["tenant"]
+		in.User = params["user"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.DisableMember(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "enableMember":
+		var in EnableMemberInput
+		in.Tenant = params["tenant"]
+		in.User = params["user"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.EnableMember(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "resetMemberPassword":
+		var in ResetMemberPasswordInput
+		in.Tenant = params["tenant"]
+		in.User = params["user"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ResetMemberPassword(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "revokeMemberSessions":
+		var in RevokeMemberSessionsInput
+		in.Tenant = params["tenant"]
+		in.User = params["user"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.RevokeMemberSessions(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "unlockMember":
+		var in UnlockMemberInput
+		in.Tenant = params["tenant"]
+		in.User = params["user"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.UnlockMember(r.Context(), in)
 		if err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -7463,6 +8918,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
+		in.IdempotencyKey = r.Header.Get("Idempotency-Key")
 		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredTenantPriceCreate, nestedTenantPriceCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -7601,6 +9057,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
+		in.IdempotencyKey = r.Header.Get("Idempotency-Key")
 		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredServiceAccountCreate, nestedServiceAccountCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -7785,6 +9242,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
+		in.IdempotencyKey = r.Header.Get("Idempotency-Key")
 		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredSubjectMappingCreate, nestedSubjectMappingCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -7957,6 +9415,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
+		in.IdempotencyKey = r.Header.Get("Idempotency-Key")
 		in.Body.Enabled = true
 		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredTokenIssuerCreate, nestedTokenIssuerCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
@@ -8176,6 +9635,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			h.fail(w, r, op, err)
 			return
 		}
+		in.IdempotencyKey = r.Header.Get("Idempotency-Key")
 		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredVirtualKeyCreate, nestedVirtualKeyCreate, &in.Body); err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -8226,14 +9686,333 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		writeJSON(w, 200, out)
+	case "listUsers":
+		var in ListUsersInput
+		q, err := parseQuery(r, "limit", "cursor", "sort", "state", "username")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		in.Sort = UserSort("created_at")
+		if v, ok := q["sort"]; ok {
+			in.Sort = UserSort(v)
+		}
+		if in.Sort != "" && !in.Sort.Valid() {
+			errs = append(errs, FieldError{Field: "sort", Message: "must be one of created_at, -created_at, username, -username"})
+		}
+		if v, ok := q["state"]; ok {
+			in.State = UserState(v)
+		}
+		if in.State != "" && !in.State.Valid() {
+			errs = append(errs, FieldError{Field: "state", Message: "must be one of active, disabled"})
+		}
+		if v, ok := q["username"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "username", Message: "must not be empty"})
+			}
+			in.Username = v
+		}
+		if in.Username != "" && !re10.MatchString(in.Username) {
+			errs = append(errs, FieldError{Field: "username", Message: "must match ^[a-z0-9][a-z0-9._@+-]{1,62}[a-z0-9]$"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListUsers(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "createUser":
+		var in CreateUserInput
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		in.IdempotencyKey = r.Header.Get("Idempotency-Key")
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredUserCreate, nestedUserCreate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.CreateUser(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 201, out)
+	case "getUser":
+		var in GetUserInput
+		in.User = params["user"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GetUser(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "updateUser":
+		var in UpdateUserInput
+		in.User = params["user"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredUserUpdate, nestedUserUpdate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.UpdateUser(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "disableUser":
+		var in DisableUserInput
+		in.User = params["user"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.DisableUser(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "enableUser":
+		var in EnableUserInput
+		in.User = params["user"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.EnableUser(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "resetUserPassword":
+		var in ResetUserPasswordInput
+		in.User = params["user"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ResetUserPassword(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "revokeUserSessions":
+		var in RevokeUserSessionsInput
+		in.User = params["user"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.RevokeUserSessions(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "unlockUser":
+		var in UnlockUserInput
+		in.User = params["user"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredReason, nestedReason, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.UnlockUser(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
 	}
+}
+
+// GetAuthMethods calls GET /v1/auth/methods. Which ways of signing in are on
+func (c *Client) GetAuthMethods(ctx context.Context, in GetAuthMethodsInput) (*AuthMethods, error) {
+	q := url.Values{}
+	var out AuthMethods
+	if err := c.do(ctx, "GET", "/v1/auth/methods", q, nil, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CompleteOidcSignIn calls GET /v1/auth/oidc/callback. Finish the sign-in through the identity provider
+func (c *Client) CompleteOidcSignIn(ctx context.Context, in CompleteOidcSignInInput) (*Redirect, error) {
+	q := url.Values{}
+	if in.Code != "" {
+		q.Set("code", string(in.Code))
+	}
+	if in.State != "" {
+		q.Set("state", string(in.State))
+	}
+	if in.Error != "" {
+		q.Set("error", string(in.Error))
+	}
+	if in.Iss != "" {
+		q.Set("iss", string(in.Iss))
+	}
+	loc, err := c.doRedirect(ctx, "GET", "/v1/auth/oidc/callback", q)
+	if err != nil {
+		return nil, err
+	}
+	return &Redirect{Location: loc}, nil
+}
+
+// StartOidcSignIn calls GET /v1/auth/oidc/start. Start the sign-in through the identity provider
+func (c *Client) StartOidcSignIn(ctx context.Context, in StartOidcSignInInput) (*Redirect, error) {
+	q := url.Values{}
+	loc, err := c.doRedirect(ctx, "GET", "/v1/auth/oidc/start", q)
+	if err != nil {
+		return nil, err
+	}
+	return &Redirect{Location: loc}, nil
+}
+
+// ChangePassword calls POST /v1/auth/password. Change one's own password
+func (c *Client) ChangePassword(ctx context.Context, in ChangePasswordInput) (*Session, error) {
+	q := url.Values{}
+	var out Session
+	if err := c.do(ctx, "POST", "/v1/auth/password", q, &in.Body, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListOwnSessions calls GET /v1/auth/sessions. List one's own sessions
+func (c *Client) ListOwnSessions(ctx context.Context, in ListOwnSessionsInput) (*SessionList, error) {
+	q := url.Values{}
+	var out SessionList
+	if err := c.do(ctx, "GET", "/v1/auth/sessions", q, nil, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeleteOwnSession calls DELETE /v1/auth/sessions/{session}. End one's own session
+func (c *Client) DeleteOwnSession(ctx context.Context, in DeleteOwnSessionInput) (*Session, error) {
+	q := url.Values{}
+	var out Session
+	if err := c.do(ctx, "DELETE", "/v1/auth/sessions/"+url.PathEscape(in.Session)+"", q, nil, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// SignIn calls POST /v1/auth/sign-in. Sign in with a local account
+func (c *Client) SignIn(ctx context.Context, in SignInInput) (*Session, error) {
+	q := url.Values{}
+	var out Session
+	if err := c.do(ctx, "POST", "/v1/auth/sign-in", q, &in.Body, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// SignOut calls POST /v1/auth/sign-out. Sign out
+func (c *Client) SignOut(ctx context.Context, in SignOutInput) (*SignedOut, error) {
+	q := url.Values{}
+	var out SignedOut
+	if err := c.do(ctx, "POST", "/v1/auth/sign-out", q, nil, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // GetMe calls GET /v1/me. Who the caller is and what it may do
 func (c *Client) GetMe(ctx context.Context, in GetMeInput) (*Me, error) {
 	q := url.Values{}
 	var out Me
-	if err := c.do(ctx, "GET", "/v1/me", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/me", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8264,7 +10043,7 @@ func (c *Client) ListModels(ctx context.Context, in ListModelsInput) (*ModelList
 		q.Set("availability", string(in.Availability))
 	}
 	var out ModelList
-	if err := c.do(ctx, "GET", "/v1/models", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/models", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8273,8 +10052,12 @@ func (c *Client) ListModels(ctx context.Context, in ListModelsInput) (*ModelList
 // CreateModel calls POST /v1/models. Add a model
 func (c *Client) CreateModel(ctx context.Context, in CreateModelInput) (*Model, error) {
 	q := url.Values{}
+	var hdr map[string]string
+	if in.IdempotencyKey != "" {
+		hdr = map[string]string{"Idempotency-Key": in.IdempotencyKey}
+	}
 	var out Model
-	if err := c.do(ctx, "POST", "/v1/models", q, &in.Body, 201, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/models", q, &in.Body, 201, &out, hdr); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8284,7 +10067,7 @@ func (c *Client) CreateModel(ctx context.Context, in CreateModelInput) (*Model, 
 func (c *Client) GetModel(ctx context.Context, in GetModelInput) (*Model, error) {
 	q := url.Values{}
 	var out Model
-	if err := c.do(ctx, "GET", "/v1/models/"+url.PathEscape(in.Model)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/models/"+url.PathEscape(in.Model)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8294,7 +10077,7 @@ func (c *Client) GetModel(ctx context.Context, in GetModelInput) (*Model, error)
 func (c *Client) UpdateModel(ctx context.Context, in UpdateModelInput) (*Model, error) {
 	q := url.Values{}
 	var out Model
-	if err := c.do(ctx, "PATCH", "/v1/models/"+url.PathEscape(in.Model)+"", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "PATCH", "/v1/models/"+url.PathEscape(in.Model)+"", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8304,7 +10087,7 @@ func (c *Client) UpdateModel(ctx context.Context, in UpdateModelInput) (*Model, 
 func (c *Client) DeleteModel(ctx context.Context, in DeleteModelInput) (*Model, error) {
 	q := url.Values{}
 	var out Model
-	if err := c.do(ctx, "DELETE", "/v1/models/"+url.PathEscape(in.Model)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "DELETE", "/v1/models/"+url.PathEscape(in.Model)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8314,7 +10097,7 @@ func (c *Client) DeleteModel(ctx context.Context, in DeleteModelInput) (*Model, 
 func (c *Client) ClearPriceOverride(ctx context.Context, in ClearPriceOverrideInput) (*Model, error) {
 	q := url.Values{}
 	var out Model
-	if err := c.do(ctx, "POST", "/v1/models/"+url.PathEscape(in.Model)+"/clear-price-override", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/models/"+url.PathEscape(in.Model)+"/clear-price-override", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8330,7 +10113,7 @@ func (c *Client) ListModelGrants(ctx context.Context, in ListModelGrantsInput) (
 		q.Set("cursor", string(in.Cursor))
 	}
 	var out ModelGrantList
-	if err := c.do(ctx, "GET", "/v1/models/"+url.PathEscape(in.Model)+"/grants", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/models/"+url.PathEscape(in.Model)+"/grants", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8340,7 +10123,7 @@ func (c *Client) ListModelGrants(ctx context.Context, in ListModelGrantsInput) (
 func (c *Client) GrantModel(ctx context.Context, in GrantModelInput) (*ModelGrant, error) {
 	q := url.Values{}
 	var out ModelGrant
-	if err := c.do(ctx, "PUT", "/v1/models/"+url.PathEscape(in.Model)+"/grants/"+url.PathEscape(in.Tenant)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "PUT", "/v1/models/"+url.PathEscape(in.Model)+"/grants/"+url.PathEscape(in.Tenant)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8350,7 +10133,7 @@ func (c *Client) GrantModel(ctx context.Context, in GrantModelInput) (*ModelGran
 func (c *Client) RevokeModelGrant(ctx context.Context, in RevokeModelGrantInput) (*ModelGrant, error) {
 	q := url.Values{}
 	var out ModelGrant
-	if err := c.do(ctx, "DELETE", "/v1/models/"+url.PathEscape(in.Model)+"/grants/"+url.PathEscape(in.Tenant)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "DELETE", "/v1/models/"+url.PathEscape(in.Model)+"/grants/"+url.PathEscape(in.Tenant)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8369,7 +10152,7 @@ func (c *Client) ListPriceVersions(ctx context.Context, in ListPriceVersionsInpu
 		q.Set("at", string(in.At))
 	}
 	var out PriceVersionList
-	if err := c.do(ctx, "GET", "/v1/models/"+url.PathEscape(in.Model)+"/prices", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/models/"+url.PathEscape(in.Model)+"/prices", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8378,8 +10161,12 @@ func (c *Client) ListPriceVersions(ctx context.Context, in ListPriceVersionsInpu
 // CreatePriceOverride calls POST /v1/models/{model}/prices. Set an operator price for a model
 func (c *Client) CreatePriceOverride(ctx context.Context, in CreatePriceOverrideInput) (*PriceVersion, error) {
 	q := url.Values{}
+	var hdr map[string]string
+	if in.IdempotencyKey != "" {
+		hdr = map[string]string{"Idempotency-Key": in.IdempotencyKey}
+	}
 	var out PriceVersion
-	if err := c.do(ctx, "POST", "/v1/models/"+url.PathEscape(in.Model)+"/prices", q, &in.Body, 201, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/models/"+url.PathEscape(in.Model)+"/prices", q, &in.Body, 201, &out, hdr); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8389,7 +10176,7 @@ func (c *Client) CreatePriceOverride(ctx context.Context, in CreatePriceOverride
 func (c *Client) DeletePriceVersion(ctx context.Context, in DeletePriceVersionInput) (*PriceVersion, error) {
 	q := url.Values{}
 	var out PriceVersion
-	if err := c.do(ctx, "DELETE", "/v1/models/"+url.PathEscape(in.Model)+"/prices/"+url.PathEscape(in.PriceVersion)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "DELETE", "/v1/models/"+url.PathEscape(in.Model)+"/prices/"+url.PathEscape(in.PriceVersion)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8414,7 +10201,7 @@ func (c *Client) ListPlatformIssuers(ctx context.Context, in ListPlatformIssuers
 		q.Set("enabled", string(in.Enabled))
 	}
 	var out PlatformIssuerList
-	if err := c.do(ctx, "GET", "/v1/platform-issuers", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/platform-issuers", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8423,8 +10210,12 @@ func (c *Client) ListPlatformIssuers(ctx context.Context, in ListPlatformIssuers
 // CreatePlatformIssuer calls POST /v1/platform-issuers. Register a platform-level token issuer
 func (c *Client) CreatePlatformIssuer(ctx context.Context, in CreatePlatformIssuerInput) (*PlatformIssuer, error) {
 	q := url.Values{}
+	var hdr map[string]string
+	if in.IdempotencyKey != "" {
+		hdr = map[string]string{"Idempotency-Key": in.IdempotencyKey}
+	}
 	var out PlatformIssuer
-	if err := c.do(ctx, "POST", "/v1/platform-issuers", q, &in.Body, 201, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/platform-issuers", q, &in.Body, 201, &out, hdr); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8434,7 +10225,7 @@ func (c *Client) CreatePlatformIssuer(ctx context.Context, in CreatePlatformIssu
 func (c *Client) GetPlatformIssuer(ctx context.Context, in GetPlatformIssuerInput) (*PlatformIssuer, error) {
 	q := url.Values{}
 	var out PlatformIssuer
-	if err := c.do(ctx, "GET", "/v1/platform-issuers/"+url.PathEscape(in.Issuer)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/platform-issuers/"+url.PathEscape(in.Issuer)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8444,7 +10235,7 @@ func (c *Client) GetPlatformIssuer(ctx context.Context, in GetPlatformIssuerInpu
 func (c *Client) UpdatePlatformIssuer(ctx context.Context, in UpdatePlatformIssuerInput) (*PlatformIssuer, error) {
 	q := url.Values{}
 	var out PlatformIssuer
-	if err := c.do(ctx, "PATCH", "/v1/platform-issuers/"+url.PathEscape(in.Issuer)+"", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "PATCH", "/v1/platform-issuers/"+url.PathEscape(in.Issuer)+"", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8454,7 +10245,7 @@ func (c *Client) UpdatePlatformIssuer(ctx context.Context, in UpdatePlatformIssu
 func (c *Client) DeletePlatformIssuer(ctx context.Context, in DeletePlatformIssuerInput) (*PlatformIssuer, error) {
 	q := url.Values{}
 	var out PlatformIssuer
-	if err := c.do(ctx, "DELETE", "/v1/platform-issuers/"+url.PathEscape(in.Issuer)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "DELETE", "/v1/platform-issuers/"+url.PathEscape(in.Issuer)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8473,7 +10264,7 @@ func (c *Client) ListPlatformIssuerTenants(ctx context.Context, in ListPlatformI
 		q.Set("sort", string(in.Sort))
 	}
 	var out PlatformIssuerTenantList
-	if err := c.do(ctx, "GET", "/v1/platform-issuers/"+url.PathEscape(in.Issuer)+"/tenants", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/platform-issuers/"+url.PathEscape(in.Issuer)+"/tenants", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8483,7 +10274,7 @@ func (c *Client) ListPlatformIssuerTenants(ctx context.Context, in ListPlatformI
 func (c *Client) PutPlatformIssuerTenant(ctx context.Context, in PutPlatformIssuerTenantInput) (*PlatformIssuerTenant, error) {
 	q := url.Values{}
 	var out PlatformIssuerTenant
-	if err := c.do(ctx, "PUT", "/v1/platform-issuers/"+url.PathEscape(in.Issuer)+"/tenants/"+url.PathEscape(in.Tenant)+"", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "PUT", "/v1/platform-issuers/"+url.PathEscape(in.Issuer)+"/tenants/"+url.PathEscape(in.Tenant)+"", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8493,7 +10284,7 @@ func (c *Client) PutPlatformIssuerTenant(ctx context.Context, in PutPlatformIssu
 func (c *Client) DeletePlatformIssuerTenant(ctx context.Context, in DeletePlatformIssuerTenantInput) (*PlatformIssuerTenant, error) {
 	q := url.Values{}
 	var out PlatformIssuerTenant
-	if err := c.do(ctx, "DELETE", "/v1/platform-issuers/"+url.PathEscape(in.Issuer)+"/tenants/"+url.PathEscape(in.Tenant)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "DELETE", "/v1/platform-issuers/"+url.PathEscape(in.Issuer)+"/tenants/"+url.PathEscape(in.Tenant)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8515,7 +10306,7 @@ func (c *Client) ListPlatformKeys(ctx context.Context, in ListPlatformKeysInput)
 		q.Set("state", string(in.State))
 	}
 	var out PlatformKeyList
-	if err := c.do(ctx, "GET", "/v1/platform-keys", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/platform-keys", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8524,8 +10315,12 @@ func (c *Client) ListPlatformKeys(ctx context.Context, in ListPlatformKeysInput)
 // CreatePlatformKey calls POST /v1/platform-keys. Issue a platform key with the role platform-admin
 func (c *Client) CreatePlatformKey(ctx context.Context, in CreatePlatformKeyInput) (*PlatformKeyCreated, error) {
 	q := url.Values{}
+	var hdr map[string]string
+	if in.IdempotencyKey != "" {
+		hdr = map[string]string{"Idempotency-Key": in.IdempotencyKey}
+	}
 	var out PlatformKeyCreated
-	if err := c.do(ctx, "POST", "/v1/platform-keys", q, &in.Body, 201, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/platform-keys", q, &in.Body, 201, &out, hdr); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8535,7 +10330,7 @@ func (c *Client) CreatePlatformKey(ctx context.Context, in CreatePlatformKeyInpu
 func (c *Client) GetPlatformKey(ctx context.Context, in GetPlatformKeyInput) (*PlatformKey, error) {
 	q := url.Values{}
 	var out PlatformKey
-	if err := c.do(ctx, "GET", "/v1/platform-keys/"+url.PathEscape(in.Key)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/platform-keys/"+url.PathEscape(in.Key)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8545,7 +10340,7 @@ func (c *Client) GetPlatformKey(ctx context.Context, in GetPlatformKeyInput) (*P
 func (c *Client) RevokePlatformKey(ctx context.Context, in RevokePlatformKeyInput) (*PlatformKey, error) {
 	q := url.Values{}
 	var out PlatformKey
-	if err := c.do(ctx, "POST", "/v1/platform-keys/"+url.PathEscape(in.Key)+"/revoke", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/platform-keys/"+url.PathEscape(in.Key)+"/revoke", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8570,7 +10365,7 @@ func (c *Client) ListPlatformLimits(ctx context.Context, in ListPlatformLimitsIn
 		q.Set("metric", string(in.Metric))
 	}
 	var out PlatformLimitRuleList
-	if err := c.do(ctx, "GET", "/v1/platform-limits", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/platform-limits", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8579,8 +10374,12 @@ func (c *Client) ListPlatformLimits(ctx context.Context, in ListPlatformLimitsIn
 // CreatePlatformLimit calls POST /v1/platform-limits. Create a ceiling for every tenant or for one
 func (c *Client) CreatePlatformLimit(ctx context.Context, in CreatePlatformLimitInput) (*PlatformLimitRule, error) {
 	q := url.Values{}
+	var hdr map[string]string
+	if in.IdempotencyKey != "" {
+		hdr = map[string]string{"Idempotency-Key": in.IdempotencyKey}
+	}
 	var out PlatformLimitRule
-	if err := c.do(ctx, "POST", "/v1/platform-limits", q, &in.Body, 201, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/platform-limits", q, &in.Body, 201, &out, hdr); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8590,7 +10389,7 @@ func (c *Client) CreatePlatformLimit(ctx context.Context, in CreatePlatformLimit
 func (c *Client) GetPlatformLimit(ctx context.Context, in GetPlatformLimitInput) (*PlatformLimitRule, error) {
 	q := url.Values{}
 	var out PlatformLimitRule
-	if err := c.do(ctx, "GET", "/v1/platform-limits/"+url.PathEscape(in.Rule)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/platform-limits/"+url.PathEscape(in.Rule)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8600,7 +10399,7 @@ func (c *Client) GetPlatformLimit(ctx context.Context, in GetPlatformLimitInput)
 func (c *Client) UpdatePlatformLimit(ctx context.Context, in UpdatePlatformLimitInput) (*PlatformLimitRule, error) {
 	q := url.Values{}
 	var out PlatformLimitRule
-	if err := c.do(ctx, "PATCH", "/v1/platform-limits/"+url.PathEscape(in.Rule)+"", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "PATCH", "/v1/platform-limits/"+url.PathEscape(in.Rule)+"", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8610,7 +10409,7 @@ func (c *Client) UpdatePlatformLimit(ctx context.Context, in UpdatePlatformLimit
 func (c *Client) DeletePlatformLimit(ctx context.Context, in DeletePlatformLimitInput) (*PlatformLimitRule, error) {
 	q := url.Values{}
 	var out PlatformLimitRule
-	if err := c.do(ctx, "DELETE", "/v1/platform-limits/"+url.PathEscape(in.Rule)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "DELETE", "/v1/platform-limits/"+url.PathEscape(in.Rule)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8626,7 +10425,7 @@ func (c *Client) ListPriceImports(ctx context.Context, in ListPriceImportsInput)
 		q.Set("cursor", string(in.Cursor))
 	}
 	var out PriceImportList
-	if err := c.do(ctx, "GET", "/v1/price-imports", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/price-imports", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8635,8 +10434,12 @@ func (c *Client) ListPriceImports(ctx context.Context, in ListPriceImportsInput)
 // RunPriceImport calls POST /v1/price-imports. Import prices now
 func (c *Client) RunPriceImport(ctx context.Context, in RunPriceImportInput) (*PriceImport, error) {
 	q := url.Values{}
+	var hdr map[string]string
+	if in.IdempotencyKey != "" {
+		hdr = map[string]string{"Idempotency-Key": in.IdempotencyKey}
+	}
 	var out PriceImport
-	if err := c.do(ctx, "POST", "/v1/price-imports", q, &in.Body, 201, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/price-imports", q, &in.Body, 201, &out, hdr); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8646,7 +10449,7 @@ func (c *Client) RunPriceImport(ctx context.Context, in RunPriceImportInput) (*P
 func (c *Client) GetPriceImport(ctx context.Context, in GetPriceImportInput) (*PriceImport, error) {
 	q := url.Values{}
 	var out PriceImport
-	if err := c.do(ctx, "GET", "/v1/price-imports/"+url.PathEscape(in.PriceImport)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/price-imports/"+url.PathEscape(in.PriceImport)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8662,7 +10465,7 @@ func (c *Client) ListProviders(ctx context.Context, in ListProvidersInput) (*Pro
 		q.Set("cursor", string(in.Cursor))
 	}
 	var out ProviderList
-	if err := c.do(ctx, "GET", "/v1/providers", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/providers", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8671,8 +10474,12 @@ func (c *Client) ListProviders(ctx context.Context, in ListProvidersInput) (*Pro
 // CreateProvider calls POST /v1/providers. Add a provider
 func (c *Client) CreateProvider(ctx context.Context, in CreateProviderInput) (*Provider, error) {
 	q := url.Values{}
+	var hdr map[string]string
+	if in.IdempotencyKey != "" {
+		hdr = map[string]string{"Idempotency-Key": in.IdempotencyKey}
+	}
 	var out Provider
-	if err := c.do(ctx, "POST", "/v1/providers", q, &in.Body, 201, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/providers", q, &in.Body, 201, &out, hdr); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8682,7 +10489,7 @@ func (c *Client) CreateProvider(ctx context.Context, in CreateProviderInput) (*P
 func (c *Client) GetProvider(ctx context.Context, in GetProviderInput) (*Provider, error) {
 	q := url.Values{}
 	var out Provider
-	if err := c.do(ctx, "GET", "/v1/providers/"+url.PathEscape(in.Provider)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/providers/"+url.PathEscape(in.Provider)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8692,7 +10499,7 @@ func (c *Client) GetProvider(ctx context.Context, in GetProviderInput) (*Provide
 func (c *Client) UpdateProvider(ctx context.Context, in UpdateProviderInput) (*Provider, error) {
 	q := url.Values{}
 	var out Provider
-	if err := c.do(ctx, "PATCH", "/v1/providers/"+url.PathEscape(in.Provider)+"", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "PATCH", "/v1/providers/"+url.PathEscape(in.Provider)+"", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8702,7 +10509,7 @@ func (c *Client) UpdateProvider(ctx context.Context, in UpdateProviderInput) (*P
 func (c *Client) DeleteProvider(ctx context.Context, in DeleteProviderInput) (*Provider, error) {
 	q := url.Values{}
 	var out Provider
-	if err := c.do(ctx, "DELETE", "/v1/providers/"+url.PathEscape(in.Provider)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "DELETE", "/v1/providers/"+url.PathEscape(in.Provider)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8718,7 +10525,7 @@ func (c *Client) ListEndpoints(ctx context.Context, in ListEndpointsInput) (*End
 		q.Set("cursor", string(in.Cursor))
 	}
 	var out EndpointList
-	if err := c.do(ctx, "GET", "/v1/providers/"+url.PathEscape(in.Provider)+"/endpoints", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/providers/"+url.PathEscape(in.Provider)+"/endpoints", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8727,8 +10534,12 @@ func (c *Client) ListEndpoints(ctx context.Context, in ListEndpointsInput) (*End
 // CreateEndpoint calls POST /v1/providers/{provider}/endpoints. Add an endpoint to a provider
 func (c *Client) CreateEndpoint(ctx context.Context, in CreateEndpointInput) (*Endpoint, error) {
 	q := url.Values{}
+	var hdr map[string]string
+	if in.IdempotencyKey != "" {
+		hdr = map[string]string{"Idempotency-Key": in.IdempotencyKey}
+	}
 	var out Endpoint
-	if err := c.do(ctx, "POST", "/v1/providers/"+url.PathEscape(in.Provider)+"/endpoints", q, &in.Body, 201, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/providers/"+url.PathEscape(in.Provider)+"/endpoints", q, &in.Body, 201, &out, hdr); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8738,7 +10549,7 @@ func (c *Client) CreateEndpoint(ctx context.Context, in CreateEndpointInput) (*E
 func (c *Client) GetEndpoint(ctx context.Context, in GetEndpointInput) (*Endpoint, error) {
 	q := url.Values{}
 	var out Endpoint
-	if err := c.do(ctx, "GET", "/v1/providers/"+url.PathEscape(in.Provider)+"/endpoints/"+url.PathEscape(in.Endpoint)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/providers/"+url.PathEscape(in.Provider)+"/endpoints/"+url.PathEscape(in.Endpoint)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8748,7 +10559,7 @@ func (c *Client) GetEndpoint(ctx context.Context, in GetEndpointInput) (*Endpoin
 func (c *Client) UpdateEndpoint(ctx context.Context, in UpdateEndpointInput) (*Endpoint, error) {
 	q := url.Values{}
 	var out Endpoint
-	if err := c.do(ctx, "PATCH", "/v1/providers/"+url.PathEscape(in.Provider)+"/endpoints/"+url.PathEscape(in.Endpoint)+"", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "PATCH", "/v1/providers/"+url.PathEscape(in.Provider)+"/endpoints/"+url.PathEscape(in.Endpoint)+"", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8758,7 +10569,7 @@ func (c *Client) UpdateEndpoint(ctx context.Context, in UpdateEndpointInput) (*E
 func (c *Client) DeleteEndpoint(ctx context.Context, in DeleteEndpointInput) (*Endpoint, error) {
 	q := url.Values{}
 	var out Endpoint
-	if err := c.do(ctx, "DELETE", "/v1/providers/"+url.PathEscape(in.Provider)+"/endpoints/"+url.PathEscape(in.Endpoint)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "DELETE", "/v1/providers/"+url.PathEscape(in.Provider)+"/endpoints/"+url.PathEscape(in.Endpoint)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8783,7 +10594,7 @@ func (c *Client) ListTenantCredentials(ctx context.Context, in ListTenantCredent
 		q.Set("provider", string(in.Provider))
 	}
 	var out CredentialList
-	if err := c.do(ctx, "GET", "/v1/tenant-credentials/"+url.PathEscape(in.Tenant)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenant-credentials/"+url.PathEscape(in.Tenant)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8793,7 +10604,7 @@ func (c *Client) ListTenantCredentials(ctx context.Context, in ListTenantCredent
 func (c *Client) GetTenantCredential(ctx context.Context, in GetTenantCredentialInput) (*Credential, error) {
 	q := url.Values{}
 	var out Credential
-	if err := c.do(ctx, "GET", "/v1/tenant-credentials/"+url.PathEscape(in.Tenant)+"/"+url.PathEscape(in.Credential)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenant-credentials/"+url.PathEscape(in.Tenant)+"/"+url.PathEscape(in.Credential)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8803,7 +10614,7 @@ func (c *Client) GetTenantCredential(ctx context.Context, in GetTenantCredential
 func (c *Client) DisableTenantCredential(ctx context.Context, in DisableTenantCredentialInput) (*Credential, error) {
 	q := url.Values{}
 	var out Credential
-	if err := c.do(ctx, "POST", "/v1/tenant-credentials/"+url.PathEscape(in.Tenant)+"/"+url.PathEscape(in.Credential)+"/disable", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/tenant-credentials/"+url.PathEscape(in.Tenant)+"/"+url.PathEscape(in.Credential)+"/disable", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8813,7 +10624,7 @@ func (c *Client) DisableTenantCredential(ctx context.Context, in DisableTenantCr
 func (c *Client) RevokeTenantCredential(ctx context.Context, in RevokeTenantCredentialInput) (*Credential, error) {
 	q := url.Values{}
 	var out Credential
-	if err := c.do(ctx, "POST", "/v1/tenant-credentials/"+url.PathEscape(in.Tenant)+"/"+url.PathEscape(in.Credential)+"/revoke", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/tenant-credentials/"+url.PathEscape(in.Tenant)+"/"+url.PathEscape(in.Credential)+"/revoke", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8838,7 +10649,7 @@ func (c *Client) ListTenants(ctx context.Context, in ListTenantsInput) (*TenantL
 		q.Set("name", string(in.Name))
 	}
 	var out TenantList
-	if err := c.do(ctx, "GET", "/v1/tenants", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8847,8 +10658,12 @@ func (c *Client) ListTenants(ctx context.Context, in ListTenantsInput) (*TenantL
 // CreateTenant calls POST /v1/tenants. Create a tenant with its first administrator
 func (c *Client) CreateTenant(ctx context.Context, in CreateTenantInput) (*TenantCreated, error) {
 	q := url.Values{}
+	var hdr map[string]string
+	if in.IdempotencyKey != "" {
+		hdr = map[string]string{"Idempotency-Key": in.IdempotencyKey}
+	}
 	var out TenantCreated
-	if err := c.do(ctx, "POST", "/v1/tenants", q, &in.Body, 201, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/tenants", q, &in.Body, 201, &out, hdr); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8858,7 +10673,7 @@ func (c *Client) CreateTenant(ctx context.Context, in CreateTenantInput) (*Tenan
 func (c *Client) GetTenant(ctx context.Context, in GetTenantInput) (*Tenant, error) {
 	q := url.Values{}
 	var out Tenant
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8868,7 +10683,7 @@ func (c *Client) GetTenant(ctx context.Context, in GetTenantInput) (*Tenant, err
 func (c *Client) UpdateTenant(ctx context.Context, in UpdateTenantInput) (*Tenant, error) {
 	q := url.Values{}
 	var out Tenant
-	if err := c.do(ctx, "PATCH", "/v1/tenants/"+url.PathEscape(in.Tenant)+"", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "PATCH", "/v1/tenants/"+url.PathEscape(in.Tenant)+"", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8878,7 +10693,7 @@ func (c *Client) UpdateTenant(ctx context.Context, in UpdateTenantInput) (*Tenan
 func (c *Client) GetActiveCurrency(ctx context.Context, in GetActiveCurrencyInput) (*ActiveCurrency, error) {
 	q := url.Values{}
 	var out ActiveCurrency
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/active-currency", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/active-currency", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8888,7 +10703,7 @@ func (c *Client) GetActiveCurrency(ctx context.Context, in GetActiveCurrencyInpu
 func (c *Client) SetActiveCurrency(ctx context.Context, in SetActiveCurrencyInput) (*ActiveCurrency, error) {
 	q := url.Values{}
 	var out ActiveCurrency
-	if err := c.do(ctx, "PUT", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/active-currency", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "PUT", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/active-currency", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8904,7 +10719,7 @@ func (c *Client) GetCapability(ctx context.Context, in GetCapabilityInput) (*Cap
 		q.Set("model", string(in.Model))
 	}
 	var out Capability
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/capability", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/capability", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8929,7 +10744,7 @@ func (c *Client) ListCredentials(ctx context.Context, in ListCredentialsInput) (
 		q.Set("provider", string(in.Provider))
 	}
 	var out CredentialList
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8938,8 +10753,12 @@ func (c *Client) ListCredentials(ctx context.Context, in ListCredentialsInput) (
 // CreateCredential calls POST /v1/tenants/{tenant}/credentials. Register a provider credential
 func (c *Client) CreateCredential(ctx context.Context, in CreateCredentialInput) (*Credential, error) {
 	q := url.Values{}
+	var hdr map[string]string
+	if in.IdempotencyKey != "" {
+		hdr = map[string]string{"Idempotency-Key": in.IdempotencyKey}
+	}
 	var out Credential
-	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials", q, &in.Body, 201, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials", q, &in.Body, 201, &out, hdr); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8949,7 +10768,7 @@ func (c *Client) CreateCredential(ctx context.Context, in CreateCredentialInput)
 func (c *Client) GetCredential(ctx context.Context, in GetCredentialInput) (*Credential, error) {
 	q := url.Values{}
 	var out Credential
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8959,7 +10778,7 @@ func (c *Client) GetCredential(ctx context.Context, in GetCredentialInput) (*Cre
 func (c *Client) UpdateCredential(ctx context.Context, in UpdateCredentialInput) (*Credential, error) {
 	q := url.Values{}
 	var out Credential
-	if err := c.do(ctx, "PATCH", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "PATCH", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8969,7 +10788,7 @@ func (c *Client) UpdateCredential(ctx context.Context, in UpdateCredentialInput)
 func (c *Client) DeleteCredential(ctx context.Context, in DeleteCredentialInput) (*Credential, error) {
 	q := url.Values{}
 	var out Credential
-	if err := c.do(ctx, "DELETE", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "DELETE", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8979,7 +10798,7 @@ func (c *Client) DeleteCredential(ctx context.Context, in DeleteCredentialInput)
 func (c *Client) DisableCredential(ctx context.Context, in DisableCredentialInput) (*Credential, error) {
 	q := url.Values{}
 	var out Credential
-	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"/disable", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"/disable", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8989,7 +10808,7 @@ func (c *Client) DisableCredential(ctx context.Context, in DisableCredentialInpu
 func (c *Client) EnableCredential(ctx context.Context, in EnableCredentialInput) (*Credential, error) {
 	q := url.Values{}
 	var out Credential
-	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"/enable", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"/enable", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -8999,7 +10818,7 @@ func (c *Client) EnableCredential(ctx context.Context, in EnableCredentialInput)
 func (c *Client) RevokeCredential(ctx context.Context, in RevokeCredentialInput) (*Credential, error) {
 	q := url.Values{}
 	var out Credential
-	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"/revoke", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"/revoke", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9009,7 +10828,7 @@ func (c *Client) RevokeCredential(ctx context.Context, in RevokeCredentialInput)
 func (c *Client) ReplaceCredentialSecret(ctx context.Context, in ReplaceCredentialSecretInput) (*Credential, error) {
 	q := url.Values{}
 	var out Credential
-	if err := c.do(ctx, "PUT", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"/secret", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "PUT", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"/secret", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9019,7 +10838,7 @@ func (c *Client) ReplaceCredentialSecret(ctx context.Context, in ReplaceCredenti
 func (c *Client) SetDefaultCredential(ctx context.Context, in SetDefaultCredentialInput) (*Credential, error) {
 	q := url.Values{}
 	var out Credential
-	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"/set-default", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"/set-default", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9041,7 +10860,7 @@ func (c *Client) ListLimitEvents(ctx context.Context, in ListLimitEventsInput) (
 		q.Set("rule", string(in.Rule))
 	}
 	var out LimitEventList
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/limit-events", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/limit-events", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9075,7 +10894,7 @@ func (c *Client) ListLimits(ctx context.Context, in ListLimitsInput) (*LimitRule
 		q.Set("model", string(in.Model))
 	}
 	var out LimitRuleList
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/limits", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/limits", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9084,8 +10903,12 @@ func (c *Client) ListLimits(ctx context.Context, in ListLimitsInput) (*LimitRule
 // CreateLimit calls POST /v1/tenants/{tenant}/limits. Create a limit rule of a tenant
 func (c *Client) CreateLimit(ctx context.Context, in CreateLimitInput) (*LimitRule, error) {
 	q := url.Values{}
+	var hdr map[string]string
+	if in.IdempotencyKey != "" {
+		hdr = map[string]string{"Idempotency-Key": in.IdempotencyKey}
+	}
 	var out LimitRule
-	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/limits", q, &in.Body, 201, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/limits", q, &in.Body, 201, &out, hdr); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9095,7 +10918,7 @@ func (c *Client) CreateLimit(ctx context.Context, in CreateLimitInput) (*LimitRu
 func (c *Client) GetLimit(ctx context.Context, in GetLimitInput) (*LimitRule, error) {
 	q := url.Values{}
 	var out LimitRule
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/limits/"+url.PathEscape(in.Rule)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/limits/"+url.PathEscape(in.Rule)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9105,7 +10928,7 @@ func (c *Client) GetLimit(ctx context.Context, in GetLimitInput) (*LimitRule, er
 func (c *Client) UpdateLimit(ctx context.Context, in UpdateLimitInput) (*LimitRule, error) {
 	q := url.Values{}
 	var out LimitRule
-	if err := c.do(ctx, "PATCH", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/limits/"+url.PathEscape(in.Rule)+"", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "PATCH", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/limits/"+url.PathEscape(in.Rule)+"", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9115,7 +10938,123 @@ func (c *Client) UpdateLimit(ctx context.Context, in UpdateLimitInput) (*LimitRu
 func (c *Client) DeleteLimit(ctx context.Context, in DeleteLimitInput) (*LimitRule, error) {
 	q := url.Values{}
 	var out LimitRule
-	if err := c.do(ctx, "DELETE", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/limits/"+url.PathEscape(in.Rule)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "DELETE", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/limits/"+url.PathEscape(in.Rule)+"", q, nil, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListMembers calls GET /v1/tenants/{tenant}/members. List the members of a tenant
+func (c *Client) ListMembers(ctx context.Context, in ListMembersInput) (*MemberList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	if in.Sort != "" {
+		q.Set("sort", string(in.Sort))
+	}
+	if in.Username != "" {
+		q.Set("username", string(in.Username))
+	}
+	var out MemberList
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/members", q, nil, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreateMember calls POST /v1/tenants/{tenant}/members. Add a member to a tenant
+func (c *Client) CreateMember(ctx context.Context, in CreateMemberInput) (*MemberCreated, error) {
+	q := url.Values{}
+	var hdr map[string]string
+	if in.IdempotencyKey != "" {
+		hdr = map[string]string{"Idempotency-Key": in.IdempotencyKey}
+	}
+	var out MemberCreated
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/members", q, &in.Body, 201, &out, hdr); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetMember calls GET /v1/tenants/{tenant}/members/{user}. Read a member
+func (c *Client) GetMember(ctx context.Context, in GetMemberInput) (*Member, error) {
+	q := url.Values{}
+	var out Member
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/members/"+url.PathEscape(in.User)+"", q, nil, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateMember calls PATCH /v1/tenants/{tenant}/members/{user}. Change the roles or the attributes of a member
+func (c *Client) UpdateMember(ctx context.Context, in UpdateMemberInput) (*Member, error) {
+	q := url.Values{}
+	var out Member
+	if err := c.do(ctx, "PATCH", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/members/"+url.PathEscape(in.User)+"", q, &in.Body, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeleteMember calls DELETE /v1/tenants/{tenant}/members/{user}. Remove a member from a tenant
+func (c *Client) DeleteMember(ctx context.Context, in DeleteMemberInput) (*Member, error) {
+	q := url.Values{}
+	var out Member
+	if err := c.do(ctx, "DELETE", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/members/"+url.PathEscape(in.User)+"", q, nil, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DisableMember calls POST /v1/tenants/{tenant}/members/{user}/disable. Disable a member
+func (c *Client) DisableMember(ctx context.Context, in DisableMemberInput) (*Member, error) {
+	q := url.Values{}
+	var out Member
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/members/"+url.PathEscape(in.User)+"/disable", q, &in.Body, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// EnableMember calls POST /v1/tenants/{tenant}/members/{user}/enable. Enable a member
+func (c *Client) EnableMember(ctx context.Context, in EnableMemberInput) (*Member, error) {
+	q := url.Values{}
+	var out Member
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/members/"+url.PathEscape(in.User)+"/enable", q, &in.Body, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ResetMemberPassword calls POST /v1/tenants/{tenant}/members/{user}/reset-password. Reset the password of a member
+func (c *Client) ResetMemberPassword(ctx context.Context, in ResetMemberPasswordInput) (*PasswordReset, error) {
+	q := url.Values{}
+	var out PasswordReset
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/members/"+url.PathEscape(in.User)+"/reset-password", q, &in.Body, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// RevokeMemberSessions calls POST /v1/tenants/{tenant}/members/{user}/revoke-sessions. End every session of a member
+func (c *Client) RevokeMemberSessions(ctx context.Context, in RevokeMemberSessionsInput) (*SessionsRevoked, error) {
+	q := url.Values{}
+	var out SessionsRevoked
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/members/"+url.PathEscape(in.User)+"/revoke-sessions", q, &in.Body, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UnlockMember calls POST /v1/tenants/{tenant}/members/{user}/unlock. Unlock the sign-in of a member
+func (c *Client) UnlockMember(ctx context.Context, in UnlockMemberInput) (*Member, error) {
+	q := url.Values{}
+	var out Member
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/members/"+url.PathEscape(in.User)+"/unlock", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9125,7 +11064,7 @@ func (c *Client) DeleteLimit(ctx context.Context, in DeleteLimitInput) (*LimitRu
 func (c *Client) GetModelRestriction(ctx context.Context, in GetModelRestrictionInput) (*ModelRestriction, error) {
 	q := url.Values{}
 	var out ModelRestriction
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/model-restriction", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/model-restriction", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9135,7 +11074,7 @@ func (c *Client) GetModelRestriction(ctx context.Context, in GetModelRestriction
 func (c *Client) SetModelRestriction(ctx context.Context, in SetModelRestrictionInput) (*ModelRestriction, error) {
 	q := url.Values{}
 	var out ModelRestriction
-	if err := c.do(ctx, "PUT", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/model-restriction", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "PUT", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/model-restriction", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9145,7 +11084,7 @@ func (c *Client) SetModelRestriction(ctx context.Context, in SetModelRestriction
 func (c *Client) ClearModelRestriction(ctx context.Context, in ClearModelRestrictionInput) (*ModelRestriction, error) {
 	q := url.Values{}
 	var out ModelRestriction
-	if err := c.do(ctx, "DELETE", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/model-restriction", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "DELETE", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/model-restriction", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9164,7 +11103,7 @@ func (c *Client) ListTenantModels(ctx context.Context, in ListTenantModelsInput)
 		q.Set("provider", string(in.Provider))
 	}
 	var out TenantModelList
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/models", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/models", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9183,7 +11122,7 @@ func (c *Client) ListTenantPlatformIssuers(ctx context.Context, in ListTenantPla
 		q.Set("sort", string(in.Sort))
 	}
 	var out TenantPlatformIssuerList
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/platform-issuers", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/platform-issuers", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9199,7 +11138,7 @@ func (c *Client) ListTenantPlatformLimits(ctx context.Context, in ListTenantPlat
 		q.Set("cursor", string(in.Cursor))
 	}
 	var out TenantPlatformLimitRuleList
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/platform-limits", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/platform-limits", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9209,7 +11148,7 @@ func (c *Client) ListTenantPlatformLimits(ctx context.Context, in ListTenantPlat
 func (c *Client) ListPriceLists(ctx context.Context, in ListPriceListsInput) (*TenantPriceListList, error) {
 	q := url.Values{}
 	var out TenantPriceListList
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/price-lists", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/price-lists", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9237,7 +11176,7 @@ func (c *Client) ListPriceListVersions(ctx context.Context, in ListPriceListVers
 		q.Set("at", string(in.At))
 	}
 	var out TenantPriceVersionList
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/prices", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/prices", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9246,8 +11185,12 @@ func (c *Client) ListPriceListVersions(ctx context.Context, in ListPriceListVers
 // CreatePriceListVersion calls POST /v1/tenants/{tenant}/prices. Add a price version to one of the tenant's price lists
 func (c *Client) CreatePriceListVersion(ctx context.Context, in CreatePriceListVersionInput) (*TenantPriceVersion, error) {
 	q := url.Values{}
+	var hdr map[string]string
+	if in.IdempotencyKey != "" {
+		hdr = map[string]string{"Idempotency-Key": in.IdempotencyKey}
+	}
 	var out TenantPriceVersion
-	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/prices", q, &in.Body, 201, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/prices", q, &in.Body, 201, &out, hdr); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9257,7 +11200,7 @@ func (c *Client) CreatePriceListVersion(ctx context.Context, in CreatePriceListV
 func (c *Client) GetPriceListVersion(ctx context.Context, in GetPriceListVersionInput) (*TenantPriceVersion, error) {
 	q := url.Values{}
 	var out TenantPriceVersion
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/prices/"+url.PathEscape(in.Price)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/prices/"+url.PathEscape(in.Price)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9267,7 +11210,7 @@ func (c *Client) GetPriceListVersion(ctx context.Context, in GetPriceListVersion
 func (c *Client) DeletePriceListVersion(ctx context.Context, in DeletePriceListVersionInput) (*TenantPriceVersion, error) {
 	q := url.Values{}
 	var out TenantPriceVersion
-	if err := c.do(ctx, "DELETE", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/prices/"+url.PathEscape(in.Price)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "DELETE", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/prices/"+url.PathEscape(in.Price)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9277,7 +11220,7 @@ func (c *Client) DeletePriceListVersion(ctx context.Context, in DeletePriceListV
 func (c *Client) ReactivateTenant(ctx context.Context, in ReactivateTenantInput) (*Tenant, error) {
 	q := url.Values{}
 	var out Tenant
-	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/reactivate", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/reactivate", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9302,7 +11245,7 @@ func (c *Client) ListServiceAccounts(ctx context.Context, in ListServiceAccounts
 		q.Set("name", string(in.Name))
 	}
 	var out ServiceAccountList
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/service-accounts", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/service-accounts", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9311,8 +11254,12 @@ func (c *Client) ListServiceAccounts(ctx context.Context, in ListServiceAccounts
 // CreateServiceAccount calls POST /v1/tenants/{tenant}/service-accounts. Create a service account
 func (c *Client) CreateServiceAccount(ctx context.Context, in CreateServiceAccountInput) (*ServiceAccount, error) {
 	q := url.Values{}
+	var hdr map[string]string
+	if in.IdempotencyKey != "" {
+		hdr = map[string]string{"Idempotency-Key": in.IdempotencyKey}
+	}
 	var out ServiceAccount
-	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/service-accounts", q, &in.Body, 201, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/service-accounts", q, &in.Body, 201, &out, hdr); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9322,7 +11269,7 @@ func (c *Client) CreateServiceAccount(ctx context.Context, in CreateServiceAccou
 func (c *Client) GetServiceAccount(ctx context.Context, in GetServiceAccountInput) (*ServiceAccount, error) {
 	q := url.Values{}
 	var out ServiceAccount
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/service-accounts/"+url.PathEscape(in.ServiceAccount)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/service-accounts/"+url.PathEscape(in.ServiceAccount)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9332,7 +11279,7 @@ func (c *Client) GetServiceAccount(ctx context.Context, in GetServiceAccountInpu
 func (c *Client) UpdateServiceAccount(ctx context.Context, in UpdateServiceAccountInput) (*ServiceAccount, error) {
 	q := url.Values{}
 	var out ServiceAccount
-	if err := c.do(ctx, "PATCH", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/service-accounts/"+url.PathEscape(in.ServiceAccount)+"", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "PATCH", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/service-accounts/"+url.PathEscape(in.ServiceAccount)+"", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9342,7 +11289,7 @@ func (c *Client) UpdateServiceAccount(ctx context.Context, in UpdateServiceAccou
 func (c *Client) DisableServiceAccount(ctx context.Context, in DisableServiceAccountInput) (*ServiceAccount, error) {
 	q := url.Values{}
 	var out ServiceAccount
-	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/service-accounts/"+url.PathEscape(in.ServiceAccount)+"/disable", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/service-accounts/"+url.PathEscape(in.ServiceAccount)+"/disable", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9352,7 +11299,7 @@ func (c *Client) DisableServiceAccount(ctx context.Context, in DisableServiceAcc
 func (c *Client) EnableServiceAccount(ctx context.Context, in EnableServiceAccountInput) (*ServiceAccount, error) {
 	q := url.Values{}
 	var out ServiceAccount
-	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/service-accounts/"+url.PathEscape(in.ServiceAccount)+"/enable", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/service-accounts/"+url.PathEscape(in.ServiceAccount)+"/enable", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9380,7 +11327,7 @@ func (c *Client) ListSubjectMappings(ctx context.Context, in ListSubjectMappings
 		q.Set("subject", string(in.Subject))
 	}
 	var out SubjectMappingList
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/subject-mappings", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/subject-mappings", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9389,8 +11336,12 @@ func (c *Client) ListSubjectMappings(ctx context.Context, in ListSubjectMappings
 // CreateSubjectMapping calls POST /v1/tenants/{tenant}/subject-mappings. Let a token subject act as a service account
 func (c *Client) CreateSubjectMapping(ctx context.Context, in CreateSubjectMappingInput) (*SubjectMapping, error) {
 	q := url.Values{}
+	var hdr map[string]string
+	if in.IdempotencyKey != "" {
+		hdr = map[string]string{"Idempotency-Key": in.IdempotencyKey}
+	}
 	var out SubjectMapping
-	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/subject-mappings", q, &in.Body, 201, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/subject-mappings", q, &in.Body, 201, &out, hdr); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9400,7 +11351,7 @@ func (c *Client) CreateSubjectMapping(ctx context.Context, in CreateSubjectMappi
 func (c *Client) GetSubjectMapping(ctx context.Context, in GetSubjectMappingInput) (*SubjectMapping, error) {
 	q := url.Values{}
 	var out SubjectMapping
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/subject-mappings/"+url.PathEscape(in.Mapping)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/subject-mappings/"+url.PathEscape(in.Mapping)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9410,7 +11361,7 @@ func (c *Client) GetSubjectMapping(ctx context.Context, in GetSubjectMappingInpu
 func (c *Client) DeleteSubjectMapping(ctx context.Context, in DeleteSubjectMappingInput) (*SubjectMapping, error) {
 	q := url.Values{}
 	var out SubjectMapping
-	if err := c.do(ctx, "DELETE", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/subject-mappings/"+url.PathEscape(in.Mapping)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "DELETE", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/subject-mappings/"+url.PathEscape(in.Mapping)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9420,7 +11371,7 @@ func (c *Client) DeleteSubjectMapping(ctx context.Context, in DeleteSubjectMappi
 func (c *Client) SuspendTenant(ctx context.Context, in SuspendTenantInput) (*Tenant, error) {
 	q := url.Values{}
 	var out Tenant
-	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/suspend", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/suspend", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9430,7 +11381,7 @@ func (c *Client) SuspendTenant(ctx context.Context, in SuspendTenantInput) (*Ten
 func (c *Client) GetTenantTimeZone(ctx context.Context, in GetTenantTimeZoneInput) (*TenantTimeZone, error) {
 	q := url.Values{}
 	var out TenantTimeZone
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/time-zone", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/time-zone", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9440,7 +11391,7 @@ func (c *Client) GetTenantTimeZone(ctx context.Context, in GetTenantTimeZoneInpu
 func (c *Client) SetTenantTimeZone(ctx context.Context, in SetTenantTimeZoneInput) (*TenantTimeZone, error) {
 	q := url.Values{}
 	var out TenantTimeZone
-	if err := c.do(ctx, "PUT", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/time-zone", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "PUT", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/time-zone", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9465,7 +11416,7 @@ func (c *Client) ListTokenIssuers(ctx context.Context, in ListTokenIssuersInput)
 		q.Set("enabled", string(in.Enabled))
 	}
 	var out TokenIssuerList
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/token-issuers", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/token-issuers", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9474,8 +11425,12 @@ func (c *Client) ListTokenIssuers(ctx context.Context, in ListTokenIssuersInput)
 // CreateTokenIssuer calls POST /v1/tenants/{tenant}/token-issuers. Register a trusted token issuer
 func (c *Client) CreateTokenIssuer(ctx context.Context, in CreateTokenIssuerInput) (*TokenIssuer, error) {
 	q := url.Values{}
+	var hdr map[string]string
+	if in.IdempotencyKey != "" {
+		hdr = map[string]string{"Idempotency-Key": in.IdempotencyKey}
+	}
 	var out TokenIssuer
-	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/token-issuers", q, &in.Body, 201, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/token-issuers", q, &in.Body, 201, &out, hdr); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9485,7 +11440,7 @@ func (c *Client) CreateTokenIssuer(ctx context.Context, in CreateTokenIssuerInpu
 func (c *Client) GetTokenIssuer(ctx context.Context, in GetTokenIssuerInput) (*TokenIssuer, error) {
 	q := url.Values{}
 	var out TokenIssuer
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/token-issuers/"+url.PathEscape(in.Issuer)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/token-issuers/"+url.PathEscape(in.Issuer)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9495,7 +11450,7 @@ func (c *Client) GetTokenIssuer(ctx context.Context, in GetTokenIssuerInput) (*T
 func (c *Client) UpdateTokenIssuer(ctx context.Context, in UpdateTokenIssuerInput) (*TokenIssuer, error) {
 	q := url.Values{}
 	var out TokenIssuer
-	if err := c.do(ctx, "PATCH", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/token-issuers/"+url.PathEscape(in.Issuer)+"", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "PATCH", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/token-issuers/"+url.PathEscape(in.Issuer)+"", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9505,7 +11460,7 @@ func (c *Client) UpdateTokenIssuer(ctx context.Context, in UpdateTokenIssuerInpu
 func (c *Client) DeleteTokenIssuer(ctx context.Context, in DeleteTokenIssuerInput) (*TokenIssuer, error) {
 	q := url.Values{}
 	var out TokenIssuer
-	if err := c.do(ctx, "DELETE", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/token-issuers/"+url.PathEscape(in.Issuer)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "DELETE", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/token-issuers/"+url.PathEscape(in.Issuer)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9533,7 +11488,7 @@ func (c *Client) ListUsageRecords(ctx context.Context, in ListUsageRecordsInput)
 		q.Set("limit_state", string(in.LimitState))
 	}
 	var out UsageRecordList
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/usage-records", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/usage-records", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9558,7 +11513,7 @@ func (c *Client) ListVirtualKeys(ctx context.Context, in ListVirtualKeysInput) (
 		q.Set("service_account_id", string(in.ServiceAccountID))
 	}
 	var out VirtualKeyList
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/virtual-keys", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/virtual-keys", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9567,8 +11522,12 @@ func (c *Client) ListVirtualKeys(ctx context.Context, in ListVirtualKeysInput) (
 // CreateVirtualKey calls POST /v1/tenants/{tenant}/virtual-keys. Issue a virtual key for a service account
 func (c *Client) CreateVirtualKey(ctx context.Context, in CreateVirtualKeyInput) (*VirtualKeyCreated, error) {
 	q := url.Values{}
+	var hdr map[string]string
+	if in.IdempotencyKey != "" {
+		hdr = map[string]string{"Idempotency-Key": in.IdempotencyKey}
+	}
 	var out VirtualKeyCreated
-	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/virtual-keys", q, &in.Body, 201, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/virtual-keys", q, &in.Body, 201, &out, hdr); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9578,7 +11537,7 @@ func (c *Client) CreateVirtualKey(ctx context.Context, in CreateVirtualKeyInput)
 func (c *Client) GetVirtualKey(ctx context.Context, in GetVirtualKeyInput) (*VirtualKey, error) {
 	q := url.Values{}
 	var out VirtualKey
-	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/virtual-keys/"+url.PathEscape(in.Key)+"", q, nil, 200, &out); err != nil {
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/virtual-keys/"+url.PathEscape(in.Key)+"", q, nil, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -9588,7 +11547,116 @@ func (c *Client) GetVirtualKey(ctx context.Context, in GetVirtualKeyInput) (*Vir
 func (c *Client) RevokeVirtualKey(ctx context.Context, in RevokeVirtualKeyInput) (*VirtualKey, error) {
 	q := url.Values{}
 	var out VirtualKey
-	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/virtual-keys/"+url.PathEscape(in.Key)+"/revoke", q, &in.Body, 200, &out); err != nil {
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/virtual-keys/"+url.PathEscape(in.Key)+"/revoke", q, &in.Body, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListUsers calls GET /v1/users. List the users that the platform manages
+func (c *Client) ListUsers(ctx context.Context, in ListUsersInput) (*UserList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	if in.Sort != "" {
+		q.Set("sort", string(in.Sort))
+	}
+	if in.State != "" {
+		q.Set("state", string(in.State))
+	}
+	if in.Username != "" {
+		q.Set("username", string(in.Username))
+	}
+	var out UserList
+	if err := c.do(ctx, "GET", "/v1/users", q, nil, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreateUser calls POST /v1/users. Create a user
+func (c *Client) CreateUser(ctx context.Context, in CreateUserInput) (*UserCreated, error) {
+	q := url.Values{}
+	var hdr map[string]string
+	if in.IdempotencyKey != "" {
+		hdr = map[string]string{"Idempotency-Key": in.IdempotencyKey}
+	}
+	var out UserCreated
+	if err := c.do(ctx, "POST", "/v1/users", q, &in.Body, 201, &out, hdr); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetUser calls GET /v1/users/{user}. Read a user
+func (c *Client) GetUser(ctx context.Context, in GetUserInput) (*User, error) {
+	q := url.Values{}
+	var out User
+	if err := c.do(ctx, "GET", "/v1/users/"+url.PathEscape(in.User)+"", q, nil, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateUser calls PATCH /v1/users/{user}. Change a user
+func (c *Client) UpdateUser(ctx context.Context, in UpdateUserInput) (*User, error) {
+	q := url.Values{}
+	var out User
+	if err := c.do(ctx, "PATCH", "/v1/users/"+url.PathEscape(in.User)+"", q, &in.Body, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DisableUser calls POST /v1/users/{user}/disable. Disable a user
+func (c *Client) DisableUser(ctx context.Context, in DisableUserInput) (*User, error) {
+	q := url.Values{}
+	var out User
+	if err := c.do(ctx, "POST", "/v1/users/"+url.PathEscape(in.User)+"/disable", q, &in.Body, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// EnableUser calls POST /v1/users/{user}/enable. Enable a user
+func (c *Client) EnableUser(ctx context.Context, in EnableUserInput) (*User, error) {
+	q := url.Values{}
+	var out User
+	if err := c.do(ctx, "POST", "/v1/users/"+url.PathEscape(in.User)+"/enable", q, &in.Body, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ResetUserPassword calls POST /v1/users/{user}/reset-password. Reset the password of a user
+func (c *Client) ResetUserPassword(ctx context.Context, in ResetUserPasswordInput) (*PasswordReset, error) {
+	q := url.Values{}
+	var out PasswordReset
+	if err := c.do(ctx, "POST", "/v1/users/"+url.PathEscape(in.User)+"/reset-password", q, &in.Body, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// RevokeUserSessions calls POST /v1/users/{user}/revoke-sessions. End every session of a user
+func (c *Client) RevokeUserSessions(ctx context.Context, in RevokeUserSessionsInput) (*SessionsRevoked, error) {
+	q := url.Values{}
+	var out SessionsRevoked
+	if err := c.do(ctx, "POST", "/v1/users/"+url.PathEscape(in.User)+"/revoke-sessions", q, &in.Body, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UnlockUser calls POST /v1/users/{user}/unlock. Unlock the sign-in of a user
+func (c *Client) UnlockUser(ctx context.Context, in UnlockUserInput) (*User, error) {
+	q := url.Values{}
+	var out User
+	if err := c.do(ctx, "POST", "/v1/users/"+url.PathEscape(in.User)+"/unlock", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil

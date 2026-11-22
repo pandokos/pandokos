@@ -85,8 +85,8 @@ func TestTenantPriceListsUpgrade(t *testing.T) {
 			t.Error("migration 0012 ran twice")
 		}
 		var versions int
-		if err := super.QueryRow(ctx, `SELECT count(*) FROM pandokos.schema_migration`).Scan(&versions); err != nil || versions != 12 {
-			t.Errorf("the ledger holds %d migrations (%v), want 12", versions, err)
+		if err := super.QueryRow(ctx, `SELECT count(*) FROM pandokos.schema_migration`).Scan(&versions); err != nil || versions != 13 {
+			t.Errorf("the ledger holds %d migrations (%v), want 13", versions, err)
 		}
 		d.Migrate(t) // the migrator applies what is missing: nothing
 	})

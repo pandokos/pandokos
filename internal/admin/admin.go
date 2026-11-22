@@ -3,23 +3,33 @@
 package admin
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/pandokos/pandokos/internal/account"
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/audit"
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/catalog"
+	"github.com/pandokos/pandokos/internal/idem"
 	"github.com/pandokos/pandokos/internal/limits"
+	"github.com/pandokos/pandokos/internal/oidc"
+	"github.com/pandokos/pandokos/internal/password"
 	"github.com/pandokos/pandokos/internal/requestid"
+	"github.com/pandokos/pandokos/internal/secret"
+	"github.com/pandokos/pandokos/internal/session"
 	"github.com/pandokos/pandokos/internal/store"
+	"github.com/pandokos/pandokos/internal/store/queries"
 	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/internal/vault"
 )
@@ -46,6 +56,15 @@ type Options struct {
 	// DefaultCurrency is pricing.default_currency: the active currency of a tenant that chose
 	// none; USD when empty.
 	DefaultCurrency string
+	// Sessions, Accounts, OIDC and Idempotency are the services of sprint 4.2; Origin and Auth
+	// are the settings of section 5.15 that the handlers read. OIDC is nil when the identity
+	// provider is off. Part B declares them; step C3 reads them.
+	Sessions    *session.Store
+	Accounts    *account.Service
+	OIDC        *oidc.Provider
+	Idempotency *idem.Store
+	Origin      OriginOptions
+	Auth        AuthOptions
 	// Limits are the settings of the capability check: limits.on_unknown_price ("refuse", the
 	// default, or "allow") and the zones that give the calendar of each tenant.
 	Limits struct {
@@ -57,6 +76,24 @@ type Options struct {
 		// builds it (T-R43). Required.
 		Ledger limits.Ledger
 	}
+}
+
+// OriginOptions say which origin the administration listener is reached at (section 5.7): Public
+// is auth.public_origin, TLS says that the listener terminates TLS, Loopback that it listens on a
+// loopback address, and TrustedProxies are listeners.admin.trusted_proxies.
+type OriginOptions struct {
+	Public         string
+	TLS, Loopback  bool
+	TrustedProxies []netip.Prefix
+}
+
+// AuthOptions are the sign-in settings of section 5.15 that the handlers use.
+type AuthOptions struct {
+	LocalEnabled    bool        // auth.local.enabled
+	OIDCDisplayName string      // auth.oidc.display_name
+	PostSignInPath  string      // auth.oidc.post_sign_in_path; "/" when empty
+	GroupRules      []oidc.Rule // auth.oidc.group_mappings, parsed
+	AutoProvision   bool        // auth.oidc.auto_provision
 }
 
 // RefreshOptions say whether and from where the price dataset may be downloaded.
@@ -86,6 +123,14 @@ type server struct {
 		Zones          *limits.Zones
 		Ledger         limits.Ledger
 	}
+	// The services and settings of sprint 4.2; each may be nil or zero when the listener has no
+	// sign-in (a session is then never accepted).
+	sessions    *session.Store
+	accounts    *account.Service
+	oidc        *oidc.Provider
+	idempotency *idem.Store
+	origin      OriginOptions
+	authOpts    AuthOptions
 }
 
 // reqState is the state of one request, shared by the outer handler and the hooks.
@@ -94,6 +139,32 @@ type reqState struct {
 	operation string
 	principal *authz.Principal
 	errCode   adminapi.ProblemCode
+	// header holds the headers and cookies that a handler or the hook adds; the status recorder
+	// copies them into the response before the status line.
+	header http.Header
+	// session and user are those of a request that carries a session cookie, once it is accepted.
+	session *session.Session
+	user    *account.User
+	// source is the address the request is counted against (section 5.5); presented is the session
+	// cookie of a sign-in, which the sign-in ends so that no session is fixed.
+	source    netip.Addr
+	presented string
+	// seed is the binding cookie of a sign-in through the identity provider, read for the callback only.
+	seed secret.Secret
+	// claimed is the context that carries the idempotency claim of the request, and capture the
+	// response body kept for it (section 5.11); both are nil without an Idempotency-Key.
+	claimed         context.Context
+	capture         *bytes.Buffer
+	captureOverflow bool
+}
+
+// setCookie adds a Set-Cookie header to the response of the request.
+func setCookie(ctx context.Context, c *http.Cookie) {
+	st := stateOf(ctx)
+	if st.header == nil {
+		st.header = http.Header{}
+	}
+	st.header.Add("Set-Cookie", c.String())
 }
 
 type stateKey struct{}
@@ -123,8 +194,12 @@ func New(o Options) (http.Handler, error) {
 	case o.Refresh.Enabled && (o.Refresh.URL == "" || o.Refresh.Fetch == nil):
 		return nil, errors.New("admin: Refresh needs a URL and a Fetch function when enabled")
 	}
+	if err := checkGroupRules(o); err != nil {
+		return nil, err
+	}
 	s := &server{log: o.Logger, db: o.DB, auth: o.Authenticator, now: o.Now, sealer: o.Sealer, validator: o.Validator,
-		snapshot: o.Snapshot, refresh: o.Refresh}
+		snapshot: o.Snapshot, refresh: o.Refresh,
+		sessions: o.Sessions, accounts: o.Accounts, oidc: o.OIDC, idempotency: o.Idempotency, origin: o.Origin, authOpts: o.Auth}
 	s.limits.OnUnknownPrice, s.limits.Ledger = o.Limits.OnUnknownPrice, o.Limits.Ledger
 	s.limits.Zones = o.Limits.Zones
 	if s.defaultCurrency = o.DefaultCurrency; s.defaultCurrency == "" {
@@ -142,6 +217,9 @@ func New(o Options) (http.Handler, error) {
 		}
 		w.Header().Set(requestid.Header, st.id)
 		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
 		rec := &statusRecorder{ResponseWriter: w, state: st}
 		start := time.Now()
 		defer func() {
@@ -152,6 +230,7 @@ func New(o Options) (http.Handler, error) {
 					writeProblem(rec, st.id, adminapi.ProblemCodeInternal, nil)
 				}
 			}
+			s.finishIdempotent(st, rec.status)
 			s.logRequest(r, st, rec.status, time.Since(start))
 		}()
 		api.ServeHTTP(rec, r.WithContext(context.WithValue(r.Context(), stateKey{}, st)))
@@ -175,8 +254,11 @@ func (s *server) logRequest(r *http.Request, st *reqState, status int, d time.Du
 	// is not, nor its tenant (ADR 0055).
 	if p := st.principal; p != nil {
 		attrs = append(attrs, "principal_type", string(p.Kind))
-		if p.Kind != authz.KindServiceAccount {
-			attrs = append(attrs, "principal_id", p.ID, "key_id", p.KeyID)
+		if p.Kind == authz.KindPlatform || (p.Kind == authz.KindUser && p.TenantID.IsZero()) {
+			attrs = append(attrs, "principal_id", p.ID)
+			if p.Kind == authz.KindPlatform {
+				attrs = append(attrs, "key_id", p.KeyID)
+			}
 		}
 	}
 	s.log.Info("admin request", attrs...)
@@ -191,7 +273,68 @@ func bearer(h string) (string, bool) {
 	return h[len(scheme):], true
 }
 
+// before is the hook that authenticates and authorizes (sections 5.1 and 5.3): the first row that
+// applies wins. A public operation reads no credential; a request with an Authorization header is
+// a key (the cookie is ignored); a request with the session cookie is a session; otherwise 401.
 func (s *server) before(ctx context.Context, r *http.Request, op *adminapi.Operation, params map[string]string) (context.Context, error) {
+	ctx, err := s.authenticate(ctx, r, op, params)
+	if err != nil {
+		return ctx, err
+	}
+	return s.beginIdempotent(ctx, r, op, params)
+}
+
+// authenticate is the credential half of the hook.
+func (s *server) authenticate(ctx context.Context, r *http.Request, op *adminapi.Operation, params map[string]string) (context.Context, error) {
+	st := stateOf(ctx)
+	st.source = sourceAddr(r, s.origin)
+	if op.Public {
+		if c, err := r.Cookie(session.CookieName); err == nil {
+			st.presented = c.Value
+		}
+		if c, err := r.Cookie(oidc.SeedCookieName); err == nil && op.ID == "completeOidcSignIn" {
+			st.seed = secret.New(c.Value)
+		}
+		return s.beforePublic(ctx, r, op)
+	}
+	if _, ok := r.Header["Authorization"]; !ok {
+		if c, err := r.Cookie(session.CookieName); err == nil {
+			return s.beforeSession(ctx, r, op, params, c.Value)
+		}
+	}
+	return s.beforeKey(ctx, r, op, params)
+}
+
+// beforePublic applies the origin rule to a public operation, and the checks of section 5.7 to
+// signIn. No credential is read.
+func (s *server) beforePublic(ctx context.Context, r *http.Request, op *adminapi.Operation) (context.Context, error) {
+	origin, ok := expectedOrigin(r, s.origin)
+	if !ok {
+		return ctx, errSignInDisabled
+	}
+	if op.ID == "signIn" && !sameSite(r, origin) {
+		return ctx, errCSRF
+	}
+	return ctx, nil
+}
+
+// sameSite applies the three checks of section 5.7: the header, the Origin and Sec-Fetch-Site.
+func sameSite(r *http.Request, expected string) bool {
+	if r.Header.Get("X-Pandokos-Csrf") != "1" {
+		return false
+	}
+	if o := r.Header.Values("Origin"); len(o) != 1 || o[0] != expected {
+		return false
+	}
+	if f := r.Header.Values("Sec-Fetch-Site"); len(f) > 0 && (len(f) != 1 || f[0] != "same-origin") {
+		return false
+	}
+	return true
+}
+
+// beforeKey is the path of a key: no cookie is read and no CSRF check is made, because no browser
+// attaches an Authorization header by itself.
+func (s *server) beforeKey(ctx context.Context, r *http.Request, op *adminapi.Operation, params map[string]string) (context.Context, error) {
 	st := stateOf(ctx)
 	var p authz.Principal
 	var err error
@@ -209,6 +352,11 @@ func (s *server) before(ctx context.Context, r *http.Request, op *adminapi.Opera
 		return ctx, err
 	}
 	st.principal = &p
+	return s.decide(ctx, p, op, params)
+}
+
+// decide applies authz.Decide to a principal for the operation.
+func (s *server) decide(ctx context.Context, p authz.Principal, op *adminapi.Operation, params map[string]string) (context.Context, error) {
 	target := authz.Target{}
 	if perm, ok := authz.Lookup(op.Permission); ok && perm.Scope == authz.ScopeTenant {
 		if id, perr := tenant.ParseID(params["tenant"]); perr == nil {
@@ -227,6 +375,73 @@ func (s *server) before(ctx context.Context, r *http.Request, op *adminapi.Opera
 	return authz.WithPrincipal(ctx, p), nil
 }
 
+// mustChangeAllowed are the operations that a session whose account must change its password may call.
+var mustChangeAllowed = map[string]bool{"getMe": true, "changePassword": true, "signOut": true}
+
+// beforeSession is the path of a session cookie (sections 5.3, 5.6 and 5.7): the origin and the
+// forgery checks first, before any credential is looked at; then the session; the principal built for
+// the scope of the operation; the must-change gate; the decision; the touch.
+func (s *server) beforeSession(ctx context.Context, r *http.Request, op *adminapi.Operation, params map[string]string, token string) (context.Context, error) {
+	st := stateOf(ctx)
+	origin, ok := expectedOrigin(r, s.origin)
+	if !ok {
+		return ctx, errSignInDisabled
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead && !sameSite(r, origin) {
+		return ctx, errCSRF
+	}
+	if s.sessions == nil {
+		return ctx, errUnauthenticated
+	}
+	sess, user, err := s.sessions.Lookup(ctx, token)
+	if errors.Is(err, session.ErrNoSession) {
+		setCookie(ctx, session.ClearCookie())
+		s.log.Warn("authentication failed", "listener", "admin", "request_id", st.id, "reason", "session", "audited", false)
+		return ctx, errUnauthenticated
+	}
+	if err != nil {
+		return ctx, err
+	}
+	if user.MustChange && !mustChangeAllowed[op.ID] {
+		return ctx, errMustChange
+	}
+	p := authz.Principal{Kind: authz.KindUser, ID: user.ID, Name: user.Username, SessionID: sess.ID, MustChangePassword: user.MustChange}
+	if p.Name == "" {
+		p.Name = user.DisplayName
+	}
+	perm, known := authz.Lookup(op.Permission)
+	if known && perm.Scope == authz.ScopeTenant {
+		tid, perr := tenant.ParseID(params["tenant"])
+		if perr != nil {
+			return ctx, errNotFound
+		}
+		var row queries.GetMemberPrincipalRow
+		err := s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
+			var err error
+			row, err = queries.New(tx).GetMemberPrincipal(ctx, user.ID)
+			return err
+		})
+		if errors.Is(err, store.ErrNoRows) {
+			return ctx, errNotFound // not a member: the answer for a tenant that does not exist
+		}
+		if err != nil {
+			return ctx, err
+		}
+		p.TenantID, p.TenantName, p.TenantState, p.Roles = tid, row.TenantName, tenant.State(row.TenantState), row.Roles
+	} else {
+		p.Roles = user.PlatformRoles
+	}
+	st.principal, st.session, st.user = &p, &sess, &user
+	ctx, err = s.decide(ctx, p, op, params)
+	if err != nil {
+		return ctx, err
+	}
+	if err := s.sessions.Touch(ctx, sess.ID); err != nil {
+		s.log.Debug("session use not recorded", "request_id", st.id, "error", err.Error())
+	}
+	return ctx, nil
+}
+
 // authFailed logs a failed authentication and records it in the audit log, within the cap.
 func (s *server) authFailed(ctx context.Context, st *reqState, f *authn.Failure) {
 	d := f.Detail()
@@ -242,6 +457,9 @@ func (s *server) authFailed(ctx context.Context, st *reqState, f *authn.Failure)
 	s.log.Warn("authentication failed", attrs...)
 }
 
+// errNoAuditLog says that a failure names no log to be written to.
+var errNoAuditLog = errors.New("admin: failure names no audit log")
+
 func (s *server) recordFailure(ctx context.Context, st *reqState, f *authn.Failure) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
@@ -256,6 +474,18 @@ func (s *server) recordFailure(ctx context.Context, st *reqState, f *authn.Failu
 		Actor:  audit.Actor{Type: audit.ActorAnonymous, KeyID: f.KeyID},
 		Action: "auth.failure", ResourceType: resource, ResourceID: f.KeyID, Outcome: "failure", RequestID: st.id,
 		Detail: map[string]any{"reason": f.Reason, "listener": "admin"},
+	}
+	if f.IssuerID != "" {
+		// A refused token names the registration; the subject only when its signature was verified.
+		e.ResourceType, e.ResourceID = "token_issuer", f.IssuerID
+		e.Detail["issuer_scope"] = f.IssuerScope
+		if f.Subject != "" {
+			e.Detail["subject"] = f.Subject
+		}
+		if f.TenantID.IsZero() {
+			// No tenant to write to: logged only, as on the gateway.
+			return errNoAuditLog
+		}
 	}
 	if !f.TenantID.IsZero() {
 		return s.db.WithTenant(ctx, f.TenantID, func(ctx context.Context, tx store.Tx) error {
@@ -274,6 +504,14 @@ func (s *server) fail(w http.ResponseWriter, r *http.Request, _ *adminapi.Operat
 	var ie *invalidError
 	var st2 *stateError
 	var fe *catalog.FetchError
+	var rt *retryError
+	var refusal *account.Refusal
+	var pe *account.PolicyError
+	var rp *replayError
+	if errors.As(err, &rp) {
+		writeReplay(w, rp)
+		return
+	}
 	switch {
 	case errors.As(err, &re):
 		code, fields = re.Code, re.Fields
@@ -281,6 +519,34 @@ func (s *server) fail(w http.ResponseWriter, r *http.Request, _ *adminapi.Operat
 		code, fields = adminapi.ProblemCodeInvalidRequest, ie.fields
 	case errors.As(err, &st2):
 		code, fields = adminapi.ProblemCodeInvalidState, st2.fields
+	case errors.As(err, &rt):
+		code = rt.code
+		w.Header().Set("Retry-After", strconv.Itoa(retryAfter(rt.after)))
+	case errors.As(err, &refusal):
+		// A refused sign-in is a 401 whatever the reason; a delayed one is a 429 that says when.
+		code = adminapi.ProblemCodeUnauthenticated
+		if refusal.RetryAfter > 0 {
+			code = adminapi.ProblemCodeTooManyAttempts
+			w.Header().Set("Retry-After", strconv.Itoa(retryAfter(refusal.RetryAfter)))
+		}
+	case errors.As(err, &pe):
+		code, fields = adminapi.ProblemCodeInvalidRequest, []adminapi.FieldError{{Field: pe.Field, Message: pe.Violation}}
+	case errors.Is(err, password.ErrBusy):
+		code = adminapi.ProblemCodeUnavailable
+		w.Header().Set("Retry-After", "1")
+	case errors.Is(err, idem.ErrKeyReused):
+		code = adminapi.ProblemCodeIdempotencyKeyReused
+	case errors.Is(err, idem.ErrInProgress):
+		code = adminapi.ProblemCodeIdempotencyInProgress
+		w.Header().Set("Retry-After", "1")
+	case errors.Is(err, idem.ErrResponseLost):
+		code = adminapi.ProblemCodeIdempotencyResponseLost
+	case errors.Is(err, errCSRF):
+		code = adminapi.ProblemCodeCsrfRejected
+	case errors.Is(err, errSignInDisabled):
+		code = adminapi.ProblemCodeSignInDisabled
+	case errors.Is(err, errMustChange):
+		code = adminapi.ProblemCodePasswordChangeRequired
 	case errors.Is(err, errUnauthenticated):
 		code = adminapi.ProblemCodeUnauthenticated
 	case errors.Is(err, errForbidden):
@@ -333,4 +599,63 @@ func (s *server) fail(w http.ResponseWriter, r *http.Request, _ *adminapi.Operat
 	}
 	st.errCode = code
 	writeProblem(w, st.id, code, fields)
+}
+
+// retryAfter rounds a delay up to whole seconds, at least one.
+func retryAfter(d time.Duration) int {
+	n := int((d + time.Second - 1) / time.Second)
+	if n < 1 {
+		return 1
+	}
+	return n
+}
+
+// checkGroupRules refuses at start a group rule that names a role that a user cannot hold in its scope,
+// or a tenant that does not exist (section 5.9). An installation without any tenant cannot name one yet,
+// so nothing is refused there; a tenant created later is found at each sign-in.
+func checkGroupRules(o Options) error {
+	var names []string
+	for i, r := range o.Auth.GroupRules {
+		scope, role := authz.ScopeTenant, r.Role
+		if r.Platform {
+			scope = authz.ScopePlatform
+		} else {
+			names = append(names, r.Tenant)
+		}
+		def, ok := authz.RoleByName(role)
+		if !ok || def.Scope != scope || (role != authz.RolePlatformAdmin && role != authz.RoleTenantAdmin) {
+			return fmt.Errorf("admin: group rule %d names a role that a user cannot hold in that scope", i+1)
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var rows []queries.TenantIDsByNameRow
+	var existing []queries.PandokosTenant
+	err := o.DB.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
+		var err error
+		if rows, err = queries.New(tx).TenantIDsByName(ctx, names); err != nil {
+			return err
+		}
+		existing, err = queries.New(tx).ListTenants(ctx, queries.ListTenantsParams{Sort: "created_at", AfterID: "00000000-0000-0000-0000-000000000000", PageSize: 1})
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("admin: group rules: tenants cannot be read: %w", err)
+	}
+	if len(existing) == 0 {
+		return nil // a new installation: its tenants are made through this very API, and the rules are skipped until they exist
+	}
+	found := map[string]bool{}
+	for _, r := range rows {
+		found[r.Name] = true
+	}
+	for i, r := range o.Auth.GroupRules {
+		if !r.Platform && !found[r.Tenant] {
+			return fmt.Errorf("admin: group rule %d names a tenant that does not exist", i+1)
+		}
+	}
+	return nil
 }

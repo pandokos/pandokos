@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Another site</title></head>
+<body>
+<pre id="result">pending</pre>
+<iframe name="sink" style="display:none"></iframe>
+<form id="forged" method="POST" target="sink" enctype="application/x-www-form-urlencoded" action="">
+  <input name="sign_in" value="local">
+  <input name="username" value="attacker.form">
+</form>
+<script>
+// The page of a site that is not the one of the API. The address of the API is in the fragment: #api=<origin>.
+(async () => {
+  const out = {};
+  const api = new URLSearchParams(location.hash.slice(1)).get("api");
+  document.getElementById("forged").action = api + "/v1/users";
+  document.getElementById("forged").submit();
+  const attempt = async (name, init) => {
+    try {
+      const r = await fetch(api + "/v1/users", init);
+      out[name] = {status: r.status, type: r.type};
+    } catch (e) {
+      out[name] = {error: String(e)};
+    }
+  };
+  await attempt("json", {method: "POST", credentials: "include", headers: {"Content-Type": "application/json", "X-Pandokos-Csrf": "1"},
+    body: JSON.stringify({sign_in: "local", username: "attacker.fetch"})});
+  await attempt("simple", {method: "POST", credentials: "include", mode: "no-cors", headers: {"Content-Type": "text/plain"},
+    body: JSON.stringify({sign_in: "local", username: "attacker.simple"})});
+  await attempt("read", {method: "GET", credentials: "include"});
+  await new Promise(r => setTimeout(r, 1000));
+  document.getElementById("result").textContent = JSON.stringify(out);
+})();
+</script>
+</body>
+</html>

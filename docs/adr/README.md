@@ -61,6 +61,10 @@ A record is *proposed* until the maintainer accepts it, by merging its pull requ
 | [0053](0053-tenant-price-lists-and-active-currency.md) | Tenant price lists and the active currency | proposed |
 | [0054](0054-usage-data-is-the-tenants.md) | Usage data is the tenant's: what the platform does not see | proposed |
 | [0055](0055-operational-telemetry-holds-no-tenant-data.md) | Operational telemetry holds no tenant data | proposed |
+| [0056](0056-users-memberships-and-sessions-as-principals.md) | Users, memberships, and how a session becomes a principal | proposed |
+| [0057](0057-local-accounts-and-sessions-formats-and-numbers.md) | Local accounts and sessions: formats and numbers | proposed |
+| [0058](0058-openid-connect-relying-party.md) | The OpenID Connect relying party | proposed |
+| [0059](0059-idempotency-keys.md) | Idempotency keys | proposed |
 
 ## Questions from SOW 0.1 and where they were decided
 
@@ -72,7 +76,7 @@ A record is *proposed* until the maintainer accepts it, by merging its pull requ
 | 4. Vault architecture and key management | 0008 |
 | 5. Separation of control and data plane | 0003 |
 | 6, 7. Service-account authentication, mTLS, JWT, SPIFFE, DPoP | 0005 |
-| 8. Federated identity, tenants and roles | 0006, 0022 |
+| 8. Federated identity, tenants and roles | 0006, 0022, 0056, 0057, 0058 |
 | 9. RBAC model and granularity | 0007 |
 | 10. What the platform admin can do with credentials | 0007, 0008 |
 | 11, 12. Provider APIs and degree of transparency | 0009 |

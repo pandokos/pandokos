@@ -16,7 +16,13 @@ time).
 - Base path `/v1`. Platform resources at the top (`/v1/tenants`, `/v1/platform-keys`), tenant
   resources under the tenant, the caller at `/v1/me`. Identifiers in paths are IDs (UUIDs, or the
   key ID of a key); names are attributes found with the `name` filter. The CLI accepts names.
-- Authentication: `Authorization: Bearer <key>`. Nothing else is read.
+- Authentication: `Authorization: Bearer <key>` (a platform key or a virtual key; with `tokens.admin_listener`
+  also a token of a trusted issuer), or the session cookie `__Host-pandokos_session` that people get by
+  signing in. The four sign-in operations read no credential. A request with both uses the header and
+  ignores the cookie. A session request that is not `GET` or `HEAD` also needs the header
+  `X-Pandokos-Csrf: 1` and an `Origin` equal to the expected origin. The sign-in guide
+  ([sign-in.md](../operations/sign-in.md)) describes the methods, the lifetimes and how to build a
+  browser client.
 - JSON only; members are `snake_case`; times are RFC 3339 in UTC. An absent optional member is left
   out of responses. Bodies and queries are strict: an unknown member or parameter is an error.
 - Verb sub-resources (`suspend`, `reactivate`, `disable`, `enable`, `revoke`) take an optional
@@ -35,6 +41,9 @@ time).
   `replaceCredentialSecret` and never returned, not even by create. A response shows its label,
   `fingerprint` and `hint` instead. For a request body that has a `secret` member, an unknown member
   is reported as the field `body` without naming the member, because the name could be a secret.
+  Only a member named `secret` makes a body count as carrying one (`carriesSecret`); in any other body
+  an unknown member is named in the problem, because the name is what the caller must fix. The value of
+  an unknown member is never echoed in either case.
 - Every response carries `X-Pandokos-Request-Id` and `Cache-Control: no-store`.
 
 ## Collections
@@ -62,14 +71,43 @@ Errors are RFC 9457 problems (`application/problem+json`) with a fixed sentence 
 | `validation_unavailable` | 502 | the provider could not be asked or gave no clear answer when `validate` was asked; nothing was stored |
 | `price_dataset_invalid` | 422 | `runPriceImport` with source `remote`: the downloaded price dataset could not be read; nothing was imported (fixed text, the response bytes are never quoted) |
 | `price_source_unavailable` | 502 | `runPriceImport` with source `remote`: the price dataset could not be downloaded; nothing was imported (fixed text) |
+| `too_many_attempts` | 429 | sign-in or a password check is delayed or locked, or there are too many sign-in transactions (`Retry-After`) |
+| `password_change_required` | 403 | the session must change its password first |
+| `csrf_rejected` | 403 | the checks of origin and request forgery failed |
+| `sign_in_disabled` | 403 | the sign-in method is switched off, or the origin of the listener is not known |
+| `idempotency_key_reused` | 422 | the `Idempotency-Key` was used with another request |
+| `idempotency_in_progress` | 409 | the first request with the key is still running (`Retry-After`) |
+| `idempotency_response_lost` | 409 | the first request succeeded and its response was not kept |
 | `internal` | 500 | an unexpected failure |
 | `unavailable` | 503 | the database cannot be reached |
+
+## Users, sessions and members (sprint 4.2)
+
+A person calls the administration API with the session cookie that sign-in sets, in addition to a
+key (the document's `security` lists both). Four operations need no credential: `getAuthMethods`,
+`signIn`, `startOidcSignIn` and `completeOidcSignIn`. The caller's own sessions are managed with
+`signOut`, `changePassword`, `listOwnSessions` and `deleteOwnSession` (permission `session:self`).
+The users that the platform manages are `listUsers`, `createUser`, `getUser`, `updateUser`,
+`disableUser`, `enableUser`, `unlockUser`, `resetUserPassword` and `revokeUserSessions`; the members
+of a tenant are `listMembers`, `createMember`, `getMember`, `updateMember`, `deleteMember`,
+`disableMember`, `enableMember`, `unlockMember`, `resetMemberPassword` and `revokeMemberSessions`.
+Every operation that answers 201 takes an `Idempotency-Key` header.
+
+A user is global, with one sign-in method and one managing side. The platform operations show the
+users that the platform manages only; a tenant's members are shown by the tenant's operations, and a
+user that a tenant manages is reset, disabled, unlocked or signed out by that tenant's administrators
+only (a platform-managed member: `409 invalid_state`). A generated password is shown once, in the
+response of the creation or the reset; a user cannot disable itself or remove its own last platform
+role (`409 invalid_state`).
+
+The behaviour that the schemas cannot say, and the settings behind it, are in the
+[sign-in guide](../operations/sign-in.md).
 
 ## The accepted subset of OpenAPI 3.1
 
 `internal/apigen` accepts a deliberate subset and fails on anything else: `openapi: 3.1.0`; path
 items with `get`, `post`, `patch`, `put`, `delete`; operations with a unique lower-camel-case
-`operationId` and a mandatory `x-pandokos-permission`; path parameters that are strings with a
+`operationId` and a mandatory `x-pandokos-permission` (or `x-pandokos-public: true` with `security: []` for the four sign-in operations; a `303` response with a `Location` header as the only response of a public `GET`; the header parameter `IdempotencyKey`; `x-pandokos-lenient-query: true`; `headers` on responses are accepted and ignored); path parameters that are strings with a
 pattern, query parameters that are optional strings, enumerations or integers; flat JSON request
 bodies; exactly one 2xx response; every other response `application/problem+json` with the schema
 `Problem`; component objects with `additionalProperties: false`. A keyword it does not know is an
@@ -77,8 +115,11 @@ error, so the document cannot state a rule the generated code does not enforce.
 
 ## Commands
 
-Every operation has one CLI command that only calls the generated client. `TENANT` and
-`SERVICE_ACCOUNT` accept an ID or a name.
+Every operation has one CLI command that only calls the generated client, except the public
+operations and the operations on the caller's own session: the CLI authenticates with a key.
+`TENANT` and `SERVICE_ACCOUNT` accept an ID or a name; a user or a member also a username. The
+commands that return a generated password print it once on standard output, or write it with
+`--password-out FILE` to a new file of mode 0600.
 
 | Command | Operation |
 |---|---|
@@ -102,6 +143,8 @@ Every operation has one CLI command that only calls the generated client. `TENAN
 | `token-issuer list`, `create`, `get`, `update`, `delete`, `platform` | `listTokenIssuers`, `createTokenIssuer`, `getTokenIssuer`, `updateTokenIssuer`, `deleteTokenIssuer`, `listTenantPlatformIssuers` |
 | `subject-mapping list`, `create`, `get`, `delete` | `listSubjectMappings`, `createSubjectMapping`, `getSubjectMapping`, `deleteSubjectMapping` |
 | `platform-issuer list`, `create`, `get`, `update`, `delete`, `tenants`, `add-tenant`, `remove-tenant` | `listPlatformIssuers`, `createPlatformIssuer`, `getPlatformIssuer`, `updatePlatformIssuer`, `deletePlatformIssuer`, `listPlatformIssuerTenants`, `putPlatformIssuerTenant`, `deletePlatformIssuerTenant` |
+| `platform-user list`, `create`, `get`, `update`, `disable`, `enable`, `reset-password`, `unlock`, `revoke-sessions` | `listUsers`, `createUser`, `getUser`, `updateUser`, `disableUser`, `enableUser`, `resetUserPassword`, `unlockUser`, `revokeUserSessions` |
+| `member list`, `add`, `get`, `update`, `remove`, `disable`, `enable`, `reset-password`, `unlock`, `revoke-sessions` (with `--tenant`) | `listMembers`, `createMember`, `getMember`, `updateMember`, `deleteMember`, `disableMember`, `enableMember`, `resetMemberPassword`, `unlockMember`, `revokeMemberSessions` |
 | `import-prices (--file FILE \| --embedded) [--dry-run]` | none: a host command that reads a price dataset and writes through the database ([catalogue guide](../operations/catalogue.md)) |
 | `kek generate --out FILE` | none: a local command that writes a key-encryption key ([vault guide](../operations/vault.md)) |
 

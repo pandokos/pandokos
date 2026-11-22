@@ -26,8 +26,12 @@ type Operation struct {
 	ID         string // operationId
 	Method     string
 	Path       string // as in the document, with {name} segments
-	Permission string // x-pandokos-permission
-	Status     int    // status of the successful response
+	Permission string // x-pandokos-permission; empty for a public operation
+	// Public marks an operation that needs no credential (x-pandokos-public): sign-in.
+	Public bool
+	// Idempotent marks an operation that takes the Idempotency-Key header (it answers 201).
+	Idempotent bool
+	Status     int // status of the successful response
 	HasBody    bool
 	PathParams []PathParam
 }
@@ -226,18 +230,39 @@ func parseQuery(r *http.Request, allowed ...string) (map[string]string, error) {
 	return out, nil
 }
 
-// nestedMember describes a member of a schema that is an object (or an array of objects): the
+// parseQueryLenient is parseQuery for an operation marked x-pandokos-lenient-query: a parameter
+// that the operation does not declare is ignored (an identity provider adds some to its
+// callback); a declared one that is given twice is still an error.
+func parseQueryLenient(r *http.Request, allowed ...string) (map[string]string, error) {
+	values, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		return nil, invalidField("query", "is not a valid query string")
+	}
+	out := map[string]string{}
+	for _, name := range allowed {
+		switch vs := values[name]; len(vs) {
+		case 0:
+		case 1:
+			out[name] = vs[0]
+		default:
+			return nil, invalidField(name, "must be given once")
+		}
+	}
+	return out, nil
+}
+
+// nestedSpec describes a member of a schema that is an object (or an array of objects): the
 // members that object requires, and its own nested members.
-type nestedMember struct {
+type nestedSpec struct {
 	Name     string
 	Many     bool // an array of objects
 	Required []string
-	Nested   []nestedMember
+	Nested   []nestedSpec
 }
 
 // missingNested lists the required members that are absent (or null) in the nested objects of
 // members, with the name of the member and the index of the item in front of their names.
-func missingNested(members map[string]json.RawMessage, nested []nestedMember, prefix string) []FieldError {
+func missingNested(members map[string]json.RawMessage, nested []nestedSpec, prefix string) []FieldError {
 	var errs []FieldError
 	for _, n := range nested {
 		raw, ok := members[n.Name]
@@ -275,7 +300,7 @@ func missingNested(members map[string]json.RawMessage, nested []nestedMember, pr
 // decodeBody reads a JSON object into dst. Unknown members, missing required members (of the body
 // and of the objects nested in it), a second JSON value and a body over the limit are errors. A
 // body that is not required may be empty.
-func decodeBody(r *http.Request, limit int64, bodyRequired bool, required []string, nested []nestedMember, dst any) error {
+func decodeBody(r *http.Request, limit int64, bodyRequired bool, required []string, nested []nestedSpec, dst any) error {
 	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, limit))
 	if err != nil {
 		var tooLarge *http.MaxBytesError
@@ -348,8 +373,10 @@ func decodeBody(r *http.Request, limit int64, bodyRequired bool, required []stri
 	return nil
 }
 
-// carriesSecret reports whether the body type has a member named secret: the unknown members of
-// such a body are not quoted, because a caller may have put the secret where a name belongs.
+// carriesSecret reports whether the body type has a member named secret: the unknown
+// members of such a body are not quoted, because a caller may have put the secret where a name
+// belongs. The bodies of sign-in and of a password change (members password, current_password and
+// new_password) are not among them: their unknown members are named, never their values (T-790).
 func carriesSecret(dst any) bool {
 	t := reflect.TypeOf(dst)
 	if t == nil || t.Kind() != reflect.Pointer || t.Elem().Kind() != reflect.Struct {
@@ -357,7 +384,8 @@ func carriesSecret(dst any) bool {
 	}
 	st := t.Elem()
 	for i := range st.NumField() {
-		if name, _, _ := strings.Cut(st.Field(i).Tag.Get("json"), ","); name == "secret" {
+		switch name, _, _ := strings.Cut(st.Field(i).Tag.Get("json"), ","); name {
+		case "secret":
 			return true
 		}
 	}
@@ -385,6 +413,16 @@ func wrongMember(members map[string]json.RawMessage, dst any) string {
 		}
 	}
 	return ""
+}
+
+// writeRedirect answers 303 See Other with the Location of out and no body.
+func writeRedirect(w http.ResponseWriter, out *Redirect) {
+	if out == nil || out.Location == "" {
+		panic("adminapi: a redirect without a Location")
+	}
+	w.Header().Set("Location", out.Location)
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusSeeOther)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -451,7 +489,7 @@ type Client struct {
 
 const maxResponseBytes = 8 << 20
 
-func (c *Client) do(ctx context.Context, method, path string, q url.Values, body any, want int, out any) error {
+func (c *Client) do(ctx context.Context, method, path string, q url.Values, body any, want int, out any, extra map[string]string) error {
 	var rd io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -477,6 +515,9 @@ func (c *Client) do(ctx context.Context, method, path string, q url.Values, body
 	}
 	if c.Key != nil {
 		req.Header.Set("Authorization", "Bearer "+c.Key())
+	}
+	for k, v := range extra {
+		req.Header.Set(k, v)
 	}
 	hc := c.HTTP
 	if hc == nil {
@@ -509,4 +550,54 @@ func (c *Client) do(ctx context.Context, method, path string, q url.Values, body
 		return fmt.Errorf("adminapi: decode the response: %w", err)
 	}
 	return nil
+}
+
+// doRedirect calls a public GET that answers 303 and returns its Location; it does not follow it.
+func (c *Client) doRedirect(ctx context.Context, method, path string, q url.Values) (string, error) {
+	u := strings.TrimSuffix(c.BaseURL, "/") + path
+	if len(q) > 0 {
+		u += "?" + q.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u, nil)
+	if err != nil {
+		return "", fmt.Errorf("adminapi: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	if c.UserAgent != "" {
+		req.Header.Set("User-Agent", c.UserAgent)
+	}
+	hc := http.DefaultClient
+	if c.HTTP != nil {
+		hc = c.HTTP
+	}
+	nofollow := *hc
+	nofollow.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := nofollow.Do(req)
+	if err != nil {
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			err = ue.Err // the URL is not repeated in the message
+		}
+		return "", fmt.Errorf("adminapi: the server could not be reached: %w", err)
+	}
+	defer resp.Body.Close()
+	if c.OnResponse != nil {
+		c.OnResponse(resp)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	if err != nil {
+		return "", fmt.Errorf("adminapi: read the response: %w", err)
+	}
+	if resp.StatusCode != http.StatusSeeOther {
+		var p Problem
+		if json.Unmarshal(raw, &p) != nil || p.Code == "" {
+			return "", fmt.Errorf("adminapi: unexpected response with status %d", resp.StatusCode)
+		}
+		return "", &ProblemError{Problem: p}
+	}
+	loc := resp.Header.Get("Location")
+	if loc == "" {
+		return "", errors.New("adminapi: the redirect has no Location")
+	}
+	return loc, nil
 }

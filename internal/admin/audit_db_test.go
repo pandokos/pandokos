@@ -537,7 +537,7 @@ func TestEveryChangeIsAudited(t *testing.T) {
 		byOp[s.op] = true
 	}
 	for _, op := range adminapi.Operations {
-		if op.Method != "GET" && !byOp[op.ID] && !catalogueMutations[op.ID] && !issuerMutations[op.ID] && !limitMutations[op.ID] {
+		if op.Method != "GET" && !byOp[op.ID] && !catalogueMutations[op.ID] && !issuerMutations[op.ID] && !limitMutations[op.ID] && !peopleMutations[op.ID] {
 			t.Errorf("the mutating operation %s has no audit step: add it (the catalogue operations are in TestCatalogAudit, the token issuer operations in TestIssuerAudit)", op.ID)
 		}
 	}
@@ -629,14 +629,29 @@ func TestEveryChangeIsAudited(t *testing.T) {
 
 	// Reads write nothing: every GET operation, with a key that is allowed to make it.
 	for _, op := range adminapi.Operations {
-		if op.Method != "GET" {
-			continue
+		if op.Method != "GET" || op.Public || op.Permission == authz.SessionSelf {
+			continue // sprint 4.2: the public operations and those of one's own session are not made with a key
 		}
 		key := f.w.adminKey
 		if perm, _ := authz.Lookup(op.Permission); perm.Scope == authz.ScopePlatform {
 			key = api.PlatformKey()
 		}
-		if resp := f.w.call(t, op, key); resp.Status != 200 {
+		// The reads of a user or a member (sprint 4.2) name a user that exists: a platform user, or a
+		// member that the tenant manages.
+		params := f.w.params()
+		if strings.Contains(op.Path, "{user}") {
+			if strings.HasPrefix(op.Path, "/v1/users") {
+				params.User = api.DB.PlatformUser(t, apitest.UniqueName("reader"), nil).ID
+			} else {
+				tid, err := tenant.ParseID(f.w.tenant.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				params.User = api.DB.TenantUser(t, tid, apitest.UniqueName("reader"), []string{"tenant-admin"}).ID
+			}
+		}
+		c := apitest.CallFor(t, op, params)
+		if resp := api.Do(t, c.Method, c.Path, key, c.Body, nil); resp.Status != 200 {
 			t.Errorf("%s: status %d\n%s", op.ID, resp.Status, resp.Body)
 		}
 	}
@@ -750,7 +765,7 @@ func TestAuditIsAtomic(t *testing.T) {
 		},
 	}
 	for _, op := range adminapi.Operations {
-		if op.Method != "GET" && calls[op.ID] == nil && !catalogueMutations[op.ID] && !issuerMutations[op.ID] && !limitMutations[op.ID] {
+		if op.Method != "GET" && calls[op.ID] == nil && !catalogueMutations[op.ID] && !issuerMutations[op.ID] && !limitMutations[op.ID] && !peopleMutations[op.ID] {
 			t.Errorf("the mutating operation %s has no call here: add it (the catalogue operations are in TestCatalogAudit, the token issuer operations in TestIssuerAudit)", op.ID)
 		}
 	}

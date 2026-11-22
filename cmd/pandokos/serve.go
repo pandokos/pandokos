@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pandokos/pandokos/internal/account"
 	"github.com/pandokos/pandokos/internal/admin"
 	"github.com/pandokos/pandokos/internal/authn"
 	"github.com/pandokos/pandokos/internal/buildinfo"
@@ -53,6 +54,24 @@ func warnBootstrap(ctx context.Context, logger *slog.Logger, db *store.DB) {
 			return
 		case <-t.C:
 		}
+	}
+}
+
+// warnNoAdministrator logs, once at start, that local sign-in is on and no active user holds a platform
+// role (section 5.15). The query failing is logged at debug: the warning is a hint, not a gate.
+func warnNoAdministrator(ctx context.Context, logger *slog.Logger, cfg *config.Config, db *store.DB) {
+	if !cfg.Auth.Local.Enabled {
+		return
+	}
+	qctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	has, err := account.HasAdministrator(qctx, db)
+	if err != nil {
+		logger.Debug("administrator check failed", "error", err.Error())
+		return
+	}
+	if !has {
+		logger.Warn("no user with a platform role exists", "hint", `create the first administrator with "pandokos init --admin-username NAME"`)
 	}
 }
 
@@ -196,7 +215,13 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	adminAuth, err := authn.New(authn.Options{DB: adminDB, Logger: logger, Kinds: []authn.Kind{authn.KindTenant, authn.KindPlatform}})
+	adminAuthOpts := authn.Options{DB: adminDB, Logger: logger, Kinds: []authn.Kind{authn.KindTenant, authn.KindPlatform}}
+	if cfg.Tokens.Enabled && cfg.Tokens.AdminListener {
+		// The key cache is the gateway's; the administration listener keeps no principal cache.
+		adminAuthOpts.Kinds = append(adminAuthOpts.Kinds, authn.KindToken)
+		adminAuthOpts.Tokens = gatewayAuthOpts.Tokens
+	}
+	adminAuth, err := authn.New(adminAuthOpts)
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
@@ -260,6 +285,17 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	adminOpts.Limits.Zones, adminOpts.Limits.OnUnknownPrice = zones, cfg.Limits.OnUnknownPrice
 	adminOpts.DefaultCurrency = cfg.Pricing.DefaultCurrency
 	adminOpts.Limits.Ledger = limits.NewLedger(workerDB)
+	people, err := newPeople(cfg, adminDB)
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
+	adminOpts.Sessions, adminOpts.Accounts, adminOpts.Idempotency = people.sessions, people.accounts, people.idempotency
+	adminOpts.Origin, adminOpts.Auth = adminOrigin(cfg), adminAuthOptions(cfg)
+	if adminOpts.OIDC, adminOpts.Auth.GroupRules, err = newOIDC(cfg, guard, logger); err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
 	adminHandler, err := admin.New(adminOpts)
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
@@ -351,10 +387,12 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		return 1
 	}
 
+	warnNoAdministrator(ctx, logger, cfg, adminDB)
 	background, stopBackground := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	defer func() { stopBackground(); wg.Wait() }()
-	wg.Add(5)
+	wg.Add(6)
+	go func() { defer wg.Done(); people.runPurge(background, logger) }()
 	go func() { defer wg.Done(); listener.Run(background) }()
 	go func() { defer wg.Done(); warnBootstrap(background, logger, adminDB) }()
 	go func() { defer wg.Done(); partitioner.Run(background) }()

@@ -13,6 +13,7 @@ cd "$(dirname "$0")"
 
 boot=/home/nonroot/bootstrap.key
 admin=/home/nonroot/demo-admin.key
+adminpw=/home/nonroot/admin.password
 keyfile=quickstart.key
 total=5
 
@@ -86,10 +87,11 @@ docker compose up -d --wait </dev/null
 done_
 
 step 3 "Create the tenant demo" \
-  "init issues the first platform key (a bootstrap key, valid for one day); with it" \
-  "the tenant demo is created, with an administration key that acts only on demo." \
-  "Both keys stay in the container's volume, /home/nonroot."
-show docker compose exec pandokos /pandokos init --key-out $boot
+  "init issues the first platform key (a bootstrap key, valid for one day) and the first" \
+  "administrator, a person who signs in with a generated password that must be changed;" \
+  "with the key the tenant demo is created, with an administration key that acts only on demo." \
+  "The keys and the password stay in the container's volume, /home/nonroot."
+show docker compose exec pandokos /pandokos init --key-out $boot --admin-username admin --password-out $adminpw
 show docker compose exec -e PANDOKOS_CLI_KEY_FILE=$boot pandokos /pandokos tenant create demo --admin-key-out $admin
 wait_enter
 if pdk $admin service-account list </dev/null >/dev/null 2>&1; then
@@ -99,7 +101,7 @@ else
   rm -f "$keyfile"
   reset="start again from nothing: docker compose down -v && ./quickstart.sh"
   quiet "init failed; if an earlier run stopped half-way, $reset" \
-    docker compose exec -T pandokos /pandokos init --key-out $boot </dev/null
+    docker compose exec -T pandokos /pandokos init --key-out $boot --admin-username admin --password-out $adminpw </dev/null
   quiet "tenant create failed; $reset" pdk $boot tenant create demo --admin-key-out $admin </dev/null
   done_
 fi

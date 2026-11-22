@@ -39,11 +39,14 @@ curl --cacert secrets/tls_cert https://localhost:8080/readyz    # repeat until 2
 ```
 
 `docker compose up -d --wait` returns once PostgreSQL is healthy, `migrate` has finished and
-`pandokos` runs. Then create the first platform key, a tenant and a key for an application. The CLI
-runs inside the container, where `PANDOKOS_CLI_SERVER` and `PANDOKOS_CLI_CA_FILE` are already set:
+`pandokos` runs. Then create the first platform key and the first administrator (a person, with a
+generated password that must be changed at the first sign-in), a tenant and a key for an
+application. The CLI runs inside the container, where `PANDOKOS_CLI_SERVER` and
+`PANDOKOS_CLI_CA_FILE` are already set:
 
 ```sh
-docker compose exec pandokos /pandokos init --key-out /home/nonroot/bootstrap.key
+docker compose exec pandokos /pandokos init --key-out /home/nonroot/bootstrap.key \
+  --admin-username admin --password-out /home/nonroot/admin.password
 docker compose exec -e PANDOKOS_CLI_KEY_FILE=/home/nonroot/bootstrap.key pandokos \
   /pandokos tenant create demo --admin-key-out /home/nonroot/demo-admin.key
 pdk() { docker compose exec -T -e PANDOKOS_CLI_KEY_FILE=/home/nonroot/demo-admin.key pandokos /pandokos "$@"; }

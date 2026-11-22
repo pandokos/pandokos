@@ -160,7 +160,7 @@ func (s *server) CreateTenant(ctx context.Context, in adminapi.CreateTenantInput
 			out = adminapi.TenantCreated{
 				Tenant:              s.tenantOut(active),
 				AdminServiceAccount: saOut.out(),
-				AdminKey: adminapi.VirtualKeyCreated{
+				AdminKey: &adminapi.VirtualKeyCreated{
 					Key:    vkRow{vk.KeyID, vk.TenantID, vk.ServiceAccountID, vk.Description, vk.Scopes, vk.Scoped, vk.ExpiresAt, vk.RevokedAt, vk.CreatedAt, vk.State, vk.CredentialID, vk.Models, vk.ModelsRestricted}.out(),
 					Secret: revealOnce(key),
 				},

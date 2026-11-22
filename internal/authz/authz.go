@@ -79,6 +79,12 @@ const (
 	PriceListRead   = "price_list:read"
 	PriceListWrite  = "price_list:write"
 	PriceListDelete = "price_list:delete"
+
+	UserRead    = "user:read"
+	UserWrite   = "user:write"
+	MemberRead  = "member:read"
+	MemberWrite = "member:write"
+	SessionSelf = "session:self"
 )
 
 var catalogue = []Permission{
@@ -126,6 +132,11 @@ var catalogue = []Permission{
 	{PriceListRead, ScopeTenant, "Reading the tenant's price lists and their versions, and the tenant's active currency"},
 	{PriceListWrite, ScopeTenant, "Adding a price version to one of the tenant's price lists; choosing the tenant's active currency"},
 	{PriceListDelete, ScopeTenant, "Removing a price version of the tenant's lists that has not started"},
+	{UserRead, ScopePlatform, "Reading and listing the users that the platform manages, with their platform roles"},
+	{UserWrite, ScopePlatform, "Creating and changing such users; disabling and enabling them; resetting their password; unlocking them; ending their sessions; assigning platform roles"},
+	{MemberRead, ScopeTenant, "Reading and listing the members of the tenant and their roles"},
+	{MemberWrite, ScopeTenant, "Adding and removing members and setting their roles; creating local accounts that the tenant manages, and for those: disabling, enabling, resetting the password, unlocking, ending sessions"},
+	{SessionSelf, ScopeSelf, "Signing out, changing one's own password, listing and ending one's own sessions"},
 }
 
 // Catalogue returns the permissions, in a fixed order.
@@ -144,16 +155,17 @@ func Lookup(name string) (Permission, bool) {
 // Kind is the kind of a principal.
 type Kind string
 
-// The kinds of principal of this sprint.
+// The kinds of principal.
 const (
 	KindPlatform       Kind = "platform"
 	KindServiceAccount Kind = "service_account"
+	KindUser           Kind = "user"
 )
 
 // Role is a built-in role. Roles are defined in code and immutable (AZ-03).
 type Role struct {
 	Name        string
-	Kind        Kind     // which kind of principal can hold it
+	Scope       Scope    // ScopePlatform or ScopeTenant: where a principal holds it
 	Permissions []string // sorted
 	Description string
 }
@@ -174,15 +186,15 @@ func sorted(names ...string) []string {
 // Roles returns the three built-in roles, in a fixed order; the slices are copies.
 func Roles() []Role {
 	return []Role{
-		{RolePlatformAdmin, KindPlatform, sorted(IdentityRead, TenantRead, TenantWrite, TenantSuspend, PlatformKeyRead, PlatformKeyWrite, PlatformKeyRevoke, TenantCredentialRead, TenantCredentialRevoke, CatalogRead, CatalogWrite, CatalogPrice,
-			PlatformIssuerRead, PlatformIssuerWrite, PlatformIssuerDelete, PlatformLimitRead, PlatformLimitWrite, PlatformLimitDelete),
+		{RolePlatformAdmin, ScopePlatform, sorted(IdentityRead, TenantRead, TenantWrite, TenantSuspend, PlatformKeyRead, PlatformKeyWrite, PlatformKeyRevoke, TenantCredentialRead, TenantCredentialRevoke, CatalogRead, CatalogWrite, CatalogPrice,
+			PlatformIssuerRead, PlatformIssuerWrite, PlatformIssuerDelete, PlatformLimitRead, PlatformLimitWrite, PlatformLimitDelete, UserRead, UserWrite),
 			"Administers the installation: tenants and platform keys"},
-		{RoleTenantAdmin, KindServiceAccount, sorted(IdentityRead, ServiceAccountRead, ServiceAccountWrite, VirtualKeyRead, VirtualKeyWrite, VirtualKeyRevoke, ModelInvoke,
+		{RoleTenantAdmin, ScopeTenant, sorted(IdentityRead, ServiceAccountRead, ServiceAccountWrite, MemberRead, MemberWrite, VirtualKeyRead, VirtualKeyWrite, VirtualKeyRevoke, ModelInvoke,
 			CredentialRead, CredentialWrite, CredentialRotate, CredentialDelete, CredentialUse, ModelRead, ModelRestrict, UsageRead,
 			TokenIssuerRead, TokenIssuerWrite, TokenIssuerDelete, SubjectMappingRead, SubjectMappingWrite, SubjectMappingDelete, LimitRead, LimitWrite, LimitDelete,
 			PriceListRead, PriceListWrite, PriceListDelete),
 			"Administers one tenant: service accounts and virtual keys; may call models"},
-		{RoleInference, KindServiceAccount, sorted(ModelInvoke, CredentialUse), "Calls models through the inference listener"},
+		{RoleInference, ScopeTenant, sorted(ModelInvoke, CredentialUse), "Calls models through the inference listener"},
 	}
 }
 
@@ -207,12 +219,16 @@ type Principal struct {
 	// accepted the token the request carried; empty for a key.
 	IssuerID string
 	// Subject is the verified subject of that token; empty for a key.
-	Subject     string
-	TenantID    tenant.ID
-	TenantName  string
-	TenantState tenant.State
-	Roles       []string
-	Scopes      []string // nil: no restriction; otherwise the permissions the key is limited to
+	Subject string
+	// SessionID is the session of a user's request; empty for any other credential.
+	SessionID string
+	// MustChangePassword is true for a session whose account has to change its password first.
+	MustChangePassword bool
+	TenantID           tenant.ID
+	TenantName         string
+	TenantState        tenant.State
+	Roles              []string
+	Scopes             []string // nil: no restriction; otherwise the permissions the key is limited to
 	// CredentialID is the provider credential the key in use is pinned to; empty for none.
 	CredentialID string
 	// Models is the allow-list of the key in use, as model references (provider/name); nil: the
@@ -220,16 +236,40 @@ type Principal struct {
 	Models []string
 }
 
+// holdsRole reports whether a role of the given scope counts for p: a platform role for a
+// principal without a tenant that is not a service account, a tenant role for a principal with a
+// tenant that is not a platform key.
+func (p Principal) holdsRole(scope Scope) bool {
+	switch p.Kind {
+	case KindPlatform:
+		return scope == ScopePlatform
+	case KindServiceAccount:
+		return scope == ScopeTenant
+	case KindUser:
+		if p.TenantID.IsZero() {
+			return scope == ScopePlatform
+		}
+		return scope == ScopeTenant
+	}
+	return false
+}
+
 // Effective returns the permissions p holds: the union of the permissions of its roles that
-// exist and are of p's kind, intersected with Scopes when Scopes is not nil. Sorted.
+// exist and whose scope counts for p, intersected with Scopes when Scopes is not nil. Sorted.
 func (p Principal) Effective() []string {
 	set := map[string]bool{}
 	for _, name := range p.Roles {
-		if r, ok := RoleByName(name); ok && r.Kind == p.Kind {
+		if r, ok := RoleByName(name); ok && p.holdsRole(r.Scope) {
 			for _, perm := range r.Permissions {
 				set[perm] = true
 			}
 		}
+	}
+	if p.Kind == KindUser {
+		// A user holds the two self permissions whatever its roles. A key or a token has no
+		// session, so session:self is never in the roles and never held by them.
+		set[IdentityRead] = true
+		set[SessionSelf] = true
 	}
 	if p.Scopes != nil {
 		allowed := map[string]bool{}
@@ -280,12 +320,12 @@ func Decide(p Principal, permission string, t Target) Decision {
 		return Deny
 	}
 	if perm.Scope == ScopePlatform {
-		if p.Kind != KindPlatform || !p.holds(permission) {
+		if !p.holds(permission) || (p.Kind != KindPlatform && (p.Kind != KindUser || !p.TenantID.IsZero())) {
 			return Deny
 		}
 		return Allow
 	}
-	if p.Kind == KindServiceAccount {
+	if p.Kind == KindServiceAccount || (p.Kind == KindUser && !p.TenantID.IsZero()) {
 		if p.TenantID.IsZero() {
 			return Deny
 		}
@@ -325,3 +365,26 @@ var (
 	ErrUnauthenticated = errors.New("authz: unauthenticated")
 	ErrUnavailable     = errors.New("authz: cannot verify the credential now")
 )
+
+// Assignable reports whether p may give a user the role in the scope: the role exists with that
+// scope, is one a user can hold (tenant-admin, platform-admin), and p holds every permission of
+// it. This is the rule against escalation: nobody hands out more than they hold.
+func Assignable(p Principal, role string, scope Scope) bool {
+	if role != RolePlatformAdmin && role != RoleTenantAdmin {
+		return false
+	}
+	r, ok := RoleByName(role)
+	if !ok || r.Scope != scope {
+		return false
+	}
+	held := map[string]bool{}
+	for _, e := range p.Effective() {
+		held[e] = true
+	}
+	for _, perm := range r.Permissions {
+		if !held[perm] {
+			return false
+		}
+	}
+	return true
+}

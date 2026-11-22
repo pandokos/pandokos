@@ -333,3 +333,66 @@ func TestTrueByDefaultBoolean(t *testing.T) {
 		t.Error("an optional boolean that defaults to true can be omitted when false")
 	}
 }
+
+// TestRejectsSprint42Constructs is the rejecting half of T-822: each of the four constructs of
+// sprint 4.2 has a form that the generator refuses.
+func TestRejectsSprint42Constructs(t *testing.T) {
+	publicList := replaceOnce(t, minimal, "      operationId: listThings\n      x-pandokos-permission: thing:read\n", "      operationId: listThings\n      x-pandokos-public: true\n      security: []\n")
+	if _, err := generate(writeSpec(t, publicList)); err != nil {
+		t.Fatalf("a public operation without a permission must be accepted: %v", err)
+	}
+	idemParam := "    IdempotencyKey:\n      name: Idempotency-Key\n      in: header\n      schema: {type: string, pattern: '^[\\x21-\\x7e]{1,128}$'}\n"
+	withParams := func(doc string) string {
+		return replaceOnce(t, doc, "components:\n  responses:", "components:\n  parameters:\n"+idemParam+"  responses:")
+	}
+	redirect := "    Redirect:\n      description: Redirect.\n      headers:\n        Location: {schema: {type: string}}\n"
+	withRedirect := func(doc string) string {
+		return replaceOnce(t, doc, "    Things:\n      description: Things.", redirect+"    Things:\n      description: Things.")
+	}
+	cases := []struct {
+		name   string
+		doc    string
+		wantIn []string
+	}{
+		{"a public operation with a permission", replaceOnce(t, minimal, "      operationId: listThings\n", "      operationId: listThings\n      x-pandokos-public: true\n"),
+			[]string{"x-pandokos-public", "x-pandokos-permission"}},
+		{"a public operation that says false", replaceOnce(t, minimal, "      operationId: listThings\n      x-pandokos-permission: thing:read\n", "      operationId: listThings\n      x-pandokos-public: false\n"),
+			[]string{"x-pandokos-public"}},
+		{"a 303 beside a 2xx", replaceOnce(t, withRedirect(publicList), "        \"400\": {$ref: '#/components/responses/Err'}\n  /v1/things/{id}:", "        \"303\": {$ref: '#/components/responses/Redirect'}\n  /v1/things/{id}:"),
+			[]string{"303"}},
+		{"a 303 on an operation that is not public", replaceOnce(t, withRedirect(minimal), "        \"200\": {$ref: '#/components/responses/Things'}\n        \"400\"", "        \"303\": {$ref: '#/components/responses/Redirect'}\n        \"400\""),
+			[]string{"303"}},
+		{"the header parameter on an operation that does not answer 201", replaceOnce(t, withParams(minimal), "      operationId: listThings\n      x-pandokos-permission: thing:read\n",
+			"      operationId: listThings\n      x-pandokos-permission: thing:read\n      parameters:\n        - {$ref: '#/components/parameters/IdempotencyKey'}\n"),
+			[]string{"Idempotency", "201"}},
+		{"a lenient query without x-pandokos-public", replaceOnce(t, minimal, "      operationId: listThings\n", "      operationId: listThings\n      x-pandokos-lenient-query: true\n"),
+			[]string{"x-pandokos-lenient-query"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := generate(writeSpec(t, c.doc))
+			if err == nil {
+				t.Fatal("the document was accepted")
+			}
+			for _, w := range c.wantIn {
+				if !strings.Contains(err.Error(), w) {
+					t.Errorf("the error %q does not name %q", err, w)
+				}
+			}
+		})
+	}
+
+	// The four constructs, accepted, generate what section 5.12 says.
+	good := replaceOnce(t, withRedirect(withParams(publicList)), "        \"200\": {$ref: '#/components/responses/Things'}\n        \"400\": {$ref: '#/components/responses/Err'}\n  /v1/things/{id}:", "        \"303\": {$ref: '#/components/responses/Redirect'}\n  /v1/things/{id}:")
+	good = replaceOnce(t, good, "      x-pandokos-public: true\n      security: []\n", "      x-pandokos-public: true\n      x-pandokos-lenient-query: true\n      security: []\n")
+	out, err := generate(writeSpec(t, good))
+	if err != nil {
+		t.Fatalf("the constructs together: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{"Public: true", "Status: 303", "type Redirect struct{ Location string }", "(*Redirect, error)"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the generated code lacks %q", want)
+		}
+	}
+}

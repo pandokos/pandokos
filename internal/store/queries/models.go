@@ -8,6 +8,18 @@ import (
 	"time"
 )
 
+type PandokosAppUser struct {
+	ID             string
+	SignIn         string
+	TenantID       *string
+	DisplayName    string
+	Email          string
+	State          string
+	StateChangedAt time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
 type PandokosAuditEvent struct {
 	TenantID     string
 	ID           string
@@ -23,6 +35,27 @@ type PandokosAuditEvent struct {
 	RequestID    string
 	Reason       string
 	Detail       string
+}
+
+type PandokosIdempotencyKey struct {
+	ID             string
+	TenantID       *string
+	PrincipalKind  string
+	PrincipalID    string
+	Key            string
+	Operation      string
+	Salt           []byte
+	RequestHash    []byte
+	Attempt        int32
+	LockedUntil    time.Time
+	CommittedAt    *time.Time
+	ResourceType   string
+	ResourceID     string
+	ResponseStatus *int32
+	ResponseBody   []byte
+	CompletedAt    *time.Time
+	CreatedAt      time.Time
+	ExpiresAt      time.Time
 }
 
 type PandokosIssuerDirectory struct {
@@ -77,6 +110,42 @@ type PandokosLimitRule struct {
 	ModelID          *string
 }
 
+type PandokosLocalAccount struct {
+	UserID            string
+	SignIn            string
+	Username          string
+	PasswordHash      string
+	MustChange        bool
+	PasswordChangedAt time.Time
+	PasswordExpiresAt *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+type PandokosMembership struct {
+	TenantID  string
+	ID        string
+	UserID    string
+	Source    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type PandokosMembershipDirectory struct {
+	UserID   string
+	TenantID string
+}
+
+type PandokosMembershipRole struct {
+	TenantID  string
+	ID        string
+	UserID    string
+	Role      string
+	Source    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type PandokosModel struct {
 	ID                  string
 	ProviderID          string
@@ -99,6 +168,12 @@ type PandokosModelTenantGrant struct {
 	ModelID   string
 	TenantID  string
 	CreatedAt time.Time
+}
+
+type PandokosOidcLogin struct {
+	StateHash []byte
+	CreatedAt time.Time
+	ExpiresAt time.Time
 }
 
 type PandokosPlatformAuditEvent struct {
@@ -165,6 +240,15 @@ type PandokosPlatformLimitRule struct {
 	Thresholds []int16
 	ProviderID *string
 	ModelID    *string
+}
+
+type PandokosPlatformRoleAssignment struct {
+	ID        string
+	UserID    string
+	Role      string
+	Source    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type PandokosPriceImport struct {
@@ -304,6 +388,15 @@ type PandokosServiceAccount struct {
 	ValidUntil  *time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+}
+
+type PandokosSigninThrottle struct {
+	Key             []byte
+	Kind            string
+	Failures        int32
+	WindowStartedAt time.Time
+	LastFailureAt   time.Time
+	LockedUntil     *time.Time
 }
 
 type PandokosSubjectMapping struct {
@@ -481,6 +574,25 @@ type PandokosUsageRecordDefault struct {
 	CostFallbacks         []string
 	Metadata              string
 	MetadataDropped       int32
+}
+
+type PandokosUserIdentity struct {
+	UserID    string
+	SignIn    string
+	Issuer    string
+	Subject   string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type PandokosUserSession struct {
+	ID         string
+	TokenHash  []byte
+	UserID     string
+	Method     string
+	CreatedAt  time.Time
+	LastUsedAt time.Time
+	ExpiresAt  time.Time
 }
 
 type PandokosVirtualKey struct {

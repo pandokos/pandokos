@@ -59,3 +59,7 @@ enables only interactive administration. Automation has keys for that.
 **An external identity provider as the only way in**, with one bundled in the reference
 deployment. It keeps Pandokos free of passwords, at the price of a second product to run and
 understand for the smallest installation. Rejected by the maintainer in favour of local accounts.
+
+## History
+
+- 2026-11-22: sprint 4.2 builds the human side: users, memberships and the principal of a session in [ADR 0056](0056-users-memberships-and-sessions-as-principals.md), the relying party in [ADR 0058](0058-openid-connect-relying-party.md). IAM-08 for users is met by the identity link and the group rules; the bound of IAM-11 is the request in flight, there is no session cache. A bearer token still never acts as a user.

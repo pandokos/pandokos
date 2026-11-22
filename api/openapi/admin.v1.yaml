@@ -6,15 +6,24 @@ info:
   title: Pandokos administration API
   version: 0.2.0
   description: >-
-    Control plane of Pandokos. Every operation needs a virtual key or a platform key in the
-    Authorization header and one permission, named in x-pandokos-permission.
+    Control plane of Pandokos. An operation is called with one of three credentials: a virtual
+    key or a platform key in the Authorization header (or, where the installation allows it, a
+    token of a trusted issuer), or the session cookie that sign-in sets for a person. Every
+    operation but the four of sign-in needs one permission, named in x-pandokos-permission.
   license:
     name: Apache-2.0
     identifier: Apache-2.0
 security:
   - key: []
+  - session: []
 tags:
   - name: identity
+  - name: sign-in
+    description: Sign-in with a local account or through the identity provider, and the caller's own sessions
+  - name: users
+    description: Users that the platform manages
+  - name: members
+    description: Members of a tenant
   - name: tenants
   - name: service-accounts
   - name: virtual-keys
@@ -84,6 +93,8 @@ paths:
         content:
           application/json:
             schema: {$ref: '#/components/schemas/TenantCreate'}
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
       responses:
         "201": {$ref: '#/components/responses/TenantCreated'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
@@ -92,6 +103,7 @@ paths:
         "409": {$ref: '#/components/responses/Conflict'}
         "413": {$ref: '#/components/responses/RequestTooLarge'}
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/IdempotencyKeyReused'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
   /v1/tenants/{tenant}:
@@ -220,6 +232,8 @@ paths:
         content:
           application/json:
             schema: {$ref: '#/components/schemas/ServiceAccountCreate'}
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
       responses:
         "201": {$ref: '#/components/responses/ServiceAccountCreated'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
@@ -229,6 +243,7 @@ paths:
         "409": {$ref: '#/components/responses/Conflict'}
         "413": {$ref: '#/components/responses/RequestTooLarge'}
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/IdempotencyKeyReused'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
   /v1/tenants/{tenant}/service-accounts/{service_account}:
@@ -364,6 +379,8 @@ paths:
         content:
           application/json:
             schema: {$ref: '#/components/schemas/VirtualKeyCreate'}
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
       responses:
         "201": {$ref: '#/components/responses/VirtualKeyCreated'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
@@ -372,6 +389,7 @@ paths:
         "404": {$ref: '#/components/responses/NotFound'}
         "413": {$ref: '#/components/responses/RequestTooLarge'}
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/IdempotencyKeyReused'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
   /v1/tenants/{tenant}/virtual-keys/{key}:
@@ -461,6 +479,8 @@ paths:
         content:
           application/json:
             schema: {$ref: '#/components/schemas/CredentialCreate'}
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
       responses:
         "201": {$ref: '#/components/responses/CredentialCreated'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
@@ -470,7 +490,7 @@ paths:
         "409": {$ref: '#/components/responses/Conflict'}
         "413": {$ref: '#/components/responses/RequestTooLarge'}
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
-        "422": {$ref: '#/components/responses/CredentialRejected'}
+        "422": {$ref: '#/components/responses/CredentialRejectedOrKeyReused'}
         "500": {$ref: '#/components/responses/Internal'}
         "502": {$ref: '#/components/responses/ValidationUnavailable'}
         "503": {$ref: '#/components/responses/Unavailable'}
@@ -794,6 +814,8 @@ paths:
         The name is the first path segment of the inference listener and never changes; healthz, readyz and v1 are refused. The provider is created enabled.
       x-pandokos-permission: catalog:write
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ProviderCreate'}}}}
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
       responses:
         "201": {$ref: '#/components/responses/ProviderCreated'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
@@ -803,6 +825,7 @@ paths:
         "409": {$ref: '#/components/responses/Conflict'}
         "413": {$ref: '#/components/responses/RequestTooLarge'}
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/IdempotencyKeyReused'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
   /v1/providers/{provider}:
@@ -879,6 +902,8 @@ paths:
         The first endpoint of a provider becomes its default. http is accepted only for an endpoint marked private, and a public endpoint cannot name a private IP address.
       x-pandokos-permission: catalog:write
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/EndpointCreate'}}}}
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
       responses:
         "201": {$ref: '#/components/responses/EndpointCreated'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
@@ -888,6 +913,7 @@ paths:
         "409": {$ref: '#/components/responses/Conflict'}
         "413": {$ref: '#/components/responses/RequestTooLarge'}
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/IdempotencyKeyReused'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
   /v1/providers/{provider}/endpoints/{endpoint}:
@@ -968,6 +994,8 @@ paths:
         availability defaults to selected: nobody may use the model until it is granted or made available to all. upstream_id defaults to the name.
       x-pandokos-permission: catalog:write
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ModelCreate'}}}}
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
       responses:
         "201": {$ref: '#/components/responses/ModelCreated'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
@@ -977,6 +1005,7 @@ paths:
         "409": {$ref: '#/components/responses/Conflict'}
         "413": {$ref: '#/components/responses/RequestTooLarge'}
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/IdempotencyKeyReused'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
   /v1/models/{model}:
@@ -1105,6 +1134,8 @@ paths:
         Adds a version with source override that starts at valid_from (now when absent; never in the past). From then on imports leave the model alone until clearPriceOverride.
       x-pandokos-permission: catalog:price
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PriceOverride'}}}}
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
       responses:
         "201": {$ref: '#/components/responses/PriceVersionCreated'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
@@ -1114,6 +1145,7 @@ paths:
         "409": {$ref: '#/components/responses/Conflict'}
         "413": {$ref: '#/components/responses/RequestTooLarge'}
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/IdempotencyKeyReused'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
   /v1/models/{model}/prices/{price_version}:
@@ -1180,6 +1212,8 @@ paths:
         embedded imports the snapshot of this release; remote downloads pricing.refresh.url and is refused unless pricing.refresh.enabled. With dry_run nothing is written and the response has no id.
       x-pandokos-permission: catalog:price
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PriceImportRun'}}}}
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
       responses:
         "201": {$ref: '#/components/responses/PriceImportCreated'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
@@ -1188,7 +1222,7 @@ paths:
         "404": {$ref: '#/components/responses/NotFound'}
         "413": {$ref: '#/components/responses/RequestTooLarge'}
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
-        "422": {$ref: '#/components/responses/PriceDatasetInvalid'}
+        "422": {$ref: '#/components/responses/PriceDatasetInvalidOrKeyReused'}
         "500": {$ref: '#/components/responses/Internal'}
         "502": {$ref: '#/components/responses/PriceSourceUnavailable'}
         "503": {$ref: '#/components/responses/Unavailable'}
@@ -1306,6 +1340,8 @@ paths:
         content:
           application/json:
             schema: {$ref: '#/components/schemas/PlatformKeyCreate'}
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
       responses:
         "201": {$ref: '#/components/responses/PlatformKeyCreated'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
@@ -1313,6 +1349,7 @@ paths:
         "403": {$ref: '#/components/responses/Forbidden'}
         "413": {$ref: '#/components/responses/RequestTooLarge'}
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/IdempotencyKeyReused'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
   /v1/platform-keys/{key}:
@@ -1407,6 +1444,8 @@ paths:
         model must be available to the tenant.
       x-pandokos-permission: price_list:write
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TenantPriceCreate'}}}}
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
       responses:
         "201": {$ref: '#/components/responses/TenantPriceVersionCreated'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
@@ -1416,6 +1455,7 @@ paths:
         "409": {$ref: '#/components/responses/Conflict'}
         "413": {$ref: '#/components/responses/RequestTooLarge'}
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/IdempotencyKeyReused'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
   /v1/tenants/{tenant}/prices/{price}:
@@ -1574,6 +1614,8 @@ paths:
         content:
           application/json:
             schema: {$ref: '#/components/schemas/TokenIssuerCreate'}
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
       responses:
         "201": {$ref: '#/components/responses/TokenIssuerCreated'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
@@ -1583,6 +1625,7 @@ paths:
         "409": {$ref: '#/components/responses/Conflict'}
         "413": {$ref: '#/components/responses/RequestTooLarge'}
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/IdempotencyKeyReused'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
   /v1/tenants/{tenant}/token-issuers/{issuer}:
@@ -1693,6 +1736,8 @@ paths:
         content:
           application/json:
             schema: {$ref: '#/components/schemas/SubjectMappingCreate'}
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
       responses:
         "201": {$ref: '#/components/responses/SubjectMappingCreated'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
@@ -1702,6 +1747,7 @@ paths:
         "409": {$ref: '#/components/responses/Conflict'}
         "413": {$ref: '#/components/responses/RequestTooLarge'}
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/IdempotencyKeyReused'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
   /v1/tenants/{tenant}/subject-mappings/{mapping}:
@@ -1772,6 +1818,8 @@ paths:
         content:
           application/json:
             schema: {$ref: '#/components/schemas/LimitRuleCreate'}
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
       responses:
         "201": {$ref: '#/components/responses/LimitRuleCreated'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
@@ -1781,6 +1829,7 @@ paths:
         "409": {$ref: '#/components/responses/Conflict'}
         "413": {$ref: '#/components/responses/RequestTooLarge'}
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/IdempotencyKeyReused'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
   /v1/tenants/{tenant}/limits/{rule}:
@@ -1951,6 +2000,8 @@ paths:
         content:
           application/json:
             schema: {$ref: '#/components/schemas/PlatformLimitRuleCreate'}
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
       responses:
         "201": {$ref: '#/components/responses/PlatformLimitRuleCreated'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
@@ -1959,6 +2010,7 @@ paths:
         "409": {$ref: '#/components/responses/Conflict'}
         "413": {$ref: '#/components/responses/RequestTooLarge'}
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/IdempotencyKeyReused'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
   /v1/platform-limits/{rule}:
@@ -2046,6 +2098,8 @@ paths:
         content:
           application/json:
             schema: {$ref: '#/components/schemas/PlatformIssuerCreate'}
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
       responses:
         "201": {$ref: '#/components/responses/PlatformIssuerCreated'}
         "400": {$ref: '#/components/responses/InvalidRequest'}
@@ -2055,6 +2109,7 @@ paths:
         "409": {$ref: '#/components/responses/Conflict'}
         "413": {$ref: '#/components/responses/RequestTooLarge'}
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/IdempotencyKeyReused'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
   /v1/platform-issuers/{issuer}:
@@ -2170,12 +2225,578 @@ paths:
         "404": {$ref: '#/components/responses/NotFound'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/auth/methods:
+    get:
+      operationId: getAuthMethods
+      tags: [sign-in]
+      summary: Which ways of signing in are on
+      description: >-
+        Tells a sign-in page which methods to offer. It needs no credential.
+      x-pandokos-public: true
+      security: []
+      responses:
+        "200": {$ref: '#/components/responses/AuthMethods'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/auth/sign-in:
+    post:
+      operationId: signIn
+      tags: [sign-in]
+      summary: Sign in with a local account
+      description: >-
+        Creates a session and sets the session cookie. Every refusal of a wrong or unknown username or password looks alike.
+      x-pandokos-public: true
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SignInRequest'}
+      responses:
+        "200": {$ref: '#/components/responses/SignedIn'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "429": {$ref: '#/components/responses/TooManyAttempts'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/auth/oidc/start:
+    get:
+      operationId: startOidcSignIn
+      tags: [sign-in]
+      summary: Start the sign-in through the identity provider
+      description: >-
+        Answers 303 to the authorization endpoint of the identity provider.
+      x-pandokos-public: true
+      security: []
+      responses:
+        "303": {$ref: '#/components/responses/Redirect'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "429": {$ref: '#/components/responses/TooManyAttempts'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/auth/oidc/callback:
+    get:
+      operationId: completeOidcSignIn
+      tags: [sign-in]
+      summary: Finish the sign-in through the identity provider
+      description: >-
+        Receives the authorization code, creates the session and answers 303 to the page the installation configures.
+      x-pandokos-public: true
+      security: []
+      x-pandokos-lenient-query: true
+      parameters:
+        - {$ref: '#/components/parameters/OidcCode'}
+        - {$ref: '#/components/parameters/OidcState'}
+        - {$ref: '#/components/parameters/OidcError'}
+        - {$ref: '#/components/parameters/OidcIssuer'}
+      responses:
+        "303": {$ref: '#/components/responses/Redirect'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "500": {$ref: '#/components/responses/Internal'}
+  /v1/auth/sign-out:
+    post:
+      operationId: signOut
+      tags: [sign-in]
+      summary: Sign out
+      description: >-
+        Ends the session of the request and clears the cookie.
+      x-pandokos-permission: session:self
+      responses:
+        "200": {$ref: '#/components/responses/SignedOut'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/auth/password:
+    post:
+      operationId: changePassword
+      tags: [sign-in]
+      summary: Change one's own password
+      description: >-
+        Ends every other session of the user and replaces the session of the request.
+      x-pandokos-permission: session:self
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PasswordChange'}
+      responses:
+        "200": {$ref: '#/components/responses/SignedIn'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "429": {$ref: '#/components/responses/TooManyAttempts'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/auth/sessions:
+    get:
+      operationId: listOwnSessions
+      tags: [sign-in]
+      summary: List one's own sessions
+      x-pandokos-permission: session:self
+      responses:
+        "200": {$ref: '#/components/responses/SessionList'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/auth/sessions/{session}:
+    parameters:
+      - {$ref: '#/components/parameters/Session'}
+    delete:
+      operationId: deleteOwnSession
+      tags: [sign-in]
+      summary: End one's own session
+      x-pandokos-permission: session:self
+      responses:
+        "200": {$ref: '#/components/responses/Session'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List the users that the platform manages
+      x-pandokos-permission: user:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/UserSort'}
+        - {$ref: '#/components/parameters/UserState'}
+        - {$ref: '#/components/parameters/UsernameFilter'}
+      responses:
+        "200": {$ref: '#/components/responses/UserList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: createUser
+      tags: [users]
+      summary: Create a user
+      description: >-
+        A local user is returned with a generated password, once, that it must change at its first sign-in. A federated user is named by its subject at the identity provider.
+      x-pandokos-permission: user:write
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UserCreate'}
+      responses:
+        "201": {$ref: '#/components/responses/UserCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/IdempotencyKeyReused'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/users/{user}:
+    parameters:
+      - {$ref: '#/components/parameters/User'}
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: Read a user
+      x-pandokos-permission: user:read
+      responses:
+        "200": {$ref: '#/components/responses/User'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    patch:
+      operationId: updateUser
+      tags: [users]
+      summary: Change a user
+      x-pandokos-permission: user:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UserUpdate'}
+      responses:
+        "200": {$ref: '#/components/responses/User'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/users/{user}/disable:
+    parameters:
+      - {$ref: '#/components/parameters/User'}
+    post:
+      operationId: disableUser
+      tags: [users]
+      summary: Disable a user
+      x-pandokos-permission: user:write
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/User'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/users/{user}/enable:
+    parameters:
+      - {$ref: '#/components/parameters/User'}
+    post:
+      operationId: enableUser
+      tags: [users]
+      summary: Enable a user
+      x-pandokos-permission: user:write
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/User'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/users/{user}/unlock:
+    parameters:
+      - {$ref: '#/components/parameters/User'}
+    post:
+      operationId: unlockUser
+      tags: [users]
+      summary: Unlock the sign-in of a user
+      x-pandokos-permission: user:write
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/User'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/users/{user}/reset-password:
+    parameters:
+      - {$ref: '#/components/parameters/User'}
+    post:
+      operationId: resetUserPassword
+      tags: [users]
+      summary: Reset the password of a user
+      description: >-
+        Replaces the password with a generated one, shown once, that must be changed at the next sign-in, and ends the sessions of the user.
+      x-pandokos-permission: user:write
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/PasswordReset'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/users/{user}/revoke-sessions:
+    parameters:
+      - {$ref: '#/components/parameters/User'}
+    post:
+      operationId: revokeUserSessions
+      tags: [users]
+      summary: End every session of a user
+      x-pandokos-permission: user:write
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/SessionsRevoked'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/members:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: listMembers
+      tags: [members]
+      summary: List the members of a tenant
+      x-pandokos-permission: member:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/Sort'}
+        - {$ref: '#/components/parameters/UsernameFilter'}
+      responses:
+        "200": {$ref: '#/components/responses/MemberList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: createMember
+      tags: [members]
+      summary: Add a member to a tenant
+      description: >-
+        Creates a local account that the tenant manages (account new; its generated password is returned once) or adds a user that the platform manages (account existing).
+      x-pandokos-permission: member:write
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MemberCreate'}
+      responses:
+        "201": {$ref: '#/components/responses/MemberCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/IdempotencyKeyReused'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/members/{user}:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/User'}
+    get:
+      operationId: getMember
+      tags: [members]
+      summary: Read a member
+      x-pandokos-permission: member:read
+      responses:
+        "200": {$ref: '#/components/responses/Member'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    patch:
+      operationId: updateMember
+      tags: [members]
+      summary: Change the roles or the attributes of a member
+      x-pandokos-permission: member:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MemberUpdate'}
+      responses:
+        "200": {$ref: '#/components/responses/Member'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    delete:
+      operationId: deleteMember
+      tags: [members]
+      summary: Remove a member from a tenant
+      description: >-
+        Removes the membership and its roles. A user that the tenant manages is also disabled and its sessions end.
+      x-pandokos-permission: member:write
+      responses:
+        "200": {$ref: '#/components/responses/Member'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/members/{user}/disable:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/User'}
+    post:
+      operationId: disableMember
+      tags: [members]
+      summary: Disable a member
+      x-pandokos-permission: member:write
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/Member'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/members/{user}/enable:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/User'}
+    post:
+      operationId: enableMember
+      tags: [members]
+      summary: Enable a member
+      x-pandokos-permission: member:write
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/Member'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/members/{user}/unlock:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/User'}
+    post:
+      operationId: unlockMember
+      tags: [members]
+      summary: Unlock the sign-in of a member
+      x-pandokos-permission: member:write
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/Member'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/members/{user}/reset-password:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/User'}
+    post:
+      operationId: resetMemberPassword
+      tags: [members]
+      summary: Reset the password of a member
+      x-pandokos-permission: member:write
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/PasswordReset'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/members/{user}/revoke-sessions:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/User'}
+    post:
+      operationId: revokeMemberSessions
+      tags: [members]
+      summary: End every session of a member
+      x-pandokos-permission: member:write
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/SessionsRevoked'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
 components:
   securitySchemes:
     key:
       type: http
       scheme: bearer
       description: A virtual key or a platform key (pdk_…).
+    session:
+      type: apiKey
+      in: cookie
+      name: __Host-pandokos_session
+      description: The session of a person who signed in (cookie set by signIn).
   parameters:
     Tenant:
       name: tenant
@@ -2273,6 +2894,41 @@ components:
       required: true
       description: ID of a platform limit rule.
       schema: {$ref: '#/components/schemas/ID'}
+    User:
+      {name: user, in: path, required: true, description: User ID., schema: {$ref: '#/components/schemas/ID'}}
+    Session:
+      {name: session, in: path, required: true, description: Session ID., schema: {$ref: '#/components/schemas/ID'}}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      description: >-
+        Makes a retry of this request safe. A second request with the same key, by the same
+        principal, on the same operation and body returns the first response (header
+        Idempotency-Replayed) without the members that are shown once.
+      schema: {type: string, pattern: '^[\x21-\x7e]{1,128}$'}
+    OidcCode:
+      {name: code, in: query, description: Authorization code of the identity provider., schema: {type: string, maxLength: 4096}}
+    OidcState:
+      {name: state, in: query, description: The state of the sign-in transaction., schema: {type: string, maxLength: 4096}}
+    OidcError:
+      {name: error, in: query, description: Error code of the identity provider., schema: {type: string, maxLength: 4096}}
+    OidcIssuer:
+      {name: iss, in: query, description: Issuer that the identity provider names in its answer., schema: {type: string, maxLength: 4096}}
+    UserSort:
+      name: sort
+      in: query
+      description: Order of the items. A leading minus means descending.
+      schema: {$ref: '#/components/schemas/UserSort'}
+    UserState:
+      name: state
+      in: query
+      description: Only users in this state.
+      schema: {$ref: '#/components/schemas/UserState'}
+    UsernameFilter:
+      name: username
+      in: query
+      description: Only the user with exactly this username.
+      schema: {$ref: '#/components/schemas/Username'}
     Limit:
       name: limit
       in: query
@@ -2379,8 +3035,98 @@ components:
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
+    CredentialRejectedOrKeyReused:
+      description: 'The provider refused the secret; nothing was stored. Code: credential_rejected. Or the Idempotency-Key was used with another request (code idempotency_key_reused).'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
     ValidationUnavailable:
       description: 'The provider could not be asked or gave no clear answer; nothing was stored. Code: validation_unavailable.'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    AuthMethods:
+      description: The ways of signing in that are on.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AuthMethods'}
+    SignedIn:
+      description: The session. The cookie __Host-pandokos_session carries its token.
+      headers:
+        Set-Cookie: {description: 'The session cookie.', schema: {type: string}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Session'}
+    SignedOut:
+      description: The session ended; the cookie is cleared.
+      headers:
+        Set-Cookie: {description: 'The cookie, expired.', schema: {type: string}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SignedOut'}
+    Session:
+      description: The session.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Session'}
+    SessionList:
+      description: The sessions of the caller.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SessionList'}
+    SessionsRevoked:
+      description: How many sessions ended.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SessionsRevoked'}
+    User:
+      description: The user.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/User'}
+    UserCreated:
+      description: The new user and, for a local account, its generated password, this once.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/UserCreated'}
+    UserList:
+      description: One page of users.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/UserList'}
+    PasswordReset:
+      description: The new password, this once.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PasswordReset'}
+    Member:
+      description: The member.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Member'}
+    MemberCreated:
+      description: The new member and, for a new account, its generated password, this once.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/MemberCreated'}
+    MemberList:
+      description: One page of members.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/MemberList'}
+    Redirect:
+      description: The browser goes to the address in Location.
+      headers:
+        Location: {description: Where to go., schema: {type: string}}
+    TooManyAttempts:
+      description: 'Sign-in or the password check is delayed or locked, or there are too many sign-in transactions. Code: too_many_attempts.'
+      headers:
+        Retry-After: {description: Seconds to wait., schema: {type: integer}}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    IdempotencyKeyReused:
+      description: 'The Idempotency-Key was used with another request. Code: idempotency_key_reused.'
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
@@ -2395,7 +3141,7 @@ components:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
     Forbidden:
-      description: 'The caller lacks the permission (code forbidden) or its tenant is not active (code tenant_suspended).'
+      description: 'The caller lacks the permission (code forbidden) or its tenant is not active (code tenant_suspended); the session must change its password first (code password_change_required); the checks of origin and request forgery failed (code csrf_rejected); the sign-in method is off or the origin of the listener is not known (code sign_in_disabled).'
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
@@ -2405,7 +3151,7 @@ components:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
     Conflict:
-      description: 'The name is taken (code conflict) or the resource is in a state that does not allow the operation (code invalid_state).'
+      description: 'The name is taken (code conflict) or the resource is in a state that does not allow the operation (code invalid_state); the first request with the same Idempotency-Key is still running (code idempotency_in_progress, with Retry-After) or succeeded and its response was not kept (code idempotency_response_lost).'
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
@@ -2567,6 +3313,11 @@ components:
           schema: {$ref: '#/components/schemas/Problem'}
     PriceDatasetInvalid:
       description: 'The price dataset could not be read; nothing was imported. Code: price_dataset_invalid.'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    PriceDatasetInvalidOrKeyReused:
+      description: 'The price dataset could not be read; nothing was imported. Code: price_dataset_invalid. Or the Idempotency-Key was used with another request (code idempotency_key_reused).'
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
@@ -3367,7 +4118,7 @@ components:
       enum: [active, expired, revoked]
     PrincipalType:
       type: string
-      enum: [platform, service_account]
+      enum: [platform, service_account, user]
     ProblemCode:
       type: string
       description: Stable machine-readable code. Clients must tolerate codes added later.
@@ -3387,6 +4138,13 @@ components:
         - validation_unavailable
         - price_source_unavailable
         - price_dataset_invalid
+        - too_many_attempts
+        - password_change_required
+        - csrf_rejected
+        - sign_in_disabled
+        - idempotency_key_reused
+        - idempotency_in_progress
+        - idempotency_response_lost
     Problem:
       type: object
       description: RFC 9457 problem details with the members code, request_id and errors.
@@ -3410,6 +4168,210 @@ components:
       properties:
         field: {type: string, description: 'Name of the body member or of the parameter.'}
         message: {type: string, description: 'The rule that was broken. It never repeats the value.'}
+    SignInMethod: {type: string, enum: [local, oidc]}
+    UserState: {type: string, enum: [active, disabled]}
+    RoleSource: {type: string, enum: [manual, idp]}
+    ManagedBy: {type: string, enum: [tenant, platform]}
+    MemberAccountKind: {type: string, enum: [new, existing]}
+    UserSort:
+      type: string
+      enum: [created_at, -created_at, username, -username]
+      default: created_at
+    Username: {type: string, pattern: '^[a-z0-9][a-z0-9._@+-]{1,62}[a-z0-9]$'}
+    DisplayName: {type: string, maxLength: 200}
+    Email: {type: string, maxLength: 254}
+    RoleName: {type: string, pattern: '^[a-z][a-z0-9-]{0,62}$'}
+    LocalAuthMethod:
+      type: object
+      additionalProperties: false
+      required: [enabled]
+      properties:
+        enabled: {type: boolean}
+    OidcAuthMethod:
+      type: object
+      additionalProperties: false
+      required: [enabled]
+      properties:
+        enabled: {type: boolean}
+        display_name: {type: string}
+        start_path: {type: string, description: 'Navigate the browser here: /v1/auth/oidc/start.'}
+    AuthMethods:
+      type: object
+      additionalProperties: false
+      required: [local, oidc]
+      properties:
+        local: {$ref: '#/components/schemas/LocalAuthMethod'}
+        oidc: {$ref: '#/components/schemas/OidcAuthMethod'}
+    SignInRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username: {type: string, minLength: 1, maxLength: 64, description: Compared without regard to case.}
+        password: {type: string, minLength: 1, maxLength: 1024}
+    PasswordChange:
+      type: object
+      additionalProperties: false
+      required: [current_password, new_password]
+      properties:
+        current_password: {type: string, minLength: 1, maxLength: 1024}
+        new_password: {type: string, minLength: 1, maxLength: 1024}
+    SessionUser:
+      type: object
+      additionalProperties: false
+      required: [id, sign_in, display_name]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        sign_in: {$ref: '#/components/schemas/SignInMethod'}
+        username: {$ref: '#/components/schemas/Username'}
+        display_name: {$ref: '#/components/schemas/DisplayName'}
+    Session:
+      type: object
+      additionalProperties: false
+      required: [id, user, method, must_change_password, current, created_at, last_used_at, expires_at, idle_timeout_seconds]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        user: {$ref: '#/components/schemas/SessionUser'}
+        method: {$ref: '#/components/schemas/SignInMethod'}
+        must_change_password: {type: boolean}
+        current: {type: boolean, description: True for the session of the request.}
+        created_at: {type: string, format: date-time}
+        last_used_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        idle_timeout_seconds: {type: integer}
+    SessionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Session'}}
+    SignedOut:
+      type: object
+      additionalProperties: false
+      required: [signed_out]
+      properties:
+        signed_out: {type: boolean}
+    SessionsRevoked:
+      type: object
+      additionalProperties: false
+      required: [revoked]
+      properties:
+        revoked: {type: integer}
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, sign_in, display_name, email, state, state_changed_at, platform_roles, created_at, updated_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        sign_in: {$ref: '#/components/schemas/SignInMethod'}
+        username: {$ref: '#/components/schemas/Username'}
+        subject: {type: string, description: Subject at the identity provider; federated users only.}
+        display_name: {$ref: '#/components/schemas/DisplayName'}
+        email: {$ref: '#/components/schemas/Email'}
+        state: {$ref: '#/components/schemas/UserState'}
+        state_changed_at: {type: string, format: date-time}
+        must_change_password: {type: boolean}
+        locked_until: {type: string, format: date-time, description: Present while sign-in is locked.}
+        platform_roles: {type: array, items: {$ref: '#/components/schemas/RoleName'}}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    UserCreate:
+      type: object
+      additionalProperties: false
+      required: [sign_in]
+      properties:
+        sign_in: {$ref: '#/components/schemas/SignInMethod'}
+        username: {$ref: '#/components/schemas/Username'}
+        subject: {type: string, minLength: 1, maxLength: 255}
+        display_name: {$ref: '#/components/schemas/DisplayName'}
+        email: {$ref: '#/components/schemas/Email'}
+        platform_roles: {type: array, maxItems: 8, uniqueItems: true, items: {$ref: '#/components/schemas/RoleName'}}
+    UserCreated:
+      type: object
+      additionalProperties: false
+      required: [user]
+      properties:
+        user: {$ref: '#/components/schemas/User'}
+        initial_password: {type: string, description: 'Shown once, for a local account; absent on an idempotent replay.'}
+    UserUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        display_name: {$ref: '#/components/schemas/DisplayName'}
+        email: {$ref: '#/components/schemas/Email'}
+        platform_roles: {type: array, maxItems: 8, uniqueItems: true, items: {$ref: '#/components/schemas/RoleName'}}
+    PasswordReset:
+      type: object
+      additionalProperties: false
+      required: [user_id, password, expires_at]
+      properties:
+        user_id: {$ref: '#/components/schemas/ID'}
+        password: {type: string, description: Shown once. It must be changed at the next sign-in.}
+        expires_at: {type: string, format: date-time}
+    UserList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/User'}}
+        next_cursor: {type: string}
+    Member:
+      type: object
+      additionalProperties: false
+      required: [user_id, sign_in, display_name, email, state, managed_by, roles, source, created_at, updated_at]
+      properties:
+        user_id: {$ref: '#/components/schemas/ID'}
+        sign_in: {$ref: '#/components/schemas/SignInMethod'}
+        username: {$ref: '#/components/schemas/Username'}
+        display_name: {$ref: '#/components/schemas/DisplayName'}
+        email: {$ref: '#/components/schemas/Email'}
+        state: {$ref: '#/components/schemas/UserState'}
+        managed_by: {$ref: '#/components/schemas/ManagedBy'}
+        must_change_password: {type: boolean, description: Members the tenant manages only.}
+        locked_until: {type: string, format: date-time, description: Members the tenant manages only.}
+        roles: {type: array, items: {$ref: '#/components/schemas/RoleName'}}
+        source: {$ref: '#/components/schemas/RoleSource'}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    MemberCreate:
+      type: object
+      additionalProperties: false
+      required: [account, roles]
+      properties:
+        account: {$ref: '#/components/schemas/MemberAccountKind'}
+        username: {$ref: '#/components/schemas/Username'}
+        user_id: {$ref: '#/components/schemas/ID'}
+        display_name: {$ref: '#/components/schemas/DisplayName'}
+        email: {$ref: '#/components/schemas/Email'}
+        roles: {type: array, minItems: 1, maxItems: 8, uniqueItems: true, items: {$ref: '#/components/schemas/RoleName'}}
+    MemberCreated:
+      type: object
+      additionalProperties: false
+      required: [member]
+      properties:
+        member: {$ref: '#/components/schemas/Member'}
+        initial_password: {type: string, description: 'Shown once, for a new account; absent on an idempotent replay.'}
+    MemberUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        roles: {type: array, minItems: 1, maxItems: 8, uniqueItems: true, items: {$ref: '#/components/schemas/RoleName'}}
+        display_name: {$ref: '#/components/schemas/DisplayName'}
+        email: {$ref: '#/components/schemas/Email'}
+    MemberList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Member'}}
+        next_cursor: {type: string}
+    Membership:
+      type: object
+      additionalProperties: false
+      required: [tenant, roles]
+      properties:
+        tenant: {$ref: '#/components/schemas/TenantRef'}
+        roles: {type: array, items: {$ref: '#/components/schemas/RoleName'}}
     Reason:
       type: object
       additionalProperties: false
@@ -3431,8 +4393,14 @@ components:
         principal_type: {$ref: '#/components/schemas/PrincipalType'}
         id: {type: string, description: Service account ID, or the key ID of the platform key.}
         name: {type: string}
-        key_id: {type: string, description: Key ID of the credential in use.}
-        bootstrap: {type: boolean, description: True when the credential is the bootstrap key created by pandokos init.}
+        key_id: {type: string, description: 'Key ID of the credential in use; empty for a user.'}
+        bootstrap: {type: boolean, description: True when the credential is the bootstrap key created by pandokos init; false for a user.}
+        must_change_password: {type: boolean, description: Present for a user.}
+        session: {$ref: '#/components/schemas/Session'}
+        memberships:
+          type: array
+          description: The tenants a user is a member of, with its roles in each; present for a user.
+          items: {$ref: '#/components/schemas/Membership'}
         tenant: {$ref: '#/components/schemas/TenantRef'}
         roles:
           type: array
@@ -3478,11 +4446,11 @@ components:
     TenantCreated:
       type: object
       additionalProperties: false
-      required: [tenant, admin_service_account, admin_key]
+      required: [tenant, admin_service_account]
       properties:
         tenant: {$ref: '#/components/schemas/Tenant'}
         admin_service_account: {$ref: '#/components/schemas/ServiceAccount'}
-        admin_key: {$ref: '#/components/schemas/VirtualKeyCreated'}
+        admin_key: {$ref: '#/components/schemas/VirtualKeyCreated', description: Absent on an idempotent replay.}
     TenantUpdate:
       type: object
       additionalProperties: false
@@ -3599,10 +4567,10 @@ components:
     VirtualKeyCreated:
       type: object
       additionalProperties: false
-      required: [key, secret]
+      required: [key]
       properties:
         key: {$ref: '#/components/schemas/VirtualKey'}
-        secret: {type: string, description: 'The complete key (pdk_…). It is returned by this response only.'}
+        secret: {type: string, description: 'The complete key (pdk_…). It is returned by the first response only; absent on an idempotent replay.'}
     VirtualKeyList:
       type: object
       additionalProperties: false
@@ -3634,10 +4602,10 @@ components:
     PlatformKeyCreated:
       type: object
       additionalProperties: false
-      required: [key, secret]
+      required: [key]
       properties:
         key: {$ref: '#/components/schemas/PlatformKey'}
-        secret: {type: string, description: 'The complete key (pdk_…). It is returned by this response only.'}
+        secret: {type: string, description: 'The complete key (pdk_…). It is returned by the first response only; absent on an idempotent replay.'}
     PlatformKeyList:
       type: object
       additionalProperties: false

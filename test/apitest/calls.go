@@ -1,7 +1,9 @@
 package apitest
 
 import (
-	"math/rand"
+	"crypto/rand"
+	"encoding/hex"
+	mrand "math/rand"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -30,6 +32,22 @@ type Params struct {
 	LimitRule      string // {rule} of a limit rule of the tenant
 	PlatformLimit  string // {rule} of a platform limit rule
 	TenantPrice    string // {price} of a scheduled price version of the tenant's price lists
+	User           string // {user}; NoUser when empty
+	Session        string // {session}; NoUser when empty
+}
+
+// NoUser is the {user} and {session} of a call whose Params name none: a well-formed identifier
+// that no row has.
+const NoUser = "0192f0f0-0000-7000-8000-00000000000b"
+
+// randomPassword returns a password made when the test runs; no test password is written down.
+func randomPassword(tb testing.TB) string {
+	tb.Helper()
+	b := make([]byte, 12)
+	if _, err := rand.Read(b); err != nil {
+		tb.Fatal(err)
+	}
+	return hex.EncodeToString(b)
 }
 
 // NoLimitRule is the {rule} of a call whose Params name no limit rule: a well-formed identifier
@@ -138,12 +156,27 @@ func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 	case "listPriceLists", "listPriceListVersions", "getPriceListVersion", "deletePriceListVersion", "getActiveCurrency":
 	case "createPriceListVersion":
 		// A random start: two calls with the same start in one list and model collide on the unique key.
-		start := time.Now().UTC().Add(time.Hour + time.Duration(rand.Int63n(int64(24*time.Hour*365)))).Truncate(time.Second)
+		start := time.Now().UTC().Add(time.Hour + time.Duration(mrand.Int63n(int64(24*time.Hour*365)))).Truncate(time.Second)
 		body = map[string]any{"provider": "openai", "model": "gpt-4o-mini", "currency": "EUR", "valid_from": start.Format(time.RFC3339),
 			"rates": []map[string]any{{"category": "input", "threshold": 0, "rate": "1"}}}
 	case "setActiveCurrency":
 		// The default of the installation: always accepted, and it changes nothing.
 		body = map[string]any{"currency": ""}
+	case "getAuthMethods", "startOidcSignIn", "completeOidcSignIn", "signOut", "listOwnSessions", "deleteOwnSession",
+		"listUsers", "getUser", "listMembers", "getMember", "deleteMember":
+	case "signIn":
+		body = map[string]any{"username": UniqueName("nobody"), "password": randomPassword(tb)}
+	case "changePassword":
+		body = map[string]any{"current_password": randomPassword(tb), "new_password": randomPassword(tb)}
+	case "createUser":
+		body = map[string]any{"sign_in": "local", "username": UniqueName("person")}
+	case "createMember":
+		body = map[string]any{"account": "new", "username": UniqueName("member"), "roles": []string{"tenant-admin"}}
+	case "updateUser", "updateMember":
+		body = map[string]any{"display_name": "changed by a test"}
+	case "disableUser", "enableUser", "unlockUser", "resetUserPassword", "revokeUserSessions",
+		"disableMember", "enableMember", "unlockMember", "resetMemberPassword", "revokeMemberSessions":
+		body = map[string]any{}
 	default:
 		tb.Fatalf("apitest.CallFor does not know the operation %s: add it", op.ID)
 	}
@@ -157,6 +190,8 @@ func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 	path = strings.ReplaceAll(path, "{price}", p.TenantPrice)
 	path = strings.ReplaceAll(path, "{price_import}", p.PriceImport)
 	path = strings.ReplaceAll(path, "{mapping}", p.SubjectMapping)
+	path = strings.ReplaceAll(path, "{user}", orDefault(p.User, NoUser))
+	path = strings.ReplaceAll(path, "{session}", orDefault(p.Session, NoUser))
 	rule := p.LimitRule
 	if strings.HasPrefix(op.Path, "/v1/platform-limits/") {
 		rule = p.PlatformLimit
@@ -176,4 +211,11 @@ func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 		path = strings.ReplaceAll(path, "{key}", p.VirtualKey)
 	}
 	return Call{Method: op.Method, Path: path + query, Body: body}
+}
+
+func orDefault(v, d string) string {
+	if v == "" {
+		return d
+	}
+	return v
 }

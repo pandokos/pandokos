@@ -26,3 +26,4 @@ The project owns about 800 lines of generator; a construct outside the subset is
 
 - 2026-11: sprint 2.2 adds presence-aware optional members of update bodies and nested request objects; the description sentinel of 2.1 is removed.
 - 2026-11-18: recorded as accepted by the maintainer.
+- 2026-11-22: sprint 4.2 teaches the generator four constructs: `x-pandokos-public: true` in place of a permission, a `303` response with a `Location` header as the only response of a public `GET`, the header parameter `IdempotencyKey` and `x-pandokos-lenient-query: true`; it accepts and ignores `headers` on responses and a second security scheme `session`.

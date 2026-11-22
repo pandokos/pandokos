@@ -95,7 +95,7 @@ func newSide(t *testing.T, api *apitest.API, name string) side {
 
 func newAPIWorld(t *testing.T) *apiWorld {
 	t.Helper()
-	w := &apiWorld{api: apitest.New(t)}
+	w := &apiWorld{api: apitest.NewPeople(t, apitest.PeopleConfig{})} // the member operations need local accounts
 	w.a, w.b = newSide(t, w.api, "tenant-a"), newSide(t, w.api, "tenant-b")
 
 	// The catalogue of sprint 2.2: a provider with a model for everybody and a model granted to
@@ -167,6 +167,15 @@ func (w *apiWorld) fresh(t *testing.T, s side, op adminapi.Operation) apitest.Pa
 			t.Fatal(err)
 		}
 		p.Model = m.ID
+	}
+	// The operations on a member get a member of their own that the tenant manages, so that the
+	// ones that remove or disable it leave the others.
+	if strings.Contains(op.Path, "/members/{user}") {
+		id, err := tenant.ParseID(s.tenant.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p.User = w.api.DB.TenantUser(t, id, apitest.UniqueName("member"), []string{"tenant-admin"}).ID
 	}
 	// The operations of sprint 4.1 that delete a registration or a mapping get one of their own, so
 	// that the ones the other operations name are still there.
@@ -294,6 +303,11 @@ var platformAndSelf = map[string]string{
 	"getPlatformLimit":    "platform",
 	"updatePlatformLimit": "platform",
 	"deletePlatformLimit": "platform",
+
+	// Sprint 4.2: the nine platform operations on users, and the four of the caller's own session.
+	"listUsers": "platform", "createUser": "platform", "getUser": "platform", "updateUser": "platform", "disableUser": "platform",
+	"enableUser": "platform", "unlockUser": "platform", "resetUserPassword": "platform", "revokeUserSessions": "platform",
+	"signOut": "self", "changePassword": "self", "listOwnSessions": "self", "deleteOwnSession": "self",
 }
 
 func scopeOf(t *testing.T, op adminapi.Operation) authz.Scope {
@@ -311,7 +325,7 @@ func TestCrossTenantIndistinguishable(t *testing.T) {
 	w := newAPIWorld(t)
 	rows := w.api.SnapshotTenant(t, w.b.tenant.ID)
 	checked := 0
-	for _, op := range adminapi.Operations {
+	for _, op := range apiOperations() {
 		scope := scopeOf(t, op)
 		if scope != authz.ScopeTenant {
 			kind, ok := platformAndSelf[op.ID]
@@ -336,7 +350,11 @@ func TestCrossTenantIndistinguishable(t *testing.T) {
 			}
 			r1 := w.api.Do(t, cr.Method, cr.Path, w.a.adminKey, cr.Body, nil)
 			r2 := w.api.Do(t, cm.Method, cm.Path, w.a.adminKey, cm.Body, nil)
-			if scope == authz.ScopeSelf {
+			if op.Permission == authz.SessionSelf {
+				// Sprint 4.2: a key has no session, so the operations on one's own session refuse it.
+				expect403(t, op, r1)
+				expect403(t, op, r2)
+			} else if scope == authz.ScopeSelf {
 				if r1.Status != 200 || r2.Status != 200 {
 					t.Errorf("%s: statuses %d %d", op.ID, r1.Status, r2.Status)
 				}
@@ -551,7 +569,7 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 	w := newAPIWorld(t)
 	c := w.api.Client(w.a.adminKey)
 	n := 0
-	for _, op := range adminapi.Operations {
+	for _, op := range apiOperations() {
 		if scopeOf(t, op) != authz.ScopeTenant {
 			continue
 		}
@@ -571,8 +589,8 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 		}
 		n++
 	}
-	if n != 52 {
-		t.Errorf("%d tenant operations, want 52 (24, the two of sprint 3.3, the ten of sprint 4.1, the seven of sprint 5.2, the two of sprint 5.3 and the seven of sprint 5.4)", n)
+	if n != 62 {
+		t.Errorf("%d tenant operations, want 62 (24, the two of sprint 3.3, the ten of sprint 4.1, the seven of sprint 5.2, the two of sprint 5.3, the seven of sprint 5.4 and the ten of sprint 4.2)", n)
 	}
 	if _, err := c.GetTenant(ctx(t), adminapi.GetTenantInput{Tenant: w.b.tenant.ID}); err == nil {
 		t.Error("a tenant key read a tenant")
@@ -598,7 +616,7 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 // TestPlatformKeyHasNoTenantPermission is T-272.
 func TestPlatformKeyHasNoTenantPermission(t *testing.T) {
 	w := newAPIWorld(t)
-	for _, op := range adminapi.Operations {
+	for _, op := range apiOperations() {
 		if scopeOf(t, op) != authz.ScopeTenant {
 			continue
 		}
@@ -624,11 +642,15 @@ func TestPlatformKeyHasNoTenantPermission(t *testing.T) {
 // TestTenantAdminIsEnoughAndNoMore is T-273.
 func TestTenantAdminIsEnoughAndNoMore(t *testing.T) {
 	w := newAPIWorld(t)
-	for _, op := range adminapi.Operations {
+	for _, op := range apiOperations() {
 		call := apitest.CallFor(t, op, w.fresh(t, w.a, op))
 		r := w.api.Do(t, call.Method, call.Path, w.a.adminKey, call.Body, nil)
 		switch scopeOf(t, op) {
 		case authz.ScopeTenant, authz.ScopeSelf:
+			if op.Permission == authz.SessionSelf {
+				expect403(t, op, r) // sprint 4.2: a key has no session
+				continue
+			}
 			if r.Status != 200 && r.Status != 201 {
 				t.Errorf("%s: a tenant-admin key got %d\n%s", op.ID, r.Status, r.Body)
 			}
@@ -638,12 +660,28 @@ func TestTenantAdminIsEnoughAndNoMore(t *testing.T) {
 	}
 }
 
-// TestEveryRouteDeclaresAPermission is T-274.
-func TestEveryRouteDeclaresAPermission(t *testing.T) {
+// TestRoutesArePublicOrPermitted is T-825 (T-274, TestEveryRouteDeclaresAPermission, in sprint 4.2): every
+// operation declares a permission or is one of exactly four public operations; without a credential
+// every operation that is not public is 401.
+func TestRoutesArePublicOrPermitted(t *testing.T) {
 	w := newAPIWorld(t)
 	catalogue := map[string]bool{}
 	for _, p := range authz.Catalogue() {
 		catalogue[p.Name] = true
+	}
+	public := map[string]bool{}
+	for _, op := range adminapi.Operations {
+		if op.Public {
+			public[op.ID] = true
+			if op.Permission != "" {
+				t.Errorf("the public operation %s names the permission %q", op.ID, op.Permission)
+			}
+		} else if !catalogue[op.Permission] {
+			t.Errorf("%s is not public and names %q, which is not in the catalogue", op.ID, op.Permission)
+		}
+	}
+	if len(public) != 4 || !public["getAuthMethods"] || !public["signIn"] || !public["startOidcSignIn"] || !public["completeOidcSignIn"] {
+		t.Errorf("the public operations are %v, want exactly getAuthMethods, signIn, startOidcSignIn and completeOidcSignIn", public)
 	}
 	// A service account with no role at all.
 	c := w.api.Client(w.a.adminKey)
@@ -655,7 +693,7 @@ func TestEveryRouteDeclaresAPermission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, op := range adminapi.Operations {
+	for _, op := range apiOperations() {
 		if !catalogue[op.Permission] {
 			t.Errorf("%s names %q, which is not in the catalogue", op.ID, op.Permission)
 		}
@@ -673,7 +711,7 @@ func TestEveryRouteDeclaresAPermission(t *testing.T) {
 	if resp := chat(t, srv, "", nil, ""); resp.StatusCode != 401 {
 		t.Errorf("inference without a credential: %d", resp.StatusCode)
 	}
-	for _, op := range adminapi.Operations {
+	for _, op := range apiOperations() {
 		call := apitest.CallFor(t, op, w.a.params())
 		if r := w.api.Do(t, call.Method, call.Path, "", call.Body, nil); r.Status != 401 {
 			t.Errorf("%s without a credential: %d", op.ID, r.Status)
@@ -782,7 +820,7 @@ var priceListOperations = []string{"listPriceLists", "listPriceListVersions", "c
 func TestTenantPriceAPI(t *testing.T) {
 	w := newAPIWorld(t)
 	byID := map[string]adminapi.Operation{}
-	for _, op := range adminapi.Operations {
+	for _, op := range apiOperations() {
 		byID[op.ID] = op
 	}
 	for _, id := range priceListOperations {
@@ -830,4 +868,16 @@ func TestTenantPriceAPI(t *testing.T) {
 			}
 		})
 	}
+}
+
+// apiOperations are the operations that need a credential: every one but the four public ones of
+// sprint 4.2 (sign-in), which name no permission. T-825 covers those.
+func apiOperations() []adminapi.Operation {
+	var ops []adminapi.Operation
+	for _, op := range adminapi.Operations {
+		if !op.Public {
+			ops = append(ops, op)
+		}
+	}
+	return ops
 }

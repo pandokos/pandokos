@@ -249,88 +249,108 @@ func hasClaim(raw json.RawMessage, want string) bool {
 	return false
 }
 
-// validate runs checks 4 to 12 of section 5.4 against the registration, for a token that peek
-// accepted with the algorithm alg and key ID kid. The library is given exactly the one algorithm;
-// the claims are read from the payload that verification returns, never from peek. A refusal is a
-// *Failure; keys that cannot be obtained are an error that wraps authz.ErrUnavailable.
-func (a *Authenticator) validate(ctx context.Context, presented, alg, kid string, r registration) (verified, error) {
-	fail := func(reason string) *Failure {
-		return &Failure{Reason: reason, IssuerID: r.ID, IssuerScope: r.Scope, TenantID: r.TenantID}
-	}
-	// 4: the registration; the algorithm in the product's list (again) and in the registration's.
-	if !r.Enabled {
-		return verified{}, fail("issuer_disabled")
-	}
+// verifyJWT runs checks 4 to 9 of section 5.4 for a token that peek accepted with the algorithm
+// alg and key ID kid: the algorithm, the key, the signature, issuer and audience, the instants and
+// the lifetime. The library is given exactly the one algorithm; the claims are read from the
+// payload that verification returns, never from peek. A refusal is a *Failure with a reason only;
+// keys that cannot be obtained are an error that wraps authz.ErrUnavailable.
+func verifyJWT(ctx context.Context, keys KeySource, now time.Time, presented, alg, kid string, c JWTCheck) (map[string]json.RawMessage, error) {
+	fail := func(reason string) *Failure { return &Failure{Reason: reason} }
+	// 4: the algorithm in the product's list (again) and in the check's.
 	listed := false
-	for _, x := range r.Algorithms {
+	for _, x := range c.Algorithms {
 		listed = listed || x == alg
 	}
 	if !productAlgorithms[alg] || !listed {
-		return verified{}, fail("algorithm_not_allowed")
+		return nil, fail("algorithm_not_allowed")
 	}
-	// 5: the key, from the registration's source only.
+	// 5: the key, from the check's source only.
 	jws, err := jose.ParseSignedCompact(presented, []jose.SignatureAlgorithm{jose.SignatureAlgorithm(alg)})
 	if err != nil || len(jws.Signatures) != 1 || jws.Signatures[0].Header.Algorithm != alg {
-		return verified{}, fail("malformed")
+		return nil, fail("malformed")
 	}
-	pub, err := a.tok.Keys.Key(ctx, jwks.Source{Issuer: r.Issuer, JWKSURI: r.JWKSURI}, kid, alg)
+	pub, err := keys.Key(ctx, jwks.Source{Issuer: c.Issuer, JWKSURI: c.JWKSURI}, kid, alg)
 	switch {
 	case errors.Is(err, jwks.ErrKeyNotFound):
-		return verified{}, fail("unknown_signing_key")
+		return nil, fail("unknown_signing_key")
 	case err != nil && errors.Is(err, authz.ErrUnavailable):
-		return verified{}, err
+		return nil, err
 	case err != nil:
-		return verified{}, errors.Join(authz.ErrUnavailable, err)
+		return nil, errors.Join(authz.ErrUnavailable, err)
 	case !jwks.Fits(pub, alg): // whatever the source hands over, the type and size must fit
-		return verified{}, fail("unknown_signing_key")
+		return nil, fail("unknown_signing_key")
 	}
 	// 6: the signature, over the first two segments as received.
 	payload, err := jws.Verify(pub)
 	if err != nil {
-		return verified{}, fail("bad_signature")
+		return nil, fail("bad_signature")
 	}
 	claims, err := decodeObject(payload)
 	if err != nil {
-		return verified{}, fail("malformed")
+		return nil, fail("malformed")
 	}
 	// 7: issuer and audience, again, from the verified payload.
-	if iss, _ := asString(claims["iss"]); iss != r.Issuer {
-		return verified{}, fail("issuer_mismatch")
+	if iss, _ := asString(claims["iss"]); iss != c.Issuer {
+		return nil, fail("issuer_mismatch")
 	}
 	raw, present := claims["aud"]
 	auds, ok := audiences(raw, present)
 	if !ok {
-		return verified{}, fail("malformed")
+		return nil, fail("malformed")
 	}
 	found := false
 	for _, x := range auds {
-		found = found || x == r.Audience
+		found = found || x == c.Audience
 	}
 	if !found {
-		return verified{}, fail("wrong_audience")
+		return nil, fail("wrong_audience")
 	}
 	// 8: exp is required; nbf and iat are honoured when present.
-	now, skew := a.now(), a.tok.ClockSkew
+	skew := c.ClockSkew
 	exp, ok := seconds(claims["exp"])
 	if !ok || !now.Before(exp.Add(skew)) {
-		return verified{}, fail("expired")
+		return nil, fail("expired")
 	}
 	if raw, present := claims["nbf"]; present {
 		if nbf, ok := seconds(raw); !ok || now.Before(nbf.Add(-skew)) {
-			return verified{}, fail("not_yet_valid")
+			return nil, fail("not_yet_valid")
 		}
 	}
 	start := now
 	if raw, present := claims["iat"]; present {
 		iat, ok := seconds(raw)
 		if !ok || iat.After(now.Add(skew)) {
-			return verified{}, fail("not_yet_valid")
+			return nil, fail("not_yet_valid")
 		}
 		start = iat
 	}
 	// 9: the lifetime.
-	if exp.Sub(start) > a.tok.MaxLifetime {
-		return verified{}, fail("lifetime_too_long")
+	if exp.Sub(start) > c.MaxLifetime {
+		return nil, fail("lifetime_too_long")
+	}
+	return claims, nil
+}
+
+// validate runs checks 4 to 12 of section 5.4 against the registration, for a token that peek
+// accepted with the algorithm alg and key ID kid. A refusal is a *Failure; keys that cannot be
+// obtained are an error that wraps authz.ErrUnavailable.
+func (a *Authenticator) validate(ctx context.Context, presented, alg, kid string, r registration) (verified, error) {
+	fail := func(reason string) *Failure {
+		return &Failure{Reason: reason, IssuerID: r.ID, IssuerScope: r.Scope, TenantID: r.TenantID}
+	}
+	if !r.Enabled {
+		return verified{}, fail("issuer_disabled")
+	}
+	claims, err := verifyJWT(ctx, a.tok.Keys, a.now(), presented, alg, kid, JWTCheck{
+		Issuer: r.Issuer, Audience: r.Audience, JWKSURI: r.JWKSURI, Algorithms: r.Algorithms,
+		ClockSkew: a.tok.ClockSkew, MaxLifetime: a.tok.MaxLifetime,
+	})
+	var f *Failure
+	if errors.As(err, &f) {
+		return verified{}, fail(f.Reason)
+	}
+	if err != nil {
+		return verified{}, err
 	}
 	// 10: the required claims.
 	for name, want := range r.RequiredClaims {

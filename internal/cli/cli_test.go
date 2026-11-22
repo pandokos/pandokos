@@ -430,7 +430,7 @@ func TestCommands(t *testing.T) {
 		secret := testutil.NewKey(t)
 		r.f.out["createTenant"] = &adminapi.TenantCreated{
 			Tenant: tenant, AdminServiceAccount: acct,
-			AdminKey: adminapi.VirtualKeyCreated{Key: vkey, Secret: secret},
+			AdminKey: &adminapi.VirtualKeyCreated{Key: vkey, Secret: secret},
 		}
 		out, _ = mustRun(t, r, "tenant", "create", "--display-name", "Acme Inc", "--admin-name", "root", "--admin-key-expires-at", t1.Format(time.RFC3339), "acme")
 		want := adminapi.CreateTenantInput{Body: adminapi.TenantCreate{Name: "acme", DisplayName: "Acme Inc", AdminServiceAccountName: "root", AdminKeyExpiresAt: &t1}}
@@ -663,6 +663,7 @@ func TestCommands(t *testing.T) {
 		// With an out-file the secret is replaced by the empty string.
 		file := filepath.Join(t.TempDir(), "new.key")
 		out, _ = mustRun(t, r, "platform-key", "create", "-o", "json", "--key-out", file)
+		c = adminapi.PlatformKeyCreated{} // the secret member is left out of the output now (sprint 4.2), so Unmarshal must not keep the old one
 		if err := json.Unmarshal([]byte(out), &c); err != nil || c.Secret != "" || strings.Contains(out, secret) {
 			t.Errorf("json create with --key-out: %v\n%s", err, out)
 		}
@@ -853,7 +854,7 @@ func TestConnectionAndSecrets(t *testing.T) {
 			t.Errorf("exit %d, stdout %q, stderr %q, calls %d", code, out, errs, len(r.f.calls("createVirtualKey")))
 		}
 		// Nor does the tenant create command print the key when it has an out-file.
-		r.f.out["createTenant"] = &adminapi.TenantCreated{Tenant: tenant, AdminServiceAccount: acct, AdminKey: adminapi.VirtualKeyCreated{Key: vkey, Secret: secret}}
+		r.f.out["createTenant"] = &adminapi.TenantCreated{Tenant: tenant, AdminServiceAccount: acct, AdminKey: &adminapi.VirtualKeyCreated{Key: vkey, Secret: secret}}
 		file2 := filepath.Join(t.TempDir(), "admin.key")
 		out, _ = mustRun(t, r, "tenant", "create", "--admin-key-out", file2, "acme")
 		if strings.Contains(out, secret) || !lineWith(out, "key written to "+file2) {

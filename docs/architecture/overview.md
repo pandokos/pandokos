@@ -122,7 +122,13 @@ flowchart TB
 
 - **authn** turns a credential into a *principal*: tenant, identity, roles, scopes, constraints.
   Three mechanisms produce the same principal: virtual keys, tokens from trusted issuers, and
-  (later) client certificates ([ADR 0005](../adr/0005-data-plane-authentication.md)).
+  (later) client certificates ([ADR 0005](../adr/0005-data-plane-authentication.md)). The
+  **administration plane** has four authenticators: platform and virtual keys, tokens of trusted
+  issuers when `tokens.admin_listener` is on (service accounts only), and, for people, the session
+  cookie (`internal/session`, `internal/account`, `internal/oidc`; the principal of a session is built
+  for each request from the permission and the tenant of the path,
+  [ADR 0056](../adr/0056-users-memberships-and-sessions-as-principals.md)). The gateway uses none of
+  the people's packages.
 - **authz** evaluates `resource:action` permissions in process
   ([ADR 0007](../adr/0007-authorization-rbac.md)).
 - **limits** reserves capacity before forwarding and settles after: requests, tokens and cost per
@@ -249,14 +255,14 @@ revocation takes, so these numbers are part of the product's contract (IAM-05, V
 |---|---|---|
 | Principal for a virtual key (gateway only; lifetime `cache.principal_ttl`; the admin API does not cache) | 30 s (5 s for unknown keys) | PostgreSQL `NOTIFY` on change, lifetime as upper bound |
 | Registration of a trusted issuer, and the principal of a token (gateway only; lifetime `cache.principal_ttl`; 5 s for "unknown" and "not mapped") | 30 s | `tenant:<id>` for a tenant's registrations and mappings; `issuers` for platform-level ones |
-| Keys of a trusted issuer (JWKS) | refreshed every 15 min (`tokens.jwks.refresh_interval`); used for at most 6 h after the last successful fetch (`tokens.jwks.max_stale`); the issuer's cache headers are not read | Refetch on unknown key ID, at most once per source per 10 s; not by notifications |
+| Keys of a trusted issuer (JWKS) | refreshed every 15 min (`tokens.jwks.refresh_interval`); used for at most 6 h after the last successful fetch (`tokens.jwks.max_stale`); the issuer's cache headers are not read | Refetch on unknown key ID, at most once per source per 10 s; not by notifications. The administration role keeps a cache of its own, for the configured identity provider and, with `tokens.admin_listener`, for registered issuers |
 | Catalogue (providers, endpoints, models, prices) and each tenant's model access | 30 s (`cache.catalog_ttl`, at most 5 m) | `NOTIFY` (`catalog`, `catalog:<tenant>`) |
 | Limit rules of a tenant (gateway only) | 30 s (`cache.limits_ttl`, 1 s to 5 m) | `NOTIFY` (`limits`, `limits:<tenant>`, `tenant:<tenant>`) |
 | Unwrapped tenant data key | 5 min | `NOTIFY` on tenant deletion or key rotation |
 | Decrypted provider credential | 60 s | `NOTIFY` on credential change |
-| Session of a signed-in user | 30 s | `NOTIFY` on sign-out, password change or disabling of the user |
+| Session of a signed-in user | **none**: the session and its user are read from the database at every request of the administration listener, as is the membership of a tenant operation | not needed: sign-out, password change, disabling and revocation delete the row, and the next request fails |
 
-**Documented bound: a revocation takes effect within 60 seconds on every instance**, and in
+**Documented bound: a revocation of a key or a credential takes effect within 60 seconds on every instance**, and in
 practice within a second when notifications are flowing. The bound is tested.
 
 When the connection that carries the notifications is lost, the caches are **not** emptied: the
@@ -404,7 +410,9 @@ identity provider ([ADR 0006](../adr/0006-human-authentication-external-oidc.md)
 [ADR 0022](../adr/0022-local-accounts-and-sessions.md)); either way the result is the same
 server-side session, carried by a cookie. A session is accepted only by the administration API.
 The gateway does not know what a session is, so signing in can never be used to call a model.
-Service accounts and virtual keys cannot sign in.
+Service accounts and virtual keys cannot sign in. Disabling a user, ending a session and changing a
+password take effect at the next request: there is no session cache (IAM-11). The guide for operators
+and client authors is [signing people in](../operations/sign-in.md).
 
 **What a user may do.** `GET /v1/me` tells a signed-in user who they are and which permissions
 they hold, platform-wide and in each tenant, as the same `resource:action` strings the API

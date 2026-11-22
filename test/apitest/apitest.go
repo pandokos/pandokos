@@ -44,6 +44,13 @@ type API struct {
 	KeyProvider vault.KeyProvider
 	Sealer      *vault.Sealer
 
+	// People are the services of sprint 4.2 behind the handler of an API made by NewPeople.
+	People *People
+
+	// PublicOrigin is the origin that browsers of the API send as Origin when it is not the address
+	// of the test server (auth.public_origin); empty: the address of the test server.
+	PublicOrigin string
+
 	srv         *httptest.Server
 	platformKey string
 	mu          sync.Mutex
@@ -146,6 +153,9 @@ func (a *API) track(key string) {
 	}
 	a.secrets = append(a.secrets, key)
 }
+
+// Root returns the testing.TB the API was made with, for helpers that need one after the test body started.
+func (a *API) Root() testing.TB { return a.root }
 
 // PlatformKey returns the bootstrap platform key.
 func (a *API) PlatformKey() string { return a.platformKey }

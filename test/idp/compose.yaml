@@ -5,6 +5,9 @@ name: pandokos-testidp
 services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.8.2@sha256:7e66a96e4739239070aeaf72e4c5decf0f7f682cfc725b9f7ea2b336eaba38b3
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${PANDOKOS_TEST_IDP_KEYCLOAK_ADMIN_PASSWORD:?run test/idp/up.sh}
     command:
       - start-dev
       - --http-enabled=false

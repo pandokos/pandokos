@@ -6,8 +6,13 @@ Commands:
   serve [--config FILE]            Start the server
   migrate [--config FILE]          Apply pending schema migrations, then exit
   migrate status [--config FILE]   Show applied and pending migrations, then exit
-  init [--config FILE] [--ttl DURATION] [--description TEXT] [--key-out FILE] [--recover]
-                                   Issue the bootstrap platform key, then exit
+  init [--config FILE] [--ttl DURATION] [--description TEXT] [--key-out FILE] [--recover] [--admin-username NAME] [--password-out FILE]
+                                   Issue the bootstrap platform key, then exit; with
+                                   --admin-username also create the first administrator
+  user reset-password USERNAME [--config FILE] [--password-out FILE]
+                                   Give a local account a new generated password, then exit
+  user unlock USERNAME [--config FILE]
+                                   Remove the lock of a local account, then exit
   whoami                           Show the identity of the key in use
   tenant list|create|get|update|suspend|reactivate
   service-account list|create|get|update|disable|enable
@@ -30,6 +35,8 @@ Commands:
   platform-issuer list|create|get|update|delete|tenants|add-tenant|remove-tenant
   limit list|create|get|update|delete|platform|events
   platform-limit list|create|get|update|delete
+  platform-user list|create|get|update|disable|enable|reset-password|unlock|revoke-sessions
+  member list|add|get|update|remove|disable|enable|reset-password|unlock|revoke-sessions
                                    Administer through the administration API;
                                    "pandokos <command> --help" lists the flags
   import-prices [--config FILE] (--file FILE | --embedded) [--dry-run]

@@ -481,7 +481,7 @@ func TestLimitEventPolicies(t *testing.T) {
 func TestLimitAPI(t *testing.T) {
 	w := newAPIWorld(t)
 	var ops []adminapi.Operation
-	for _, op := range adminapi.Operations {
+	for _, op := range apiOperations() {
 		if strings.Contains(op.Path, "limit") && strings.Contains(op.Path, "{tenant}") {
 			ops = append(ops, op)
 		}
@@ -560,7 +560,7 @@ func TestLimitAPI(t *testing.T) {
 	})
 
 	t.Run("the platform routes are refused to a tenant key", func(t *testing.T) {
-		for _, op := range adminapi.Operations {
+		for _, op := range apiOperations() {
 			if !strings.HasPrefix(op.Path, "/v1/platform-limits") {
 				continue
 			}

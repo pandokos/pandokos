@@ -26,9 +26,20 @@ the egress guard (the proxy of `upstream.proxy.url` for public hosts, forbidden 
 redirect), and a host that resolves to a private address only if the operator listed it in
 `tokens.private_hosts`. The requests carry nothing of the caller or of the token, so the provider
 learns that a Pandokos instance verifies tokens of its issuer, and when. Nothing of an answer is
-logged or returned to anyone. The administration API makes no such request. Because the address is
+logged or returned to anyone. The administration API makes such requests only with sign-in through an identity provider (below) or, with `tokens.admin_listener`, for the issuers that administrators registered. Because the address is
 supplied by a tenant administrator (or a platform administrator), the egress controls and the
 operator's host list, not the registration, decide where the gateway may connect.
+
+### Sign-in of people
+
+With `auth.oidc.enabled` the administration role sends the browser of a person to the provider and
+receives it back with a code. It then fetches the provider's metadata and key set and redeems the code at
+its token endpoint, through the egress guard (no redirect, 10 seconds, 64 KiB; a private address only for a
+host in `auth.oidc.private_hosts`). The redeem carries the client ID and secret, the code, the redirect URI
+and the PKCE verifier. The provider learns that this instance signs people in and when, and sees the
+person at its own login page. Pandokos receives an ID token, reads the subject, the display name, the e-mail
+address and the groups from it, and drops the access, ID and refresh tokens at once: they are never stored,
+logged or sent to the browser. Passwords of local accounts reach no other system.
 
 ## Limits
 

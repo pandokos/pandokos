@@ -16,13 +16,14 @@ import (
 )
 
 // checkTokens validates the options of an authenticator that accepts KindToken: it needs a key
-// source and the pool of the gateway role.
+// source and the pool of the gateway role, or of the admin role when the administration listener
+// accepts tokens (tokens.admin_listener).
 func checkTokens(o Options) error {
 	switch {
 	case o.Tokens.Keys == nil:
 		return errors.New("authn: tokens need Tokens.Keys")
-	case o.DB.Role() != store.RoleGateway:
-		return errors.New("authn: tokens need the pool of the gateway role")
+	case o.DB.Role() != store.RoleGateway && o.DB.Role() != store.RoleAdmin:
+		return errors.New("authn: tokens need the pool of the gateway or the admin role")
 	}
 	return nil
 }

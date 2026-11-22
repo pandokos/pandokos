@@ -136,6 +136,9 @@ var commands = []command{
 			out.abandon()
 			return err
 		}
+		if res.AdminKey == nil { // only an idempotent replay leaves the key out; the CLI sends no Idempotency-Key
+			res.AdminKey = &adminapi.VirtualKeyCreated{}
+		}
 		return a.printCreated(func() error {
 			if err := a.printResource(res.Tenant); err != nil {
 				return err

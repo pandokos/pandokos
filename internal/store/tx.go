@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/pandokos/pandokos/internal/tenant"
 )
@@ -136,4 +137,9 @@ func (db *DB) Provision(ctx context.Context, fn func(ctx context.Context, tx Tx,
 		}
 		return fn(ctx, tx{t}, bind)
 	})
+}
+
+// Interval returns d as the value of an interval parameter of a query.
+func Interval(d time.Duration) pgtype.Interval {
+	return pgtype.Interval{Microseconds: d.Microseconds(), Valid: true}
 }

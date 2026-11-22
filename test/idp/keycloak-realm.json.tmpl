@@ -3,7 +3,56 @@
   "enabled": true,
   "sslRequired": "all",
   "registrationAllowed": false,
+  "groups": [
+    {"name": "pandokos-admins"},
+    {"name": "tenant-a-admins"}
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "email": "alice@example.test",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Admin",
+      "groups": ["pandokos-admins", "tenant-a-admins"],
+      "credentials": [{"type": "password", "value": "@ALICE_PASSWORD@", "temporary": false}]
+    },
+    {
+      "username": "bob",
+      "enabled": true,
+      "email": "bob@example.test",
+      "emailVerified": true,
+      "firstName": "Bob",
+      "lastName": "Nobody",
+      "credentials": [{"type": "password", "value": "@BOB_PASSWORD@", "temporary": false}]
+    }
+  ],
   "clients": [
+    {
+      "clientId": "pandokos-admin",
+      "name": "pandokos-admin",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "@PEOPLE_SECRET@",
+      "serviceAccountsEnabled": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["@ORIGIN@/v1/auth/oidc/callback"],
+      "webOrigins": [],
+      "attributes": {"pkce.code.challenge.method": "S256"},
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {"claim.name": "groups", "full.path": "false", "id.token.claim": "true", "access.token.claim": "false", "userinfo.token.claim": "false"}
+        }
+      ]
+    },
     {
       "clientId": "workload-a",
       "name": "workload-a",

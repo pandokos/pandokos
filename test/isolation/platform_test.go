@@ -10,7 +10,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/test/apitest"
@@ -111,7 +110,7 @@ func TestPlatformSeesNoTenantUsage(t *testing.T) {
 			}
 		})
 
-		t.Run("the definer functions are the eleven of sprint 5.3, with the result types pinned", func(t *testing.T) {
+		t.Run("the definer functions are the eleven of sprint 5.3 and the five of sprint 4.2, with the result types pinned", func(t *testing.T) {
 			rows, err := super.Query(ctx(t), `SELECT p.proname, pg_get_function_result(p.oid), p.prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 				WHERE n.nspname = 'pandokos' AND p.prosecdef ORDER BY 1`)
 			if err != nil {
@@ -123,6 +122,11 @@ func TestPlatformSeesNoTenantUsage(t *testing.T) {
 				"ensure_usage_partitions":            "record",
 				"issuer_directory_sync":              "trigger",
 				"issuer_lookup":                      "TABLE(scope text, tenant_id uuid, issuer_id uuid)",
+				"membership_directory_sync":          "trigger",
+				"membership_guard":                   "trigger",
+				"platform_role_assignment_guard":     "trigger",
+				"platform_user_lookup":               "uuid",
+				"user_tenants":                       "SETOF uuid",
 				"platform_issuer_mapping_count":      "bigint",
 				"platform_issuer_tenant_lookup":      "uuid",
 				"record_auth_failure":                "void",
@@ -201,7 +205,7 @@ func TestPlatformAPISeesNoTenantUsage(t *testing.T) {
 	}
 
 	tenantOps, platformOps := 0, 0
-	for _, op := range adminapi.Operations {
+	for _, op := range apiOperations() {
 		switch scopeOf(t, op) {
 		case authz.ScopeTenant:
 			c := apitest.CallFor(t, op, w.fresh(t, w.a, op))
@@ -211,7 +215,7 @@ func TestPlatformAPISeesNoTenantUsage(t *testing.T) {
 			tenantOps++
 		}
 	}
-	for _, op := range adminapi.Operations {
+	for _, op := range apiOperations() {
 		if scopeOf(t, op) != authz.ScopePlatform {
 			continue
 		}

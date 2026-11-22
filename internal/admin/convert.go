@@ -210,3 +210,33 @@ func (s *server) activeCurrencyOut(current, previous string, from *time.Time, no
 	}
 	return out
 }
+
+// userOut is the API form of a user that the platform manages; locked is the end of the lock of its
+// account, read from the throttle row.
+func userOut(r queries.GetUserRow, locked *time.Time) adminapi.User {
+	u := adminapi.User{
+		ID: r.ID, SignIn: adminapi.SignInMethod(r.SignIn), Username: r.Username, Subject: r.Subject, DisplayName: r.DisplayName, Email: r.Email,
+		State: adminapi.UserState(r.State), StateChangedAt: r.StateChangedAt, LockedUntil: utc(locked),
+		PlatformRoles: nonNil(r.PlatformRoles), CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	}
+	if r.SignIn == "local" {
+		u.MustChangePassword = r.MustChange
+	}
+	return u
+}
+
+// memberOut is the API form of a member; for a member that the tenant manages it also says whether
+// the password must be changed and until when the account is locked.
+func memberOut(r queries.GetMemberRow, locked *time.Time) adminapi.Member {
+	m := adminapi.Member{
+		UserID: r.UserID, SignIn: adminapi.SignInMethod(r.SignIn), Username: r.Username, DisplayName: r.DisplayName, Email: r.Email,
+		State: adminapi.UserState(r.State), ManagedBy: adminapi.ManagedByPlatform, Roles: nonNil(r.Roles), Source: adminapi.RoleSource(r.Source),
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	}
+	if r.ManagingTenantID != nil {
+		m.ManagedBy = adminapi.ManagedByTenant
+		m.MustChangePassword = r.MustChange
+		m.LockedUntil = utc(locked)
+	}
+	return m
+}

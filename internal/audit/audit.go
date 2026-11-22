@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/pandokos/pandokos/internal/authz"
+	"github.com/pandokos/pandokos/internal/idem"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/queries"
 	"github.com/pandokos/pandokos/internal/telemetry"
@@ -23,6 +24,7 @@ type ActorType string
 const (
 	ActorPlatform       ActorType = "platform"
 	ActorServiceAccount ActorType = "service_account"
+	ActorUser           ActorType = "user"
 	ActorAnonymous      ActorType = "anonymous"
 	ActorHost           ActorType = "host"
 )
@@ -38,8 +40,11 @@ type Actor struct {
 // ActorOf returns the actor of a principal.
 func ActorOf(p authz.Principal) Actor {
 	t := ActorServiceAccount
-	if p.Kind == authz.KindPlatform {
+	switch p.Kind {
+	case authz.KindPlatform:
 		t = ActorPlatform
+	case authz.KindUser:
+		t = ActorUser
 	}
 	return Actor{Type: t, ID: p.ID, Name: p.Name, KeyID: p.KeyID}
 }
@@ -108,11 +113,23 @@ func RecordTenant(ctx context.Context, tx store.Tx, id tenant.ID, e Event) error
 	if err != nil {
 		return err
 	}
-	return queries.New(tx).InsertAuditEvent(ctx, queries.InsertAuditEventParams{
+	if err := queries.New(tx).InsertAuditEvent(ctx, queries.InsertAuditEventParams{
 		TenantID: id.String(), ActorType: string(e.Actor.Type), ActorID: e.Actor.ID, ActorName: e.Actor.Name, KeyID: e.Actor.KeyID,
 		Action: e.Action, ResourceType: e.ResourceType, ResourceID: e.ResourceID, Outcome: e.Outcome,
 		RequestID: e.RequestID, Reason: e.Reason, Detail: detail,
-	})
+	}); err != nil {
+		return err
+	}
+	return markCreate(ctx, tx, e)
+}
+
+// markCreate gives the claim of an idempotency key, when the request carries one, its commit mark
+// in the transaction of the first success event: the creation and its memory are one atomic fact.
+func markCreate(ctx context.Context, tx store.Tx, e Event) error {
+	if e.Outcome != "success" {
+		return nil
+	}
+	return idem.Mark(ctx, tx, e.ResourceType, e.ResourceID)
 }
 
 // RecordPlatform writes e to the platform audit log; tx is in platform scope.
@@ -121,11 +138,14 @@ func RecordPlatform(ctx context.Context, tx store.Tx, e Event) error {
 	if err != nil {
 		return err
 	}
-	return queries.New(tx).InsertPlatformAuditEvent(ctx, queries.InsertPlatformAuditEventParams{
+	if err := queries.New(tx).InsertPlatformAuditEvent(ctx, queries.InsertPlatformAuditEventParams{
 		ActorType: string(e.Actor.Type), ActorID: e.Actor.ID, ActorName: e.Actor.Name, KeyID: e.Actor.KeyID,
 		Action: e.Action, ResourceType: e.ResourceType, ResourceID: e.ResourceID, Outcome: e.Outcome,
 		RequestID: e.RequestID, Reason: e.Reason, Detail: detail,
-	})
+	}); err != nil {
+		return err
+	}
+	return markCreate(ctx, tx, e)
 }
 
 // RecordAuthFailure writes an authentication failure of the inference listener to the audit

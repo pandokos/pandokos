@@ -13,6 +13,11 @@ erDiagram
     TENANT ||--o{ SERVICE_ACCOUNT : owns
     TENANT ||--o{ MEMBERSHIP : has
     USER ||--o{ MEMBERSHIP : holds
+    MEMBERSHIP ||--|{ MEMBERSHIP_ROLE : roles
+    USER ||--o| LOCAL_ACCOUNT : signs_in_with
+    USER ||--o| USER_IDENTITY : signs_in_with
+    USER ||--o{ USER_SESSION : opens
+    USER ||--o{ PLATFORM_ROLE_ASSIGNMENT : holds
     SERVICE_ACCOUNT ||--o{ VIRTUAL_KEY : has
     TENANT ||--o{ ROLE : defines
     ROLE ||--o{ ROLE_ASSIGNMENT : granted
@@ -37,7 +42,8 @@ erDiagram
 | Group | Tables | Scope |
 |---|---|---|
 | Platform | `tenant`, `platform_key`, `virtual_key_directory` (no grant to any runtime role), `platform_role_assignment`, `provider`, `provider_endpoint`, `model`, `model_tenant_grant`, `price_version`, `price_rate`, `price_import`, `platform_issuer`, `platform_issuer_tenant` (a tenant's session sees its own rows), `platform_limit_rule` (a tenant's session sees the defaults and its own rows), `issuer_directory` (no grant to any runtime role), `kek_version` | global |
-| Identity | `app_user`, `local_account`, `user_session`, `membership`, `service_account`, `virtual_key`, `trusted_issuer`, `subject_mapping`, `role`, `role_permission`, `role_assignment` | tenant (`app_user`, `local_account` and `user_session` are global, memberships are tenant-scoped) |
+| Identity | `service_account`, `virtual_key`, `trusted_issuer`, `subject_mapping`, `role`, `role_permission`, `role_assignment` (service accounts), `membership`, `membership_role` | tenant |
+| People | `app_user`, `local_account`, `user_identity`, `user_session`, `signin_throttle`, `oidc_login`, `idempotency_key` (global, with explicit policies and a grant to the admin role only), `membership_directory` (global, no grant to any runtime role) | global; the gateway and worker roles hold nothing on them |
 | Vault | `tenant_data_key`, `provider_credential` | tenant |
 | Policy | `tenant_model_restriction`, `limit_rule` | tenant |
 | Tenant prices | `tenant_price_version`, `tenant_price_rate` | tenant; no policy shows them to the platform scope |
@@ -114,7 +120,7 @@ are granted to the role, so users and passwords can change without a migration. 
 |---|---|---|---|
 | `pandokos_owner` | `migrate` only | Own and alter the schema | Be used at run time |
 | `pandokos_gateway` | gateway | Read identities, catalogue, policy and credentials of the session tenant (not platform keys); call the key lookup function, which crosses the policy for one fact only: the tenant of a key ID; insert usage and outbox rows; execute `record_auth_failure`, which writes one `auth.failure` audit row in the session tenant | Write identities, catalogue or credentials; hold any privilege on the audit tables (it can only call that function); update or delete usage |
-| `pandokos_admin` | admin API | Read and write the session tenant's configuration; write platform tables when acting as platform; insert audit rows (it cannot read them yet); read usage | Read the sealed secret of a credential, in any session (it holds no `SELECT` on that column); update or delete usage or audit |
+| `pandokos_admin` | admin API | Read and write the session tenant's configuration; write platform tables when acting as platform; insert audit rows (it cannot read them yet); read usage; read and write the tables of people and sessions (sprint 4.2), and execute the five definer functions of migration 0013 and the two issuer lookups that tokens on the administration listener need | Read the sealed secret of a credential, in any session (it holds no `SELECT` on that column); update or delete usage or audit |
 | `pandokos_worker` | worker | List tenants (in platform scope); run one job for one tenant inside that tenant's session; manage outbox deliveries; import prices in platform scope (prices, rates, imports and the platform audit rows of the refresh job) | Run a statement over several tenants' data at once |
 
 Three details make this hold:
@@ -146,22 +152,48 @@ Three details make this hold:
 
 ## People and sessions
 
-A person is one `app_user` row, global because a person can belong to several tenants. How they
-sign in is either a federated identity (issuer and subject) or a `local_account` row: username,
-password hash with its parameters, a must-change flag, failure counters. A user has one sign-in
-method.
+Migration 0013 ([ADR 0056](../adr/0056-users-memberships-and-sessions-as-principals.md),
+[ADR 0057](../adr/0057-local-accounts-and-sessions-formats-and-numbers.md)) holds eleven tables for
+people, sessions and idempotency, five definer functions and two `EXECUTE` grants for tokens. The
+columns of each are exactly what the sign-in guide says is stored: no address, no user agent, no token.
 
-`user_session` holds one row per open session: the hash of the session token, the user, the
-creation and last-use times, and the sign-in method. The token itself exists only in the browser's
-cookie.
+**A person.** `app_user` is global, because a person can belong to several tenants: display name,
+e-mail address, `state` (`active`, `disabled`), `sign_in` (`local` or `oidc`, exactly one, immutable) and
+`tenant_id`, the tenant that manages the account (null: the platform; immutable). A `local_account` (a
+lower-case username unique in the installation, the Argon2id PHC hash with its parameters, a must-change
+flag, the expiry of a generated password) or a `user_identity` (issuer and subject) hangs on the user; a
+composite foreign key on (`id`, `sign_in`) makes the two exclusive without a trigger. **The managing
+rule**, two triggers: a user that a tenant manages is a member of that tenant only and holds no platform
+role; a federated user is always managed by the platform.
 
-These three tables are readable and writable by the admin database role only. The gateway role
-has no grant on them: the data plane cannot see passwords or sessions, which is what makes
-"a session never authenticates inference" a property of the database and not only of the
-code.
+**Roles of people, in tables of their own.** The earlier text of this page kept the roles of members in
+`role_assignment` with a user column; sprint 4.2 departs from it (decision D-2): `membership` (tenant,
+user, `source`) and `membership_role` are tenant-scoped tables with forced row-level security and the one
+policy `tenant_isolation`, and `platform_role_assignment` holds the platform roles of users. The source of
+a row is `manual` (an administrator) or `idp` (kept by the group rules at sign-in). `role_assignment`
+stays the table of service accounts, which the gateway reads; keeping people out of it means the gateway
+never sees a role row about a person, and the isolation harness, which allows one policy per tenant table,
+needs no policy that hides a column. `membership_directory` (user, tenant), kept by a trigger, is read
+only through `user_tenants`, a definer function that answers in the platform scope: the one path from a
+user to its tenants across the tenant policy. `platform_user_lookup` is its counterpart: it finds one
+platform-managed user by ID or username for a tenant's session. The roles themselves are read in each
+tenant's session, under the ordinary policy.
 
-What a user may do in a tenant is still in `membership` and `role_assignment`, under row-level
-security like every other tenant table.
+**Sessions and sign-in state.** `user_session` has one row per open session: the SHA-256 of the token, the
+user, the method, the times (creation, last use, absolute expiry); the token exists only in the browser's
+cookie, and a session ends by deleting the row. `signin_throttle` has one row per digest of a typed
+username and one per digest of a source prefix (failures, window, lock). `oidc_login` holds the SHA-256 of
+the `state` of a sign-in in progress for ten minutes. `idempotency_key` holds the scope, the operation, a
+salted hash of the request, the commit mark and the stored response of a create operation, without the
+members shown once ([ADR 0059](../adr/0059-idempotency-keys.md)). The admin role purges the expired rows
+of the last four tables, and of sessions, every five minutes.
+
+**Visibility.** The platform scope sees every user (sign-in happens there, before any tenant is known).
+A tenant's session sees the users it manages and its members, and writes only the former. An unscoped
+session sees nothing. Sessions, identities, throttle rows and platform roles are visible in the platform
+scope only. The gateway and worker roles have no privilege on any of these tables or functions in any
+session, which is what makes "a session never authenticates inference" a property of the database and not
+only of the code. The audit constraint accepts the actor type `host`, for the commands run on the host.
 
 ## Trusted issuers, the directory and subject mappings (sprint 4.1)
 

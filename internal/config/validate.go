@@ -99,6 +99,7 @@ func validate(c *Config, purpose Purpose) []Problem {
 	}
 
 	ps = append(ps, validateLimits(c)...)
+	ps = append(ps, validateAuth(c)...)
 	ps = append(ps, validateDatabase(c)...)
 
 	return ps

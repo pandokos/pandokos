@@ -112,7 +112,7 @@ jobs:
           cat local/testdb/env >> "$GITHUB_ENV"
       - name: Start Keycloak, Hydra and Authentik
         run: make idp-up
-      - name: Trusted issuer tests
+      - name: Trusted issuer and people tests
         run: make test-idp
       - name: Identity provider logs
         if: failure()
@@ -120,6 +120,28 @@ jobs:
       - name: Stop the identity providers
         if: always()
         run: make idp-down
+      - name: Database logs
+        if: failure()
+        run: docker compose -f test/db/compose.yaml logs --no-color --tail 200
+
+  browser:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+      - name: Start PostgreSQL and PgBouncer
+        run: |
+          sh test/db/up.sh
+          echo "::add-mask::$(cat local/testdb/postgres_password)"
+          cat local/testdb/env >> "$GITHUB_ENV"
+      - run: make build
+      # Chrome is on the runner image; the tests fail, they do not skip, without it.
+      - run: google-chrome --version
+      - run: make test-browser
       - name: Database logs
         if: failure()
         run: docker compose -f test/db/compose.yaml logs --no-color --tail 200

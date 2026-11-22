@@ -50,6 +50,9 @@ type Config struct {
 	Ledger    Ledger    `yaml:"ledger"`
 	Telemetry Telemetry `yaml:"telemetry"`
 	Tokens    Tokens    `yaml:"tokens"`
+	Auth      Auth      `yaml:"auth"`
+
+	Idempotency Idempotency `yaml:"idempotency"`
 }
 
 // Tokens configures the validation of tokens of trusted issuers on the inference listener. Only
@@ -61,6 +64,8 @@ type Tokens struct {
 	MaxLifetime   Duration   `yaml:"max_lifetime"`
 	PrivateHosts  []string   `yaml:"private_hosts"` // lower-cased by Load
 	JWKS          TokensJWKS `yaml:"jwks"`
+	// AdminListener accepts tokens of trusted issuers on the administration listener too.
+	AdminListener bool `yaml:"admin_listener"`
 }
 
 // TokensJWKS configures the retrieval and the cache of the keys of token issuers.
@@ -138,6 +143,9 @@ type AdminListener struct {
 	MaxHeaderBytes    int         `yaml:"max_header_bytes"`
 	TLS               ListenerTLS `yaml:"tls"`
 	AllowPlaintext    bool        `yaml:"allow_plaintext"`
+	// TrustedProxies are the CIDR prefixes of the proxies in front of the listener whose
+	// X-Forwarded-For header is believed (sprint 4.2: the source of a sign-in).
+	TrustedProxies []string `yaml:"trusted_proxies"`
 }
 
 // ListenerTLS configures native TLS on a listener.
@@ -336,6 +344,7 @@ func Defaults() *Config {
 				IdleTimeout:       Duration(120 * time.Second),
 				MaxHeaderBytes:    65536,
 				TLS:               ListenerTLS{MinVersion: "TLS1.2"},
+				TrustedProxies:    []string{},
 			},
 		},
 		Limits: Limits{
@@ -386,7 +395,9 @@ func Defaults() *Config {
 				MaxStale:           Duration(6 * time.Hour),
 			},
 		},
-		Vault: Vault{KEK: VaultKEK{Provider: "local"}},
+		Auth:        authDefaults(),
+		Idempotency: Idempotency{Retention: Duration(24 * time.Hour)},
+		Vault:       Vault{KEK: VaultKEK{Provider: "local"}},
 		Database: Database{
 			Name:           "pandokos",
 			TLS:            DatabaseTLS{Mode: "verify-full"},

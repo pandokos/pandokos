@@ -52,6 +52,11 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | `price_list:read` | tenant | Reading the tenant's price lists and their versions, and the tenant's active currency |
 | `price_list:write` | tenant | Adding a price version to one of the tenant's price lists; choosing the tenant's active currency |
 | `price_list:delete` | tenant | Removing a price version of the tenant's lists that has not started |
+| `user:read` | platform | Reading and listing the users that the platform manages, with their platform roles |
+| `user:write` | platform | Creating and changing such users; disabling and enabling them; resetting their password; unlocking them; ending their sessions; assigning platform roles |
+| `member:read` | tenant | Reading and listing the members of the tenant and their roles |
+| `member:write` | tenant | Adding and removing members and setting their roles; creating local accounts that the tenant manages, and for those: disabling, enabling, resetting the password, unlocking, ending sessions |
+| `session:self` | self | Signing out, changing one's own password, listing and ending one's own sessions |
 
 The six limit permissions are held by two roles: `tenant-admin` has `limit:read`, `limit:write` and
 `limit:delete`; `platform-admin` has `platform_limit:read`, `platform_limit:write` and
@@ -69,8 +74,8 @@ Roles are defined in code and cannot be changed; `role_assignment.role` holds a 
 
 | Role | Held by | Permissions |
 |---|---|---|
-| `platform-admin` | platform principals | `catalog:price`, `catalog:read`, `catalog:write`, `identity:read`, `platform_issuer:delete`, `platform_issuer:read`, `platform_issuer:write`, `platform_key:read`, `platform_key:revoke`, `platform_key:write`, `platform_limit:delete`, `platform_limit:read`, `platform_limit:write`, `tenant:read`, `tenant:suspend`, `tenant:write`, `tenant_credential:read`, `tenant_credential:revoke` |
-| `tenant-admin` | service accounts | `credential:delete`, `credential:read`, `credential:rotate`, `credential:use`, `credential:write`, `identity:read`, `limit:delete`, `limit:read`, `limit:write`, `model:invoke`, `model:read`, `model:restrict`, `price_list:delete`, `price_list:read`, `price_list:write`, `service_account:read`, `service_account:write`, `subject_mapping:delete`, `subject_mapping:read`, `subject_mapping:write`, `token_issuer:delete`, `token_issuer:read`, `token_issuer:write`, `usage:read`, `virtual_key:read`, `virtual_key:revoke`, `virtual_key:write` |
+| `platform-admin` | platform principals and users without a tenant | `catalog:price`, `catalog:read`, `catalog:write`, `identity:read`, `platform_issuer:delete`, `platform_issuer:read`, `platform_issuer:write`, `platform_key:read`, `platform_key:revoke`, `platform_key:write`, `platform_limit:delete`, `platform_limit:read`, `platform_limit:write`, `tenant:read`, `tenant:suspend`, `tenant:write`, `tenant_credential:read`, `tenant_credential:revoke`, `user:read`, `user:write` |
+| `tenant-admin` | service accounts and members of a tenant | `credential:delete`, `credential:read`, `credential:rotate`, `credential:use`, `credential:write`, `identity:read`, `limit:delete`, `limit:read`, `limit:write`, `member:read`, `member:write`, `model:invoke`, `model:read`, `model:restrict`, `price_list:delete`, `price_list:read`, `price_list:write`, `service_account:read`, `service_account:write`, `subject_mapping:delete`, `subject_mapping:read`, `subject_mapping:write`, `token_issuer:delete`, `token_issuer:read`, `token_issuer:write`, `usage:read`, `virtual_key:read`, `virtual_key:revoke`, `virtual_key:write` |
 | `inference` | service accounts | `credential:use`, `model:invoke` |
 
 ## Decision
@@ -78,13 +83,22 @@ Roles are defined in code and cannot be changed; `role_assignment.role` holds a 
 The first rule that applies wins:
 
 1. a permission that is not in the catalogue is denied;
-2. a platform permission is allowed to a platform principal that holds it, whatever the target;
-3. for a service account: no tenant is denied, and a tenant that is not `active` is refused with
-   `tenant_suspended` (403);
+2. a platform permission is allowed to a platform principal, or a user without a tenant, that holds it,
+   whatever the target;
+3. for a service account, and for a user with a tenant: no tenant is denied, and a tenant that is not
+   `active` is refused with `tenant_suspended` (403);
 4. a tenant permission is denied to a platform principal (a platform role implies no tenant
    permission); a request for another tenant is `not_found` (404), whether or not the caller holds
    the permission and whether or not that tenant exists; otherwise the permission must be held;
-5. a self permission is allowed when held.
+5. a self permission is allowed when held. Every user holds `identity:read` and `session:self`
+   whatever its roles; `session:self` is never held by a key or a token, which have no session.
+
+A user is identified by its session, not by a tenant: the principal is built for each request, from the
+platform roles of the user for a platform permission and from its membership of the tenant of the path
+for a tenant permission (no membership is `not_found`). A role counts for a principal when its scope
+fits: a platform role for a principal without a tenant that is not a service account, a tenant role for a
+principal with a tenant that is not a platform key. A role may be given to a user only by a principal
+that holds every permission of it.
 
 The permissions a principal holds are the union of its roles' permissions, narrowed to the scopes
 of the key when the key has any. A role that is unknown, or of the other kind, grants nothing.
