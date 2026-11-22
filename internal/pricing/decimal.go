@@ -109,8 +109,6 @@ func (d Decimal) num() *big.Int {
 	return d.unscaled
 }
 
-var pow10f = [...]float64{1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22}
-
 // Float64 returns the nearest float64, for metrics only: the exact decimal stays in the record.
 func (d Decimal) Float64() float64 {
 	// Both operands exact in a float64: one correctly rounded division, no allocation.
@@ -119,7 +117,8 @@ func (d Decimal) Float64() float64 {
 	}
 	if d.scale <= 22 && d.unscaled.IsInt64() {
 		if n := d.unscaled.Int64(); n > -(1<<53) && n < 1<<53 {
-			return float64(n) / pow10f[d.scale]
+			pow10 := [...]float64{1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22}
+			return float64(n) / pow10[d.scale]
 		}
 	}
 	den := new(big.Int).Exp(bigTen, big.NewInt(int64(d.scale)), nil)
