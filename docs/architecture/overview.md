@@ -208,8 +208,9 @@ sequenceDiagram
    of a trusted issuer, in whichever header the family reads, and is verified offline against the keys
    of the registration that its issuer and audience select ([tokens guide](../operations/tokens.md)).
    Both end as the principal of a service account. The lookup result is cached in memory for a short
-   time. Tokens are accepted on the inference listener only; the administration API takes virtual
-   keys and platform keys until sprint 4.2 decides for users and sessions.
+   time. Tokens are accepted on the inference listener, and on the administration listener only when
+   `tokens.admin_listener` is on (service accounts only); the administration API otherwise takes
+   virtual keys, platform keys and, for people, a session ([sign-in guide](../operations/sign-in.md)).
 3. **Admit and attribute.** Right after authentication the request takes a slot of the ledger buffer
    (step 3a, `Admit`); without a free slot it is refused with `unavailable` and has no record. Then
    caller metadata and trace context are read and the server span is started (step 3b). Nothing of
@@ -323,7 +324,7 @@ The rule: when Pandokos cannot verify that a request is allowed, it does not for
 | Valkey | Refuses by default. Configurable to continue with per-instance counters | Unaffected |
 | The usage ledger, when a counter of a day or month has to be loaded | Refuses with 503 by default, or admits without the limits that could not be verified (`limits.on_store_failure`); a counter already loaded keeps counting | Unaffected |
 | KEK provider | Continues while data keys are cached, then refuses | Credential writes fail |
-| Identity provider | Tokens verify while the keys are cached, up to 6 h after the last fetch; then a call with a token is answered 503, never 401. Virtual keys unaffected | Sign-in through the IdP is unavailable (from sprint 4.2). Open sessions, local accounts and keys are unaffected |
+| Identity provider | Tokens verify while the keys are cached, up to 6 h after the last fetch; then a call with a token is answered 503, never 401. Virtual keys unaffected | Sign-in through the IdP is unavailable. Open sessions, local accounts and keys are unaffected |
 | OTLP collector | Unaffected; spans are dropped when the export queue is full | Unaffected |
 | Event destination | Unaffected; events wait in the outbox | Unaffected |
 | Provider | The provider's error is returned unchanged | Credential validation fails |

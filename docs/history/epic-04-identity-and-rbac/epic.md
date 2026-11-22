@@ -1,0 +1,163 @@
+---
+id: EPIC-4
+title: Identity federation and RBAC
+status: done
+release: v0.1 (sprint 4.1), v0.2
+depends_on: [EPIC-1]
+---
+
+# Epic 4 — Identity federation and RBAC
+
+## Outcome
+
+Workloads call with tokens from their own identity provider; people sign in with a local account
+or through an external OIDC provider and obtain a session; the full role model is in place and
+the API can tell a user what they are allowed to do, so that an interface built on it can offer
+only that.
+
+## Decisions it implements
+
+ADR 0005 (trusted issuers), 0006, 0007, 0022; written by sprint 4.2: 0056, 0057, 0058, 0059 (proposed); by sprint 4.3: 0060, 0061 (proposed).
+
+## Sprints
+
+### 4.1 Trusted token issuers — part of v0.1
+
+- Issuer registration: tenant-bound, or platform-level with a tenant claim and an explicit tenant
+  list.
+- OIDC discovery and JWKS retrieval with caching, bounded refetch on unknown key IDs.
+- Token validation: signature, algorithm allow-list, issuer, audience, expiry, required claims.
+- Subject mapping to service accounts; unmapped subjects refused.
+- The same principal as for virtual keys; no change downstream.
+- Tests with two different open-source identity providers.
+
+Requirements: IAM-06, IAM-07, IAM-08.
+
+Decided at design (2026-11-16): tokens are accepted on the inference listener only; tokens on the
+administration listener, and mapping a subject to a user (the "or users" of IAM-08), moved to 4.2 with
+users and sessions. Delivered: records [ADR 0045](../../../docs/adr/0045-trusted-token-issuers.md),
+[0046](../../../docs/adr/0046-issuer-key-retrieval-and-caching.md) and
+[0047](../../../docs/adr/0047-identity-providers-in-the-test-suite.md); the
+[tokens guide](../../../docs/operations/tokens.md).
+
+Exit: a token from a platform-level issuer with tenant A in its claim acts for tenant A and cannot
+act for a tenant outside the registration's list; a token with the wrong audience is refused; the
+gateway keeps working through a short outage of the identity provider.
+
+### 4.2 Users, local accounts and sessions
+
+The security-sensitive part first: passwords and sessions.
+
+- User records; memberships in tenants; platform users.
+- Local accounts: creation by administrators, Argon2id hashing with stored parameters, minimum
+  length, generated initial password with forced change, own password change.
+- Reset from the administration API and from the host (`pandokos user reset-password`);
+  `pandokos init` creates the first platform admin account.
+- Throttling and temporary lock; uniform answers for unknown users; audit of failures.
+- Sessions: token and hashed storage, cookie attributes, idle and absolute lifetimes, sign-out,
+  revocation, end on password change and on disabling; cross-site request forgery checks.
+- Sessions accepted on the administration listener only; no grant for the gateway role on account
+  and session tables, verified by the isolation harness.
+- Sign-in through an external OIDC provider as relying party: code flow with PKCE, state and
+  nonce, ID token validation, same session; optional mapping of provider groups to roles.
+- Switch to disable local accounts; refusal of sign-in over plain HTTP outside loopback.
+- Idempotency keys on create operations.
+- Tokens of trusted issuers on the administration listener, and subject mappings to users (moved from 4.1).
+- A browser client served on the same origin as the administration listener, by the binary or by
+  a reverse proxy in front of it, can sign in and call the API: tested with a minimal page.
+
+Requirements: IAM-09 to IAM-12, IAM-13 (accounts), IAM-14 (account), IAM-18 to IAM-22, API-05,
+PRV-01.
+
+Exit: with no identity provider, a platform admin signs in over the API with a local account and
+creates another user, who must change the generated password; ten wrong passwords lock the
+account and appear in the audit log; a session cookie presented to the inference port is ignored;
+with an identity provider configured, the same user flows work through it; disabling a user ends
+their sessions within the bound.
+
+Decided at design (2026-11-21, maintainer decisions O-1 to O-12 in the
+[sprint design](4.2-users-local-accounts-sessions/sprint.md), section 12): a bearer token never acts as
+a user, so subject mappings to users are delivered as the identity link of the ID token and group rules;
+tokens on the administration listener are opt-in (`tokens.admin_listener`) and map to service accounts
+only; sign-in events of a tenant-managed user go to its tenant's audit log; `init --admin-username` is an
+optional flag with no default username; with local accounts off a host reset lets no one in; the binary
+serves no static files (the browser contract is tested behind a same-origin proxy in headless Chrome);
+group rules stay in the configuration; the breached-password list is the one unmet ASVS row; a replayed
+create answers without the one-time secret. Records:
+[ADR 0056](../../../docs/adr/0056-users-memberships-and-sessions-as-principals.md),
+[0057](../../../docs/adr/0057-local-accounts-and-sessions-formats-and-numbers.md),
+[0058](../../../docs/adr/0058-openid-connect-relying-party.md) and
+[0059](../../../docs/adr/0059-idempotency-keys.md), with history lines on twelve older records. Guide:
+[signing people in](../../../docs/operations/sign-in.md).
+
+### 4.3 Roles
+
+- All built-in tenant roles; platform auditor (AZ-06 no longer has a platform usage viewer; no platform role reads usage, costs or prices of a tenant).
+- Custom roles from the permission catalogue; no-escalation rule; deactivation; deletion guard.
+- `GET /v1/me`: identity, platform permissions, memberships and effective permissions per tenant.
+- Platform support action inside a tenant: explicit permission, mandatory reason, tenant audit
+  record, configuration switch to disable.
+- Reasons required on high-impact operations.
+- A generated permission reference in the documentation.
+
+Requirements: AZ-03 to AZ-06, AZ-09, AZ-10, AZ-11, SEC-08.
+
+Design constraint from open issues (noted 2026-11-21). These issues stay out of scope, but the
+permission catalogue, the reasons and the support action must be shaped so that they can be added
+later without reworking the role model:
+
+- [#31](https://github.com/pandokos/pandokos/issues/31) (time-boxed budget exceptions): a dedicated
+  permission to approve an overrun, distinct from editing limit rules (AZ-10), with a mandatory
+  reason (SEC-08). The catalogue must allow such a permission to be added; operations on limit rules
+  are among those that take a reason.
+- [#35](https://github.com/pandokos/pandokos/issues/35) (exposure report and containment): a
+  platform-level bulk action across tenants, with a mandatory reason and an audit record in each
+  affected tenant.
+- [#52](https://github.com/pandokos/pandokos/issues/52) (tenant correlation in operational
+  telemetry): a controlled re-identification by the operator, under a dedicated permission, with an
+  audit entry visible to the tenant.
+
+The platform support action is therefore designed as a general mechanism (explicit permission,
+mandatory reason, audit record in the tenant, configuration switch), not as a one-off for support
+inside a tenant.
+
+Decided at design (2026-11-22, maintainer decisions O-1 to O-13 in the
+[sprint design](4.3-roles/sprint.md), section 12): `owner` holds every tenant permission and is the
+first identity of a tenant, `tenant-admin` is that minus owner-only permissions; no platform role carries
+`usage:read`, not even under a support action, and `audit:read` under support is decided in 6.2; under a
+support action the platform grants with the tenant's authority, which is what recovers a tenant without
+administrators; nine operations require a reason, including `suspendTenant` and `reactivateTenant`, a
+change of the v0.1 contract recorded in the release notes of v0.2.0 together with `tenant_setting:write`
+for the time zone and the active currency; limit-rule reasons stay optional; `support.enabled` is on by
+default with a 1 h default and a 24 h cap; the owner can end a support action; platform keys may hold
+`platform-auditor`; no scopes per subject mapping. Records:
+[ADR 0060](../../../docs/adr/0060-built-in-roles-custom-roles-and-the-rule-against-escalation.md) and
+[0061](../../../docs/adr/0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md)
+(proposed), with history lines on fourteen older records. Guide:
+[roles, custom roles and support actions](../../../docs/operations/roles.md). Issues #31, #35 and #52
+stay open: the mechanism they reuse is in place (`x-pandokos-reason`, the attributes `InTenant` and
+`Support`, `store.ActInTenant`, `audit.RecordIntervention`; sprint design, section 11).
+
+Starting point from sprint 4.2 (its design, section 11). A role has a scope (`platform` or `tenant`); a
+principal is built per request; a member's roles are rows of `membership_role`, a service account's of
+`role_assignment` and a platform user's of `platform_role_assignment`. Custom roles are rows that all three
+reference by name, and the deletion guard looks at the three. `authz.Assignable` is the seed of the
+no-escalation rule and becomes "holds every permission of the role" for any role. `GET /v1/me` gains
+effective permissions per tenant in the `memberships` members that exist now. The support action is a
+platform user's principal acting in a tenant where it has no membership: the one place in the hook where
+"no membership" is decided (`404 not_found`) is where a recorded support action with a reason grants a
+bounded principal instead, and its audit row goes to the tenant's log with the actor `user`. Nothing in 4.2
+lets a platform role read a tenant's users, members or sessions. The platform auditor is a second platform
+role for users.
+
+Exit: for each built-in role a test matrix shows which routes are allowed and denied, and
+`/v1/me` reports exactly the permissions the matrix expects; a tenant admin cannot grant a
+permission it lacks; a platform admin cannot read a tenant's usage or audit without a recorded
+support action.
+
+## Risks
+
+- Password and session code is where small mistakes become vulnerabilities. The sprint follows
+  OWASP ASVS for these chapters as a checklist, and its review is done by a second pair of eyes.
+- Identity providers differ in claim shapes for groups. Mapping is configuration, and the tests
+  use more than one provider to keep it honest.
