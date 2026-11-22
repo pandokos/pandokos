@@ -378,8 +378,8 @@ func TestRolesGuide(t *testing.T) {
 		if !strings.Contains(index, "("+name+")") {
 			t.Errorf("docs/adr/README.md does not index %s", name)
 		}
-		if !regexp.MustCompile(`(?m)^- Status: proposed\s*$`).MatchString(read(t, "docs/adr/"+name)) {
-			t.Errorf("%s is not proposed", name)
+		if !regexp.MustCompile(`(?m)^- Status: accepted\s*$`).MatchString(read(t, "docs/adr/"+name)) {
+			t.Errorf("%s is not accepted", name)
 		}
 	}
 }

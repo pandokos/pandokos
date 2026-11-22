@@ -61,12 +61,12 @@ A record is *proposed* until the maintainer accepts it, by merging its pull requ
 | [0053](0053-tenant-price-lists-and-active-currency.md) | Tenant price lists and the active currency | proposed |
 | [0054](0054-usage-data-is-the-tenants.md) | Usage data is the tenant's: what the platform does not see | proposed |
 | [0055](0055-operational-telemetry-holds-no-tenant-data.md) | Operational telemetry holds no tenant data | proposed |
-| [0056](0056-users-memberships-and-sessions-as-principals.md) | Users, memberships, and how a session becomes a principal | proposed |
-| [0057](0057-local-accounts-and-sessions-formats-and-numbers.md) | Local accounts and sessions: formats and numbers | proposed |
-| [0058](0058-openid-connect-relying-party.md) | The OpenID Connect relying party | proposed |
-| [0059](0059-idempotency-keys.md) | Idempotency keys | proposed |
-| [0060](0060-built-in-roles-custom-roles-and-the-rule-against-escalation.md) | Built-in roles, custom roles and the rule against escalation | proposed |
-| [0061](0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md) | Support actions and reasons: how the platform acts inside a tenant | proposed |
+| [0056](0056-users-memberships-and-sessions-as-principals.md) | Users, memberships, and how a session becomes a principal | accepted |
+| [0057](0057-local-accounts-and-sessions-formats-and-numbers.md) | Local accounts and sessions: formats and numbers | accepted |
+| [0058](0058-openid-connect-relying-party.md) | The OpenID Connect relying party | accepted |
+| [0059](0059-idempotency-keys.md) | Idempotency keys | accepted |
+| [0060](0060-built-in-roles-custom-roles-and-the-rule-against-escalation.md) | Built-in roles, custom roles and the rule against escalation | accepted |
+| [0061](0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md) | Support actions and reasons: how the platform acts inside a tenant | accepted |
 
 ## Questions from SOW 0.1 and where they were decided
 
