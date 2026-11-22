@@ -130,9 +130,7 @@ func NewMetrics(o MetricsOptions) (*Metrics, error) {
 	if o.Prometheus {
 		m.reader = sdkmetric.NewManualReader()
 		opts = append(opts, sdkmetric.WithReader(m.reader))
-		m.handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { // replaced by the exposition (C3)
-			http.Error(w, "", http.StatusServiceUnavailable)
-		})
+		m.handler = m.newHandler()
 	}
 	m.sdk = sdkmetric.NewMeterProvider(opts...)
 	m.provider = m.sdk
