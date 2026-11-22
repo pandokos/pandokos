@@ -172,7 +172,7 @@ func roleStatements(c context.Context, t *testing.T, d *dbtest.Database, admin *
 		}
 		// Opening again closes the first first: one open action per actor and tenant.
 		ids, err := q.CloseOpenSupportActions(c, queries.CloseOpenSupportActionsParams{TenantID: tenantID, ActorType: "platform", ActorID: "pkabcdefghijklmn", ClosedByID: "pkabcdefghijklmn"})
-		if err != nil || len(ids) != 1 || ids[0] != actionID {
+		if err != nil || len(ids) != 1 || ids[0].ID != actionID || ids[0].ClosedBy != "platform" {
 			t.Errorf("CloseOpenSupportActions: %v %v", ids, err)
 		}
 		b, err := q.OpenSupportAction(c, queries.OpenSupportActionParams{TenantID: tenantID, ActorType: "platform", ActorID: "pkabcdefghijklmn", ActorName: "ops",

@@ -6,6 +6,7 @@ package admin
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/url"
 	"strings"
 	"time"
@@ -232,7 +233,7 @@ func (s *server) federatedInput(ctx context.Context, id oidc.Identity, presented
 			// the line names the position of the rule only.
 			_, ok := ids[r.Tenant]
 			if _, custom := ruleRole(r); !ok || (custom && states[r.Tenant][r.Role] != "active") {
-				s.log.Warn("group rule skipped", "rule", i+1, "request_id", stateOf(ctx).id)
+				ruleSkipped(s.log, i+1, stateOf(ctx).id)
 				continue
 			}
 		}
@@ -267,13 +268,19 @@ func (s *server) federatedInput(ctx context.Context, id oidc.Identity, presented
 			}
 			for i, r := range live {
 				if !r.Platform && r.Role == role && ids[r.Tenant] == tid.String() {
-					s.log.Warn("group rule skipped", "rule", position[i], "request_id", requestID)
+					ruleSkipped(s.log, position[i], requestID)
 				}
 			}
 		}
 		return out, nil
 	}
 	return in, nil
+}
+
+// ruleSkipped is the line of a group rule that gives nothing: at start (no request) or at a sign-in.
+// It names the position of the rule in the configuration and the request, nothing else.
+func ruleSkipped(log *slog.Logger, position int, requestID string) {
+	log.Warn("group rule skipped", "rule", position, "request_id", requestID)
 }
 
 // oidcFailed logs and audits a refused sign-in through the identity provider, within the cap. The

@@ -767,7 +767,7 @@ func checkGroupRules(o Options) error {
 			return fmt.Errorf("admin: group rules: custom roles cannot be read: %w", err)
 		}
 		if _, ok := have[r.Role]; !ok {
-			o.Logger.Warn("group rule skipped", "rule", i+1)
+			ruleSkipped(o.Logger, i+1, "")
 		}
 	}
 	return nil
