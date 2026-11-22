@@ -292,12 +292,14 @@ func TestMetricsHoldNoTenantData(t *testing.T) {
 		keyFile := filepath.Join(t.TempDir(), "key")
 		out := p.mustCLI(t, admin, "key", "create", "--tenant", f.id, "--service-account", sa, "--description", f.keyDesc, "--key-out", keyFile)
 		f.key = readKeyFile(t, keyFile)
-		if km := regexp.MustCompile(`(?m)^(?:key )?id: (t[a-z2-7]{16})$`).FindStringSubmatch(out); km != nil {
-			p.track(km[1])
+		km := regexp.MustCompile(`(?m)^(?:key )?id: (t[a-z2-7]{16})$`).FindStringSubmatch(out)
+		if km == nil {
+			t.Fatalf("no key ID in the output of key create:\n%s", out)
 		}
+		p.track(km[1])
 		f.cred = p.addCredential(t, admin, "openai", fixtures.CanaryCredential)
 		p.track(f.id, sa)
-		canaries = append(canaries, f.id, f.name, f.saName, f.keyDesc, f.meta, sa)
+		canaries = append(canaries, f.id, f.name, f.saName, f.keyDesc, f.meta, sa, km[1])
 		tenants = append(tenants, f)
 	}
 	canaries = append(canaries, fixtures.Canaries()...)
@@ -470,7 +472,11 @@ func TestCollectorStoppedLatencyUnchanged(t *testing.T) {
 			if mode == "closed" {
 				col.Close()
 			} else {
+				before := len(col.Requests())
 				col.Stall()
+				// The timed calls must overlap a stalled export: wait until one has reached the collector
+				// (it is recorded before it waits) and is held there for the OTLP timeout.
+				testutil.Eventually(t, 30*time.Second, "an export request held by the stalled collector", func() bool { return len(col.Requests()) > before })
 			}
 			without := timeCalls()
 			if without > withCollector*3+500*time.Millisecond {
