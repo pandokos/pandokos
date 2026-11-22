@@ -17,6 +17,9 @@ const (
 	settingTenant = "app.tenant_id"
 	settingScope  = "app.scope"
 	scopePlatform = "platform"
+
+	// restoreTimeout bounds the restore of the tenant of a transaction after InTenant's function.
+	restoreTimeout = 5 * time.Second
 )
 
 // Tx is what code running inside a transaction may do. It cannot commit, roll back, or reach
@@ -153,9 +156,12 @@ func (db *DB) ActInTenant(ctx context.Context, id tenant.ID, fn func(ctx context
 
 // InTenant runs fn on t, a transaction in platform scope, with the tenant of the transaction set
 // to id: what ActInTenant gives, on the transaction and the connection that are already held. The
-// tenant the transaction had is restored when fn returns, also with an error that leaves the
-// transaction usable (no row); fn's error is the one returned. A transaction without the platform scope is ErrNoPlatformScope, a zero id ErrNoTenant.
-func InTenant(ctx context.Context, t Tx, id tenant.ID, fn func(ctx context.Context) error) error {
+// tenant the transaction had is restored on every exit of fn: a return, an error, a cancelled
+// context (the restore runs on a context that is not cancelled, with a short timeout) and a panic
+// (restored, then the panic continues). If the restore fails its error is always returned, joined
+// with fn's error, so a caller never goes on with the tenant still set; otherwise fn's error is
+// returned. A transaction without the platform scope is ErrNoPlatformScope, a zero id ErrNoTenant.
+func InTenant(ctx context.Context, t Tx, id tenant.ID, fn func(ctx context.Context) error) (err error) {
 	if id.IsZero() {
 		return ErrNoTenant
 	}
@@ -170,11 +176,14 @@ func InTenant(ctx context.Context, t Tx, id tenant.ID, fn func(ctx context.Conte
 	if _, err := t.Exec(ctx, "SELECT pg_catalog.set_config($1, $2, true)", settingTenant, id.String()); err != nil {
 		return fmt.Errorf("store: set the transaction context: %w", err)
 	}
-	ferr := fn(ctx)
-	if _, err := t.Exec(ctx, "SELECT pg_catalog.set_config($1, $2, true)", settingTenant, prev); err != nil && ferr == nil {
-		return fmt.Errorf("store: set the transaction context: %w", err)
-	}
-	return ferr
+	defer func() {
+		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), restoreTimeout)
+		defer cancel()
+		if _, rerr := t.Exec(rctx, "SELECT pg_catalog.set_config($1, $2, true)", settingTenant, prev); rerr != nil {
+			err = errors.Join(err, fmt.Errorf("store: restore the transaction context: %w", rerr))
+		}
+	}()
+	return fn(ctx)
 }
 
 // Interval returns d as the value of an interval parameter of a query.

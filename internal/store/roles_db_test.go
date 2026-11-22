@@ -513,7 +513,7 @@ func TestInTenant(t *testing.T) {
 			err := admin.Platform(ctx(t), func(c context.Context, tx store.Tx) error {
 				cc, cancel := context.WithCancel(c)
 				defer cancel()
-				err := store.InTenant(cc, tx, a, func(c context.Context) error {
+				err := store.InTenant(cc, tx, a, func(context.Context) error {
 					cancel()
 					return boom
 				})
