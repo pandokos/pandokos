@@ -104,6 +104,8 @@ replaced by `_`.
 | `auth.oidc.private_hosts` | `PANDOKOS_AUTH_OIDC_PRIVATE_HOSTS` | list | none | Host names, separated by commas in the environment, whose URLs may resolve to private addresses, as tokens.private_hosts |
 | `auth.oidc.post_sign_in_path` | `PANDOKOS_AUTH_OIDC_POST_SIGN_IN_PATH` | path | `/` | Where the browser goes after sign-in through the identity provider: starts with one /, no //, no \, no control character |
 | `idempotency.retention` | `PANDOKOS_IDEMPOTENCY_RETENTION` | duration | `24h` | Time an idempotency key is kept; 1h to 7d |
+| `support.enabled` | `PANDOKOS_SUPPORT_ENABLED` | boolean | `true` | Allow the platform to open support actions inside a tenant; `false`: none can be opened and none is honoured, and a tenant that loses its administrators cannot be recovered through the API (a warning at start) |
+| `support.max_duration` | `PANDOKOS_SUPPORT_MAX_DURATION` | duration | `1h` | Default and longest life of a support action; 1m to 24h |
 | `database.address` | `PANDOKOS_DATABASE_ADDRESS` | `host:port` | none, required | Address of PostgreSQL, or of the connection pooler in front of it |
 | `database.direct_address` | `PANDOKOS_DATABASE_DIRECT_ADDRESS` | `host:port` | none | Address of PostgreSQL itself, used only by the notification listener. Set it when `database.address` is a pooler in transaction mode |
 | `database.name` | `PANDOKOS_DATABASE_NAME` | name | `pandokos` | Database name |

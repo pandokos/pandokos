@@ -75,6 +75,12 @@ type AuthOIDC struct {
 	ClientSecret secret.Secret `yaml:"-"` // read from ClientSecretFile when the purpose is serve and OIDC is enabled
 }
 
+// Support configures the support actions of the platform inside a tenant (sprint 4.3).
+type Support struct {
+	Enabled     bool     `yaml:"enabled"`
+	MaxDuration Duration `yaml:"max_duration"`
+}
+
 // Idempotency configures the retention of idempotency keys.
 type Idempotency struct {
 	Retention Duration `yaml:"retention"`
@@ -197,6 +203,10 @@ func authKeys() []keyDef {
 			setString(func(c *Config) *string { return &c.Auth.OIDC.PostSignInPath })),
 		serveDef("idempotency.retention", "duration", "24h", "Time an idempotency key is kept; 1h to 7d",
 			setDuration(func(c *Config) *Duration { return &c.Idempotency.Retention })),
+		serveDef("support.enabled", "boolean", "true", "Allow the platform to open support actions inside a tenant ; false: none can be opened and none is honoured",
+			setBool(func(c *Config) *bool { return &c.Support.Enabled })),
+		serveDef("support.max_duration", "duration", "1h", "Default and longest life of a support action; 1m to 24h",
+			setDuration(func(c *Config) *Duration { return &c.Support.MaxDuration })),
 	}
 }
 
@@ -344,6 +354,7 @@ func validateAuth(c *Config) []Problem {
 	if r := time.Duration(c.Idempotency.Retention); r < time.Hour || r > 7*hoursPerDay {
 		add("idempotency.retention", "must be between 1h and 168h")
 	}
+	inRange("support.max_duration", c.Support.MaxDuration, time.Minute, hoursPerDay, "1m and 24h")
 	a := &c.Auth
 	l := &a.Local
 	if l.PasswordMinLength < 8 || l.PasswordMinLength > 128 {
@@ -406,6 +417,9 @@ func authWarnings(c *Config) []Warning {
 	a := c.Listeners.Admin
 	if host, _, err := net.SplitHostPort(a.Address); err == nil && a.AllowPlaintext && !isLoopback(host) && (a.TLS.CertFile == "" || a.TLS.KeyFile == "") && c.Auth.PublicOrigin == "" {
 		ws = append(ws, Warning{Key: "auth.public_origin", Message: "the administration listener is served without TLS and no HTTPS origin is named: nobody can sign in; set auth.public_origin to the origin that browsers use"})
+	}
+	if !c.Support.Enabled {
+		ws = append(ws, Warning{Key: "support.enabled", Message: "support actions are off: a tenant that loses its administrators cannot be recovered through the API"})
 	}
 	if o := c.Auth.OIDC; o.Enabled && len(o.GroupMappings) == 0 && !o.AutoProvision {
 		ws = append(ws, Warning{Key: "auth.oidc.group_mappings", Message: "no group mappings and no auto_provision: every user of the identity provider must be linked by hand"})

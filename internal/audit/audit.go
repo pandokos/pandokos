@@ -59,6 +59,8 @@ type Event struct {
 	RequestID    string
 	Reason       string         // from the request body, when given
 	Detail       map[string]any // redacted description of the change
+	// SupportActionID names the support action the change was made under; empty for none.
+	SupportActionID string
 }
 
 func sensitive(key string) bool {
@@ -113,14 +115,26 @@ func RecordTenant(ctx context.Context, tx store.Tx, id tenant.ID, e Event) error
 	if err != nil {
 		return err
 	}
+	var action *string
+	if e.SupportActionID != "" {
+		action = &e.SupportActionID
+	}
 	if err := queries.New(tx).InsertAuditEvent(ctx, queries.InsertAuditEventParams{
-		TenantID: id.String(), ActorType: string(e.Actor.Type), ActorID: e.Actor.ID, ActorName: e.Actor.Name, KeyID: e.Actor.KeyID,
+		SupportActionID: action,
+		TenantID:        id.String(), ActorType: string(e.Actor.Type), ActorID: e.Actor.ID, ActorName: e.Actor.Name, KeyID: e.Actor.KeyID,
 		Action: e.Action, ResourceType: e.ResourceType, ResourceID: e.ResourceID, Outcome: e.Outcome,
 		RequestID: e.RequestID, Reason: e.Reason, Detail: detail,
 	}); err != nil {
 		return err
 	}
 	return markCreate(ctx, tx, e)
+}
+
+// RecordIntervention writes e to the audit log of tenant id and to the platform's, with the tenant
+// ID added to the detail of the platform's row. tx comes from store.DB.ActInTenant.
+// Part A: a stub; step C1 writes it.
+func RecordIntervention(_ context.Context, _ store.Tx, _ tenant.ID, _ Event) error {
+	return errors.New("audit: RecordIntervention is not implemented")
 }
 
 // markCreate gives the claim of an idempotency key, when the request carries one, its commit mark

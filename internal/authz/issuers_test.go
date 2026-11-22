@@ -85,8 +85,8 @@ func TestIssuerPermissions(t *testing.T) {
 				}
 			}
 		}
-		if n := len(roles); n != 3 {
-			t.Errorf("%d built-in roles: sprint 4.1 adds no role", n)
+		if n := len(roles); n != 10 {
+			t.Errorf("%d built-in roles: sprint 4.3 makes ten", n)
 		}
 	})
 

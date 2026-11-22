@@ -40,7 +40,13 @@ func TestUpgrade0013(t *testing.T) {
 	snapshot := func(tbl string) string {
 		t.Helper()
 		var s string
-		if err := super.QueryRow(ctx, `SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text)::text, '[]') FROM pandokos.`+tbl+` t`).Scan(&s); err != nil {
+		// Migration 0014 (sprint 4.3) adds the column audit_event.support_action_id and gives the role
+		// owner to whoever held tenant-admin by hand: neither is a change by migration 0013.
+		where := ""
+		if tbl == "role_assignment" {
+			where = " WHERE t.role <> 'owner'"
+		}
+		if err := super.QueryRow(ctx, `SELECT COALESCE(jsonb_agg(to_jsonb(t) - 'support_action_id' ORDER BY to_jsonb(t)::text)::text, '[]') FROM pandokos.`+tbl+` t`+where).Scan(&s); err != nil {
 			t.Fatal(err)
 		}
 		return s

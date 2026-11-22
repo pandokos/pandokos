@@ -94,7 +94,13 @@ SELECT k.key_id, k.secret_hash, COALESCE(k.scopes, '{}')::text[] AS scopes, (k.s
        s.valid_from, s.valid_until,
        t.id AS tenant_id, t.name AS tenant_name, t.state AS tenant_state,
        COALESCE((SELECT array_agg(r.role ORDER BY r.role) FROM pandokos.role_assignment r
-                  WHERE r.service_account_id = k.service_account_id), '{}')::text[] AS roles
+                  WHERE r.service_account_id = k.service_account_id), '{}')::text[] AS roles,
+       COALESCE((SELECT array_agg(DISTINCT p ORDER BY p)
+                   FROM pandokos.role_assignment r
+                   JOIN pandokos.tenant_role c
+                     ON c.tenant_id = r.tenant_id AND c.name = r.role AND c.state = 'active'
+                  CROSS JOIN LATERAL unnest(c.permissions) AS p
+                  WHERE r.service_account_id = k.service_account_id), '{}')::text[] AS granted
   FROM pandokos.virtual_key k
   JOIN pandokos.service_account s ON s.tenant_id = k.tenant_id AND s.id = k.service_account_id
   JOIN pandokos.tenant t ON t.id = k.tenant_id
@@ -120,6 +126,7 @@ type GetKeyPrincipalRow struct {
 	TenantName          string
 	TenantState         string
 	Roles               []string
+	Granted             []string
 }
 
 func (q *Queries) GetKeyPrincipal(ctx context.Context, keyID string) (GetKeyPrincipalRow, error) {
@@ -144,6 +151,7 @@ func (q *Queries) GetKeyPrincipal(ctx context.Context, keyID string) (GetKeyPrin
 		&i.TenantName,
 		&i.TenantState,
 		&i.Roles,
+		&i.Granted,
 	)
 	return i, err
 }

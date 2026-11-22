@@ -82,6 +82,8 @@ func (s *server) GetMe(ctx context.Context, _ adminapi.GetMeInput) (*adminapi.Me
 		m.Memberships = append(m.Memberships, adminapi.Membership{
 			Tenant: adminapi.TenantRef{ID: tid.String(), Name: row.TenantName, State: adminapi.TenantState(row.TenantState)},
 			Roles:  nonNil(row.Roles),
+			// Step C5 fills the effective permissions; until then an empty list keeps the member valid.
+			Permissions: []string{},
 		})
 	}
 	sort.Slice(m.Memberships, func(i, j int) bool { return m.Memberships[i].Tenant.Name < m.Memberships[j].Tenant.Name })

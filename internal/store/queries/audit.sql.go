@@ -12,25 +12,27 @@ import (
 const insertAuditEvent = `-- name: InsertAuditEvent :exec
 
 INSERT INTO pandokos.audit_event (tenant_id, actor_type, actor_id, actor_name, key_id, action, resource_type,
-                                  resource_id, outcome, request_id, reason, detail)
+                                  resource_id, outcome, request_id, reason, detail, support_action_id)
 VALUES ($1::uuid, $2::text, $3::text, $4::text,
         $5::text, $6::text, $7::text, $8::text,
-        $9::text, $10::text, $11::text, $12::text::jsonb)
+        $9::text, $10::text, $11::text, $12::text::jsonb,
+        $13::uuid)
 `
 
 type InsertAuditEventParams struct {
-	TenantID     string
-	ActorType    string
-	ActorID      string
-	ActorName    string
-	KeyID        string
-	Action       string
-	ResourceType string
-	ResourceID   string
-	Outcome      string
-	RequestID    string
-	Reason       string
-	Detail       string
+	TenantID        string
+	ActorType       string
+	ActorID         string
+	ActorName       string
+	KeyID           string
+	Action          string
+	ResourceType    string
+	ResourceID      string
+	Outcome         string
+	RequestID       string
+	Reason          string
+	Detail          string
+	SupportActionID *string
 }
 
 // Audit. Insert only: there is no statement that reads, changes or removes an audit row.
@@ -49,6 +51,7 @@ func (q *Queries) InsertAuditEvent(ctx context.Context, arg InsertAuditEventPara
 		arg.RequestID,
 		arg.Reason,
 		arg.Detail,
+		arg.SupportActionID,
 	)
 	return err
 }

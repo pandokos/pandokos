@@ -50,7 +50,7 @@ func TestUpgradeWithRules(t *testing.T) {
 
 	// The upgrade: stop, migrate, start.
 	code, out, errs := runBinary(t, d.Env(t), "migrate")
-	if code != 0 || !strings.Contains(out, "applied 0011_limit_integrity") || !strings.Contains(out, "applied 0012_tenant_price_lists") || !strings.Contains(out, "schema is at version 13") {
+	if code != 0 || !strings.Contains(out, "applied 0011_limit_integrity") || !strings.Contains(out, "applied 0012_tenant_price_lists") || !strings.Contains(out, "schema is at version 14") {
 		t.Fatalf("migrate: exit %d\nstdout: %s\nstderr: %s", code, out, errs)
 	}
 	var kept int

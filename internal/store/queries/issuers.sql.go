@@ -608,7 +608,13 @@ SELECT m.id AS mapping_id,
        s.valid_from, s.valid_until,
        t.id AS tenant_id, t.name AS tenant_name, t.state AS tenant_state,
        COALESCE((SELECT array_agg(r.role ORDER BY r.role) FROM pandokos.role_assignment r
-                  WHERE r.service_account_id = m.service_account_id), '{}')::text[] AS roles
+                  WHERE r.service_account_id = m.service_account_id), '{}')::text[] AS roles,
+       COALESCE((SELECT array_agg(DISTINCT p ORDER BY p)
+                   FROM pandokos.role_assignment r
+                   JOIN pandokos.tenant_role c
+                     ON c.tenant_id = r.tenant_id AND c.name = r.role AND c.state = 'active'
+                  CROSS JOIN LATERAL unnest(c.permissions) AS p
+                  WHERE r.service_account_id = m.service_account_id), '{}')::text[] AS granted
   FROM pandokos.subject_mapping m
   JOIN pandokos.service_account s ON s.tenant_id = m.tenant_id AND s.id = m.service_account_id
   JOIN pandokos.tenant t ON t.id = m.tenant_id
@@ -645,6 +651,7 @@ type GetTokenPrincipalRow struct {
 	TenantName          string
 	TenantState         string
 	Roles               []string
+	Granted             []string
 }
 
 func (q *Queries) GetTokenPrincipal(ctx context.Context, arg GetTokenPrincipalParams) (GetTokenPrincipalRow, error) {
@@ -666,6 +673,7 @@ func (q *Queries) GetTokenPrincipal(ctx context.Context, arg GetTokenPrincipalPa
 		&i.TenantName,
 		&i.TenantState,
 		&i.Roles,
+		&i.Granted,
 	)
 	return i, err
 }

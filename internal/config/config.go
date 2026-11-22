@@ -53,6 +53,7 @@ type Config struct {
 	Auth      Auth      `yaml:"auth"`
 
 	Idempotency Idempotency `yaml:"idempotency"`
+	Support     Support     `yaml:"support"`
 }
 
 // Tokens configures the validation of tokens of trusted issuers on the inference listener. Only
@@ -397,6 +398,7 @@ func Defaults() *Config {
 		},
 		Auth:        authDefaults(),
 		Idempotency: Idempotency{Retention: Duration(24 * time.Hour)},
+		Support:     Support{Enabled: true, MaxDuration: Duration(time.Hour)},
 		Vault:       Vault{KEK: VaultKEK{Provider: "local"}},
 		Database: Database{
 			Name:           "pandokos",

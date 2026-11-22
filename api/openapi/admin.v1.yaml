@@ -41,6 +41,12 @@ tags:
   - name: subject-mappings
   - name: platform-issuers
   - name: limits
+  - name: roles
+    description: The permission catalogue, the built-in roles and the custom roles of a tenant
+  - name: tenant-support
+    description: Support actions of the platform inside a tenant
+  - name: support-actions
+    description: What the platform was allowed to do in the tenant, seen by the tenant
   - name: platform-limits
 paths:
   /v1/me:
@@ -226,6 +232,7 @@ paths:
       operationId: createServiceAccount
       tags: [service-accounts]
       summary: Create a service account
+      description: Refused with escalation_refused when it would give or take a permission the caller does not hold.
       x-pandokos-permission: service_account:write
       requestBody:
         required: true
@@ -269,6 +276,7 @@ paths:
       description: >-
         Members that are absent are left as they are. valid_from and valid_until accept null,
         which removes the bound. roles replaces the whole set of roles.
+        Refused with escalation_refused when it would give or take a permission the caller does not hold.
       x-pandokos-permission: service_account:write
       requestBody:
         required: true
@@ -373,6 +381,7 @@ paths:
       description: >-
         The key is returned once and is stored only as a hash. A service account can hold
         several active keys.
+        Refused with escalation_refused when it would give or take a permission the caller does not hold.
       x-pandokos-permission: virtual_key:write
       requestBody:
         required: true
@@ -1332,8 +1341,10 @@ paths:
     post:
       operationId: createPlatformKey
       tags: [platform-keys]
-      summary: Issue a platform key with the role platform-admin
-      description: The key is returned once and is stored only as a hash.
+      summary: Issue a platform key
+      description: >-
+        The key is returned once and is stored only as a hash. Its role is platform-admin unless
+        role names platform-auditor, a read-only role. Refused with escalation_refused when it would give or take a permission the caller does not hold.
       x-pandokos-permission: platform_key:write
       requestBody:
         required: true
@@ -1730,6 +1741,7 @@ paths:
       summary: Let a token subject act as a service account
       description: >-
         The subject acts with all the roles of the service account. A platform-level registration that does not list the tenant is not found.
+        Refused with escalation_refused when it would give or take a permission the caller does not hold.
       x-pandokos-permission: subject_mapping:write
       requestBody:
         required: true
@@ -2386,6 +2398,7 @@ paths:
       summary: Create a user
       description: >-
         A local user is returned with a generated password, once, that it must change at its first sign-in. A federated user is named by its subject at the identity provider.
+        Refused with escalation_refused when it would give or take a permission the caller does not hold.
       x-pandokos-permission: user:write
       parameters:
         - {$ref: '#/components/parameters/IdempotencyKey'}
@@ -2424,6 +2437,7 @@ paths:
       operationId: updateUser
       tags: [users]
       summary: Change a user
+      description: Refused with escalation_refused when it would give or take a permission the caller does not hold.
       x-pandokos-permission: user:write
       requestBody:
         required: true
@@ -2522,6 +2536,7 @@ paths:
       summary: Reset the password of a user
       description: >-
         Replaces the password with a generated one, shown once, that must be changed at the next sign-in, and ends the sessions of the user.
+        Refused with escalation_refused when it would give or take a permission the caller does not hold.
       x-pandokos-permission: user:write
       requestBody:
         required: false
@@ -2589,6 +2604,7 @@ paths:
       summary: Add a member to a tenant
       description: >-
         Creates a local account that the tenant manages (account new; its generated password is returned once) or adds a user that the platform manages (account existing).
+        Refused with escalation_refused when it would give or take a permission the caller does not hold.
       x-pandokos-permission: member:write
       parameters:
         - {$ref: '#/components/parameters/IdempotencyKey'}
@@ -2629,6 +2645,7 @@ paths:
       operationId: updateMember
       tags: [members]
       summary: Change the roles or the attributes of a member
+      description: Refused with escalation_refused when it would give or take a permission the caller does not hold.
       x-pandokos-permission: member:write
       requestBody:
         required: true
@@ -2652,6 +2669,7 @@ paths:
       summary: Remove a member from a tenant
       description: >-
         Removes the membership and its roles. A user that the tenant manages is also disabled and its sessions end.
+        Refused with escalation_refused when it would give or take a permission the caller does not hold.
       x-pandokos-permission: member:write
       responses:
         "200": {$ref: '#/components/responses/Member'}
@@ -2744,6 +2762,7 @@ paths:
       operationId: resetMemberPassword
       tags: [members]
       summary: Reset the password of a member
+      description: Refused with escalation_refused when it would give or take a permission the caller does not hold.
       x-pandokos-permission: member:write
       requestBody:
         required: false
@@ -2786,6 +2805,354 @@ paths:
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/permissions:
+    get:
+      operationId: listPermissions
+      tags: [roles]
+      summary: The permission catalogue
+      x-pandokos-permission: identity:read
+      responses:
+        "200": {$ref: '#/components/responses/PermissionList'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/roles:
+    get:
+      operationId: listBuiltinRoles
+      tags: [roles]
+      summary: The built-in roles of tenants and of the platform
+      x-pandokos-permission: identity:read
+      responses:
+        "200": {$ref: '#/components/responses/BuiltinRoleList'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/roles:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: listRoles
+      tags: [roles]
+      summary: List the custom roles of a tenant
+      x-pandokos-permission: role:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/NamedSort'}
+        - name: state
+          in: query
+          description: Only roles in this state.
+          schema: {$ref: '#/components/schemas/RoleState'}
+      responses:
+        "200": {$ref: '#/components/responses/RoleList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: createRole
+      tags: [roles]
+      summary: Define a custom role
+      description: >-
+        The caller must hold every permission of the role (escalation_refused otherwise). The name
+        cannot be changed later, cannot be the name of a built-in role and cannot start with
+        platform- or pandokos-.
+      x-pandokos-permission: role:write
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RoleCreate'}
+      responses:
+        "201": {$ref: '#/components/responses/RoleCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/IdempotencyKeyReused'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/roles/{role}:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/Role'}
+    get:
+      operationId: getRole
+      tags: [roles]
+      summary: Read a custom role and how many identities hold it
+      x-pandokos-permission: role:read
+      responses:
+        "200": {$ref: '#/components/responses/Role'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    patch:
+      operationId: updateRole
+      tags: [roles]
+      summary: Change the description or the permissions of a custom role
+      description: >-
+        The change holds for every holder: for members at their next request, for keys and tokens
+        when the gateways drop their cached principals. The caller must hold every permission the
+        role has and will have. Refused with escalation_refused when it would give or take a
+        permission the caller does not hold.
+      x-pandokos-permission: role:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RoleUpdate'}
+      responses:
+        "200": {$ref: '#/components/responses/Role'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    delete:
+      operationId: deleteRole
+      tags: [roles]
+      summary: Delete a custom role that nobody holds
+      description: >-
+        The caller must hold every permission of the role. Refused with escalation_refused when it
+        would give or take a permission the caller does not hold.
+      x-pandokos-permission: role:delete
+      responses:
+        "204": {$ref: '#/components/responses/Deleted'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/RoleInUse'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/roles/{role}/deactivate:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/Role'}
+    post:
+      operationId: deactivateRole
+      tags: [roles]
+      summary: Deactivate a custom role
+      description: >-
+        Holders keep the assignment and lose the permissions; the role cannot be assigned.
+        Deactivating an inactive role succeeds and changes nothing. Refused with escalation_refused
+        when it would give or take a permission the caller does not hold.
+      x-pandokos-permission: role:write
+      x-pandokos-reason: required
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RequiredReason'}
+      responses:
+        "200": {$ref: '#/components/responses/Role'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/roles/{role}/activate:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/Role'}
+    post:
+      operationId: activateRole
+      tags: [roles]
+      summary: Activate a custom role
+      description: >-
+        Holders get the permissions of the role again, and the role can be assigned. Activating an
+        active role succeeds and changes nothing. Refused with escalation_refused when it would give
+        or take a permission the caller does not hold.
+      x-pandokos-permission: role:write
+      x-pandokos-reason: required
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RequiredReason'}
+      responses:
+        "200": {$ref: '#/components/responses/Role'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenant-support/{tenant}/actions:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: listTenantSupportActions
+      tags: [tenant-support]
+      summary: List the support actions of a tenant as a platform principal
+      x-pandokos-permission: tenant_support:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {name: sort, in: query, schema: {$ref: '#/components/schemas/SupportActionSort'}}
+        - {name: state, in: query, description: 'open, or closed for every other state.', schema: {$ref: '#/components/schemas/SupportActionFilter'}}
+      responses:
+        "200": {$ref: '#/components/responses/SupportActionList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: openSupportAction
+      tags: [tenant-support]
+      summary: Open a support action in a tenant
+      description: >-
+        Lets the caller act in the tenant with the listed permissions until the action expires or is
+        closed. The reason, the permissions and every change made under the action are recorded in
+        the tenant's audit log; the tenant sees the action and its owner can end it. An open action
+        of the same caller in the tenant is closed first. No permission that reads usage, prices or
+        secrets can be listed. Refused with support_disabled when the installation switched support
+        actions off.
+      x-pandokos-permission: tenant_support:open
+      x-pandokos-reason: required
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SupportActionOpen'}
+      responses:
+        "201": {$ref: '#/components/responses/SupportActionCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/IdempotencyKeyReused'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenant-support/{tenant}/actions/{action}:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/SupportAction'}
+    get:
+      operationId: getTenantSupportAction
+      tags: [tenant-support]
+      summary: Read a support action as a platform principal
+      x-pandokos-permission: tenant_support:read
+      responses:
+        "200": {$ref: '#/components/responses/SupportAction'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenant-support/{tenant}/actions/{action}/close:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/SupportAction'}
+    post:
+      operationId: closeSupportAction
+      tags: [tenant-support]
+      summary: Close a support action
+      description: >-
+        Closing an action that is closed or expired succeeds and changes nothing.
+      x-pandokos-permission: tenant_support:open
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/SupportAction'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/support-actions:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: listSupportActions
+      tags: [support-actions]
+      summary: List the support actions of the platform in a tenant
+      x-pandokos-permission: support_action:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {name: sort, in: query, schema: {$ref: '#/components/schemas/SupportActionSort'}}
+        - {name: state, in: query, description: 'open, or closed for every other state.', schema: {$ref: '#/components/schemas/SupportActionFilter'}}
+      responses:
+        "200": {$ref: '#/components/responses/SupportActionList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/support-actions/{action}:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/SupportAction'}
+    get:
+      operationId: getSupportAction
+      tags: [support-actions]
+      summary: Read a support action of the platform in a tenant
+      x-pandokos-permission: support_action:read
+      responses:
+        "200": {$ref: '#/components/responses/SupportAction'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/support-actions/{action}/end:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/SupportAction'}
+    post:
+      operationId: endSupportAction
+      tags: [support-actions]
+      summary: End a support action of the platform in a tenant
+      description: >-
+        Ending an action that is closed or expired succeeds and changes nothing.
+      x-pandokos-permission: support_action:end
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Reason'}
+      responses:
+        "200": {$ref: '#/components/responses/SupportAction'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
 components:
   securitySchemes:
     key:
@@ -2809,6 +3176,18 @@ components:
       in: path
       required: true
       description: Service account ID.
+      schema: {$ref: '#/components/schemas/ID'}
+    Role:
+      name: role
+      in: path
+      required: true
+      description: Name of a custom role of the tenant.
+      schema: {$ref: '#/components/schemas/RoleName'}
+    SupportAction:
+      name: action
+      in: path
+      required: true
+      description: Support action ID.
       schema: {$ref: '#/components/schemas/ID'}
     VirtualKey:
       name: key
@@ -3135,13 +3514,60 @@ components:
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
+    PermissionList:
+      description: The permission catalogue.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/PermissionList'}
+    BuiltinRoleList:
+      description: The built-in roles.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/BuiltinRoleList'}
+    Role:
+      description: The custom role.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Role'}
+    RoleCreated:
+      description: The new custom role.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Role'}
+    RoleList:
+      description: One page of custom roles.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/RoleList'}
+    SupportAction:
+      description: The support action.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SupportAction'}
+    SupportActionCreated:
+      description: The new support action.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SupportAction'}
+    SupportActionList:
+      description: One page of support actions.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SupportActionList'}
+    RoleInUse:
+      description: 'The role is still assigned. Code: role_in_use.'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Deleted:
+      description: Deleted.
     Unauthenticated:
       description: 'The credential is missing, malformed, unknown, expired or revoked. Code: unauthenticated.'
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
     Forbidden:
-      description: 'The caller lacks the permission (code forbidden) or its tenant is not active (code tenant_suspended); the session must change its password first (code password_change_required); the checks of origin and request forgery failed (code csrf_rejected); the sign-in method is off or the origin of the listener is not known (code sign_in_disabled).'
+      description: 'The caller lacks the permission (code forbidden) or its tenant is not active (code tenant_suspended); the session must change its password first (code password_change_required); the checks of origin and request forgery failed (code csrf_rejected); the sign-in method is off or the origin of the listener is not known (code sign_in_disabled); the caller tried to give or take a permission it does not hold (code escalation_refused); support actions are switched off (code support_disabled).'
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
@@ -4097,7 +4523,7 @@ components:
       additionalProperties: false
       required: [reason]
       properties:
-        reason: {type: string, minLength: 1, maxLength: 500, description: Recorded in the audit log of the tenant and on the credential.}
+        reason: {type: string, minLength: 1, maxLength: 500, description: Recorded in the audit log.}
     Sort:
       type: string
       enum: [created_at, -created_at]
@@ -4145,6 +4571,9 @@ components:
         - idempotency_key_reused
         - idempotency_in_progress
         - idempotency_response_lost
+        - escalation_refused
+        - support_disabled
+        - role_in_use
     Problem:
       type: object
       description: RFC 9457 problem details with the members code, request_id and errors.
@@ -4365,13 +4794,142 @@ components:
       properties:
         items: {type: array, items: {$ref: '#/components/schemas/Member'}}
         next_cursor: {type: string}
+    PermissionName: {type: string, pattern: '^[a-z_]+:[a-z_]+$', maxLength: 64}
+    RoleState: {type: string, enum: [active, inactive]}
+    PermissionScope: {type: string, enum: [platform, tenant, self]}
+    Permission:
+      type: object
+      additionalProperties: false
+      required: [name, scope, description, in_tenant, support]
+      properties:
+        name: {$ref: '#/components/schemas/PermissionName'}
+        scope: {$ref: '#/components/schemas/PermissionScope'}
+        description: {type: string}
+        in_tenant: {type: boolean, description: A platform permission whose operations read or change one tenant.}
+        support: {type: boolean, description: A tenant permission that a support action may carry.}
+    PermissionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: {items: {type: array, items: {$ref: '#/components/schemas/Permission'}}}
+    BuiltinRole:
+      type: object
+      additionalProperties: false
+      required: [name, scope, members, description, permissions]
+      properties:
+        name: {$ref: '#/components/schemas/RoleName'}
+        scope: {$ref: '#/components/schemas/PermissionScope'}
+        members: {type: boolean, description: Whether a person can hold the role.}
+        description: {type: string}
+        permissions: {type: array, items: {$ref: '#/components/schemas/PermissionName'}}
+    BuiltinRoleList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: {items: {type: array, items: {$ref: '#/components/schemas/BuiltinRole'}}}
+    Role:
+      type: object
+      additionalProperties: false
+      required: [id, tenant_id, name, description, permissions, state, created_at, updated_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        tenant_id: {$ref: '#/components/schemas/ID'}
+        name: {$ref: '#/components/schemas/RoleName'}
+        description: {type: string, maxLength: 500}
+        permissions: {type: array, items: {$ref: '#/components/schemas/PermissionName'}}
+        state: {$ref: '#/components/schemas/RoleState'}
+        assignments: {$ref: '#/components/schemas/RoleAssignments'}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    RoleAssignments:
+      type: object
+      description: How many members and service accounts hold the role. Present on a single read.
+      additionalProperties: false
+      required: [members, service_accounts]
+      properties: {members: {type: integer}, service_accounts: {type: integer}}
+    RoleList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Role'}}
+        next_cursor: {type: string, description: Absent on the last page.}
+    RoleCreate:
+      type: object
+      additionalProperties: false
+      required: [name, permissions]
+      properties:
+        name: {$ref: '#/components/schemas/RoleName'}
+        description: {type: string, maxLength: 500}
+        permissions: {type: array, minItems: 1, maxItems: 64, items: {$ref: '#/components/schemas/PermissionName'}}
+    RoleUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        description: {type: string, maxLength: 500}
+        permissions: {type: array, minItems: 1, maxItems: 64, items: {$ref: '#/components/schemas/PermissionName'}}
+        reason: {type: string, maxLength: 500, description: Recorded in the audit log.}
+    SupportActionClosedBy: {type: string, enum: [platform, tenant, expiry]}
+    SupportActionActorType: {type: string, enum: [platform, user]}
+    SupportActionFilter: {type: string, enum: [open, closed]}
+    SupportActionState: {type: string, enum: [open, expired, closed, ended]}
+    SupportActionSort: {type: string, enum: [opened_at, -opened_at], default: -opened_at}
+    SupportAction:
+      type: object
+      additionalProperties: false
+      required: [id, tenant_id, actor, reason, permissions, state, opened_at, expires_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        tenant_id: {$ref: '#/components/schemas/ID'}
+        actor: {$ref: '#/components/schemas/SupportActionActor'}
+        reason: {type: string}
+        permissions: {type: array, items: {$ref: '#/components/schemas/PermissionName'}}
+        state: {$ref: '#/components/schemas/SupportActionState'}
+        opened_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        closed_at: {type: string, format: date-time}
+        closed_by: {$ref: '#/components/schemas/SupportActionClosedBy'}
+        close_reason: {type: string}
+    SupportActionActor:
+      type: object
+      additionalProperties: false
+      required: [type, id, name]
+      properties:
+        type: {$ref: '#/components/schemas/SupportActionActorType'}
+        id: {type: string}
+        name: {type: string}
+    SupportActionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/SupportAction'}}
+        next_cursor: {type: string, description: Absent on the last page.}
+    SupportActionOpen:
+      type: object
+      additionalProperties: false
+      required: [reason, permissions]
+      properties:
+        reason: {type: string, minLength: 1, maxLength: 500, description: Recorded in the audit log of the tenant and on the action.}
+        permissions: {type: array, minItems: 1, maxItems: 11, uniqueItems: true, items: {$ref: '#/components/schemas/PermissionName'}}
+        duration_seconds: {type: integer, minimum: 60, maximum: 86400, description: Default and upper bound are support.max_duration.}
+    SupportGrant:
+      type: object
+      additionalProperties: false
+      required: [id, tenant, permissions, expires_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        tenant: {$ref: '#/components/schemas/TenantRef'}
+        permissions: {type: array, items: {$ref: '#/components/schemas/PermissionName'}}
+        expires_at: {type: string, format: date-time}
     Membership:
       type: object
       additionalProperties: false
-      required: [tenant, roles]
+      required: [tenant, roles, permissions]
       properties:
         tenant: {$ref: '#/components/schemas/TenantRef'}
         roles: {type: array, items: {$ref: '#/components/schemas/RoleName'}}
+        permissions: {type: array, description: Effective permissions of the caller in this tenant., items: {type: string}}
     Reason:
       type: object
       additionalProperties: false
@@ -4402,6 +4960,10 @@ components:
           description: The tenants a user is a member of, with its roles in each; present for a user.
           items: {$ref: '#/components/schemas/Membership'}
         tenant: {$ref: '#/components/schemas/TenantRef'}
+        support_actions:
+          type: array
+          description: The open support actions of the caller; present for a platform principal.
+          items: {$ref: '#/components/schemas/SupportGrant'}
         roles:
           type: array
           items: {type: string}
@@ -4598,6 +5160,7 @@ components:
       additionalProperties: false
       properties:
         description: {type: string, maxLength: 200}
+        role: {$ref: '#/components/schemas/RoleName'}
         expires_at: {type: string, format: date-time}
     PlatformKeyCreated:
       type: object

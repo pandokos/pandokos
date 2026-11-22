@@ -308,6 +308,10 @@ var platformAndSelf = map[string]string{
 	"listUsers": "platform", "createUser": "platform", "getUser": "platform", "updateUser": "platform", "disableUser": "platform",
 	"enableUser": "platform", "unlockUser": "platform", "resetUserPassword": "platform", "revokeUserSessions": "platform",
 	"signOut": "self", "changePassword": "self", "listOwnSessions": "self", "deleteOwnSession": "self",
+
+	// Sprint 4.3: the catalogue and the built-in roles, and the four platform operations on the support actions of a tenant.
+	"listPermissions": "self", "listBuiltinRoles": "self",
+	"listTenantSupportActions": "platform", "openSupportAction": "platform", "getTenantSupportAction": "platform", "closeSupportAction": "platform",
 }
 
 func scopeOf(t *testing.T, op adminapi.Operation) authz.Scope {
@@ -589,8 +593,8 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 		}
 		n++
 	}
-	if n != 62 {
-		t.Errorf("%d tenant operations, want 62 (24, the two of sprint 3.3, the ten of sprint 4.1, the seven of sprint 5.2, the two of sprint 5.3, the seven of sprint 5.4 and the ten of sprint 4.2)", n)
+	if n != 72 {
+		t.Errorf("%d tenant operations, want 72 (24, the two of sprint 3.3, the ten of sprint 4.1, the seven of sprint 5.2, the two of sprint 5.3, the seven of sprint 5.4, the ten of sprint 4.2 and the ten of sprint 4.3)", n)
 	}
 	if _, err := c.GetTenant(ctx(t), adminapi.GetTenantInput{Tenant: w.b.tenant.ID}); err == nil {
 		t.Error("a tenant key read a tenant")

@@ -65,6 +65,12 @@ type Options struct {
 	Idempotency *idem.Store
 	Origin      OriginOptions
 	Auth        AuthOptions
+	// Support is the configuration of support actions (sprint 4.3): support.enabled and
+	// support.max_duration.
+	Support struct {
+		Enabled     bool
+		MaxDuration time.Duration
+	}
 	// Limits are the settings of the capability check: limits.on_unknown_price ("refuse", the
 	// default, or "allow") and the zones that give the calendar of each tenant.
 	Limits struct {
@@ -131,6 +137,11 @@ type server struct {
 	idempotency *idem.Store
 	origin      OriginOptions
 	authOpts    AuthOptions
+	// support is Options.Support.
+	support struct {
+		enabled     bool
+		maxDuration time.Duration
+	}
 }
 
 // reqState is the state of one request, shared by the outer handler and the hooks.
@@ -202,6 +213,7 @@ func New(o Options) (http.Handler, error) {
 		sessions: o.Sessions, accounts: o.Accounts, oidc: o.OIDC, idempotency: o.Idempotency, origin: o.Origin, authOpts: o.Auth}
 	s.limits.OnUnknownPrice, s.limits.Ledger = o.Limits.OnUnknownPrice, o.Limits.Ledger
 	s.limits.Zones = o.Limits.Zones
+	s.support.enabled, s.support.maxDuration = o.Support.Enabled, o.Support.MaxDuration
 	if s.defaultCurrency = o.DefaultCurrency; s.defaultCurrency == "" {
 		s.defaultCurrency = "USD"
 	}
@@ -553,6 +565,12 @@ func (s *server) fail(w http.ResponseWriter, r *http.Request, _ *adminapi.Operat
 		code = adminapi.ProblemCodeForbidden
 	case errors.Is(err, errTenantState):
 		code = adminapi.ProblemCodeTenantSuspended
+	case errors.Is(err, errEscalation):
+		code = adminapi.ProblemCodeEscalationRefused
+	case errors.Is(err, errSupportDisabled):
+		code = adminapi.ProblemCodeSupportDisabled
+	case errors.Is(err, errRoleInUse):
+		code = adminapi.ProblemCodeRoleInUse
 	case errors.Is(err, errNotFound):
 		code = adminapi.ProblemCodeNotFound
 	case errors.Is(err, errConflict):

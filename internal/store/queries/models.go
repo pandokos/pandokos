@@ -21,20 +21,21 @@ type PandokosAppUser struct {
 }
 
 type PandokosAuditEvent struct {
-	TenantID     string
-	ID           string
-	OccurredAt   time.Time
-	ActorType    string
-	ActorID      string
-	ActorName    string
-	KeyID        string
-	Action       string
-	ResourceType string
-	ResourceID   string
-	Outcome      string
-	RequestID    string
-	Reason       string
-	Detail       string
+	TenantID        string
+	ID              string
+	OccurredAt      time.Time
+	ActorType       string
+	ActorID         string
+	ActorName       string
+	KeyID           string
+	Action          string
+	ResourceType    string
+	ResourceID      string
+	Outcome         string
+	RequestID       string
+	Reason          string
+	Detail          string
+	SupportActionID *string
 }
 
 type PandokosIdempotencyKey struct {
@@ -411,6 +412,24 @@ type PandokosSubjectMapping struct {
 	UpdatedAt        time.Time
 }
 
+type PandokosSupportAction struct {
+	ID          string
+	TenantID    string
+	ActorType   string
+	ActorID     string
+	ActorName   string
+	KeyID       string
+	Reason      string
+	Permissions []string
+	RequestID   string
+	OpenedAt    time.Time
+	ExpiresAt   time.Time
+	ClosedAt    *time.Time
+	ClosedBy    string
+	ClosedByID  string
+	CloseReason string
+}
+
 type PandokosTenant struct {
 	ID                          string
 	Name                        string
@@ -462,6 +481,17 @@ type PandokosTenantPriceVersion struct {
 	Currency  string
 	Note      string
 	CreatedAt time.Time
+}
+
+type PandokosTenantRole struct {
+	TenantID    string
+	ID          string
+	Name        string
+	Description string
+	Permissions []string
+	State       string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 type PandokosTrustedIssuer struct {

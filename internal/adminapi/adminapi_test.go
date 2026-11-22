@@ -38,6 +38,70 @@ func (f *fake) rec(id string, in any) { f.mu.Lock(); f.got[id] = in; f.mu.Unlock
 func (f *fake) last(id string) any    { f.mu.Lock(); defer f.mu.Unlock(); return f.got[id] }
 func (f *fake) reset()                { f.mu.Lock(); f.got = map[string]any{}; f.mu.Unlock() }
 
+func (f *fake) ListPermissions(_ context.Context, in adminapi.ListPermissionsInput) (*adminapi.PermissionList, error) {
+	f.rec("listPermissions", in)
+	return &adminapi.PermissionList{}, nil
+}
+func (f *fake) ListBuiltinRoles(_ context.Context, in adminapi.ListBuiltinRolesInput) (*adminapi.BuiltinRoleList, error) {
+	f.rec("listBuiltinRoles", in)
+	return &adminapi.BuiltinRoleList{}, nil
+}
+func (f *fake) ListRoles(_ context.Context, in adminapi.ListRolesInput) (*adminapi.RoleList, error) {
+	f.rec("listRoles", in)
+	return &adminapi.RoleList{}, nil
+}
+func (f *fake) CreateRole(_ context.Context, in adminapi.CreateRoleInput) (*adminapi.Role, error) {
+	f.rec("createRole", in)
+	return &adminapi.Role{}, nil
+}
+func (f *fake) GetRole(_ context.Context, in adminapi.GetRoleInput) (*adminapi.Role, error) {
+	f.rec("getRole", in)
+	return &adminapi.Role{}, nil
+}
+func (f *fake) UpdateRole(_ context.Context, in adminapi.UpdateRoleInput) (*adminapi.Role, error) {
+	f.rec("updateRole", in)
+	return &adminapi.Role{}, nil
+}
+func (f *fake) DeleteRole(_ context.Context, in adminapi.DeleteRoleInput) (*adminapi.NoContent, error) {
+	f.rec("deleteRole", in)
+	return &adminapi.NoContent{}, nil
+}
+func (f *fake) DeactivateRole(_ context.Context, in adminapi.DeactivateRoleInput) (*adminapi.Role, error) {
+	f.rec("deactivateRole", in)
+	return &adminapi.Role{}, nil
+}
+func (f *fake) ActivateRole(_ context.Context, in adminapi.ActivateRoleInput) (*adminapi.Role, error) {
+	f.rec("activateRole", in)
+	return &adminapi.Role{}, nil
+}
+func (f *fake) ListTenantSupportActions(_ context.Context, in adminapi.ListTenantSupportActionsInput) (*adminapi.SupportActionList, error) {
+	f.rec("listTenantSupportActions", in)
+	return &adminapi.SupportActionList{}, nil
+}
+func (f *fake) OpenSupportAction(_ context.Context, in adminapi.OpenSupportActionInput) (*adminapi.SupportAction, error) {
+	f.rec("openSupportAction", in)
+	return &adminapi.SupportAction{}, nil
+}
+func (f *fake) GetTenantSupportAction(_ context.Context, in adminapi.GetTenantSupportActionInput) (*adminapi.SupportAction, error) {
+	f.rec("getTenantSupportAction", in)
+	return &adminapi.SupportAction{}, nil
+}
+func (f *fake) CloseSupportAction(_ context.Context, in adminapi.CloseSupportActionInput) (*adminapi.SupportAction, error) {
+	f.rec("closeSupportAction", in)
+	return &adminapi.SupportAction{}, nil
+}
+func (f *fake) ListSupportActions(_ context.Context, in adminapi.ListSupportActionsInput) (*adminapi.SupportActionList, error) {
+	f.rec("listSupportActions", in)
+	return &adminapi.SupportActionList{}, nil
+}
+func (f *fake) GetSupportAction(_ context.Context, in adminapi.GetSupportActionInput) (*adminapi.SupportAction, error) {
+	f.rec("getSupportAction", in)
+	return &adminapi.SupportAction{}, nil
+}
+func (f *fake) EndSupportAction(_ context.Context, in adminapi.EndSupportActionInput) (*adminapi.SupportAction, error) {
+	f.rec("endSupportAction", in)
+	return &adminapi.SupportAction{}, nil
+}
 func (f *fake) GetAuthMethods(_ context.Context, in adminapi.GetAuthMethodsInput) (*adminapi.AuthMethods, error) {
 	f.rec("getAuthMethods", in)
 	return &adminapi.AuthMethods{}, nil
@@ -1200,8 +1264,72 @@ func TestRouterAndClient(t *testing.T) {
 			in := adminapi.RevokeMemberSessionsInput{Tenant: tid, User: sid, Body: adminapi.Reason{Reason: "why"}}
 			add("revokeMemberSessions", in, func() error { _, err := c.RevokeMemberSessions(ctx, in); return err })
 		}
-		if len(adminapi.Operations) != 132 {
-			t.Fatalf("%d operations, want 132 (the 35 of epic 1 and sprint 2.1, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1, the 12 of sprint 5.2, the 2 of sprint 5.3, the 7 of sprint 5.4 and the 27 of sprint 4.2)", len(adminapi.Operations))
+		{
+			in := adminapi.ListPermissionsInput{}
+			add("listPermissions", in, func() error { _, err := c.ListPermissions(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListBuiltinRolesInput{}
+			add("listBuiltinRoles", in, func() error { _, err := c.ListBuiltinRoles(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListRolesInput{Tenant: tid, Limit: 50, Sort: "created_at"}
+			add("listRoles", in, func() error { _, err := c.ListRoles(ctx, in); return err })
+		}
+		{
+			in := adminapi.CreateRoleInput{Tenant: tid, Body: adminapi.RoleCreate{Name: "reader", Permissions: []string{"member:read"}}}
+			add("createRole", in, func() error { _, err := c.CreateRole(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetRoleInput{Tenant: tid, Role: "reader"}
+			add("getRole", in, func() error { _, err := c.GetRole(ctx, in); return err })
+		}
+		{
+			in := adminapi.UpdateRoleInput{Tenant: tid, Role: "reader", Body: adminapi.RoleUpdate{Description: adminapi.Optional[string]{Set: true, Value: "d"}}}
+			add("updateRole", in, func() error { _, err := c.UpdateRole(ctx, in); return err })
+		}
+		{
+			in := adminapi.DeleteRoleInput{Tenant: tid, Role: "reader"}
+			add("deleteRole", in, func() error { _, err := c.DeleteRole(ctx, in); return err })
+		}
+		{
+			in := adminapi.DeactivateRoleInput{Tenant: tid, Role: "reader", Body: adminapi.RequiredReason{Reason: "why"}}
+			add("deactivateRole", in, func() error { _, err := c.DeactivateRole(ctx, in); return err })
+		}
+		{
+			in := adminapi.ActivateRoleInput{Tenant: tid, Role: "reader", Body: adminapi.RequiredReason{Reason: "why"}}
+			add("activateRole", in, func() error { _, err := c.ActivateRole(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListTenantSupportActionsInput{Tenant: tid, Limit: 50, Sort: "-opened_at"}
+			add("listTenantSupportActions", in, func() error { _, err := c.ListTenantSupportActions(ctx, in); return err })
+		}
+		{
+			in := adminapi.OpenSupportActionInput{Tenant: tid, Body: adminapi.SupportActionOpen{Reason: "why", Permissions: []string{"member:read"}}}
+			add("openSupportAction", in, func() error { _, err := c.OpenSupportAction(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetTenantSupportActionInput{Tenant: tid, Action: sid}
+			add("getTenantSupportAction", in, func() error { _, err := c.GetTenantSupportAction(ctx, in); return err })
+		}
+		{
+			in := adminapi.CloseSupportActionInput{Tenant: tid, Action: sid, Body: adminapi.Reason{Reason: "why"}}
+			add("closeSupportAction", in, func() error { _, err := c.CloseSupportAction(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListSupportActionsInput{Tenant: tid, Limit: 50, Sort: "-opened_at"}
+			add("listSupportActions", in, func() error { _, err := c.ListSupportActions(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetSupportActionInput{Tenant: tid, Action: sid}
+			add("getSupportAction", in, func() error { _, err := c.GetSupportAction(ctx, in); return err })
+		}
+		{
+			in := adminapi.EndSupportActionInput{Tenant: tid, Action: sid, Body: adminapi.Reason{Reason: "why"}}
+			add("endSupportAction", in, func() error { _, err := c.EndSupportAction(ctx, in); return err })
+		}
+		if len(adminapi.Operations) != 148 {
+			t.Fatalf("%d operations, want 148 (the 35 of epic 1 and sprint 2.1, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1, the 12 of sprint 5.2, the 2 of sprint 5.3, the 7 of sprint 5.4, the 27 of sprint 4.2 and the 16 of sprint 4.3)", len(adminapi.Operations))
 		}
 		for _, op := range adminapi.Operations {
 			tc, ok := calls[op.ID]
@@ -1232,11 +1360,11 @@ func TestRouterAndClient(t *testing.T) {
 	t.Run("operations carry a permission and a status", func(t *testing.T) {
 		for _, op := range adminapi.Operations {
 			// Sprint 4.2: a public operation has no permission; a redirect answers 303.
-			if (op.Permission == "") != op.Public || (op.Status != 200 && op.Status != 201 && op.Status != 303) || !strings.HasPrefix(op.Path, "/v1/") {
+			if (op.Permission == "") != op.Public || (op.Status != 200 && op.Status != 201 && op.Status != 204 && op.Status != 303) || !strings.HasPrefix(op.Path, "/v1/") {
 				t.Errorf("%+v", op)
 			}
 			// 201 for the operations that make a resource, and for the one that runs an import.
-			if (op.Status == 201) != (op.Method == "POST" && (strings.HasPrefix(op.ID, "create") || op.ID == "runPriceImport")) {
+			if (op.Status == 201) != (op.Method == "POST" && (strings.HasPrefix(op.ID, "create") || op.ID == "runPriceImport" || op.ID == "openSupportAction")) {
 				t.Errorf("%s: status %d", op.ID, op.Status)
 			}
 		}
