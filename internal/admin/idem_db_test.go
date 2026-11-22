@@ -9,6 +9,7 @@ import (
 
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/authz"
+	"github.com/pandokos/pandokos/internal/telemetry"
 	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/test/apitest"
 	"github.com/pandokos/pandokos/test/fixtures"
@@ -31,34 +32,31 @@ func oneTime(v any, out *[]string) {
 	}
 }
 
-// subset reports whether every member of replay is in first with the same value.
-func subset(replay, first any) bool {
-	switch r := replay.(type) {
+// isOneTime reports whether a member is shown once and so absent from a replay.
+func isOneTime(k string, v any) bool {
+	_, isString := v.(string)
+	return isString && (k == "key" || k == "hash" || k == "secret_hash" || telemetry.IsSensitiveKey(k))
+}
+
+// withoutOneTime returns v without the members that are shown once, at any depth.
+func withoutOneTime(v any) any {
+	switch x := v.(type) {
 	case map[string]any:
-		f, ok := first.(map[string]any)
-		if !ok {
-			return false
-		}
-		for k, e := range r {
-			fe, ok := f[k]
-			if !ok || !subset(e, fe) {
-				return false
+		out := map[string]any{}
+		for k, e := range x {
+			if !isOneTime(k, e) {
+				out[k] = withoutOneTime(e)
 			}
 		}
-		return true
+		return out
 	case []any:
-		f, ok := first.([]any)
-		if !ok || len(f) != len(r) {
-			return false
+		out := make([]any, len(x))
+		for i, e := range x {
+			out[i] = withoutOneTime(e)
 		}
-		for i := range r {
-			if !subset(r[i], f[i]) {
-				return false
-			}
-		}
-		return true
+		return out
 	}
-	return reflect.DeepEqual(replay, first)
+	return v
 }
 
 func auditCount(w *world) int {
@@ -104,7 +102,7 @@ func TestIdempotencyEveryCreate(t *testing.T) {
 			t.Errorf("%s: the bodies are not JSON", op.ID)
 			continue
 		}
-		if !subset(s, f) {
+		if !reflect.DeepEqual(s, withoutOneTime(f)) {
 			t.Errorf("%s: the replay is not the first response without its one-time members:\n%s\n%s", op.ID, second.Body, first.Body)
 		}
 		var once []string
@@ -219,9 +217,11 @@ func TestIdempotencyStoresNoSecret(t *testing.T) {
 	w.fill(t, "nosecret")
 	canary := apitest.Canary("body")
 	hdr := func(k string) http.Header { return http.Header{"Idempotency-Key": {k}} }
-	var shown []string
+	var shown, requests []string
 	do := func(name, method, path, key string, body map[string]any) {
 		t.Helper()
+		raw, _ := json.Marshal(body)
+		requests = append(requests, string(raw))
 		r := w.api.Do(t, method, path, key, body, hdr("canary-"+name))
 		if r.Status != 201 {
 			t.Fatalf("%s: %d %s", name, r.Status, r.Body)
@@ -247,9 +247,20 @@ func TestIdempotencyStoresNoSecret(t *testing.T) {
 	if len(shown) < 5 {
 		t.Fatalf("only %d one-time values were returned", len(shown))
 	}
-	for _, v := range append(shown, fixtures.CanaryCredential, canary) {
+	for _, v := range append(shown, fixtures.CanaryCredential) {
 		if strings.Contains(text, v) {
 			t.Errorf("idempotency_key holds %q", v[:min(len(v), 16)])
+		}
+	}
+	// The request body is never stored: neither as it was sent, nor as the JSON of the column.
+	for _, raw := range requests {
+		var v any
+		_ = json.Unmarshal([]byte(raw), &v)
+		pretty, _ := json.Marshal(v)
+		for _, form := range []string{raw, strings.ReplaceAll(raw, `":"`, `": "`), string(pretty)} {
+			if strings.Contains(text, form) || strings.Contains(text, strings.ReplaceAll(form, `"`, `\"`)) {
+				t.Errorf("idempotency_key holds a request body: %.40s", raw)
+			}
 		}
 	}
 }

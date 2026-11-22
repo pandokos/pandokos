@@ -54,8 +54,6 @@ type Claim struct {
 	attempt int32
 	tenant  tenant.ID
 	marked  atomic.Bool
-	// echo holds the strings of the request body: a member of the response that repeats one is not kept.
-	echo map[string]struct{}
 }
 
 type claimKey struct{}
@@ -122,7 +120,7 @@ func (s *Store) Begin(ctx context.Context, scope Scope, operation, path, key str
 				Salt: salt, RequestHash: hash, TenantID: tenantArg(scope.TenantID), Retention: store.Interval(s.o.Retention),
 			})
 			if err == nil {
-				claim = &Claim{id: row.ID, attempt: row.Attempt, tenant: scope.TenantID, echo: echoOf(body)}
+				claim = &Claim{id: row.ID, attempt: row.Attempt, tenant: scope.TenantID}
 				return nil
 			}
 			if !errors.Is(err, store.ErrNoRows) {
@@ -163,7 +161,7 @@ func (s *Store) Begin(ctx context.Context, scope Scope, operation, path, key str
 			if err != nil {
 				return err
 			}
-			claim = &Claim{id: ex.ID, attempt: attempt, tenant: scope.TenantID, echo: echoOf(body)}
+			claim = &Claim{id: ex.ID, attempt: attempt, tenant: scope.TenantID}
 			return nil
 		}
 		return ErrInProgress
@@ -222,7 +220,7 @@ func (s *Store) Finish(ctx context.Context, status int, body []byte) error {
 			return q.ReleaseIdempotencyKey(ctx, queries.ReleaseIdempotencyKeyParams{ID: c.id, Attempt: c.attempt})
 		})
 	}
-	stored, err := redact(body, c.echo)
+	stored, err := redact(body)
 	if err != nil {
 		return err
 	}
@@ -242,37 +240,11 @@ func (s *Store) Finish(ctx context.Context, status int, body []byte) error {
 	})
 }
 
-// echoOf returns the string values of a JSON request body, at any depth.
-func echoOf(body []byte) map[string]struct{} {
-	var v any
-	if json.Unmarshal(body, &v) != nil {
-		return nil
-	}
-	out := map[string]struct{}{}
-	var walk func(any)
-	walk = func(v any) {
-		switch x := v.(type) {
-		case string:
-			out[x] = struct{}{}
-		case map[string]any:
-			for _, e := range x {
-				walk(e)
-			}
-		case []any:
-			for _, e := range x {
-				walk(e)
-			}
-		}
-	}
-	walk(v)
-	return out
-}
-
 // redact returns body as a JSON object without what must not be kept: the members that are shown
-// once (the sensitive members of the audit log, and the secret of a key), and the text members
-// that repeat what the request said (the request body is never stored), at any depth. A body that
-// is not a JSON object is stored as an empty one.
-func redact(body []byte, echo map[string]struct{}) (string, error) {
+// once (the sensitive members of the audit log, and the secret of a key), at any depth. The request
+// body is never stored: the row holds its hash. A body that is not a JSON object is stored as an
+// empty one.
+func redact(body []byte) (string, error) {
 	var v any
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.UseNumber()
@@ -281,7 +253,7 @@ func redact(body []byte, echo map[string]struct{}) (string, error) {
 	if derr != nil || !ok {
 		return "{}", nil //nolint:nilerr // a body that is not an object is stored as an empty one
 	}
-	out, err := json.Marshal(drop(m, echo))
+	out, err := json.Marshal(drop(m))
 	if err != nil {
 		return "", err
 	}
@@ -293,23 +265,22 @@ func sensitive(key string) bool {
 	return telemetry.IsSensitiveKey(k) || k == "secret_hash" || k == "hash"
 }
 
-func identifier(key string) bool { return key == "id" || strings.HasSuffix(key, "_id") }
-
-func drop(v any, echo map[string]struct{}) any {
+func drop(v any) any {
 	switch x := v.(type) {
 	case map[string]any:
 		for k, e := range x {
-			s, isString := e.(string)
-			_, repeated := echo[s]
-			if sensitive(k) || (k == "key" && isString) || (isString && repeated && !identifier(k)) {
+			// Only a text value is a secret; an object is searched, and a flag such as
+			// must_change_password stays.
+			_, isString := e.(string)
+			if isString && (sensitive(k) || k == "key") {
 				delete(x, k)
 				continue
 			}
-			x[k] = drop(e, echo)
+			x[k] = drop(e)
 		}
 	case []any:
 		for i, e := range x {
-			x[i] = drop(e, echo)
+			x[i] = drop(e)
 		}
 	}
 	return v
