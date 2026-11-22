@@ -76,6 +76,10 @@ type opts struct {
 	otlpTimeout  string              // telemetry.otlp.timeout
 	propagate    bool                // telemetry.traces.propagate
 	collector    *otlptest.Collector // the collector at otlpEndpoint, when the test has one
+
+	// Sprint 6.1: the metrics.
+	metricsPrometheus bool   // telemetry.metrics.prometheus: GET /metrics on the administration listener
+	exportInterval    string // telemetry.metrics.export_interval, for example "5s" (the configuration allows 5s to 10m)
 }
 
 type proc struct {
@@ -98,6 +102,12 @@ type proc struct {
 	tenants      int
 
 	col *otlptest.Collector // the collector the process exports to, if the test started one
+
+	// Sprint 6.1: the identifiers of the fixtures (tenants, service accounts, keys, credentials, and
+	// whatever a test adds with track) that no line of the log may hold; the log reference is checked
+	// when the process stops.
+	ids        []string
+	logChecked bool
 
 	up      *fakeprovider.Server
 	upURL   string // the base URL the endpoint of openai is pointed at
@@ -151,6 +161,7 @@ func (p *proc) addCredential(t *testing.T, adminFile, provider, secretValue stri
 	if m == nil {
 		t.Fatalf("no credential ID in the output of credential create:\n%s", out)
 	}
+	p.track(m[1])
 	return m[1]
 }
 
@@ -226,6 +237,12 @@ func (o opts) sprint32Env(t *testing.T) []string {
 	}
 	if o.propagate {
 		env = append(env, "PANDOKOS_TELEMETRY_TRACES_PROPAGATE=true")
+	}
+	if o.metricsPrometheus {
+		env = append(env, "PANDOKOS_TELEMETRY_METRICS_PROMETHEUS=true")
+	}
+	if o.exportInterval != "" {
+		env = append(env, "PANDOKOS_TELEMETRY_METRICS_EXPORT_INTERVAL="+o.exportInterval)
 	}
 	return env
 }
@@ -330,6 +347,7 @@ func startBinary(t *testing.T, o opts) *proc {
 			_ = p.cmd.Process.Kill()
 			<-p.exited
 		}
+		checkLogReference(t, p)
 	})
 	testutil.Eventually(t, 10*time.Second, "the listening log lines", func() bool {
 		for _, l := range completeLines(p.stdout, "listening") {
@@ -403,6 +421,7 @@ func (p *proc) newTenant(t *testing.T, platformFile, name string) (id, adminFile
 	if m == nil {
 		t.Fatalf("no tenant ID in the output of tenant create:\n%s", out)
 	}
+	p.track(m[1])
 	return m[1], adminFile
 }
 
@@ -432,6 +451,7 @@ func (p *proc) newInferenceKey(t *testing.T, adminFile, tenantID string, keyFlag
 	if sa == "" {
 		t.Fatalf("no inference service account in %s", list)
 	}
+	p.track(sa)
 	keyFile := filepath.Join(t.TempDir(), "inference.key")
 	out := p.mustCLI(t, adminFile, append([]string{"key", "create", "--tenant", tenantID, "--service-account", sa, "--key-out", keyFile}, keyFlags...)...)
 	b, err := os.ReadFile(keyFile)
@@ -444,6 +464,7 @@ func (p *proc) newInferenceKey(t *testing.T, adminFile, tenantID string, keyFlag
 	}
 	if m != nil {
 		keyID = m[1]
+		p.track(keyID)
 	}
 	return keyID, strings.TrimSpace(string(b))
 }
@@ -509,7 +530,17 @@ func (p *proc) stop(t *testing.T) int {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the process did not exit within 10 s of SIGTERM")
 	}
+	checkLogReference(t, p)
 	return p.code
+}
+
+// track adds identifiers to what no line of the log may hold.
+func (p *proc) track(ids ...string) {
+	for _, id := range ids {
+		if id != "" {
+			p.ids = append(p.ids, id)
+		}
+	}
 }
 
 func (p *proc) url(path string) string { return p.scheme + "://" + p.addr + path }

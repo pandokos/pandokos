@@ -53,6 +53,7 @@ type API struct {
 	PublicOrigin string
 
 	srv         *httptest.Server
+	handler     http.Handler // what admin.New returned: AdminStats reads its Stats
 	platformKey string
 	mu          sync.Mutex
 	secrets     []string
@@ -111,6 +112,7 @@ func NewOn(tb testing.TB, d *dbtest.Database, mutate ...func(*admin.Options)) *A
 	if err != nil {
 		tb.Fatal(err)
 	}
+	a.handler = h
 	a.srv = httptest.NewServer(a.recording(h))
 	tb.Cleanup(a.srv.Close)
 	a.URL = a.srv.URL

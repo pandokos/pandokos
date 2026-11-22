@@ -421,3 +421,204 @@ func TestTelemetryConfiguration(t *testing.T) {
 		})
 	})
 }
+
+// TestMetricsKeys is T-927: the three keys of telemetry.metrics (sprint 6.1, section 5.12): types,
+// defaults, bounds, environment names, serve only, the rule of the interval against the OTLP
+// timeout, and the warnings of sections 5.1 and 5.12, none of which shows a variable's value.
+func TestMetricsKeys(t *testing.T) {
+	envOf := envOfKeys()
+	const (
+		otlpKey     = "telemetry.metrics.otlp"
+		intervalKey = "telemetry.metrics.export_interval"
+		promKey     = "telemetry.metrics.prometheus"
+		endpointKey = "telemetry.otlp.endpoint"
+		timeoutKey  = "telemetry.otlp.timeout"
+	)
+	load := func(t *testing.T, kv ...string) (*Config, []Warning, error) {
+		t.Helper()
+		src := validSource(t)
+		for i := 0; i < len(kv); i += 2 {
+			src.Environ = append(src.Environ, envOf[kv[i]]+"="+kv[i+1])
+		}
+		return Load(src)
+	}
+	must := func(t *testing.T, kv ...string) (*Config, []Warning) {
+		t.Helper()
+		c, w, err := load(t, kv...)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		return c, w
+	}
+	warningsFor := func(ws []Warning, key string) []Warning {
+		var out []Warning
+		for _, w := range ws {
+			if w.Key == key {
+				out = append(out, w)
+			}
+		}
+		return out
+	}
+
+	t.Run("the keys, their environment names, types and defaults", func(t *testing.T) {
+		want := map[string]struct{ env, typ, def string }{
+			otlpKey:     {"PANDOKOS_TELEMETRY_METRICS_OTLP", "boolean", "true"},
+			intervalKey: {"PANDOKOS_TELEMETRY_METRICS_EXPORT_INTERVAL", "duration", "60s"},
+			promKey:     {"PANDOKOS_TELEMETRY_METRICS_PROMETHEUS", "boolean", "false"},
+		}
+		found := 0
+		for _, k := range Keys() {
+			w, ok := want[k.Name]
+			if !ok {
+				continue
+			}
+			found++
+			if k.Env != w.env || k.Type != w.typ || k.Default != w.def || k.Description == "" {
+				t.Errorf("%s: %+v, want env %s type %s default %q", k.Name, k, w.env, w.typ, w.def)
+			}
+		}
+		if found != len(want) {
+			t.Errorf("%d of the three keys are in Keys()", found)
+		}
+		c, ws := mustLoad(t, validSource(t))
+		m := c.Telemetry.Metrics
+		if !m.OTLP || time.Duration(m.ExportInterval) != 60*time.Second || m.Prometheus {
+			t.Errorf("the defaults: %+v", m)
+		}
+		for _, w := range ws {
+			if strings.HasPrefix(w.Key, "telemetry.metrics.") {
+				t.Errorf("an unexpected warning with the defaults: %+v", w)
+			}
+		}
+	})
+
+	t.Run("the booleans", func(t *testing.T) {
+		for _, key := range []string{otlpKey, promKey} {
+			if _, _, err := load(t, key, "sometimes"); !hasProblem(err, key) {
+				t.Errorf("%s: sometimes: %v", key, err)
+			}
+		}
+		if c, _ := must(t, otlpKey, "false"); c.Telemetry.Metrics.OTLP {
+			t.Error("otlp false")
+		}
+		if c, _ := must(t, promKey, "true"); !c.Telemetry.Metrics.Prometheus {
+			t.Error("prometheus true")
+		}
+	})
+
+	t.Run("telemetry.metrics.export_interval is 5 s to 10 min", func(t *testing.T) {
+		for v, ok := range map[string]bool{"5s": true, "10s": true, "60s": true, "5m": true, "10m": true, "4s": false, "999ms": false, "0s": false, "11m": false, "soon": false, "-5s": false} {
+			c, _, err := load(t, timeoutKey, "5s", intervalKey, v) // the timeout is not what is tested here
+			if ok != (err == nil) {
+				t.Errorf("%q: %v", v, err)
+			}
+			if ok && err == nil {
+				if got, _ := time.ParseDuration(v); time.Duration(c.Telemetry.Metrics.ExportInterval) != got {
+					t.Errorf("%q parsed as %v", v, c.Telemetry.Metrics.ExportInterval)
+				}
+			}
+			if !ok && !hasProblem(err, intervalKey) {
+				t.Errorf("%q: problems %v", v, problemKeys(err))
+			}
+		}
+	})
+
+	t.Run("the interval is at least the OTLP timeout", func(t *testing.T) {
+		if _, _, err := load(t, timeoutKey, "30s", intervalKey, "10s"); !hasProblem(err, intervalKey) {
+			t.Errorf("an interval of 10s with a timeout of 30s: %v", err)
+		} else if msg, _ := problemMessage(err, intervalKey); !strings.Contains(msg, "must be at least telemetry.otlp.timeout") {
+			t.Errorf("the problem says %q", msg)
+		}
+		must(t, timeoutKey, "30s", intervalKey, "30s")
+		must(t, timeoutKey, "10s", intervalKey, "10s")
+		if _, _, err := load(t, timeoutKey, "10s", intervalKey, "9s"); !hasProblem(err, intervalKey) {
+			t.Errorf("an interval of 9s with the default timeout of 10s: %v", err)
+		}
+	})
+
+	t.Run("the interval warns when no OTLP export runs", func(t *testing.T) {
+		const text = "has no effect without telemetry.otlp.endpoint and telemetry.metrics.otlp"
+		count := func(ws []Warning) int {
+			n := 0
+			for _, w := range warningsFor(ws, intervalKey) {
+				if strings.Contains(w.Message, text) {
+					n++
+				}
+			}
+			return n
+		}
+		if _, ws := must(t, intervalKey, "30s"); count(ws) != 1 {
+			t.Errorf("an interval and no endpoint: %+v", ws)
+		}
+		if _, ws := must(t, intervalKey, "30s", endpointKey, "http://collector.example.test:4318", otlpKey, "false"); count(ws) != 1 {
+			t.Errorf("an interval, an endpoint and metrics.otlp off: %+v", ws)
+		}
+		if _, ws := must(t, intervalKey, "30s", endpointKey, "http://collector.example.test:4318"); count(ws) != 0 {
+			t.Errorf("an interval with an export that runs: %+v", ws)
+		}
+		if _, ws := must(t, endpointKey, "http://collector.example.test:4318"); count(ws) != 0 {
+			t.Errorf("no interval set: %+v", ws)
+		}
+	})
+
+	t.Run("the OTEL metric variables warn, naming the variable and never its value", func(t *testing.T) {
+		const value = "synthetic-metric-variable-value-7c2d"
+		cases := []struct{ name, key string }{
+			{"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", endpointKey},
+			{"OTEL_METRIC_EXPORT_INTERVAL", intervalKey},
+			{"OTEL_METRIC_EXPORT_TIMEOUT", timeoutKey},
+		}
+		for _, c := range cases {
+			src := validSource(t)
+			src.Environ = append(src.Environ, c.name+"="+value)
+			_, ws := mustLoad(t, src)
+			n := 0
+			for _, w := range ws {
+				if strings.Contains(w.Message, c.name) {
+					n++
+					if w.Key != c.key {
+						t.Errorf("%s: the warning is under %q, want %q", c.name, w.Key, c.key)
+					}
+				}
+				testutil.AssertAbsent(t, "a warning for "+c.name, w.Key+w.Message, value)
+			}
+			if n != 1 {
+				t.Errorf("%s: %d warnings name it: %+v", c.name, n, ws)
+			}
+		}
+		// The metrics endpoint variable is a warning only while the endpoint key is empty.
+		src := validSource(t)
+		src.Environ = append(src.Environ, "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="+value, envOf[endpointKey]+"=http://collector.example.test:4318")
+		_, ws := mustLoad(t, src)
+		for _, w := range ws {
+			if strings.Contains(w.Message, "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT") {
+				t.Errorf("a warning although telemetry.otlp.endpoint is set: %+v", w)
+			}
+		}
+	})
+
+	t.Run("a YAML file sets them", func(t *testing.T) {
+		src := validSource(t)
+		src.File = writeFile(t, "telemetry:\n  otlp:\n    endpoint: http://collector.example.test:4318\n  metrics:\n    otlp: false\n    export_interval: 20s\n    prometheus: true\n")
+		c, _ := mustLoad(t, src)
+		m := c.Telemetry.Metrics
+		if m.OTLP || time.Duration(m.ExportInterval) != 20*time.Second || !m.Prometheus {
+			t.Errorf("%+v", m)
+		}
+	})
+
+	t.Run("the keys are read for serve only", func(t *testing.T) {
+		for name, src := range map[string]Source{"init": validInitSource(t), "migrate": validMigrateSource(t)} {
+			src.Environ = append(src.Environ, envOf[otlpKey]+"=maybe", envOf[intervalKey]+"=1ms", envOf[promKey]+"=perhaps")
+			c, ws := mustLoad(t, src)
+			if !c.Telemetry.Metrics.OTLP || time.Duration(c.Telemetry.Metrics.ExportInterval) != 60*time.Second || c.Telemetry.Metrics.Prometheus {
+				t.Errorf("%s read the metrics settings: %+v", name, c.Telemetry.Metrics)
+			}
+			for _, w := range ws {
+				if strings.HasPrefix(w.Key, "telemetry.metrics.") {
+					t.Errorf("%s: a warning: %+v", name, w)
+				}
+			}
+		}
+	})
+}

@@ -783,3 +783,41 @@ func TestRecordAfterCloseOmitsFailedFields(t *testing.T) {
 		})
 	}
 }
+
+// TestStatsRefused is T-916 (ledger part): every Admit that returns false is counted in
+// Stats().Refused, a refusal for a full buffer and one for a writer that is closing alike; a
+// granted admission is not counted.
+func TestStatsRefused(t *testing.T) {
+	r := start(t, 2, 10, 5*time.Millisecond, &fakeStore{gate: make(chan struct{})})
+	if got := r.w.Stats().Refused; got != 0 {
+		t.Fatalf("Refused = %d before any refusal", got)
+	}
+	for i := 0; i < 2; i++ {
+		if !r.w.Admit() {
+			t.Fatalf("admission %d refused", i)
+		}
+	}
+	if got := r.w.Stats().Refused; got != 0 {
+		t.Errorf("Refused = %d after two granted admissions", got)
+	}
+	for i := 1; i <= 3; i++ {
+		if r.w.Admit() {
+			t.Fatal("an admission beyond the buffer was granted")
+		}
+		if got := r.w.Stats().Refused; got != int64(i) {
+			t.Errorf("Refused = %d after %d refusals", got, i)
+		}
+	}
+
+	// A writer that is closing refuses and counts too.
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	r.fs.setGate(nil)
+	r.w.Close(ctx)
+	if r.w.Admit() {
+		t.Fatal("a closed writer admitted")
+	}
+	if got := r.w.Stats().Refused; got != 4 {
+		t.Errorf("Refused = %d after a refusal by a closed writer, want 4", got)
+	}
+}

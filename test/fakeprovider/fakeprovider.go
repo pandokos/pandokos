@@ -62,8 +62,18 @@ const (
 	ModelCutAfterStart = "fake-cut-after-start"
 	// ModelStallAfterFirst streams the first event and then waits until the request is cancelled.
 	ModelStallAfterFirst = "fake-stall-after-first"
+	// ModelTimed answers 200 with the headers at once, the first byte of the body TimedFirstByte
+	// later and the end of the body TimedEnd after the headers, for the chat operations of the openai
+	// family, streaming or not (sprint 6.1: the times of the metrics).
+	ModelTimed = "fake-timed"
 	// ModelError529 answers 529 with error_529.json (Anthropic routes; 503 for the openai family).
 	ModelError529 = "fake-error-529"
+)
+
+// The delays of ModelTimed, measured from the answer's headers.
+const (
+	TimedFirstByte = 200 * time.Millisecond
+	TimedEnd       = 400 * time.Millisecond
 )
 
 // The compatible profiles of OpenAI-compatible servers, selected by model (chat completions,
@@ -489,6 +499,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.compat(w, r, op, req.Model, req.Stream, body)
 	case ModelCutAfterStart, ModelStallAfterFirst:
 		s.firstThen(w, r, req.Model, base2(op, req.Stream))
+	case ModelTimed:
+		s.timed(w, r, op, req.Stream)
 	case ModelError529:
 		writeJSON(w, http.StatusServiceUnavailable, []byte(`{"error":{"message":"synthetic: overloaded","type":"server_error","param":null,"code":null}}`))
 	case ModelDetails:
@@ -769,6 +781,39 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request, data []byte, gat
 			}
 		}
 	}
+}
+
+// timed answers the headers at once, the first byte of the body after TimedFirstByte and the rest
+// after TimedEnd, from the headers; a cancellation ends it.
+func (s *Server) timed(w http.ResponseWriter, r *http.Request, op string, stream bool) {
+	data, isStream := base(op, stream)
+	if isStream {
+		w.Header().Set("Content-Type", "text/event-stream")
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+	}
+	w.WriteHeader(http.StatusOK)
+	rc := http.NewResponseController(w)
+	_ = rc.Flush()
+	start := time.Now()
+	pause := func(d time.Duration) bool {
+		select {
+		case <-time.After(time.Until(start.Add(d))):
+			return true
+		case <-r.Context().Done():
+			return false
+		}
+	}
+	if !pause(TimedFirstByte) {
+		return
+	}
+	_, _ = w.Write(data[:1])
+	_ = rc.Flush()
+	if !pause(TimedEnd) {
+		return
+	}
+	_, _ = w.Write(data[1:])
+	_ = rc.Flush()
 }
 
 // wait blocks until c delivers (or, for the step channel, Release opens the gate for good) or the

@@ -407,8 +407,9 @@ func TestSampling(t *testing.T) {
 	})
 }
 
-// TestDiagnosticsGoToTheLogger is T-503: an export failure and an SDK-internal message are JSON
-// lines on the logger, and nothing is written to the process's standard error.
+// TestDiagnosticsGoToTheLogger is T-503 (changed in sprint 6.1: the process-wide SDK error line is
+// `telemetry error`): an export failure and an SDK-internal message are JSON lines on the logger,
+// and nothing is written to the process's standard error.
 func TestDiagnosticsGoToTheLogger(t *testing.T) {
 	stderr := captureStderr(t)
 	c := otlptest.New(t)
@@ -421,10 +422,15 @@ func TestDiagnosticsGoToTheLogger(t *testing.T) {
 	shutdown(t, tr)
 	testutil.Eventually(t, 5*time.Second, "`trace export failing`", func() bool { return len(logs.Find(t, "trace export failing")) >= 1 })
 
-	// An error handed to the SDK's error handler is a line of the logger too.
+	// An error handed to the SDK's error handler is a line of the logger too: since sprint 6.1 it is
+	// `telemetry error`, because an error that reaches the process-wide handler is not attributable
+	// to one signal; the export failure above stays `trace export failing`.
 	_, logs2 := newTraces(t, nil, nil)
 	otel.Handle(errors.New("synthetic sdk error"))
-	testutil.Eventually(t, 5*time.Second, "the handled error on the logger", func() bool { return len(logs2.Find(t, "trace export failing")) >= 1 })
+	testutil.Eventually(t, 5*time.Second, "the handled error on the logger", func() bool { return len(logs2.Find(t, "telemetry error")) >= 1 })
+	if n := len(logs2.Find(t, "trace export failing")); n != 0 {
+		t.Errorf("an SDK error was logged as `trace export failing` (%d lines)", n)
+	}
 
 	for _, b := range []*testutil.LogBuffer{logs, logs2} {
 		for _, line := range b.Lines(t) { // Lines fails the test on a line that is not JSON
