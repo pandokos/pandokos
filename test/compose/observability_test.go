@@ -47,7 +47,7 @@ type obsStack struct {
 // compose runs docker compose with the overlay.
 func (s *obsStack) compose(stdin string, bound time.Duration, args ...string) (string, string, error) {
 	s.t.Helper()
-	full := append([]string{"compose", "-p", s.project, "-f", "compose.yaml", "-f", "override.yaml", "-f", "observability/compose.yaml"}, args...)
+	full := append([]string{"compose", "-p", s.project, "-f", "compose.yaml", "-f", "override.yaml", "-f", "obs-override.yaml", "-f", "observability/compose.yaml"}, args...)
 	return run(s.t, s.dir, stdin, bound, "docker", full...)
 }
 
@@ -87,6 +87,12 @@ func startObservability(t *testing.T) *obsStack {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "override.yaml"), override, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The reconciler of the limits folds the counters every 5 minutes by default: 10 s lets the
+	// panels of its rounds (cut lag, reconciliations) show data within the test.
+	obsOverride := "services:\n  pandokos:\n    environment:\n      PANDOKOS_LIMITS_RECONCILE_INTERVAL: 10s\n"
+	if err := os.WriteFile(filepath.Join(dir, "obs-override.yaml"), []byte(obsOverride), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var nonce [4]byte
@@ -135,6 +141,7 @@ func startObservability(t *testing.T) *obsStack {
 	for _, m := range append(append([]string(nil), s.models...), fakeprovider.ModelError429) {
 		s.pdk(obsBoot, "", "model", "create", "--availability", "all", "openai/"+m)
 	}
+	s.pdk(obsBoot, "", "model", "create", "--availability", "all", "openai/"+fakeprovider.ModelNoUsage) // no price: its cost is unknown
 	for _, m := range s.models {
 		s.pdk(obsBoot, "", "price", "override", "--currency", "USD", "--rate", "input=3", "--rate", "output=6", "openai/"+m)
 	}
@@ -168,6 +175,37 @@ func (s *obsStack) call(model string, stream bool) (int, time.Duration) {
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
 	return resp.StatusCode, time.Since(began)
+}
+
+// callWith makes a chat call with the given bearer value and returns the status.
+func (s *obsStack) callWith(bearer, model string) int {
+	s.t.Helper()
+	body := `{"model":"` + model + `","messages":[{"role":"user","content":"` + fixtures.CanaryPrompt + `"}]}`
+	req, _ := http.NewRequestWithContext(s.t.Context(), http.MethodPost, "https://localhost:8080/openai/v1/chat/completions", strings.NewReader(body))
+	req.Header = http.Header{"Authorization": {"Bearer " + bearer}, "Content-Type": {"application/json"}}
+	resp, err := s.trusting.Do(req)
+	if err != nil {
+		s.t.Fatalf("a call: %v", err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return resp.StatusCode
+}
+
+// signInAttempt tries a local sign-in on the administration listener with a username that does not
+// exist, and returns the status: a failed attempt of the method password.
+func (s *obsStack) signInAttempt() int {
+	s.t.Helper()
+	req, _ := http.NewRequestWithContext(s.t.Context(), http.MethodPost, "https://localhost:8081/v1/auth/sign-in",
+		strings.NewReader(`{"username":"nobody","password":"not-the-password"}`))
+	req.Header = http.Header{"Content-Type": {"application/json"}, "Origin": {"https://localhost:8081"}, "X-Pandokos-Csrf": {"1"}}
+	resp, err := s.trusting.Do(req)
+	if err != nil {
+		s.t.Fatalf("the sign-in: %v", err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return resp.StatusCode
 }
 
 // promQuery runs an instant query on the Prometheus of the overlay and returns the series.
@@ -206,6 +244,17 @@ func promQuery(t testing.TB, query string) []map[string]string {
 		out = append(out, m)
 	}
 	return out
+}
+
+// emptyFallback ends the queries of panels that show 0 when there is nothing to count.
+const emptyFallback = " or on() vector(0)"
+
+// noDataInTest lists the metrics whose panels cannot show a series in this test, each with the
+// reason. Every other panel query, without its `or on() vector(0)` fallback, must return a real
+// series. A metric listed here that does answer fails the test, so the list cannot go stale.
+var noDataInTest = map[string]string{
+	"pandokos_sessions_open":      "the gauge is set by the purge round of the sessions, which runs every 5 minutes (with a minute of jitter) and has no configuration key to shorten it",
+	"pandokos_jwks_fetches_total": "an issuer key fetch needs a trusted issuer, and the reference stack has no identity provider to serve a JWKS document over HTTPS",
 }
 
 // dashboardPanel is a panel of a Grafana dashboard that has queries.
@@ -283,7 +332,8 @@ func p95(d []time.Duration) time.Duration {
 
 // TestObservabilityDashboards is T-931: the reference plus the overlay with the built image and the
 // fake provider for two models. After 40 calls (streams and not) every panel query of both
-// dashboards, with the variables expanded to .*, returns at least one series from Prometheus; the
+// dashboards, with the variables expanded to .* and the trailing `or on() vector(0)` removed (it would
+// always answer), returns at least one real series from Prometheus, except the metrics of noDataInTest; the
 // latency, token and cost panels of the Inference dashboard return a series for each model, with
 // gen_ai_request_model equal to the two catalogue names; Grafana lists both dashboards; and the set
 // of metric names of Prometheus (OTLP path) equals the set of GET /metrics (scrape path).
@@ -293,6 +343,8 @@ func TestObservabilityDashboards(t *testing.T) {
 	// Calls: 40 alternating the two models, half of them streams; then the provider's 429 and a
 	// refusal of the limits, so that every panel has something to show.
 	s.pdk(obsDemo, "", "limit", "create", "--metric", "requests_per_minute", "--limit", "42")
+	// A rule of a period gives the reconciler a tenant to follow, and so a cut to report the lag of.
+	s.pdk(obsDemo, "", "limit", "create", "--metric", "requests_per_day", "--limit", "100000")
 	for i := 0; i < 40; i++ {
 		model := s.models[i%2]
 		stream := i%4 >= 2 && model == fakeprovider.ModelBasic // fake-details answers whole documents only
@@ -301,6 +353,17 @@ func TestObservabilityDashboards(t *testing.T) {
 		}
 	}
 	s.call(fakeprovider.ModelError429, false)
+	// An authentication failure with a reason (a well-formed key that does not exist), a sign-in that
+	// fails, and a call of the model that has no price.
+	if status := s.callWith("pdk_t"+strings.Repeat("a", 16)+"_"+strings.Repeat("a", 59), fakeprovider.ModelBasic); status != 401 {
+		t.Errorf("a call with an unknown key: status %d, want 401", status)
+	}
+	if status := s.signInAttempt(); status != 401 {
+		t.Errorf("a sign-in with an unknown user: status %d, want 401", status)
+	}
+	if status, _ := s.call(fakeprovider.ModelNoUsage, false); status != 200 {
+		t.Errorf("a call of the model without a price: status %d", status)
+	}
 	s.call(fakeprovider.ModelBasic, false)
 	if status, _ := s.call(fakeprovider.ModelBasic, false); status != 429 {
 		t.Errorf("the call over the limit: status %d, want 429", status)
@@ -323,7 +386,28 @@ func TestObservabilityDashboards(t *testing.T) {
 	for _, f := range files {
 		for _, panel := range panelsOf(t, f) {
 			for _, q := range panel.Queries {
-				series := promQuery(t, expand(q))
+				q = strings.TrimSuffix(q, emptyFallback) // the panel's own "no data" fallback would always answer
+				var series []map[string]string
+				var reason string
+				for metric, why := range noDataInTest {
+					if strings.Contains(q, metric) {
+						reason = why
+					}
+				}
+				if reason != "" {
+					if got := promQuery(t, expand(q)); len(got) > 0 {
+						t.Errorf("%s, %q: the query %q returns series, so it does not belong in noDataInTest (%s)", panel.Dashboard, panel.Title, q, reason)
+					}
+					continue
+				}
+				// A rate needs two samples and the counters born last (the reconciler's pass) come
+				// after a few intervals: wait for the series, without failing at the first panel.
+				for deadline := time.Now().Add(90 * time.Second); ; {
+					if series = promQuery(t, expand(q)); len(series) > 0 || time.Now().After(deadline) {
+						break
+					}
+					time.Sleep(2 * time.Second)
+				}
 				if len(series) == 0 {
 					t.Errorf("%s, %q: the query %q returns no series", panel.Dashboard, panel.Title, q)
 					continue
@@ -336,8 +420,16 @@ func TestObservabilityDashboards(t *testing.T) {
 					for _, m := range series {
 						got[m["gen_ai_request_model"]] = true
 					}
-					if len(got) != 2 || !got[s.models[0]] || !got[s.models[1]] {
-						t.Errorf("%s, %q: the series of %q are for the models %v, want exactly %v", panel.Dashboard, panel.Title, q, got, s.models)
+					// Both catalogue models are there; the models that were called to provoke other panels
+					// (no price, the provider's 429) may be there too, nothing else.
+					known := map[string]bool{s.models[0]: true, s.models[1]: true, fakeprovider.ModelNoUsage: true, fakeprovider.ModelError429: true}
+					for m := range got {
+						if !known[m] {
+							t.Errorf("%s, %q: the series of %q hold the unknown model %q", panel.Dashboard, panel.Title, q, m)
+						}
+					}
+					if !got[s.models[0]] || !got[s.models[1]] {
+						t.Errorf("%s, %q: the series of %q are for the models %v, want both of %v", panel.Dashboard, panel.Title, q, got, s.models)
 					}
 				}
 			}
@@ -495,8 +587,10 @@ func TestObservabilityCollectorStopped(t *testing.T) {
 	testutil.Eventually(t, 60*time.Second, "`metric export failing` in the log of Pandokos", func() bool {
 		return strings.Contains(s.mustCompose("", 60*time.Second, "logs", "--no-color", "pandokos"), `"msg":"metric export failing"`)
 	})
-	if d := time.Since(stopped); d > 2*time.Minute {
-		t.Errorf("the failure line took %s to appear", d)
+	// Two export intervals (10 s in the overlay) plus telemetry.otlp.timeout (10 s, the default) is
+	// the longest the line can take; 10 s more cover the polling of the logs.
+	if d, bound := time.Since(stopped), 2*10*time.Second+10*time.Second+10*time.Second; d > bound {
+		t.Errorf("the failure line took %s to appear, more than %s (two export intervals plus the OTLP timeout)", d, bound)
 	}
 	logs := s.mustCompose("", 60*time.Second, "logs", "--no-color", "pandokos")
 	for _, line := range strings.Split(logs, "\n") {
