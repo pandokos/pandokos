@@ -357,10 +357,7 @@ func TestNoPeopleInTelemetry(t *testing.T) {
 	if !strings.Contains(src, `"admin request"`) {
 		t.Error("the admin request line is not in internal/admin/admin.go")
 	}
-	keys := []string{}
-	for _, m := range regexp.MustCompile(`"principal_id"`).FindAllString(src, -1) {
-		keys = append(keys, m)
-	}
+	keys := regexp.MustCompile(`"principal_id"`).FindAllString(src, -1)
 	sort.Strings(keys)
 	if len(keys) != 1 {
 		t.Errorf("the admin request line names principal_id %d times, want once, in the platform branch", len(keys))
