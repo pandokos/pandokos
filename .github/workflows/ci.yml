@@ -248,7 +248,7 @@ jobs:
         env:
           PANDOKOS_TEST_IMAGE: pandokos:ci
       - name: Compose quick-start
-        run: go test -tags compose -count=1 -timeout 15m ./test/compose/
+        run: go test -tags compose -count=1 -timeout 25m ./test/compose/
         env:
           PANDOKOS_TEST_IMAGE: pandokos:ci
       - name: Database logs

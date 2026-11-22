@@ -787,6 +787,11 @@ Repository tests:
 
 ## 11. Consequences for later sprints
 
+- **Scraper credential.** Platform keys carry no scopes, so the `platform-auditor` key of the
+  scraper can also read tenants, users, platform keys, issuers and support actions; the guide says to
+  protect it as an auditor credential. Narrowing it (platform-key scopes, or a dedicated scraper role
+  that holds `metrics:read` alone) is a follow-up to schedule before the credential is widely
+  distributed.
 - **6.2 (reports).** Reports are the tenant's and are built on the rollup; nothing reads metrics for
   reports. M2 gives the platform the installation-wide count of `rejected_limit` traffic that 5.1
   O-11 asked to measure; the decision on the volume of those rows is taken in 6.2 with these

@@ -54,7 +54,9 @@ flowchart LR
    The optional scrape endpoint `GET /metrics` (`telemetry.metrics.prometheus`) is on this listener, outside
    the API document, and is never anonymous: it needs a platform key (or a platform-level issuer's
    token) whose role holds the platform permission `metrics:read`, held by `platform-admin` and
-   `platform-auditor`; tenant principals and sessions are refused ([telemetry guide](../operations/telemetry.md#10-the-scrape-endpoint)).
+   `platform-auditor`; tenant principals and sessions are refused. Platform keys carry no scopes, so a scraper's
+   `platform-auditor` key can also read tenants, users, platform keys, issuers and support actions and is
+   protected as an auditor credential ([telemetry guide](../operations/telemetry.md#10-the-scrape-endpoint)).
 3. **Process to database.** Each role connects with its own least-privileged database role. The
    database enforces tenant isolation independently of the application.
 4. **Process to KEK provider.** Whoever holds the key-encryption key and the database can decrypt

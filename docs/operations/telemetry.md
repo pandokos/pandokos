@@ -175,7 +175,12 @@ so the scraper gets a key of the narrower role:
 pandokos platform-key create --role platform-auditor --description "prometheus" --key-out ./scraper.key
 ```
 
-A key without `--role` has `platform-admin`, which is more than a scraper needs. Give the file to
+A key without `--role` has `platform-admin`, which is more than a scraper needs. The auditor role is
+narrower, not narrow: because platform keys carry no scopes, the scraper key can also read tenants,
+users, platform keys, token issuers and support actions through the administration API. Protect it as
+an auditor credential (a file the Prometheus user alone can read, no copy elsewhere, revoked and
+replaced like any platform key), and keep the administration listener off the networks that do not
+need it. A scope on platform keys, or a dedicated scraper role, is a follow-up. Give the file to
 Prometheus (mode 0600, readable by the Prometheus user), and its CA if the listener's certificate is
 not public:
 
