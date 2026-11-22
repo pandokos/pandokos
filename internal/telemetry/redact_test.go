@@ -45,10 +45,11 @@ func secretShapes(t *testing.T) map[string]string {
 		t.Fatalf("the fake identity provider made %q, not a compact JWS", jws)
 	}
 	return map[string]string{
-		"a virtual key":      key.Reveal(),
-		"a platform key":     pkey.Reveal(),
-		"a session token":    tok.Reveal(),
-		"a bearer value":     "Bearer abc.def",
+		"a virtual key":   key.Reveal(),
+		"a platform key":  pkey.Reveal(),
+		"a session token": tok.Reveal(),
+		"a bearer value":  "Bearer abc.def",
+		"a dotted bearer value with the whole token68 set": "Bearer ab.c+d/e=",
 		"a compact JWS":      jws,
 		"a bearer JWS value": "bearer " + jws,
 	}

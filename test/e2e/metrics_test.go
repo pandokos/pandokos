@@ -472,11 +472,19 @@ func TestCollectorStoppedLatencyUnchanged(t *testing.T) {
 			if mode == "closed" {
 				col.Close()
 			} else {
-				before := len(col.Requests())
+				exports := func() (n int) {
+					for _, r := range col.Requests() {
+						if strings.HasSuffix(r.Path, "/v1/metrics") { // a trace export does not end the wait
+							n++
+						}
+					}
+					return n
+				}
+				before := exports()
 				col.Stall()
 				// The timed calls must overlap a stalled export: wait until one has reached the collector
 				// (it is recorded before it waits) and is held there for the OTLP timeout.
-				testutil.Eventually(t, 30*time.Second, "an export request held by the stalled collector", func() bool { return len(col.Requests()) > before })
+				testutil.Eventually(t, 30*time.Second, "a metric export request held by the stalled collector", func() bool { return exports() > before })
 			}
 			without := timeCalls()
 			if without > withCollector*3+500*time.Millisecond {

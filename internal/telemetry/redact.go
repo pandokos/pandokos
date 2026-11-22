@@ -26,7 +26,7 @@ func Redactions() int64 { return redactions.Load() }
 var (
 	// A bearer value looks like a credential: at least 16 characters of the token68 set, or
 	// dot-separated (a JWS). An ordinary sentence ("the bearer token was refused") is kept.
-	bearerPattern  = regexp.MustCompile(`(?i)\bbearer\s+(?:[A-Za-z0-9._~+/=-]{16,}|[A-Za-z0-9_-]+\.[A-Za-z0-9._-]+)`)
+	bearerPattern  = regexp.MustCompile(`(?i)\bbearer\s+(?:[A-Za-z0-9._~+/=-]{16,}|[A-Za-z0-9_-]+\.[A-Za-z0-9._~+/=-]+)`)
 	keyPattern     = regexp.MustCompile(`pdk_[tp][a-z2-7]{16}_[a-z2-7]{59}`)
 	sessionPattern = regexp.MustCompile(`pds_[A-Za-z0-9_-]{43}`)
 	jwsPattern     = regexp.MustCompile(`eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*`)
