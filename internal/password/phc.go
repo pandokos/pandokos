@@ -52,10 +52,11 @@ func parse(s string) (p Params, salt, key []byte, err error) {
 	return Params{MemoryKiB: uint32(m), Iterations: uint32(t), Parallelism: uint8(par)}, salt, key, nil //nolint:gosec // bounded above
 }
 
-// number reads prefix followed by decimal digits only, from 1 to max.
+// number reads prefix followed by decimal digits only, from 1 to max, without a leading zero (the
+// PHC string format has one spelling of a number).
 func number(s, prefix string, max uint64) (uint64, bool) {
 	d, ok := strings.CutPrefix(s, prefix)
-	if !ok || d == "" || len(d) > 10 {
+	if !ok || d == "" || len(d) > 10 || d[0] == '0' {
 		return 0, false
 	}
 	for _, c := range d {
