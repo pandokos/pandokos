@@ -78,6 +78,13 @@ func peopleStatements(c context.Context, t *testing.T, admin *store.DB, tid tena
 		if l, err := q.LockUser(c, u.ID); err != nil || l.ID != u.ID || l.State != "active" || l.TenantID != nil {
 			t.Errorf("LockUser: %+v %v", l, err)
 		}
+		mark("LockLocalAccount")
+		if l, err := q.LockLocalAccount(c, u.ID); err != nil || l.State != "active" || l.PasswordHash != phc(1) {
+			t.Errorf("LockLocalAccount: %+v %v", l, err)
+		}
+		if _, err := q.LockLocalAccount(c, noRowsUser); !errors.Is(err, store.ErrNoRows) {
+			t.Errorf("LockLocalAccount of an ID that does not exist: %v", err)
+		}
 		mark("GetAccountForSignIn")
 		acct, err := q.GetAccountForSignIn(c, username)
 		if err != nil || acct.UID != u.ID || acct.ManagingTenantID != "" || acct.PasswordHash != phc(1) || !acct.MustChange || acct.Username != username {

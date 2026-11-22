@@ -488,7 +488,7 @@ func TestEveryStatement(t *testing.T) {
 		// Sprint 4.2: users, accounts, memberships, sessions, throttling, OIDC transactions, idempotency keys.
 		peopleStatements(c, t, admin, tid, ten.ID, called)
 
-		// The 222 statements, and nothing was prepared on the server.
+		// The 223 statements, and nothing was prepared on the server.
 		var names []string
 		typ := reflect.TypeOf(&queries.Queries{})
 		for i := 0; i < typ.NumMethod(); i++ {
@@ -497,8 +497,8 @@ func TestEveryStatement(t *testing.T) {
 			}
 		}
 		sort.Strings(names)
-		if len(names) != 222 {
-			t.Errorf("the generated package has %d statements, want 222: %v", len(names), names)
+		if len(names) != 223 {
+			t.Errorf("the generated package has %d statements, want 223: %v", len(names), names)
 		}
 		for _, name := range names {
 			if !called[name] {
