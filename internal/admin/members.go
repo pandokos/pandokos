@@ -196,6 +196,9 @@ func (s *server) CreateMember(ctx context.Context, in adminapi.CreateMemberInput
 			if userID == "" {
 				return errNotFound
 			}
+			if p.SupportActionID != "" && p.Kind == authz.KindUser && userID == p.ID {
+				return invalidState("user_id", "a user cannot make itself a member of a tenant under its own support action")
+			}
 		}
 		if _, err := q.CreateMembership(ctx, queries.CreateMembershipParams{TenantID: tid.String(), UserID: userID, Source: "manual"}); err != nil {
 			return err

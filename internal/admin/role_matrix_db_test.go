@@ -34,16 +34,21 @@ func setOf(in []string) map[string]bool {
 func probeOps() []adminapi.Operation {
 	var ops []adminapi.Operation
 	var last []adminapi.Operation
+	var open []adminapi.Operation
 	for _, op := range adminapi.Operations {
 		switch {
 		case op.Public:
 		case op.ID == "signOut":
 			last = append(last, op)
+		case op.ID == "openSupportAction":
+			// It really opens an action for the probing identity, which then holds member:read in the
+			// tenant it probes: it is probed after every other operation, before the sign-out.
+			open = append(open, op)
 		default:
 			ops = append(ops, op)
 		}
 	}
-	return append(ops, last...)
+	return append(append(ops, open...), last...)
 }
 
 // TestRoleMatrix is T-867, the exit condition: for each of the ten roles and every operation of the

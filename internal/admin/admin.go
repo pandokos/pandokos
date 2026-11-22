@@ -266,7 +266,13 @@ func (s *server) logRequest(r *http.Request, st *reqState, status int, d time.Du
 	// is not, nor its tenant (ADR 0055).
 	if p := st.principal; p != nil {
 		attrs = append(attrs, "principal_type", string(p.Kind))
-		if p.Kind == authz.KindPlatform || (p.Kind == authz.KindUser && p.TenantID.IsZero()) {
+		// A support principal is logged as the platform principal it is, and says so; the line
+		// names neither its tenant nor its action.
+		support := p.SupportActionID != ""
+		if support {
+			attrs = append(attrs, "support", true)
+		}
+		if support || p.Kind == authz.KindPlatform || (p.Kind == authz.KindUser && p.TenantID.IsZero()) {
 			attrs = append(attrs, "principal_id", p.ID)
 			if p.Kind == authz.KindPlatform {
 				attrs = append(attrs, "key_id", p.KeyID)
@@ -363,6 +369,19 @@ func (s *server) beforeKey(ctx context.Context, r *http.Request, op *adminapi.Op
 		}
 		return ctx, err
 	}
+	if perm, ok := authz.Lookup(op.Permission); ok && perm.Scope == authz.ScopeTenant && p.Kind == authz.KindPlatform {
+		// The one place where a platform key has nothing to do in a tenant: unless it has an open
+		// support action there (section 5.6). A path that names no tenant keeps its old answer.
+		if tid, perr := tenant.ParseID(params["tenant"]); perr == nil {
+			sp, ok, err := s.supportPrincipal(ctx, p, tid)
+			if err != nil {
+				return ctx, err
+			}
+			if ok {
+				p = sp
+			}
+		}
+	}
 	st.principal = &p
 	return s.decide(ctx, p, op, params)
 }
@@ -428,6 +447,18 @@ func (s *server) beforeSession(ctx context.Context, r *http.Request, op *adminap
 			return ctx, errNotFound
 		}
 		mp, err := s.memberPrincipal(ctx, user, sess, tid)
+		if errors.Is(err, errNotFound) {
+			// Not a member: the platform user's support action in this tenant, if it has one.
+			base := p
+			base.Roles = user.PlatformRoles
+			sp, ok, serr := s.supportPrincipal(ctx, base, tid)
+			if serr != nil {
+				return ctx, serr
+			}
+			if ok {
+				mp, err = sp, nil
+			}
+		}
 		if err != nil {
 			return ctx, err
 		}

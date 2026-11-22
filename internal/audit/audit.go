@@ -115,6 +115,10 @@ func RecordTenant(ctx context.Context, tx store.Tx, id tenant.ID, e Event) error
 	if err != nil {
 		return err
 	}
+	// A principal that runs under a support action names it on every row that it writes.
+	if p, ok := authz.FromContext(ctx); ok && e.SupportActionID == "" {
+		e.SupportActionID = p.SupportActionID
+	}
 	var action *string
 	if e.SupportActionID != "" {
 		action = &e.SupportActionID
@@ -132,9 +136,17 @@ func RecordTenant(ctx context.Context, tx store.Tx, id tenant.ID, e Event) error
 
 // RecordIntervention writes e to the audit log of tenant id and to the platform's, with the tenant
 // ID added to the detail of the platform's row. tx comes from store.DB.ActInTenant.
-// Part A: a stub; step C1 writes it.
-func RecordIntervention(_ context.Context, _ store.Tx, _ tenant.ID, _ Event) error {
-	return errors.New("audit: RecordIntervention is not implemented")
+func RecordIntervention(ctx context.Context, tx store.Tx, id tenant.ID, e Event) error {
+	if err := RecordTenant(ctx, tx, id, e); err != nil {
+		return err
+	}
+	platform := e
+	platform.Detail = make(map[string]any, len(e.Detail)+1)
+	for k, v := range e.Detail {
+		platform.Detail[k] = v
+	}
+	platform.Detail["tenant_id"] = id.String()
+	return RecordPlatform(ctx, tx, platform)
 }
 
 // markCreate gives the claim of an idempotency key, when the request carries one, its commit mark

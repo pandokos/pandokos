@@ -194,6 +194,13 @@ func (w *apiWorld) fresh(t *testing.T, s side, op adminapi.Operation) apitest.Pa
 	if strings.Contains(op.Path, "{price}") {
 		p.TenantPrice = w.seedTenantPrice(t, s)
 	}
+	// The operations of sprint 4.3 on a custom role or on a support action get one of their own.
+	if strings.Contains(op.Path, "{role}") {
+		p.Role = w.api.CustomRole(t, s.tenant.ID, "member:read")
+	}
+	if strings.Contains(op.Path, "/support-actions/{action}") {
+		p.SupportAction = apitest.OpenSupport(t, &apitest.Caller{API: w.api, Key: w.api.PlatformKey(), Name: "platform"}, s.tenant.ID, "member:read")
+	}
 	return p
 }
 
@@ -580,7 +587,7 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 		// The positive control: A's key does it in A.
 		own := apitest.CallFor(t, op, w.fresh(t, w.a, op))
 		r := w.api.Do(t, own.Method, own.Path, w.a.adminKey, own.Body, nil)
-		if r.Status != 200 && r.Status != 201 {
+		if r.Status != 200 && r.Status != 201 && r.Status != 204 { // deleteRole answers 204
 			t.Errorf("%s in A: status %d\n%s", op.ID, r.Status, r.Body)
 		}
 		// And none in B.
@@ -646,16 +653,21 @@ func TestPlatformKeyHasNoTenantPermission(t *testing.T) {
 // TestTenantAdminIsEnoughAndNoMore is T-273 (changed in sprint 4.3: it runs for the owner, and the
 // tenant-admin is enough for everything but endSupportAction, which is kept for owners).
 func TestTenantAdminIsEnoughAndNoMore(t *testing.T) {
-	w := newAPIWorld(t)
-	plat := &apitest.Caller{API: w.api, Key: w.api.PlatformKey(), Name: "platform"}
 	for _, who := range []struct {
 		name string
-		key  string
+		key  func(w *apiWorld) string
 	}{
-		{"owner", w.a.adminKey},
-		{"tenant-admin", w.api.AsRole(t, w.a.tenant.ID, "tenant-admin").Key},
+		{"owner", func(w *apiWorld) string { return w.a.adminKey }},
+		{"tenant-admin", func(w *apiWorld) string { return w.api.AsRole(t, w.a.tenant.ID, "tenant-admin").Key }},
 	} {
 		t.Run(who.name, func(t *testing.T) {
+			// A world of its own: the operations that delete or create leave the next run a different tenant.
+			w := newAPIWorld(t)
+			plat := &apitest.Caller{API: w.api, Key: w.api.PlatformKey(), Name: "platform"}
+			who := struct {
+				name string
+				key  string
+			}{who.name, who.key(w)}
 			for _, op := range apiOperations() {
 				p := w.fresh(t, w.a, op)
 				// The operations on a custom role and on a support action get ones of their own.

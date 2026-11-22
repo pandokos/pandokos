@@ -141,9 +141,14 @@ func (db *DB) Provision(ctx context.Context, fn func(ctx context.Context, tx Tx,
 
 // ActInTenant runs fn in one transaction in platform scope that is also the session of tenant id.
 // Admin role only (ErrNotAdmin). It exists for what the platform does inside a tenant.
-// Part A: a stub; step C1 writes it.
-func (db *DB) ActInTenant(_ context.Context, _ tenant.ID, _ func(ctx context.Context, tx Tx) error) error {
-	return errors.New("store: ActInTenant is not implemented")
+func (db *DB) ActInTenant(ctx context.Context, id tenant.ID, fn func(ctx context.Context, tx Tx) error) error {
+	if db.role != RoleAdmin {
+		return ErrNotAdmin
+	}
+	if id.IsZero() {
+		return ErrNoTenant
+	}
+	return db.inTx(ctx, []setting{{settingScope, scopePlatform}, {settingTenant, id.String()}}, fn)
 }
 
 // Interval returns d as the value of an interval parameter of a query.
