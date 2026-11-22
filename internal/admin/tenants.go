@@ -7,6 +7,7 @@ import (
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/audit"
 	"github.com/pandokos/pandokos/internal/authn"
+	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/queries"
 	"github.com/pandokos/pandokos/internal/tenant"
@@ -114,7 +115,7 @@ func (s *server) CreateTenant(ctx context.Context, in adminapi.CreateTenantInput
 			if err != nil {
 				return err
 			}
-			if err := q.CreateRoleAssignment(ctx, queries.CreateRoleAssignmentParams{TenantID: t.ID, ServiceAccountID: sa.ID, Role: "tenant-admin"}); err != nil {
+			if err := q.CreateRoleAssignment(ctx, queries.CreateRoleAssignmentParams{TenantID: t.ID, ServiceAccountID: sa.ID, Role: authz.RoleOwner}); err != nil {
 				return err
 			}
 			var exp *time.Time
@@ -130,7 +131,7 @@ func (s *server) CreateTenant(ctx context.Context, in adminapi.CreateTenantInput
 			}
 			actor := audit.ActorOf(p)
 			if err := audit.RecordTenant(ctx, tx, tid, audit.Event{Actor: actor, Action: "service_account.create", ResourceType: "service_account", ResourceID: sa.ID,
-				Outcome: "success", RequestID: st.id, Detail: map[string]any{"name": saName, "roles": []string{"tenant-admin"}}}); err != nil {
+				Outcome: "success", RequestID: st.id, Detail: map[string]any{"name": saName, "roles": []string{authz.RoleOwner}}}); err != nil {
 				return err
 			}
 			vkDetail := map[string]any{"service_account_id": sa.ID}
@@ -156,7 +157,7 @@ func (s *server) CreateTenant(ctx context.Context, in adminapi.CreateTenantInput
 					"admin_service_account_id": sa.ID, "admin_key_id": keyID}}); err != nil {
 				return err
 			}
-			saOut := saRow{sa.ID, sa.TenantID, sa.Name, sa.Description, sa.State, sa.ValidFrom, sa.ValidUntil, sa.CreatedAt, sa.UpdatedAt, []string{"tenant-admin"}}
+			saOut := saRow{sa.ID, sa.TenantID, sa.Name, sa.Description, sa.State, sa.ValidFrom, sa.ValidUntil, sa.CreatedAt, sa.UpdatedAt, []string{authz.RoleOwner}}
 			out = adminapi.TenantCreated{
 				Tenant:              s.tenantOut(active),
 				AdminServiceAccount: saOut.out(),

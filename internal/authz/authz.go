@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"sync"
 
 	"github.com/pandokos/pandokos/internal/tenant"
 )
@@ -163,13 +164,18 @@ func Catalogue() []Permission { return append([]Permission(nil), catalogue...) }
 
 // Lookup returns the permission with the given name.
 func Lookup(name string) (Permission, bool) {
-	for _, p := range catalogue {
-		if p.Name == name {
-			return p, true
-		}
-	}
-	return Permission{}, false
+	p, ok := byName()[name]
+	return p, ok
 }
+
+// byName indexes the catalogue by name, built once.
+var byName = sync.OnceValue(func() map[string]Permission {
+	m := make(map[string]Permission, len(catalogue))
+	for _, p := range catalogue {
+		m[p.Name] = p
+	}
+	return m
+})
 
 // Kind is the kind of a principal.
 type Kind string
@@ -233,14 +239,33 @@ func (p Principal) holdsRole(scope Scope) bool {
 	return false
 }
 
-// Effective returns the permissions p holds: the union of the permissions of its roles that
-// exist and whose scope counts for p, intersected with Scopes when Scopes is not nil. Sorted.
+// Effective returns the permissions p holds, sorted, in four steps: the permissions of the built-in
+// roles among Roles whose scope counts for p; for a principal that holds tenant roles, the names
+// of Granted that are tenant permissions of the catalogue (anything else is dropped); for a user,
+// identity:read and session:self; all intersected with Scopes when Scopes is not nil. A principal
+// that runs under a support action has instead the permissions of the action that carry the
+// attribute Support (sprint 4.3, sections 5.3 and 5.6).
 func (p Principal) Effective() []string {
 	set := map[string]bool{}
-	for _, name := range p.Roles {
-		if r, ok := RoleByName(name); ok && p.holdsRole(r.Scope) {
-			for _, perm := range r.Permissions {
-				set[perm] = true
+	if p.SupportActionID != "" {
+		for _, name := range p.Granted {
+			if perm, ok := Lookup(name); ok && perm.Scope == ScopeTenant && perm.Support {
+				set[name] = true
+			}
+		}
+	} else {
+		for _, name := range p.Roles {
+			if r, ok := RoleByName(name); ok && p.holdsRole(r.Scope) {
+				for _, perm := range r.Permissions {
+					set[perm] = true
+				}
+			}
+		}
+		if len(p.Roles) > 0 && p.holdsRole(ScopeTenant) {
+			for _, name := range p.Granted {
+				if perm, ok := Lookup(name); ok && perm.Scope == ScopeTenant {
+					set[name] = true
+				}
 			}
 		}
 	}
@@ -267,6 +292,12 @@ func (p Principal) Effective() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// supportsTenant is true for a platform key that runs under a support action: it is treated as a
+// principal of the tenant of the action.
+func (p Principal) supportsTenant() bool {
+	return p.Kind == KindPlatform && p.SupportActionID != ""
 }
 
 func (p Principal) holds(permission string) bool {
@@ -299,12 +330,14 @@ func Decide(p Principal, permission string, t Target) Decision {
 		return Deny
 	}
 	if perm.Scope == ScopePlatform {
-		if !p.holds(permission) || (p.Kind != KindPlatform && (p.Kind != KindUser || !p.TenantID.IsZero())) {
+		// Only a principal without a tenant: a platform key without a support action, or a user
+		// without a tenant.
+		if !p.holds(permission) || (p.Kind != KindPlatform && p.Kind != KindUser) || !p.TenantID.IsZero() {
 			return Deny
 		}
 		return Allow
 	}
-	if p.Kind == KindServiceAccount || (p.Kind == KindUser && !p.TenantID.IsZero()) {
+	if p.Kind == KindServiceAccount || (p.Kind == KindUser && !p.TenantID.IsZero()) || p.supportsTenant() {
 		if p.TenantID.IsZero() {
 			return Deny
 		}
@@ -314,7 +347,7 @@ func Decide(p Principal, permission string, t Target) Decision {
 	}
 	if perm.Scope == ScopeTenant {
 		switch {
-		case p.Kind == KindPlatform, t.TenantID.IsZero():
+		case p.Kind == KindPlatform && p.SupportActionID == "", t.TenantID.IsZero():
 			return Deny
 		case t.TenantID != p.TenantID:
 			return DenyNotFound
