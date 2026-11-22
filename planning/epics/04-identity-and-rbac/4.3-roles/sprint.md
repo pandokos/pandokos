@@ -3,7 +3,7 @@ id: SPRINT-4.3
 title: Roles
 epic: EPIC-4
 release: v0.2
-status: in-progress
+status: done
 design: draft 2026-11-22
 ---
 
