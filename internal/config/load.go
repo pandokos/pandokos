@@ -91,6 +91,7 @@ func limitsWarnings(c *Config) []Warning {
 
 func warnings(cfg *Config, env map[string]string, known map[string]bool, src Source) []Warning {
 	ws := listenerAndURLWarnings(cfg)
+	ws = append(ws, authWarnings(cfg)...)
 	if src.Purpose == PurposeServe {
 		ws = append(ws, proxyEnvironmentWarnings(cfg, src.Environ)...)
 		ws = append(ws, otelEnvironmentWarnings(cfg, src.Environ)...)

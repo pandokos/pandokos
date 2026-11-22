@@ -60,7 +60,7 @@ func TestHashVerify(t *testing.T) {
 	if len(m[5]) != 43 { // 32 bytes in unpadded base64
 		t.Errorf("output of %d characters, want 43 (32 bytes)", len(m[5]))
 	}
-	if strings.Contains(phc, "=") {
+	if strings.Contains(m[4]+m[5], "=") || strings.HasSuffix(phc, "=") {
 		t.Error("padded base64")
 	}
 	if strings.Contains(phc, pw.Reveal()) {

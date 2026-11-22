@@ -190,3 +190,59 @@ func loadOIDCSecret(c *Config) []Problem {
 	c.Auth.OIDC.ClientSecret = s
 	return nil
 }
+
+const (
+	hoursPerDay = 24 * time.Hour
+	maxSessionH = 168 * time.Hour
+)
+
+// validateAuth applies the rules of section 5.15 of sprint 4.2 that do not depend on the
+// identity provider.
+func validateAuth(c *Config) []Problem {
+	var ps []Problem
+	add := func(key, msg string) { ps = append(ps, Problem{Key: key, Message: msg}) }
+	inRange := func(key string, d Duration, lo, hi time.Duration, text string) {
+		if v := time.Duration(d); v < lo || v > hi {
+			add(key, "must be between "+text)
+		}
+	}
+	a := &c.Auth
+	l := &a.Local
+	if l.PasswordMinLength < 8 || l.PasswordMinLength > 128 {
+		add("auth.local.password_min_length", "must be between 8 and 128")
+	}
+	inRange("auth.local.generated_password_ttl", l.GeneratedPasswordTTL, time.Hour, 30*hoursPerDay, "1h and 720h")
+	if l.MaxFailures < 3 || l.MaxFailures > 100 {
+		add("auth.local.max_failures", "must be between 3 and 100")
+	}
+	inRange("auth.local.failure_window", l.FailureWindow, time.Minute, hoursPerDay, "1m and 24h")
+	inRange("auth.local.lock_duration", l.LockDuration, time.Minute, hoursPerDay, "1m and 24h")
+	if l.SourceMaxFailures < 10 || l.SourceMaxFailures < l.MaxFailures {
+		add("auth.local.source_max_failures", "must be at least 10 and at least auth.local.max_failures")
+	}
+	if l.Argon2.MemoryKiB < 19456 || l.Argon2.MemoryKiB > 1048576 {
+		add("auth.local.argon2.memory_kib", "must be between 19456 and 1048576")
+	}
+	if l.Argon2.Iterations < 2 || l.Argon2.Iterations > 10 {
+		add("auth.local.argon2.iterations", "must be between 2 and 10")
+	}
+	if l.Argon2.Parallelism < 1 || l.Argon2.Parallelism > 4 {
+		add("auth.local.argon2.parallelism", "must be between 1 and 4")
+	}
+	if l.MaxConcurrentHashes < 1 || l.MaxConcurrentHashes > 64 {
+		add("auth.local.max_concurrent_hashes", "must be between 1 and 64")
+	}
+	if !l.Enabled && !a.OIDC.Enabled {
+		add("auth.local.enabled", "local accounts cannot be switched off unless auth.oidc.enabled is true: nobody could sign in")
+	}
+	return ps
+}
+
+// authWarnings returns the warnings of sprint 4.2 that the configuration alone decides.
+func authWarnings(c *Config) []Warning {
+	var ws []Warning
+	if c.Auth.Local.PasswordMinLength < 12 {
+		ws = append(ws, Warning{Key: "auth.local.password_min_length", Message: "a minimum below 12 characters weakens local passwords"})
+	}
+	return ws
+}
