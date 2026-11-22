@@ -81,6 +81,7 @@ func (s *server) CompleteOidcSignIn(ctx context.Context, in adminapi.CompleteOid
 	st := stateOf(ctx)
 	setCookie(ctx, oidc.ClearSeedCookie())
 	failed := func(reason, userID string, tid tenant.ID) (*adminapi.Redirect, error) {
+		s.stats.oidc.Add("oidc", account.SignInRefused)
 		s.oidcFailed(ctx, st, reason, userID, "", tid)
 		return s.postSignIn("sign_in_failed"), nil
 	}
@@ -123,11 +124,13 @@ func (s *server) CompleteOidcSignIn(ctx context.Context, in adminapi.CompleteOid
 		var r *account.Refusal
 		if errors.As(err, &r) {
 			// The token was validated: the subject is the provider's word and goes to the audit row.
+			s.stats.oidc.Add("oidc", account.SignInRefused)
 			s.oidcFailed(ctx, st, r.Reason, r.UserID, id.Subject, r.TenantID)
 			return s.postSignIn("sign_in_failed"), nil
 		}
 		return s.oidcUnavailable(st, err), nil
 	}
+	s.stats.oidc.Add("oidc", account.SignInOK)
 	setCookie(ctx, session.Cookie(res.Token))
 	return &adminapi.Redirect{Location: s.postSignInPath()}, nil
 }
@@ -143,6 +146,7 @@ func oidcReason(err error) string {
 // oidcUnavailable answers an outage of the provider or the database with the redirect that says so,
 // and logs the class of the error, never the error itself.
 func (s *server) oidcUnavailable(st *reqState, err error) *adminapi.Redirect {
+	s.stats.oidc.Add("oidc", account.SignInUnavailable)
 	if errors.Is(err, authz.ErrUnavailable) || store.IsUnavailable(err) {
 		s.log.Warn("sign-in through the identity provider unavailable", "request_id", st.id)
 		return s.postSignIn("unavailable")

@@ -58,6 +58,7 @@ type Cache struct {
 	byKey        map[Source]*list.Element
 	metaMu       sync.Mutex // guards meta
 	meta         map[string]*metaEntry
+	fetches      sync.Map // FetchKey -> *atomic.Int64
 }
 
 // entry is the state of one source. Its mutex guards every field; a fetch in flight runs without

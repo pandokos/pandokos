@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/pandokos/pandokos/internal/authz"
@@ -67,6 +68,8 @@ type Authenticator struct {
 	// The caches of the token path (section 5.6); nil without a cache lifetime.
 	regs       *lookupCache[registration]
 	principals *lookupCache[principalEntry]
+
+	attempts *sync.Map // Attempt -> *atomic.Int64; a pointer, the Authenticator is copied by some callers
 }
 
 // New validates o.
@@ -79,7 +82,7 @@ func New(o Options) (*Authenticator, error) {
 	case len(o.Kinds) == 0:
 		return nil, errors.New("authn: at least one kind is required")
 	}
-	a := &Authenticator{db: o.DB, kinds: map[Kind]bool{}, now: o.Now}
+	a := &Authenticator{db: o.DB, kinds: map[Kind]bool{}, now: o.Now, attempts: new(sync.Map)}
 	if a.now == nil {
 		a.now = time.Now
 	}
@@ -110,24 +113,33 @@ func unavailable(err error) error {
 }
 
 // Authenticate verifies presented and returns the principal. A refusal is a *Failure; a database
-// that cannot answer is authz.ErrUnavailable.
+// that cannot answer is authz.ErrUnavailable. Each call is counted once, by kind, result and reason.
 func (a *Authenticator) Authenticate(ctx context.Context, presented string) (authz.Principal, error) {
+	p, kind, err := a.authenticate(ctx, presented)
+	a.count(kind, err)
+	return p, err
+}
+
+func (a *Authenticator) authenticate(ctx context.Context, presented string) (authz.Principal, string, error) {
 	// A value that starts with pdk_ is a key and never a token; any other value of the shape of a
 	// compact JWT is a token when tokens are accepted (section 5.2).
 	if a.kinds[KindToken] && looksLikeToken(presented, a.tok.MaxBytes) {
-		return a.token(ctx, presented)
+		p, err := a.token(ctx, presented)
+		return p, "token", err
 	}
 	keyID, kind, hash, err := Parse(presented)
 	if err != nil {
-		return authz.Principal{}, &Failure{Reason: ReasonMalformed}
+		return authz.Principal{}, "unknown", &Failure{Reason: ReasonMalformed}
 	}
 	if !a.kinds[kind] {
-		return authz.Principal{}, &Failure{Reason: ReasonKindNotAccepted, KeyID: keyID}
+		return authz.Principal{}, "key", &Failure{Reason: ReasonKindNotAccepted, KeyID: keyID}
 	}
 	if kind == KindPlatform {
-		return a.platform(ctx, keyID, hash)
+		p, err := a.platform(ctx, keyID, hash)
+		return p, "key", err
 	}
-	return a.virtual(ctx, keyID, hash)
+	p, err := a.virtual(ctx, keyID, hash)
+	return p, "key", err
 }
 
 func (a *Authenticator) platform(ctx context.Context, keyID string, hash [32]byte) (authz.Principal, error) {

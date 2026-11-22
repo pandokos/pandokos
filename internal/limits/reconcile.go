@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pandokos/pandokos/internal/store"
@@ -43,6 +44,26 @@ type Reconciler struct {
 
 	mu      sync.Mutex
 	rebased map[tenant.ID]time.Time // the last rebase of a tenant; the load counts as the first
+
+	ok, failed   atomic.Int64
+	lastDuration atomic.Int64 // nanoseconds of the last Tick
+	lastCut      atomic.Int64 // unix nanoseconds of the last cut reached; 0 before the first
+}
+
+// ReconcilerStats is a snapshot of the runs of a Reconciler: one run for each tenant reconciled in a pass.
+type ReconcilerStats struct {
+	OK, Failed   int64
+	LastDuration time.Duration // of the last pass
+	LastCut      time.Time     // the latest cut a pass reached; zero before the first
+}
+
+// Stats returns the counters.
+func (r *Reconciler) Stats() ReconcilerStats {
+	st := ReconcilerStats{OK: r.ok.Load(), Failed: r.failed.Load(), LastDuration: time.Duration(r.lastDuration.Load())}
+	if n := r.lastCut.Load(); n != 0 {
+		st.LastCut = time.Unix(0, n).UTC()
+	}
+	return st
 }
 
 // NewReconciler returns a Reconciler.
@@ -168,13 +189,23 @@ func (r *Reconciler) Run(ctx context.Context) {
 
 // Tick is one pass of Run, for tests.
 func (r *Reconciler) Tick(ctx context.Context) {
+	began := r.o.Now()
+	defer func() { r.lastDuration.Store(int64(r.o.Now().Sub(began))) }()
 	tenants := r.o.Store.PeriodTenants()
 	r.forget(tenants)
 	for _, t := range tenants {
 		if ctx.Err() != nil {
 			return
 		}
-		if err := r.reconcile(ctx, t); err != nil && ctx.Err() == nil {
+		err := r.reconcile(ctx, t)
+		switch {
+		case err == nil:
+			r.ok.Add(1)
+			if cut, ok := r.o.Store.Cut(t); ok && cut.UnixNano() > r.lastCut.Load() {
+				r.lastCut.Store(cut.UnixNano())
+			}
+		case ctx.Err() == nil:
+			r.failed.Add(1)
 			r.o.Logger.Warn("limit reconciliation failed", slog.String("error_class", errorClass(err)))
 		}
 	}

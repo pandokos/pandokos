@@ -66,7 +66,16 @@ type Options struct {
 }
 
 // Store keeps the idempotency keys.
-type Store struct{ o Options }
+type Store struct {
+	o       Options
+	replays atomic.Int64
+}
+
+// Stats is a snapshot of the counters of a Store.
+type Stats struct{ Replays int64 }
+
+// Stats returns the counters.
+func (s *Store) Stats() Stats { return Stats{Replays: s.replays.Load()} }
 
 // NewStore returns a Store.
 func NewStore(o Options) *Store {
@@ -170,6 +179,7 @@ func (s *Store) Begin(ctx context.Context, scope Scope, operation, path, key str
 		return ctx, nil, err
 	}
 	if replay != nil {
+		s.replays.Add(1)
 		return ctx, replay, nil
 	}
 	return context.WithValue(ctx, claimKey{}, claim), nil, nil

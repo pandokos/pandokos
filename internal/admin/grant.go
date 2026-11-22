@@ -59,6 +59,7 @@ func (s *server) guardGrant(ctx context.Context, p authz.Principal, sets ...[]st
 	for _, set := range sets {
 		if !p.CanGrant(set) {
 			st := stateOf(ctx)
+			s.stats.grantsRefused.Add(1)
 			s.log.Warn("grant refused", "request_id", st.id, "operation", st.operation)
 			return errEscalation
 		}

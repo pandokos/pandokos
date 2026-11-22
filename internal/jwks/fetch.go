@@ -141,12 +141,25 @@ func (c *Cache) discover(ctx context.Context, src Source) (*url.URL, error) {
 	return u, nil
 }
 
-// fetch retrieves the usable keys of a source: discovery when needed, then the key set.
+// fetch retrieves the usable keys of a source: discovery when needed, then the key set. Each
+// document fetched is counted by its result.
 func (c *Cache) fetch(ctx context.Context, src Source) ([]usableKey, error) {
 	u, err := c.discover(ctx, src)
+	if src.JWKSURI == "" {
+		c.countFetch("metadata", err)
+	}
 	if err != nil {
+		if src.JWKSURI != "" {
+			c.countFetch("keys", err)
+		}
 		return nil, err
 	}
+	keys, err := c.fetchKeys(ctx, u)
+	c.countFetch("keys", err)
+	return keys, err
+}
+
+func (c *Cache) fetchKeys(ctx context.Context, u *url.URL) ([]usableKey, error) {
 	body, err := c.get(ctx, u, maxKeySetBytes)
 	if err != nil {
 		return nil, err

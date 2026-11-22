@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/pandokos/pandokos/internal/account"
@@ -28,6 +29,10 @@ type people struct {
 	sessions    *session.Store
 	accounts    *account.Service
 	idempotency *idem.Store
+	hasher      *password.Hasher
+
+	open      atomic.Int64 // the sessions open at the last count that succeeded
+	openKnown atomic.Bool  // a count has succeeded
 }
 
 func newPeople(cfg *config.Config, db *store.DB) (*people, error) {
@@ -46,7 +51,7 @@ func newPeople(cfg *config.Config, db *store.DB) (*people, error) {
 		MaxFailures: l.MaxFailures, SourceMaxFailures: l.SourceMaxFailures, FailureWindow: time.Duration(l.FailureWindow), LockDuration: time.Duration(l.LockDuration),
 	})
 	return &people{
-		sessions: sessions, accounts: accounts,
+		sessions: sessions, accounts: accounts, hasher: hasher,
 		idempotency: idem.NewStore(idem.Options{DB: db, Retention: time.Duration(cfg.Idempotency.Retention)}),
 	}, nil
 }
@@ -145,18 +150,42 @@ func (p *people) runPurge(ctx context.Context, logger *slog.Logger) {
 			return
 		case <-time.After(wait):
 		}
-		for name, purge := range map[string]func(context.Context) error{
-			"sessions": p.sessions.Purge, "accounts": p.accounts.Purge, "idempotency": p.idempotency.Purge,
-		} {
-			pctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-			if err := purge(pctx); err != nil && ctx.Err() == nil {
-				if sqlstate := store.SQLState(err); sqlstate != "" {
-					logger.Warn("purge failed", "target", name, "sqlstate", sqlstate)
-				} else {
-					logger.Warn("purge failed", "target", name)
-				}
-			}
-			cancel()
-		}
+		p.purgeOnce(ctx, logger)
 	}
 }
+
+// purgeOnce is one round of runPurge: the purges, then the count of the sessions open, which is
+// kept for the metric. A failure is logged with its class only; a failed count keeps the last value.
+func (p *people) purgeOnce(ctx context.Context, logger *slog.Logger) {
+	for name, purge := range map[string]func(context.Context) error{
+		"sessions": p.sessions.Purge, "accounts": p.accounts.Purge, "idempotency": p.idempotency.Purge,
+	} {
+		pctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		if err := purge(pctx); err != nil && ctx.Err() == nil {
+			if sqlstate := store.SQLState(err); sqlstate != "" {
+				logger.Warn("purge failed", "target", name, "sqlstate", sqlstate)
+			} else {
+				logger.Warn("purge failed", "target", name)
+			}
+		}
+		cancel()
+	}
+	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	n, err := p.sessions.CountOpen(cctx)
+	if err != nil {
+		if ctx.Err() == nil {
+			if sqlstate := store.SQLState(err); sqlstate != "" {
+				logger.Warn("session count failed", "sqlstate", sqlstate)
+			} else {
+				logger.Warn("session count failed")
+			}
+		}
+		return
+	}
+	p.open.Store(n)
+	p.openKnown.Store(true)
+}
+
+// sessionsOpen is the number of sessions open at the last count and whether a count was made.
+func (p *people) sessionsOpen() (int64, bool) { return p.open.Load(), p.openKnown.Load() }

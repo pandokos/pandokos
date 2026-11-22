@@ -109,7 +109,10 @@ type Options struct {
 }
 
 // Service signs people in and changes their passwords.
-type Service struct{ o Options }
+type Service struct {
+	o       Options
+	counter SignInCounter
+}
 
 // NewService returns a Service.
 func NewService(o Options) *Service {

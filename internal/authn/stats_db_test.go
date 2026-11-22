@@ -27,7 +27,7 @@ func TestStats(t *testing.T) {
 	r := newTokenRig(t, d, 0)
 	f := newFixture(t, d, "stats")
 	gw := r.auth
-	admin, _ := newAuth(t, d.Open(t, store.RoleAdmin), 0, authn.KindTenant, authn.KindPlatform)
+	var admin *authn.Authenticator // made after the database was stopped and started: a pool made before holds dead connections
 
 	want := map[string]int64{}
 	count := func(kind, result, reason string) { want[kind+"|"+result+"|"+reason]++ }
@@ -63,7 +63,7 @@ func TestStats(t *testing.T) {
 		wrong, _ := f.key(t, &other, nil, "")
 		revoked, rid := f.key(t, nil, nil, "")
 		f.exec(t, "UPDATE pandokos.virtual_key SET revoked_at = now() WHERE key_id = $1", rid)
-		expired, _ := f.key(t, nil, nil, "now() - interval '1 second'")
+		expired, _ := f.key(t, nil, nil, "now() - interval '1 hour'")
 		g := newFixture(t, d, "stats-disabled")
 		disabled, _ := g.key(t, nil, nil, "")
 		g.exec(t, "UPDATE pandokos.service_account SET state = 'disabled' WHERE id = $1::uuid", g.sa)
@@ -120,6 +120,7 @@ func TestStats(t *testing.T) {
 	})
 
 	t.Run("each listener instance counts its own", func(t *testing.T) {
+		admin, _ = newAuth(t, d.Open(t, store.RoleAdmin), 0, authn.KindTenant, authn.KindPlatform)
 		if got := attempts(admin); len(got) != 0 {
 			t.Fatalf("the admin authenticator counted the gateway's calls: %v", got)
 		}

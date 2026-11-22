@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pandokos/pandokos/internal/store"
@@ -61,6 +62,16 @@ type RuleCache struct {
 	entries map[tenant.ID]ruleEntry
 	flights map[tenant.ID]*ruleFlight
 	epoch   uint64 // changes whenever any entry is invalidated
+
+	loadsOK, loadsFailed atomic.Int64
+}
+
+// RuleCacheStats is a snapshot of the loads of a RuleCache.
+type RuleCacheStats struct{ OK, Failed int64 }
+
+// Stats returns the counters: loads, not lookups.
+func (c *RuleCache) Stats() RuleCacheStats {
+	return RuleCacheStats{OK: c.loadsOK.Load(), Failed: c.loadsFailed.Load()}
 }
 
 // NewRuleCache builds a RuleCache on the gateway pool.
@@ -135,8 +146,12 @@ func (c *RuleCache) Rules(ctx context.Context, id tenant.ID) (RuleSet, error) {
 			var skipped int
 			f.val, skipped, f.err = c.load(lctx, id)
 			if f.err != nil {
+				c.loadsFailed.Add(1)
 				c.log.Warn("limit rules unavailable")
-			} else if skipped > 0 {
+			} else {
+				c.loadsOK.Add(1)
+			}
+			if f.err == nil && skipped > 0 {
 				c.log.Debug("limit rules of an unknown metric or subject skipped", "skipped", skipped)
 			}
 			c.mu.Lock()

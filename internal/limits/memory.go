@@ -77,6 +77,7 @@ type Memory struct {
 	events  EventSink
 	horizon time.Duration
 	seq     atomic.Uint64
+	expired atomic.Int64
 	shards  [shardCount]shard
 }
 
@@ -489,8 +490,15 @@ func (m *Memory) Sweep(now time.Time) int {
 	for _, e := range all {
 		m.log.Error("limit reservation expired", "request_id", e.requestID)
 	}
+	m.expired.Add(int64(len(all)))
 	return len(all)
 }
+
+// MemoryStats is a snapshot of the counters of a Memory.
+type MemoryStats struct{ Expired int64 }
+
+// Stats returns the counters: the reservations the sweep expired.
+func (m *Memory) Stats() MemoryStats { return MemoryStats{Expired: m.expired.Load()} }
 
 // Outstanding returns the number of reservations not yet settled, released or expired.
 func (m *Memory) Outstanding() int {

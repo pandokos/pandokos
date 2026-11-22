@@ -30,10 +30,12 @@ type Params struct {
 
 // Hasher computes and checks Argon2id hashes, at most a fixed number at the same time.
 type Hasher struct {
-	params Params
-	slots  chan struct{}
-	count  atomic.Uint64
-	dummy  string
+	params  Params
+	slots   chan struct{}
+	count   atomic.Uint64
+	active  atomic.Int64 // slots taken
+	waiting atomic.Int64 // callers blocked for a slot
+	dummy   string
 }
 
 // ErrBusy is returned when too many computations are running; the API answers 503.
@@ -69,13 +71,31 @@ func (h *Hasher) acquire(ctx context.Context) error {
 	}
 	select {
 	case h.slots <- struct{}{}:
+		h.active.Add(1)
+		return nil
+	default:
+	}
+	h.waiting.Add(1)
+	defer h.waiting.Add(-1)
+	select {
+	case h.slots <- struct{}{}:
+		h.active.Add(1)
 		return nil
 	case <-ctx.Done():
 		return ErrBusy
 	}
 }
 
-func (h *Hasher) release() { <-h.slots }
+func (h *Hasher) release() {
+	h.active.Add(-1)
+	<-h.slots
+}
+
+// Stats is a snapshot of the hasher: the slots taken and the callers waiting for one.
+type Stats struct{ Active, Waiting int64 }
+
+// Stats returns the counters.
+func (h *Hasher) Stats() Stats { return Stats{Active: h.active.Load(), Waiting: h.waiting.Load()} }
 
 // Hash returns the PHC string of pw.
 func (h *Hasher) Hash(ctx context.Context, pw secret.Secret) (phc string, err error) {

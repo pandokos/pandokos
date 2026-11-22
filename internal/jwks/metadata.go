@@ -102,6 +102,7 @@ func (c *Cache) metaStart(e *metaEntry, issuer string, now time.Time) chan struc
 		ctx, cancel := context.WithTimeout(context.Background(), c.o.FetchTimeout)
 		defer cancel()
 		doc, err := c.fetchMetadata(ctx, issuer)
+		c.countFetch("metadata", err)
 		if err != nil {
 			attrs := []any{"issuer", logIssuer(issuer)}
 			var fe *fetchError

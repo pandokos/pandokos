@@ -330,6 +330,13 @@ Fields: `target`, `sqlstate`
 
 Written by the serve.
 
+### `session count failed`
+
+Level: warn
+Fields: `sqlstate`
+
+Written by the serve.
+
 ### `starting`
 
 Level: info
@@ -419,6 +426,13 @@ Written by the gateway.
 
 Level: error
 Fields: `request_id`, `panic_type`, `error`
+
+Written by the gateway.
+
+### `metrics observation failed`
+
+Level: error
+Fields: `request_id`, `panic_type`
 
 Written by the gateway.
 

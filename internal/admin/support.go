@@ -272,6 +272,7 @@ func (s *server) OpenSupportAction(ctx context.Context, in adminapi.OpenSupportA
 	if err != nil {
 		return nil, mapSupportConstraint(err)
 	}
+	s.stats.supportOpened.Add(1)
 	return &out, nil
 }
 
@@ -301,8 +302,10 @@ func (s *server) CloseSupportAction(ctx context.Context, in adminapi.CloseSuppor
 	st := stateOf(ctx)
 	actor := audit.ActorOf(p)
 	var out adminapi.SupportAction
+	changed := false
 	err = s.db.ActInTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
 		q := queries.New(tx)
+		changed = false
 		if ok, err := q.TenantExists(ctx, tid.String()); err != nil || !ok {
 			return notFoundOr(err)
 		}
@@ -324,11 +327,15 @@ func (s *server) CloseSupportAction(ctx context.Context, in adminapi.CloseSuppor
 			return err
 		}
 		out = supportOut(row, s.now())
+		changed = true
 		return audit.RecordIntervention(ctx, tx, tid, audit.Event{Actor: actor, Action: "support_action.close", ResourceType: "support_action",
 			ResourceID: row.ID, Outcome: "success", RequestID: st.id, Reason: reason, SupportActionID: row.ID})
 	})
 	if err != nil {
 		return nil, err
+	}
+	if changed {
+		s.stats.supportClosed.Add(1)
 	}
 	return &out, nil
 }
@@ -349,8 +356,10 @@ func (s *server) EndSupportAction(ctx context.Context, in adminapi.EndSupportAct
 	p := principalOf(ctx)
 	st := stateOf(ctx)
 	var out adminapi.SupportAction
+	changed := false
 	err = s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
 		q := queries.New(tx)
+		changed = false
 		row, err := q.LockSupportAction(ctx, queries.LockSupportActionParams{ID: in.Action, TenantID: tid.String()})
 		if isNoRowsErr(err) {
 			return errNotFound
@@ -369,11 +378,15 @@ func (s *server) EndSupportAction(ctx context.Context, in adminapi.EndSupportAct
 			return err
 		}
 		out = supportOut(row, s.now())
+		changed = true
 		return audit.RecordTenant(ctx, tx, tid, audit.Event{Actor: audit.ActorOf(p), Action: "support_action.end", ResourceType: "support_action",
 			ResourceID: row.ID, Outcome: "success", RequestID: st.id, Reason: reason})
 	})
 	if err != nil {
 		return nil, err
+	}
+	if changed {
+		s.stats.supportEnded.Add(1)
 	}
 	return &out, nil
 }

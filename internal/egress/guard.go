@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -32,6 +33,33 @@ type Guard struct {
 
 	publicRT  http.RoundTripper
 	privateRT http.RoundTripper
+
+	blockedCount [6]atomic.Int64 // by reason, in the order of BlockReasons
+}
+
+// blocked counts a refusal and returns it as an error.
+func (g *Guard) blocked(reason string, a netip.Addr) error {
+	for i, r := range BlockReasons {
+		if r == reason {
+			g.blockedCount[i].Add(1)
+			break
+		}
+	}
+	return &BlockedError{Reason: reason, Addr: a}
+}
+
+// Stats is a snapshot of the counters of a Guard.
+type Stats struct {
+	Blocked map[string]int64 // refusals by reason, keyed by BlockReasons; every reason is present
+}
+
+// Stats returns a copy of the counters.
+func (g *Guard) Stats() Stats {
+	m := make(map[string]int64, len(BlockReasons))
+	for i, r := range BlockReasons {
+		m[r] = g.blockedCount[i].Load()
+	}
+	return Stats{Blocked: m}
 }
 
 // New returns a Guard.
@@ -89,11 +117,11 @@ func (g *Guard) transport(o Options, control func(string, string, syscall.RawCon
 func (g *Guard) control(max AddrClass) func(string, string, syscall.RawConn) error {
 	return func(network, address string, _ syscall.RawConn) error {
 		if network != "tcp4" && network != "tcp6" {
-			return &BlockedError{Reason: BlockNotTCP}
+			return g.blocked(BlockNotTCP, netip.Addr{})
 		}
 		ap, err := netip.ParseAddrPort(address)
 		if err != nil {
-			return &BlockedError{Reason: BlockUnparsable}
+			return g.blocked(BlockUnparsable, netip.Addr{})
 		}
 		return g.check(ap.Addr(), max)
 	}
@@ -104,9 +132,9 @@ func (g *Guard) check(a netip.Addr, max AddrClass) error {
 	a = a.Unmap().WithZone("")
 	switch c := g.classify(a); {
 	case c == AddrForbidden:
-		return &BlockedError{Reason: BlockForbiddenAddress, Addr: a}
+		return g.blocked(BlockForbiddenAddress, a)
 	case c > max:
-		return &BlockedError{Reason: BlockPrivateAddress, Addr: a}
+		return g.blocked(BlockPrivateAddress, a)
 	}
 	return nil
 }
@@ -147,16 +175,16 @@ func (t *guardedTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 func (t *guardedTransport) preflight(req *http.Request) error {
 	u := req.URL
 	if u == nil {
-		return &BlockedError{Reason: BlockScheme}
+		return t.g.blocked(BlockScheme, netip.Addr{})
 	}
 	switch {
 	case u.Scheme == "https":
 	case u.Scheme == "http" && t.private:
 	default:
-		return &BlockedError{Reason: BlockScheme}
+		return t.g.blocked(BlockScheme, netip.Addr{})
 	}
 	if u.User != nil {
-		return &BlockedError{Reason: BlockUserInfo}
+		return t.g.blocked(BlockUserInfo, netip.Addr{})
 	}
 	if a, err := netip.ParseAddr(u.Hostname()); err == nil {
 		max := AddrPublic

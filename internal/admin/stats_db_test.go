@@ -52,11 +52,11 @@ func TestSupportAndGrantStats(t *testing.T) {
 	}
 	want.SupportEnded["closed"]++
 	check("a closing")
-	// Closing it again fails: nothing is counted.
-	if r := w.key.Do(t, "POST", w.sp("/"+a.ID+"/close"), map[string]any{"reason": apitest.Reason("close again")}, nil); r.Status < 400 {
+	// Closing it again answers the action unchanged (sprint 4.3): nothing is counted.
+	if r := w.key.Do(t, "POST", w.sp("/"+a.ID+"/close"), map[string]any{"reason": apitest.Reason("close again")}, nil); r.Status != 200 {
 		t.Fatalf("a second close: %d", r.Status)
 	}
-	check("a second closing that failed")
+	check("a second closing that changed nothing")
 
 	// Opened by a user, ended by the tenant.
 	b := w.open(t, w.user, apitest.Reason("open as a user"), []string{authz.MemberRead}, nil)
@@ -66,10 +66,10 @@ func TestSupportAndGrantStats(t *testing.T) {
 	}
 	want.SupportEnded["ended"]++
 	check("an ending by the tenant")
-	if r := w.owner.Do(t, "POST", w.tp("/support-actions/"+b.ID+"/end"), map[string]any{"reason": apitest.Reason("end again")}, nil); r.Status < 400 {
+	if r := w.owner.Do(t, "POST", w.tp("/support-actions/"+b.ID+"/end"), map[string]any{"reason": apitest.Reason("end again")}, nil); r.Status != 200 {
 		t.Fatalf("a second end: %d", r.Status)
 	}
-	check("a second ending that failed")
+	check("a second ending that changed nothing")
 
 	// Refused grants: a tenant administrator may not give the owner role or a support permission.
 	admin := w.api.AsRole(t, w.tenant.ID, authz.RoleTenantAdmin)

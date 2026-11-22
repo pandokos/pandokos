@@ -42,7 +42,7 @@ func TestSessionsOpen(t *testing.T) {
 	}
 	live1, live2 := seed("live.one"), seed("live.two")
 	expired, idled := seed("expired.one"), seed("idle.one")
-	d.Age(t, "user_session", "id = '"+expired+"'::uuid", 2*time.Hour, "expires_at")
+	d.Age(t, "user_session", "id = '"+expired+"'::uuid", 13*time.Hour, "created_at", "last_used_at", "expires_at")
 	d.Age(t, "user_session", "id = '"+idled+"'::uuid", idle+time.Hour, "last_used_at")
 	_, _ = live1, live2
 

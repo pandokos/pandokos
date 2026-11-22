@@ -44,6 +44,7 @@ type Stats struct {
 	Written   int64 // rows committed
 	Rejected  int64 // records the database refused
 	Unwritten int64 // records declared lost at shutdown
+	Refused   int64 // admissions refused: a full buffer or a closing writer
 }
 
 // sink is the store seam: it inserts the records of one tenant in one transaction of that tenant.
@@ -100,6 +101,7 @@ type Writer struct {
 	written    int64
 	rejected   int64
 	unwritten  int64
+	refused    int64
 	closeCount int
 }
 
@@ -145,10 +147,12 @@ func (w *Writer) Admit() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.closing {
+		w.refused++
 		return false
 	}
 	if w.inUse >= w.bufferSize {
 		w.saturated = true
+		w.refused++
 		return false
 	}
 	w.inUse++
@@ -251,7 +255,7 @@ func (w *Writer) OldestPendingStart() (time.Time, bool) {
 func (w *Writer) Stats() Stats {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return Stats{InUse: w.inUse, Queued: len(w.queue), Written: w.written, Rejected: w.rejected, Unwritten: w.unwritten}
+	return Stats{InUse: w.inUse, Queued: len(w.queue), Written: w.written, Rejected: w.rejected, Unwritten: w.unwritten, Refused: w.refused}
 }
 
 // Run is the writing loop; it returns after Close, or when ctx ends.
