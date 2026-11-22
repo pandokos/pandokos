@@ -99,6 +99,7 @@ fuzz: ## Run each fuzz target for FUZZTIME
 	go test ./internal/password/ -run '^$$' -fuzz '^FuzzParsePHC$$' -fuzztime $(FUZZTIME)
 	go test ./internal/session/ -run '^$$' -fuzz '^FuzzParseToken$$' -fuzztime $(FUZZTIME)
 	go test ./internal/oidc/ -run '^$$' -fuzz '^FuzzGroups$$' -fuzztime $(FUZZTIME)
+	go test ./internal/authz/ -run '^$$' -fuzz '^FuzzEffective$$' -fuzztime $(FUZZTIME)
 
 bench: ## Usage reader and limits benchmarks
 	go test ./internal/family/openai/ -run '^$$' -bench . -benchmem
