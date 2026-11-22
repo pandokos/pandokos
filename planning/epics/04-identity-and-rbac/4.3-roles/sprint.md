@@ -974,3 +974,13 @@ test. IDs continue from T-845 and T-R58.
 | O-11 | Yes: platform keys may hold `platform-auditor` |
 | O-12 | Refused grants are logged, not audited; revisited in 6.2 |
 | O-13 | Closed without building: no scopes per subject mapping |
+
+### Maintainer decisions on the review findings (2026-11-22)
+
+| Finding | Decision |
+|---|---|
+| A platform password reset gives a session of a tenant member | Refused with `escalation_refused` when the user's permissions in any of its tenants go beyond the caller's; the way to recover such an account is the host command `pandokos user reset-password` |
+| `updateTokenIssuer` changes what a tenant issuer trusts | A grant: changes of `issuer`, `audience`, `jwks_uri`, `algorithms`, `subject_claim`, `required_claims` and re-enabling need the permissions of every service account mapped under it. `updatePlatformIssuer` stays unguarded, an accepted residual risk recorded in ADR 0061 |
+| A missing custom role of a group rule stops the start | Skipped with one start warning naming the rule position; malformed, wrong-scope and `inference` rules still stop the start |
+| `duration_seconds: 0` | Absent or 0 is the default, `support.max_duration`; 1 to 59 is refused |
+| Known gap | A role added to an existing membership in parallel with a reset is not serialised with it; revisited in sprint 10.2 |
