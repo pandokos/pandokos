@@ -1,6 +1,6 @@
 # 0056. Users, memberships, and how a session becomes a principal
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-22
 
 Refines [ADR 0006](0006-human-authentication-external-oidc.md),
@@ -92,3 +92,4 @@ API, and IAM-22 says only sessions carry people.
   report `ErrAuditIncomplete`). AUD-03 holds for the platform log and for every operation of a tenant's
   administrator; it does not hold for these four actions of a tenant-managed user.
 - 2026-11-22: sprint 4.3: a person may hold any tenant role but `inference`, and custom roles are not for the platform; the support action is honoured at the place where "no membership" is decided ([ADR 0060](0060-built-in-roles-custom-roles-and-the-rule-against-escalation.md), [ADR 0061](0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md)).
+- 2026-11-23: accepted by the maintainer after review.

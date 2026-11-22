@@ -1,6 +1,6 @@
 # 0061. Support actions and reasons: how the platform acts inside a tenant
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-22
 
 Refines [ADR 0007](0007-authorization-rbac.md),
@@ -90,3 +90,4 @@ lie.
   `usage:read` (O-2); grants with the tenant's authority (O-3); the nine operations, including the required
   reason on `suspendTenant` and `reactivateTenant` (O-4); `support.enabled` true by default, 1 h, 24 h cap
   (O-7); the owner ends an action (O-8); refused grants are logged, not audited (O-12).
+- 2026-11-23: accepted by the maintainer after review.

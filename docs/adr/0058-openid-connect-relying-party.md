@@ -1,6 +1,6 @@
 # 0058. The OpenID Connect relying party
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-22
 
 Refines [ADR 0006](0006-human-authentication-external-oidc.md); amends
@@ -79,3 +79,4 @@ reviewed with it; resources can follow if tenants get their own providers.
 
 - 2026-11-22: proposed with sprint 4.2. Maintainer decisions of 2026-11-21: group rules stay in
   configuration (O-7); Keycloak for the full browser flow and Authentik for the claim shape (O-8).
+- 2026-11-23: accepted by the maintainer after review.

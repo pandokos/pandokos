@@ -33,7 +33,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, environ [
 	case "whoami", "tenant", "service-account", "key", "platform-key", "credential", "tenant-credential",
 		"provider", "endpoint", "model", "price", "price-import", "tenant-model", "model-restriction", "capability", "usage",
 		"token-issuer", "subject-mapping", "platform-issuer", "limit", "platform-limit", "price-list",
-		"platform-user", "member":
+		"platform-user", "member", "permission", "role", "tenant-support", "support-action":
 		return runClient(ctx, args, stdout, stderr, environ)
 	case "user":
 		return runUser(ctx, args[1:], stdout, stderr, environ)

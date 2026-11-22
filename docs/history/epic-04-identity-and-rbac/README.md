@@ -48,7 +48,7 @@ ADR 0045–0047 (sprint 4.1: trusted token issuers, issuer key retrieval and cac
 in the test suite), ADR 0056–0059 (sprint 4.2: users, memberships and sessions as principals; formats
 and numbers of local accounts and sessions; the OpenID Connect relying party; idempotency keys) and
 ADR 0060–0061 (sprint 4.3: built-in roles, custom roles and the rule against escalation; support
-actions and reasons). Those of 4.2 and 4.3 are proposed for the maintainer's review, with history
+actions and reasons). Those of 4.2 and 4.3 were accepted by the maintainer on 2026-11-23, with history
 lines on earlier records (among them 0005, 0006, 0018, 0020, 0022, 0026, 0027, 0028, 0031, 0032 and
 0055). See the [ADR index](../../adr/README.md).
 
@@ -89,7 +89,7 @@ lines on earlier records (among them 0005, 0006, 0018, 0020, 0022, 0026, 0027, 0
 
 ## Maintainer actions
 
-- Review ADR 0056 to 0061, proposed.
+- Review ADR 0056 to 0061 (done on 2026-11-23, see below).
 - Sprint 4.2 adds one dependency, `golang.org/x/crypto` (for `argon2`, imported only by
   `internal/password`); check `govulncheck` at the pinned version.
 - Sprint 4.2 adds the CI job `browser` (headless Chrome, `make test-browser`); it must be a required
@@ -108,3 +108,16 @@ lines on earlier records (among them 0005, 0006, 0018, 0020, 0022, 0026, 0027, 0
   [roles](../../operations/roles.md).
 - Browser, identity provider and container tests run only in CI, not in the sandbox of the
   implementation.
+
+### Done after the close (2026-11-23)
+
+- ADR 0056 to 0061 accepted by the maintainer, with ADR 0053 to 0055 left proposed by epic 5.
+- The two residual exposures accepted: a platform-level issuer is not guarded; a membership or role
+  gained while a platform-issued password is pending is not checked until sprint 10.2.
+- The maintainer ran the container and Compose tests, the quick start, the sign-in flows, roles and
+  support actions, and the upgrade of a v0.1 installation by hand. The run found that the role and
+  support commands were not routed by the binary, and that the Compose test copied a local `secrets`
+  directory; both fixed in [#56](https://github.com/pandokos/pandokos/pull/56), with a test of the
+  routing of every client command.
+- The draft of the v0.2.0 page is [`docs/releases/v0.2.0-draft.md`](../../releases/v0.2.0-draft.md).
+- Open: make the CI job `browser` a required check of `main`.

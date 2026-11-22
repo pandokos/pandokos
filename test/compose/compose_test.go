@@ -47,6 +47,11 @@ func copyTree(t *testing.T, from, to string) {
 		}
 		rel, _ := filepath.Rel(from, path)
 		dest := filepath.Join(to, rel)
+		// A secrets directory left by a manual quick-start is not part of the reference: the test
+		// must start from nothing, as setup.sh does on a fresh clone.
+		if info.IsDir() && info.Name() == "secrets" {
+			return filepath.SkipDir
+		}
 		if info.IsDir() {
 			return os.MkdirAll(dest, 0o755)
 		}

@@ -1,6 +1,6 @@
 # 0057. Local accounts and sessions: formats and numbers
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-22
 
 Refines [ADR 0022](0022-local-accounts-and-sessions.md). Requirements IAM-18 to IAM-22, SEC-02 to
@@ -98,3 +98,4 @@ lifetimes.
   only. A sign-in that overlaps a password change, a reset or a disable creates no session: the success
   transaction locks the user and its account and requires the hash that was verified and the state
   `active`.
+- 2026-11-23: accepted by the maintainer after review.

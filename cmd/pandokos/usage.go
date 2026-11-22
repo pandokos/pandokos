@@ -37,6 +37,10 @@ Commands:
   platform-limit list|create|get|update|delete
   platform-user list|create|get|update|disable|enable|reset-password|unlock|revoke-sessions
   member list|add|get|update|remove|disable|enable|reset-password|unlock|revoke-sessions
+  permission list
+  role builtin|list|create|get|update|deactivate|activate|delete
+  tenant-support open|list|get|close
+  support-action list|get|end
                                    Administer through the administration API;
                                    "pandokos <command> --help" lists the flags
   import-prices [--config FILE] (--file FILE | --embedded) [--dry-run]

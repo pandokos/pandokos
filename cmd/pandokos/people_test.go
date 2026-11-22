@@ -321,6 +321,10 @@ func TestPeopleHostUsage(t *testing.T) {
 		"user unlock USERNAME [--config FILE]",
 		"platform-user list|create|get|update|disable|enable|reset-password|unlock|revoke-sessions",
 		"member list|add|get|update|remove|disable|enable|reset-password|unlock|revoke-sessions",
+		"permission list",
+		"role builtin|list|create|get|update|deactivate|activate|delete",
+		"tenant-support open|list|get|close",
+		"support-action list|get|end",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the usage text lacks %q", want)

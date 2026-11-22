@@ -1,6 +1,6 @@
 # 0059. Idempotency keys
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-22
 
 Requirement API-05. Refines [ADR 0017](0017-admin-api-spec-first.md) where it names the create operations.
@@ -58,3 +58,4 @@ duplicate on retry.
 
 - 2026-11-22: proposed with sprint 4.2. Maintainer decision of 2026-11-21: a replayed create answers
   without the one-time secret (O-11).
+- 2026-11-23: accepted by the maintainer after review.

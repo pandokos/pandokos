@@ -79,7 +79,7 @@ flowchart LR
    tenants map subjects to and act as those service accounts. This is an accepted residual exposure,
    since the platform runs the installation and already holds its database and keys
    ([ADR 0061](../adr/0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md)); every
-   change is in the platform's audit log.
+   change is in the platform's audit log. Accepted by the maintainer on 2026-11-23.
 
    **The identity provider for people** is a second use of this boundary. The operator configures one
    provider (`auth.oidc.*`); Pandokos is its confidential client with PKCE, state and nonce, and trusts it
@@ -227,7 +227,8 @@ against the code). Concurrent attempts that passed the throttle together are all
 gave lasts until the next sign-in. A membership or role gained while a platform-issued password
 (`resetUserPassword` or `createUser`) is still pending, until it is changed or expires, is not checked
 against the caller that obtained the password: a known gap, to be closed in sprint 10.2, for example by
-refusing or invalidating a pending platform-issued password when a membership or role is added.
+refusing or invalidating a pending platform-issued password when a membership or role is added. The
+maintainer accepted it until then on 2026-11-23.
 
 ## Key hierarchy
 

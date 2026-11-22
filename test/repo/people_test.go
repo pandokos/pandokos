@@ -237,8 +237,8 @@ func TestSignInGuide(t *testing.T) {
 			t.Errorf("docs/adr/README.md does not index %s", base)
 		}
 		body, _ := os.ReadFile(matches[0])
-		if !regexp.MustCompile(`(?m)^- Status: proposed\s*$`).Match(body) {
-			t.Errorf("%s is not proposed", base)
+		if !regexp.MustCompile(`(?m)^- Status: accepted\s*$`).Match(body) {
+			t.Errorf("%s is not accepted", base)
 		}
 	}
 	if !strings.Contains(read(t, "docs/reference/admin-api.md"), "sign-in.md") && !strings.Contains(read(t, "README.md"), "sign-in.md") {

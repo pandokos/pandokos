@@ -1,6 +1,6 @@
 # 0060. Built-in roles, custom roles and the rule against escalation
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-22
 
 Refines [ADR 0007](0007-authorization-rbac.md), [ADR 0031](0031-authorization-core-and-provisioning.md)
@@ -91,3 +91,4 @@ an incident.
   designed (O-1); role contents confirmed (O-6); the split of the two settings (O-5); reserved names (O-9);
   removal covered and containment free (O-10); platform keys may hold `platform-auditor` (O-11); no scopes
   per mapping (O-13).
+- 2026-11-23: accepted by the maintainer after review.
