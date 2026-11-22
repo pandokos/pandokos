@@ -43,10 +43,13 @@ func (c *countingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 func newTraces(t *testing.T, endpoint *url.URL, mutate func(*telemetry.TracesOptions)) (*telemetry.Traces, *testutil.LogBuffer) {
 	t.Helper()
 	logs := &testutil.LogBuffer{}
+	res, err := telemetry.NewResource(map[string]string{"deployment.environment": "test"}, serviceVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
 	o := telemetry.TracesOptions{
 		Endpoint: endpoint, Headers: map[string]string{headerName: headerCanary}, Timeout: time.Second, SampleRatio: 1,
-		Attributes: map[string]string{"deployment.environment": "test"}, ServiceVersion: serviceVersion,
-		Logger: telemetry.NewLogger(logs, "debug"),
+		Resource: res, Logger: telemetry.NewLogger(logs, "debug"),
 	}
 	if endpoint != nil {
 		o.Transport = testutil.TestGuard(t).Transport(true)
@@ -146,7 +149,13 @@ func TestExport(t *testing.T) {
 		c := otlptest.New(t)
 		ids := map[string]bool{}
 		for i := 0; i < 2; i++ {
-			tr, _ := newTraces(t, c.URL(), func(o *telemetry.TracesOptions) { o.Attributes = map[string]string{"service.name": "custom-name"} })
+			tr, _ := newTraces(t, c.URL(), func(o *telemetry.TracesOptions) {
+				res, err := telemetry.NewResource(map[string]string{"service.name": "custom-name"}, serviceVersion)
+				if err != nil {
+					t.Fatal(err)
+				}
+				o.Resource = res
+			})
 			emit(tr, "x")
 			shutdown(t, tr)
 		}
@@ -182,16 +191,23 @@ func TestExport(t *testing.T) {
 	t.Run("the options are checked", func(t *testing.T) {
 		logs := telemetry.NewLogger(&testutil.LogBuffer{}, "info")
 		c := otlptest.New(t)
-		if _, err := telemetry.NewTraces(telemetry.TracesOptions{Endpoint: c.URL(), Timeout: time.Second, SampleRatio: 1, Logger: logs}); err == nil {
+		res, err := telemetry.NewResource(nil, serviceVersion)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := telemetry.NewTraces(telemetry.TracesOptions{Endpoint: c.URL(), Timeout: time.Second, SampleRatio: 1, Resource: res, Logger: logs}); err == nil {
 			t.Error("an endpoint without a transport was accepted")
 		}
-		if _, err := telemetry.NewTraces(telemetry.TracesOptions{SampleRatio: 1}); err == nil {
+		if _, err := telemetry.NewTraces(telemetry.TracesOptions{SampleRatio: 1, Resource: res}); err == nil {
 			t.Error("no logger was accepted")
 		}
-		if _, err := telemetry.NewTraces(telemetry.TracesOptions{SampleRatio: 1.5, Logger: logs}); err == nil {
+		if _, err := telemetry.NewTraces(telemetry.TracesOptions{SampleRatio: 1, Logger: logs}); err == nil {
+			t.Error("no resource was accepted")
+		}
+		if _, err := telemetry.NewTraces(telemetry.TracesOptions{SampleRatio: 1.5, Resource: res, Logger: logs}); err == nil {
 			t.Error("a ratio over 1 was accepted")
 		}
-		if _, err := telemetry.NewTraces(telemetry.TracesOptions{SampleRatio: -0.1, Logger: logs}); err == nil {
+		if _, err := telemetry.NewTraces(telemetry.TracesOptions{SampleRatio: -0.1, Resource: res, Logger: logs}); err == nil {
 			t.Error("a negative ratio was accepted")
 		}
 	})
@@ -298,7 +314,11 @@ func TestEnvironment(t *testing.T) {
 	}
 	c := otlptest.New(t)
 	tr, _ := newTraces(t, c.URL(), func(o *telemetry.TracesOptions) {
-		o.Attributes = map[string]string{"deployment.environment": "configured"}
+		res, err := telemetry.NewResource(map[string]string{"deployment.environment": "configured"}, serviceVersion)
+		if err != nil {
+			t.Fatal(err)
+		}
+		o.Resource = res
 	})
 	emit(tr, "one", "two", "three")
 	shutdown(t, tr)
@@ -387,8 +407,9 @@ func TestSampling(t *testing.T) {
 	})
 }
 
-// TestDiagnosticsGoToTheLogger is T-503: an export failure and an SDK-internal message are JSON
-// lines on the logger, and nothing is written to the process's standard error.
+// TestDiagnosticsGoToTheLogger is T-503 (changed in sprint 6.1: the process-wide SDK error line is
+// `telemetry error`): an export failure and an SDK-internal message are JSON lines on the logger,
+// and nothing is written to the process's standard error.
 func TestDiagnosticsGoToTheLogger(t *testing.T) {
 	stderr := captureStderr(t)
 	c := otlptest.New(t)
@@ -401,10 +422,15 @@ func TestDiagnosticsGoToTheLogger(t *testing.T) {
 	shutdown(t, tr)
 	testutil.Eventually(t, 5*time.Second, "`trace export failing`", func() bool { return len(logs.Find(t, "trace export failing")) >= 1 })
 
-	// An error handed to the SDK's error handler is a line of the logger too.
+	// An error handed to the SDK's error handler is a line of the logger too: since sprint 6.1 it is
+	// `telemetry error`, because an error that reaches the process-wide handler is not attributable
+	// to one signal; the export failure above stays `trace export failing`.
 	_, logs2 := newTraces(t, nil, nil)
 	otel.Handle(errors.New("synthetic sdk error"))
-	testutil.Eventually(t, 5*time.Second, "the handled error on the logger", func() bool { return len(logs2.Find(t, "trace export failing")) >= 1 })
+	testutil.Eventually(t, 5*time.Second, "the handled error on the logger", func() bool { return len(logs2.Find(t, "telemetry error")) >= 1 })
+	if n := len(logs2.Find(t, "trace export failing")); n != 0 {
+		t.Errorf("an SDK error was logged as `trace export failing` (%d lines)", n)
+	}
 
 	for _, b := range []*testutil.LogBuffer{logs, logs2} {
 		for _, line := range b.Lines(t) { // Lines fails the test on a line that is not JSON

@@ -1,0 +1,4 @@
+global: {scrape_interval: 15s}
+otlp:
+  translation_strategy: UnderscoreEscapingWithSuffixes
+  promote_resource_attributes: [service.instance.id]

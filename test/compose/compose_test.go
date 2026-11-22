@@ -29,8 +29,8 @@ import (
 	"github.com/pandokos/pandokos/test/testutil"
 )
 
-// secretFiles are the files setup.sh creates.
-var secretFiles = []string{"db_superuser", "db_owner", "db_gateway", "db_admin", "db_worker", "pandokos_kek", "tls_cert", "tls_key"}
+// secretFiles are the files setup.sh creates (grafana_admin is for the observability overlay, sprint 6.1 D2).
+var secretFiles = []string{"db_superuser", "db_owner", "db_gateway", "db_admin", "db_worker", "pandokos_kek", "grafana_admin", "tls_cert", "tls_key"}
 
 // stack is one running Compose project in a temporary copy of the reference.
 type stack struct {

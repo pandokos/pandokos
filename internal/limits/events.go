@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pandokos/pandokos/internal/pricing"
@@ -60,6 +61,8 @@ type EventWriter struct {
 	o EventWriterOptions
 	q chan Event
 
+	recorded, dropped, failed atomic.Int64
+
 	mu          sync.Mutex
 	interrupted *Event // the event whose insert Run abandoned when its context ended; Close writes it first
 }
@@ -86,8 +89,21 @@ func (w *EventWriter) Offer(e Event) bool {
 	case w.q <- e:
 		return true
 	default:
+		w.dropped.Add(1)
 		return false
 	}
+}
+
+// EventStats is a snapshot of the counters of an EventWriter.
+type EventStats struct {
+	Recorded int64 // events inserted
+	Dropped  int64 // events refused by a full queue or left unwritten by Close
+	Failed   int64 // events the database refused
+}
+
+// Stats returns the counters.
+func (w *EventWriter) Stats() EventStats {
+	return EventStats{Recorded: w.recorded.Load(), Dropped: w.dropped.Load(), Failed: w.failed.Load()}
 }
 
 // Run inserts the queued events until ctx is done. An event whose insert was interrupted is kept
@@ -111,6 +127,12 @@ func (w *EventWriter) Run(ctx context.Context) {
 // Close writes what is queued within ctx and returns the number of events left unwritten. Run
 // must have returned.
 func (w *EventWriter) Close(ctx context.Context) (unwritten int) {
+	unwritten = w.close(ctx)
+	w.dropped.Add(int64(unwritten))
+	return unwritten
+}
+
+func (w *EventWriter) close(ctx context.Context) (unwritten int) {
 	w.mu.Lock()
 	first := w.interrupted
 	w.interrupted = nil
@@ -143,12 +165,14 @@ func (w *EventWriter) write(ctx context.Context, e Event) bool {
 	for {
 		err := w.insert(ctx, e)
 		if err == nil {
+			w.recorded.Add(1)
 			return true
 		}
 		if ctx.Err() != nil {
 			return false
 		}
 		if !store.IsUnavailable(err) {
+			w.failed.Add(1)
 			// The event is the tenant's: the line names its kind and the error, nothing of the tenant (ADR 0055).
 			w.o.Logger.Error("limit event not recorded", slog.String("kind", e.Kind), slog.String("sqlstate", store.SQLState(err)), slog.String("error_class", errorClass(err)))
 			return true

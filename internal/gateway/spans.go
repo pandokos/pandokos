@@ -47,6 +47,9 @@ func failed(o usage.Outcome) bool {
 
 // endClient sets the status of the provider span and ends it.
 func (st *reqState) endClient(r *usage.Record) {
+	if !st.forwardAt.IsZero() {
+		st.callEnd = st.now()
+	}
 	endSpan(st.client, r)
 }
 

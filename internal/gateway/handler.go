@@ -22,6 +22,7 @@ import (
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/buildinfo"
 	"github.com/pandokos/pandokos/internal/family"
+	"github.com/pandokos/pandokos/internal/pricing"
 	"github.com/pandokos/pandokos/internal/secret"
 	"github.com/pandokos/pandokos/internal/usage"
 )
@@ -57,6 +58,7 @@ type Options struct {
 	Tracer                 trace.TracerProvider      // required
 	PropagateTrace         bool                      // send traceparent and tracestate to the provider
 	Limits                 Limits                    // optional: nil enforces no limit
+	Metrics                Metrics                   // optional: nil records nothing
 	DefaultOutputTokens    int64                     // output tokens reserved per choice when the caller sets no limit; positive
 	Now                    func() time.Time          // optional: the clock of the start of a request (default time.Now); a seam for tests
 }
@@ -80,6 +82,7 @@ type Handler struct {
 	propagator  propagation.TextMapPropagator
 	propagate   bool
 	limits      Limits
+	metrics     Metrics
 	defaultOut  int64
 	now         func() time.Time // Options.Now
 }
@@ -152,6 +155,7 @@ func New(o Options) (*Handler, error) {
 		propagator:  propagation.TraceContext{},
 		propagate:   o.PropagateTrace,
 		limits:      o.Limits,
+		metrics:     o.Metrics,
 		defaultOut:  o.DefaultOutputTokens,
 	}
 	h.proxy = h.newProxy(&classTransport{public: o.Public, private: o.Private})
@@ -213,6 +217,9 @@ type reqState struct {
 	server, client  trace.Span
 	serverCx        context.Context
 	firstByte       time.Time
+	forwardAt       time.Time // the start of step 9, before the client span starts
+	callEnd         time.Time // the end of the client span; zero when the call never produced a body
+	scheme          string
 	readerAbandoned bool // a family reader panicked and is no longer called
 	readerFailed    bool // a reader panicked or gave up: logged as usage_reader
 	deltas          int64
@@ -222,6 +229,7 @@ type reqState struct {
 	// Sprint 5.1: the reservation of step 7b.
 	reservation    Reservation
 	reservedTokens int64
+	reservedCost   pricing.Cost // the estimate's cost, kept for the observation of the estimate
 	refusal        *LimitRefusal
 	counted        bool       // the credential was opened: the request counts (sprint 5.2 D-2)
 	limitState     LimitState // how the limits treated the request (sprint 5.3, 5.5); not_evaluated until step 7b says
@@ -270,6 +278,10 @@ func providerName(s string) bool {
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	st := &reqState{now: h.now, start: h.now(), id: NewRequestID(), callerCx: r.Context(), method: logMethod(r.Method), adapter: h.def, limitState: LimitStateNotEvaluated}
 	st.sw = &statusWriter{ResponseWriter: w, requestID: st.id}
+	st.scheme = "http"
+	if r.TLS != nil {
+		st.scheme = "https"
+	}
 	w.Header().Set(family.HeaderRequestID, st.id)
 	defer func() { h.finish(st, recover()) }()
 
@@ -356,6 +368,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	prepared, strip := parsed.Prepare(family.Preparation{UpstreamModel: target.UpstreamModel, StreamUsage: target.StreamUsage})
 	st.parsed, st.stream, st.strip = true, parsed.Stream(), strip
 
+	st.forwardAt = st.now()
 	outCx, cancel := context.WithTimeout(r.Context(), h.maxDuration)
 	defer cancel()
 	outCx, st.client = h.tracer.Start(outCx, st.op.GenAI, trace.WithSpanKind(trace.SpanKindClient), trace.WithAttributes(st.clientSpanAttributes()...))
@@ -581,7 +594,14 @@ func (h *Handler) finish(st *reqState, rec any) {
 	}
 	// The reservation ends whatever the record, the client or the server end do: a panic in
 	// any of them must not leave the slot and the tokens held until they expire.
-	defer h.settleLimit(st)
+	// The observation follows the settle, which gives its figures, and runs after the request
+	// line, also when the record panicked.
+	defer func() {
+		est := h.settleLimit(st)
+		if h.metrics != nil {
+			h.observe(st, outcome, est)
+		}
+	}()
 	if st.admitted {
 		h.finishRecord(st, outcome)
 	}

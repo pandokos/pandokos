@@ -298,3 +298,19 @@ func FuzzParseDecimal(f *testing.F) {
 		}
 	})
 }
+
+func TestDecimalFloat64(t *testing.T) {
+	for _, c := range []struct {
+		in   string
+		want float64
+	}{
+		{"0", 0},
+		{"0.000000000000000001", 1e-18},
+		{"123456789012345678901234567890", 1.2345678901234568e29},
+		{"-2.5", -2.5},
+	} {
+		if got := mustDec(t, c.in).Float64(); got != c.want {
+			t.Errorf("Float64(%s) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pandokos/pandokos/internal/authz"
@@ -49,7 +50,17 @@ type Limits struct {
 
 	mu      sync.Mutex
 	noticed map[tenant.ID]time.Time
+
+	admittedUnpriced atomic.Int64
 }
+
+// LimitsStats is a snapshot of the counters of Limits.
+type LimitsStats struct {
+	AdmittedUnpriced int64 // requests admitted although a cost limit could not measure their price
+}
+
+// Stats returns the counters.
+func (l *Limits) Stats() LimitsStats { return LimitsStats{AdmittedUnpriced: l.admittedUnpriced.Load()} }
 
 var _ gateway.Limits = (*Limits)(nil)
 
@@ -224,6 +235,7 @@ func (l *Limits) reserve(ctx context.Context, p authz.Principal, e gateway.Limit
 		if l.refusePrice && enforced {
 			return nil, &gateway.LimitRefusal{Code: string(family.CodeNoPrice), Currency: budgetCurrency, PriceCurrency: e.Cost.Currency, PriceSource: e.Cost.Source}, gateway.LimitStateLimited, nil
 		}
+		l.admittedUnpriced.Add(1)
 		kept := make([]limits.Limit, 0, len(ls))
 		for _, x := range ls {
 			if !cannotMeasure(x, e) {

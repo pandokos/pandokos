@@ -5,6 +5,7 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,6 +18,8 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/pandokos/pandokos/internal/authn"
+	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/config"
 	"github.com/pandokos/pandokos/internal/egress"
 	"github.com/pandokos/pandokos/internal/family/openai"
@@ -37,6 +40,11 @@ type Options struct {
 	Recorder      gateway.Recorder        // required: receives the usage record of every admitted request
 	Tracer        trace.TracerProvider    // required: the trace provider of the gateway
 	Limits        gateway.Limits          // optional: reserves capacity before the credential is opened; nil enforces nothing
+	Metrics       gateway.Metrics         // optional: receives one observation per inference request
+	// MetricsHandler serves GET /metrics on the administration listener; nil: the path is the
+	// administration API's (404). MetricsAuth authenticates the scrape and is required with it.
+	MetricsHandler http.Handler
+	MetricsAuth    gateway.Authenticator
 }
 
 // listener is one HTTP listener with its server.
@@ -54,14 +62,17 @@ const handlerWait = 5 * time.Second
 // Server serves two listeners with two handlers: the inference gateway and the administration
 // API. They share the health state, the logger and the shutdown sequence.
 type Server struct {
-	cfg      *config.Config
-	logger   *slog.Logger
-	health   *health.State
-	healthH  http.Handler
-	gw       *gateway.Handler
-	admin    http.Handler
-	egress   *egress.Guard
-	inf, adm *listener
+	cfg     *config.Config
+	logger  *slog.Logger
+	health  *health.State
+	healthH http.Handler
+	gw      *gateway.Handler
+	admin   http.Handler
+	egress  *egress.Guard
+
+	metrics     http.Handler          // the scrape handler; nil: no route
+	metricsAuth gateway.Authenticator // authenticates a scrape
+	inf, adm    *listener
 
 	baseCtx    context.Context
 	cancelBase context.CancelCauseFunc
@@ -89,9 +100,11 @@ func New(o Options) (*Server, error) {
 		return nil, errors.New("server: Recorder is required")
 	case o.Tracer == nil:
 		return nil, errors.New("server: Tracer is required")
+	case o.MetricsHandler != nil && o.MetricsAuth == nil:
+		return nil, errors.New("server: MetricsAuth is required with MetricsHandler")
 	}
 	cfg, logger := o.Config, o.Logger
-	s := &Server{cfg: cfg, logger: logger, health: health.New(logger), admin: o.Admin, egress: o.Egress}
+	s := &Server{cfg: cfg, logger: logger, health: health.New(logger), admin: o.Admin, egress: o.Egress, metrics: o.MetricsHandler, metricsAuth: o.MetricsAuth}
 	s.healthH = s.health.Handler()
 	gw, err := gateway.New(gateway.Options{
 		Logger:                 logger,
@@ -111,6 +124,7 @@ func New(o Options) (*Server, error) {
 		PropagateTrace:         cfg.Telemetry.Traces.Propagate,
 		Limits:                 o.Limits,
 		DefaultOutputTokens:    cfg.Limits.DefaultOutputTokens,
+		Metrics:                o.Metrics,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("server: %w", err)
@@ -246,7 +260,94 @@ func (s *Server) routeAdmin(w http.ResponseWriter, r *http.Request) {
 			"duration_ms", time.Since(start).Milliseconds())
 		return
 	}
+	if r.URL.Path == "/metrics" && s.metrics != nil {
+		s.scrape(w, r)
+		return
+	}
 	s.admin.ServeHTTP(w, r)
+}
+
+// scrape serves GET /metrics: the method, then a bearer credential, then the permission
+// metrics:read, then the handler. It answers in the problem format of the administration API.
+func (s *Server) scrape(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	id := gateway.NewRequestID()
+	rec := &statusRecorder{ResponseWriter: w}
+	defer func() {
+		s.logger.Debug("admin request",
+			"request_id", id,
+			"method", logMethod(r.Method),
+			"operation", "metrics",
+			"status", rec.code,
+			"duration_ms", time.Since(start).Milliseconds())
+	}()
+	rec.Header().Set("X-Request-Id", id)
+	rec.Header().Set("Cache-Control", "no-store")
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		rec.Header().Set("Allow", "GET, HEAD")
+		problem(rec, id, http.StatusMethodNotAllowed, "invalid_request", "Method not allowed")
+		return
+	}
+	token, ok := bearerOf(r.Header.Get("Authorization"))
+	if !ok {
+		s.logger.Warn("authentication failed", "listener", "admin", "request_id", id, "reason", "malformed")
+		rec.Header().Set("WWW-Authenticate", "Bearer")
+		problem(rec, id, http.StatusUnauthorized, "unauthenticated", "Unauthenticated")
+		return
+	}
+	p, err := s.metricsAuth.Authenticate(r.Context(), token)
+	switch {
+	case errors.Is(err, authz.ErrUnavailable):
+		rec.Header().Set("Retry-After", "5")
+		problem(rec, id, http.StatusServiceUnavailable, "unavailable", "Unavailable")
+		return
+	case err != nil:
+		reason := "unauthenticated"
+		var d interface{ Detail() authn.FailureDetail }
+		if errors.As(err, &d) {
+			reason = d.Detail().Reason
+		}
+		s.logger.Warn("authentication failed", "listener", "admin", "request_id", id, "reason", reason)
+		rec.Header().Set("WWW-Authenticate", "Bearer")
+		problem(rec, id, http.StatusUnauthorized, "unauthenticated", "Unauthenticated")
+		return
+	}
+	if authz.Decide(p, authz.MetricsRead, authz.Target{}) != authz.Allow {
+		problem(rec, id, http.StatusForbidden, "forbidden", "Forbidden")
+		return
+	}
+	s.metrics.ServeHTTP(rec, r)
+}
+
+// bearerOf returns the value of an "Authorization: Bearer <value>" header.
+func bearerOf(h string) (string, bool) {
+	scheme, v, ok := strings.Cut(h, " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") || strings.TrimSpace(v) == "" {
+		return "", false
+	}
+	return strings.TrimSpace(v), true
+}
+
+// problem writes an application/problem+json answer with the members of the administration API's
+// problem that do not depend on the operation (ADR 0020).
+func problem(w http.ResponseWriter, requestID string, status int, code, title string) {
+	b, err := json.Marshal(map[string]any{
+		"type": "urn:pandokos:problem:" + code, "title": title, "status": status, "code": code, "request_id": requestID,
+	})
+	if err != nil {
+		b = []byte(`{"code":"internal"}`)
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+	_, _ = w.Write(append(b, '\n'))
+}
+
+func logMethod(m string) string {
+	switch m {
+	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions:
+		return m
+	}
+	return "OTHER"
 }
 
 // Serve serves both listeners until ctx is done, then shuts down: readiness goes down, in-flight

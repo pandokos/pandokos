@@ -50,6 +50,13 @@ func (b *LogBuffer) String() string {
 	return b.buf.String()
 }
 
+// Reset forgets everything written so far.
+func (b *LogBuffer) Reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.buf.Reset()
+}
+
 // Lines decodes every line as a JSON object; it fails the test on a line that is not one.
 func (b *LogBuffer) Lines(tb testing.TB) []map[string]any {
 	tb.Helper()

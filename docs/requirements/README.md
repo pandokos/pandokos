@@ -277,7 +277,7 @@ SOW 0.1; *new* marks requirements added in this revision.
 | OBS-04 | Telemetry holds no content and no secrets | M | R1 | OTEL-07 |
 | OBS-05 | Endpoint, protocol, headers, sampling and resource attributes are configurable. A failing collector never blocks or slows inference | M | R1 | OTEL-08, OTEL-09, NFR-AV-03 |
 | OBS-06 | Metrics cover requests, errors, time to first byte, total latency, tokens, estimated cost and limit rejections, by provider, model and outcome | M | R2 | OTEL-10 |
-| OBS-07 | Tenant and request identifiers are not metric labels by default. Tenant labels are an opt-in for small installations | M | R2 | OTEL-11 |
+| OBS-07 | Tenant, caller and request identifiers are never metric labels, and no setting adds them. A tenant dimension of operational telemetry, without the tenant's identity in clear, is designed in issue #52 (ADR 0055) | M | R2 | OTEL-11 |
 | OBS-08 | Liveness and readiness endpoints reflect the state of critical dependencies | M | R1 | NFR-MAINT-04 |
 
 ### 5.12 Administration API

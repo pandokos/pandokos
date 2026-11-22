@@ -92,3 +92,4 @@ an incident.
   removal covered and containment free (O-10); platform keys may hold `platform-auditor` (O-11); no scopes
   per mapping (O-13).
 - 2026-11-23: accepted by the maintainer after review.
+- 2026-11-22: sprint 6.1: the platform permission `metrics:read`, held by `platform-admin` and `platform-auditor` ([ADR 0062](0062-metrics-instruments-attributes-cardinality-and-scrape.md)).

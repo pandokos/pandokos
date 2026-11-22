@@ -1,7 +1,7 @@
 ---
 id: EPIC-6
 title: Observability, reports and lifecycle
-status: todo
+status: in-progress
 release: v0.2, v0.3 (sprint 6.4)
 depends_on: [EPIC-3]
 ---

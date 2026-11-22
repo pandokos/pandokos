@@ -47,8 +47,11 @@ func importsOf(t *testing.T) map[string][]string {
 // store/queries and tenant, and cmd/pandokos alone imports it; internal/family is a leaf.
 func TestTelemetryImports(t *testing.T) {
 	imports := importsOf(t)
+	// Sprint 6.1: the metric API and the semantic conventions join the packages only
+	// internal/telemetry imports.
 	forbiddenOutsideTelemetry := []string{
 		"go.opentelemetry.io/otel/sdk", "go.opentelemetry.io/otel/exporters", "github.com/go-logr/", "go.opentelemetry.io/proto", "google.golang.org/protobuf",
+		"go.opentelemetry.io/otel/metric", "go.opentelemetry.io/otel/semconv",
 	}
 
 	t.Run("the SDK, the exporter, logr and protobuf stay in internal/telemetry", func(t *testing.T) {
@@ -61,14 +64,15 @@ func TestTelemetryImports(t *testing.T) {
 				}
 			}
 		}
-		var sdk, exporter, bridge bool
+		var sdk, exporter, bridge, metricAPI bool
 		for _, imp := range imports["internal/telemetry"] {
+			metricAPI = metricAPI || strings.HasPrefix(imp, "go.opentelemetry.io/otel/metric")
 			sdk = sdk || strings.HasPrefix(imp, "go.opentelemetry.io/otel/sdk")
 			exporter = exporter || strings.HasPrefix(imp, "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp")
 			bridge = bridge || strings.HasPrefix(imp, "github.com/go-logr/logr")
 		}
-		if !sdk || !exporter || !bridge {
-			t.Errorf("internal/telemetry imports the SDK %v, the exporter %v, logr %v: the test would prove nothing", sdk, exporter, bridge)
+		if !sdk || !exporter || !bridge || !metricAPI {
+			t.Errorf("internal/telemetry imports the SDK %v, the exporter %v, logr %v, the metric API %v: the test would prove nothing", sdk, exporter, bridge, metricAPI)
 		}
 	})
 
@@ -242,8 +246,8 @@ func TestUsageAndTelemetryGuides(t *testing.T) {
 				}
 			}
 		}
-		if keys != 7 {
-			t.Errorf("%d telemetry keys, want 7", keys)
+		if keys != 10 {
+			t.Errorf("%d telemetry keys, want 10", keys)
 		}
 		for _, w := range []string{"OTEL_RESOURCE_ATTRIBUTES", "OTEL_", "traceparent", "upstream.tls.ca_file", "sampl", "propagat"} {
 			if !strings.Contains(doc, w) {

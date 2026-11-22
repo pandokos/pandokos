@@ -325,6 +325,13 @@ func peopleStatements(c context.Context, t *testing.T, admin *store.DB, tid tena
 		if _, err := q.CreateSession(c, queries.CreateSessionParams{TokenHash: hash("tok-five"), UserID: platformUser, Method: "local", ExpiresAt: expires}); err != nil {
 			return err
 		}
+		mark("CountOpenSessions")
+		if n, err := q.CountOpenSessions(c, interval(24*time.Hour)); err != nil || n < 1 {
+			t.Errorf("CountOpenSessions of live sessions: %d %v", n, err)
+		}
+		if n, err := q.CountOpenSessions(c, interval(0)); err != nil || n != 0 {
+			t.Errorf("CountOpenSessions of idle sessions: %d %v", n, err)
+		}
 		if n, err := q.PurgeSessions(c, interval(24*time.Hour)); err != nil || n != 0 {
 			t.Errorf("PurgeSessions of live sessions: %d %v", n, err)
 		}

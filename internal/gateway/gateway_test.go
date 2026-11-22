@@ -77,6 +77,7 @@ var fakeModels = []string{
 	fakeprovider.ModelRedirect, fakeprovider.ModelEchoAuth, fakeprovider.ModelClose, "fake-model",
 	fakeprovider.ModelNoUsage, fakeprovider.ModelStreamError, fakeprovider.ModelKeepalive, fakeprovider.ModelTools,
 	fakeprovider.ModelTinyWrites, fakeprovider.ModelCut, fakeprovider.ModelCRLF, fakeprovider.ModelBigEvent,
+	fakeprovider.ModelTimed,
 }
 
 // trusting returns an option function for testutil.TestGuard that trusts a TLS fake.
@@ -90,7 +91,7 @@ func newHarness(t *testing.T, mutate func(*gateway.Options)) *harness {
 }
 
 // newHarnessWith builds the gateway over the fake provider up, with real transports from guard.
-func newHarnessWith(t *testing.T, up *fakeprovider.Server, guard *egress.Guard, mutate func(*gateway.Options)) *harness {
+func newHarnessWith(t testing.TB, up *fakeprovider.Server, guard *egress.Guard, mutate func(*gateway.Options)) *harness {
 	t.Helper()
 	targets := map[string]gateway.Target{}
 	for _, m := range fakeModels {
@@ -116,7 +117,7 @@ func newRaw(t *testing.T, handler http.HandlerFunc) *harness {
 	return build(t, targets, testutil.TestGuard(t), nil)
 }
 
-func build(t *testing.T, targets map[string]gateway.Target, guard *egress.Guard, mutate func(*gateway.Options)) *harness {
+func build(t testing.TB, targets map[string]gateway.Target, guard *egress.Guard, mutate func(*gateway.Options)) *harness {
 	t.Helper()
 	logs := &testutil.LogBuffer{}
 	cat := testutil.StaticCatalogue(map[string]string{"openai": "openai"}, targets)

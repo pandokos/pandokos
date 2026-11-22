@@ -85,10 +85,11 @@ type Ledger struct {
 	ShutdownFlushTimeout Duration `yaml:"shutdown_flush_timeout"`
 }
 
-// Telemetry configures trace export. Only serve reads and validates these settings.
+// Telemetry configures trace and metric export. Only serve reads and validates these settings.
 type Telemetry struct {
 	OTLP     TelemetryOTLP     `yaml:"otlp"`
 	Traces   TelemetryTraces   `yaml:"traces"`
+	Metrics  TelemetryMetrics  `yaml:"metrics"`
 	Resource TelemetryResource `yaml:"resource"`
 
 	ResourceAttributes map[string]string `yaml:"-"` // filled by Load when the purpose is serve
@@ -109,6 +110,13 @@ type TelemetryOTLP struct {
 type TelemetryTraces struct {
 	SampleRatio float64 `yaml:"sample_ratio"`
 	Propagate   bool    `yaml:"propagate"`
+}
+
+// TelemetryMetrics configures the export of metrics over OTLP and the scrape endpoint.
+type TelemetryMetrics struct {
+	OTLP           bool     `yaml:"otlp"`
+	ExportInterval Duration `yaml:"export_interval"`
+	Prometheus     bool     `yaml:"prometheus"`
 }
 
 // TelemetryResource configures the resource attributes: comma-separated key=value pairs.
@@ -380,8 +388,9 @@ func Defaults() *Config {
 			ShutdownFlushTimeout: Duration(10 * time.Second),
 		},
 		Telemetry: Telemetry{
-			OTLP:   TelemetryOTLP{Protocol: "http/protobuf", Timeout: Duration(10 * time.Second)},
-			Traces: TelemetryTraces{SampleRatio: 1},
+			OTLP:    TelemetryOTLP{Protocol: "http/protobuf", Timeout: Duration(10 * time.Second)},
+			Traces:  TelemetryTraces{SampleRatio: 1},
+			Metrics: TelemetryMetrics{OTLP: true, ExportInterval: Duration(60 * time.Second)},
 		},
 		Tokens: Tokens{
 			Enabled:       true,

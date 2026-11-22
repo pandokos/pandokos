@@ -16,6 +16,7 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | `platform_key:read` | platform | - | Reading and listing platform keys (metadata) | `getPlatformKey`, `listPlatformKeys` | `platform-admin`, `platform-auditor` |
 | `platform_key:write` | platform | - | Issuing a platform key | `createPlatformKey` | `platform-admin` |
 | `platform_key:revoke` | platform | - | Revoking a platform key | `revokePlatformKey` | `platform-admin` |
+| `metrics:read` | platform | - | Reading the installation's metrics on the scrape endpoint | `GET /metrics (administration listener)` | `platform-admin`, `platform-auditor` |
 | `service_account:read` | tenant | support | Reading and listing service accounts and their roles | `getServiceAccount`, `listServiceAccounts` | `owner`, `tenant-admin`, `auditor`, `developer`, `read-only` |
 | `service_account:write` | tenant | support | Creating, changing, disabling and enabling service accounts; assigning roles | `createServiceAccount`, `disableServiceAccount`, `enableServiceAccount`, `updateServiceAccount` | `owner`, `tenant-admin` |
 | `virtual_key:read` | tenant | support | Reading and listing virtual keys (metadata) | `getVirtualKey`, `listVirtualKeys` | `owner`, `tenant-admin`, `auditor`, `developer`, `read-only` |
@@ -79,8 +80,8 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | `developer` | tenant | yes | Issues virtual keys and calls models | `credential:read`, `credential:use`, `identity:read`, `limit:read`, `model:invoke`, `model:read`, `service_account:read`, `usage:read`, `virtual_key:read`, `virtual_key:revoke`, `virtual_key:write` |
 | `inference` | tenant | no | Calls models through the inference listener | `credential:use`, `model:invoke` |
 | `read-only` | tenant | yes | Reads everything of the tenant that can be read | `credential:read`, `identity:read`, `limit:read`, `member:read`, `model:read`, `price_list:read`, `role:read`, `service_account:read`, `subject_mapping:read`, `support_action:read`, `token_issuer:read`, `usage:read`, `virtual_key:read` |
-| `platform-admin` | platform | yes | Administers the installation: tenants and platform keys | `catalog:price`, `catalog:read`, `catalog:write`, `identity:read`, `platform_issuer:delete`, `platform_issuer:read`, `platform_issuer:write`, `platform_key:read`, `platform_key:revoke`, `platform_key:write`, `platform_limit:delete`, `platform_limit:read`, `platform_limit:write`, `tenant:read`, `tenant:suspend`, `tenant:write`, `tenant_credential:read`, `tenant_credential:revoke`, `tenant_support:open`, `tenant_support:read`, `user:read`, `user:write` |
-| `platform-auditor` | platform | yes | Reads the installation: tenants, keys, catalogue, issuers, limits, users and support actions | `catalog:read`, `identity:read`, `platform_issuer:read`, `platform_key:read`, `platform_limit:read`, `tenant:read`, `tenant_support:read`, `user:read` |
+| `platform-admin` | platform | yes | Administers the installation: tenants and platform keys | `catalog:price`, `catalog:read`, `catalog:write`, `identity:read`, `metrics:read`, `platform_issuer:delete`, `platform_issuer:read`, `platform_issuer:write`, `platform_key:read`, `platform_key:revoke`, `platform_key:write`, `platform_limit:delete`, `platform_limit:read`, `platform_limit:write`, `tenant:read`, `tenant:suspend`, `tenant:write`, `tenant_credential:read`, `tenant_credential:revoke`, `tenant_support:open`, `tenant_support:read`, `user:read`, `user:write` |
+| `platform-auditor` | platform | yes | Reads the installation: tenants, keys, catalogue, issuers, limits, users and support actions | `catalog:read`, `identity:read`, `metrics:read`, `platform_issuer:read`, `platform_key:read`, `platform_limit:read`, `tenant:read`, `tenant_support:read`, `user:read` |
 
 ## Permissions by tenant role
 
@@ -131,6 +132,7 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | `platform_key:read` | x | x | Reading and listing platform keys (metadata) |
 | `platform_key:write` | x | - | Issuing a platform key |
 | `platform_key:revoke` | x | - | Revoking a platform key |
+| `metrics:read` | x | x | Reading the installation's metrics on the scrape endpoint |
 | `tenant_credential:read` | x | - | Reading and listing the credentials of a tenant (metadata) |
 | `tenant_credential:revoke` | x | - | Disabling or revoking a credential of a tenant, with a reason |
 | `catalog:read` | x | x | Reading providers, endpoints, models, model grants, price versions and price imports |

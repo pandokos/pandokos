@@ -185,7 +185,9 @@ func TestGenerate(t *testing.T) {
 				}
 			}
 			sort.Strings(wantOps)
-			gotOps := regexp.MustCompile(`[a-z][A-Za-z]+`).FindAllString(r[4], -1)
+			// Routes outside the OpenAPI document ("GET /metrics (…)") are listed with the IDs.
+			cell := regexp.MustCompile("`[A-Z]+ /[^`]*`").ReplaceAllString(r[4], "")
+			gotOps := regexp.MustCompile(`[a-z][A-Za-z]+`).FindAllString(cell, -1)
 			if !reflect.DeepEqual(nilIfEmpty(gotOps), nilIfEmpty(wantOps)) {
 				t.Errorf("%s: operations %v, want %v (by ID)", p.Name, gotOps, wantOps)
 			}

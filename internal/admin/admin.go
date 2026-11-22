@@ -114,6 +114,7 @@ type RefreshOptions struct {
 }
 
 type server struct {
+	stats     adminCounters
 	log       *slog.Logger
 	db        *store.DB
 	auth      *authn.Authenticator
@@ -191,7 +192,7 @@ func stateOf(ctx context.Context) *reqState {
 
 // New returns the handler of the administration API: adminapi.NewHandler with the hooks below,
 // inside the handler that sets the request ID and writes the log line.
-func New(o Options) (http.Handler, error) {
+func New(o Options) (*Handler, error) {
 	switch {
 	case o.Logger == nil:
 		return nil, errors.New("admin: Logger is required")
@@ -223,7 +224,7 @@ func New(o Options) (http.Handler, error) {
 	}
 	s.limiter = newFailureLimiter(s.now)
 	api := adminapi.NewHandler(s, adminapi.Hooks{Before: s.before, Error: s.fail, MaxBodyBytes: maxBodyBytes})
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return &Handler{s: s, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		st := &reqState{id: requestid.New(), operation: "unmatched"}
 		if op, _ := adminapi.Match(r.Method, r.URL.Path); op != nil {
 			st.operation = op.ID
@@ -247,7 +248,7 @@ func New(o Options) (http.Handler, error) {
 			s.logRequest(r, st, rec.status, time.Since(start))
 		}()
 		api.ServeHTTP(rec, r.WithContext(context.WithValue(r.Context(), stateKey{}, st)))
-	}), nil
+	})}, nil
 }
 
 func logMethod(m string) string {

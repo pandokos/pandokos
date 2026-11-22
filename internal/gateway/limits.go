@@ -63,7 +63,7 @@ func (h *Handler) reserve(st *reqState, bound family.OutputBound) bool {
 		h.fail(st, code)
 		return false
 	}
-	st.reservation, st.reservedTokens = res, e.InputTokens+e.OutputTokens
+	st.reservation, st.reservedTokens, st.reservedCost = res, e.InputTokens+e.OutputTokens, e.Cost
 	return true
 }
 
@@ -85,10 +85,11 @@ func millionths(v int64) string {
 }
 
 // settleLimit ends the reservation, if one is held: settle with the figures of the usage record
-// when the request counts (its credential was opened), release otherwise. It never panics.
-func (h *Handler) settleLimit(st *reqState) {
+// when the request counts (its credential was opened), release otherwise. It never panics. It
+// returns what was settled against what was reserved, nil when nothing was settled.
+func (h *Handler) settleLimit(st *reqState) (est *EstimateObservation) {
 	if st.reservation == nil {
-		return
+		return nil
 	}
 	res := st.reservation
 	defer func() {
@@ -98,7 +99,7 @@ func (h *Handler) settleLimit(st *reqState) {
 	}()
 	if !st.counted {
 		res.Release()
-		return
+		return nil
 	}
 	var u LimitUsage
 	if st.rec != nil {
@@ -107,7 +108,16 @@ func (h *Handler) settleLimit(st *reqState) {
 		}
 		u.Cost = st.rec.Cost
 	}
+	est = &EstimateObservation{ReservedTokens: st.reservedTokens, SettledTokens: u.Tokens}
+	if st.reservedCost.Known {
+		est.ReservedCost = st.reservedCost.Amount.Float64()
+	}
+	if u.Cost.Known {
+		est.SettledCost = u.Cost.Amount.Float64()
+	}
+	est.CostComparable = st.reservedCost.Known && u.Cost.Known
 	res.Settle(u)
+	return est
 }
 
 // limitAttrs are the log fields of the limits: whether they were evaluated and whether the counters

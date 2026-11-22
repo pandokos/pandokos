@@ -205,6 +205,19 @@ func (s *Store) Purge(ctx context.Context) error {
 	})
 }
 
+// CountOpen counts the sessions that Purge would keep (platform scope); the purge loop reads it for
+// the sessions-open metric.
+func (s *Store) CountOpen(ctx context.Context) (int64, error) {
+	idle := store.Interval(s.o.Idle)
+	var n int64
+	err := s.o.DB.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
+		var err error
+		n, err = queries.New(tx).CountOpenSessions(ctx, idle)
+		return err
+	})
+	return n, err
+}
+
 // Cookie returns the cookie that carries token: the attributes never vary, loopback included.
 func Cookie(token secret.Secret) *http.Cookie {
 	return &http.Cookie{Name: CookieName, Value: token.Reveal(), Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode}

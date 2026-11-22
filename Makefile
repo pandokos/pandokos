@@ -45,7 +45,7 @@ test-sdk-ts: ## TypeScript SDK suite (needs node 22: npm ci runs first)
 		go test -tags sdkexternal -count=1 -run '^TestTypeScriptSDK$$' ./...
 
 test-compose: ## The Compose quick-start against a built image: make image first
-	PANDOKOS_TEST_IMAGE=$(IMAGE) go test -tags compose -count=1 -timeout 15m ./test/compose/
+	PANDOKOS_TEST_IMAGE=$(IMAGE) go test -tags compose -count=1 -timeout 25m ./test/compose/
 
 test-container: ## Tests against a built image: make image and make db-up first
 	@$(DBENV) PANDOKOS_TEST_IMAGE=$(IMAGE) go test -tags container -count=1 ./test/container/
@@ -101,10 +101,11 @@ fuzz: ## Run each fuzz target for FUZZTIME
 	go test ./internal/oidc/ -run '^$$' -fuzz '^FuzzGroups$$' -fuzztime $(FUZZTIME)
 	go test ./internal/authz/ -run '^$$' -fuzz '^FuzzEffective$$' -fuzztime $(FUZZTIME)
 
-bench: ## Usage reader and limits benchmarks
+bench: ## Usage reader, limits and gateway metrics benchmarks
 	go test ./internal/family/openai/ -run '^$$' -bench . -benchmem
 	go test ./internal/limits/ -run '^$$' -bench . -benchmem
 	go test ./internal/resolver/ -run '^$$' -bench . -benchmem
+	go test ./internal/gateway/ -run '^$$' -bench BenchmarkRequestWithMetrics -benchmem
 
 fmt: ## Format the code
 	gofmt -w cmd internal test

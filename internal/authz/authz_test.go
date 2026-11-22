@@ -36,6 +36,7 @@ func TestCatalogue(t *testing.T) {
 		{"platform_key:read", ScopePlatform},
 		{"platform_key:write", ScopePlatform},
 		{"platform_key:revoke", ScopePlatform},
+		{"metrics:read", ScopePlatform},
 		{"service_account:read", ScopeTenant},
 		{"service_account:write", ScopeTenant},
 		{"virtual_key:read", ScopeTenant},
@@ -88,8 +89,8 @@ func TestCatalogue(t *testing.T) {
 		{"tenant_support:read", ScopePlatform},
 	}
 	got := Catalogue()
-	if len(got) != 57 {
-		t.Fatalf("%d permissions, want 57", len(got))
+	if len(got) != 58 {
+		t.Fatalf("%d permissions, want 58", len(got))
 	}
 	re := regexp.MustCompile(`^[a-z_]+:[a-z_]+$`)
 	seen := map[string]bool{}
@@ -135,7 +136,7 @@ func TestCatalogue(t *testing.T) {
 // three platform catalogue permissions, tenant-admin the two tenant ones, inference nothing).
 func TestRoles(t *testing.T) {
 	platform := []string{IdentityRead, TenantRead, TenantWrite, TenantSuspend, PlatformKeyRead, PlatformKeyWrite, PlatformKeyRevoke,
-		TenantCredentialRead, TenantCredentialRevoke, CatalogRead, CatalogWrite, CatalogPrice,
+		TenantCredentialRead, TenantCredentialRevoke, CatalogRead, CatalogWrite, CatalogPrice, MetricsRead,
 		PlatformIssuerRead, PlatformIssuerWrite, PlatformIssuerDelete, PlatformLimitRead, PlatformLimitWrite, PlatformLimitDelete, UserRead, UserWrite,
 		TenantSupportOpen, TenantSupportRead}
 	tenantAll := []string{IdentityRead, ServiceAccountRead, ServiceAccountWrite, MemberRead, MemberWrite, VirtualKeyRead, VirtualKeyWrite, VirtualKeyRevoke, ModelInvoke,
@@ -319,7 +320,7 @@ func TestEffective(t *testing.T) {
 		{"unknown role", sa(id(1), tenant.StateActive, []string{"ghost"}, nil), nil},
 		{"role of the other kind", sa(id(1), tenant.StateActive, []string{RolePlatformAdmin}, nil), nil},
 		{"platform role on a platform principal", Principal{Kind: KindPlatform, Roles: []string{RolePlatformAdmin, RoleInference}},
-			[]string{CatalogPrice, CatalogRead, CatalogWrite, IdentityRead, PlatformIssuerDelete, PlatformIssuerRead, PlatformIssuerWrite, PlatformKeyRead, PlatformKeyRevoke, PlatformKeyWrite, PlatformLimitDelete, PlatformLimitRead, PlatformLimitWrite, TenantRead, TenantSuspend, TenantWrite, TenantCredentialRead, TenantCredentialRevoke, TenantSupportOpen, TenantSupportRead, UserRead, UserWrite}},
+			[]string{CatalogPrice, CatalogRead, CatalogWrite, IdentityRead, MetricsRead, PlatformIssuerDelete, PlatformIssuerRead, PlatformIssuerWrite, PlatformKeyRead, PlatformKeyRevoke, PlatformKeyWrite, PlatformLimitDelete, PlatformLimitRead, PlatformLimitWrite, TenantRead, TenantSuspend, TenantWrite, TenantCredentialRead, TenantCredentialRevoke, TenantSupportOpen, TenantSupportRead, UserRead, UserWrite}},
 		{"nil scopes are no restriction", sa(id(1), tenant.StateActive, []string{RoleInference}, nil), []string{CredentialUse, ModelInvoke}},
 		{"empty scopes are a restriction to nothing", sa(id(1), tenant.StateActive, []string{RoleInference}, []string{}), nil},
 		{"duplicate roles", sa(id(1), tenant.StateActive, []string{RoleInference, RoleInference}, nil), []string{CredentialUse, ModelInvoke}},
@@ -532,4 +533,73 @@ func TestSettingDescriptions(t *testing.T) {
 			t.Errorf("%s: %q does not name the %s", TenantSettingWrite, p.Description, word)
 		}
 	}
+}
+
+// TestMetricsPermission is T-926: metrics:read is a platform permission without attributes, held by
+// platform-admin and platform-auditor only; a tenant principal of any role is refused; a platform key
+// can be scoped to it.
+func TestMetricsPermission(t *testing.T) {
+	p, ok := Lookup(MetricsRead)
+	if !ok || MetricsRead != "metrics:read" {
+		t.Fatalf("metrics:read is not in the catalogue: %+v %v", p, ok)
+	}
+	if p.Scope != ScopePlatform || p.InTenant || p.Support || p.Description == "" {
+		t.Errorf("metrics:read is %+v, want a platform permission with a description and no attribute", p)
+	}
+
+	var holders []string
+	for _, r := range Roles() {
+		for _, perm := range r.Permissions {
+			if perm == MetricsRead {
+				holders = append(holders, r.Name)
+			}
+		}
+	}
+	if want := []string{RolePlatformAdmin, RolePlatformAuditor}; !equalSets(holders, want) {
+		t.Errorf("the roles holding metrics:read are %v, want %v only", holders, want)
+	}
+
+	a := id(1)
+	for _, r := range Roles() {
+		if r.Scope != ScopeTenant {
+			continue
+		}
+		if d := Decide(sa(a, tenant.StateActive, []string{r.Name}, nil), MetricsRead, Target{}); d == Allow {
+			t.Errorf("a tenant principal with the role %s may read the metrics", r.Name)
+		}
+		if d := Decide(sa(a, tenant.StateActive, []string{r.Name}, nil), MetricsRead, Target{TenantID: a}); d == Allow {
+			t.Errorf("a tenant principal with the role %s may read the metrics of its tenant", r.Name)
+		}
+	}
+	for _, role := range []string{RolePlatformAdmin, RolePlatformAuditor} {
+		if d := Decide(Principal{Kind: KindPlatform, ID: "p", Roles: []string{role}}, MetricsRead, Target{}); d != Allow {
+			t.Errorf("%s: %v, want Allow", role, d)
+		}
+	}
+	if d := Decide(Principal{Kind: KindPlatform, ID: "p"}, MetricsRead, Target{}); d == Allow {
+		t.Error("a platform principal without a role may read the metrics")
+	}
+
+	// A platform key scoped to the permission alone holds it; scoped to another, it does not.
+	admin := Principal{Kind: KindPlatform, ID: "p", Roles: []string{RolePlatformAdmin}}
+	scoped := admin
+	scoped.Scopes = []string{MetricsRead}
+	if d := Decide(scoped, MetricsRead, Target{}); d != Allow {
+		t.Errorf("a key scoped to metrics:read: %v", d)
+	}
+	if d := Decide(scoped, TenantRead, Target{}); d == Allow {
+		t.Errorf("a key scoped to metrics:read reads tenants: %v", d)
+	}
+	other := admin
+	other.Scopes = []string{CatalogRead}
+	if d := Decide(other, MetricsRead, Target{}); d == Allow {
+		t.Errorf("a key scoped to catalog:read reads the metrics: %v", d)
+	}
+}
+
+func equalSets(a, b []string) bool {
+	x, y := append([]string(nil), a...), append([]string(nil), b...)
+	sort.Strings(x)
+	sort.Strings(y)
+	return reflect.DeepEqual(x, y)
 }

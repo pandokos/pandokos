@@ -92,3 +92,4 @@ tenant's usage; the conventions do not require them.
 - 2026-11-22: sprint 4.2 applies the decision to people: logs and traces name no user, username, subject, group or address; a user is named in the `admin request` line only when acting on the platform.
 - 2026-11-22: sprint 4.3 (D-17): the request line of a support principal says `support: true` and names no tenant, role, permission, reason or action; the line `grant refused` names the request and the operation only ([ADR 0061](0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md)).
 - 2026-11-23: accepted by the maintainer after review.
+- 2026-11-22: sprint 6.1: metrics carry the catalogue model and no tenant data; the provider credential ID on the provider-429 counter is the one identifier on a metric; the log reference enforces §2 and §3 ([ADR 0062](0062-metrics-instruments-attributes-cardinality-and-scrape.md), [ADR 0063](0063-the-log-redaction-and-the-log-reference.md)).

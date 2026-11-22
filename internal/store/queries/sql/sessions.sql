@@ -64,3 +64,9 @@ SELECT id, user_id, method, created_at, last_used_at, expires_at
   FROM pandokos.user_session
  WHERE user_id = sqlc.arg(user_id)::uuid
  ORDER BY created_at DESC, id DESC;
+
+-- name: CountOpenSessions :one
+-- Platform scope. The sessions PurgeSessions would keep; counted by the purge loop (sprint 6.1, D-19).
+SELECT count(*)::bigint AS sessions
+  FROM pandokos.user_session
+ WHERE expires_at > now() AND last_used_at > now() - sqlc.arg(idle)::interval;

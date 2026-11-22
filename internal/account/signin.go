@@ -91,6 +91,12 @@ func actorOf(u User) audit.Actor {
 // platform scope: a read of the throttle rows and the account, then, after the hash has been
 // computed outside any transaction, either the count of the failure or the writes of the success.
 func (s *Service) SignIn(ctx context.Context, username string, pw secret.Secret, source netip.Addr, presented string) (SignInResult, error) {
+	res, err := s.signIn(ctx, username, pw, source, presented)
+	s.counter.Add("password", signInResult(err))
+	return res, err
+}
+
+func (s *Service) signIn(ctx context.Context, username string, pw secret.Secret, source netip.Addr, presented string) (SignInResult, error) {
 	username = strings.ToLower(username)
 	akey, skey := UsernameKey(username), sourceKey(source)
 
@@ -208,11 +214,16 @@ func (s *Service) SignIn(ctx context.Context, username string, pw secret.Secret,
 // returns the refusal that the caller reports; an error of the count is returned as it is.
 func (s *Service) failSignIn(ctx context.Context, akey, skey []byte, reason string, acct queries.GetAccountForSignInRow, managing tenant.ID, found bool) error {
 	var later afterCommit
+	lockedNow := false
 	err := s.o.DB.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
 		later = nil
+		lockedNow = false
 		locked, failures, err := s.countFailure(ctx, tx, akey, skey)
 		if err != nil {
 			return err
+		}
+		if locked {
+			lockedNow = true
 		}
 		if locked && found {
 			return s.record(ctx, tx, &later, managing, audit.Event{Actor: audit.Actor{Type: audit.ActorAnonymous}, Action: "user.lock", ResourceType: "user",
@@ -222,6 +233,9 @@ func (s *Service) failSignIn(ctx context.Context, akey, skey []byte, reason stri
 	})
 	if err != nil {
 		return err
+	}
+	if lockedNow {
+		s.counter.Lock()
 	}
 	if err := later.run(ctx); err != nil {
 		return err

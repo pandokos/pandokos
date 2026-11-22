@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pandokos/pandokos/internal/store"
@@ -50,6 +51,18 @@ type UnlimitedAuditor struct {
 	mu   sync.Mutex
 	seen map[tenant.ID]seenDay
 	q    chan unlimitedEntry
+
+	written, skipped, failed atomic.Int64
+}
+
+// UnlimitedStats is a snapshot of the counters of an UnlimitedAuditor.
+type UnlimitedStats struct {
+	Written, Skipped, Failed int64 // rows inserted; calls that found the day's row there; writes that did not happen
+}
+
+// Stats returns the counters.
+func (a *UnlimitedAuditor) Stats() UnlimitedStats {
+	return UnlimitedStats{Written: a.written.Load(), Skipped: a.skipped.Load(), Failed: a.failed.Load()}
 }
 
 var _ UnlimitedNoter = (*UnlimitedAuditor)(nil)
@@ -87,6 +100,7 @@ func (a *UnlimitedAuditor) Note(t tenant.ID, day, zone, provider, model, request
 	case a.q <- unlimitedEntry{tenant: t, day: day, zone: zone, provider: provider, model: model, requestID: requestID}:
 		a.seen[t] = seenDay{day: day}
 	default:
+		a.failed.Add(1) // the day is dropped: it is not written now
 		a.seen[t] = seenDay{retry: now.Add(unlimitedBackoff)}
 	}
 }
@@ -129,21 +143,30 @@ func (a *UnlimitedAuditor) Close(ctx context.Context) {
 func (a *UnlimitedAuditor) write(e unlimitedEntry) {
 	day, err := time.Parse("2006-01-02", e.day)
 	if err != nil {
+		a.failed.Add(1)
 		a.forget(e.tenant)
 		a.log.Debug("unlimited traffic not recorded", "request_id", e.requestID, "error_class", "day")
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), unlimitedTimeout)
 	defer cancel()
+	var recorded bool
 	err = a.db.WithTenant(ctx, e.tenant, func(ctx context.Context, tx store.Tx) error {
-		_, err := queries.New(tx).RecordUnlimitedTraffic(ctx, queries.RecordUnlimitedTrafficParams{
+		var err error
+		recorded, err = queries.New(tx).RecordUnlimitedTraffic(ctx, queries.RecordUnlimitedTrafficParams{
 			Day: store.Date(day), TimeZone: e.zone, Provider: e.provider, Model: e.model, RequestID: e.requestID,
 		})
 		return err
 	})
 	if err != nil {
+		a.failed.Add(1)
 		a.forget(e.tenant)
 		a.log.Debug("unlimited traffic not recorded", "request_id", e.requestID, "error_class", errorClass(err))
 		return
+	}
+	if recorded {
+		a.written.Add(1)
+	} else {
+		a.skipped.Add(1)
 	}
 }

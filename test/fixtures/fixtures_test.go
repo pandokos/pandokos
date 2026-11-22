@@ -3,6 +3,7 @@ package fixtures
 import (
 	"bytes"
 	"encoding/json"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -111,5 +112,13 @@ func TestSprint33FixturesAreWellFormed(t *testing.T) {
 	}
 	if !bytes.Contains(ReadCompat("chat_stream_extra_usage.sse"), []byte(`"queue_time":0.012`)) {
 		t.Error("chat_stream_extra_usage.sse has no fractional member")
+	}
+}
+
+func TestCanaryLabel(t *testing.T) {
+	re := regexp.MustCompile(`^tenant-canary-[0-9a-f]{8}$`)
+	a, b := CanaryLabel("tenant"), CanaryLabel("tenant")
+	if !re.MatchString(a) || !re.MatchString(b) || a == b {
+		t.Errorf("CanaryLabel gave %q and %q", a, b)
 	}
 }
