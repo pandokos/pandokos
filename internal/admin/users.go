@@ -15,6 +15,7 @@ import (
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/store/queries"
+	"github.com/pandokos/pandokos/internal/tenant"
 )
 
 // lockedUntil reads, in the platform scope, the end of the lock of each username that is locked now.
@@ -423,9 +424,12 @@ func (s *server) ResetUserPassword(ctx context.Context, in adminapi.ResetUserPas
 	if err != nil {
 		return nil, err
 	}
-	err = s.platformUser(ctx, in.User, func(ctx context.Context, tx store.Tx, _ *queries.Queries, cur queries.GetUserRow) error {
+	err = s.platformUser(ctx, in.User, func(ctx context.Context, tx store.Tx, q *queries.Queries, cur queries.GetUserRow) error {
 		target := authz.Principal{Kind: authz.KindUser, Roles: cur.PlatformRoles}
 		if err := s.guardGrant(ctx, p, target.Effective()); err != nil {
+			return err
+		}
+		if err := s.guardMemberships(ctx, q, p, cur.ID); err != nil {
 			return err
 		}
 		pw, expires, err := s.accounts.ResetPassword(ctx, tx, cur.ID, g)
@@ -442,6 +446,42 @@ func (s *server) ResetUserPassword(ctx context.Context, in adminapi.ResetUserPas
 		return nil, err
 	}
 	return &out, nil
+}
+
+// guardMemberships applies the guard to the memberships of a platform user whose sign-in the
+// caller would obtain (a new password): the permissions the user holds in each of its tenants,
+// as the hook builds them, must all be the caller's. The platform reaches a tenant's data only
+// under a support action (section 5.6); the recovery of such an account is the host command. q is
+// the platform transaction that holds the lock of the user, so that no membership is added
+// meanwhile (a new membership waits for the lock); each tenant is read in its own session.
+func (s *server) guardMemberships(ctx context.Context, q *queries.Queries, p authz.Principal, userID string) error {
+	ids, err := q.UserTenants(ctx, userID)
+	if err != nil {
+		return err
+	}
+	for _, raw := range ids {
+		tid, err := tenant.ParseID(raw)
+		if err != nil {
+			return err
+		}
+		var grant queries.GetMemberGrantRow
+		err = s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
+			var err error
+			grant, err = queries.New(tx).GetMemberGrant(ctx, userID)
+			return err
+		})
+		if isNoRowsErr(err) {
+			continue // removed since the directory was read
+		}
+		if err != nil {
+			return err
+		}
+		member := authz.Principal{Kind: authz.KindUser, ID: userID, TenantID: tid, Roles: grant.Roles, Granted: grant.Granted}
+		if err := s.guardGrant(ctx, p, member.Effective()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // RevokeUserSessions ends every session of a user.

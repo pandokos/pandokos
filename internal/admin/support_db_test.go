@@ -501,6 +501,16 @@ func TestSupportNeverReadsUsage(t *testing.T) {
 			refused("with an action that holds all eleven permissions", apitest.Probe(t, who, op, p), op, false)
 		}
 	}
+	// No other path: a new password for a platform user that is a member of the tenant would be a
+	// session of the member, with its permissions; it is refused with or without an action.
+	member := w.d.PlatformUser(t, apitest.UniqueName("member"), nil)
+	w.d.Member(t, w.tid, member.ID, []string{"owner"})
+	for name, who := range map[string]apitest.Doer{"a platform key": w.key, "a platform user": w.user} {
+		r := who.Do(t, "POST", "/v1/users/"+member.ID+"/reset-password", map[string]any{"reason": apitest.Reason("reset")}, nil)
+		if r.Status != 403 || r.Problem() != "escalation_refused" {
+			t.Errorf("%s resetting the password of a member of the tenant: %d %s, want 403 escalation_refused", name, r.Status, short(r))
+		}
+	}
 	// Opening an action that names one of them is 400.
 	for perm := range forbidden {
 		invalidOn(t, "an action that names "+perm, w.key.Do(t, "POST", w.sp(""), map[string]any{"reason": apitest.Reason("x"), "permissions": []string{perm}}, nil), "permissions")

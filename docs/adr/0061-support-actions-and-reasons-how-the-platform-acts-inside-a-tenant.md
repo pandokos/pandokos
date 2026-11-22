@@ -35,6 +35,9 @@ ingredients: a reason, a record in the tenant's log, a bounded time, a switch.
    has the attribute `Support`, and opening refuses them. A platform administrator reaches a tenant's
    data only by making an identity in the tenant for somebody, which needs an open action and leaves rows
    that the tenant reads. `support.enabled: false` removes this path together with the recovery.
+   `resetUserPassword` is not a second path: it refuses (`403 escalation_refused`, with or without an
+   action) a platform user that holds permissions in a tenant, since the new password would be a
+   session of a member; such a user is recovered with the host command `pandokos user reset-password`.
 4. **The construct `x-pandokos-reason: required`.** The generator demands a required `reason` in the body
    and the generated handler refuses an empty one. Nine operations declare it, by three criteria: the
    platform acts on a tenant (`suspendTenant`, `reactivateTenant`, `disableTenantCredential`,

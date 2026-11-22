@@ -39,7 +39,10 @@ and to be sure that nobody can hand out more than they hold.
    missing from it. Removal is covered (taking a role needs the permissions of giving it); containment
    (disabling, revoking, ending sessions, deleting a mapping) is free; only the difference between the
    current and the new role set is checked. A refusal is `403 escalation_refused`. A subject mapping is a
-   guarded grant and there are no scopes per mapping (this closes open point 5 of sprint 4.1).
+   guarded grant and there are no scopes per mapping (this closes open point 5 of sprint 4.1). A new
+   password is a grant too: `resetUserPassword` checks the platform roles of the user and its
+   effective permissions in every tenant it is a member of, so the platform cannot obtain a member's
+   sign-in through the API; the host command `pandokos user reset-password` remains the recovery.
 6. **One function builds a member's principal**, for the request hook and for `GET /v1/me`, so that what
    the API reports and what it enforces cannot differ.
 7. **The permission reference is generated** by `internal/permdoc` from the catalogue, the roles and the

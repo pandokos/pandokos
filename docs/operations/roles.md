@@ -154,7 +154,7 @@ refusal is logged without a tenant, role or permission).
 | `createPlatformKey` | the role of the key |
 | `createVirtualKey` | what the key will be able to do: the permissions of the service account, intersected with the key's scope list |
 | `createSubjectMapping` | the permissions of the service account the subject will act as |
-| `resetMemberPassword`, `resetUserPassword` | the permissions of the person whose password is reset |
+| `resetMemberPassword`, `resetUserPassword` | the permissions of the person whose password is reset; for `resetUserPassword`, its platform roles and its permissions in every tenant it is a member of |
 
 - **Roles that stay are not checked.** `roles` replaces the whole set; only the difference with the
   current set is conferred or removed by the caller, so an administrator can edit a member that also
@@ -167,6 +167,11 @@ refusal is logged without a tenant, role or permission).
   key of an administrator.
 - **An unknown role is still `400`.** `escalation_refused` is the answer for a role that exists and that
   the caller may not hand out.
+- **A password is a grant.** A new password gives the caller a sign-in as that person. A platform
+  user that is a member of a tenant holds that tenant's permissions, which a platform administrator
+  does not, so `resetUserPassword` refuses such a user with `403 escalation_refused`, with or without
+  a support action. The user's own recovery is the host command `pandokos user reset-password`, run
+  by whoever operates the host.
 - **Token mappings are grants.** A subject mapping gives a subject every role of a service account, so
   a principal cannot map a subject to an account stronger than itself. To give a token less, put a
   custom role on a dedicated service account.
@@ -249,7 +254,8 @@ does not want with `support-action end`. The operations `listSupportActions`, `g
 [reference](../reference/admin-api.md).
 
 **What this means for the platform administrator's role.** A platform administrator reaches a tenant's
-data only by making an identity in the tenant for somebody (a key or a member); there is no other path,
+data only by making an identity in the tenant for somebody (a key or a member); there is no other path
+(the password of a platform user that is a member of a tenant is not reset through the API, see section 4),
 it needs an open action, and each step is a row in the tenant's log with the action and its reason. The
 [security model](../architecture/security-model.md) states this as the residual exposure of the role.
 `support.enabled: false` removes it together with the recovery (`serve` warns at start).

@@ -301,6 +301,28 @@ func TestNoEscalationCredentials(t *testing.T) {
 				t.Errorf("the platform administrator resetting the password of a %s: %d %s", role, r.Status, r.Body)
 			}
 		}
+		// A platform user that is a member of a tenant: the new password would give the caller the
+		// member's permissions in the tenant, which the platform does not hold (section 5.6).
+		for _, role := range []string{"owner", g.weakRole} {
+			p := w.d.PlatformUser(t, apitest.UniqueName("member"), nil)
+			w.d.Member(t, w.tid, p.ID, []string{role})
+			escalation(t, "the password of a platform user that is a "+role+" of a tenant", w.platform(t, "POST", "/v1/users/"+p.ID+"/reset-password", reason))
+			for _, r := range w.d.PlatformAuditRows(t) {
+				if r.ResourceID == p.ID && r.Action == "user.password_reset" {
+					t.Errorf("a refused reset wrote the row %s", r.Action)
+				}
+			}
+		}
+		// A membership whose only role is deactivated gives nothing but the self permissions.
+		w.role(t, "dormant", authz.RoleRead)
+		if r := w.owner.Do(t, "POST", w.tp("/roles/dormant/deactivate"), map[string]any{"reason": "test"}, nil); r.Status != 200 {
+			t.Fatalf("deactivate: %d", r.Status)
+		}
+		p := w.d.PlatformUser(t, apitest.UniqueName("dormant"), nil)
+		w.d.Member(t, w.tid, p.ID, []string{"dormant"})
+		if r := w.platform(t, "POST", "/v1/users/"+p.ID+"/reset-password", reason); r.Status != 200 {
+			t.Errorf("the password of a member that holds no permission of the tenant: %d %s", r.Status, r.Body)
+		}
 	})
 	t.Run("the containment operations work on a stronger identity", func(t *testing.T) {
 		issuer := w.api.SeedTokenIssuer(t, w.tenant.ID)
