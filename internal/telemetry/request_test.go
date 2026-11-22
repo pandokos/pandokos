@@ -227,7 +227,7 @@ func TestRequestRecording(t *testing.T) {
 		var cancelled, notFound, ok200 []point
 		for _, p := range snap.points(t, "http.server.request.duration") {
 			switch {
-			case !hasKey(p, "http.response.status_code"):
+			case !hasKey(p, "http.response.status_code") && !hasKey(p, "http.route"): // the unmatched request; m-cancel (a matched route, no status) is another point
 				cancelled = append(cancelled, p)
 			case p.Attrs["http.response.status_code"] == "404":
 				notFound = append(notFound, p)

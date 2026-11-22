@@ -128,35 +128,40 @@ func (e *reportingMetricExporter) Export(ctx context.Context, rm *metricdata.Res
 	return nil
 }
 
-// Descriptions of the instruments of the telemetry pipeline (M39, M40).
-const (
-	descSpans    = "Spans of the trace provider by state: ended, exported, failed. ended minus exported minus failed is what the queue dropped."
-	descFailures = "Exports of telemetry that failed, by signal and class."
-)
-
-// registerSelf registers M39 and M40, read from selfStats at each collection.
-func registerSelf(meter metric.Meter) error {
-	spans, err := meter.Int64ObservableCounter("pandokos.telemetry.spans",
-		metric.WithUnit("{span}"), metric.WithDescription(descSpans))
-	if err != nil {
-		return err
+// registerSelf registers M39, M40 and M41, read from selfStats and the redaction counter at each
+// collection.
+func registerSelf(k *maker) {
+	spans := k.int64ObservableCounter("pandokos.telemetry.spans")
+	failures := k.int64ObservableCounter("pandokos.telemetry.export_failures")
+	redacted := k.int64ObservableCounter("pandokos.log.redactions")
+	if k.err != nil {
+		return
 	}
-	failures, err := meter.Int64ObservableCounter("pandokos.telemetry.export_failures",
-		metric.WithUnit("{export}"), metric.WithDescription(descFailures))
-	if err != nil {
-		return err
+	states := [...]struct {
+		state string
+		n     *atomic.Int64
+	}{{"ended", &selfStats.ended}, {"exported", &selfStats.exported}, {"failed", &selfStats.failed}}
+	var spanSets [len(states)]attribute.Set
+	for i, s := range states {
+		spanSets[i] = attribute.NewSet(attribute.String("pandokos.telemetry.state", s.state))
 	}
-	_, err = meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
-		for state, v := range map[string]int64{"ended": selfStats.ended.Load(), "exported": selfStats.exported.Load(), "failed": selfStats.failed.Load()} {
-			o.ObserveInt64(spans, v, metric.WithAttributes(attribute.String("pandokos.telemetry.state", state)))
+	var failureSets [len(signalNames)][len(classNames)]attribute.Set
+	for s, signal := range signalNames {
+		for c, class := range classNames {
+			failureSets[s][c] = attribute.NewSet(attribute.String("pandokos.telemetry.signal", signal), attribute.String("error.type", class))
 		}
-		for s, name := range signalNames {
-			for c, class := range classNames {
-				o.ObserveInt64(failures, selfStats.failures[s][c].Load(), metric.WithAttributes(
-					attribute.String("pandokos.telemetry.signal", name), attribute.String("error.type", class)))
+	}
+	_, err := k.meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		for i, s := range states {
+			o.ObserveInt64(spans, s.n.Load(), metric.WithAttributeSet(spanSets[i]))
+		}
+		for s := range signalNames {
+			for c := range classNames {
+				o.ObserveInt64(failures, selfStats.failures[s][c].Load(), metric.WithAttributeSet(failureSets[s][c]))
 			}
 		}
+		o.ObserveInt64(redacted, Redactions())
 		return nil
-	}, spans, failures)
-	return err
+	}, spans, failures, redacted)
+	k.fail(err)
 }

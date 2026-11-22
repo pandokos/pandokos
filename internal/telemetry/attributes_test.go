@@ -52,6 +52,9 @@ func closedValue(instrument, key, value string, catalogue map[string]bool) bool 
 	case "http.route":
 		return value == "/{provider}/v1/chat/completions" || value == "/{provider}/v1/embeddings" || strings.HasPrefix(value, "/{provider}/v1/")
 	case "error.type":
+		if instrument == "pandokos.telemetry.export_failures" { // the classes of an export failure (M40)
+			return in(value, []string{"timeout", "status", "connection", "other"})
+		}
 		if instrument == "http.server.request.duration" {
 			return threeDigits.MatchString(value) && value >= "500" || in(value, outcomes)
 		}

@@ -20,9 +20,6 @@ func TestCardinality(t *testing.T) {
 	for i := 0; i < models; i++ {
 		r.m.ObserveRequest(chatRequest(fmt.Sprintf("model-%04d", i)))
 	}
-	noModel := chatRequest("")
-	noModel.Provider = "acme"
-	r.m.ObserveRequest(noModel)
 	snap := r.collect()
 
 	var overflow, regular, counted int
@@ -47,6 +44,11 @@ func TestCardinality(t *testing.T) {
 	if counted != models {
 		t.Errorf("%d measurements counted across the sets, want %d: the overflow must not lose any", counted, models)
 	}
+	// The request without a model is recorded on a Metrics of its own: after 2500 models the instrument
+	// is at its limit and every new set goes to the overflow set.
+	noModel := chatRequest("")
+	noModel.Provider = "acme"
+	snap = newRig(t, nil).observe(noModel)
 	for _, p := range snap.points(t, "pandokos.gateway.requests") {
 		if p.Attrs["gen_ai.provider.name"] == "acme" && p.Attrs["pandokos.outcome"] == "ok" && !hasKey(p, "gen_ai.request.model") && p.Value >= 1 {
 			return // the request without a model has a point without the model attribute

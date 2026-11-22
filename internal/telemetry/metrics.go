@@ -67,6 +67,7 @@ type Metrics struct {
 	sdk      *sdkmetric.MeterProvider // nil with the no-op provider
 	handler  http.Handler
 	reader   *sdkmetric.ManualReader // the scrape reader; nil unless Prometheus is on
+	inst     *instruments            // nil with the no-op provider
 
 	h *errorHandler
 }
@@ -139,15 +140,24 @@ func NewMetrics(o MetricsOptions) (*Metrics, error) {
 	meter := m.sdk.Meter(meterName,
 		metric.WithInstrumentationVersion(o.ServiceVersion),
 		metric.WithSchemaURL(semconv.SchemaURL))
-	if err := registerSelf(meter); err != nil {
+	k := &maker{meter: meter}
+	m.inst = newInstruments(k)
+	registerSelf(k)
+	registerSources(k, o)
+	if k.err != nil {
 		_ = m.sdk.Shutdown(context.Background())
 		return nil, errors.New("telemetry: the instruments could not be created")
 	}
 	return m, nil
 }
 
-// ObserveRequest records one request of the inference listener.
-func (m *Metrics) ObserveRequest(_ Request) {}
+// ObserveRequest records one request of the inference listener. It only aggregates in memory: it
+// never waits for the network.
+func (m *Metrics) ObserveRequest(r Request) {
+	if m.inst != nil {
+		m.inst.observe(r)
+	}
+}
 
 // Handler returns the scrape handler; nil unless Prometheus is enabled.
 func (m *Metrics) Handler() http.Handler { return m.handler }
@@ -159,9 +169,3 @@ func (m *Metrics) Shutdown(ctx context.Context) error {
 	}
 	return m.sdk.Shutdown(ctx)
 }
-
-// Catalogue returns the instrument catalogue: the table of the metrics reference.
-func Catalogue() []InstrumentSpec { return nil }
-
-// views are the explicit bucket boundaries of the histograms (C2).
-func views() []sdkmetric.View { return nil }
