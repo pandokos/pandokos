@@ -6,7 +6,8 @@ register an identity provider, how a token becomes a service account, what is ch
 order, how to choose the audience, what happens when the identity provider is down, and how to read a
 refusal. It applies from sprint 4.1 ([ADR 0045](../adr/0045-trusted-token-issuers.md),
 [ADR 0046](../adr/0046-issuer-key-retrieval-and-caching.md)). Tokens are accepted on the inference
-listener only; the administration API takes virtual keys and platform keys.
+listener; since sprint 4.2 they are accepted on the administration listener too, but only when
+the operator sets `tokens.admin_listener` (section 8 and the [sign-in guide](sign-in.md), section 11).
 
 ## 1. Tokens or keys
 
@@ -308,6 +309,7 @@ provider cannot be reached. Raise `max_stale` only if you accept that.
 | `tokens.jwks.refresh_interval` | `15m` | background refresh of a key set |
 | `tokens.jwks.min_refetch_interval` | `10s` | shortest time between fetches caused by an unknown `kid` |
 | `tokens.jwks.max_stale` | `6h` | use of a key set after its last successful fetch |
+| `tokens.admin_listener` | `false` | accept tokens on the administration listener too, as service accounts only; needs `tokens.enabled` |
 
 Bounds and the warnings are in the [configuration reference](configuration.md). Without a
 registration nothing is accepted and nothing is fetched, so the default `true` costs nothing.
@@ -355,8 +357,9 @@ A subject mapping can be the subject of a limit rule, named by its ID, like a vi
 - Patterns, prefixes or expressions for subjects: a mapping is an exact match.
 - Scopes, model lists or pins per mapping: a token principal has every permission of the service
   account's roles and the tenant's default credential of the provider.
-- Tokens on the administration listener, and mapping a subject to a user: both come with users and
-  sessions (sprint 4.2).
+- A token that acts as a user: on the administration listener (`tokens.admin_listener`, off by default) a token
+  maps to a service account with its roles and never to a user or a platform principal; people sign in with a
+  session ([sign-in guide](sign-in.md)).
 - A check of a registration or a token from the API; metrics for token authentication.
 
 ## 12. Troubleshooting

@@ -666,3 +666,45 @@ start. There is no down migration; to go back, restore a backup taken before.
    [telemetry guide](telemetry.md)). No setting brings them back. The troubleshooting of
    `no_price` therefore moves from the operator's log to the tenant's tools (the capability check,
    `active` in `limit list`, `listTenantModels`, [limits guide](limits.md), section 15).
+
+## 18. Grants of migration 0013
+
+Migration `0013_users_sessions` adds people, sessions and idempotency keys
+([sign-in guide](sign-in.md), [data model](../architecture/data-model.md),
+[ADR 0056](../adr/0056-users-memberships-and-sessions-as-principals.md),
+[ADR 0057](../adr/0057-local-accounts-and-sessions-formats-and-numbers.md),
+[ADR 0059](../adr/0059-idempotency-keys.md)). It runs in one transaction as the owner role, changes no
+existing row and lifts no row-level security. **The gateway and worker roles receive no privilege on any
+table or function of this migration**, in any session (IAM-22 as a property of the database).
+
+**What changes.**
+
+- Nine global tables with forced row-level security and explicit policies, all granted to the admin role
+  only, by column where a column never changes: `app_user` (the platform scope sees and writes every
+  user; a tenant's session sees the users it manages and its members and writes the former),
+  `local_account`, `user_identity`, `user_session`, `platform_role_assignment`, `signin_throttle`,
+  `oidc_login` and `idempotency_key` (platform scope, or the scope that a row names), and
+  `membership_directory` with no grant to any runtime role (read through `user_tenants`).
+- Two tenant-scoped tables, `membership` and `membership_role`, with the one policy `tenant_isolation`;
+  the admin role reads, inserts and deletes them (and updates the `source` of a membership); nothing
+  else touches them.
+- Five definer functions: `user_tenants` (the tenants of one user, platform scope only),
+  `platform_user_lookup` (one platform-managed user for a tenant's session, by ID or username, never a
+  list) and three trigger functions that keep the managing rule, the directory and the role rules
+  (`membership_guard`, `membership_directory_sync`, `platform_role_assignment_guard`).
+- The admin role may `EXECUTE` `issuer_lookup` and `platform_issuer_tenant_lookup` (migration 0010), for
+  tokens on the administration listener.
+- The check constraint of the audit tables accepts the actor type `host`.
+
+**Locks and duration.** New tables and constraints only; the audit constraint is the one statement that
+touches an existing table, on tables of the audit log that are small relative to the ledger. A failure rolls
+everything back to the schema of 0012.
+
+**Upgrade: stop, migrate, start.** An earlier binary does not start against the new schema, and a new
+binary does not start against the schema of 0012. There is no down migration; to go back, restore a backup
+taken before. After the upgrade `serve` warns while local accounts are on and no active user holds a
+platform role: run `pandokos init --admin-username NAME` (an existing installation keeps its keys) or link
+a person through the identity provider.
+
+**What the administration role does at run time.** It purges expired sessions, throttle rows, sign-in
+transactions and idempotency keys every five minutes. The worker is not involved.

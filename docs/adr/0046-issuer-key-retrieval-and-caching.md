@@ -68,3 +68,4 @@ outbound path and a way to probe addresses with an answer.
 
 Sprint 4.1.
 - 2026-11-18: accepted by the maintainer after review.
+- 2026-11-22: sprint 4.2 gives the admin role a key cache and lets it fetch documents, only of the issuer the operator configured for sign-in (`auth.oidc.issuer`) and, with `tokens.admin_listener`, of registered issuers ([ADR 0058](0058-openid-connect-relying-party.md)).

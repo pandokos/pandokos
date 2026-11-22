@@ -16,7 +16,13 @@ time).
 - Base path `/v1`. Platform resources at the top (`/v1/tenants`, `/v1/platform-keys`), tenant
   resources under the tenant, the caller at `/v1/me`. Identifiers in paths are IDs (UUIDs, or the
   key ID of a key); names are attributes found with the `name` filter. The CLI accepts names.
-- Authentication: `Authorization: Bearer <key>`. Nothing else is read.
+- Authentication: `Authorization: Bearer <key>` (a platform key or a virtual key; with `tokens.admin_listener`
+  also a token of a trusted issuer), or the session cookie `__Host-pandokos_session` that people get by
+  signing in. The four sign-in operations read no credential. A request with both uses the header and
+  ignores the cookie. A session request that is not `GET` or `HEAD` also needs the header
+  `X-Pandokos-Csrf: 1` and an `Origin` equal to the expected origin. The sign-in guide
+  ([sign-in.md](../operations/sign-in.md)) describes the methods, the lifetimes and how to build a
+  browser client.
 - JSON only; members are `snake_case`; times are RFC 3339 in UTC. An absent optional member is left
   out of responses. Bodies and queries are strict: an unknown member or parameter is an error.
 - Verb sub-resources (`suspend`, `reactivate`, `disable`, `enable`, `revoke`) take an optional
@@ -91,11 +97,14 @@ only (a platform-managed member: `409 invalid_state`). A generated password is s
 response of the creation or the reset; a user cannot disable itself or remove its own last platform
 role (`409 invalid_state`).
 
+The behaviour that the schemas cannot say, and the settings behind it, are in the
+[sign-in guide](../operations/sign-in.md).
+
 ## The accepted subset of OpenAPI 3.1
 
 `internal/apigen` accepts a deliberate subset and fails on anything else: `openapi: 3.1.0`; path
 items with `get`, `post`, `patch`, `put`, `delete`; operations with a unique lower-camel-case
-`operationId` and a mandatory `x-pandokos-permission` (or `x-pandokos-public: true` with `security: []` for the four sign-in operations); path parameters that are strings with a
+`operationId` and a mandatory `x-pandokos-permission` (or `x-pandokos-public: true` with `security: []` for the four sign-in operations; a `303` response with a `Location` header as the only response of a public `GET`; the header parameter `IdempotencyKey`; `x-pandokos-lenient-query: true`; `headers` on responses are accepted and ignored); path parameters that are strings with a
 pattern, query parameters that are optional strings, enumerations or integers; flat JSON request
 bodies; exactly one 2xx response; every other response `application/problem+json` with the schema
 `Problem`; component objects with `additionalProperties: false`. A keyword it does not know is an

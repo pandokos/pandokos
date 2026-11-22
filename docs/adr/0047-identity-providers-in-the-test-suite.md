@@ -102,3 +102,4 @@ be produced by a real provider, and tokens and keys must not be stored in the re
 
 Sprint 4.1. Authentik 2026.8.5 added after the sprint (tests T-606 to T-608).
 - 2026-11-18: accepted by the maintainer after review.
+- 2026-11-22: sprint 4.2 gives the Keycloak realm people and groups (a confidential client with the standard flow and PKCE, the users `alice` and `bob`, two groups and a group membership mapper) and adds headless Chrome (`test/browser`, build tag `browser`, CI job `browser`). Authentik is used for the shape of its `groups` claim only.

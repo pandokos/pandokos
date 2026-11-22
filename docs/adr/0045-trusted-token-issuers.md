@@ -94,3 +94,4 @@ accepted wherever the family reads a credential; a free audience, unique install
 subject match only.
 - 2026-11-18: accepted by the maintainer after review.
 - 2026-11-18: sprint 5.3: deleting a mapping or an issuer (tenant-bound or platform-level) deletes the limit rules of its mappings, audited ([ADR 0049](0049-limit-rules.md), [ADR 0052](0052-administration-of-limits.md)).
+- 2026-11-22: sprint 4.2 accepts tokens on the administration listener behind `tokens.admin_listener`: the same selection, validation and mapping, the admin pool and no principal cache; the principal is the mapped service account, never a user (D-5).

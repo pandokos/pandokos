@@ -4,7 +4,9 @@
   before 1.0 (SEC-05, SEC-09).
 - Decisions: [ADR 0005](../adr/0005-data-plane-authentication.md),
   [ADR 0008](../adr/0008-vault-envelope-encryption.md),
-  [ADR 0018](../adr/0018-supply-chain.md)
+  [ADR 0018](../adr/0018-supply-chain.md),
+  [ADR 0056](../adr/0056-users-memberships-and-sessions-as-principals.md) to
+  [ADR 0059](../adr/0059-idempotency-keys.md)
 
 ## What is protected
 
@@ -37,9 +39,18 @@ flowchart LR
 1. **Caller to gateway.** Untrusted. Everything the caller sends is input: path, headers, body,
    metadata, trace context. Only a verified credential establishes identity and tenant.
 2. **Administrator to admin API.** People hold a session, obtained through the identity
-   provider or a local account. Automation uses administrator keys (tokens of trusted issuers are accepted on the inference listener only). Every operation is
-   authorized. A client that runs in the user's browser is untrusted: what it hides is not a
-   control. The admin port is not meant for the public internet.
+   provider or a local account: a server-side session in a cookie that scripts cannot read, read from
+   the database at every request, accepted on this listener only ([sign-in guide](../operations/sign-in.md),
+   [ADR 0056](../adr/0056-users-memberships-and-sessions-as-principals.md),
+   [ADR 0057](../adr/0057-local-accounts-and-sessions-formats-and-numbers.md)). Automation uses
+   administrator keys; tokens of trusted issuers are accepted here too when the operator sets
+   `tokens.admin_listener`, as service accounts only. A request carries one credential, chosen in a fixed
+   order (a public sign-in operation reads none; an `Authorization` header is a key or a token and a cookie
+   beside it is ignored; otherwise the cookie). A state-changing request with a session needs a custom
+   header and an `Origin` equal to the expected origin, and a listener known to be in clear text outside
+   loopback refuses to sign anyone in until the operator names the HTTPS origin in front of it
+   (`auth.public_origin`). Every operation is authorized. A client that runs in the user's browser is
+   untrusted: what it hides is not a control. The admin port is not meant for the public internet.
 3. **Process to database.** Each role connects with its own least-privileged database role. The
    database enforces tenant isolation independently of the application.
 4. **Process to KEK provider.** Whoever holds the key-encryption key and the database can decrypt
@@ -61,6 +72,15 @@ flowchart LR
    register that pair and its mapping would then receive those calls (the residual case of the
    [tokens guide](../operations/tokens.md), section 5; the guide requires an audience naming the
    installation and the tenant). Second, a token cannot be revoked before it expires.
+
+   **The identity provider for people** is a second use of this boundary. The operator configures one
+   provider (`auth.oidc.*`); Pandokos is its confidential client with PKCE, state and nonce, and trusts it
+   to assert who a person is and, through explicit group rules in the configuration, which role the person
+   holds. A compromised provider can sign in as any person it knows, and the rules give each group no more
+   than the operator wrote: `platform-admin` and `tenant-admin` only, in tenants that exist. The
+   administration role fetches the provider's documents through the egress guard, of the one configured
+   issuer only; the ID token is validated, its subject read and every provider token dropped at once
+   ([ADR 0058](../adr/0058-openid-connect-relying-party.md)).
 7. **Infrastructure operator.** See the next section.
 8. **Gateway to trace collector.** Outbound only, to the one URL the operator configured, through
    the same guard as provider calls (certificates verified, no proxy, no redirect, forbidden
@@ -130,12 +150,16 @@ disk the operator's database administrators can read, and by auditing every admi
 | A token of another relying party, or a forged algorithm or key (`none`, HMAC keyed with the public key, `jwk`, `jku`, a `kid` of another source) | The audience is mandatory and compared exactly; the algorithm is on an allow-list of ten asymmetric algorithms before any key is looked up, and the library is given exactly that one; keys come only from the registration's source, and a key is used only if its type and size fit the algorithm |
 | A tenant administrator makes the gateway fetch an internal address through `issuer` or `jwks_uri` | `https` only through the egress guard; internal addresses unreachable unless the operator lists the host; a fixed method, no redirect, 5 s, 64 KiB and 256 KiB limits, at most one fetch per source per 10 s; nothing of the answer observable except whether tokens verify |
 | Forged tokens flood the log, the audit log or the identity provider | Failures before the registration is known are logged only; audited failures are bounded (one row per registration, reason and subject in ten minutes, 60 a minute per instance); one fetch per source per 10 s |
-| Password guessing against local accounts | Throttling per account and source, uniform responses, audit of failures (IAM-20). Memory-hard hashes (IAM-19). No default credentials (IAM-14). Local accounts can be switched off (IAM-18) |
-| A stolen or forged session | Random 256-bit tokens stored as hashes; cookie not readable by scripts, sent over TLS only and never cross-site; idle and absolute lifetimes; revocation (IAM-21) |
-| Cross-site request forgery against a signed-in user | Same-site cookie, plus a required custom header and an origin check on every state-changing request (IAM-21) |
+| Password guessing against local accounts | Ten failures lock an account for 15 minutes and fifty lock a source (a delay from the third failure), by digests of what was typed, so an unknown username behaves exactly like a real one; one hash computation always runs and the four refusals (unknown, wrong password, disabled, expired generated password) are one byte-identical `401`; failures and locks are audited, without the typed username (IAM-20). Argon2id with stored parameters, 16-byte salt, 64 MiB, at most four computations at once (IAM-19). No default credentials; a generated password is 120 bits, expires in 72 hours and must be changed (IAM-14). Local accounts can be switched off (IAM-18). Accepted: a known username can be locked out for the lock duration (the host commands and the identity provider are the way round) |
+| A stolen or forged session | Random 256-bit tokens `pds_...` stored as SHA-256 only; cookie `__Host-` with `Secure; HttpOnly; SameSite=Strict`, no `Domain`; idle (30 minutes) and absolute (12 hours) lifetimes; at most ten sessions per user; a new token at sign-in and at password change; sign-out, revocation and the end of a session on disabling a user (IAM-21). The session and its user are read at every request, so the bound of IAM-11 is the request in flight |
+| Cross-site request forgery against a signed-in user | `SameSite=Strict`, plus on every sign-in and every state-changing session request the header `X-Pandokos-Csrf: 1`, an `Origin` equal to the expected origin and `Sec-Fetch-Site: same-origin` when present, before the body is read; the API sends no CORS header (IAM-21). The two OpenID Connect endpoints are navigations, protected by state and a binding cookie |
+| A sign-in forged with another person's code, or a replayed callback | State, nonce and PKCE verifier derived from a seed that only the starting browser holds (`SameSite=Lax` cookie); a one-use state row valid for ten minutes; `iss`, `aud`, `nonce`, `azp` and signature checked; a fixed redirect destination (IAM-09) |
+| Group rules give a role by mistake | Exact match on the group; rules are configuration reviewed by the operator; only two roles can be given; each grant is audited with `source: idp` and removed at the next sign-in that the groups no longer justify; manual rows are never touched |
+| A tenant administrator takes over a person who is powerful elsewhere | The managing rule: a user that a tenant manages is a member of that tenant only and holds no platform role (two triggers); a platform-managed member can be added but not reset, disabled, unlocked or signed out by a tenant administrator (`409 invalid_state`); federated users are always platform-managed |
+| A retry creates a second resource, or leaks the first one's secret | Idempotency keys on every create: scoped by tenant, principal and key; a request hash with a random salt; the creation and its memory are one atomic fact through the audit helper; the stored response never holds a one-time member ([ADR 0059](../adr/0059-idempotency-keys.md)) |
 | Script injection in a browser client | The session cookie cannot be read by scripts and no API response carries a credential a script could keep (IAM-21). The rest is the client's own duty: Pandokos serves no pages |
 | A signed-in user reaches functions beyond their role | The API authorizes every call. What `/v1/me` reports comes from the same permissions and is tested against them (AZ-11) |
-| A session is used to call models | Sessions are accepted only on the administration listener; the gateway's database role cannot read them (IAM-22) |
+| A session is used to call models | Sessions are accepted only on the administration listener; no code of the gateway reads a cookie and its database role has no privilege on any table of people or sessions, in any session (IAM-22) |
 | The database or a backup is copied | Credentials are ciphertext under per-tenant keys wrapped by a key that is not in the database (VLT-09, VLT-13). Virtual keys are stored as hashes |
 | The key-encryption key leaks | Rotation by re-wrapping (VLT-10). The leak alone exposes nothing without the database |
 | A ciphertext is copied onto another tenant's row | The tenant and credential IDs are bound into the ciphertext as associated data, so decryption fails (VLT-07) |
@@ -169,6 +193,22 @@ replay can do. Sender-constrained mechanisms, which would make a captured key us
 are IAM-15 and IAM-16 and are not built yet.
 
 A token of a trusted issuer is a bearer credential too, valid until its `exp`. TLS on the listener, the short lifetimes the identity provider issues, and `tokens.max_lifetime` (24 hours by default, any longer token is refused) bound the exposure; the signature is checked on every request, so there is no cache of tokens to outlive one. A single token cannot be revoked; deleting its subject mapping or disabling its registration stops the subject within `cache.principal_ttl`. A refusal before the signature check is slightly faster than one after it; this reveals at most that an issuer and audience pair is registered, which a tenant administrator already learns from a conflict.
+
+A session is a bearer credential as well: whoever holds the cookie value can use it until it ends. It is
+not readable by scripts, is sent over TLS only (the `__Host-` prefix and `Secure`; HSTS is the duty of a
+proxy that ends TLS) and never cross-site, and it ends within the idle and absolute lifetimes, by sign-out,
+by a password change or reset, by the disabling of the user and by revocation, all effective at the next
+request because nothing is cached. There is no binding of a session to an address or a device. What a
+group gave through an identity provider lasts until the user's next sign-in.
+
+**Residual exposures of people.** Local accounts have one factor and no multi-factor authentication
+(ADR 0022): production use should prefer an identity provider or a private administration network. A
+session is a bearer credential until it ends. An operator of the database reads user records (display
+names, e-mail addresses, usernames, hashes). A throttle row is a digest of a typed username and lives for
+at most the window plus the lock. New passwords are not checked against a list of breached passwords (the
+one unmet row of the ASVS 4.0.3 chapters V2 and V3 table of the sprint design, which a reviewer reads
+against the code). Concurrent attempts that passed the throttle together are all verified. What a group
+gave lasts until the next sign-in.
 
 ## Key hierarchy
 

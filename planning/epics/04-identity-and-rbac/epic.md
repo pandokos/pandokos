@@ -17,7 +17,7 @@ only that.
 
 ## Decisions it implements
 
-ADR 0005 (trusted issuers), 0006, 0007, 0022.
+ADR 0005 (trusted issuers), 0006, 0007, 0022; written by sprint 4.2: 0056, 0057, 0058, 0059 (proposed).
 
 ## Sprints
 
@@ -75,6 +75,21 @@ account and appear in the audit log; a session cookie presented to the inference
 with an identity provider configured, the same user flows work through it; disabling a user ends
 their sessions within the bound.
 
+Decided at design (2026-11-21, maintainer decisions O-1 to O-12 in the
+[sprint design](4.2-users-local-accounts-sessions/sprint.md), section 12): a bearer token never acts as
+a user, so subject mappings to users are delivered as the identity link of the ID token and group rules;
+tokens on the administration listener are opt-in (`tokens.admin_listener`) and map to service accounts
+only; sign-in events of a tenant-managed user go to its tenant's audit log; `init --admin-username` is an
+optional flag with no default username; with local accounts off a host reset lets no one in; the binary
+serves no static files (the browser contract is tested behind a same-origin proxy in headless Chrome);
+group rules stay in the configuration; the breached-password list is the one unmet ASVS row; a replayed
+create answers without the one-time secret. Records:
+[ADR 0056](../../../docs/adr/0056-users-memberships-and-sessions-as-principals.md),
+[0057](../../../docs/adr/0057-local-accounts-and-sessions-formats-and-numbers.md),
+[0058](../../../docs/adr/0058-openid-connect-relying-party.md) and
+[0059](../../../docs/adr/0059-idempotency-keys.md), with history lines on twelve older records. Guide:
+[signing people in](../../../docs/operations/sign-in.md).
+
 ### 4.3 Roles
 
 - All built-in tenant roles; platform auditor (AZ-06 no longer has a platform usage viewer; no platform role reads usage, costs or prices of a tenant).
@@ -105,6 +120,18 @@ later without reworking the role model:
 The platform support action is therefore designed as a general mechanism (explicit permission,
 mandatory reason, audit record in the tenant, configuration switch), not as a one-off for support
 inside a tenant.
+
+Starting point from sprint 4.2 (its design, section 11). A role has a scope (`platform` or `tenant`); a
+principal is built per request; a member's roles are rows of `membership_role`, a service account's of
+`role_assignment` and a platform user's of `platform_role_assignment`. Custom roles are rows that all three
+reference by name, and the deletion guard looks at the three. `authz.Assignable` is the seed of the
+no-escalation rule and becomes "holds every permission of the role" for any role. `GET /v1/me` gains
+effective permissions per tenant in the `memberships` members that exist now. The support action is a
+platform user's principal acting in a tenant where it has no membership: the one place in the hook where
+"no membership" is decided (`404 not_found`) is where a recorded support action with a reason grants a
+bounded principal instead, and its audit row goes to the tenant's log with the actor `user`. Nothing in 4.2
+lets a platform role read a tenant's users, members or sessions. The platform auditor is a second platform
+role for users.
 
 Exit: for each built-in role a test matrix shows which routes are allowed and denied, and
 `/v1/me` reports exactly the permissions the matrix expects; a tenant admin cannot grant a

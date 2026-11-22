@@ -74,3 +74,4 @@ Mutual TLS covers the same need for callers that want it.
 ## History
 
 - 2026-11: sprint 4.1 refines the trusted issuers: registration, selection by issuer and audience, algorithms and the token principal in [ADR 0045](0045-trusted-token-issuers.md); the retrieval of keys in [ADR 0046](0046-issuer-key-retrieval-and-caching.md). Tokens are accepted on the inference listener only; the audience is a free value, unique with the issuer in the installation, not a name that Pandokos assigns.
+- 2026-11-22: sprint 4.2 accepts tokens of trusted issuers on the administration listener too, behind `tokens.admin_listener` (default off), as service accounts only; a token never yields a platform principal or a user ([ADR 0056](0056-users-memberships-and-sessions-as-principals.md)).

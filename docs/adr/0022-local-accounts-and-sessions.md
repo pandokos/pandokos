@@ -93,3 +93,7 @@ request and has no sign-out.
 
 **Stateless signed tokens as sessions.** No table, but no real revocation either, which IAM-21
 requires.
+
+## History
+
+- 2026-11-22: sprint 4.2 decides O-5 as follows: with `auth.local.enabled` false no password signs in, whatever a host command did; the emergency entry is `init --recover` or turning the switch on. Usernames are lower case and unique in the installation. Formats and numbers are in [ADR 0057](0057-local-accounts-and-sessions-formats-and-numbers.md).
