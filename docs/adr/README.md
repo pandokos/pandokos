@@ -58,9 +58,9 @@ A record is *proposed* until the maintainer accepts it, by merging its pull requ
 | [0050](0050-quotas-and-budgets-periods-attribution-currencies.md) | Quotas and budgets: periods, attribution, currencies and unknown prices | accepted |
 | [0051](0051-period-counters-and-the-ledger.md) | Period counters and the ledger: load, cut, reconciliation, the failing store | accepted |
 | [0052](0052-administration-of-limits.md) | Administration of limits: scopes, thresholds, events, API and permissions | accepted |
-| [0053](0053-tenant-price-lists-and-active-currency.md) | Tenant price lists and the active currency | proposed |
-| [0054](0054-usage-data-is-the-tenants.md) | Usage data is the tenant's: what the platform does not see | proposed |
-| [0055](0055-operational-telemetry-holds-no-tenant-data.md) | Operational telemetry holds no tenant data | proposed |
+| [0053](0053-tenant-price-lists-and-active-currency.md) | Tenant price lists and the active currency | accepted |
+| [0054](0054-usage-data-is-the-tenants.md) | Usage data is the tenant's: what the platform does not see | accepted |
+| [0055](0055-operational-telemetry-holds-no-tenant-data.md) | Operational telemetry holds no tenant data | accepted |
 | [0056](0056-users-memberships-and-sessions-as-principals.md) | Users, memberships, and how a session becomes a principal | accepted |
 | [0057](0057-local-accounts-and-sessions-formats-and-numbers.md) | Local accounts and sessions: formats and numbers | accepted |
 | [0058](0058-openid-connect-relying-party.md) | The OpenID Connect relying party | accepted |
