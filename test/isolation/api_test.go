@@ -643,24 +643,48 @@ func TestPlatformKeyHasNoTenantPermission(t *testing.T) {
 	}
 }
 
-// TestTenantAdminIsEnoughAndNoMore is T-273.
+// TestTenantAdminIsEnoughAndNoMore is T-273 (changed in sprint 4.3: it runs for the owner, and the
+// tenant-admin is enough for everything but endSupportAction, which is kept for owners).
 func TestTenantAdminIsEnoughAndNoMore(t *testing.T) {
 	w := newAPIWorld(t)
-	for _, op := range apiOperations() {
-		call := apitest.CallFor(t, op, w.fresh(t, w.a, op))
-		r := w.api.Do(t, call.Method, call.Path, w.a.adminKey, call.Body, nil)
-		switch scopeOf(t, op) {
-		case authz.ScopeTenant, authz.ScopeSelf:
-			if op.Permission == authz.SessionSelf {
-				expect403(t, op, r) // sprint 4.2: a key has no session
-				continue
+	plat := &apitest.Caller{API: w.api, Key: w.api.PlatformKey(), Name: "platform"}
+	for _, who := range []struct {
+		name string
+		key  string
+	}{
+		{"owner", w.a.adminKey},
+		{"tenant-admin", w.api.AsRole(t, w.a.tenant.ID, "tenant-admin").Key},
+	} {
+		t.Run(who.name, func(t *testing.T) {
+			for _, op := range apiOperations() {
+				p := w.fresh(t, w.a, op)
+				// The operations on a custom role and on a support action get ones of their own.
+				if strings.Contains(op.Path, "{role}") {
+					p.Role = w.api.CustomRole(t, w.a.tenant.ID, "member:read")
+				}
+				if strings.Contains(op.Path, "/support-actions/{action}") {
+					p.SupportAction = apitest.OpenSupport(t, plat, w.a.tenant.ID, "member:read")
+				}
+				call := apitest.CallFor(t, op, p)
+				r := w.api.Do(t, call.Method, call.Path, who.key, call.Body, nil)
+				switch scopeOf(t, op) {
+				case authz.ScopeTenant, authz.ScopeSelf:
+					if op.Permission == authz.SessionSelf {
+						expect403(t, op, r) // sprint 4.2: a key has no session
+						continue
+					}
+					if who.name == "tenant-admin" && op.ID == "endSupportAction" {
+						expect403(t, op, r) // sprint 4.3: kept for owners
+						continue
+					}
+					if r.Status != 200 && r.Status != 201 && r.Status != 204 {
+						t.Errorf("%s: a %s key got %d\n%s", op.ID, who.name, r.Status, r.Body)
+					}
+				default:
+					expect403(t, op, r)
+				}
 			}
-			if r.Status != 200 && r.Status != 201 {
-				t.Errorf("%s: a tenant-admin key got %d\n%s", op.ID, r.Status, r.Body)
-			}
-		default:
-			expect403(t, op, r)
-		}
+		})
 	}
 }
 

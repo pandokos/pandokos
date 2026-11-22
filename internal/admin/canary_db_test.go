@@ -62,7 +62,7 @@ func TestPeopleCanary(t *testing.T) {
 	// A generated password and a reset.
 	created := decode[adminapi.UserCreated](t, record("createUser", p.platform(t, "POST", "/v1/users", map[string]any{"sign_in": "local", "username": "canary.created"})), 201)
 	plant(created.InitialPassword, "createUser")
-	reset := decode[adminapi.PasswordReset](t, record("reset", p.platform(t, "POST", "/v1/users/"+created.User.ID+"/reset-password", map[string]any{})), 200)
+	reset := decode[adminapi.PasswordReset](t, record("reset", p.platform(t, "POST", "/v1/users/"+created.User.ID+"/reset-password", map[string]any{"reason": "test"})), 200)
 	plant(reset.Password, "reset")
 	member := decode[adminapi.MemberCreated](t, record("createMember", p.tenantKey(t, "POST", p.membersPath(""), map[string]any{"account": "new", "username": "canary.member", "roles": []string{"tenant-admin"}})), 201)
 	plant(member.InitialPassword, "createMember")

@@ -74,12 +74,16 @@ func TestMembersAPI(t *testing.T) {
 	adminA := d.TenantUser(t, ida, "a.admin", []string{"tenant-admin"})
 	bAdminA := session(adminA)
 	for _, path := range []string{"/reset-password", "/disable", "/unlock", "/revoke-sessions", "/enable"} {
+		body := map[string]any{}
+		if path == "/reset-password" {
+			body = map[string]any{"reason": "test"} // required since sprint 4.3
+		}
 		for name, do := range map[string]func() *apitest.Response{
 			"A's key": func() *apitest.Response {
-				return api.Do(t, "POST", "/v1/tenants/"+ta.ID+"/members/"+shared.ID+path, keyA, map[string]any{}, nil)
+				return api.Do(t, "POST", "/v1/tenants/"+ta.ID+"/members/"+shared.ID+path, keyA, body, nil)
 			},
 			"A's session": func() *apitest.Response {
-				return bAdminA.Do(t, "POST", "/v1/tenants/"+ta.ID+"/members/"+shared.ID+path, map[string]any{}, nil)
+				return bAdminA.Do(t, "POST", "/v1/tenants/"+ta.ID+"/members/"+shared.ID+path, body, nil)
 			},
 		} {
 			if r := do(); r.Status != 409 || !strings.Contains(string(r.Body), `"code":"invalid_state"`) {
@@ -95,7 +99,7 @@ func TestMembersAPI(t *testing.T) {
 	for name, r := range map[string]*apitest.Response{
 		"get":      api.Do(t, "GET", "/v1/tenants/"+ta.ID+"/members/"+theirs.ID, keyA, nil, nil),
 		"disable":  api.Do(t, "POST", "/v1/tenants/"+ta.ID+"/members/"+theirs.ID+"/disable", keyA, map[string]any{}, nil),
-		"reset":    api.Do(t, "POST", "/v1/tenants/"+ta.ID+"/members/"+theirs.ID+"/reset-password", keyA, map[string]any{}, nil),
+		"reset":    api.Do(t, "POST", "/v1/tenants/"+ta.ID+"/members/"+theirs.ID+"/reset-password", keyA, map[string]any{"reason": "test"}, nil),
 		"existing": api.Do(t, "POST", "/v1/tenants/"+ta.ID+"/members", keyA, map[string]any{"account": "existing", "user_id": theirs.ID, "roles": []string{"tenant-admin"}}, nil),
 		"by name":  api.Do(t, "POST", "/v1/tenants/"+ta.ID+"/members", keyA, map[string]any{"account": "existing", "username": theirs.Username, "roles": []string{"tenant-admin"}}, nil),
 		"list":     api.Do(t, "GET", "/v1/tenants/"+ta.ID+"/members?username="+theirs.Username, keyA, nil, nil),

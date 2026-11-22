@@ -7,7 +7,7 @@ import (
 	"github.com/pandokos/pandokos/test/apitest"
 )
 
-// TestTenantPricePermissions is T-752: each of the seven operations needs its permission: refused to an
+// TestTenantPricePermissions is T-752: each of the seven operations needs its permission (setActiveCurrency: tenant_setting:write since sprint 4.3): refused to an
 // inference key, to a key scoped without it and to a platform key; tenant-admin needs nothing else.
 func TestTenantPricePermissions(t *testing.T) {
 	w := newPW(t)
@@ -41,7 +41,7 @@ func TestTenantPricePermissions(t *testing.T) {
 			func() any {
 				return priceBody(w.cat.All, w.cat.Provider.Name, "EUR", nil, map[string]any{"valid_from": scheduled(60, int(apitestN()))})
 			}},
-		{"setActiveCurrency", "price_list:write", "PUT", func() string { return "/v1/tenants/" + tn + "/active-currency" }, func() any { return map[string]any{"currency": ""} }},
+		{"setActiveCurrency", "tenant_setting:write", "PUT", func() string { return "/v1/tenants/" + tn + "/active-currency" }, func() any { return map[string]any{"currency": ""} }},
 		{"deletePriceListVersion", "price_list:delete", "DELETE", func() string { return "/v1/tenants/" + tn + "/prices/" + price() }, func() any { return nil }},
 	} {
 		t.Run(c.op, func(t *testing.T) {

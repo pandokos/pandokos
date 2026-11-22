@@ -242,7 +242,7 @@ func TestTokenCall(t *testing.T) {
 	})
 
 	t.Run("the token of a tenant that is suspended is refused by the decision", func(t *testing.T) {
-		w.run(t, w.boot, "tenant", "suspend", c.id)
+		w.run(t, w.boot, "tenant", "suspend", "--reason", "test", c.id)
 		w.run(t, w.boot, "platform-issuer", "add-tenant", "--claim-value", "org-c", platform, c.id)
 		tok := w.sign("ES256", "svc", "pandokos-e2e-shared", func(cl fakeidp.Claims) fakeidp.Claims { return cl.With("org", "org-c") })
 		testutil.Eventually(t, 5*time.Second, "the suspended tenant to be refused", func() bool {

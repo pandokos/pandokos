@@ -45,7 +45,7 @@ func TestTenants(t *testing.T) {
 			t.Errorf("tenant: %+v", out.Tenant)
 		}
 		sa := out.AdminServiceAccount
-		if sa.Name != "root" || sa.TenantID != out.Tenant.ID || len(sa.Roles) != 1 || sa.Roles[0] != "tenant-admin" || sa.State != adminapi.ServiceAccountStateActive {
+		if sa.Name != "root" || sa.TenantID != out.Tenant.ID || len(sa.Roles) != 1 || sa.Roles[0] != "owner" || sa.State != adminapi.ServiceAccountStateActive {
 			t.Errorf("service account: %+v", sa)
 		}
 		k := out.AdminKey
@@ -59,7 +59,7 @@ func TestTenants(t *testing.T) {
 		if m.PrincipalType != adminapi.PrincipalTypeServiceAccount || m.ID != sa.ID || m.Tenant == nil || m.Tenant.ID != out.Tenant.ID || m.Tenant.State != adminapi.TenantStateActive || m.Bootstrap {
 			t.Errorf("me: %+v", m)
 		}
-		if strings.Join(m.Roles, ",") != "tenant-admin" || len(m.Permissions) != 34 {
+		if strings.Join(m.Roles, ",") != "owner" || len(m.Permissions) != 35 { // sprint 4.3: the first service account is an owner: the 34 tenant permissions and identity:read
 			t.Errorf("roles %v, permissions %v", m.Roles, m.Permissions)
 		}
 		// The default name of the first service account is admin; no expiry means none.
@@ -133,7 +133,7 @@ func TestTenants(t *testing.T) {
 		}
 		id := out.Tenant.ID
 		for i := 0; i < 2; i++ { // the second call is idempotent
-			s, err := plat.SuspendTenant(ctx(t), adminapi.SuspendTenantInput{Tenant: id, Body: adminapi.Reason{Reason: "unpaid"}})
+			s, err := api.SuspendTenant(t, api.PlatformKey(), id)
 			if err != nil || s.State != adminapi.TenantStateSuspended {
 				t.Fatalf("suspend %d: %+v %v", i, s, err)
 			}
@@ -143,7 +143,7 @@ func TestTenants(t *testing.T) {
 			t.Errorf("get: %+v %v", g, err)
 		}
 		for i := 0; i < 2; i++ {
-			s, err := plat.ReactivateTenant(ctx(t), adminapi.ReactivateTenantInput{Tenant: id})
+			s, err := api.ReactivateTenant(t, api.PlatformKey(), id)
 			if err != nil || s.State != adminapi.TenantStateActive {
 				t.Fatalf("reactivate %d: %+v %v", i, s, err)
 			}
@@ -155,14 +155,14 @@ func TestTenants(t *testing.T) {
 		if err := super.QueryRow(ctx(t), "INSERT INTO pandokos.tenant (name) VALUES ('stuck') RETURNING id::text").Scan(&provisioning); err != nil {
 			t.Fatal(err)
 		}
-		expect(t, api.Do(t, "POST", "/v1/tenants/"+provisioning+"/suspend", api.PlatformKey(), nil, nil), 409, adminapi.ProblemCodeInvalidState)
-		expect(t, api.Do(t, "POST", "/v1/tenants/"+provisioning+"/reactivate", api.PlatformKey(), nil, nil), 409, adminapi.ProblemCodeInvalidState)
+		expect(t, api.Do(t, "POST", "/v1/tenants/"+provisioning+"/suspend", api.PlatformKey(), map[string]any{"reason": "test"}, nil), 409, adminapi.ProblemCodeInvalidState)
+		expect(t, api.Do(t, "POST", "/v1/tenants/"+provisioning+"/reactivate", api.PlatformKey(), map[string]any{"reason": "test"}, nil), 409, adminapi.ProblemCodeInvalidState)
 		for _, st := range []string{"deleting", "deleted"} {
 			if _, err := super.Exec(ctx(t), "UPDATE pandokos.tenant SET state = $1 WHERE id = $2::uuid", st, id); err != nil {
 				t.Fatal(err)
 			}
-			expect(t, api.Do(t, "POST", "/v1/tenants/"+id+"/suspend", api.PlatformKey(), nil, nil), 409, adminapi.ProblemCodeInvalidState)
-			expect(t, api.Do(t, "POST", "/v1/tenants/"+id+"/reactivate", api.PlatformKey(), nil, nil), 409, adminapi.ProblemCodeInvalidState)
+			expect(t, api.Do(t, "POST", "/v1/tenants/"+id+"/suspend", api.PlatformKey(), map[string]any{"reason": "test"}, nil), 409, adminapi.ProblemCodeInvalidState)
+			expect(t, api.Do(t, "POST", "/v1/tenants/"+id+"/reactivate", api.PlatformKey(), map[string]any{"reason": "test"}, nil), 409, adminapi.ProblemCodeInvalidState)
 		}
 		expect(t, api.Do(t, "POST", "/v1/tenants/"+provisioning+"/suspend", api.PlatformKey(), map[string]any{"reason": strings.Repeat("r", 501)}, nil), 400, adminapi.ProblemCodeInvalidRequest)
 	})
@@ -578,8 +578,7 @@ func mustJSON(t *testing.T, v any) string {
 // TestSuspensionBlocksAdministration is T-264.
 func TestSuspensionBlocksAdministration(t *testing.T) {
 	w := newWorld(t, "suspended-admin")
-	plat := w.api.Client(w.platform)
-	if _, err := plat.SuspendTenant(ctx(t), adminapi.SuspendTenantInput{Tenant: w.tenant.ID}); err != nil {
+	if _, err := w.api.SuspendTenant(t, w.platform, w.tenant.ID); err != nil {
 		t.Fatal(err)
 	}
 	before := w.api.SnapshotTenant(t, w.tenant.ID)
@@ -602,7 +601,7 @@ func TestSuspensionBlocksAdministration(t *testing.T) {
 	if after := w.api.SnapshotTenant(t, w.tenant.ID); after != before {
 		t.Error("a row of the suspended tenant changed")
 	}
-	if _, err := plat.ReactivateTenant(ctx(t), adminapi.ReactivateTenantInput{Tenant: w.tenant.ID}); err != nil {
+	if _, err := w.api.ReactivateTenant(t, w.platform, w.tenant.ID); err != nil {
 		t.Fatal(err)
 	}
 	if m := me(t, w.api, w.adminKey); m.Tenant == nil || m.Tenant.State != adminapi.TenantStateActive {

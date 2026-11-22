@@ -59,7 +59,7 @@ func TestPeopleAudit(t *testing.T) {
 			return p.platform(t, "POST", "/v1/users/"+plat.User.ID+"/enable", map[string]any{})
 		}, []string{"user.enable"}, nil, "platform", plat.User.ID},
 		{"resetUserPassword", func() *apitest.Response {
-			r := p.platform(t, "POST", "/v1/users/"+plat.User.ID+"/reset-password", map[string]any{})
+			r := p.platform(t, "POST", "/v1/users/"+plat.User.ID+"/reset-password", map[string]any{"reason": "test"})
 			if r.Status == 200 {
 				secrets = append(secrets, decode[adminapi.PasswordReset](t, r, 200).Password)
 			}
@@ -103,7 +103,7 @@ func TestPeopleAudit(t *testing.T) {
 			return p.tenantKey(t, "POST", p.membersPath("/"+member.Member.UserID+"/enable"), map[string]any{})
 		}, nil, []string{"user.enable"}, "service_account", member.Member.UserID},
 		{"resetMemberPassword", func() *apitest.Response {
-			r := p.tenantKey(t, "POST", p.membersPath("/"+member.Member.UserID+"/reset-password"), map[string]any{})
+			r := p.tenantKey(t, "POST", p.membersPath("/"+member.Member.UserID+"/reset-password"), map[string]any{"reason": "test"})
 			if r.Status == 200 {
 				secrets = append(secrets, decode[adminapi.PasswordReset](t, r, 200).Password)
 			}

@@ -148,6 +148,19 @@ func TestRejectsOutsideTheSubset(t *testing.T) {
       responses:
         "201": {$ref: '#/components/responses/Thing'}
 `
+	// Sprint 4.3: x-pandokos-reason: required. A POST that closes a thing, with the reason schema given.
+	withReason := func(marker, body, schema string) string {
+		op := "    post:\n      operationId: closeThing\n      x-pandokos-permission: thing:write\n" + marker + body +
+			"      responses:\n        \"200\": {$ref: '#/components/responses/Thing'}\n"
+		doc := replaceOnce(t, minimal, "        \"404\": {$ref: '#/components/responses/Err'}\ncomponents:", "        \"404\": {$ref: '#/components/responses/Err'}\n"+op+"components:")
+		return replaceOnce(t, doc, "    ProblemCode:\n", schema+"    ProblemCode:\n")
+	}
+	const required = "      x-pandokos-reason: required\n"
+	closingBody := "      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: {$ref: '#/components/schemas/Closing'}\n"
+	closing := func(props, req string) string {
+		return "    Closing:\n      type: object\n      additionalProperties: false\n" + req + "      properties:\n" + props
+	}
+	goodReason := closing("        reason: {type: string, minLength: 1, maxLength: 500}\n", "      required: [reason]\n")
 	cases := []struct {
 		name   string
 		doc    string
@@ -182,6 +195,20 @@ func TestRejectsOutsideTheSubset(t *testing.T) {
 			[]string{"operationId"}},
 		{"openapi 3.0.3", replaceOnce(t, minimal, "openapi: 3.1.0", "openapi: 3.0.3"),
 			[]string{"3.1.0"}},
+		{"x-pandokos-reason with another value", withReason("      x-pandokos-reason: optional\n", closingBody, goodReason),
+			[]string{"x-pandokos-reason", "required"}},
+		{"x-pandokos-reason on an operation without a body", withReason(required, "", goodReason),
+			[]string{"x-pandokos-reason", "body"}},
+		{"x-pandokos-reason on an optional body", withReason(required, strings.Replace(closingBody, "required: true", "required: false", 1), goodReason),
+			[]string{"x-pandokos-reason", "body"}},
+		{"x-pandokos-reason with a reason that is not required", withReason(required, closingBody, closing("        reason: {type: string}\n", "")),
+			[]string{"x-pandokos-reason", "reason"}},
+		{"x-pandokos-reason with a body that has no reason", withReason(required, closingBody, closing("        note: {type: string}\n", "      required: [note]\n")),
+			[]string{"x-pandokos-reason", "reason"}},
+		{"x-pandokos-reason with a reason that is not a string", withReason(required, closingBody, closing("        reason: {type: integer}\n", "      required: [reason]\n")),
+			[]string{"x-pandokos-reason", "string"}},
+		{"x-pandokos-reason on a GET", replaceOnce(t, minimal, "      operationId: listThings\n", "      operationId: listThings\n      x-pandokos-reason: required\n"),
+			[]string{"x-pandokos-reason"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -195,6 +222,22 @@ func TestRejectsOutsideTheSubset(t *testing.T) {
 				}
 			}
 		})
+	}
+
+	// The construct, accepted, generates the flag and the check that the reason is not empty once
+	// its white space is trimmed (T-883).
+	out, err := generate(writeSpec(t, withReason(required, closingBody, goodReason)))
+	if err != nil {
+		t.Fatalf("x-pandokos-reason on a POST with a required reason: %v", err)
+	}
+	text := string(out)
+	for _, want := range []string{"ReasonRequired: true", "requireReason(in.Body.Reason)"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the generated code lacks %q", want)
+		}
+	}
+	if plain, err := generate(writeSpec(t, withReason("", closingBody, goodReason))); err != nil || strings.Contains(string(plain), "ReasonRequired: true") || strings.Contains(string(plain), "requireReason(in.Body.Reason)") {
+		t.Errorf("an operation without the construct: %v (it must not set the flag nor generate the check)", err)
 	}
 }
 

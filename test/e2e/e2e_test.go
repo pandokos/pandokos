@@ -1226,12 +1226,12 @@ func TestRevocationAndSuspensionEndToEnd(t *testing.T) {
 			}
 			p.mustCLI(t, admin, "key", "revoke", "--tenant", id, keyID1)
 			testutil.Eventually(t, c.deadline+500*time.Millisecond, "the revoked key to be refused", func() bool { s, _ := call(key1); return s == 401 })
-			p.mustCLI(t, platform, "tenant", "suspend", id)
+			p.mustCLI(t, platform, "tenant", "suspend", "--reason", "test", id)
 			testutil.Eventually(t, c.deadline+500*time.Millisecond, "the suspended tenant to be refused", func() bool {
 				s, text := call(key2)
 				return s == 403 && strings.Contains(text, "tenant_suspended")
 			})
-			p.mustCLI(t, platform, "tenant", "reactivate", id)
+			p.mustCLI(t, platform, "tenant", "reactivate", "--reason", "test", id)
 			testutil.Eventually(t, c.deadline+500*time.Millisecond, "the reactivated tenant to work", func() bool { s, _ := call(key2); return s == 200 })
 			if c.warns {
 				testutil.Eventually(t, 20*time.Second, "the warning that notifications do not arrive", func() bool {

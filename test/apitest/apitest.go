@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -55,6 +56,7 @@ type API struct {
 	platformKey string
 	mu          sync.Mutex
 	secrets     []string
+	owners      map[string]string // tenant ID -> key of its first administrator (the owner), made by Tenant
 	super       *pgx.Conn
 	root        testing.TB
 }
@@ -99,6 +101,9 @@ func NewOn(tb testing.TB, d *dbtest.Database, mutate ...func(*admin.Options)) *A
 		tb.Fatal(err)
 	}
 	o.Limits.Zones = zones
+	// The defaults of the installation (sprint 4.3): support actions on, one hour by default; a test
+	// of the switch changes them in its mutate function.
+	o.Support.Enabled, o.Support.MaxDuration = true, time.Hour
 	for _, m := range mutate {
 		m(&o)
 	}
@@ -113,6 +118,10 @@ func NewOn(tb testing.TB, d *dbtest.Database, mutate ...func(*admin.Options)) *A
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	res, err := admin.Bootstrap(ctx, a.Admin, admin.BootstrapOptions{TTL: time.Hour, Description: "apitest"})
+	if errors.Is(err, admin.ErrUsableKeyExists) {
+		// A second API on a database that has its bootstrap key (a test of the switch of support actions): it has no key of its own.
+		return a
+	}
 	if err != nil {
 		tb.Fatalf("bootstrap: %v", err)
 	}
@@ -176,6 +185,12 @@ func (a *API) Tenant(tb testing.TB, name string) (t adminapi.Tenant, adminKey st
 		tb.Fatalf("create tenant %s: %v", name, err)
 	}
 	a.track(out.AdminKey.Secret)
+	a.mu.Lock()
+	if a.owners == nil {
+		a.owners = map[string]string{}
+	}
+	a.owners[out.Tenant.ID] = out.AdminKey.Secret
+	a.mu.Unlock()
 	return out.Tenant, out.AdminKey.Secret
 }
 

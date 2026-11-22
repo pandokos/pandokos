@@ -459,13 +459,17 @@ func TestMembers(t *testing.T) {
 		}
 		// Operations on the account act on members that the tenant manages only.
 		for _, path := range []string{"/disable", "/enable", "/unlock", "/reset-password", "/revoke-sessions"} {
-			if c := code(t, q.tenantKey(t, "POST", q.membersPath("/"+sh.ID+path), map[string]any{}), 409); c != "invalid_state" {
+			body := map[string]any{}
+			if path == "/reset-password" {
+				body = map[string]any{"reason": "test"} // required since sprint 4.3
+			}
+			if c := code(t, q.tenantKey(t, "POST", q.membersPath("/"+sh.ID+path), body), 409); c != "invalid_state" {
 				t.Errorf("%s on a platform-managed member: %s", path, c)
 			}
-			if r := q.tenantKey(t, "POST", q.membersPath("/"+mine.ID+path), map[string]any{}); r.Status != 200 {
+			if r := q.tenantKey(t, "POST", q.membersPath("/"+mine.ID+path), body); r.Status != 200 {
 				t.Errorf("%s on a member the tenant manages: %d %s", path, r.Status, r.Body)
 			}
-			if c := code(t, q.tenantKey(t, "POST", q.membersPath("/"+apitest.NoUser+path), map[string]any{}), 404); c != "not_found" {
+			if c := code(t, q.tenantKey(t, "POST", q.membersPath("/"+apitest.NoUser+path), body), 404); c != "not_found" {
 				t.Errorf("%s on an unknown user: %s", path, c)
 			}
 		}

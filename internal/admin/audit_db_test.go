@@ -137,7 +137,7 @@ func newFixtures(t *testing.T, opts ...func(*admin.Options)) *fixt {
 	f := &fixt{w: w, platID: w.api.PlatformKey()[4:21], platName: "apitest"}
 	f.admin = *me(t, w.api, w.adminKey)
 	frozen, _ := w.api.Tenant(t, "frozen")
-	if _, err := w.api.Client(w.platform).SuspendTenant(ctx(t), adminapi.SuspendTenantInput{Tenant: frozen.ID}); err != nil {
+	if _, err := w.api.SuspendTenant(t, w.platform, frozen.ID); err != nil {
 		t.Fatal(err)
 	}
 	f.frozen = frozen
@@ -423,7 +423,7 @@ func (f *fixt) steps(t *testing.T) []step {
 					// The actor of both rows in the tenant's log is the platform principal.
 					func() auditRow {
 						row := f.platActor(auditRow{Action: "service_account.create", ResourceType: "service_account", ResourceID: newTenant.AdminServiceAccount.ID, RequestID: rid(r),
-							Detail: map[string]any{"name": "boss", "roles": []any{"tenant-admin"}}})
+							Detail: map[string]any{"name": "boss", "roles": []any{"owner"}}})
 						row.Log, row.TenantID = "tenant", nt
 						return row
 					}(),
@@ -459,7 +459,7 @@ func (f *fixt) steps(t *testing.T) []step {
 			}},
 		{"reactivateTenant",
 			func() *apitest.Response {
-				return w.api.Do(t, "POST", "/v1/tenants/"+tid+"/reactivate", w.platform, nil, nil)
+				return w.api.Do(t, "POST", "/v1/tenants/"+tid+"/reactivate", w.platform, map[string]any{"reason": "test"}, nil)
 			},
 			func(r *apitest.Response) []auditRow {
 				return []auditRow{f.platActor(auditRow{Action: "tenant.reactivate", ResourceType: "tenant", ResourceID: tid, RequestID: rid(r),
@@ -574,10 +574,10 @@ func TestEveryChangeIsAudited(t *testing.T) {
 		do   func() *apitest.Response
 	}{
 		{"suspend", func() *apitest.Response {
-			return api.Do(t, "POST", "/v1/tenants/"+f.frozen.ID+"/suspend", api.PlatformKey(), nil, nil)
+			return api.Do(t, "POST", "/v1/tenants/"+f.frozen.ID+"/suspend", api.PlatformKey(), map[string]any{"reason": "test"}, nil)
 		}},
 		{"reactivate an active tenant", func() *apitest.Response {
-			return api.Do(t, "POST", "/v1/tenants/"+f.w.tenant.ID+"/reactivate", api.PlatformKey(), nil, nil)
+			return api.Do(t, "POST", "/v1/tenants/"+f.w.tenant.ID+"/reactivate", api.PlatformKey(), map[string]any{"reason": "test"}, nil)
 		}},
 		{"enable an enabled account", func() *apitest.Response {
 			return api.Do(t, "POST", "/v1/tenants/"+f.w.tenant.ID+"/service-accounts/"+f.w.sa.ID+"/enable", f.w.adminKey, nil, nil)
@@ -701,10 +701,10 @@ func TestAuditIsAtomic(t *testing.T) {
 			return api.Do(t, "PATCH", "/v1/tenants/"+tid, api.PlatformKey(), map[string]any{"name": "atomic-renamed"}, nil)
 		},
 		"suspendTenant": func() *apitest.Response {
-			return api.Do(t, "POST", "/v1/tenants/"+tid+"/suspend", api.PlatformKey(), nil, nil)
+			return api.Do(t, "POST", "/v1/tenants/"+tid+"/suspend", api.PlatformKey(), map[string]any{"reason": "test"}, nil)
 		},
 		"reactivateTenant": func() *apitest.Response {
-			return api.Do(t, "POST", "/v1/tenants/"+f.frozen.ID+"/reactivate", api.PlatformKey(), nil, nil)
+			return api.Do(t, "POST", "/v1/tenants/"+f.frozen.ID+"/reactivate", api.PlatformKey(), map[string]any{"reason": "test"}, nil)
 		},
 		"setTenantTimeZone": func() *apitest.Response {
 			return api.Do(t, "PUT", "/v1/tenants/"+tid+"/time-zone", f.w.adminKey, map[string]any{"time_zone": "Asia/Tokyo"}, nil)

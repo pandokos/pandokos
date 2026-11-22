@@ -310,7 +310,7 @@ func TestLimitPermissions(t *testing.T) {
 		}
 	}
 	// A suspended tenant cannot be administered.
-	if _, err := w.api.Client(w.plat).SuspendTenant(ctx(t), adminapi.SuspendTenantInput{Tenant: w.b.ID}); err != nil {
+	if _, err := w.api.SuspendTenant(t, w.plat, w.b.ID); err != nil {
 		t.Fatal(err)
 	}
 	expect(t, w.do(t, w.kb, "GET", "/v1/tenants/"+w.b.ID+"/limits", nil), 403, adminapi.ProblemCodeTenantSuspended)

@@ -163,7 +163,7 @@ func TestCapabilityAgreesWithGateway(t *testing.T) {
 	t.Run("a suspended tenant is refused by both", func(t *testing.T) {
 		e := newState(t, true, "all")
 		credential(t, e)
-		p.mustCLI(t, boot, "tenant", "suspend", e.tenant)
+		p.mustCLI(t, boot, "tenant", "suspend", "--reason", "test", e.tenant)
 		testutil.Eventually(t, 8*time.Second, "the gateway to refuse a suspended tenant", func() bool {
 			ok, status := gatewayPasses(e, e.model)
 			return !ok && status == http.StatusForbidden
