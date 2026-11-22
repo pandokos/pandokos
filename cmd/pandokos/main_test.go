@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pandokos/pandokos/internal/cli"
 	"github.com/pandokos/pandokos/test/fixtures"
 	"github.com/pandokos/pandokos/test/testutil"
 )
@@ -434,4 +435,18 @@ func TestImportPricesUsage(t *testing.T) {
 			t.Errorf("code %d, stdout %q", code, out)
 		}
 	})
+}
+
+// Every command of the administration client reaches it, and the usage text names it: a command
+// implemented in internal/cli but not routed here answers "unknown command".
+func TestEveryClientCommandIsRouted(t *testing.T) {
+	for _, group := range cli.Groups() {
+		_, _, errs := runCmd(t, nil, group)
+		if strings.Contains(errs, "unknown command") {
+			t.Errorf("%s is not routed to the client: %s", group, errs)
+		}
+		if !regexp.MustCompile(`(?m)^  ` + regexp.QuoteMeta(group) + `( |$)`).MatchString(usage) {
+			t.Errorf("the usage text does not name %s", group)
+		}
+	}
 }

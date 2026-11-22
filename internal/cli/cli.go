@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -443,4 +444,19 @@ func (a *app) printSecretCreated(what string, text func() error, full any, secre
 		fmt.Fprintf(a.stdout, "%s: %s\n", what, secretText)
 	}
 	return nil
+}
+
+// Groups returns the first word of every command, sorted and once each: the words the binary must
+// hand to Run.
+func Groups() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, c := range commands {
+		if w := c.words[0]; !seen[w] {
+			seen[w] = true
+			out = append(out, w)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
