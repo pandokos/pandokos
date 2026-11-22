@@ -54,6 +54,21 @@ type Config struct {
 
 	Idempotency Idempotency `yaml:"idempotency"`
 	Support     Support     `yaml:"support"`
+	Reports     Reports     `yaml:"reports"`
+	Retention   Retention   `yaml:"retention"`
+}
+
+// Reports configures the usage rollup that the worker keeps (ADR 0064). Only serve reads and
+// validates these settings.
+type Reports struct {
+	RollupInterval Duration `yaml:"rollup_interval"`
+}
+
+// Retention configures how long usage and audit rows are kept, in months; 0 keeps everything
+// (ADR 0064, ADR 0065). Only serve reads and validates these settings.
+type Retention struct {
+	UsageMonths int `yaml:"usage_months"`
+	AuditMonths int `yaml:"audit_months"`
 }
 
 // Tokens configures the validation of tokens of trusted issuers on the inference listener. Only
@@ -407,6 +422,7 @@ func Defaults() *Config {
 		},
 		Auth:        authDefaults(),
 		Idempotency: Idempotency{Retention: Duration(24 * time.Hour)},
+		Reports:     Reports{RollupInterval: Duration(time.Minute)},
 		Support:     Support{Enabled: true, MaxDuration: Duration(time.Hour)},
 		Vault:       Vault{KEK: VaultKEK{Provider: "local"}},
 		Database: Database{

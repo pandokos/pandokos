@@ -14,6 +14,94 @@ import (
 
 const aggregateUsageForLimits = `-- name: AggregateUsageForLimits :many
 
+WITH p AS (
+    SELECT $1::timestamptz AS f, $2::timestamptz AS l, $3::timestamptz AS t,
+           COALESCE((SELECT s.watermark FROM pandokos.usage_rollup_state s), '-infinity'::timestamptz) AS wm
+), w AS (
+    SELECT p.f, p.l, p.t, p.wm, CASE WHEN b.hi > b.lo THEN b.lo ELSE p.f END AS lo, CASE WHEN b.hi > b.lo THEN b.hi ELSE p.f END AS hi
+      FROM p, LATERAL (
+        SELECT CASE WHEN date_bin('1 hour', p.f, '2000-01-01 00:00:00+00') = p.f THEN p.f
+                    ELSE date_bin('1 hour', p.f, '2000-01-01 00:00:00+00') + interval '1 hour' END AS lo,
+               date_bin('1 hour', LEAST(p.l, p.t), '2000-01-01 00:00:00+00') AS hi) b
+), parts AS (
+    SELECT 0::bigint AS minute, r.principal_id, r.key_id, r.provider, r.model_id, r.currency, r.requests,
+           (r.input_tokens + r.estimated_input_tokens + r.output_tokens + r.estimated_output_tokens)::numeric AS tokens,
+           r.cost
+      FROM pandokos.usage_rollup r, w
+     WHERE r.credential AND r.hour >= w.lo AND r.hour < w.hi
+    UNION ALL
+    SELECT CASE WHEN u.started_at >= w.l THEN floor(extract(epoch FROM u.started_at) / 60)::bigint ELSE 0 END,
+           u.principal_id, u.key_id, u.provider, COALESCE(u.model_id::text, ''), COALESCE(u.currency, ''), 1,
+           (COALESCE(u.input_tokens, u.estimated_input_tokens, 0) + COALESCE(u.output_tokens, u.estimated_output_tokens, 0))::numeric,
+           COALESCE(u.cost, 0)
+      FROM pandokos.usage_record u, w
+     WHERE u.credential_id IS NOT NULL
+       AND ((u.started_at >= w.f AND u.started_at < w.lo)
+            OR (u.started_at >= w.hi AND u.started_at < w.t)
+            OR (u.recorded_at >= w.wm AND u.started_at >= w.lo AND u.started_at < w.hi))
+)
+SELECT p.minute::bigint AS minute, p.principal_id, p.key_id, COALESCE(pr.id::text, '')::text AS provider_id, p.model_id,
+       p.currency, sum(p.requests)::bigint AS requests, sum(p.tokens)::numeric AS tokens, sum(p.cost)::numeric AS cost
+  FROM parts p
+  LEFT JOIN pandokos.provider pr ON pr.name = p.provider
+ GROUP BY p.minute, p.principal_id, p.key_id, pr.id, p.model_id, p.currency
+`
+
+type AggregateUsageForLimitsParams struct {
+	FromTime time.Time
+	LiveFrom time.Time
+	ToTime   time.Time
+}
+
+type AggregateUsageForLimitsRow struct {
+	Minute      int64
+	PrincipalID string
+	KeyID       string
+	ProviderID  string
+	ModelID     string
+	Currency    string
+	Requests    int64
+	Tokens      string
+	Cost        string
+}
+
+// Worker pool (counters and capability check), session of the tenant: the exact reader (ADR 0064).
+// What the ledger holds for the requests that started in [from_time, to_time), by the dimensions a
+// rule can name, with the result of AggregateUsageForLimitsFromLedger below: whole hours of
+// [from_time, min(live_from, to_time)) from the rollup and the records of those hours recorded since
+// the watermark; the rest from the ledger.
+func (q *Queries) AggregateUsageForLimits(ctx context.Context, arg AggregateUsageForLimitsParams) ([]AggregateUsageForLimitsRow, error) {
+	rows, err := q.db.Query(ctx, aggregateUsageForLimits, arg.FromTime, arg.LiveFrom, arg.ToTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AggregateUsageForLimitsRow{}
+	for rows.Next() {
+		var i AggregateUsageForLimitsRow
+		if err := rows.Scan(
+			&i.Minute,
+			&i.PrincipalID,
+			&i.KeyID,
+			&i.ProviderID,
+			&i.ModelID,
+			&i.Currency,
+			&i.Requests,
+			&i.Tokens,
+			&i.Cost,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const aggregateUsageForLimitsFromLedger = `-- name: AggregateUsageForLimitsFromLedger :many
+
 SELECT (CASE WHEN u.started_at >= $1::timestamptz
              THEN floor(extract(epoch FROM u.started_at) / 60)::bigint ELSE 0 END)::bigint AS minute,
        u.principal_id, u.key_id, COALESCE(p.id::text, '')::text AS provider_id,
@@ -31,13 +119,13 @@ SELECT (CASE WHEN u.started_at >= $1::timestamptz
 HAVING count(*) FILTER (WHERE u.credential_id IS NOT NULL) > 0
 `
 
-type AggregateUsageForLimitsParams struct {
+type AggregateUsageForLimitsFromLedgerParams struct {
 	LiveFrom time.Time
 	FromTime time.Time
 	ToTime   time.Time
 }
 
-type AggregateUsageForLimitsRow struct {
+type AggregateUsageForLimitsFromLedgerRow struct {
 	Minute      int64
 	PrincipalID string
 	KeyID       string
@@ -56,15 +144,15 @@ type AggregateUsageForLimitsRow struct {
 // Rows that started before live_from are summed with minute 0; later rows by the minute they
 // started in (Unix time / 60). A request counts when a credential was opened for it; its tokens
 // are those the cost was computed on; its cost counts when it is known.
-func (q *Queries) AggregateUsageForLimits(ctx context.Context, arg AggregateUsageForLimitsParams) ([]AggregateUsageForLimitsRow, error) {
-	rows, err := q.db.Query(ctx, aggregateUsageForLimits, arg.LiveFrom, arg.FromTime, arg.ToTime)
+func (q *Queries) AggregateUsageForLimitsFromLedger(ctx context.Context, arg AggregateUsageForLimitsFromLedgerParams) ([]AggregateUsageForLimitsFromLedgerRow, error) {
+	rows, err := q.db.Query(ctx, aggregateUsageForLimitsFromLedger, arg.LiveFrom, arg.FromTime, arg.ToTime)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []AggregateUsageForLimitsRow{}
+	items := []AggregateUsageForLimitsFromLedgerRow{}
 	for rows.Next() {
-		var i AggregateUsageForLimitsRow
+		var i AggregateUsageForLimitsFromLedgerRow
 		if err := rows.Scan(
 			&i.Minute,
 			&i.PrincipalID,

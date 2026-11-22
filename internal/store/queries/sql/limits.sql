@@ -79,6 +79,45 @@ ON CONFLICT DO NOTHING;
 SELECT pandokos.record_unlimited_traffic(sqlc.arg(day)::date, sqlc.arg(time_zone)::text, sqlc.arg(provider)::text,
                                          sqlc.arg(model)::text, sqlc.arg(request_id)::text)::boolean AS recorded;
 
+-- Worker pool (counters and capability check), session of the tenant: the exact reader (ADR 0064).
+-- What the ledger holds for the requests that started in [from_time, to_time), by the dimensions a
+-- rule can name, with the result of AggregateUsageForLimitsFromLedger below: whole hours of
+-- [from_time, min(live_from, to_time)) from the rollup and the records of those hours recorded since
+-- the watermark; the rest from the ledger.
+
+-- name: AggregateUsageForLimits :many
+WITH p AS (
+    SELECT sqlc.arg(from_time)::timestamptz AS f, sqlc.arg(live_from)::timestamptz AS l, sqlc.arg(to_time)::timestamptz AS t,
+           COALESCE((SELECT s.watermark FROM pandokos.usage_rollup_state s), '-infinity'::timestamptz) AS wm
+), w AS (
+    SELECT p.*, CASE WHEN b.hi > b.lo THEN b.lo ELSE p.f END AS lo, CASE WHEN b.hi > b.lo THEN b.hi ELSE p.f END AS hi
+      FROM p, LATERAL (
+        SELECT CASE WHEN date_bin('1 hour', p.f, '2000-01-01 00:00:00+00') = p.f THEN p.f
+                    ELSE date_bin('1 hour', p.f, '2000-01-01 00:00:00+00') + interval '1 hour' END AS lo,
+               date_bin('1 hour', LEAST(p.l, p.t), '2000-01-01 00:00:00+00') AS hi) b
+), parts AS (
+    SELECT 0::bigint AS minute, r.principal_id, r.key_id, r.provider, r.model_id, r.currency, r.requests,
+           (r.input_tokens + r.estimated_input_tokens + r.output_tokens + r.estimated_output_tokens)::numeric AS tokens,
+           r.cost
+      FROM pandokos.usage_rollup r, w
+     WHERE r.credential AND r.hour >= w.lo AND r.hour < w.hi
+    UNION ALL
+    SELECT CASE WHEN u.started_at >= w.l THEN floor(extract(epoch FROM u.started_at) / 60)::bigint ELSE 0 END,
+           u.principal_id, u.key_id, u.provider, COALESCE(u.model_id::text, ''), COALESCE(u.currency, ''), 1,
+           (COALESCE(u.input_tokens, u.estimated_input_tokens, 0) + COALESCE(u.output_tokens, u.estimated_output_tokens, 0))::numeric,
+           COALESCE(u.cost, 0)
+      FROM pandokos.usage_record u, w
+     WHERE u.credential_id IS NOT NULL
+       AND ((u.started_at >= w.f AND u.started_at < w.lo)
+            OR (u.started_at >= w.hi AND u.started_at < w.t)
+            OR (u.recorded_at >= w.wm AND u.started_at >= w.lo AND u.started_at < w.hi))
+)
+SELECT p.minute::bigint AS minute, p.principal_id, p.key_id, COALESCE(pr.id::text, '')::text AS provider_id, p.model_id,
+       p.currency, sum(p.requests)::bigint AS requests, sum(p.tokens)::numeric AS tokens, sum(p.cost)::numeric AS cost
+  FROM parts p
+  LEFT JOIN pandokos.provider pr ON pr.name = p.provider
+ GROUP BY p.minute, p.principal_id, p.key_id, pr.id, p.model_id, p.currency;
+
 -- Worker pool (counters and capability check), session of the tenant. What the ledger holds for
 -- the requests that started in [from_time, to_time), by the dimensions a rule can name: the
 -- service account, the key, the provider and the model, the last two by identifier. The provider
@@ -87,7 +126,7 @@ SELECT pandokos.record_unlimited_traffic(sqlc.arg(day)::date, sqlc.arg(time_zone
 -- started in (Unix time / 60). A request counts when a credential was opened for it; its tokens
 -- are those the cost was computed on; its cost counts when it is known.
 
--- name: AggregateUsageForLimits :many
+-- name: AggregateUsageForLimitsFromLedger :many
 SELECT (CASE WHEN u.started_at >= sqlc.arg(live_from)::timestamptz
              THEN floor(extract(epoch FROM u.started_at) / 60)::bigint ELSE 0 END)::bigint AS minute,
        u.principal_id, u.key_id, COALESCE(p.id::text, '')::text AS provider_id,

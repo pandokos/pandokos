@@ -37,6 +37,8 @@ tags:
   - name: model-access
   - name: platform-keys
   - name: usage
+  - name: audit
+    description: The audit logs of a tenant and of the platform, their chains and exports
   - name: token-issuers
   - name: subject-mappings
   - name: platform-issuers
@@ -1594,6 +1596,177 @@ paths:
         "404": {$ref: '#/components/responses/NotFound'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/usage-report:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: getUsageReport
+      tags: [usage]
+      summary: Report the tenant's usage by period, provider, model, caller and key
+      description: >-
+        Sums over the records whose started_at is in [from, to), by the tenant's day or month or over the whole
+        window, and by the dimensions of group_by (model when absent). Rows are always split by currency and price
+        source: costs are never converted, nor added across currencies or price sources. Requests refused for a
+        limit are counted apart. from and to are dates (the start of that day in the tenant's time zone) or RFC 3339
+        instants; from defaults to the start of the current month of the tenant and to to now. The window is at most
+        400 days and the report at most 10000 rows.
+      x-pandokos-permission: usage:read
+      parameters:
+        - {name: from, in: query, description: 'Start: YYYY-MM-DD or an RFC 3339 instant.', schema: {type: string, minLength: 10, maxLength: 64}}
+        - {name: to, in: query, description: 'End (excluded): YYYY-MM-DD or an RFC 3339 instant.', schema: {type: string, minLength: 10, maxLength: 64}}
+        - {name: period, in: query, description: The periods of the report., schema: {$ref: '#/components/schemas/ReportPeriod'}}
+        - {name: group_by, in: query, description: 'Comma-separated subset of provider, model, caller, key.', schema: {type: string, pattern: '^(provider|model|caller|key)(,(provider|model|caller|key)){0,3}$'}}
+        - {name: provider, in: query, description: Only records of this provider., schema: {$ref: '#/components/schemas/ProviderName'}}
+        - {name: model, in: query, description: Only records of this model name., schema: {$ref: '#/components/schemas/ModelName'}}
+      responses:
+        "200": {$ref: '#/components/responses/UsageReport'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/usage-records/export:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: exportUsageRecords
+      tags: [usage]
+      summary: Export the tenant's usage records, oldest first, as NDJSON or CSV
+      description: >-
+        Records whose started_at is in [from, to), as listUsageRecords selects them (at most 31 days), oldest first,
+        streamed. A failure after the first byte ends the transfer without its terminator: a client that does not
+        receive the whole body has an incomplete export. In CSV a text cell that starts with =, +, -, @, a tab or a
+        carriage return is prefixed with a single quote.
+      x-pandokos-permission: usage:read
+      parameters:
+        - {name: from, in: query, description: 'Start of the window, RFC 3339.', schema: {type: string, maxLength: 64}}
+        - {name: to, in: query, description: 'End of the window (excluded), RFC 3339.', schema: {type: string, maxLength: 64}}
+        - {name: provider, in: query, description: Only records of this provider., schema: {$ref: '#/components/schemas/ProviderName'}}
+        - {name: format, in: query, description: The format of the body., schema: {$ref: '#/components/schemas/ExportFormat'}}
+      responses:
+        "200": {$ref: '#/components/responses/UsageRecordExport'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/metadata-keys:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: getMetadataKeys
+      tags: [usage]
+      summary: Read the caller metadata keys the tenant accepts
+      x-pandokos-permission: usage:read
+      responses:
+        "200": {$ref: '#/components/responses/MetadataKeys'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    put:
+      operationId: setMetadataKeys
+      tags: [usage]
+      summary: Accept only the caller metadata keys named
+      description: >-
+        From then on a metadata header whose key is not listed is dropped and counted in X-Pandokos-Metadata-Dropped.
+        An empty list accepts no key.
+      x-pandokos-permission: tenant_setting:write
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/MetadataKeysSet'}}}}
+      responses:
+        "200": {$ref: '#/components/responses/MetadataKeys'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    delete:
+      operationId: clearMetadataKeys
+      tags: [usage]
+      summary: Accept every caller metadata key again
+      x-pandokos-permission: tenant_setting:write
+      responses:
+        "200": {$ref: '#/components/responses/MetadataKeys'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/audit-events:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: listAuditEvents
+      tags: [audit]
+      summary: List the events of the tenant's audit log, newest first
+      description: >-
+        A cursor is valid only with the same filters. The detail of an event that records a price or the active
+        currency is withheld from a caller without price_list:read; its digest is given instead.
+      x-pandokos-permission: audit:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/AuditFrom'}
+        - {$ref: '#/components/parameters/AuditTo'}
+        - {$ref: '#/components/parameters/AuditAction'}
+        - {$ref: '#/components/parameters/AuditResourceType'}
+        - {$ref: '#/components/parameters/AuditResourceID'}
+        - {$ref: '#/components/parameters/AuditActorType'}
+        - {$ref: '#/components/parameters/AuditActorID'}
+        - {$ref: '#/components/parameters/AuditOutcome'}
+        - {$ref: '#/components/parameters/AuditRequestID'}
+        - {name: support_action_id, in: query, description: Only events written under this support action., schema: {$ref: '#/components/schemas/ID'}}
+      responses:
+        "200": {$ref: '#/components/responses/AuditEventList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/audit-events/export:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: exportAuditEvents
+      tags: [audit]
+      summary: Export the tenant's audit chain, oldest first, as NDJSON
+      description: >-
+        The events from from_seq (the anchor of the chain by default) to to_seq (the head read when the export
+        starts, by default), one per line. pandokos audit verify checks such an export.
+      x-pandokos-permission: audit:read
+      parameters:
+        - {$ref: '#/components/parameters/AuditFromSeq'}
+        - {$ref: '#/components/parameters/AuditToSeq'}
+      responses:
+        "200": {$ref: '#/components/responses/AuditEventExport'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/audit-head:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: getAuditHead
+      tags: [audit]
+      summary: Read the head and the anchor of the tenant's audit chain
+      x-pandokos-permission: audit:read
+      responses:
+        "200": {$ref: '#/components/responses/AuditHead'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
   /v1/tenants/{tenant}/token-issuers:
     parameters:
       - {$ref: '#/components/parameters/Tenant'}
@@ -1904,6 +2077,26 @@ paths:
         "404": {$ref: '#/components/responses/NotFound'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/limits/{rule}/usage:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+      - {$ref: '#/components/parameters/LimitRule'}
+    get:
+      operationId: getLimitUsage
+      tags: [limits]
+      summary: Read how much of a daily or monthly limit rule is used in its current period
+      description: >-
+        What the usage ledger holds for the rule in its period at now, in the tenant's time zone, counted as the
+        counters count it. Requests in flight are not included. A rule of a per-minute metric is invalid_state.
+      x-pandokos-permission: usage:read
+      responses:
+        "200": {$ref: '#/components/responses/LimitUsage'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
   /v1/tenants/{tenant}/platform-limits:
     parameters:
       - {$ref: '#/components/parameters/Tenant'}
@@ -2081,6 +2274,59 @@ paths:
         "401": {$ref: '#/components/responses/Unauthenticated'}
         "403": {$ref: '#/components/responses/Forbidden'}
         "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/platform-audit-events:
+    get:
+      operationId: listPlatformAuditEvents
+      tags: [audit]
+      summary: List the events of the platform's audit log, newest first
+      x-pandokos-permission: platform_audit:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {$ref: '#/components/parameters/AuditFrom'}
+        - {$ref: '#/components/parameters/AuditTo'}
+        - {$ref: '#/components/parameters/AuditAction'}
+        - {$ref: '#/components/parameters/AuditResourceType'}
+        - {$ref: '#/components/parameters/AuditResourceID'}
+        - {$ref: '#/components/parameters/AuditActorType'}
+        - {$ref: '#/components/parameters/AuditActorID'}
+        - {$ref: '#/components/parameters/AuditOutcome'}
+        - {$ref: '#/components/parameters/AuditRequestID'}
+      responses:
+        "200": {$ref: '#/components/responses/AuditEventList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/platform-audit-events/export:
+    get:
+      operationId: exportPlatformAuditEvents
+      tags: [audit]
+      summary: Export the platform's audit chain, oldest first, as NDJSON
+      x-pandokos-permission: platform_audit:read
+      parameters:
+        - {$ref: '#/components/parameters/AuditFromSeq'}
+        - {$ref: '#/components/parameters/AuditToSeq'}
+      responses:
+        "200": {$ref: '#/components/responses/AuditEventExport'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/platform-audit-head:
+    get:
+      operationId: getPlatformAuditHead
+      tags: [audit]
+      summary: Read the head and the anchor of the platform's audit chain
+      x-pandokos-permission: platform_audit:read
+      responses:
+        "200": {$ref: '#/components/responses/AuditHead'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
   /v1/platform-issuers:
@@ -3339,6 +3585,17 @@ components:
       in: query
       description: Order of the items. A leading minus means descending.
       schema: {$ref: '#/components/schemas/NamedSort'}
+    AuditFrom: {name: from, in: query, description: 'Only events at or after this RFC 3339 instant.', schema: {type: string, minLength: 1, maxLength: 64}}
+    AuditTo: {name: to, in: query, description: 'Only events before this RFC 3339 instant.', schema: {type: string, minLength: 1, maxLength: 64}}
+    AuditAction: {name: action, in: query, description: 'Only this action, or the actions that start with it when it ends with a dot (member.).', schema: {type: string, pattern: '^[a-z_]+\.([a-z_]+)?$'}}
+    AuditResourceType: {name: resource_type, in: query, description: Only events on this type of resource., schema: {type: string, pattern: '^[a-z_]{1,64}$'}}
+    AuditResourceID: {name: resource_id, in: query, description: Only events on the resource with this ID., schema: {type: string, minLength: 1, maxLength: 128}}
+    AuditActorType: {name: actor_type, in: query, description: Only events of this type of actor., schema: {$ref: '#/components/schemas/AuditActorType'}}
+    AuditActorID: {name: actor_id, in: query, description: Only events of the actor with this ID., schema: {type: string, pattern: '^[A-Za-z0-9_-]{1,64}$'}}
+    AuditOutcome: {name: outcome, in: query, description: Only events with this outcome., schema: {$ref: '#/components/schemas/AuditOutcome'}}
+    AuditRequestID: {name: request_id, in: query, description: Only events of this request., schema: {type: string, pattern: '^[0-9a-f]{32}$'}}
+    AuditFromSeq: {name: from_seq, in: query, description: First sequence number; the anchor of the chain by default., schema: {type: integer, minimum: 1}}
+    AuditToSeq: {name: to_seq, in: query, description: Last sequence number; the head when the export starts by default., schema: {type: integer, minimum: 1}}
   responses:
     Me:
       description: The caller.
@@ -3863,6 +4120,43 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/LimitEventList'}
+    UsageReport:
+      description: The report.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/UsageReport'}
+    UsageRecordExport:
+      description: The records, oldest first, one JSON object per line, or as CSV with a header line.
+      content:
+        application/x-ndjson:
+          schema: {$ref: '#/components/schemas/UsageRecord'}
+        text/csv:
+          schema: {type: string}
+    LimitUsage:
+      description: How much of the rule is used in its current period.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/LimitUsage'}
+    MetadataKeys:
+      description: The metadata keys the tenant accepts.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/MetadataKeys'}
+    AuditEventList:
+      description: One page of audit events.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AuditEventList'}
+    AuditEventExport:
+      description: The events of the chain, oldest first, one JSON object per line.
+      content:
+        application/x-ndjson:
+          schema: {$ref: '#/components/schemas/AuditEvent'}
+    AuditHead:
+      description: The head and the anchor of the chain.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AuditHead'}
   schemas:
     ApiFamily:
       type: string
@@ -5658,3 +5952,132 @@ components:
           type: array
           items: {$ref: '#/components/schemas/LimitEvent'}
         next_cursor: {type: string, description: Absent on the last page.}
+    ReportPeriod: {type: string, enum: [day, month, total], default: month}
+    ExportFormat: {type: string, enum: [ndjson, csv], default: ndjson}
+    AuditActorType: {type: string, enum: [platform, service_account, user, anonymous, host]}
+    AuditOutcome: {type: string, enum: [success, failure]}
+    UsageReport:
+      type: object
+      additionalProperties: false
+      required: [from, to, period, time_zone, group_by, rows]
+      properties:
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        period: {$ref: '#/components/schemas/ReportPeriod'}
+        time_zone: {type: string, description: The time zone in force at to; periods follow the zone in force at each instant.}
+        group_by:
+          type: array
+          items: {type: string}
+        rows:
+          type: array
+          items: {$ref: '#/components/schemas/UsageReportRow'}
+    UsageReportRow:
+      type: object
+      additionalProperties: false
+      required: [period_start, period_end, provider, model, model_id, principal_kind, principal_id, key_id, currency,
+                 price_source, requests, requests_ok, rejected_limit, input_tokens, output_tokens, cache_read_tokens,
+                 cache_write_tokens, reasoning_tokens, estimated_input_tokens, estimated_output_tokens, cost,
+                 cost_unknown]
+      properties:
+        period_start: {type: string, format: date-time}
+        period_end: {type: string, format: date-time}
+        provider: {type: string, description: Empty unless grouped by provider.}
+        model: {type: string, description: Empty unless grouped by model.}
+        model_id: {type: string, description: Empty unless grouped by model, and for records without a model ID.}
+        principal_kind: {type: string, description: Empty unless grouped by caller.}
+        principal_id: {type: string, description: Empty unless grouped by caller.}
+        key_id: {type: string, description: Empty unless grouped by key.}
+        currency: {type: string, description: Empty for records without a cost.}
+        price_source: {type: string, description: 'catalogue, tenant, or empty for records without a price version.'}
+        requests: {type: integer, description: Records of the row, those refused for a limit excepted.}
+        requests_ok: {type: integer}
+        rejected_limit: {type: integer, description: Requests refused for a limit, counted apart.}
+        input_tokens: {type: integer, description: Reported by the provider.}
+        output_tokens: {type: integer, description: Reported by the provider.}
+        cache_read_tokens: {type: integer}
+        cache_write_tokens: {type: integer}
+        reasoning_tokens: {type: integer}
+        estimated_input_tokens: {type: integer, description: Estimated by Pandokos.}
+        estimated_output_tokens: {type: integer, description: Estimated by Pandokos.}
+        cost: {type: [string, "null"], description: 'Decimal amount in currency, the sum of the known costs; null when none is known. Informational under BYOK.'}
+        cost_unknown: {type: integer, description: Records whose cost could not be computed.}
+    LimitUsage:
+      type: object
+      additionalProperties: false
+      required: [rule_id, metric, currency, period_start, period_end, as_of, used, used_amount]
+      properties:
+        rule_id: {$ref: '#/components/schemas/ID'}
+        metric: {type: string}
+        currency: {type: string, description: The currency of a cost rule; empty otherwise.}
+        period_start: {type: string, format: date-time}
+        period_end: {type: string, format: date-time}
+        as_of: {type: string, format: date-time}
+        used: {type: integer, description: Requests or tokens; 0 for a cost rule.}
+        used_amount: {type: string, description: The amount in currency for a cost rule; empty otherwise.}
+    MetadataKey: {type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,31}$'}
+    MetadataKeys:
+      type: object
+      additionalProperties: false
+      required: [restricted, keys]
+      properties:
+        restricted: {type: boolean, description: False when every key with the format is accepted.}
+        keys:
+          type: array
+          items: {type: string}
+        updated_at: {type: string, format: date-time, description: Absent when not restricted.}
+    MetadataKeysSet:
+      type: object
+      additionalProperties: false
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          maxItems: 64
+          items: {$ref: '#/components/schemas/MetadataKey'}
+    RawObject:
+      type: object
+      x-pandokos-raw-json: true
+      description: A JSON object passed through as the database holds it.
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required: [seq, id, occurred_at, actor_type, actor_id, actor_name, key_id, action, resource_type, resource_id,
+                 outcome, request_id, reason, support_action_id, detail, detail_withheld, detail_digest, prev_hash, hash]
+      properties:
+        seq: {type: integer}
+        id: {$ref: '#/components/schemas/ID'}
+        occurred_at: {type: string, format: date-time, description: 'UTC, six fraction digits.'}
+        actor_type: {type: string}
+        actor_id: {type: string}
+        actor_name: {type: string}
+        key_id: {type: string}
+        action: {type: string}
+        resource_type: {type: string}
+        resource_id: {type: string}
+        outcome: {type: string}
+        request_id: {type: string}
+        reason: {type: string}
+        support_action_id: {type: string, description: Empty when the event was not written under a support action; always empty in the platform log.}
+        detail: {$ref: '#/components/schemas/RawObject'}
+        detail_withheld: {type: boolean, description: 'True when detail is withheld from the caller and replaced by an empty object.'}
+        detail_digest: {type: string, description: 'Lower-case hex SHA-256 of the canonical encoding of the detail; set when detail_withheld, empty otherwise.'}
+        prev_hash: {type: string, description: Lower-case hex.}
+        hash: {type: string, description: Lower-case hex.}
+    AuditEventList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/AuditEvent'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    AuditHead:
+      type: object
+      additionalProperties: false
+      required: [seq, hash, anchor_seq, anchor_hash]
+      properties:
+        seq: {type: integer, description: The last sequence number; 0 for an empty chain.}
+        hash: {type: string, description: Lower-case hex of the last row's hash.}
+        anchor_seq: {type: integer, description: The first row kept; 1 until retention removes rows.}
+        anchor_hash: {type: string, description: Lower-case hex of the hash of the row before the anchor; zeros at the start.}

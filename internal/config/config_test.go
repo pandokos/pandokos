@@ -354,6 +354,9 @@ var wantKeys = []string{
 	"idempotency.retention",
 	"support.enabled",
 	"support.max_duration",
+	"reports.rollup_interval",
+	"retention.usage_months",
+	"retention.audit_months",
 }
 
 var wantDefaultText = []string{"info", "0.0.0.0:8080", "10s", "120s", "65536", "", "", "TLS1.2",
@@ -365,7 +368,7 @@ var wantDefaultText = []string{"info", "0.0.0.0:8080", "10s", "120s", "65536", "
 	"50ms", "500", "10000", "10s", "", "http/protobuf", "", "10s", "1", "false", "true", "60s", "false", "",
 	"true", "8192", "60s", "24h", "", "5s", "15m", "10s", "6h",
 	"false", "", "true", "12", "72h", "10", "15m", "15m", "50", "65536", "3", "1", "4", "30m", "12h", "10",
-	"false", "", "", "", "basic", "openid profile email", "RS256 ES256", "Single sign-on", "name", "email", "groups", "", "false", "", "/", "24h", "true", "1h"}
+	"false", "", "", "", "basic", "openid profile email", "RS256 ES256", "Single sign-on", "name", "email", "groups", "", "false", "", "/", "24h", "true", "1h", "1m", "0", "0"}
 
 func leafKeys(t reflect.Type, prefix string, out *[]string) {
 	for i := 0; i < t.NumField(); i++ {

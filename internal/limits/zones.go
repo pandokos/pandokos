@@ -93,6 +93,22 @@ func (c TenantCalendar) Day(t time.Time) string {
 	return t.In(cal.loc).Format("2006-01-02")
 }
 
+// Bounds returns the instants that cut [from, to) into periods of kind k, each in the calendar in
+// force at its own start: from, every period start strictly inside, and to. For PeriodTotal they
+// are from and to. Sprint 6.2 part C4 builds it; until then it returns nil.
+func (c TenantCalendar) Bounds(k PeriodKind, from, to time.Time) []time.Time {
+	_, _, _ = k, from, to
+	return nil
+}
+
+// CivilStart returns midnight of the date y-m-d in the calendar in force then, as an instant;
+// the zero Time when there is no calendar. Sprint 6.2 part C4 builds it; until then it returns the
+// zero Time.
+func (c TenantCalendar) CivilStart(y int, m time.Month, d int) time.Time {
+	_, _, _ = y, m, d
+	return time.Time{}
+}
+
 // NextChange returns the instant at which a change of zone made at now takes effect: the end of the
 // month of the zone in force that contains now. It is the one place that computes the instant.
 func NextChange(inForce *Calendar, now time.Time) time.Time {

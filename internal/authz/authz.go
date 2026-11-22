@@ -79,6 +79,8 @@ const (
 	PlatformLimitRead   = "platform_limit:read"
 	PlatformLimitWrite  = "platform_limit:write"
 	PlatformLimitDelete = "platform_limit:delete"
+	AuditRead           = "audit:read"
+	PlatformAuditRead   = "platform_audit:read"
 
 	PriceListRead   = "price_list:read"
 	PriceListWrite  = "price_list:write"
@@ -156,9 +158,11 @@ var catalogue = []Permission{
 	{RoleDelete, ScopeTenant, "Deleting a custom role that nobody holds", false, true},
 	{SupportActionRead, ScopeTenant, "Reading the support actions that the platform opened in the tenant", false, true},
 	{SupportActionEnd, ScopeTenant, "Ending a support action of the platform in the tenant", false, false},
-	{TenantSettingWrite, ScopeTenant, "Setting the tenant's time zone and its active currency", false, false},
+	{TenantSettingWrite, ScopeTenant, "Setting the tenant's time zone, its active currency and the metadata keys it accepts", false, false},
 	{TenantSupportOpen, ScopePlatform, "Opening a support action in a tenant, with a reason, and closing support actions", true, false},
 	{TenantSupportRead, ScopePlatform, "Reading and listing the support actions of a tenant", true, false},
+	{AuditRead, ScopeTenant, "Reading the tenant's audit log, the head of its chain and its export", false, false},
+	{PlatformAuditRead, ScopePlatform, "Reading the platform's audit log, the head of its chain and its export", false, false},
 }
 
 // Catalogue returns the permissions, in a fixed order.

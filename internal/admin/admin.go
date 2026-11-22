@@ -238,6 +238,13 @@ func New(o Options) (*Handler, error) {
 		start := time.Now()
 		defer func() {
 			if p := recover(); p != nil {
+				if err, ok := p.(error); ok && errors.Is(err, http.ErrAbortHandler) {
+					// A streamed answer that failed after its first byte: the server closes
+					// the connection without the chunk terminator.
+					s.finishIdempotent(st, rec.status)
+					s.logRequest(r, st, rec.status, time.Since(start))
+					panic(p)
+				}
 				s.log.Error("panic recovered", "request_id", st.id, "panic_type", fmt.Sprintf("%T", p), "stack", string(debug.Stack()))
 				if rec.status == 0 {
 					st.errCode = adminapi.ProblemCodeInternal

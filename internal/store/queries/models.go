@@ -20,6 +20,14 @@ type PandokosAppUser struct {
 	UpdatedAt      time.Time
 }
 
+type PandokosAuditChain struct {
+	TenantID   string
+	Seq        int64
+	Hash       []byte
+	AnchorSeq  int64
+	AnchorHash []byte
+}
+
 type PandokosAuditEvent struct {
 	TenantID        string
 	ID              string
@@ -36,6 +44,9 @@ type PandokosAuditEvent struct {
 	Reason          string
 	Detail          string
 	SupportActionID *string
+	Seq             int64
+	PrevHash        []byte
+	Hash            []byte
 }
 
 type PandokosIdempotencyKey struct {
@@ -147,6 +158,14 @@ type PandokosMembershipRole struct {
 	UpdatedAt time.Time
 }
 
+type PandokosMetadataKeyPolicy struct {
+	TenantID  string
+	ID        string
+	Keys      []string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type PandokosModel struct {
 	ID                  string
 	ProviderID          string
@@ -177,6 +196,14 @@ type PandokosOidcLogin struct {
 	ExpiresAt time.Time
 }
 
+type PandokosPlatformAuditChain struct {
+	ID         int16
+	Seq        int64
+	Hash       []byte
+	AnchorSeq  int64
+	AnchorHash []byte
+}
+
 type PandokosPlatformAuditEvent struct {
 	ID           string
 	OccurredAt   time.Time
@@ -191,6 +218,9 @@ type PandokosPlatformAuditEvent struct {
 	RequestID    string
 	Reason       string
 	Detail       string
+	Seq          int64
+	PrevHash     []byte
+	Hash         []byte
 }
 
 type PandokosPlatformIssuer struct {
@@ -604,6 +634,38 @@ type PandokosUsageRecordDefault struct {
 	CostFallbacks         []string
 	Metadata              string
 	MetadataDropped       int32
+}
+
+type PandokosUsageRollup struct {
+	TenantID              string
+	Hour                  time.Time
+	PrincipalKind         string
+	PrincipalID           string
+	KeyID                 string
+	Provider              string
+	Model                 string
+	ModelID               string
+	Currency              string
+	PriceSource           string
+	Outcome               string
+	Credential            bool
+	Requests              int64
+	InputTokens           int64
+	OutputTokens          int64
+	CacheReadTokens       int64
+	CacheWriteTokens      int64
+	ReasoningTokens       int64
+	EstimatedInputTokens  int64
+	EstimatedOutputTokens int64
+	Cost                  string
+	CostKnown             int64
+	CostUnknown           int64
+}
+
+type PandokosUsageRollupState struct {
+	TenantID  string
+	Watermark time.Time
+	UpdatedAt time.Time
 }
 
 type PandokosUserIdentity struct {
