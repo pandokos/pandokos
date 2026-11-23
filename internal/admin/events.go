@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"math"
 
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/outbox"
@@ -60,7 +61,7 @@ func (s *server) ExportEvents(ctx context.Context, in adminapi.ExportEventsInput
 				return err
 			}
 			ref = t.ExternalReference
-			rows, err = q.ListOutboxEventsAfter(ctx, queries.ListOutboxEventsAfterParams{After: after, Types: types, Max: int32(size)}) //nolint:gosec // at most 1000
+			rows, err = q.ListOutboxEventsAfter(ctx, queries.ListOutboxEventsAfterParams{After: after, Types: types, Max: pageSize(size)})
 			return err
 		})
 		if err != nil {
@@ -105,7 +106,7 @@ func (s *server) ExportPlatformEvents(ctx context.Context, in adminapi.ExportPla
 		var rows []queries.ListPlatformOutboxEventsAfterRow
 		err := s.db.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
 			var err error
-			rows, err = queries.New(tx).ListPlatformOutboxEventsAfter(ctx, queries.ListPlatformOutboxEventsAfterParams{After: after, Types: types, Max: int32(size)}) //nolint:gosec // at most 1000
+			rows, err = queries.New(tx).ListPlatformOutboxEventsAfter(ctx, queries.ListPlatformOutboxEventsAfterParams{After: after, Types: types, Max: pageSize(size)})
 			return err
 		})
 		if err != nil {
@@ -129,4 +130,15 @@ func (s *server) ExportPlatformEvents(ctx context.Context, in adminapi.ExportPla
 		return len(rows) == size && remaining > 0, nil
 	}
 	return s.stream(exportPlatformEvent, "application/x-ndjson", "platform-events-"+fileStamp(s.now())+".ndjson", stateOf(ctx), page), nil
+}
+
+// pageSize converts a page size, at most exportPage, to the statement's type.
+func pageSize(n int) int32 {
+	if n < 0 {
+		return 0
+	}
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(n)
 }
