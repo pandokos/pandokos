@@ -1,0 +1,60 @@
+pandokos: v1
+kind: platform
+providers:
+  - name: openai
+    api_family: openai
+    display_name: OpenAI
+    dataset_provider: openai
+    stream_usage_option: add
+    endpoints:
+      - name: default
+        base_url: https://api.openai.com
+        is_default: true
+models:
+  - provider: openai
+    name: gpt-4o
+    upstream_id: gpt-4o-2024-11-20
+    display_name: GPT-4o
+    status: active
+    availability: selected
+    capabilities:
+      - chat
+      - vision
+    context_window: 128000
+    max_output_tokens: 16384
+  - provider: openai
+    name: gpt-4o-mini
+    upstream_id: gpt-4o-mini
+    status: active
+    availability: all
+    capabilities:
+      - chat
+    context_window: 128000
+    max_output_tokens: 16384
+model_grants:
+  - provider: openai
+    model: gpt-4o
+    tenant: acme
+price_overrides:
+  - provider: openai
+    model: gpt-4o
+    valid_from: "2026-03-01T00:00:00Z"
+    note: negotiated
+    currency: USD
+    rates:
+      - category: input
+        threshold: 0
+        rate: "2.00"
+      - category: output
+        threshold: 0
+        rate: "8.00"
+platform_limits:
+  - tenant: acme
+    provider: openai
+    metric: tokens_per_day
+    limit: 5000000
+    enforce: true
+  - tenant: default
+    metric: requests_per_minute
+    limit: 600
+    enforce: true

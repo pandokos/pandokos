@@ -26,6 +26,7 @@ import (
 	"github.com/pandokos/pandokos/internal/ledger"
 	"github.com/pandokos/pandokos/internal/limits"
 	"github.com/pandokos/pandokos/internal/pricing/genaiprices"
+	"github.com/pandokos/pandokos/internal/reports"
 	"github.com/pandokos/pandokos/internal/resolver"
 	"github.com/pandokos/pandokos/internal/server"
 	"github.com/pandokos/pandokos/internal/store"
@@ -362,6 +363,8 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	logger.Info("limits ready", "time_zone", cfg.Limits.TimeZone,
 		"on_unknown_price", cfg.Limits.OnUnknownPrice, "on_store_failure", cfg.Limits.OnStoreFailure)
 	partitioner := &ledger.Partitioner{DB: workerDB, Logger: logger}
+	rollup := &reports.Rollup{DB: workerDB, Interval: time.Duration(cfg.Reports.RollupInterval), Logger: logger}
+	retention := &reports.Retention{DB: workerDB, UsageMonths: cfg.Retention.UsageMonths, AuditMonths: cfg.Retention.AuditMonths, Logger: logger}
 	// Ensure bounds itself. A failure is a warning: the keeper retries, and rows whose month has
 	// no partition land in the default one.
 	if err := ensurePartitions(ctx, partitioner); err != nil {
@@ -382,6 +385,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		Admin:       adminSource(adminHandler),
 		Limits:      limitsSource(memory, reconciler, events, ruleCache),
 		Resolver:    resolverSource(limitsPort, unlimited),
+		Reports:     reportsSource(rollup, retention, adminHandler),
 	}
 	if keyCache != nil {
 		sources.JWKS = jwksSource(keyCache)
@@ -442,11 +446,13 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	background, stopBackground := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	defer func() { stopBackground(); wg.Wait() }()
-	wg.Add(6)
+	wg.Add(8)
 	go func() { defer wg.Done(); people.runPurge(background, logger) }()
 	go func() { defer wg.Done(); listener.Run(background) }()
 	go func() { defer wg.Done(); warnBootstrap(background, logger, adminDB) }()
 	go func() { defer wg.Done(); partitioner.Run(background) }()
+	go func() { defer wg.Done(); rollup.Run(background) }()
+	go func() { defer wg.Done(); retention.Run(background) }()
 	go func() { defer wg.Done(); memory.Run(background) }()
 	go func() { defer wg.Done(); reconciler.Run(background) }()
 	// The writer is not stopped by the signal: it runs until Close has returned.

@@ -30,10 +30,15 @@ Commands:
   model-restriction get|set|clear
   capability check --provider P --model M
   usage list [--from T] [--to T] [--provider P]
+  usage report [--month YYYY-MM] [--period day|month|total] [--group-by DIMS]
+  usage export [--from T] [--to T] [--format ndjson|csv] [--out FILE]
+  metadata-keys get|set|clear
+  audit list|head|export|verify
+  platform-audit list|head|export|verify
   token-issuer list|create|get|update|delete|platform
   subject-mapping list|create|get|delete
   platform-issuer list|create|get|update|delete|tenants|add-tenant|remove-tenant
-  limit list|create|get|update|delete|platform|events
+  limit list|create|get|update|delete|platform|events|usage
   platform-limit list|create|get|update|delete
   platform-user list|create|get|update|disable|enable|reset-password|unlock|revoke-sessions
   member list|add|get|update|remove|disable|enable|reset-password|unlock|revoke-sessions
@@ -43,6 +48,10 @@ Commands:
   support-action list|get|end
                                    Administer through the administration API;
                                    "pandokos <command> --help" lists the flags
+  export (--platform | --tenant ID) [--out FILE]
+                                   Write the configuration as a declarative document
+  apply --file FILE (--platform | --tenant ID) [--dry-run]
+                                   Create and update what a document lists; never deletes
   import-prices [--config FILE] (--file FILE | --embedded) [--dry-run]
                                    Import a price dataset from a file or the embedded snapshot, then exit
   kek generate --out FILE          Write a new key-encryption key to a new file (mode 0600)

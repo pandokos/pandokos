@@ -52,6 +52,7 @@ type Sources struct {
 	Admin       func() AdminStats    // grants refused, support actions opened and ended by cause
 	Limits      func() LimitsStats   // memory, reconciler, events, rule cache
 	Resolver    func() ResolverStats // admitted unpriced, unlimited traffic by result
+	Reports     func() ReportsStats  // the usage rollup, retention and exports (M42 to M46)
 }
 
 // InstrumentSpec describes one instrument of the catalogue (the table of the metrics reference).

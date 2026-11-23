@@ -25,17 +25,25 @@ role can be given to a service account.
 | `tenant-admin` | tenant | Day-to-day administration: every tenant permission except those kept for owners (today `support_action:end`) |
 | `credential-manager` | tenant | Provider credentials: read, create, rotate, delete; reads the models. Does not hold `credential:use` |
 | `usage-viewer` | tenant | Reads usage, prices, limits and models |
-| `auditor` | tenant | Reads how the tenant is configured, who may do what and what the platform did in it; reads neither usage nor prices |
+| `auditor` | tenant | Reads how the tenant is configured, who may do what and what the platform did in it, and the tenant's audit log (`audit:read`); reads neither usage nor prices, so the rates in the audit details are withheld from it |
 | `developer` | tenant | Issues and revokes virtual keys and calls models; reads usage and limits |
 | `inference` | tenant | Calls models: `model:invoke` and `credential:use`. A workload role; a person cannot hold it |
 | `read-only` | tenant | Every tenant permission whose action is `read` |
 | `platform-admin` | platform | Administers the installation: every platform permission |
-| `platform-auditor` | platform | Reads the installation: tenants, keys, catalogue, issuers, limits, users and support actions; reads no credential of a tenant |
+| `platform-auditor` | platform | Reads the installation: tenants, keys, catalogue, issuers, limits, users, support actions and the platform's audit log (`platform_audit:read`); reads no credential of a tenant |
 
 `credential-manager` has no `credential:use` because that permission is for callers and has an
 effect only together with `model:invoke`. `developer` issues keys, but only for service accounts that
 hold no more than it does (section 4). A member that holds `developer` or a custom role with
 `model:invoke` gains nothing from it in a session: the inference listener never reads sessions.
+
+**Reading the audit logs** ([audit guide](audit.md)). `audit:read` (tenant scope) is held by `owner`,
+`tenant-admin` and `auditor`; it is not held by `read-only` (which excludes it explicitly), by
+`usage-viewer`, `developer`, `credential-manager` or `inference`, and **it cannot be carried by a support
+action**: the log records price rates and budget amounts, so what a platform administrator did inside a
+tenant is read in the platform's own log. `platform_audit:read` (platform scope) is held by
+`platform-admin` and `platform-auditor`. A custom role may hold `audit:read`. Without `price_list:read`
+the detail of a price action is withheld from a reader.
 
 A platform key may hold `platform-auditor`: `platform-key create --role platform-auditor` makes a
 read-only key for an inventory job. The default is `platform-admin`.

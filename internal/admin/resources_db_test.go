@@ -59,7 +59,7 @@ func TestTenants(t *testing.T) {
 		if m.PrincipalType != adminapi.PrincipalTypeServiceAccount || m.ID != sa.ID || m.Tenant == nil || m.Tenant.ID != out.Tenant.ID || m.Tenant.State != adminapi.TenantStateActive || m.Bootstrap {
 			t.Errorf("me: %+v", m)
 		}
-		if strings.Join(m.Roles, ",") != "owner" || len(m.Permissions) != 35 { // sprint 4.3: the first service account is an owner: the 34 tenant permissions and identity:read
+		if strings.Join(m.Roles, ",") != "owner" || len(m.Permissions) != 36 { // the first service account is an owner: the 35 tenant permissions (audit:read since sprint 6.2) and identity:read
 			t.Errorf("roles %v, permissions %v", m.Roles, m.Permissions)
 		}
 		// The default name of the first service account is admin; no expiry means none.
@@ -491,7 +491,7 @@ func TestPlatformKeys(t *testing.T) {
 	c := api.Client(boot)
 
 	m := me(t, api, boot)
-	if m.PrincipalType != adminapi.PrincipalTypePlatform || !m.Bootstrap || m.Tenant != nil || strings.Join(m.Roles, ",") != "platform-admin" || len(m.Permissions) != 23 {
+	if m.PrincipalType != adminapi.PrincipalTypePlatform || !m.Bootstrap || m.Tenant != nil || strings.Join(m.Roles, ",") != "platform-admin" || len(m.Permissions) != 24 {
 		t.Errorf("me: %+v", m)
 	}
 	r := api.Do(t, "GET", "/v1/me", boot, nil, nil)
@@ -595,8 +595,8 @@ func TestSuspensionBlocksAdministration(t *testing.T) {
 			}
 		}
 	}
-	if n != 79 {
-		t.Errorf("only %d operations were exercised, want 79 (getMe, the twenty tenant operations of epic 2.1, the four of sprint 2.2, the two of sprint 3.3, the ten of sprint 4.1, the seven of sprint 5.2, the two of sprint 5.3, the seven of sprint 5.4, the ten members and the four own-session operations of sprint 4.2, and the twelve of sprint 4.3)", n)
+	if n != 88 {
+		t.Errorf("only %d operations were exercised, want 88 (getMe, the twenty tenant operations of epic 2.1, the four of sprint 2.2, the two of sprint 3.3, the ten of sprint 4.1, the seven of sprint 5.2, the two of sprint 5.3, the seven of sprint 5.4, the ten members and the four own-session operations of sprint 4.2, the twelve of sprint 4.3 and the nine of sprint 6.2)", n)
 	}
 	if after := w.api.SnapshotTenant(t, w.tenant.ID); after != before {
 		t.Error("a row of the suspended tenant changed")

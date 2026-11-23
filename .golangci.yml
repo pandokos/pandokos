@@ -305,6 +305,8 @@ linters:
             - github.com/pandokos/pandokos/internal/adminapi
             - github.com/pandokos/pandokos/internal/secret
             - github.com/pandokos/pandokos/internal/buildinfo
+            - github.com/pandokos/pandokos/internal/auditchain
+            - github.com/pandokos/pandokos/internal/declare
         vault-is-below-the-planes:
           list-mode: lax
           files:

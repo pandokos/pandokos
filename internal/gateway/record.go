@@ -237,5 +237,7 @@ func (h *Handler) finishRecord(st *reqState, logOutcome string) {
 func metadataHeader(w http.Header, dropped int) {
 	if dropped > 0 {
 		w.Set(family.HeaderMetadataDropped, fmt.Sprint(dropped))
+		return
 	}
+	w.Del(family.HeaderMetadataDropped)
 }

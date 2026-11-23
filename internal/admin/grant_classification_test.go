@@ -7,6 +7,19 @@ package admin_test
 // operation is added here by the one who writes it, and the test fails until it is.
 func grantClassification() map[string]kind {
 	return map[string]kind{
+		// Sprint 6.2: reading reports and logs, and the metadata keys a tenant accepts, confer no permission.
+		"getUsageReport":             grantNone,
+		"exportUsageRecords":         grantNone,
+		"getLimitUsage":              grantNone,
+		"listAuditEvents":            grantNone,
+		"getAuditHead":               grantNone,
+		"exportAuditEvents":          grantNone,
+		"listPlatformAuditEvents":    grantNone,
+		"getPlatformAuditHead":       grantNone,
+		"exportPlatformAuditEvents":  grantNone,
+		"getMetadataKeys":            grantNone,
+		"setMetadataKeys":            grantNone,
+		"clearMetadataKeys":          grantNone,
 		"activateRole":               grantRemoves,
 		"changePassword":             grantNone,
 		"clearModelRestriction":      grantNone,

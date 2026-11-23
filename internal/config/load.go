@@ -97,6 +97,7 @@ func warnings(cfg *Config, env map[string]string, known map[string]bool, src Sou
 		ws = append(ws, otelEnvironmentWarnings(cfg, src.Environ)...)
 		ws = append(ws, tokenWarnings(cfg)...)
 		ws = append(ws, limitsWarnings(cfg)...)
+		ws = append(ws, retentionWarnings(cfg)...)
 	}
 	var unknown []string
 	for name := range env {

@@ -18,6 +18,8 @@ type cursor struct {
 	P string `json:"p,omitempty"`
 	// L is the limit_state filter of a usage list.
 	L string `json:"l,omitempty"`
+	// Q holds the filters of an audit list, encoded as a query string.
+	Q string `json:"q,omitempty"`
 }
 
 func encodeCursor(sort, name, id string) string {
@@ -50,7 +52,7 @@ func decodeFullCursor(raw, sort string) (cursor, error) {
 		return cursor{}, invalid("cursor", msg)
 	}
 	var c cursor
-	if json.Unmarshal(b, &c) != nil || c.S != sort || len(c.N) > 200 || len(c.F) > 64 || len(c.T) > 64 || len(c.P) > 64 {
+	if json.Unmarshal(b, &c) != nil || c.S != sort || len(c.N) > 200 || len(c.F) > 64 || len(c.T) > 64 || len(c.P) > 64 || len(c.Q) > 2048 {
 		return cursor{}, invalid("cursor", msg)
 	}
 	if _, perr := tenant.ParseID(c.I); perr != nil {

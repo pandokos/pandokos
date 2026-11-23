@@ -7,7 +7,200 @@ package queries
 
 import (
 	"context"
+	"time"
 )
+
+const exportAuditEvents = `-- name: ExportAuditEvents :many
+SELECT e.seq, e.id, e.occurred_at, e.actor_type, e.actor_id, e.actor_name, e.key_id, e.action, e.resource_type,
+       e.resource_id, e.outcome, e.request_id, e.reason, COALESCE(e.support_action_id::text, '')::text AS support_action_id,
+       e.detail::text AS detail, e.prev_hash, e.hash
+  FROM pandokos.audit_event e
+ WHERE e.seq > $1::bigint AND e.seq <= $2::bigint
+ ORDER BY e.seq
+ LIMIT $3::integer
+`
+
+type ExportAuditEventsParams struct {
+	AfterSeq int64
+	ToSeq    int64
+	PageSize int32
+}
+
+type ExportAuditEventsRow struct {
+	Seq             int64
+	ID              string
+	OccurredAt      time.Time
+	ActorType       string
+	ActorID         string
+	ActorName       string
+	KeyID           string
+	Action          string
+	ResourceType    string
+	ResourceID      string
+	Outcome         string
+	RequestID       string
+	Reason          string
+	SupportActionID string
+	Detail          string
+	PrevHash        []byte
+	Hash            []byte
+}
+
+func (q *Queries) ExportAuditEvents(ctx context.Context, arg ExportAuditEventsParams) ([]ExportAuditEventsRow, error) {
+	rows, err := q.db.Query(ctx, exportAuditEvents, arg.AfterSeq, arg.ToSeq, arg.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ExportAuditEventsRow{}
+	for rows.Next() {
+		var i ExportAuditEventsRow
+		if err := rows.Scan(
+			&i.Seq,
+			&i.ID,
+			&i.OccurredAt,
+			&i.ActorType,
+			&i.ActorID,
+			&i.ActorName,
+			&i.KeyID,
+			&i.Action,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.Outcome,
+			&i.RequestID,
+			&i.Reason,
+			&i.SupportActionID,
+			&i.Detail,
+			&i.PrevHash,
+			&i.Hash,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const exportPlatformAuditEvents = `-- name: ExportPlatformAuditEvents :many
+SELECT e.seq, e.id, e.occurred_at, e.actor_type, e.actor_id, e.actor_name, e.key_id, e.action, e.resource_type,
+       e.resource_id, e.outcome, e.request_id, e.reason, e.detail::text AS detail, e.prev_hash, e.hash
+  FROM pandokos.platform_audit_event e
+ WHERE e.seq > $1::bigint AND e.seq <= $2::bigint
+ ORDER BY e.seq
+ LIMIT $3::integer
+`
+
+type ExportPlatformAuditEventsParams struct {
+	AfterSeq int64
+	ToSeq    int64
+	PageSize int32
+}
+
+type ExportPlatformAuditEventsRow struct {
+	Seq          int64
+	ID           string
+	OccurredAt   time.Time
+	ActorType    string
+	ActorID      string
+	ActorName    string
+	KeyID        string
+	Action       string
+	ResourceType string
+	ResourceID   string
+	Outcome      string
+	RequestID    string
+	Reason       string
+	Detail       string
+	PrevHash     []byte
+	Hash         []byte
+}
+
+func (q *Queries) ExportPlatformAuditEvents(ctx context.Context, arg ExportPlatformAuditEventsParams) ([]ExportPlatformAuditEventsRow, error) {
+	rows, err := q.db.Query(ctx, exportPlatformAuditEvents, arg.AfterSeq, arg.ToSeq, arg.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ExportPlatformAuditEventsRow{}
+	for rows.Next() {
+		var i ExportPlatformAuditEventsRow
+		if err := rows.Scan(
+			&i.Seq,
+			&i.ID,
+			&i.OccurredAt,
+			&i.ActorType,
+			&i.ActorID,
+			&i.ActorName,
+			&i.KeyID,
+			&i.Action,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.Outcome,
+			&i.RequestID,
+			&i.Reason,
+			&i.Detail,
+			&i.PrevHash,
+			&i.Hash,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAuditHead = `-- name: GetAuditHead :one
+SELECT c.seq, c.hash, c.anchor_seq, c.anchor_hash FROM pandokos.audit_chain c
+ WHERE c.tenant_id = pandokos.current_tenant_id()
+`
+
+type GetAuditHeadRow struct {
+	Seq        int64
+	Hash       []byte
+	AnchorSeq  int64
+	AnchorHash []byte
+}
+
+func (q *Queries) GetAuditHead(ctx context.Context) (GetAuditHeadRow, error) {
+	row := q.db.QueryRow(ctx, getAuditHead)
+	var i GetAuditHeadRow
+	err := row.Scan(
+		&i.Seq,
+		&i.Hash,
+		&i.AnchorSeq,
+		&i.AnchorHash,
+	)
+	return i, err
+}
+
+const getPlatformAuditHead = `-- name: GetPlatformAuditHead :one
+SELECT c.seq, c.hash, c.anchor_seq, c.anchor_hash FROM pandokos.platform_audit_chain c WHERE c.id = 1
+`
+
+type GetPlatformAuditHeadRow struct {
+	Seq        int64
+	Hash       []byte
+	AnchorSeq  int64
+	AnchorHash []byte
+}
+
+func (q *Queries) GetPlatformAuditHead(ctx context.Context) (GetPlatformAuditHeadRow, error) {
+	row := q.db.QueryRow(ctx, getPlatformAuditHead)
+	var i GetPlatformAuditHeadRow
+	err := row.Scan(
+		&i.Seq,
+		&i.Hash,
+		&i.AnchorSeq,
+		&i.AnchorHash,
+	)
+	return i, err
+}
 
 const insertAuditEvent = `-- name: InsertAuditEvent :exec
 
@@ -35,8 +228,10 @@ type InsertAuditEventParams struct {
 	SupportActionID *string
 }
 
-// Audit. Insert only: there is no statement that reads, changes or removes an audit row.
-// detail is passed as JSON text and cast: the driver sends text parameters (ADR 0027).
+// Audit. Inserts (InsertAuditEvent, InsertPlatformAuditEvent, RecordAuthFailure) and, since 0015,
+// reads: a tenant's session reads its log and the head of its chain, the platform scope of the admin
+// role the platform's. detail is read as text: its canonical encoding is computed from it (ADR 0065).
+// detail is passed to the inserts as JSON text and cast: the driver sends text parameters (ADR 0027).
 func (q *Queries) InsertAuditEvent(ctx context.Context, arg InsertAuditEventParams) error {
 	_, err := q.db.Exec(ctx, insertAuditEvent,
 		arg.TenantID,
@@ -93,6 +288,214 @@ func (q *Queries) InsertPlatformAuditEvent(ctx context.Context, arg InsertPlatfo
 		arg.Detail,
 	)
 	return err
+}
+
+const listAuditEvents = `-- name: ListAuditEvents :many
+SELECT e.seq, e.id, e.occurred_at, e.actor_type, e.actor_id, e.actor_name, e.key_id, e.action, e.resource_type,
+       e.resource_id, e.outcome, e.request_id, e.reason, COALESCE(e.support_action_id::text, '')::text AS support_action_id,
+       e.detail::text AS detail, e.prev_hash, e.hash
+  FROM pandokos.audit_event e
+ WHERE e.seq < $1::bigint
+   AND ($2::timestamptz IS NULL OR e.occurred_at >= $2::timestamptz)
+   AND ($3::timestamptz IS NULL OR e.occurred_at < $3::timestamptz)
+   AND ($4::text = '' OR e.action = $4::text
+        OR (right($4::text, 1) = '.' AND starts_with(e.action, $4::text)))
+   AND ($5::text = '' OR e.resource_type = $5::text)
+   AND ($6::text = '' OR e.resource_id = $6::text)
+   AND ($7::text = '' OR e.actor_type = $7::text)
+   AND ($8::text = '' OR e.actor_id = $8::text)
+   AND ($9::text = '' OR e.outcome = $9::text)
+   AND ($10::text = '' OR e.request_id = $10::text)
+   AND ($11::text = '' OR e.support_action_id = $11::text::uuid)
+ ORDER BY e.seq DESC
+ LIMIT $12::integer
+`
+
+type ListAuditEventsParams struct {
+	BeforeSeq       int64
+	FromAt          *time.Time
+	ToAt            *time.Time
+	Action          string
+	ResourceType    string
+	ResourceID      string
+	ActorType       string
+	ActorID         string
+	Outcome         string
+	RequestID       string
+	SupportActionID string
+	PageSize        int32
+}
+
+type ListAuditEventsRow struct {
+	Seq             int64
+	ID              string
+	OccurredAt      time.Time
+	ActorType       string
+	ActorID         string
+	ActorName       string
+	KeyID           string
+	Action          string
+	ResourceType    string
+	ResourceID      string
+	Outcome         string
+	RequestID       string
+	Reason          string
+	SupportActionID string
+	Detail          string
+	PrevHash        []byte
+	Hash            []byte
+}
+
+func (q *Queries) ListAuditEvents(ctx context.Context, arg ListAuditEventsParams) ([]ListAuditEventsRow, error) {
+	rows, err := q.db.Query(ctx, listAuditEvents,
+		arg.BeforeSeq,
+		arg.FromAt,
+		arg.ToAt,
+		arg.Action,
+		arg.ResourceType,
+		arg.ResourceID,
+		arg.ActorType,
+		arg.ActorID,
+		arg.Outcome,
+		arg.RequestID,
+		arg.SupportActionID,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAuditEventsRow{}
+	for rows.Next() {
+		var i ListAuditEventsRow
+		if err := rows.Scan(
+			&i.Seq,
+			&i.ID,
+			&i.OccurredAt,
+			&i.ActorType,
+			&i.ActorID,
+			&i.ActorName,
+			&i.KeyID,
+			&i.Action,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.Outcome,
+			&i.RequestID,
+			&i.Reason,
+			&i.SupportActionID,
+			&i.Detail,
+			&i.PrevHash,
+			&i.Hash,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPlatformAuditEvents = `-- name: ListPlatformAuditEvents :many
+SELECT e.seq, e.id, e.occurred_at, e.actor_type, e.actor_id, e.actor_name, e.key_id, e.action, e.resource_type,
+       e.resource_id, e.outcome, e.request_id, e.reason, e.detail::text AS detail, e.prev_hash, e.hash
+  FROM pandokos.platform_audit_event e
+ WHERE e.seq < $1::bigint
+   AND ($2::timestamptz IS NULL OR e.occurred_at >= $2::timestamptz)
+   AND ($3::timestamptz IS NULL OR e.occurred_at < $3::timestamptz)
+   AND ($4::text = '' OR e.action = $4::text
+        OR (right($4::text, 1) = '.' AND starts_with(e.action, $4::text)))
+   AND ($5::text = '' OR e.resource_type = $5::text)
+   AND ($6::text = '' OR e.resource_id = $6::text)
+   AND ($7::text = '' OR e.actor_type = $7::text)
+   AND ($8::text = '' OR e.actor_id = $8::text)
+   AND ($9::text = '' OR e.outcome = $9::text)
+   AND ($10::text = '' OR e.request_id = $10::text)
+ ORDER BY e.seq DESC
+ LIMIT $11::integer
+`
+
+type ListPlatformAuditEventsParams struct {
+	BeforeSeq    int64
+	FromAt       *time.Time
+	ToAt         *time.Time
+	Action       string
+	ResourceType string
+	ResourceID   string
+	ActorType    string
+	ActorID      string
+	Outcome      string
+	RequestID    string
+	PageSize     int32
+}
+
+type ListPlatformAuditEventsRow struct {
+	Seq          int64
+	ID           string
+	OccurredAt   time.Time
+	ActorType    string
+	ActorID      string
+	ActorName    string
+	KeyID        string
+	Action       string
+	ResourceType string
+	ResourceID   string
+	Outcome      string
+	RequestID    string
+	Reason       string
+	Detail       string
+	PrevHash     []byte
+	Hash         []byte
+}
+
+func (q *Queries) ListPlatformAuditEvents(ctx context.Context, arg ListPlatformAuditEventsParams) ([]ListPlatformAuditEventsRow, error) {
+	rows, err := q.db.Query(ctx, listPlatformAuditEvents,
+		arg.BeforeSeq,
+		arg.FromAt,
+		arg.ToAt,
+		arg.Action,
+		arg.ResourceType,
+		arg.ResourceID,
+		arg.ActorType,
+		arg.ActorID,
+		arg.Outcome,
+		arg.RequestID,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPlatformAuditEventsRow{}
+	for rows.Next() {
+		var i ListPlatformAuditEventsRow
+		if err := rows.Scan(
+			&i.Seq,
+			&i.ID,
+			&i.OccurredAt,
+			&i.ActorType,
+			&i.ActorID,
+			&i.ActorName,
+			&i.KeyID,
+			&i.Action,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.Outcome,
+			&i.RequestID,
+			&i.Reason,
+			&i.Detail,
+			&i.PrevHash,
+			&i.Hash,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const recordAuthFailure = `-- name: RecordAuthFailure :exec

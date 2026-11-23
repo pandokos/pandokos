@@ -56,6 +56,10 @@ type TenantAccess struct {
 	// Prices holds the tenant's price versions by model ID, of the currencies of Currency; the
 	// entry is the tenant's alone and is dropped by catalog:<tenant>.
 	Prices map[string][]pricing.Version
+	// MetadataKeys is the set of caller metadata keys the tenant accepts (sprint 6.2); nil means
+	// the tenant has no policy and every key with the format is accepted. An empty, non-nil map
+	// accepts none.
+	MetadataKeys map[string]bool
 }
 
 // SnapshotData is what NewSnapshot builds a Snapshot from.

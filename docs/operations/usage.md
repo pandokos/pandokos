@@ -252,8 +252,19 @@ should send traffic elsewhere.
 - A row whose month has no partition lands in the **default partition** instead of being refused. It
   is expected to stay empty. When it is not, `serve` warns once per start with `usage records in
   the default partition`: the hourly job is not running or fell behind. Rows in the default
-  partition stay there; a later release decides their retention.
-- No partition is ever dropped by Pandokos in this release. Retention is a later sprint.
+  partition stay readable and counted like any other (the rollup and the reports read them) and are
+  removed by retention with their month.
+- **Retention.** With the default `retention.usage_months: 0` no partition is ever dropped and no
+  record is removed. With a value of 2 to 120 the worker keeps the current UTC month and that many
+  full months before it: it runs at start, after the partitions are ensured, and then every hour, and
+  drops each monthly partition that ends at or before the cut (`DROP TABLE`, under the advisory lock of
+  `ensure_usage_partitions`), removes the rollup rows and the default-partition rows of each tenant
+  before the cut (the partitions first: when that fails the tenants' pass is skipped and tried again at
+  the next run, so the rollup of a month never goes before its ledger), and records `usage.retention` in the platform's log and in each tenant's log. It is
+  one installation-wide setting, not per tenant. Only the two retention functions of migration 0015
+  delete from the ledger ([database guide](database.md#20-grants-of-migration-0015)); a removal cannot
+  be undone, take a backup or an export first. Log lines: `retention ready`, `retention applied`,
+  `retention failing` ([log reference](../reference/logs.md)).
 - Partitions carry forced row-level security and no grants of their own: reach rows through
   `pandokos.usage_record`.
 
@@ -337,3 +348,106 @@ The usage records, the limit events and the price lists of a tenant are **the te
   the product. It does not protect a tenant's data from whoever administers the database, the hosts or
   the backups: the owner role, a superuser or a backup reads every table (issue #33, [security
   model](../architecture/security-model.md)).
+
+## 11. Reports
+
+A tenant's usage viewer reads aggregates of the ledger, not rows, with `getUsageReport` (permission
+`usage:read`) or the CLI ([administration API](../reference/admin-api.md)):
+
+```sh
+pandokos usage report --tenant demo --month 2026-10 --group-by provider,model
+pandokos usage report --tenant demo --from 2026-11-01 --to 2026-11-15 --period day --group-by caller
+```
+
+- **Window.** `from` and `to` are a civil date (the start of that day in the tenant's calendar) or an
+  RFC 3339 instant; by default the start of the current month of the tenant up to now. At most 400
+  days, `from` before `to`. `--month YYYY-MM` sets both.
+- **Periods** (`period`: `day`, `month` (default) or `total`) are the tenant's days and months in the
+  zone in force at each instant, a pending change of zone included; the first and last group are
+  clipped to the window, and each row says its `period_start` and `period_end`.
+- **Grouping** (`group_by`, a subset of `provider`, `model`, `caller`, `key`; default `model`).
+  `caller` is the principal (kind and ID), `key` the virtual key ID. `provider` and `model` also
+  filter, on the names as recorded.
+- **Currencies and price sources are never added.** Every row is split by `currency` and
+  `price_source` (`catalogue` or `tenant`); its `cost` is a decimal string, `null` when no record of
+  the row has a known cost, and `cost_unknown` counts the records without one. Nothing is converted.
+  Token sums keep the provider's figures and Pandokos's estimates apart.
+- **`rejected_limit` is apart.** `requests` counts every request but those refused by a limit;
+  `requests_ok` those that succeeded; `rejected_limit` the refusals, which have no usage and no cost.
+- **At most 10 000 rows.** A larger report is `400 invalid_request` on `group_by`: narrow the window,
+  the period or the grouping.
+- The report is read in the tenant's session on the administration role and is not audited. **The
+  platform reads no report of a tenant** (section 10).
+
+**Usage against a limit rule.** `getLimitUsage` (`pandokos limit usage --tenant demo RULE`, permission
+`usage:read`) answers for a daily or monthly rule of the tenant how much of the current period is
+used: `used` (requests or tokens) or `used_amount` (cost in the rule's currency), the period's start
+and end and `as_of`. It reads the ledger through the same code as the limit counters
+(`limits.Sum`) and does **not** count requests still in flight, because the reservations are per
+gateway instance ([ADR 0051](../adr/0051-period-counters-and-the-ledger.md)). A per-minute rule is
+`409 invalid_state`: its window is shorter than any report.
+
+## 12. Export
+
+`exportUsageRecords` (`pandokos usage export --tenant demo --from T --to T --format ndjson|csv --out FILE`,
+permission `usage:read`) streams the tenant's records of a window, oldest first by `(started_at, id)`.
+
+- **Formats.** `ndjson` (default, `application/x-ndjson`): one JSON object per line with the schema of
+  `listUsageRecords`, never altered. `csv` (`text/csv; charset=utf-8`): a header line, then one line per
+  record; the columns are the members of the record in schema order, arrays and objects as their JSON
+  text in one cell, costs as decimal strings. The response carries `Content-Disposition: attachment`.
+- **The CSV guard.** A text cell whose first character is `=`, `+`, `-`, `@`, a tab or a carriage return
+  is written with a leading `'` so that a spreadsheet does not read it as a formula (OWASP's advice).
+  Numbers are not changed. Use NDJSON when the exact text matters.
+- **The 31-day split.** A request covers at most 31 days (as the list). `pandokos usage export`
+  splits a longer window into consecutive requests; with `--out` it writes `FILE.partial` and renames it
+  when the last request ends, so an interrupted export leaves no file that looks complete.
+- **Pages.** The server reads pages of 1000 records by key, each in its own transaction, and writes them
+  as it reads; a record committed during the export behind the position it has passed is not in it, and
+  none appears twice. Each page extends the write deadline by 60 s; an export is bounded to 15 minutes.
+- **Aborted transfers.** An error before the first byte is the usual problem answer. After it the
+  server aborts the connection, so a client sees an incomplete chunked transfer, never a truncated file
+  that looks complete (`curl` reports an incomplete transfer), and logs `export aborted`
+  ([log reference](../reference/logs.md)); `pandokos_exports_total{result="aborted"}` counts it
+  ([metrics reference](../reference/metrics.md)). Retry the window.
+
+## 13. Rollup
+
+Reports and the limit counters do not sum raw rows; the worker keeps a rollup per tenant
+([ADR 0064](../adr/0064-usage-rollup-reports-and-exports.md)).
+
+- **What it holds.** One row per UTC hour of the start and per caller, key, provider, model, model ID,
+  currency, price source, outcome and whether a credential was opened, with the request count, the token
+  sums as recorded and the sum and counts of costs. It holds no content, and it is derived: it can be
+  rebuilt from the ledger.
+- **The watermark.** One per tenant: every record whose `recorded_at` (the database's time at insert) is
+  before it is in the rollup, none at or after it. The job runs every `reports.rollup_interval`
+  (default 1 minute, 10 s to 1 h), in the tenant's session, and moves the watermark to one minute
+  before the clock, at most seven days per transaction and at most 30 s per tenant per pass.
+- **The one-minute delay.** The insert of a record ends within the writer's 5 s deadline, so a record
+  recorded before `now - 1 minute` is committed when the window is read: none is lost. A backlog written
+  after an outage is added to its old hour when its window comes.
+- **What happens when it stops.** Reads get slower, never wrong: the exact reader takes the rollup for
+  whole hours that no period boundary cuts, **plus** the records of those hours recorded since the
+  watermark, and the ledger for everything else, in one statement. The limit counters and the capability
+  check read through the same reader. The log says `usage rollup failing` (at most once a minute) and,
+  after the first pass that succeeds, `usage rollup recovered`; the gauge `pandokos.reports.rollup.lag`
+  shows how far behind the slowest tenant is.
+- **Large ledgers.** Migration 0015 builds an index of the ledger by `(tenant_id, recorded_at)`;
+  [build it beforehand](database.md#the-index-of-migration-0015-on-a-large-ledger) on a ledger of tens of
+  millions of rows. Manual inserts into the ledger are not supported: a record written with an old
+  `recorded_at` behind the watermark would not be in the rollup.
+
+## 14. Metadata keys
+
+By default a tenant accepts every caller metadata key of the format of section 5. A tenant can restrict
+them to a list (0 to 64 keys, each of the key format): `pandokos metadata-keys set --tenant demo project team`
+(permission `tenant_setting:write`), `get` (`usage:read`) and `clear` (back to every key); each call is
+audited (`tenant.metadata_keys_set`, `tenant.metadata_keys_clear`), also one that sets the list it
+already has. The gateway applies the list with
+the tenant's catalogue view once the model is resolved: keys outside it count as dropped and appear in
+`X-Pandokos-Metadata-Dropped` and `metadata_dropped`, and are not stored or forwarded. A request that ends
+before the model is resolved records no metadata and counts every entry it had kept as dropped, because
+the tenant's list is not known yet and storing a key the tenant may refuse is what the restriction
+forbids ([PRV-03](../requirements/README.md)). A change reaches the gateways through
+the tenant's catalogue notification (ADR 0030).

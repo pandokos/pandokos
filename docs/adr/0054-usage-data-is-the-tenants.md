@@ -60,3 +60,4 @@ problem (issue #33) with other costs.
 - 2026-11-22: sprint 4.3: no support action carries a permission that reads usage, limit events or prices; the strong form of this decision holds under a support action ([ADR 0061](0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md)).
 - 2026-11-23: accepted by the maintainer after review.
 - 2026-11-22: sprint 6.1: cost and token metrics are per installation, model and currency, with no tenant dimension ([ADR 0062](0062-metrics-instruments-attributes-cardinality-and-scrape.md)).
+- 2026-11-23: sprint 6.2: reports, limit usage and exports are tenant operations; the retention functions return counts ([ADR 0064](0064-usage-rollup-reports-and-exports.md))

@@ -49,11 +49,28 @@ func TestAuditIsAppendOnly(t *testing.T) {
 			"TRUNCATE": `TRUNCATE pandokos.` + tb.name,
 			"SELECT":   `SELECT count(*) FROM pandokos.` + tb.name,
 		}
-		// Each runtime role gets 42501 on UPDATE, DELETE, TRUNCATE and SELECT, in every session.
+		// Each runtime role gets 42501 on UPDATE, DELETE and TRUNCATE, in every session, and the
+		// gateway and worker roles on SELECT too. Since sprint 6.2 the admin role reads the log of
+		// its tenant's session and, for the platform's log, in platform scope (AUD-05); in every
+		// other session it sees no row.
 		for _, role := range runtimeRoles {
 			conn := d.Connect(t, role)
 			for _, sess := range sessions(a) {
+				if role == "admin" {
+					var n int
+					err := inSession(t, conn, sess, func(c context.Context, tx pgx.Tx) error {
+						return tx.QueryRow(c, stmts["SELECT"]).Scan(&n)
+					})
+					if err != nil {
+						t.Errorf("%s: SELECT as admin in session %s: %v", tb.name, sess.name, err)
+					} else if own := sess.name == tb.session.name; own && n < 1 || !own && n != 0 {
+						t.Errorf("%s: the admin role sees %d rows in session %s (its own session: %v)", tb.name, n, sess.name, own)
+					}
+				}
 				for op, sql := range stmts {
+					if op == "SELECT" && role == "admin" {
+						continue
+					}
 					err := inSession(t, conn, sess, func(c context.Context, tx pgx.Tx) error {
 						_, err := tx.Exec(c, sql)
 						return err
@@ -97,7 +114,7 @@ func TestAuditIsAppendOnly(t *testing.T) {
 				t.Errorf("%s: %s inserted: %v", tb.name, role, err)
 			}
 		}
-		// The identity and the time of a row are the database's: the admin role cannot choose them.
+		// The identity, the time and the place in the chain of a row are the database's: the admin role cannot choose them.
 		cols := "tenant_id, "
 		vals := "$1::uuid, "
 		var args []any
@@ -106,7 +123,9 @@ func TestAuditIsAppendOnly(t *testing.T) {
 		} else {
 			cols, vals = "", ""
 		}
-		for _, col := range []struct{ name, value string }{{"id", "pandokos.uuid_v7()"}, {"occurred_at", "now()"}} {
+		for _, col := range []struct{ name, value string }{{"id", "pandokos.uuid_v7()"}, {"occurred_at", "now()"},
+			// Sprint 6.2: the place in the chain and the hash are the database's too.
+			{"seq", "1"}, {"prev_hash", "decode(repeat('00', 32), 'hex')"}, {"hash", "decode(repeat('00', 32), 'hex')"}} {
 			err := inSession(t, admin, tb.session, func(c context.Context, tx pgx.Tx) error {
 				_, err := tx.Exec(c, `INSERT INTO pandokos.`+tb.name+` (`+cols+col.name+`, actor_type, action, resource_type, outcome) VALUES (`+vals+col.value+`, 'platform', 'test.x', 'test', 'success')`, args...)
 				return err

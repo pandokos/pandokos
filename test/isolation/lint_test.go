@@ -41,6 +41,7 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 			"virtual_key_directory":    {Reason: "Key ID to tenant, for the lookup function; no runtime role has any privilege on it"},
 			"platform_key":             {Reason: "Credentials of the platform; protected by its own policies", Restricted: true},
 			"platform_audit_event":     {Reason: "Audit log of the platform; protected by its own policies", Restricted: true},
+			"platform_audit_chain":     {Reason: "the head and anchor of the platform's audit chain; read by the admin role in platform scope, written by the seal and retention functions only", Restricted: true},
 			"kek_version":              {Reason: "identifiers of key-encryption key versions; describes the installation, holds no key and no tenant information"},
 			"provider":                 {Reason: "providers of the catalogue; read by every runtime role, written in platform scope", Restricted: true},
 			"provider_endpoint":        {Reason: "endpoints of providers; read by the gateway and the admin role, written in platform scope", Restricted: true},
@@ -124,7 +125,25 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 				},
 			},
 			"audit_event": {
-				"pandokos_admin": {"INSERT(action,actor_id,actor_name,actor_type,detail,key_id,outcome,reason,request_id,resource_id,resource_type,support_action_id,tenant_id)"},
+				"pandokos_admin": {"INSERT(action,actor_id,actor_name,actor_type,detail,key_id,outcome,reason,request_id,resource_id,resource_type,support_action_id,tenant_id)", "SELECT"},
+			},
+			"audit_chain": {
+				"pandokos_admin": {"SELECT"},
+			},
+			"platform_audit_chain": {
+				"pandokos_admin": {"SELECT"},
+			},
+			"usage_rollup": {
+				"pandokos_admin":  {"SELECT"},
+				"pandokos_worker": {"DELETE", "INSERT", "SELECT", "UPDATE"},
+			},
+			"usage_rollup_state": {
+				"pandokos_admin":  {"SELECT"},
+				"pandokos_worker": {"INSERT(tenant_id,watermark)", "SELECT", "UPDATE(updated_at,watermark)"},
+			},
+			"metadata_key_policy": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin":   {"DELETE", "INSERT(keys,tenant_id)", "SELECT", "UPDATE(keys)"},
 			},
 			"tenant_role": {
 				"pandokos_gateway": {"SELECT"},
@@ -134,7 +153,7 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 				"pandokos_admin": {"INSERT(actor_id,actor_name,actor_type,expires_at,key_id,permissions,reason,request_id,tenant_id)", "SELECT", "UPDATE(close_reason,closed_at,closed_by,closed_by_id)"},
 			},
 			"platform_audit_event": {
-				"pandokos_admin":  {"INSERT(action,actor_id,actor_name,actor_type,detail,key_id,outcome,reason,request_id,resource_id,resource_type)"},
+				"pandokos_admin":  {"INSERT(action,actor_id,actor_name,actor_type,detail,key_id,outcome,reason,request_id,resource_id,resource_type)", "SELECT"},
 				"pandokos_worker": {"INSERT(action,actor_id,actor_name,actor_type,detail,key_id,outcome,reason,request_id,resource_id,resource_type)"},
 			},
 			"provider": {
@@ -313,6 +332,30 @@ VALUES ($1::uuid, 'openai', 'c-' || substr(md5(random()::text), 1, 12), 1, decod
 VALUES ($1::uuid, 'platform', 'test.fixture', 'test', 'success') RETURNING id::text`,
 				Update: `reason = 'changed'`,
 			},
+			"audit_chain": {
+				Insert: `INSERT INTO pandokos.audit_chain (tenant_id) VALUES ($1::uuid) RETURNING tenant_id::text`,
+				Key:    "tenant_id",
+				Update: `anchor_seq = 1`,
+			},
+			"usage_rollup": {
+				Insert: `INSERT INTO pandokos.usage_rollup (tenant_id, hour, principal_kind, principal_id, key_id, provider, model, model_id,
+                                       currency, price_source, outcome, credential, requests, input_tokens, output_tokens,
+                                       cache_read_tokens, cache_write_tokens, reasoning_tokens, estimated_input_tokens,
+                                       estimated_output_tokens, cost, cost_known, cost_unknown)
+VALUES ($1::uuid, date_bin('1 hour', now(), '2000-01-01 00:00:00+00'), '', '', '', '', '', '', '', '', '', true,
+        1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) RETURNING tenant_id::text`,
+				Key:    "tenant_id",
+				Update: `requests = 2`,
+			},
+			"usage_rollup_state": {
+				Insert: `INSERT INTO pandokos.usage_rollup_state (tenant_id, watermark) VALUES ($1::uuid, now()) RETURNING tenant_id::text`,
+				Key:    "tenant_id",
+				Update: `watermark = now()`,
+			},
+			"metadata_key_policy": {
+				Insert: `INSERT INTO pandokos.metadata_key_policy (tenant_id, keys) VALUES ($1::uuid, ARRAY['team']) RETURNING id::text`,
+				Update: `keys = ARRAY['project']`,
+			},
 			"usage_record": {
 				Insert: `INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind, principal_id,
                                    provider, api_family, operation, outcome, duration_ms, input_source,
@@ -385,6 +428,7 @@ SELECT r.price_version_id::text FROM r`,
 		SecurityDefiner: []string{"virtual_key_lookup", "virtual_key_directory_add", "record_auth_failure", "ensure_usage_partitions",
 			"issuer_lookup", "platform_issuer_tenant_lookup", "record_token_auth_failure", "issuer_directory_sync", "platform_issuer_mapping_count",
 			"delete_platform_issuer_limit_rules", "record_unlimited_traffic",
+			"audit_seal_tenant", "audit_seal_platform", "platform_retention", "tenant_retention",
 			"membership_guard", "membership_directory_sync", "user_tenants", "platform_role_assignment_guard", "platform_user_lookup"},
 		Views:      []string{"provider_credential_metadata"},
 		AppendOnly: []string{"audit_event", "platform_audit_event", "price_import", "usage_record", "limit_event"},

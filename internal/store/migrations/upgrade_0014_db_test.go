@@ -78,7 +78,7 @@ func TestUpgrade0014(t *testing.T) {
 	}
 	auditBefore := scalar(`SELECT count(*)::text FROM pandokos.audit_event`)
 
-	d.Migrate(t)
+	d.MigrateTo(t, 14)
 
 	for _, tbl := range tables {
 		if got := snapshot(tbl); got != before[tbl] {

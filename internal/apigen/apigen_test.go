@@ -439,3 +439,97 @@ func TestRejectsSprint42Constructs(t *testing.T) {
 		}
 	}
 }
+
+// TestStreamedAnswers is T-958: the construct of sprint 6.2 (ADR 0064): a 200 whose content is
+// application/x-ndjson, alone or with text/csv, generates a method that returns a stream and a
+// client method that returns the body unread; the shapes outside it are refused.
+func TestStreamedAnswers(t *testing.T) {
+	const (
+		ndjsonOnly = "    Export:\n      description: Lines.\n      content:\n        application/x-ndjson:\n          schema: {$ref: '#/components/schemas/Thing'}\n"
+		withCSV    = "    Export:\n      description: Lines.\n      content:\n        application/x-ndjson:\n          schema: {$ref: '#/components/schemas/Thing'}\n        text/csv:\n          schema: {type: string}\n"
+		path       = "  /v1/things/export:\n    get:\n      operationId: exportThings\n      x-pandokos-permission: thing:read\n" +
+			"      parameters:\n        - {name: from_seq, in: query, schema: {type: integer, minimum: 1}}\n        - {name: format, in: query, schema: {$ref: '#/components/schemas/ExportFormat'}}\n" +
+			"      responses:\n        \"200\": {$ref: '#/components/responses/Export'}\n        \"400\": {$ref: '#/components/responses/Err'}\n"
+		format = "    ExportFormat: {type: string, enum: [ndjson, csv], default: ndjson}\n"
+	)
+	doc := func(response, extraPath string) string {
+		d := replaceOnce(t, minimal, "components:\n  responses:\n", extraPath+"components:\n  responses:\n"+response)
+		return replaceOnce(t, d, "    ProblemCode:\n", format+"    ProblemCode:\n")
+	}
+	squash := func(src []byte) string { return regexp.MustCompile(`[ \t]+`).ReplaceAllString(string(src), " ") }
+
+	t.Run("ndjson alone and ndjson with csv are generated", func(t *testing.T) {
+		for name, response := range map[string]string{"ndjson": ndjsonOnly, "ndjson and csv": withCSV} {
+			src, err := generate(writeSpec(t, doc(response, path)))
+			if err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			text := squash(src)
+			for _, want := range []string{
+				"ExportThings(ctx context.Context, in ExportThingsInput) (*Stream, error)", // the method of the server
+				"func (c *Client) ExportThings(ctx context.Context, in ExportThingsInput) (*StreamBody, error)",
+				"FromSeq int",
+				"Format ExportFormat",
+				"c.doStream(",
+			} {
+				if !strings.Contains(text, want) {
+					t.Errorf("%s: the generated code does not contain %q", name, want)
+				}
+			}
+			if !strings.Contains(text, "application/x-ndjson") {
+				t.Errorf("%s: the client does not accept application/x-ndjson", name)
+			}
+		}
+		src, _ := generate(writeSpec(t, doc(withCSV, path)))
+		if !strings.Contains(squash(src), "text/csv") {
+			t.Error("a stream that also has text/csv does not offer it")
+		}
+	})
+
+	t.Run("an optional integer with a minimum is checked when it is given", func(t *testing.T) {
+		src, err := generate(writeSpec(t, doc(ndjsonOnly, path)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(string(src), "\n")
+		for i, l := range lines {
+			if !strings.Contains(l, "if in.FromSeq < 1") {
+				continue
+			}
+			// The check is inside the block that parses the parameter, or says that zero is absent.
+			indent := func(s string) int { return len(s) - len(strings.TrimLeft(s, "\t")) }
+			guarded := strings.Contains(l, "in.FromSeq != 0")
+			for j := i - 1; j >= 0 && !guarded; j-- {
+				if indent(lines[j]) < indent(l) {
+					guarded = strings.Contains(lines[j], `q["from_seq"]`) || strings.Contains(lines[j], "in.FromSeq != 0")
+					break
+				}
+			}
+			if !guarded {
+				t.Errorf("the minimum of from_seq is checked when the parameter is absent: %q refuses the requests that do not give it", strings.TrimSpace(l))
+			}
+		}
+	})
+
+	t.Run("the shapes outside the construct are refused", func(t *testing.T) {
+		both := "    Export:\n      description: Lines.\n      content:\n        application/x-ndjson:\n          schema: {$ref: '#/components/schemas/Thing'}\n        application/json:\n          schema: {$ref: '#/components/schemas/Thing'}\n"
+		csvOnly := "    Export:\n      description: Lines.\n      content:\n        text/csv:\n          schema: {type: string}\n        application/x-ndjson:\n          schema: {type: string}\n"
+		otherType := "    Export:\n      description: Lines.\n      content:\n        application/x-ndjson:\n          schema: {$ref: '#/components/schemas/Thing'}\n        application/xml:\n          schema: {type: string}\n"
+		created := replaceOnce(t, path, `"200": {$ref: '#/components/responses/Export'}`, `"201": {$ref: '#/components/responses/Export'}`)
+		withBody := replaceOnce(t, replaceOnce(t, path, "    get:\n", "    post:\n"), "      responses:",
+			"      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: {$ref: '#/components/schemas/Thing'}\n      responses:")
+		twoSuccess := replaceOnce(t, path, "        \"400\":", "        \"201\": {$ref: '#/components/responses/Thing'}\n        \"400\":")
+		for name, c := range map[string]struct{ response, path string }{
+			"a stream with application/json too":     {both, path},
+			"a stream whose line schema is a string": {csvOnly, path},
+			"a stream with another media type":       {otherType, path},
+			"a 201 stream":                           {ndjsonOnly, created},
+			"a stream with a request body":           {ndjsonOnly, withBody},
+			"a stream beside another success answer": {ndjsonOnly, twoSuccess},
+		} {
+			if _, err := generate(writeSpec(t, doc(c.response, c.path))); err == nil {
+				t.Errorf("%s: the document was accepted", name)
+			}
+		}
+	})
+}

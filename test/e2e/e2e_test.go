@@ -80,6 +80,11 @@ type opts struct {
 	// Sprint 6.1: the metrics.
 	metricsPrometheus bool   // telemetry.metrics.prometheus: GET /metrics on the administration listener
 	exportInterval    string // telemetry.metrics.export_interval, for example "5s" (the configuration allows 5s to 10m)
+
+	// Sprint 6.2: the usage rollup and retention.
+	rollupInterval       string // reports.rollup_interval, for example "10s" (the configuration allows 10s to 1h)
+	retentionUsageMonths string // retention.usage_months
+	retentionAuditMonths string // retention.audit_months
 }
 
 type proc struct {
@@ -299,6 +304,12 @@ func startBinary(t *testing.T, o opts) *proc {
 	p.db = o.db
 	p.cfg = writeConfig(t, o.level)
 	extra := append(o.db.Env(t), o.sprint32Env(t)...)
+	for name, v := range map[string]string{"PANDOKOS_REPORTS_ROLLUP_INTERVAL": o.rollupInterval, "PANDOKOS_RETENTION_USAGE_MONTHS": o.retentionUsageMonths,
+		"PANDOKOS_RETENTION_AUDIT_MONTHS": o.retentionAuditMonths} {
+		if v != "" {
+			extra = append(extra, name+"="+v)
+		}
+	}
 	extra = append(extra, o.env...) // the options of the test come last and win
 	p.col = o.collector
 	if o.tls {
@@ -705,20 +716,20 @@ func TestMigrateCommand(t *testing.T) { // T-160
 	}
 
 	code, out, errs := runBinary(t, env, "migrate", "status")
-	if code != 1 || errs != "" || out != "0001_init  pending\n0002_identity_audit  pending\n0003_vault  pending\n0004_catalogue  pending\n0005_gateway_auth_failures  pending\n0006_usage_ledger  pending\n0007_provider_stream_usage  pending\n0008_trusted_issuers  pending\n0009_limit_rules  pending\n0010_quotas_budgets  pending\n0011_limit_integrity  pending\n0012_tenant_price_lists  pending\n0013_users_sessions  pending\n0014_roles_support  pending\nschema is at version 0; this binary needs version 14\n" {
+	if code != 1 || errs != "" || out != "0001_init  pending\n0002_identity_audit  pending\n0003_vault  pending\n0004_catalogue  pending\n0005_gateway_auth_failures  pending\n0006_usage_ledger  pending\n0007_provider_stream_usage  pending\n0008_trusted_issuers  pending\n0009_limit_rules  pending\n0010_quotas_budgets  pending\n0011_limit_integrity  pending\n0012_tenant_price_lists  pending\n0013_users_sessions  pending\n0014_roles_support  pending\n0015_reports_audit  pending\nschema is at version 0; this binary needs version 15\n" {
 		t.Fatalf("status before: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate")
-	if code != 0 || errs != "" || out != "applied 0001_init\napplied 0002_identity_audit\napplied 0003_vault\napplied 0004_catalogue\napplied 0005_gateway_auth_failures\napplied 0006_usage_ledger\napplied 0007_provider_stream_usage\napplied 0008_trusted_issuers\napplied 0009_limit_rules\napplied 0010_quotas_budgets\napplied 0011_limit_integrity\napplied 0012_tenant_price_lists\napplied 0013_users_sessions\napplied 0014_roles_support\nschema is at version 14\n" {
+	if code != 0 || errs != "" || out != "applied 0001_init\napplied 0002_identity_audit\napplied 0003_vault\napplied 0004_catalogue\napplied 0005_gateway_auth_failures\napplied 0006_usage_ledger\napplied 0007_provider_stream_usage\napplied 0008_trusted_issuers\napplied 0009_limit_rules\napplied 0010_quotas_budgets\napplied 0011_limit_integrity\napplied 0012_tenant_price_lists\napplied 0013_users_sessions\napplied 0014_roles_support\napplied 0015_reports_audit\nschema is at version 15\n" {
 		t.Fatalf("migrate: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate")
-	if code != 0 || errs != "" || out != "schema is at version 14\n" {
+	if code != 0 || errs != "" || out != "schema is at version 15\n" {
 		t.Fatalf("second migrate: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate", "status")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if code != 0 || errs != "" || len(lines) != 15 || !applied("0001_init").MatchString(lines[0]) || !applied("0002_identity_audit").MatchString(lines[1]) || !applied("0003_vault").MatchString(lines[2]) || !applied("0004_catalogue").MatchString(lines[3]) || !applied("0005_gateway_auth_failures").MatchString(lines[4]) || !applied("0006_usage_ledger").MatchString(lines[5]) || !applied("0007_provider_stream_usage").MatchString(lines[6]) || !applied("0008_trusted_issuers").MatchString(lines[7]) || !applied("0009_limit_rules").MatchString(lines[8]) || !applied("0010_quotas_budgets").MatchString(lines[9]) || !applied("0011_limit_integrity").MatchString(lines[10]) || !applied("0012_tenant_price_lists").MatchString(lines[11]) || !applied("0013_users_sessions").MatchString(lines[12]) || !applied("0014_roles_support").MatchString(lines[13]) || lines[14] != "schema is at version 14; this binary needs version 14" {
+	if code != 0 || errs != "" || len(lines) != 16 || !applied("0001_init").MatchString(lines[0]) || !applied("0002_identity_audit").MatchString(lines[1]) || !applied("0003_vault").MatchString(lines[2]) || !applied("0004_catalogue").MatchString(lines[3]) || !applied("0005_gateway_auth_failures").MatchString(lines[4]) || !applied("0006_usage_ledger").MatchString(lines[5]) || !applied("0007_provider_stream_usage").MatchString(lines[6]) || !applied("0008_trusted_issuers").MatchString(lines[7]) || !applied("0009_limit_rules").MatchString(lines[8]) || !applied("0010_quotas_budgets").MatchString(lines[9]) || !applied("0011_limit_integrity").MatchString(lines[10]) || !applied("0012_tenant_price_lists").MatchString(lines[11]) || !applied("0013_users_sessions").MatchString(lines[12]) || !applied("0014_roles_support").MatchString(lines[13]) || !applied("0015_reports_audit").MatchString(lines[14]) || lines[15] != "schema is at version 15; this binary needs version 15" {
 		t.Fatalf("status after: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	testutil.AssertAbsent(t, "migrate output", out+errs, d.Passwords()...)
@@ -740,7 +751,7 @@ func TestServeRefusesUnmigratedDatabase(t *testing.T) { // T-161
 	}
 
 	d.Migrate(t)
-	if _, err := d.Super(t).Exec(context.Background(), "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (15, 'future', repeat('0', 64), 'x')"); err != nil {
+	if _, err := d.Super(t).Exec(context.Background(), "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (16, 'future', repeat('0', 64), 'x')"); err != nil {
 		t.Fatal(err)
 	}
 	code, out, errs = runBinary(t, serveEnv(t, d), "serve", "--config", writeConfig(t, "info"))
@@ -796,7 +807,7 @@ func TestServeBehindPooler(t *testing.T) { // T-163
 	d := dbtest.New(t)
 	pooled := d.Pooled(t)
 	code, out, errs := runBinary(t, pooled.Env(t), "migrate")
-	if code != 0 || !strings.Contains(out, "schema is at version 14") {
+	if code != 0 || !strings.Contains(out, "schema is at version 15") {
 		t.Fatalf("migrate through the pooler: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	up := fakeprovider.New(t)

@@ -1,6 +1,7 @@
 package authz
 
 import (
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -32,6 +33,10 @@ const (
 
 // ownerOnly lists the tenant permissions that tenant-admin does not hold: they are kept for owners.
 var ownerOnly = []string{SupportActionEnd}
+
+// notReadOnly lists the permissions that end in :read and that read-only does not hold: the log
+// holds price rates and budget amounts (ADR 0065).
+var notReadOnly = []string{AuditRead}
 
 func sorted(names ...string) []string {
 	out := append([]string(nil), names...)
@@ -95,7 +100,7 @@ func buildRoles() []Role {
 	}
 	readOnly := []string{IdentityRead}
 	for _, name := range TenantPermissions() {
-		if strings.HasSuffix(name, ":read") {
+		if strings.HasSuffix(name, ":read") && !slices.Contains(notReadOnly, name) {
 			readOnly = append(readOnly, name)
 		}
 	}
@@ -109,8 +114,8 @@ func buildRoles() []Role {
 		{RoleUsageViewer, ScopeTenant, true, withIdentity(UsageRead, PriceListRead, LimitRead, ModelRead),
 			"Reads usage, prices and limits"},
 		{RoleAuditor, ScopeTenant, true, withIdentity(ServiceAccountRead, VirtualKeyRead, CredentialRead, MemberRead, RoleRead, TokenIssuerRead,
-			SubjectMappingRead, LimitRead, ModelRead, SupportActionRead),
-			"Reads how the tenant is configured, who may do what, and what the platform did in it"},
+			SubjectMappingRead, LimitRead, ModelRead, SupportActionRead, AuditRead),
+			"Reads how the tenant is configured, who may do what, what the platform did in it, and the tenant's audit log"},
 		{RoleDeveloper, ScopeTenant, true, withIdentity(ModelInvoke, CredentialUse, ModelRead, CredentialRead, ServiceAccountRead, VirtualKeyRead,
 			VirtualKeyWrite, VirtualKeyRevoke, UsageRead, LimitRead),
 			"Issues virtual keys and calls models"},
@@ -118,8 +123,8 @@ func buildRoles() []Role {
 		{RoleReadOnly, ScopeTenant, true, sorted(readOnly...), "Reads everything of the tenant that can be read"},
 		{RolePlatformAdmin, ScopePlatform, true, withIdentity(platformPermissions()...),
 			"Administers the installation: tenants and platform keys"},
-		{RolePlatformAuditor, ScopePlatform, true, withIdentity(TenantRead, PlatformKeyRead, MetricsRead, CatalogRead, PlatformIssuerRead, PlatformLimitRead, UserRead, TenantSupportRead),
-			"Reads the installation: tenants, keys, catalogue, issuers, limits, users and support actions"},
+		{RolePlatformAuditor, ScopePlatform, true, withIdentity(TenantRead, PlatformKeyRead, MetricsRead, CatalogRead, PlatformIssuerRead, PlatformLimitRead, UserRead, TenantSupportRead, PlatformAuditRead),
+			"Reads the installation: tenants, keys, catalogue, issuers, limits, users, support actions and the platform's audit log"},
 	}
 }
 

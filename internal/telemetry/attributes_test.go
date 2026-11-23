@@ -118,11 +118,15 @@ func closedValue(instrument, key, value string, catalogue map[string]bool) bool 
 		return in(value, []string{"closed", "ended"})
 	case "pandokos.telemetry.state":
 		return in(value, []string{"ended", "exported", "failed"})
+	case "pandokos.retention.kind":
+		return in(value, []string{"usage_partition", "usage_record", "usage_rollup", "audit_event", "platform_audit_event"})
+	case "pandokos.export.kind":
+		return in(value, []string{"usage", "audit", "platform_audit"})
 	case "pandokos.telemetry.signal":
 		return in(value, []string{"traces", "metrics"})
 	case "pandokos.result":
 		return in(value, []string{"ok", "failed", "locked", "disabled", "unavailable", "refused", "written", "rejected", "lost", "recorded", "dropped", "skipped",
-			"blocked", "timeout", "status", "too_large", "invalid_document", "issuer_mismatch", "no_usable_key", "network"})
+			"blocked", "timeout", "status", "too_large", "invalid_document", "issuer_mismatch", "no_usable_key", "network", "complete", "aborted"})
 	}
 	return false
 }

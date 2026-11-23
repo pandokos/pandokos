@@ -649,8 +649,8 @@ func TestOpenAPIDocument(t *testing.T) {
 	}
 	// Sprint 2.2: 64 operations (66 with the two of sprint 3.3), and money is never a JSON number: no schema of the document has a
 	// number type, and a rate is a string with a pattern.
-	if n != 148 {
-		t.Errorf("the document has %d operations, want 148 (35, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1, the 12 of sprint 5.2, the 2 of sprint 5.3, the 7 of sprint 5.4, the 27 of sprint 4.2 and the 16 of sprint 4.3)", n)
+	if n != 160 {
+		t.Errorf("the document has %d operations, want 160 (35, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1, the 12 of sprint 5.2, the 2 of sprint 5.3, the 7 of sprint 5.4, the 27 of sprint 4.2, the 16 of sprint 4.3 and the 12 of sprint 6.2)", n)
 	}
 	if regexp.MustCompile(`(?m)type:\s*(number|\[[^\]]*number)`).MatchString(raw) || regexp.MustCompile(`format:\s*(float|double)`).MatchString(raw) {
 		t.Error("the document uses a floating-point type: prices travel as decimal strings")
@@ -685,7 +685,11 @@ func TestOpenAPIDocument(t *testing.T) {
 	var withSecret []string
 	for name, s := range schemas.Components.Schemas {
 		for member := range s.Properties {
-			if strings.Contains(strings.ToLower(member), "hash") {
+			// Sprint 6.2: the two schemas of the audit chain carry the hashes of the chain (a hash of a
+			// row of the log and of its head, not of a secret), as lower-case hex: nowhere else.
+			chain := name == "AuditEvent" && (member == "prev_hash" || member == "hash") ||
+				name == "AuditHead" && (member == "hash" || member == "anchor_hash")
+			if strings.Contains(strings.ToLower(member), "hash") && !chain {
 				t.Errorf("schema %s has the member %s", name, member)
 			}
 			if member == "secret" {

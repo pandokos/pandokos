@@ -308,11 +308,12 @@ func TestEveryOperationNeedsACredential(t *testing.T) {
 	expect(t, r, 404, adminapi.ProblemCodeNotFound)
 }
 
-// nonAudit drops the two audit tables from a full snapshot.
+// nonAudit drops the two audit tables, and the heads of their chains, from a full snapshot.
 func nonAudit(snapshot string) []string {
 	var out []string
 	for _, l := range strings.SplitAfter(snapshot, "\n") {
-		if !strings.HasPrefix(l, "audit_event: ") && !strings.HasPrefix(l, "platform_audit_event: ") {
+		if !strings.HasPrefix(l, "audit_event: ") && !strings.HasPrefix(l, "platform_audit_event: ") &&
+			!strings.HasPrefix(l, "audit_chain: ") && !strings.HasPrefix(l, "platform_audit_chain: ") {
 			out = append(out, l)
 		}
 	}

@@ -56,7 +56,10 @@ control; the fuzz targets run in CI.
 - An instance defined by configuration alone: every setting that distinguishes one installation
   from another (database, key-encryption key, trusted issuers, listeners, telemetry) comes from
   the file or the environment, checked by a test that starts two instances side by side from two
-  configurations.
+  configurations. *Note from 6.2:* `pandokos export` and `pandokos apply` (declarative documents of the
+  platform's catalogue and of a tenant) are built; platform-level and tenant token issuers and subject
+  mappings join the document here. The restore drill also verifies both audit chains after the restore
+  (`pandokos audit verify`, `platform-audit verify`).
 
 Requirements: OPS-10 (tested), OPS-13, VLT-16 (tested), OPS-08.
 

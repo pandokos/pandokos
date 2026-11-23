@@ -91,3 +91,4 @@ lie.
   reason on `suspendTenant` and `reactivateTenant` (O-4); `support.enabled` true by default, 1 h, 24 h cap
   (O-7); the owner ends an action (O-8); refused grants are logged, not audited (O-12).
 - 2026-11-23: accepted by the maintainer after review.
+- 2026-11-23: sprint 6.2: `audit:read` does not have the attribute `Support` ([ADR 0065](0065-the-audit-hash-chain-reading-and-retention.md))

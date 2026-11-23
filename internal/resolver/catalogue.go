@@ -69,7 +69,7 @@ func (c *Catalogue) Resolve(ctx context.Context, p authz.Principal, provider, mo
 		StreamUsage: prov.StreamUsageOption != "omit",
 		Provider:    provider, ProviderID: prov.ID, Endpoint: ep.Name, ModelID: m.ID, Model: m.Name, UpstreamModel: m.UpstreamID,
 		BaseURL: base, Private: ep.Private, Prices: snap.Versions(m.ID),
-		Currency: ta.Currency, TenantPrices: ta.Prices[m.ID],
+		Currency: ta.Currency, TenantPrices: ta.Prices[m.ID], MetadataKeys: ta.MetadataKeys,
 		MaxOutputTokens: m.MaxOutputTokens, ContextWindow: m.ContextWindow, DefaultOutputTokens: m.DefaultOutputTokens,
 	}, nil
 }

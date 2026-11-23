@@ -110,7 +110,7 @@ func TestPlatformSeesNoTenantUsage(t *testing.T) {
 			}
 		})
 
-		t.Run("the definer functions are the eleven of sprint 5.3 and the five of sprint 4.2, with the result types pinned", func(t *testing.T) {
+		t.Run("the definer functions are the eleven of sprint 5.3, the five of sprint 4.2 and the four of sprint 6.2, with the result types pinned", func(t *testing.T) {
 			rows, err := super.Query(ctx(t), `SELECT p.proname, pg_get_function_result(p.oid), p.prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 				WHERE n.nspname = 'pandokos' AND p.prosecdef ORDER BY 1`)
 			if err != nil {
@@ -134,6 +134,11 @@ func TestPlatformSeesNoTenantUsage(t *testing.T) {
 				"record_unlimited_traffic":           "boolean",
 				"virtual_key_directory_add":          "trigger",
 				"virtual_key_lookup":                 "uuid",
+				// Sprint 6.2: the two seals of the audit chain and the two retention functions.
+				"audit_seal_tenant":   "trigger",
+				"audit_seal_platform": "trigger",
+				"platform_retention":  "record",
+				"tenant_retention":    "record",
 			}
 			got := map[string]string{}
 			for rows.Next() {
@@ -143,7 +148,9 @@ func TestPlatformSeesNoTenantUsage(t *testing.T) {
 				}
 				got[name] = result
 				for _, tbl := range append([]string{"usage_record", "limit_event"}, "tenant_price_version", "tenant_price_rate") {
-					if strings.Contains(body, tbl) && name != "ensure_usage_partitions" {
+					// The two retention functions name usage_record: they return counts only, and the
+					// platform one drops partitions (sprint 6.2, section 5.10).
+					if strings.Contains(body, tbl) && name != "ensure_usage_partitions" && name != "platform_retention" && name != "tenant_retention" {
 						t.Errorf("the body of %s names %s", name, tbl)
 					}
 				}

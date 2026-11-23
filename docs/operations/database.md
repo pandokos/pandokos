@@ -406,7 +406,8 @@ has no partition (it is expected to stay empty).
   partition has forced row-level security with the same policy and its own `BEFORE TRUNCATE` trigger,
   set by the owner-only function `protect_usage_partition`. The schema lint (rule L-20) checks all of
   this for every partition.
-- Pandokos never drops a partition in this release; retention is a later sprint.
+- With `retention.usage_months` set, the worker drops the partitions that end before the cut, through
+  `platform_retention` (section 20); by default none is ever dropped.
 
 ## 13. Grants of migration 0008
 
@@ -754,3 +755,83 @@ v0.2.0 and in the [roles guide](roles.md#10-what-changes-for-an-installation-of-
 on `suspendTenant` and `reactivateTenant`; the time zone and the active currency are set with
 `tenant_setting:write`, so keys scoped to `limit:write` or `price_list:write` lose the two settings; the
 first service account of a tenant is `owner`.
+
+## 20. Grants of migration 0015
+
+Migration `0015_reports_audit` adds the hash chain of the two audit logs, the usage rollup, retention and
+the metadata keys a tenant accepts ([audit guide](audit.md), [usage guide](usage.md),
+[ADR 0064](../adr/0064-usage-rollup-reports-and-exports.md),
+[ADR 0065](../adr/0065-the-audit-hash-chain-reading-and-retention.md)). It runs in one transaction as the
+owner role. It adds no role. Its file is immutable once released; a fix is a later migration.
+
+**What changes.**
+
+- **The chain.** `audit_event` and `platform_audit_event` gain `seq`, `prev_hash` and `hash`; two heads,
+  `audit_chain` (tenant-scoped, forced row-level security, one row per tenant) and `platform_audit_chain`
+  (one row), are read by the admin role and written only by the sealing triggers. A `BEFORE INSERT`
+  trigger on each log (`audit_seal_tenant`, `audit_seal_platform`, `SECURITY DEFINER`, replacing
+  `audit_stamp`) numbers and hashes every row under a lock of the head. Three functions define the hash,
+  `audit_field`, `audit_canonical` and `audit_row_hash`, and exist in this migration only.
+  **Every existing audit row is sealed once**, chain by chain in the order of its time and ID: the
+  migration lifts forced row-level security and the append-only triggers on the audit tables for that
+  step and restores them before it ends. The function `record_unlimited_traffic` (the gateway's) is
+  replaced: it inserts in a subtransaction and treats a unique violation as "already written", same
+  signature and same answer.
+- **Reading.** The admin role holds `SELECT` on `audit_event` (under the tenant's policy) and on
+  `platform_audit_event` (under the platform scope).
+- **Retention.** `append_only` lets a `DELETE` through when the setting `pandokos.retention` is `on`.
+  Two functions are the only code that sets it, around their own `DELETE`:
+  `tenant_retention(usage_months, audit_months)` (in a tenant's session) and
+  `platform_retention(usage_months, audit_months)` (in platform scope), both `SECURITY DEFINER`, both
+  granted `EXECUTE` to the **worker role** and to no other. They take no name and no date from the
+  caller, check their arguments (0, or 2 to 120 months of usage, or 1 to 1200 months of audit), drop or
+  delete only what lies before the cut, move the anchor, and write `usage.retention` and
+  `audit.retention` in the log they touch. No runtime role holds `DELETE` on an append-only table, so for
+  them the setting changes nothing; `UPDATE` and `TRUNCATE` stay refused for everybody. `grep -rn
+  pandokos.retention internal/store/migrations/sql/` finds this migration only.
+- **The rollup.** `usage_rollup` and `usage_rollup_state`, tenant-scoped with forced row-level security
+  and the canonical policy. The worker may read, insert, update and delete the rollup and read, insert
+  (`tenant_id`, `watermark`) and update (`watermark`, `updated_at`) its state; the admin role reads both.
+  They are derived and can be rebuilt, so they are not append-only. The gateway has no grant on them.
+- **The index.** `usage_record_recorded_idx` on `(tenant_id, recorded_at)`, on the partitioned ledger.
+- **Metadata keys.** `metadata_key_policy`, tenant-scoped with the canonical policy, a unique row per
+  tenant; the gateway and admin roles read it, the admin role inserts the keys, updates them and deletes
+  the row. A change notifies the gateways' catalogue cache.
+
+**Locks and duration.** The sealing of existing rows reads and updates every audit row once: it is
+proportional to the audit log, which is small next to the ledger. The statement that builds the index
+takes a lock that blocks writes to the ledger for as long as it runs; on a large ledger read the next
+section first. A failure rolls everything back to the schema of 0014. There is no down migration; to go
+back restore a backup taken before.
+
+**Upgrade: stop, migrate, start.** An earlier binary does not start against the new schema, and a new
+binary does not start against the schema of 0014.
+
+### The index of migration 0015 on a large ledger
+
+`CREATE INDEX` on a partitioned table builds one index per partition inside the migration's transaction,
+and every build blocks writes to its partition. On a ledger of tens of millions of records that can last
+minutes during which the gateway cannot record usage. To avoid the pause, **build the indexes beforehand**
+without blocking writes, while the old binary still runs, as the **database owner role**, one statement
+per partition (outside a transaction block, one at a time):
+
+```sql
+-- once for each partition that exists: the monthly ones and the default partition
+CREATE INDEX CONCURRENTLY usage_record_y2026m10_tenant_id_recorded_at_idx
+    ON pandokos.usage_record_y2026m10 (tenant_id, recorded_at);
+CREATE INDEX CONCURRENTLY usage_record_y2026m11_tenant_id_recorded_at_idx
+    ON pandokos.usage_record_y2026m11 (tenant_id, recorded_at);
+-- ... every month up to the newest partition, then
+CREATE INDEX CONCURRENTLY usage_record_default_tenant_id_recorded_at_idx
+    ON pandokos.usage_record_default (tenant_id, recorded_at);
+```
+
+(the name of a partition is `usage_record_yYYYYmMM`; list them with `\d+ pandokos.usage_record`).
+Then run `pandokos migrate`: when it creates the index of the parent table, PostgreSQL **attaches** the
+existing index of each partition that has the same definition instead of building it, so the statement
+is fast. A failed `CONCURRENTLY` build leaves an invalid index: drop it (`DROP INDEX`) and build it again.
+Partitions that the worker creates later get their index from the parent. The index serves the rollup; the
+reports and the limit counters are correct without it, only slower.
+
+**Manual inserts into the ledger are not supported.** The rollup counts a record when its `recorded_at`
+passes the watermark; a record put in by hand with a `recorded_at` behind it is not counted by the rollup.

@@ -194,6 +194,11 @@ func (w *apiWorld) fresh(t *testing.T, s side, op adminapi.Operation) apitest.Pa
 	if strings.Contains(op.Path, "{price}") {
 		p.TenantPrice = w.seedTenantPrice(t, s)
 	}
+	// The operation that deletes a limit rule gets one of its own, so that the operations after it
+	// (the usage of a rule, of sprint 6.2) still find the rule of the tenant.
+	if op.ID == "deleteLimit" {
+		p.LimitRule = w.api.SeedExtraLimitRule(t, s.tenant.ID)
+	}
 	// The operations of sprint 4.3 on a custom role or on a support action get one of their own.
 	if strings.Contains(op.Path, "{role}") {
 		p.Role = w.api.CustomRole(t, s.tenant.ID, "member:read")
@@ -261,6 +266,10 @@ var platformAndSelf = map[string]string{
 	"createPlatformKey": "platform",
 	"getPlatformKey":    "platform",
 	"revokePlatformKey": "platform",
+
+	"listPlatformAuditEvents":   "platform",
+	"getPlatformAuditHead":      "platform",
+	"exportPlatformAuditEvents": "platform",
 
 	"listTenantCredentials":   "platform",
 	"getTenantCredential":     "platform",
@@ -600,8 +609,8 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 		}
 		n++
 	}
-	if n != 72 {
-		t.Errorf("%d tenant operations, want 72 (24, the two of sprint 3.3, the ten of sprint 4.1, the seven of sprint 5.2, the two of sprint 5.3, the seven of sprint 5.4, the ten of sprint 4.2 and the ten of sprint 4.3)", n)
+	if n != 81 {
+		t.Errorf("%d tenant operations, want 81 (24, the two of sprint 3.3, the ten of sprint 4.1, the seven of sprint 5.2, the two of sprint 5.3, the seven of sprint 5.4, the ten of sprint 4.2, the ten of sprint 4.3 and the nine of sprint 6.2)", n)
 	}
 	if _, err := c.GetTenant(ctx(t), adminapi.GetTenantInput{Tenant: w.b.tenant.ID}); err == nil {
 		t.Error("a tenant key read a tenant")

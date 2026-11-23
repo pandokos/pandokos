@@ -208,6 +208,41 @@ func registerSources(k *maker, o MetricsOptions) {
 		}, reservations, counters, expired, reconciliations, lastDuration, cutLag, events, ruleLoads)
 	}
 
+	if s.Reports != nil {
+		rollups := k.int64ObservableCounter("pandokos.reports.rollups")
+		lag := k.float64ObservableGauge("pandokos.reports.rollup.lag")
+		removed := k.int64ObservableCounter("pandokos.retention.removed")
+		runs := k.int64ObservableCounter("pandokos.retention.runs")
+		exports := k.int64ObservableCounter("pandokos.exports")
+		register(func(_ context.Context, ob metric.Observer) error {
+			r := s.Reports()
+			for _, result := range sortedKeys(r.Rollups) {
+				ob.ObserveInt64(rollups, r.Rollups[result], attr("pandokos.result", result))
+			}
+			ob.ObserveFloat64(lag, r.RollupLag.Seconds())
+			for _, kind := range sortedKeys(r.RetentionRemoved) {
+				ob.ObserveInt64(removed, r.RetentionRemoved[kind], attr(AttrRetentionKind, kind))
+			}
+			for _, result := range sortedKeys(r.RetentionRuns) {
+				ob.ObserveInt64(runs, r.RetentionRuns[result], attr("pandokos.result", result))
+			}
+			keys := make([]ExportKey, 0, len(r.Exports))
+			for key := range r.Exports {
+				keys = append(keys, key)
+			}
+			sort.Slice(keys, func(i, j int) bool {
+				if keys[i].Kind != keys[j].Kind {
+					return keys[i].Kind < keys[j].Kind
+				}
+				return keys[i].Result < keys[j].Result
+			})
+			for _, key := range keys {
+				ob.ObserveInt64(exports, r.Exports[key], attr(AttrExportKind, key.Kind), attr("pandokos.result", key.Result))
+			}
+			return nil
+		}, rollups, lag, removed, runs, exports)
+	}
+
 	if s.Resolver != nil {
 		unpriced := k.int64ObservableCounter("pandokos.limits.admitted_unpriced")
 		unlimited := k.int64ObservableCounter("pandokos.limits.unlimited_traffic")

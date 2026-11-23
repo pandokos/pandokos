@@ -115,6 +115,10 @@ func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 		"listModels", "getModel", "deleteModel", "listModelGrants", "grantModel", "revokeModelGrant",
 		"listPriceVersions", "deletePriceVersion", "listPriceImports", "getPriceImport",
 		"listTenantModels", "getModelRestriction", "clearModelRestriction", "listUsageRecords":
+	case "getUsageReport", "exportUsageRecords", "getLimitUsage", "getMetadataKeys", "clearMetadataKeys",
+		"listAuditEvents", "getAuditHead", "exportAuditEvents", "listPlatformAuditEvents", "getPlatformAuditHead", "exportPlatformAuditEvents":
+	case "setMetadataKeys":
+		body = map[string]any{"keys": []string{"team"}}
 	case "getCapability":
 		query = "?provider=openai&model=gpt-4o-mini"
 	case "createProvider":

@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -620,4 +621,164 @@ func (c *Client) doRedirect(ctx context.Context, method, path string, q url.Valu
 		return "", errors.New("adminapi: the redirect has no Location")
 	}
 	return loc, nil
+}
+
+// Stream is the answer of an operation whose success is streamed (application/x-ndjson, and
+// text/csv for an operation that has a format parameter; ADR 0064). Write produces the body: it
+// is called after the headers are set but before the status is sent, so that an error returned
+// before the first byte leaves the connection is answered as a problem; after the first byte the
+// transfer is aborted without its terminator (a client that does not see the end of the chunked
+// body knows the export is incomplete).
+type Stream struct {
+	ContentType string // the media type of the body
+	Filename    string // the name offered to a download; only [A-Za-z0-9._-] are kept
+	Write       func(ctx context.Context, w io.Writer) error
+}
+
+const (
+	streamBufferBytes = 32 << 10
+	streamWriteExtend = 60 * time.Second
+	streamMaxDuration = 15 * time.Minute
+	streamDefaultName = "export"
+)
+
+// streamName keeps the characters of a download name that cannot break the header.
+func streamName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '_' || r == '-' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	if b.Len() == 0 {
+		return streamDefaultName
+	}
+	return b.String()
+}
+
+// streamWriter buffers the body until streamBufferBytes or a Flush, then sends it, extending the
+// write deadline of the connection before each send. The status line goes with the first send.
+type streamWriter struct {
+	w    http.ResponseWriter
+	rc   *http.ResponseController
+	buf  bytes.Buffer
+	sent bool
+	err  error
+}
+
+func (s *streamWriter) Write(p []byte) (int, error) {
+	if s.err != nil {
+		return 0, s.err
+	}
+	s.buf.Write(p)
+	if s.buf.Len() >= streamBufferBytes {
+		if err := s.Flush(); err != nil {
+			return 0, err
+		}
+	}
+	return len(p), nil
+}
+
+// Flush sends what is buffered.
+func (s *streamWriter) Flush() error {
+	if s.err != nil {
+		return s.err
+	}
+	_ = s.rc.SetWriteDeadline(time.Now().Add(streamWriteExtend)) // not supported: the server's own deadline stays
+	if !s.sent {
+		s.w.WriteHeader(http.StatusOK)
+		s.sent = true
+	}
+	if _, err := s.w.Write(s.buf.Bytes()); err != nil {
+		s.err = err
+		return err
+	}
+	s.buf.Reset()
+	if err := s.rc.Flush(); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		s.err = err
+		return err
+	}
+	return nil
+}
+
+// writeStream answers a streamed operation.
+func (h *handler) writeStream(w http.ResponseWriter, r *http.Request, op *Operation, out *Stream) {
+	if out == nil || out.Write == nil || out.ContentType == "" {
+		panic("adminapi: a streamed answer without a content type and a Write")
+	}
+	w.Header().Set("Content-Type", out.ContentType)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+streamName(out.Filename)+`"`)
+	w.Header().Set("Cache-Control", "no-store")
+	ctx, cancel := context.WithTimeout(r.Context(), streamMaxDuration)
+	defer cancel()
+	sw := &streamWriter{w: w, rc: http.NewResponseController(w)}
+	// The first page may take longer than what is left of the server's write timeout.
+	_ = sw.rc.SetWriteDeadline(time.Now().Add(streamWriteExtend))
+	if err := out.Write(ctx, sw); err != nil {
+		if !sw.sent {
+			w.Header().Del("Content-Disposition")
+			h.fail(w, r, op, err)
+			return
+		}
+		panic(http.ErrAbortHandler)
+	}
+	if err := sw.Flush(); err != nil {
+		panic(http.ErrAbortHandler)
+	}
+}
+
+// StreamBody is the answer of a streamed operation as the client returns it: the caller reads
+// Body to its end (a transfer that stops early is an error of the read) and closes it.
+type StreamBody struct {
+	ContentType string
+	Body        io.ReadCloser
+}
+
+// doStream calls a GET whose success is streamed. A non-200 answer is decoded as a problem.
+func (c *Client) doStream(ctx context.Context, method, path string, q url.Values, accept string) (*StreamBody, error) {
+	u := strings.TrimSuffix(c.BaseURL, "/") + path
+	if len(q) > 0 {
+		u += "?" + q.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("adminapi: %w", err)
+	}
+	req.Header.Set("Accept", accept)
+	if c.UserAgent != "" {
+		req.Header.Set("User-Agent", c.UserAgent)
+	}
+	if c.Key != nil {
+		req.Header.Set("Authorization", "Bearer "+c.Key())
+	}
+	hc := c.HTTP
+	if hc == nil {
+		hc = http.DefaultClient
+	}
+	resp, err := hc.Do(req)
+	if err != nil {
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			err = ue.Err // the URL is not repeated in the message
+		}
+		return nil, fmt.Errorf("adminapi: the server could not be reached: %w", err)
+	}
+	if c.OnResponse != nil {
+		c.OnResponse(resp)
+	}
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+		if err != nil {
+			return nil, fmt.Errorf("adminapi: read the response: %w", err)
+		}
+		var p Problem
+		if json.Unmarshal(raw, &p) != nil || p.Code == "" {
+			return nil, fmt.Errorf("adminapi: unexpected response with status %d", resp.StatusCode)
+		}
+		return nil, &ProblemError{Problem: p}
+	}
+	return &StreamBody{ContentType: resp.Header.Get("Content-Type"), Body: resp.Body}, nil
 }

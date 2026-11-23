@@ -486,8 +486,8 @@ func TestLimitAPI(t *testing.T) {
 			ops = append(ops, op)
 		}
 	}
-	if len(ops) != 7 {
-		t.Fatalf("%d tenant routes name a limit, want 7 (the route table changed: give the new routes their cases)", len(ops))
+	if len(ops) != 8 {
+		t.Fatalf("%d tenant routes name a limit, want 8 (the seven of 5.2 and getLimitUsage of 6.2; the route table changed: give the new routes their cases)", len(ops))
 	}
 	// An event of A.
 	if _, err := w.api.Super(t).Exec(ctx(t), `INSERT INTO pandokos.limit_event (tenant_id, kind, rule_id, rule_level, subject_kind, metric, period_start, period_end, percent, limit_value, observed)

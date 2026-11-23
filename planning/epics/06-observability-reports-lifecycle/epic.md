@@ -49,7 +49,7 @@ collector stopped, inference latency is unchanged.
   *Note:* `audit:read` is one tenant permission, given to `owner`, `tenant-admin` and `auditor` and not to `read-only`
   (4.3 §11); whether a support action may carry it is decided here by giving it the attribute `Support` or not. The
   read API can filter by `support_action_id`. Refused grants and refused support attempts, logged but not audited
-  in 4.3, can become events here.
+  in 4.3, stay log lines (D-23); 6.4 decides whether they become events.
 - Retention settings for usage and audit; partition dropping through the audited function.
 - Restriction of accepted metadata keys per tenant.
 - `pandokos export` and `pandokos apply` for declarative configuration.
@@ -59,6 +59,12 @@ Requirements: USE-06 to USE-08, AUD-04 (tamper evidence), AUD-05, AUD-06, CAT-10
 Exit: a tenant's usage viewer obtains last month's cost by model and cannot see another tenant's;
 altering an audit row by hand makes verification fail; `apply` of an exported document is a
 no-op.
+
+*Deferred from 6.2 (sprint 6.2 §2):* retention of `limit_event` and `price_import`, and what pseudonymization
+of a deleted tenant's records means for its audit chain, are decided in 6.3, on the mechanism of the
+retention switch (ADR 0065); platform and tenant token issuers and subject mappings in `export` and
+`apply` are sprint 12.3 ("an instance defined by configuration alone"); forwarding audit rows as they
+happen is 6.4.
 
 ### 6.3 Tenant deletion and key rotation
 

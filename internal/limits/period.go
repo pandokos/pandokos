@@ -14,6 +14,9 @@ type PeriodKind int
 const (
 	PerDay PeriodKind = iota + 1
 	PerMonth
+	// PeriodTotal is the whole window of a report as a single period (sprint 6.2). It is not a
+	// period of a rule: a calendar has no period of this kind.
+	PeriodTotal
 )
 
 // Period is [Start, End) in absolute time.

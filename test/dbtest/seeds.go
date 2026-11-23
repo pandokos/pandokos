@@ -331,6 +331,19 @@ func (d *Database) Count(tb testing.TB, sql string, args ...any) int {
 	return n
 }
 
+// SharedSuper returns the connection of the superuser that the database keeps for the helpers that
+// poll (Count): one connection for the life of the database, for the tests that read or write as the
+// owner many times. Do not close it.
+func (d *Database) SharedSuper(tb testing.TB) *pgx.Conn {
+	tb.Helper()
+	d.s.mu.Lock()
+	defer d.s.mu.Unlock()
+	if d.s.helper == nil {
+		d.s.helper = d.Super(d.s.root)
+	}
+	return d.s.helper
+}
+
 // SeedTenants inserts n active tenants named prefix-1 to prefix-n in one statement and returns
 // their IDs.
 func (d *Database) SeedTenants(tb testing.TB, prefix string, n int) []tenant.ID {

@@ -243,6 +243,7 @@ func TestLimitPermissions(t *testing.T) {
 		{"updateLimit", "PATCH", base + "/limits/" + rule.ID, map[string]any{"limit": 7}, "limit:write", false},
 		{"deleteLimit", "DELETE", base + "/limits/" + rule.ID, nil, "limit:delete", false},
 		{"listTenantPlatformLimits", "GET", base + "/platform-limits", nil, "limit:read", false},
+		{"getLimitUsage", "GET", base + "/limits/" + rule.ID + "/usage", nil, "usage:read", false}, // sprint 6.2
 		{"listLimitEvents", "GET", base + "/limit-events", nil, "limit:read", false},
 		{"listPlatformLimits", "GET", "/v1/platform-limits", nil, "platform_limit:read", true},
 		{"createPlatformLimit", "POST", "/v1/platform-limits", map[string]any{"metric": "tokens_per_day", "limit": 1}, "platform_limit:write", true},
@@ -280,7 +281,7 @@ func TestLimitPermissions(t *testing.T) {
 		k := decodeInto[adminapi.VirtualKeyCreated](t, w.do(t, w.ka, "POST", base+"/virtual-keys", map[string]any{"service_account_id": admin2.ID, "scopes": perms}), 201)
 		return k.Secret
 	}
-	allTenant := []string{"limit:read", "limit:write", "limit:delete", "service_account:read", "virtual_key:read"}
+	allTenant := []string{"limit:read", "limit:write", "limit:delete", "usage:read", "service_account:read", "virtual_key:read"}
 	for _, o := range ops {
 		do := func(key string) *apitest.Response { return w.do(t, key, o.method, o.path, o.body) }
 		if o.platform {

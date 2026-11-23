@@ -35,7 +35,7 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | `catalog:price` | platform | - | Setting and removing price overrides; running a price import | `clearPriceOverride`, `createPriceOverride`, `deletePriceVersion`, `runPriceImport` | `platform-admin` |
 | `model:read` | tenant | - | Listing the models available to the tenant, with the prices that apply to it; reading the tenant's model restriction | `getCapability`, `getModelRestriction`, `listTenantModels` | `owner`, `tenant-admin`, `credential-manager`, `usage-viewer`, `auditor`, `developer`, `read-only` |
 | `model:restrict` | tenant | - | Setting and clearing the tenant's model restriction | `clearModelRestriction`, `setModelRestriction` | `owner`, `tenant-admin` |
-| `usage:read` | tenant | - | Listing the tenant's usage records | `listUsageRecords` | `owner`, `tenant-admin`, `usage-viewer`, `developer`, `read-only` |
+| `usage:read` | tenant | - | Listing the tenant's usage records | `exportUsageRecords`, `getLimitUsage`, `getMetadataKeys`, `getUsageReport`, `listUsageRecords` | `owner`, `tenant-admin`, `usage-viewer`, `developer`, `read-only` |
 | `token_issuer:read` | tenant | - | Reading and listing the tenant's trusted token issuers and the platform-level issuers that list the tenant | `getTokenIssuer`, `listTenantPlatformIssuers`, `listTokenIssuers` | `owner`, `tenant-admin`, `auditor`, `read-only` |
 | `token_issuer:write` | tenant | - | Registering a trusted token issuer; changing, disabling and enabling it | `createTokenIssuer`, `updateTokenIssuer` | `owner`, `tenant-admin` |
 | `token_issuer:delete` | tenant | - | Deleting a trusted token issuer with its subject mappings | `deleteTokenIssuer` | `owner`, `tenant-admin` |
@@ -64,24 +64,26 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | `role:delete` | tenant | support | Deleting a custom role that nobody holds | `deleteRole` | `owner`, `tenant-admin` |
 | `support_action:read` | tenant | support | Reading the support actions that the platform opened in the tenant | `getSupportAction`, `listSupportActions` | `owner`, `tenant-admin`, `auditor`, `read-only` |
 | `support_action:end` | tenant | - | Ending a support action of the platform in the tenant | `endSupportAction` | `owner` |
-| `tenant_setting:write` | tenant | - | Setting the tenant's time zone and its active currency | `setActiveCurrency`, `setTenantTimeZone` | `owner`, `tenant-admin` |
+| `tenant_setting:write` | tenant | - | Setting the tenant's time zone, its active currency and the metadata keys it accepts | `clearMetadataKeys`, `setActiveCurrency`, `setMetadataKeys`, `setTenantTimeZone` | `owner`, `tenant-admin` |
 | `tenant_support:open` | platform | in tenant | Opening a support action in a tenant, with a reason, and closing support actions | `closeSupportAction`, `openSupportAction` | `platform-admin` |
 | `tenant_support:read` | platform | in tenant | Reading and listing the support actions of a tenant | `getTenantSupportAction`, `listTenantSupportActions` | `platform-admin`, `platform-auditor` |
+| `audit:read` | tenant | - | Reading the tenant's audit log, the head of its chain and its export | `exportAuditEvents`, `getAuditHead`, `listAuditEvents` | `owner`, `tenant-admin`, `auditor` |
+| `platform_audit:read` | platform | - | Reading the platform's audit log, the head of its chain and its export | `exportPlatformAuditEvents`, `getPlatformAuditHead`, `listPlatformAuditEvents` | `platform-admin`, `platform-auditor` |
 
 ## Built-in roles
 
 | Role | Scope | Members | Description | Permissions |
 |---|---|---|---|---|
-| `owner` | tenant | yes | Holds every permission of the tenant, now and when permissions are added | `credential:delete`, `credential:read`, `credential:rotate`, `credential:use`, `credential:write`, `identity:read`, `limit:delete`, `limit:read`, `limit:write`, `member:read`, `member:write`, `model:invoke`, `model:read`, `model:restrict`, `price_list:delete`, `price_list:read`, `price_list:write`, `role:delete`, `role:read`, `role:write`, `service_account:read`, `service_account:write`, `subject_mapping:delete`, `subject_mapping:read`, `subject_mapping:write`, `support_action:end`, `support_action:read`, `tenant_setting:write`, `token_issuer:delete`, `token_issuer:read`, `token_issuer:write`, `usage:read`, `virtual_key:read`, `virtual_key:revoke`, `virtual_key:write` |
-| `tenant-admin` | tenant | yes | Administers one tenant day to day: everything but what is kept for owners | `credential:delete`, `credential:read`, `credential:rotate`, `credential:use`, `credential:write`, `identity:read`, `limit:delete`, `limit:read`, `limit:write`, `member:read`, `member:write`, `model:invoke`, `model:read`, `model:restrict`, `price_list:delete`, `price_list:read`, `price_list:write`, `role:delete`, `role:read`, `role:write`, `service_account:read`, `service_account:write`, `subject_mapping:delete`, `subject_mapping:read`, `subject_mapping:write`, `support_action:read`, `tenant_setting:write`, `token_issuer:delete`, `token_issuer:read`, `token_issuer:write`, `usage:read`, `virtual_key:read`, `virtual_key:revoke`, `virtual_key:write` |
+| `owner` | tenant | yes | Holds every permission of the tenant, now and when permissions are added | `audit:read`, `credential:delete`, `credential:read`, `credential:rotate`, `credential:use`, `credential:write`, `identity:read`, `limit:delete`, `limit:read`, `limit:write`, `member:read`, `member:write`, `model:invoke`, `model:read`, `model:restrict`, `price_list:delete`, `price_list:read`, `price_list:write`, `role:delete`, `role:read`, `role:write`, `service_account:read`, `service_account:write`, `subject_mapping:delete`, `subject_mapping:read`, `subject_mapping:write`, `support_action:end`, `support_action:read`, `tenant_setting:write`, `token_issuer:delete`, `token_issuer:read`, `token_issuer:write`, `usage:read`, `virtual_key:read`, `virtual_key:revoke`, `virtual_key:write` |
+| `tenant-admin` | tenant | yes | Administers one tenant day to day: everything but what is kept for owners | `audit:read`, `credential:delete`, `credential:read`, `credential:rotate`, `credential:use`, `credential:write`, `identity:read`, `limit:delete`, `limit:read`, `limit:write`, `member:read`, `member:write`, `model:invoke`, `model:read`, `model:restrict`, `price_list:delete`, `price_list:read`, `price_list:write`, `role:delete`, `role:read`, `role:write`, `service_account:read`, `service_account:write`, `subject_mapping:delete`, `subject_mapping:read`, `subject_mapping:write`, `support_action:read`, `tenant_setting:write`, `token_issuer:delete`, `token_issuer:read`, `token_issuer:write`, `usage:read`, `virtual_key:read`, `virtual_key:revoke`, `virtual_key:write` |
 | `credential-manager` | tenant | yes | Manages the provider credentials of the tenant | `credential:delete`, `credential:read`, `credential:rotate`, `credential:write`, `identity:read`, `model:read` |
 | `usage-viewer` | tenant | yes | Reads usage, prices and limits | `identity:read`, `limit:read`, `model:read`, `price_list:read`, `usage:read` |
-| `auditor` | tenant | yes | Reads how the tenant is configured, who may do what, and what the platform did in it | `credential:read`, `identity:read`, `limit:read`, `member:read`, `model:read`, `role:read`, `service_account:read`, `subject_mapping:read`, `support_action:read`, `token_issuer:read`, `virtual_key:read` |
+| `auditor` | tenant | yes | Reads how the tenant is configured, who may do what, what the platform did in it, and the tenant's audit log | `audit:read`, `credential:read`, `identity:read`, `limit:read`, `member:read`, `model:read`, `role:read`, `service_account:read`, `subject_mapping:read`, `support_action:read`, `token_issuer:read`, `virtual_key:read` |
 | `developer` | tenant | yes | Issues virtual keys and calls models | `credential:read`, `credential:use`, `identity:read`, `limit:read`, `model:invoke`, `model:read`, `service_account:read`, `usage:read`, `virtual_key:read`, `virtual_key:revoke`, `virtual_key:write` |
 | `inference` | tenant | no | Calls models through the inference listener | `credential:use`, `model:invoke` |
 | `read-only` | tenant | yes | Reads everything of the tenant that can be read | `credential:read`, `identity:read`, `limit:read`, `member:read`, `model:read`, `price_list:read`, `role:read`, `service_account:read`, `subject_mapping:read`, `support_action:read`, `token_issuer:read`, `usage:read`, `virtual_key:read` |
-| `platform-admin` | platform | yes | Administers the installation: tenants and platform keys | `catalog:price`, `catalog:read`, `catalog:write`, `identity:read`, `metrics:read`, `platform_issuer:delete`, `platform_issuer:read`, `platform_issuer:write`, `platform_key:read`, `platform_key:revoke`, `platform_key:write`, `platform_limit:delete`, `platform_limit:read`, `platform_limit:write`, `tenant:read`, `tenant:suspend`, `tenant:write`, `tenant_credential:read`, `tenant_credential:revoke`, `tenant_support:open`, `tenant_support:read`, `user:read`, `user:write` |
-| `platform-auditor` | platform | yes | Reads the installation: tenants, keys, catalogue, issuers, limits, users and support actions | `catalog:read`, `identity:read`, `metrics:read`, `platform_issuer:read`, `platform_key:read`, `platform_limit:read`, `tenant:read`, `tenant_support:read`, `user:read` |
+| `platform-admin` | platform | yes | Administers the installation: tenants and platform keys | `catalog:price`, `catalog:read`, `catalog:write`, `identity:read`, `metrics:read`, `platform_audit:read`, `platform_issuer:delete`, `platform_issuer:read`, `platform_issuer:write`, `platform_key:read`, `platform_key:revoke`, `platform_key:write`, `platform_limit:delete`, `platform_limit:read`, `platform_limit:write`, `tenant:read`, `tenant:suspend`, `tenant:write`, `tenant_credential:read`, `tenant_credential:revoke`, `tenant_support:open`, `tenant_support:read`, `user:read`, `user:write` |
+| `platform-auditor` | platform | yes | Reads the installation: tenants, keys, catalogue, issuers, limits, users, support actions and the platform's audit log | `catalog:read`, `identity:read`, `metrics:read`, `platform_audit:read`, `platform_issuer:read`, `platform_key:read`, `platform_limit:read`, `tenant:read`, `tenant_support:read`, `user:read` |
 
 ## Permissions by tenant role
 
@@ -120,7 +122,8 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | `role:delete` | x | x | - | - | - | - | - | - | Deleting a custom role that nobody holds |
 | `support_action:read` | x | x | - | - | x | - | - | x | Reading the support actions that the platform opened in the tenant |
 | `support_action:end` | x | - | - | - | - | - | - | - | Ending a support action of the platform in the tenant |
-| `tenant_setting:write` | x | x | - | - | - | - | - | - | Setting the tenant's time zone and its active currency |
+| `tenant_setting:write` | x | x | - | - | - | - | - | - | Setting the tenant's time zone, its active currency and the metadata keys it accepts |
+| `audit:read` | x | x | - | - | x | - | - | - | Reading the tenant's audit log, the head of its chain and its export |
 
 ## Permissions by platform role
 
@@ -148,6 +151,7 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | `user:write` | x | - | Creating and changing such users; disabling and enabling them; resetting their password; unlocking them; ending their sessions; assigning platform roles |
 | `tenant_support:open` | x | - | Opening a support action in a tenant, with a reason, and closing support actions |
 | `tenant_support:read` | x | x | Reading and listing the support actions of a tenant |
+| `platform_audit:read` | x | x | Reading the platform's audit log, the head of its chain and its export |
 
 ## Operations that require a reason
 

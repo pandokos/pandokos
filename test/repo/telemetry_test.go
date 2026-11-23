@@ -93,8 +93,8 @@ func TestMetricsReference(t *testing.T) {
 		t.Error("docs/reference/metrics.md does not state the pinned version 1.41.0")
 	}
 	catalogue := telemetry.Catalogue()
-	if len(catalogue) != 41 {
-		t.Fatalf("telemetry.Catalogue() has %d instruments, want the 41 of the design", len(catalogue))
+	if len(catalogue) != 46 {
+		t.Fatalf("telemetry.Catalogue() has %d instruments, want the 46 of the design", len(catalogue))
 	}
 	rows := metricsRows(t)
 	names := map[string]bool{}

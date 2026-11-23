@@ -53,7 +53,7 @@ func TestTenantPriceListsUpgrade(t *testing.T) {
 		before[tbl] = snapshot(tbl, drop)
 	}
 
-	d.Migrate(t)
+	d.MigrateTo(t, 12)
 
 	for tbl, drop := range tables {
 		if got := snapshot(tbl, drop); got != before[tbl] {
@@ -85,10 +85,10 @@ func TestTenantPriceListsUpgrade(t *testing.T) {
 			t.Error("migration 0012 ran twice")
 		}
 		var versions int
-		if err := super.QueryRow(ctx, `SELECT count(*) FROM pandokos.schema_migration`).Scan(&versions); err != nil || versions != 14 {
-			t.Errorf("the ledger holds %d migrations (%v), want 14", versions, err)
+		if err := super.QueryRow(ctx, `SELECT count(*) FROM pandokos.schema_migration`).Scan(&versions); err != nil || versions != 12 {
+			t.Errorf("the ledger holds %d migrations (%v), want 12", versions, err)
 		}
-		d.Migrate(t) // the migrator applies what is missing: nothing
+		d.MigrateTo(t, 12) // the migrator applies what is missing: nothing
 	})
 }
 
