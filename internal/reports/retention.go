@@ -67,8 +67,11 @@ func (r *Retention) Run(ctx context.Context) {
 	}
 }
 
-// Pass runs retention once: each tenant in its own session, then the platform. A part that fails
-// is counted and logged and the others go on; the error returned is the first failure.
+// Pass runs retention once: the platform first (the ledger partitions and the platform log), then
+// each tenant in its own session. A tenant that fails is counted and logged and the others go on;
+// when the platform pass fails the tenant pass does not run, because it removes the rollup of the
+// months whose ledger the platform pass could not drop, and a report of those months would be
+// partial. The error returned is the first failure.
 func (r *Retention) Pass(ctx context.Context) error {
 	if r.UsageMonths == 0 && r.AuditMonths == 0 {
 		return nil
@@ -80,6 +83,26 @@ func (r *Retention) Pass(ctx context.Context) error {
 		}
 	}
 	removed := map[string]int64{}
+
+	err := r.DB.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
+		res, err := queries.New(tx).PlatformRetention(ctx, queries.PlatformRetentionParams{
+			UsageMonths: months(r.UsageMonths), AuditMonths: months(r.AuditMonths)})
+		if err != nil {
+			return err
+		}
+		removed["usage_partition"] += int64(res.PartitionsDropped)
+		removed["platform_audit_event"] += res.AuditRows
+		return nil
+	})
+	note(err)
+	if err != nil {
+		// The tenants' rollup of the months before the cut must outlive the ledger of those months:
+		// when the partitions could not be dropped, the tenant pass does not remove the rollup either.
+		return r.finish(first, removed)
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 
 	var ids []string
 	note(r.DB.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
@@ -113,19 +136,11 @@ func (r *Retention) Pass(ctx context.Context) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	err := r.DB.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
-		res, err := queries.New(tx).PlatformRetention(ctx, queries.PlatformRetentionParams{
-			UsageMonths: months(r.UsageMonths), AuditMonths: months(r.AuditMonths)})
-		if err != nil {
-			return err
-		}
-		removed["usage_partition"] += int64(res.PartitionsDropped)
-		removed["platform_audit_event"] += res.AuditRows
-		return nil
-	})
-	if err != nil {
-		note(err)
-	}
+	return r.finish(first, removed)
+}
+
+// finish records the outcome of a pass: the counters, and the log lines.
+func (r *Retention) finish(first error, removed map[string]int64) error {
 	failed := first
 
 	r.mu.Lock()

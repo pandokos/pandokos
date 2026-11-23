@@ -259,7 +259,8 @@ should send traffic elsewhere.
   full months before it: it runs at start, after the partitions are ensured, and then every hour, and
   drops each monthly partition that ends at or before the cut (`DROP TABLE`, under the advisory lock of
   `ensure_usage_partitions`), removes the rollup rows and the default-partition rows of each tenant
-  before the cut, and records `usage.retention` in the platform's log and in each tenant's log. It is
+  before the cut (the partitions first: when that fails the tenants' pass is skipped and tried again at
+  the next run, so the rollup of a month never goes before its ledger), and records `usage.retention` in the platform's log and in each tenant's log. It is
   one installation-wide setting, not per tenant. Only the two retention functions of migration 0015
   delete from the ledger ([database guide](database.md#20-grants-of-migration-0015)); a removal cannot
   be undone, take a backup or an export first. Log lines: `retention ready`, `retention applied`,
