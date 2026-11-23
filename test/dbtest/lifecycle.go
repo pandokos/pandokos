@@ -101,7 +101,9 @@ func (d *Database) superExec(tb testing.TB, what, sql string, args ...any) {
 // PopulatedTenant inserts an active tenant with a row in every table of section 5.3 of the design
 // of sprint 6.3 (the foreign-key cases included: a rule scoped to a key and one scoped to a
 // mapping, a started price version, an entry of a platform issuer, a user the tenant manages with
-// account, membership and session, and a member the platform manages, with its identity), and returns its ID. It can be
+// account, membership and session, and a member the platform manages, with its identity, and, of
+// sprint 6.4, an event destination with a dead letter and the events of its ledger records and
+// limit event), and returns its ID. It can be
 // called again on the same database: every name is new. The tenant's ledger holds two records,
 // its audit log two sealed rows.
 func (d *Database) PopulatedTenant(tb testing.TB) tenant.ID {
@@ -136,7 +138,6 @@ func (d *Database) PopulatedTenant(tb testing.TB) tenant.ID {
 	pm := d.FederatedUser(tb, "https://idp-"+sfx+".example.test", "subject-"+sfx, nil)
 	d.Member(tb, tid, pm.ID, []string{"tenant-viewer"})
 	d.CustomRole(tb, tid, "role-"+sfx, "member:read")
-
 	// Secrets (group B).
 	d.superExec(tb, "populate: data key", `INSERT INTO pandokos.tenant_data_key (tenant_id, kek_version, wrapped_key)
 		SELECT $1::uuid, v.id, decode(repeat('00', 61), 'hex') FROM pandokos.kek_version v WHERE v.state = 'active'`, id)
@@ -162,6 +163,15 @@ func (d *Database) PopulatedTenant(tb testing.TB) tenant.ID {
 	d.SeedUsage(tb, tid,
 		UsageRow{StartedAt: now.Add(-2 * time.Hour), PrincipalID: sa, KeyID: keyID, Provider: "openai", InputTokens: 10, OutputTokens: 5},
 		UsageRow{StartedAt: now.Add(-time.Hour), PrincipalID: sa, KeyID: keyID, Provider: "openai", InputTokens: 7, OutputTokens: 3})
+	// An event destination, made after the events of the ledger and of the limit event: it starts at
+	// the head of the log and has no work (the claim of the relay leaves it alone). Its sealed secret
+	// is a placeholder, as the credential's: no test of a deletion opens it. A dead letter of it; the
+	// directory row is the trigger's.
+	d.superExec(tb, "populate: event destination", `INSERT INTO pandokos.event_destination (tenant_id, name, url, secret, secret_key_version)
+		VALUES ($1::uuid, 'hook-' || $2, 'https://hooks.example.test/in', decode(repeat('00', 61), 'hex'), 1)`, id, sfx)
+	d.superExec(tb, "populate: dead letter", `INSERT INTO pandokos.outbox_dead_letter (tenant_id, destination_id, seq, event_id, type, attempts, reason, status)
+		SELECT $1::uuid, d.id, 1, pandokos.uuid_v7(), 'io.pandokos.usage.recorded.v1', 10, 'status', 500
+		  FROM pandokos.event_destination d WHERE d.tenant_id = $1::uuid`, id)
 	d.SealedRow(tb, tid, now.Add(-2*time.Hour), "populate.first")
 	d.SealedRow(tb, tid, now.Add(-time.Hour), "populate.second")
 	return tid

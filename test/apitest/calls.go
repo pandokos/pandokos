@@ -36,6 +36,7 @@ type Params struct {
 	Session        string // {session}; NoUser when empty
 	Role           string // {role}, a custom role name; NoRole when empty
 	SupportAction  string // {action}; NoUser when empty (a well-formed identifier that no row has)
+	Destination    string // {destination} of an event destination; NoUser when empty
 }
 
 // NoRole is the {role} of a call whose Params name none: a well-formed name that no role has.
@@ -206,6 +207,16 @@ func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 		body = map[string]any{"reason": "test", "permissions": []string{"member:read"}}
 	case "closeSupportAction", "endSupportAction":
 		body = map[string]any{}
+	case "listEventDestinations", "getEventDestination", "deleteEventDestination", "listEventDeadLetters", "testEventDestination", "exportEvents", "exportPlatformEvents":
+		// Sprint 6.4: reads and the exports, the delete, and the test request (no body).
+	case "createEventDestination":
+		body = map[string]any{"name": UniqueName("hook"), "url": "https://hooks.example.test/in", "enabled": true}
+	case "updateEventDestination":
+		body = map[string]any{"description": "changed by a test"}
+	case "rotateEventDestinationSecret", "replayEventDeadLetters":
+		body = map[string]any{}
+	case "rewindEventDestination":
+		body = map[string]any{"after": 0}
 	default:
 		tb.Fatalf("apitest.CallFor does not know the operation %s: add it", op.ID)
 	}
@@ -223,6 +234,7 @@ func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 	path = strings.ReplaceAll(path, "{session}", orDefault(p.Session, NoUser))
 	path = strings.ReplaceAll(path, "{role}", orDefault(p.Role, NoRole))
 	path = strings.ReplaceAll(path, "{action}", orDefault(p.SupportAction, NoUser))
+	path = strings.ReplaceAll(path, "{destination}", orDefault(p.Destination, NoUser))
 	rule := p.LimitRule
 	if strings.HasPrefix(op.Path, "/v1/platform-limits/") {
 		rule = p.PlatformLimit

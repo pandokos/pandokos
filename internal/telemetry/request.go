@@ -257,6 +257,7 @@ type instruments struct {
 	rateLimited  metric.Int64Counter
 	refusals     metric.Int64Counter
 	estimate     metric.Float64Histogram
+	eventDur     metric.Float64Histogram
 
 	mu   sync.RWMutex
 	sets map[setKey]metric.MeasurementOption // the options of the attribute sets seen, kept boxed once
@@ -280,6 +281,7 @@ func newInstruments(k *maker) *instruments {
 	in.rateLimited = k.int64Counter(nameRateLimited)
 	in.refusals = k.int64Counter(nameRefusals)
 	in.estimate = k.float64Histogram(nameEstimate)
+	in.eventDur = k.float64Histogram(nameEventDuration)
 	return in
 }
 

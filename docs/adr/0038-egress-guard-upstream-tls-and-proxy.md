@@ -59,3 +59,4 @@ without a validated key); a per-endpoint CA (a schema change nobody asked for).
 
 - 2026-11: sprint 4.1 amends rule 7: credential validation, the price download and the retrieval of the keys of trusted issuers use the same transports ([ADR 0046](0046-issuer-key-retrieval-and-caching.md)); the public transport is used unless the operator lists the host in `tokens.private_hosts`.
 - 2026-11-18: accepted by the maintainer after review.
+- 2026-11-23: sprint 6.4 adds a fourth caller of the egress guard, the delivery of events to webhook destinations: the public transport, no redirect, the private transport only for hosts of `events.webhook.private_hosts` ([ADR 0071](0071-webhook-destinations-signature-secrets-and-egress.md)).

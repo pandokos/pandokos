@@ -121,7 +121,8 @@ func TestUpgrade0016(t *testing.T) {
 		}
 	}
 
-	d.Migrate(t)
+	// Sprint 6.4: the test migrates to its own version; the later ones have tests of their own.
+	d.MigrateTo(t, 16)
 
 	t.Run("no row of the earlier tables changes", func(t *testing.T) {
 		after := snapshot()
@@ -159,7 +160,7 @@ func TestUpgrade0016(t *testing.T) {
 			got[id] = [3]string{state}
 			ids = append(ids, id)
 		}
-		// Migrate activates the test key's version afterwards when none is active: none may be missing.
+		// MigrateTo does not activate the test key's version: the two registered here are the ones there are.
 		if got["local-2222222222222222"][0] != "active" || got["local-1111111111111111"][0] != "retiring" {
 			t.Errorf("states %v, want the version registered last active and the other retiring", got)
 		}

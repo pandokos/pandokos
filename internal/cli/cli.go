@@ -149,6 +149,11 @@ func (a *app) flags(name string) *flag.FlagSet {
 
 // parse parses flags that may come before and after the positional arguments.
 func parse(fs *flag.FlagSet, args []string, wantArgs int) ([]string, error) {
+	return parseRange(fs, args, wantArgs, wantArgs)
+}
+
+// parseRange is parse for a command that takes between lo and hi positional arguments.
+func parseRange(fs *flag.FlagSet, args []string, lo, hi int) ([]string, error) {
 	var pos []string
 	for {
 		if err := fs.Parse(args); err != nil {
@@ -163,8 +168,11 @@ func parse(fs *flag.FlagSet, args []string, wantArgs int) ([]string, error) {
 		pos = append(pos, fs.Arg(0))
 		args = fs.Args()[1:]
 	}
-	if len(pos) != wantArgs {
-		return nil, usagef("%s takes %d argument(s), got %d", fs.Name(), wantArgs, len(pos))
+	if len(pos) < lo || len(pos) > hi {
+		if lo != hi {
+			return nil, usagef("%s takes %d to %d argument(s), got %d", fs.Name(), lo, hi, len(pos))
+		}
+		return nil, usagef("%s takes %d argument(s), got %d", fs.Name(), lo, len(pos))
 	}
 	return pos, nil
 }

@@ -25,19 +25,20 @@ type deletionRow struct {
 	KekVersions, Pending                        []string
 	Removed, Audit                              string
 	CompletionSeq                               *int64
+	ExternalReference                           string
 }
 
 func deletionOf(r queries.GetTenantDeletionRow) deletionRow {
 	return deletionRow{r.TenantID, r.State, r.Step, r.Reason, r.RequestedByType, r.RequestedByID, r.RequestedByName, r.RequestID,
-		r.RequestedAt, r.NotBefore, r.StartedAt, r.CompletedAt, r.Passes, r.KekVersions, r.PendingKekVersions, r.Removed, r.Audit, r.CompletionSeq}
+		r.RequestedAt, r.NotBefore, r.StartedAt, r.CompletedAt, r.Passes, r.KekVersions, r.PendingKekVersions, r.Removed, r.Audit, r.CompletionSeq, r.ExternalReference}
 }
 
 // out is the API form of the row. It never holds the salt: the statements do not read it.
 func (r deletionRow) out() adminapi.TenantDeletion {
 	d := adminapi.TenantDeletion{
 		TenantID: r.TenantID, State: adminapi.TenantDeletionState(r.State), Step: adminapi.TenantDeletionStep(r.Step), Reason: r.Reason,
-		RequestedBy: adminapi.TenantDeletionRequester{Type: adminapi.TenantDeletionRequesterType(r.RequestedByType), ID: r.RequestedByID, Name: r.RequestedBy},
-		RequestID:   r.RequestID, RequestedAt: r.RequestedAt.UTC(), NotBefore: r.NotBefore.UTC(), Passes: int(r.Passes),
+		RequestedBy:       adminapi.TenantDeletionRequester{Type: adminapi.TenantDeletionRequesterType(r.RequestedByType), ID: r.RequestedByID, Name: r.RequestedBy},
+		ExternalReference: r.ExternalReference, RequestID: r.RequestID, RequestedAt: r.RequestedAt.UTC(), NotBefore: r.NotBefore.UTC(), Passes: int(r.Passes),
 		Removed: json.RawMessage(r.Removed), KekVersions: nonNil(r.KekVersions),
 		BackupErasure: adminapi.TenantDeletionBackupErasure{State: adminapi.BackupErasureStateNotApplicable, PendingKekVersions: nonNil(r.Pending)},
 	}

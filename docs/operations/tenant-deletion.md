@@ -65,6 +65,15 @@ Go code issues no `DELETE` or `UPDATE` of a tenant's rows: the order and the con
 | `audit` | A closing row `tenant.delete`; then the tenant's log is pseudonymized and its chain sealed again (section 3) |
 | `complete` | At least two minutes after the start: ledger records and rows of the log that a transaction which began before the closing committed after `usage` or `audit` had passed are pseudonymized (the log gets a new closing row and is sealed again behind it), and the rows left in the tables of `access`, `secrets` and `configuration` are counted. If anything was found, a second pass runs those steps again (not `usage` and `audit`; `complete` looks at the ledger and the log again). Otherwise the completion record is written, the tenant becomes `deleted` and the salt is destroyed |
 
+**Events.** From the request to the start the relay keeps delivering the tenant's pending events to its
+destinations. The step `access` removes the destinations with their dead letters (a webhook is a way out for
+the tenant's data, and its signing secret is about to become unreadable) and the step `configuration` removes
+the tenant's events. **Events not delivered when the deletion begins are removed, not delivered**: the receiver
+had the grace period. The platform learns of the deletion from the events `io.pandokos.tenant.deletion_requested.v1`,
+`…deletion_cancelled.v1` and `…deleted.v1` of its own log, which carry the tenant's external reference and are
+read with `pandokos platform-event export` ([events guide](events.md#7-the-platforms-events)). The count of
+destinations joins the completion record; counts of events do not.
+
 **What is not touched:** other tenants; the catalogue (providers, endpoints, models and their prices),
 price imports, platform keys, the platform's users and role assignments, the platform's issuers (only the
 tenant's entries go), `signin_throttle` and `oidc_login` (they expire by themselves) and the platform's
@@ -200,6 +209,8 @@ completion waits two minutes after the start for exactly this case.
 - **No self-service.** Only the platform requests a deletion; a tenant's owner cannot delete its own tenant.
 - **The platform's chain is never rewritten**, so it still names the people who acted on the tenant, until audit
   retention removes the rows.
-- **No event.** "Tenant deleted" is not announced to other systems yet (sprint 6.4); keep your own list.
+- **Events of the platform only.** "Deletion requested", "deletion cancelled" and "tenant deleted" are events of the
+  platform's log, pulled with `pandokos platform-event export`; there is no platform webhook
+  ([events guide](events.md#7-the-platforms-events)).
 - **No automatic rotation after a deletion** (section 6) and no restore drill yet (sprint 12.3).
 - Nothing waits two minutes in tests: they move the clocks of the row; in production the settle time is real.

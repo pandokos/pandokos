@@ -243,6 +243,31 @@ func registerSources(k *maker, o MetricsOptions) {
 		}, rollups, lag, removed, runs, exports)
 	}
 
+	if s.Events != nil {
+		deliveries := k.int64ObservableCounter("pandokos.events.deliveries")
+		dead := k.int64ObservableCounter("pandokos.events.dead_letters")
+		expired := k.int64ObservableCounter("pandokos.events.expired")
+		dests := k.int64ObservableGauge("pandokos.events.destinations")
+		lag := k.float64ObservableGauge("pandokos.events.lag")
+		passes := k.int64ObservableCounter("pandokos.events.relay.passes")
+		register(func(_ context.Context, ob metric.Observer) error {
+			e := s.Events()
+			for _, outcome := range sortedKeys(e.Deliveries) {
+				ob.ObserveInt64(deliveries, e.Deliveries[outcome], attr(AttrDeliveryOutcome, outcome))
+			}
+			ob.ObserveInt64(dead, e.DeadLetters)
+			ob.ObserveInt64(expired, e.Expired)
+			for _, state := range sortedKeys(e.Destinations) {
+				ob.ObserveInt64(dests, e.Destinations[state], attr(AttrDestinationState, state))
+			}
+			ob.ObserveFloat64(lag, e.Lag.Seconds())
+			for _, result := range sortedKeys(e.Passes) {
+				ob.ObserveInt64(passes, e.Passes[result], attr("pandokos.result", result))
+			}
+			return nil
+		}, deliveries, dead, expired, dests, lag, passes)
+	}
+
 	if s.Resolver != nil {
 		unpriced := k.int64ObservableCounter("pandokos.limits.admitted_unpriced")
 		unlimited := k.int64ObservableCounter("pandokos.limits.unlimited_traffic")

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	"github.com/pandokos/pandokos/internal/account"
 	"github.com/pandokos/pandokos/internal/admin"
 	"github.com/pandokos/pandokos/internal/authn"
@@ -11,6 +13,7 @@ import (
 	"github.com/pandokos/pandokos/internal/ledger"
 	"github.com/pandokos/pandokos/internal/lifecycle"
 	"github.com/pandokos/pandokos/internal/limits"
+	"github.com/pandokos/pandokos/internal/outbox"
 	"github.com/pandokos/pandokos/internal/password"
 	"github.com/pandokos/pandokos/internal/reports"
 	"github.com/pandokos/pandokos/internal/resolver"
@@ -134,7 +137,7 @@ func resolverSource(l *resolver.Limits, u *resolver.UnlimitedAuditor) func() tel
 
 // reportsSource reads the usage rollup, retention and the exports of the administration handler
 // (M42 to M46): the counters of the whole installation, never of a tenant.
-func reportsSource(r *reports.Rollup, t *reports.Retention, h *admin.Handler) func() telemetry.ReportsStats {
+func reportsSource(r *reports.Rollup, t *reports.Retention, j *outbox.Janitor, h *admin.Handler) func() telemetry.ReportsStats {
 	return func() telemetry.ReportsStats {
 		rs, ts, es := r.Stats(), t.Stats(), h.Stats()
 		out := telemetry.ReportsStats{
@@ -147,6 +150,9 @@ func reportsSource(r *reports.Rollup, t *reports.Retention, h *admin.Handler) fu
 		for _, kind := range telemetry.RetentionKinds {
 			out.RetentionRemoved[kind] = ts.Removed[kind]
 		}
+		js := j.Stats()
+		out.RetentionRemoved[telemetry.RetentionOutboxEvent] = int64(js.Events)     //nolint:gosec // a count
+		out.RetentionRemoved[telemetry.RetentionLimitEvent] = int64(js.LimitEvents) //nolint:gosec // a count
 		for _, kind := range telemetry.ExportKinds {
 			out.Exports[telemetry.ExportKey{Kind: kind, Result: "complete"}] = es.ExportsComplete[kind]
 			out.Exports[telemetry.ExportKey{Kind: kind, Result: "aborted"}] = es.ExportsAborted[kind]
@@ -165,5 +171,27 @@ func lifecycleSource(d *lifecycle.Deleter, r *vault.Rewrapper) func() telemetry.
 			Rewraps:     map[string]int64{"ok": rs.OK, "failed": rs.Failed},
 			KEKVersions: rs.Versions, ErasuresPending: rs.ErasuresPending,
 		}
+	}
+}
+
+// eventsSource reads the relay of events and its janitor (M52, M54 to M58): counts of the whole
+// installation, never of a tenant, a destination or a URL.
+func eventsSource(r *outbox.Relay, j *outbox.Janitor) func() telemetry.EventsStats {
+	return func() telemetry.EventsStats {
+		rs, js := r.Stats(), j.Stats()
+		out := telemetry.EventsStats{
+			Deliveries:  make(map[string]int64, len(telemetry.DeliveryOutcomes)),
+			DeadLetters: int64(rs.DeadLetters), //nolint:gosec // a count
+			Expired:     int64(js.Expired),     //nolint:gosec // a count
+			Destinations: map[string]int64{
+				telemetry.DestinationEnabled: rs.Destinations, telemetry.DestinationFailing: rs.Failing, telemetry.DestinationDisabled: rs.Disabled,
+			},
+			Lag:    time.Duration(rs.LagSeconds * float64(time.Second)),
+			Passes: map[string]int64{"ok": int64(rs.PassesOK), "failed": int64(rs.PassesFailed)}, //nolint:gosec // counts
+		}
+		for _, o := range telemetry.DeliveryOutcomes {
+			out.Deliveries[o] = int64(rs.Deliveries[outbox.Outcome(o)]) //nolint:gosec // a count
+		}
+		return out
 	}
 }

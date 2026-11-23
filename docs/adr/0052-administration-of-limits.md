@@ -69,3 +69,4 @@ There is one rule per subject, scope, metric and currency (decision 1). The rule
 - 2026-11-18: amended by sprint 5.3 (see Amendment).
 - 2026-11-18: amended by sprint 5.4 (see Amendment); [ADR 0053](0053-tenant-price-lists-and-active-currency.md).
 - 2026-11-22: sprint 4.3: the tenant's time zone is set with `tenant_setting:write`, no longer with `limit:write` ([ADR 0060](0060-built-in-roles-custom-roles-and-the-rule-against-escalation.md)).
+- 2026-11-23: sprint 6.4 writes the outbox row this record deferred: a trigger on `limit_event` produces the event of each row ([ADR 0070](0070-the-outbox-as-a-log-relay-by-destination-and-retention.md), [ADR 0072](0072-event-types-the-envelope-the-external-reference-and-platform-events.md)).

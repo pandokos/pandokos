@@ -14,7 +14,7 @@ procedure; a restore that is rehearsed and tested is sprint 12.3. It follows fro
 | **The key file of every version that is `active` or `retiring`** (`pandokos kek-version list`) | Copy the file (and every file of `vault.kek.local.unwrap_key_files`) | **separately from the database**, in a store that the database's administrators cannot read |
 | **The configuration** | The YAML file and the environment, without the secrets that live in files | with your deployment's configuration |
 | **Outside the database: the heads of the audit chains** | `pandokos audit head --tenant T -o json` for every tenant and `pandokos platform-audit head -o json`, appended to a store that only appends ([audit guide](audit.md#7-anchoring-the-head-elsewhere)) | a host that is not the installation |
-| **Outside the database: the list of completed deletions** | `pandokos tenant deletion list --state completed -o json`, kept with the date | the same store |
+| **Outside the database: the list of completed deletions** | `pandokos tenant deletion list --state completed -o json`, kept with the date; or the platform's events: `pandokos platform-event export --type io.pandokos.tenant.deleted.v1` | the same store |
 
 A database backup holds only sealed secrets and wrapped data keys, so it cannot open anything; a key file
 holds nothing without the database. Keeping them apart is the point. The key file is backed up when it is
@@ -70,6 +70,13 @@ back up again if you promise that the tenant's credentials are gone from backups
   `pandokos tenant deletion list`, and for each tenant missing from it run `pandokos tenant delete` again
   (it is suspended first, the grace period applies). Their credentials, if your old backups are the cause,
   are only gone for good once the key version is retired and its file destroyed.
+- **The platform's events list the deletions too.** `pandokos platform-event export --type io.pandokos.tenant.deleted.v1`
+  prints one event for each completed deletion, with the tenant ID, its external reference and the time; a system
+  that has pulled the platform's events (they are never removed) holds the same list as the one above, and the
+  events recorded after the backup are exactly the deletions to request again. A restored database also loses the
+  events of the tenants' logs recorded after the backup; the ledger is the record, and the usage export reads it
+  ([events guide](events.md)). Destinations are in the backup, with their sealed secrets: a restore needs the key
+  file of the version that sealed them, like any credential.
 - **Expect the usage recorded after the backup to be missing**, and the audit rows with it: the heads you
   kept show how far the chain went.
 - **Sessions and keys revoked since the backup are valid again**: revoke what must stay revoked.

@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Destination test",
+  "type": "object",
+  "properties": {
+    "specversion": {
+      "const": "1.0"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Stable identifier of the event; the receiver's idempotency key."
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The events.source of the installation."
+    },
+    "type": {
+      "const": "io.pandokos.destination.test.v1"
+    },
+    "time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the fact was recorded, UTC, microseconds."
+    },
+    "subject": {
+      "type": "string",
+      "description": ""
+    },
+    "datacontenttype": {
+      "const": "application/json"
+    },
+    "tenantid": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The tenant the event belongs to."
+    },
+    "tenantref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The tenant's external reference, when it has one."
+    },
+    "data": {
+      "type": "object",
+      "properties": {
+        "destination_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "destination_id",
+        "name"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "specversion",
+    "id",
+    "source",
+    "type",
+    "time",
+    "datacontenttype",
+    "tenantid",
+    "data"
+  ],
+  "additionalProperties": true
+}

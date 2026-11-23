@@ -8,7 +8,7 @@ LDFLAGS := -s -w -buildid= -X $(PKG)/internal/buildinfo.Version=$(VERSION) -X $(
 GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.9.0
 GITLEAKS := github.com/zricethezav/gitleaks/v8@v8.30.1
 SQLC := github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
-GENERATED := internal/adminapi internal/store/queries docs/reference/permissions.md docs/reference/tenant-export.v1.schema.json internal/tenantexport
+GENERATED := internal/adminapi internal/store/queries docs/reference/permissions.md docs/reference/tenant-export.v1.schema.json internal/tenantexport docs/reference/events
 FUZZTIME ?= 30s
 
 # Loads local/testdb/env (written by make db-up) unless the variable is already set.
@@ -71,9 +71,10 @@ test-idp: ## Trusted issuer tests against Keycloak, Hydra and Authentik (needs m
 migrations-sum: ## Rewrite the checksum file of the migrations
 	@cd internal/store/migrations/sql && for f in *.sql; do printf '%s %s\n' "$$f" "$$(sha256sum "$$f" | cut -d' ' -f1)"; done > ../migrations.sum
 
-generate: ## Regenerate internal/adminapi and the export schema (apigen), docs/reference/permissions.md (permdoc) and internal/store/queries (sqlc)
+generate: ## Regenerate internal/adminapi and the export schema (apigen), docs/reference/permissions.md (permdoc), docs/reference/events (the event schemas) and internal/store/queries (sqlc)
 	go run ./internal/apigen -spec api/openapi/admin.v1.yaml -out internal/adminapi/adminapi.gen.go -export-schema docs/reference/tenant-export.v1.schema.json
 	cp docs/reference/tenant-export.v1.schema.json internal/tenantexport/tenant-export.v1.schema.json
+	mkdir -p docs/reference/events && rm -f docs/reference/events/*.schema.json && cp internal/outbox/schema/*.schema.json docs/reference/events/
 	go run ./internal/permdoc -out docs/reference/permissions.md
 	CGO_ENABLED=0 GOTOOLCHAIN=go$(RELEASE_GO) go run $(SQLC) generate
 
@@ -102,11 +103,12 @@ fuzz: ## Run each fuzz target for FUZZTIME
 	go test ./internal/oidc/ -run '^$$' -fuzz '^FuzzGroups$$' -fuzztime $(FUZZTIME)
 	go test ./internal/authz/ -run '^$$' -fuzz '^FuzzEffective$$' -fuzztime $(FUZZTIME)
 
-bench: ## Usage reader, limits and gateway metrics benchmarks
+bench: ## Usage reader, limits, gateway metrics and event-trigger benchmarks (the last needs make db-up)
 	go test ./internal/family/openai/ -run '^$$' -bench . -benchmem
 	go test ./internal/limits/ -run '^$$' -bench . -benchmem
 	go test ./internal/resolver/ -run '^$$' -bench . -benchmem
 	go test ./internal/gateway/ -run '^$$' -bench BenchmarkRequestWithMetrics -benchmem
+	go test ./internal/ledger/ -run '^$$' -bench BenchmarkLedgerBatchOutbox -benchmem
 
 fmt: ## Format the code
 	gofmt -w cmd internal test

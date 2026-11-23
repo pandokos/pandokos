@@ -1,6 +1,8 @@
 package telemetry_test
 
 import (
+	"bytes"
+	"encoding/base64"
 	"errors"
 	"log/slog"
 	"strings"
@@ -49,9 +51,11 @@ func secretShapes(t *testing.T) map[string]string {
 		"a platform key":  pkey.Reveal(),
 		"a session token": tok.Reveal(),
 		"a bearer value":  "Bearer abc.def",
+		// Sprint 6.4: the signing secret of a destination, whsec_ and the base64 of 32 bytes (T-1048).
+		"a webhook signing secret":                         "whsec_" + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0xfb, 0x2a, 0x77, 0x01}, 8)),
 		"a dotted bearer value with the whole token68 set": "Bearer ab.c+d/e=",
-		"a compact JWS":      jws,
-		"a bearer JWS value": "bearer " + jws,
+		"a compact JWS":                                    jws,
+		"a bearer JWS value":                               "bearer " + jws,
 	}
 }
 

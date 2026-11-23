@@ -54,6 +54,7 @@ type Sources struct {
 	Resolver    func() ResolverStats  // admitted unpriced, unlimited traffic by result
 	Reports     func() ReportsStats   // the usage rollup, retention and exports (M42 to M46)
 	Lifecycle   func() LifecycleStats // tenant deletion and key rotation (M47 to M51)
+	Events      func() EventsStats    // the relay of events (M52, M54 to M58; M53 is recorded by ObserveEventDelivery)
 }
 
 // InstrumentSpec describes one instrument of the catalogue (the table of the metrics reference).

@@ -24,8 +24,9 @@ This page is a contract checked by tests: a message or a field that is not liste
 | `audit_events` | integer | Audit events of the tenants removed by a retention run, in total over the installation. |
 | `audit_months` | integer | The configured retention of the audit logs, in months; 0 keeps them. |
 | `audited` | boolean | Whether the failure was recorded in the audit log. |
+| `batch_size` | integer | Events read for one destination in one round. |
 | `cache` | string | The cache that was flushed. |
-| `cause` | string | The class of a failure of the vault. |
+| `cause` | string | The class of a failure of the vault, or the step of the event relay that failed. |
 | `check` | string | The name of a readiness check. |
 | `class` | string | The class of a failed fetch. |
 | `commit` | string | The build commit. |
@@ -45,6 +46,8 @@ This page is a contract checked by tests: a message or a field that is not liste
 | `error` | string | The text of an error that holds nothing of a tenant or a secret. |
 | `error_class` | string | The class of a failure: a short word, never the error text. |
 | `error_code` | string | The Pandokos error code of the answer. |
+| `events` | integer | Events removed by a pass of the event janitor, in total over the installation. |
+| `expired` | integer | Events removed before an enabled destination passed them, in total over the installation. |
 | `expires_at` | string | A time in RFC 3339. |
 | `failures` | integer | Failures counted since the last line. |
 | `forced` | boolean | Whether the shutdown had to cut open requests short. |
@@ -66,9 +69,11 @@ This page is a contract checked by tests: a message or a field that is not liste
 | `kind` | string | The kind of a limit event. |
 | `ledger` | string | full when the usage ledger had no room. |
 | `level` | string | DEBUG, INFO, WARN or ERROR. |
+| `limit_events` | integer | Limit events removed by a pass of the event janitor, in total over the installation. |
 | `limit_state` | string | How the limits treated the request: not_evaluated, unlimited, limited or unverified. |
 | `limits_unverified` | boolean | True when a matching limit could not be evaluated. |
 | `listener` | string | The listener: inference or admin. |
+| `max_attempts` | integer | Attempts to deliver an event before it is parked as a dead letter. |
 | `method` | string | The HTTP method, or OTHER outside the usual set. |
 | `missing` | integer | The number of records missing at the end of the ledger. |
 | `msg` | string | The message. |
@@ -88,6 +93,7 @@ This page is a contract checked by tests: a message or a field that is not liste
 | `queued` | integer | Records waiting in the ledger buffer. |
 | `reason` | string | A closed word that says why. |
 | `request_id` | string | The request ID of the request the line is about (also the X-Pandokos-Request-Id header). |
+| `retention` | string | How long events are kept, as a duration. |
 | `rewrapped` | integer | Data keys this process re-wrapped under the active key version before it retired the replaced one. |
 | `role` | string | The database role of the pool. |
 | `route` | string | The route of the request, as a template; "unmatched" when no route matched. |
@@ -120,6 +126,7 @@ This page is a contract checked by tests: a message or a field that is not liste
 | `usage_records` | integer | Usage records removed by a retention run, in total over the installation. |
 | `version` | string | The build version. |
 | `warning` | string | The text of a configuration warning; never a value. |
+| `workers` | integer | Destinations the event relay delivers to at once. |
 
 ## Telemetry
 
@@ -611,6 +618,50 @@ Level: info
 Fields: `failures`
 
 The first step that succeeded after failures; `failures` is how many steps failed before it.
+
+## Events
+
+### `event relay ready`
+
+Level: info
+Fields: `interval`, `workers`, `batch_size`, `max_attempts`, `retention`
+
+Written at start with the worker role: the settings of the event relay and the time events are kept.
+
+### `event relay failing`
+
+Level: warn
+Fields: `error_class`, `sqlstate`, `cause`, `failures`
+
+A claim, a read or a settle of the relay failed, the secret of a destination could not be opened, or the refresh of the gauges failed (`cause` `claim`, `read`, `secret`, `settle` or `state`; `state` does not count as a failed pass, so it has no line `event relay recovered`). At most once a minute; no tenant, destination or URL is named.
+
+### `event relay recovered`
+
+Level: info
+Fields: `failures`
+
+The first pass of the relay that succeeded after failures; `failures` is how many passes failed before it.
+
+### `event deliveries failing`
+
+Level: warn
+Fields: `outcome`, `count`
+
+Delivery requests failed since the last line; `outcome` is the most frequent one and `count` the number of failures. At most once a minute; no destination, URL or tenant is named.
+
+### `event retention applied`
+
+Level: info
+Fields: `events`, `expired`, `limit_events`
+
+A pass of the janitor removed something; the numbers are totals over the installation, `expired` being the events removed before an enabled destination passed them.
+
+### `event retention failing`
+
+Level: warn
+Fields: `error_class`, `sqlstate`, `failures`
+
+A pass of the janitor failed in the whole or in part; the next pass tries again. At most once an hour.
 
 ## Oidc
 

@@ -17,7 +17,7 @@ A release is the tag `vMAJOR.MINOR.PATCH` on the commit of `main` that met its a
 |---|---|---|---|---|
 | **v0.1.0** | Core BYOK | 1, 2, 3 and sprint 4.1 | 9 | 9 done |
 | **v0.2.0** | Governance | 5, rest of 4, and 6 without sprint 6.4 | 9 | 9 done |
-| **v0.3.0** | Ready to operate | sprint 6.4, 12 | 4 | |
+| **v0.3.0** | Ready to operate | sprint 6.4, 12 | 4 | 1 done |
 | **v0.4.0** | Scale-out and providers | 8 without sprint 8.3, 9 | 4 | |
 | **v1.0.0** | Hardening | 10, sprint 8.3 | 4 | |
 
@@ -73,12 +73,12 @@ flowchart LR
 | **4** | **Identity federation and RBAC** (continued) | | done |
 | 4.2 | Users, local accounts and sessions | People sign in to the administration API with a local account or through an external OIDC provider and obtain a session; memberships in several tenants; local disable | done |
 | 4.3 | Roles | All built-in roles, custom roles, platform roles, support actions with reason; the API reports a user's effective permissions | done |
-| **6** | **[Observability, reports and lifecycle](epics/06-observability-reports-lifecycle/epic.md)** | Sprints 6.1 to 6.3 are done and in v0.2.0; sprint 6.4 belongs to v0.3.0, so the epic stays open | in progress |
+| **6** | **[Observability, reports and lifecycle](epics/06-observability-reports-lifecycle/epic.md)** | Sprints 6.1 to 6.3 are in v0.2.0; sprint 6.4 belongs to v0.3.0 | done |
 | 6.1 | Metrics and conventions | OTLP metrics, GenAI attributes at a pinned version, Prometheus endpoint, cardinality policy | done |
 | 6.2 | Reports and audit reading | Usage rollups and report API; audit reading with hash chain and verification; retention; exports | done |
 | 6.3 | Tenant deletion and key rotation | Staged deletion with cryptographic erasure; tenant export; rotation of the key-encryption key; backup and restore guide | done |
 | | **v0.3.0 — Ready to operate** | | |
-| 6.4 | Events for external systems | Usage events and limit notifications through the outbox to a signed webhook; retries, dead letters, replay; export | |
+| 6.4 | Events for external systems | Usage events and limit notifications through the outbox to a signed webhook; retries, dead letters, replay; export | done |
 | **12** | **[Operability](epics/12-operability/epic.md)** | | |
 | 12.1 | External key-encryption key | The key-encryption key held by an external service over a transit API; none on the Pandokos hosts | |
 | 12.2 | Threat model review and fuzzing | The threat model checked against the code as built; fuzzing of the network parsers in CI | |

@@ -89,12 +89,17 @@ func TestCatalogue(t *testing.T) {
 		{"tenant_support:read", ScopePlatform},
 		{"audit:read", ScopeTenant},
 		{"platform_audit:read", ScopePlatform},
+		{"event_destination:read", ScopeTenant},
+		{"event_destination:write", ScopeTenant},
+		{"event_destination:delete", ScopeTenant},
+		{"event:read", ScopeTenant},
+		{"platform_event:read", ScopePlatform},
 		{"tenant:delete", ScopePlatform},
 		{"kek:read", ScopePlatform},
 	}
 	got := Catalogue()
-	if len(got) != 62 {
-		t.Fatalf("%d permissions, want 62", len(got))
+	if len(got) != 67 {
+		t.Fatalf("%d permissions, want 67 (the 62 before sprint 6.4 and its five)", len(got))
 	}
 	re := regexp.MustCompile(`^[a-z_]+:[a-z_]+$`)
 	seen := map[string]bool{}
@@ -142,12 +147,13 @@ func TestRoles(t *testing.T) {
 	platform := []string{IdentityRead, TenantRead, TenantWrite, TenantSuspend, PlatformKeyRead, PlatformKeyWrite, PlatformKeyRevoke,
 		TenantCredentialRead, TenantCredentialRevoke, CatalogRead, CatalogWrite, CatalogPrice, MetricsRead,
 		PlatformIssuerRead, PlatformIssuerWrite, PlatformIssuerDelete, PlatformLimitRead, PlatformLimitWrite, PlatformLimitDelete, UserRead, UserWrite,
-		TenantSupportOpen, TenantSupportRead, PlatformAuditRead, TenantDelete, KEKRead}
+		TenantSupportOpen, TenantSupportRead, PlatformAuditRead, TenantDelete, KEKRead, PlatformEventRead}
 	tenantAll := []string{IdentityRead, ServiceAccountRead, ServiceAccountWrite, MemberRead, MemberWrite, VirtualKeyRead, VirtualKeyWrite, VirtualKeyRevoke, ModelInvoke,
 		CredentialRead, CredentialWrite, CredentialRotate, CredentialDelete, CredentialUse, ModelRead, ModelRestrict, UsageRead,
 		TokenIssuerRead, TokenIssuerWrite, TokenIssuerDelete, SubjectMappingRead, SubjectMappingWrite, SubjectMappingDelete, LimitRead, LimitWrite, LimitDelete,
 		PriceListRead, PriceListWrite, PriceListDelete,
-		RoleRead, RoleWrite, RoleDelete, SupportActionRead, TenantSettingWrite, AuditRead}
+		RoleRead, RoleWrite, RoleDelete, SupportActionRead, TenantSettingWrite, AuditRead,
+		EventDestinationRead, EventDestinationWrite, EventDestinationDelete, EventRead}
 	want := []struct {
 		name  string
 		scope Scope
@@ -315,7 +321,7 @@ func TestEffective(t *testing.T) {
 		want []string
 	}{
 		{"union of roles", sa(id(1), tenant.StateActive, []string{RoleInference, RoleTenantAdmin}, nil),
-			[]string{AuditRead, CredentialDelete, CredentialRead, CredentialRotate, CredentialUse, CredentialWrite, IdentityRead, LimitDelete, LimitRead, LimitWrite, MemberRead, MemberWrite, ModelInvoke,
+			[]string{AuditRead, CredentialDelete, CredentialRead, CredentialRotate, CredentialUse, CredentialWrite, EventRead, EventDestinationDelete, EventDestinationRead, EventDestinationWrite, IdentityRead, LimitDelete, LimitRead, LimitWrite, MemberRead, MemberWrite, ModelInvoke,
 				ModelRead, ModelRestrict, PriceListDelete, PriceListRead, PriceListWrite, RoleDelete, RoleRead, RoleWrite, ServiceAccountRead, ServiceAccountWrite, SubjectMappingDelete, SubjectMappingRead, SubjectMappingWrite,
 				SupportActionRead, TenantSettingWrite,
 				TokenIssuerDelete, TokenIssuerRead, TokenIssuerWrite, UsageRead, VirtualKeyRead, VirtualKeyRevoke, VirtualKeyWrite}},
@@ -324,7 +330,7 @@ func TestEffective(t *testing.T) {
 		{"unknown role", sa(id(1), tenant.StateActive, []string{"ghost"}, nil), nil},
 		{"role of the other kind", sa(id(1), tenant.StateActive, []string{RolePlatformAdmin}, nil), nil},
 		{"platform role on a platform principal", Principal{Kind: KindPlatform, Roles: []string{RolePlatformAdmin, RoleInference}},
-			[]string{CatalogPrice, CatalogRead, CatalogWrite, IdentityRead, KEKRead, MetricsRead, PlatformAuditRead, PlatformIssuerDelete, PlatformIssuerRead, PlatformIssuerWrite, PlatformKeyRead, PlatformKeyRevoke, PlatformKeyWrite, PlatformLimitDelete, PlatformLimitRead, PlatformLimitWrite, TenantDelete, TenantRead, TenantSuspend, TenantWrite, TenantCredentialRead, TenantCredentialRevoke, TenantSupportOpen, TenantSupportRead, UserRead, UserWrite}},
+			[]string{CatalogPrice, CatalogRead, CatalogWrite, IdentityRead, KEKRead, MetricsRead, PlatformAuditRead, PlatformEventRead, PlatformIssuerDelete, PlatformIssuerRead, PlatformIssuerWrite, PlatformKeyRead, PlatformKeyRevoke, PlatformKeyWrite, PlatformLimitDelete, PlatformLimitRead, PlatformLimitWrite, TenantDelete, TenantRead, TenantSuspend, TenantWrite, TenantCredentialRead, TenantCredentialRevoke, TenantSupportOpen, TenantSupportRead, UserRead, UserWrite}},
 		{"nil scopes are no restriction", sa(id(1), tenant.StateActive, []string{RoleInference}, nil), []string{CredentialUse, ModelInvoke}},
 		{"empty scopes are a restriction to nothing", sa(id(1), tenant.StateActive, []string{RoleInference}, []string{}), nil},
 		{"duplicate roles", sa(id(1), tenant.StateActive, []string{RoleInference, RoleInference}, nil), []string{CredentialUse, ModelInvoke}},

@@ -75,6 +75,9 @@ A record is *proposed* until the maintainer accepts it, by merging its pull requ
 | [0067](0067-tenant-deletion-stages-closed-tenants-and-kept-records.md) | Tenant deletion: stages, closed tenants and the records that are kept | accepted |
 | [0068](0068-key-encryption-key-versions-rotation-and-erasure-in-backups.md) | Key-encryption key versions: activation, re-wrap, retirement, and erasure in backups | accepted |
 | [0069](0069-tenant-data-export.md) | The tenant data export and its schema | accepted |
+| [0070](0070-the-outbox-as-a-log-relay-by-destination-and-retention.md) | The outbox as a log: relay by destination, and retention | proposed |
+| [0071](0071-webhook-destinations-signature-secrets-and-egress.md) | Webhook destinations: the signature, the signing secrets and egress | proposed |
+| [0072](0072-event-types-the-envelope-the-external-reference-and-platform-events.md) | Event types, the envelope, the external reference and the platform's events | proposed |
 
 ## Questions from SOW 0.1 and where they were decided
 
@@ -94,7 +97,7 @@ A record is *proposed* until the maintainer accepts it, by merging its pull requ
 | 14. Price list source and versioning | 0011 |
 | 15. Budget reservation under concurrency | 0012 |
 | 16. Audit retention and immutability | 0013 |
-| 17, 18. Events for external systems | 0014 |
+| 17, 18. Events for external systems | 0014, 0070, 0071, 0072 |
 | 19. Kubernetes topologies and silos | 0016 |
 | 20. Service-level objectives | Targets in requirement GW-17; validated in epic 10 |
 | 21. Backup, recovery, cryptographic erasure | 0008, data model; procedures in epics 6 and 10 |

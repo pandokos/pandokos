@@ -131,6 +131,15 @@ replaced by `_`.
 | `vault.kek.local.unwrap_key_files` | `PANDOKOS_VAULT_KEK_LOCAL_UNWRAP_KEY_FILES` | list of paths | empty | Up to 8 more key-encryption key files the instance can unwrap with: a version being retired, or a new version that other instances already use. Each file is read as `key_file`; separated by commas in the environment; a key equal to `key_file` or to another entry is refused at start, whatever its path. `serve` only ([vault guide](vault.md), "Rotating the key") |
 | `tenant_deletion.grace_period` | `PANDOKOS_TENANT_DELETION_GRACE_PERIOD` | duration | `168h` | Time between the request of a tenant deletion and its start; the tenant is suspended meanwhile. `0` to `2160h` (90 days); `0` starts the deletion at the worker's next tick. Read when a deletion is requested, `serve` only ([deletion guide](tenant-deletion.md)) |
 | `tenant_deletion.interval` | `PANDOKOS_TENANT_DELETION_INTERVAL` | duration | `1m` | Time between two runs of the deletion job of the worker (`10s` to `1h`), `serve` only |
+| `events.source` | `PANDOKOS_EVENTS_SOURCE` | string | `urn:pandokos` | The CloudEvents `source` of every event of this installation; a URI reference of 1 to 255 printable characters; `serve` only ([events guide](events.md)) |
+| `events.retention` | `PANDOKOS_EVENTS_RETENTION` | duration | `168h` | How long events are kept, delivered or not, and how far back a destination can be rewound; `24h` to `2160h`, whole hours; `serve` only |
+| `events.relay.interval` | `PANDOKOS_EVENTS_RELAY_INTERVAL` | duration | `1s` | Time between two passes of the event relay of the worker; `100ms` to `1m`; `serve` only |
+| `events.relay.workers` | `PANDOKOS_EVENTS_RELAY_WORKERS` | integer | `4` | Destinations that this process delivers to at once; 1 to 64; `serve` only |
+| `events.relay.batch_size` | `PANDOKOS_EVENTS_RELAY_BATCH_SIZE` | integer | `100` | Events read for one destination in one round; 1 to 1000; `serve` only |
+| `events.delivery.timeout` | `PANDOKOS_EVENTS_DELIVERY_TIMEOUT` | duration | `10s` | Time allowed to one delivery request; `1s` to `30s`; `serve` only |
+| `events.delivery.max_attempts` | `PANDOKOS_EVENTS_DELIVERY_MAX_ATTEMPTS` | integer | `10` | Attempts to deliver an event before it is parked as a dead letter; 1 to 100; `serve` only |
+| `events.delivery.backoff_max` | `PANDOKOS_EVENTS_DELIVERY_BACKOFF_MAX` | duration | `15m` | Longest wait between two attempts to deliver an event; `5s` to `24h`; `serve` only |
+| `events.webhook.private_hosts` | `PANDOKOS_EVENTS_WEBHOOK_PRIVATE_HOSTS` | list | none | Host names, separated by commas in the environment, whose webhook URLs may be `http` and resolve to private addresses, as `tokens.private_hosts`; at most 32 lower-case DNS names, no address literal, no wildcard; `serve` only. List only hosts you control |
 | `pricing.import_at_start` | `PANDOKOS_PRICING_IMPORT_AT_START` | boolean | `true` | Import the embedded price snapshot when `serve` starts, unless an identical or a newer import exists ([catalogue guide](catalogue.md)) |
 | `pricing.default_currency` | `PANDOKOS_PRICING_DEFAULT_CURRENCY` | ISO 4217 code | `USD` | The currency in which the costs of the tenants that have not chosen an active currency are computed, and in which their cost budgets apply; three capital letters. It must be the same on every instance, like `limits.time_zone`, and set before the first start of a release that has tenant price lists if your prices and budgets are not in USD ([database guide](database.md), section 17). It takes effect at restart, for every such tenant at once ([catalogue guide](catalogue.md), section 7) |
 | `pricing.refresh.enabled` | `PANDOKOS_PRICING_REFRESH_ENABLED` | boolean | `false` | Download the price dataset periodically: an outbound request to `pricing.refresh.url` |
@@ -252,6 +261,11 @@ All problems are reported together, not only the first. Each is attached to a ke
 | `tokens.private_hosts` | at most 32 entries, each a lower-case DNS name (letters, digits, hyphens, dots; at least one letter): no address literal, no wildcard, no port; no message quotes a host name |
 | `tokens.jwks.fetch_timeout`, `tokens.jwks.refresh_interval`, `tokens.jwks.min_refetch_interval` | 1s to 30s; 1m to 1h; 1s to 5m |
 | `reports.rollup_interval` | 10s to 1h |
+| `events.source` | a URI reference of 1 to 255 printable characters |
+| `events.retention` | `24h` to `2160h`, whole hours |
+| `events.relay.interval`, `events.relay.workers`, `events.relay.batch_size` | `100ms` to `1m`; 1 to 64; 1 to 1000 |
+| `events.delivery.timeout`, `events.delivery.max_attempts`, `events.delivery.backoff_max` | `1s` to `30s`; 1 to 100; `5s` to `24h` |
+| `events.webhook.private_hosts` | at most 32 lower-case DNS names, no address literal, no wildcard, no port; lower-cased by the loader |
 | `retention.usage_months` | 0, or 2 to 120 |
 | `retention.audit_months` | 0, or 1 to 1200 |
 | `tokens.jwks.max_stale` | at least twice `tokens.jwks.refresh_interval`, at most 72h |

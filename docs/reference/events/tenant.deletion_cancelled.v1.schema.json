@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Tenant deletion cancelled",
+  "type": "object",
+  "properties": {
+    "specversion": {
+      "const": "1.0"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Stable identifier of the event; the receiver's idempotency key."
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The events.source of the installation."
+    },
+    "type": {
+      "const": "io.pandokos.tenant.deletion_cancelled.v1"
+    },
+    "time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the fact was recorded, UTC, microseconds."
+    },
+    "subject": {
+      "type": "string",
+      "description": "The tenant ID."
+    },
+    "datacontenttype": {
+      "const": "application/json"
+    },
+    "tenantid": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The tenant the event belongs to."
+    },
+    "tenantref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The tenant's external reference, when it has one."
+    },
+    "sequence": {
+      "type": "string",
+      "pattern": "^[0-9]+$",
+      "description": "Position in the log, a string of digits."
+    },
+    "data": {
+      "type": "object",
+      "properties": {
+        "tenant_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "external_reference": {
+          "type": "string",
+          "description": "The tenant's external reference, when it has one."
+        },
+        "requested_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "tenant_id",
+        "requested_at"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "specversion",
+    "id",
+    "source",
+    "type",
+    "time",
+    "subject",
+    "datacontenttype",
+    "tenantid",
+    "sequence",
+    "data"
+  ],
+  "additionalProperties": true
+}

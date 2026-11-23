@@ -11,23 +11,29 @@ import (
 
 const createTenant = `-- name: CreateTenant :one
 
-INSERT INTO pandokos.tenant (name, display_name, time_zone)
-VALUES ($1::text, $2::text, $3::text)
+INSERT INTO pandokos.tenant (name, display_name, time_zone, external_reference)
+VALUES ($1::text, $2::text, $3::text, $4::text)
 RETURNING id, name, display_name, state, created_at, updated_at, state_changed_at,
           time_zone, time_zone_previous, time_zone_effective_from,
-          active_currency, active_currency_previous, active_currency_effective_from
+          active_currency, active_currency_previous, active_currency_effective_from, external_reference
 `
 
 type CreateTenantParams struct {
-	Name        string
-	DisplayName string
-	TimeZone    string
+	Name              string
+	DisplayName       string
+	TimeZone          string
+	ExternalReference string
 }
 
 // Tenants. Every statement runs in platform scope (store.DB.Platform or Provision), except
 // GetTenantSelf, which runs in the tenant's own session.
 func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) (PandokosTenant, error) {
-	row := q.db.QueryRow(ctx, createTenant, arg.Name, arg.DisplayName, arg.TimeZone)
+	row := q.db.QueryRow(ctx, createTenant,
+		arg.Name,
+		arg.DisplayName,
+		arg.TimeZone,
+		arg.ExternalReference,
+	)
 	var i PandokosTenant
 	err := row.Scan(
 		&i.ID,
@@ -43,6 +49,7 @@ func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) (Pan
 		&i.ActiveCurrency,
 		&i.ActiveCurrencyPrevious,
 		&i.ActiveCurrencyEffectiveFrom,
+		&i.ExternalReference,
 	)
 	return i, err
 }
@@ -50,7 +57,7 @@ func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) (Pan
 const getTenant = `-- name: GetTenant :one
 SELECT id, name, display_name, state, created_at, updated_at, state_changed_at,
        time_zone, time_zone_previous, time_zone_effective_from,
-       active_currency, active_currency_previous, active_currency_effective_from
+       active_currency, active_currency_previous, active_currency_effective_from, external_reference
   FROM pandokos.tenant
  WHERE id = $1::uuid
 `
@@ -72,6 +79,7 @@ func (q *Queries) GetTenant(ctx context.Context, id string) (PandokosTenant, err
 		&i.ActiveCurrency,
 		&i.ActiveCurrencyPrevious,
 		&i.ActiveCurrencyEffectiveFrom,
+		&i.ExternalReference,
 	)
 	return i, err
 }
@@ -79,7 +87,7 @@ func (q *Queries) GetTenant(ctx context.Context, id string) (PandokosTenant, err
 const getTenantForUpdate = `-- name: GetTenantForUpdate :one
 SELECT id, name, display_name, state, created_at, updated_at, state_changed_at,
        time_zone, time_zone_previous, time_zone_effective_from,
-       active_currency, active_currency_previous, active_currency_effective_from
+       active_currency, active_currency_previous, active_currency_effective_from, external_reference
   FROM pandokos.tenant
  WHERE id = $1::uuid
    FOR UPDATE
@@ -102,6 +110,7 @@ func (q *Queries) GetTenantForUpdate(ctx context.Context, id string) (PandokosTe
 		&i.ActiveCurrency,
 		&i.ActiveCurrencyPrevious,
 		&i.ActiveCurrencyEffectiveFrom,
+		&i.ExternalReference,
 	)
 	return i, err
 }
@@ -109,7 +118,7 @@ func (q *Queries) GetTenantForUpdate(ctx context.Context, id string) (PandokosTe
 const listTenants = `-- name: ListTenants :many
 SELECT t.id, t.name, t.display_name, t.state, t.created_at, t.updated_at, t.state_changed_at,
        t.time_zone, t.time_zone_previous, t.time_zone_effective_from,
-       t.active_currency, t.active_currency_previous, t.active_currency_effective_from
+       t.active_currency, t.active_currency_previous, t.active_currency_effective_from, external_reference
   FROM pandokos.tenant t
  WHERE ($1::text = '' OR t.state = $1::text)
    AND ($2::text = '' OR t.name = $2::text)
@@ -169,6 +178,7 @@ func (q *Queries) ListTenants(ctx context.Context, arg ListTenantsParams) ([]Pan
 			&i.ActiveCurrency,
 			&i.ActiveCurrencyPrevious,
 			&i.ActiveCurrencyEffectiveFrom,
+			&i.ExternalReference,
 		); err != nil {
 			return nil, err
 		}
@@ -186,7 +196,7 @@ UPDATE pandokos.tenant
  WHERE id = $2::uuid
 RETURNING id, name, display_name, state, created_at, updated_at, state_changed_at,
           time_zone, time_zone_previous, time_zone_effective_from,
-          active_currency, active_currency_previous, active_currency_effective_from
+          active_currency, active_currency_previous, active_currency_effective_from, external_reference
 `
 
 type SetTenantStateParams struct {
@@ -211,6 +221,7 @@ func (q *Queries) SetTenantState(ctx context.Context, arg SetTenantStateParams) 
 		&i.ActiveCurrency,
 		&i.ActiveCurrencyPrevious,
 		&i.ActiveCurrencyEffectiveFrom,
+		&i.ExternalReference,
 	)
 	return i, err
 }
@@ -218,19 +229,21 @@ func (q *Queries) SetTenantState(ctx context.Context, arg SetTenantStateParams) 
 const updateTenant = `-- name: UpdateTenant :one
 UPDATE pandokos.tenant
    SET name         = CASE WHEN $1::boolean THEN $2::text ELSE name END,
-       display_name = CASE WHEN $3::boolean THEN $4::text ELSE display_name END
- WHERE id = $5::uuid
+       display_name = CASE WHEN $3::boolean THEN $4::text ELSE display_name END,
+       external_reference = COALESCE($5::text, external_reference)
+ WHERE id = $6::uuid
 RETURNING id, name, display_name, state, created_at, updated_at, state_changed_at,
           time_zone, time_zone_previous, time_zone_effective_from,
-          active_currency, active_currency_previous, active_currency_effective_from
+          active_currency, active_currency_previous, active_currency_effective_from, external_reference
 `
 
 type UpdateTenantParams struct {
-	SetName        bool
-	Name           string
-	SetDisplayName bool
-	DisplayName    string
-	ID             string
+	SetName           bool
+	Name              string
+	SetDisplayName    bool
+	DisplayName       string
+	ExternalReference *string
+	ID                string
 }
 
 func (q *Queries) UpdateTenant(ctx context.Context, arg UpdateTenantParams) (PandokosTenant, error) {
@@ -239,6 +252,7 @@ func (q *Queries) UpdateTenant(ctx context.Context, arg UpdateTenantParams) (Pan
 		arg.Name,
 		arg.SetDisplayName,
 		arg.DisplayName,
+		arg.ExternalReference,
 		arg.ID,
 	)
 	var i PandokosTenant
@@ -256,6 +270,7 @@ func (q *Queries) UpdateTenant(ctx context.Context, arg UpdateTenantParams) (Pan
 		&i.ActiveCurrency,
 		&i.ActiveCurrencyPrevious,
 		&i.ActiveCurrencyEffectiveFrom,
+		&i.ExternalReference,
 	)
 	return i, err
 }

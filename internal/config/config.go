@@ -56,6 +56,7 @@ type Config struct {
 	Support     Support     `yaml:"support"`
 	Reports     Reports     `yaml:"reports"`
 	Retention   Retention   `yaml:"retention"`
+	Events      Events      `yaml:"events"`
 
 	TenantDeletion TenantDeletion `yaml:"tenant_deletion"`
 }
@@ -436,6 +437,7 @@ func Defaults() *Config {
 		},
 		Auth:           authDefaults(),
 		Idempotency:    Idempotency{Retention: Duration(24 * time.Hour)},
+		Events:         eventsDefaults(),
 		Reports:        Reports{RollupInterval: Duration(time.Minute)},
 		TenantDeletion: TenantDeletion{GracePeriod: Duration(168 * time.Hour), Interval: Duration(time.Minute)},
 		Support:        Support{Enabled: true, MaxDuration: Duration(time.Hour)},

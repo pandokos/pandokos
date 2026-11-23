@@ -361,6 +361,15 @@ var wantKeys = []string{
 	"reports.rollup_interval",
 	"retention.usage_months",
 	"retention.audit_months",
+	"events.source",
+	"events.retention",
+	"events.relay.interval",
+	"events.relay.workers",
+	"events.relay.batch_size",
+	"events.delivery.timeout",
+	"events.delivery.max_attempts",
+	"events.delivery.backoff_max",
+	"events.webhook.private_hosts",
 }
 
 var wantDefaultText = []string{"info", "0.0.0.0:8080", "10s", "120s", "65536", "", "", "TLS1.2",
@@ -372,7 +381,8 @@ var wantDefaultText = []string{"info", "0.0.0.0:8080", "10s", "120s", "65536", "
 	"50ms", "500", "10000", "10s", "", "http/protobuf", "", "10s", "1", "false", "true", "60s", "false", "",
 	"true", "8192", "60s", "24h", "", "5s", "15m", "10s", "6h",
 	"false", "", "true", "12", "72h", "10", "15m", "15m", "50", "65536", "3", "1", "4", "30m", "12h", "10",
-	"false", "", "", "", "basic", "openid profile email", "RS256 ES256", "Single sign-on", "name", "email", "groups", "", "false", "", "/", "24h", "true", "1h", "168h", "1m", "1m", "0", "0"}
+	"false", "", "", "", "basic", "openid profile email", "RS256 ES256", "Single sign-on", "name", "email", "groups", "", "false", "", "/", "24h", "true", "1h", "168h", "1m", "1m", "0", "0",
+	"urn:pandokos", "168h", "1s", "4", "100", "10s", "10", "15m", ""}
 
 func leafKeys(t reflect.Type, prefix string, out *[]string) {
 	for i := 0; i < t.NumField(); i++ {

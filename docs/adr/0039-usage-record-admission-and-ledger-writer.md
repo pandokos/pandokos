@@ -71,3 +71,4 @@ partition would reject records); metadata in one JSON header (parsing ambiguity)
 - 2026-11-18: sprint 5.4: `usage_record.price_source` says which price list the price version belongs to; the column is added without rewriting a partition
 - 2026-11-20: point 6 is superseded: records the writer cannot write at shutdown are lost and counted, never logged; a refused record is logged with its request ID and the failure only ([ADR 0055](0055-operational-telemetry-holds-no-tenant-data.md)).
 - 2026-11-23: sprint 6.2: an index of the ledger by `recorded_at`; partitions dropped by retention ([ADR 0064](0064-usage-rollup-reports-and-exports.md))
+- 2026-11-23: sprint 6.4 gives the table a statement trigger that writes one event for each record actually inserted; the writer's statement does not change ([ADR 0070](0070-the-outbox-as-a-log-relay-by-destination-and-retention.md)).

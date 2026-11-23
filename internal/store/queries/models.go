@@ -49,6 +49,45 @@ type PandokosAuditEvent struct {
 	Hash            []byte
 }
 
+type PandokosEventDestination struct {
+	TenantID                 string
+	ID                       string
+	Name                     string
+	Description              string
+	Url                      string
+	EventTypes               []string
+	Enabled                  bool
+	Secret                   []byte
+	SecretKeyVersion         int32
+	SecretCreatedAt          time.Time
+	PreviousSecret           []byte
+	PreviousSecretKeyVersion *int32
+	PreviousSecretExpiresAt  *time.Time
+	CreatedAt                time.Time
+	UpdatedAt                time.Time
+	CursorSeq                int64
+	Failures                 int32
+	FailingSince             *time.Time
+	NextAttemptAt            time.Time
+	LeaseToken               *string
+	LeaseUntil               *time.Time
+	LastSuccessAt            *time.Time
+	LastFailureAt            *time.Time
+	LastError                string
+	LastStatus               *int32
+	ExpiredEvents            int64
+	TestRequestedAt          *time.Time
+	TestEventID              *string
+	TestCompletedAt          *time.Time
+	TestOutcome              string
+	TestStatus               *int32
+}
+
+type PandokosEventDestinationDirectory struct {
+	DestinationID string
+	TenantID      string
+}
+
 type PandokosIdempotencyKey struct {
 	ID             string
 	TenantID       *string
@@ -199,6 +238,36 @@ type PandokosOidcLogin struct {
 	ExpiresAt time.Time
 }
 
+type PandokosOutboxDeadLetter struct {
+	TenantID          string
+	DestinationID     string
+	Seq               int64
+	EventID           string
+	Type              string
+	State             string
+	Attempts          int32
+	Reason            string
+	Status            *int32
+	ParkedAt          time.Time
+	ReplayRequestedAt *time.Time
+}
+
+type PandokosOutboxEvent struct {
+	TenantID   string
+	Seq        int64
+	ID         string
+	Type       string
+	Subject    string
+	OccurredAt time.Time
+	RecordedAt time.Time
+	Data       string
+}
+
+type PandokosOutboxStream struct {
+	TenantID string
+	LastSeq  int64
+}
+
 type PandokosPlatformAuditChain struct {
 	ID         int16
 	Seq        int64
@@ -274,6 +343,21 @@ type PandokosPlatformLimitRule struct {
 	Thresholds []int16
 	ProviderID *string
 	ModelID    *string
+}
+
+type PandokosPlatformOutboxEvent struct {
+	Seq        int64
+	ID         string
+	Type       string
+	Subject    string
+	OccurredAt time.Time
+	TenantID   *string
+	Data       string
+}
+
+type PandokosPlatformOutboxStream struct {
+	ID      int16
+	LastSeq int64
 }
 
 type PandokosPlatformRoleAssignment struct {
@@ -477,6 +561,7 @@ type PandokosTenant struct {
 	ActiveCurrency              string
 	ActiveCurrencyPrevious      string
 	ActiveCurrencyEffectiveFrom *time.Time
+	ExternalReference           string
 }
 
 type PandokosTenantClosed struct {
@@ -495,27 +580,28 @@ type PandokosTenantDataKey struct {
 }
 
 type PandokosTenantDeletion struct {
-	TenantID        string
-	State           string
-	Step            string
-	Reason          string
-	RequestedByType string
-	RequestedByID   string
-	RequestedByName string
-	RequestID       string
-	RequestedAt     time.Time
-	NotBefore       time.Time
-	StartedAt       *time.Time
-	SettleAt        *time.Time
-	CompletedAt     *time.Time
-	Passes          int32
-	Salt            []byte
-	UsageStartedAt  *time.Time
-	UsageID         *string
-	KekVersions     []string
-	Removed         string
-	Audit           string
-	CompletionSeq   *int64
+	TenantID          string
+	State             string
+	Step              string
+	Reason            string
+	RequestedByType   string
+	RequestedByID     string
+	RequestedByName   string
+	RequestID         string
+	RequestedAt       time.Time
+	NotBefore         time.Time
+	StartedAt         *time.Time
+	SettleAt          *time.Time
+	CompletedAt       *time.Time
+	Passes            int32
+	Salt              []byte
+	UsageStartedAt    *time.Time
+	UsageID           *string
+	KekVersions       []string
+	Removed           string
+	Audit             string
+	CompletionSeq     *int64
+	ExternalReference string
 }
 
 type PandokosTenantModelRestriction struct {

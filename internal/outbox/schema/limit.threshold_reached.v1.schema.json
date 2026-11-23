@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Limit threshold reached",
+  "type": "object",
+  "properties": {
+    "specversion": {
+      "const": "1.0"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Stable identifier of the event; the receiver's idempotency key."
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The events.source of the installation."
+    },
+    "type": {
+      "const": "io.pandokos.limit.threshold_reached.v1"
+    },
+    "time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the fact was recorded, UTC, microseconds."
+    },
+    "subject": {
+      "type": "string",
+      "description": "The ID of the rule."
+    },
+    "datacontenttype": {
+      "const": "application/json"
+    },
+    "tenantid": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The tenant the event belongs to."
+    },
+    "tenantref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The tenant's external reference, when it has one."
+    },
+    "sequence": {
+      "type": "string",
+      "pattern": "^[0-9]+$",
+      "description": "Position in the log, a string of digits."
+    },
+    "data": {
+      "type": "object",
+      "properties": {
+        "limit_event_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "rule_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "rule_level": {
+          "enum": [
+            "tenant",
+            "platform"
+          ]
+        },
+        "subject": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "tenant",
+                "service_account",
+                "key"
+              ]
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        "provider": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "metric": {
+          "enum": [
+            "requests_per_minute",
+            "tokens_per_minute",
+            "concurrent_requests",
+            "requests_per_day",
+            "requests_per_month",
+            "tokens_per_day",
+            "tokens_per_month",
+            "cost_per_day",
+            "cost_per_month"
+          ]
+        },
+        "currency": {
+          "type": "string"
+        },
+        "period": {
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "end": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "additionalProperties": false
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The limit of a requests or tokens metric."
+        },
+        "amount": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+          "description": "The limit of a cost metric, a decimal string in currency."
+        },
+        "observed": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "percent": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "limit_event_id",
+        "rule_id",
+        "rule_level",
+        "subject",
+        "metric",
+        "period",
+        "observed",
+        "percent"
+      ],
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": [
+            "limit"
+          ]
+        },
+        {
+          "required": [
+            "amount"
+          ]
+        }
+      ]
+    }
+  },
+  "required": [
+    "specversion",
+    "id",
+    "source",
+    "type",
+    "time",
+    "subject",
+    "datacontenttype",
+    "tenantid",
+    "sequence",
+    "data"
+  ],
+  "additionalProperties": true
+}

@@ -74,6 +74,9 @@ type parameter struct {
 	Required    bool    `yaml:"required"`
 	Description string  `yaml:"description"`
 	Schema      *schema `yaml:"schema"`
+	// Explode is accepted for an array query parameter; repeating the name is the only form
+	// the router reads, so only true is allowed.
+	Explode *bool `yaml:"explode"`
 }
 
 type mediaType struct {
@@ -155,6 +158,11 @@ type schema struct {
 	Required             []string   `yaml:"required"`
 	AdditionalProperties additional `yaml:"additionalProperties"`
 	MaxProperties        *int       `yaml:"maxProperties"`
+	MinProperties        *int       `yaml:"minProperties"`
+	// PresenceOnly marks a request body that is not a PATCH body but whose members must tell an
+	// absent member from a zero value (an update schema: Optional members); minProperties and
+	// maxProperties of such a schema count the members that were sent.
+	PresenceOnly bool `yaml:"x-pandokos-presence"`
 	// RawJSON marks a component object that is passed through as the JSON the database holds
 	// (json.RawMessage), written and read without decoding. Responses only (ADR 0064).
 	RawJSON bool `yaml:"x-pandokos-raw-json"`
@@ -327,7 +335,7 @@ func goName(s string) string {
 }
 
 func enumConst(typ, v string) string {
-	return typ + goName(strings.ReplaceAll(strings.ReplaceAll(v, "-", "minus_"), ":", "_"))
+	return typ + goName(strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(v, "-", "minus_"), ":", "_"), ".", "_"))
 }
 
 func comment(text string) string {
@@ -409,8 +417,10 @@ func (g *generator) fieldOf(s *schema, required bool) (field, error) {
 			f.kind, f.goType = "strings", "[]string"
 		case it.Type.Name == "integer":
 			f.kind, f.goType = "ints", "[]int"
+		case it.Type.Name == "string" && len(it.Enum) > 0 && itName != "":
+			f.kind, f.goType = "enums", "[]"+itName // query parameters only
 		default:
-			return f, errors.New("array items must be a component object, a plain string or an integer")
+			return f, errors.New("array items must be a component object, a plain string, an enum or an integer")
 		}
 	default:
 		return f, fmt.Errorf("unsupported type %q with format %q", t.Type.Name, t.Format)
@@ -503,7 +513,7 @@ func (g *generator) findUpdateSchemas() error {
 			if err != nil {
 				continue
 			}
-			if m.method == "PATCH" {
+			if m.method == "PATCH" || g.doc.Components.Schemas[n] != nil && g.doc.Components.Schemas[n].PresenceOnly {
 				g.update[n] = true
 			} else {
 				elsewhere[n] = m.method + " " + path
@@ -602,9 +612,9 @@ func (g *generator) object(name string, s *schema) error {
 		switch {
 		case optional:
 			switch f.kind {
-			case "string", "enum", "int", "bool", "strings", "ints", "stringmap":
+			case "string", "enum", "int", "bool", "strings", "enums", "ints", "stringmap", "time":
 			default:
-				return fmt.Errorf("property %s: an optional member of an update schema must be a string, enum, integer, boolean, array of strings or integers, or map of strings", pn)
+				return fmt.Errorf("property %s: an optional member of an update schema must be a string, enum, integer, boolean, date-time, array of strings, enums or integers, or map of strings", pn)
 			}
 			f.goType = "Optional[" + f.goType + "]"
 			tag += ",omitzero"
@@ -646,6 +656,26 @@ func (g *generator) object(name string, s *schema) error {
 			continue
 		}
 		g.check(&checks, "v."+fieldName(pn), pn, f, required[pn])
+	}
+	if s.MinProperties != nil || s.MaxProperties != nil {
+		if !g.update[name] {
+			return errors.New("minProperties and maxProperties of an object are for an update schema (a PATCH body, or x-pandokos-presence)")
+		}
+		fmt.Fprintf(&checks, "{\nn := %d\n", len(s.Required))
+		for _, pn := range s.Properties.Names {
+			if ps := s.Properties.By[pn]; !required[pn] {
+				if f, err := g.fieldOf(ps, false); err == nil && !f.nullable {
+					fmt.Fprintf(&checks, "if v.%s.Set {\nn++\n}\n", fieldName(pn))
+				}
+			}
+		}
+		if s.MinProperties != nil {
+			fmt.Fprintf(&checks, "if n < %d {\nerrs = append(errs, FieldError{Field: \"body\", Message: %q})\n}\n", *s.MinProperties, "must have at least "+strconv.Itoa(*s.MinProperties)+" members")
+		}
+		if s.MaxProperties != nil {
+			fmt.Fprintf(&checks, "if n > %d {\nerrs = append(errs, FieldError{Field: \"body\", Message: %q})\n}\n", *s.MaxProperties, "must have at most "+strconv.Itoa(*s.MaxProperties)+" members")
+		}
+		checks.WriteString("}\n")
 	}
 	g.p("}\n")
 	g.p("var required%s = []string{%s}\n", name, quoteList(s.Required))
@@ -765,6 +795,14 @@ func (g *generator) check(w *bytes.Buffer, expr, name string, f field, required 
 		if f.item.Maximum != nil {
 			add("anyAbove("+expr+", "+strconv.Itoa(*f.item.Maximum)+")", "every item must be at most "+strconv.Itoa(*f.item.Maximum))
 		}
+	case "enums":
+		if f.s.MaxItems != nil {
+			add("len("+expr+") > "+strconv.Itoa(*f.s.MaxItems), "must have at most "+strconv.Itoa(*f.s.MaxItems)+" items")
+		}
+		if f.s.UniqueItems {
+			add("!unique("+expr+")", "must not repeat an item")
+		}
+		fmt.Fprintf(w, "for _, item := range %s {\nif !item.Valid() {\nerrs = append(errs, FieldError{Field: %q, Message: %q})\n}\n}\n", expr, name, "every item must be one of "+strings.Join(f.item.Enum, ", "))
 	case "strings":
 		if f.s.MinItems != nil {
 			add(expr+" != nil && len("+expr+") < "+strconv.Itoa(*f.s.MinItems), "must have at least "+strconv.Itoa(*f.s.MinItems)+" items")
@@ -943,8 +981,8 @@ func (g *generator) operations() error {
 					return fail(err)
 				}
 				if p.In == "header" && p.Name == "Idempotency-Key" && raw.Ref == "#/components/parameters/IdempotencyKey" {
-					if info.status != http.StatusCreated {
-						return fail(errors.New("the Idempotency-Key parameter is for operations that answer 201"))
+					if m.method != http.MethodPost || (info.status != http.StatusCreated && info.status != http.StatusOK) {
+						return fail(errors.New("the Idempotency-Key parameter is for POST operations that answer 201 (a creation) or 200 (a replacement)"))
 					}
 					info.idempotent = true
 					continue
@@ -956,6 +994,8 @@ func (g *generator) operations() error {
 				switch {
 				case p.In == "path" && p.Required && f.kind == "string" && f.s.Pattern != "" && strings.Contains(path, "{"+p.Name+"}"):
 					info.pathParams = append(info.pathParams, param{p.Name, f, p})
+				case p.In == "query" && !p.Required && f.kind == "enums" && p.Explode != nil && *p.Explode:
+					info.queryParams = append(info.queryParams, param{p.Name, f, p})
 				case p.In == "query" && !p.Required && (f.kind == "string" || f.kind == "enum" || f.kind == "int"):
 					info.queryParams = append(info.queryParams, param{p.Name, f, p})
 				default:
@@ -1069,17 +1109,26 @@ func (g *generator) operations() error {
 		for _, p := range o.pathParams {
 			g.p("in.%s = params[%q]", goName(p.name), p.name)
 		}
-		var names []string
+		var names, lists []string
 		for _, p := range o.queryParams {
+			if p.f.kind == "enums" {
+				lists = append(lists, p.name)
+				continue
+			}
 			names = append(names, p.name)
 		}
 		parse := "parseQuery"
 		if o.lenient {
 			parse = "parseQueryLenient"
 		}
-		if len(names) == 0 {
+		switch {
+		case len(lists) > 0:
+			g.p("q, ql, err := parseQueryLists(r, []string{%s}, %s)", quoteList(lists), quoteList(names))
+			g.p("if err != nil { h.fail(w, r, op, err); return }")
+			g.p("_ = q")
+		case len(names) == 0:
 			g.p("if _, err := %s(r); err != nil { h.fail(w, r, op, err); return }", parse)
-		} else {
+		default:
 			g.p("q, err := %s(r, %s)", parse, quoteList(names))
 			g.p("if err != nil { h.fail(w, r, op, err); return }")
 		}
@@ -1089,6 +1138,20 @@ func (g *generator) operations() error {
 		for _, p := range o.queryParams {
 			fn, s := "in."+goName(p.name), p.f.s
 			switch p.f.kind {
+			case "enums":
+				// A repeated parameter: every value is a member of the enumeration.
+				item := strings.TrimPrefix(p.f.goType, "[]")
+				g.p("for _, v := range ql[%q] {", p.name)
+				g.p("%s = append(%s, %s(v))", fn, fn, item)
+				g.p("if !%s(v).Valid() { errs = append(errs, FieldError{Field: %q, Message: %q}) }", item, p.name, "must be one of "+strings.Join(p.f.item.Enum, ", "))
+				g.p("}")
+				if s.MaxItems != nil {
+					g.p("if len(%s) > %d { errs = append(errs, FieldError{Field: %q, Message: \"must have at most %d items\"}) }", fn, *s.MaxItems, p.name, *s.MaxItems)
+				}
+				if s.UniqueItems {
+					g.p("if !unique(%s) { errs = append(errs, FieldError{Field: %q, Message: \"must not repeat an item\"}) }", fn, p.name)
+				}
+				continue
 			case "int":
 				if s.Default != nil {
 					g.p("%s = %s", fn, *s.Default)
@@ -1169,6 +1232,8 @@ func (g *generator) operations() error {
 		for _, p := range o.queryParams {
 			fn := "in." + goName(p.name)
 			switch p.f.kind {
+			case "enums":
+				g.p("for _, v := range %s { q.Add(%q, string(v)) }", fn, p.name)
 			case "int":
 				g.p("if %s != 0 { q.Set(%q, strconv.Itoa(%s)) }", fn, p.name, fn)
 			default:

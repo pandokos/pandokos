@@ -515,8 +515,11 @@ gateway inserts events off the request path; if the database is unavailable it r
 flushes what is left at shutdown within what remains of `ledger.shutdown_flush_timeout`. An event
 can be lost only when the process dies between the crossing and the insert **and** the period ends
 before the next start. An inserted row writes no log line: the event is the tenant's. A row the database refuses is logged as `limit event not recorded` with its kind, the SQLSTATE and the error class, and nothing of the tenant or the rule ([ADR 0055](../adr/0055-operational-telemetry-holds-no-tenant-data.md)). Read events with
-`pandokos limit events` or `listLimitEvents` (newest first). Delivery to other systems (webhooks)
-does not exist yet: sprint 6.4 adds it ([ADR 0014](../adr/0014-events-outbox.md)).
+`pandokos limit events` or `listLimitEvents` (newest first). Every event is also published to
+other systems: the trigger on `limit_event` writes `io.pandokos.limit.threshold_reached.v1` or
+`io.pandokos.limit.exhausted.v1` in the tenant's event log, delivered to its webhook destinations or pulled
+([events guide](events.md), [event reference](../reference/events.md)). The `limit_event` rows themselves
+live as long as usage (`retention.usage_months`), not as long as events.
 
 ## 10. What is strict, bounded and best effort
 
@@ -813,7 +816,6 @@ Seeing the row for a tenant you meant to limit is the signal to write a rule.
 | Missing | Sprint |
 |---|---|
 | Counters shared by several instances, kept in Valkey and rebuilt from the ledger | epic 8 |
-| Delivery of limit events to other systems (webhook, outbox) | 6.4 |
 | Limit metrics for dashboards | 6.1 |
 | A "used against limit" report, and a usage rollup that makes the ledger reads cheap | 6.2 |
 | A cheaper path for budgets: a request with budget limits makes about 105 allocations per reserve and settle, against 4 for rate limits (measured by benchmark T-622; sprint 5.3 did not change the count); revisited with the 6.1 metrics and epic 8 | 6.1, epic 8 |

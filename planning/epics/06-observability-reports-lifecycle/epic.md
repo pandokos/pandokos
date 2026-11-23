@@ -1,16 +1,16 @@
 ---
 id: EPIC-6
 title: Observability, reports and lifecycle
-status: in-progress
+status: done
 release: v0.2, v0.3 (sprint 6.4)
 depends_on: [EPIC-3]
 ---
 
 # Epic 6 — Observability, reports and lifecycle
 
-*State:* sprints 6.1, 6.2 and 6.3 are done and part of release [v0.2.0](../../../docs/releases/v0.2.0.md);
-sprint 6.4 belongs to v0.3.0, so the epic stays in progress and is closed, with its record in
-`docs/history/`, when 6.4 is done.
+*State:* done. Sprints 6.1, 6.2 and 6.3 are part of release [v0.2.0](../../../docs/releases/v0.2.0.md);
+sprint 6.4 belongs to v0.3.0 ([draft notes](../../../docs/releases/v0.3.0-draft.md)). The epic is complete;
+its record is in [docs/history](../../../docs/history/epic-06-observability-reports-lifecycle/README.md).
 
 ## Outcome
 

@@ -119,9 +119,13 @@ func closedValue(instrument, key, value string, catalogue map[string]bool) bool 
 	case "pandokos.telemetry.state":
 		return in(value, []string{"ended", "exported", "failed"})
 	case "pandokos.retention.kind":
-		return in(value, []string{"usage_partition", "usage_record", "usage_rollup", "audit_event", "platform_audit_event", "deleted_tenant_usage_record", "deleted_tenant_audit_event"})
+		return in(value, []string{"usage_partition", "usage_record", "usage_rollup", "audit_event", "platform_audit_event", "deleted_tenant_usage_record", "deleted_tenant_audit_event", "outbox_event", "limit_event"})
 	case "pandokos.export.kind":
-		return in(value, []string{"usage", "audit", "platform_audit", "deleted_tenant_audit"})
+		return in(value, []string{"usage", "audit", "platform_audit", "deleted_tenant_audit", "event", "platform_event"})
+	case "pandokos.delivery.outcome":
+		return in(value, telemetry.DeliveryOutcomes)
+	case "pandokos.destination.state":
+		return in(value, telemetry.DestinationStates)
 	case "pandokos.deletion.step":
 		return in(value, []string{"begin", "access", "secrets", "configuration", "usage", "audit", "complete"})
 	case "pandokos.deletion.state":

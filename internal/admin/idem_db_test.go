@@ -127,9 +127,11 @@ func TestIdempotencyEveryCreate(t *testing.T) {
 	if n < 18 {
 		t.Errorf("only %d operations answer 201", n)
 	}
-	// An operation that does not answer 201 does not declare the header.
+	// An operation that does not answer 201 does not declare the header, but the one that rotates
+	// the signing secret of an event destination (sprint 6.4): it answers 200 and shows the new
+	// secret once, so a repeated request must not make a second secret (ADR 0059). T-1041 covers it.
 	for _, op := range adminapi.Operations {
-		if op.Status != 201 && op.Idempotent {
+		if op.Status != 201 && op.Idempotent && op.ID != "rotateEventDestinationSecret" {
 			t.Errorf("%s declares the Idempotency-Key header and answers %d", op.ID, op.Status)
 		}
 	}

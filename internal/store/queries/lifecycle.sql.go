@@ -94,7 +94,7 @@ func (q *Queries) DeletedTenantRetention(ctx context.Context, arg DeletedTenantR
 
 const getTenantDeletion = `-- name: GetTenantDeletion :one
 SELECT d.tenant_id, d.state, d.step, d.reason, d.requested_by_type, d.requested_by_id, d.requested_by_name, d.request_id,
-       d.requested_at, d.not_before, d.started_at, d.completed_at, d.passes, d.kek_versions, d.removed, d.audit, d.completion_seq,
+       d.requested_at, d.not_before, d.started_at, d.completed_at, d.passes, d.kek_versions, d.removed, d.audit, d.completion_seq, d.external_reference,
        ARRAY(SELECT v.id FROM pandokos.kek_version v WHERE v.id = ANY (d.kek_versions) AND v.state <> 'retired' ORDER BY v.id)::text[] AS pending_kek_versions
   FROM pandokos.tenant_deletion d
  WHERE d.tenant_id = $1::uuid
@@ -118,6 +118,7 @@ type GetTenantDeletionRow struct {
 	Removed            string
 	Audit              string
 	CompletionSeq      *int64
+	ExternalReference  string
 	PendingKekVersions []string
 }
 
@@ -143,6 +144,7 @@ func (q *Queries) GetTenantDeletion(ctx context.Context, tenantID string) (GetTe
 		&i.Removed,
 		&i.Audit,
 		&i.CompletionSeq,
+		&i.ExternalReference,
 		&i.PendingKekVersions,
 	)
 	return i, err
@@ -154,7 +156,7 @@ INSERT INTO pandokos.tenant_deletion (tenant_id, reason, requested_by_type, requ
 VALUES ($1::uuid, $2::text, $3::text, $4::text,
         $5::text, $6::text, now() + $7::interval)
 RETURNING tenant_id, state, step, reason, requested_by_type, requested_by_id, requested_by_name, request_id, requested_at,
-          not_before, started_at, completed_at, passes, kek_versions, removed, audit, completion_seq
+          not_before, started_at, completed_at, passes, kek_versions, removed, audit, completion_seq, external_reference
 `
 
 type InsertTenantDeletionParams struct {
@@ -168,23 +170,24 @@ type InsertTenantDeletionParams struct {
 }
 
 type InsertTenantDeletionRow struct {
-	TenantID        string
-	State           string
-	Step            string
-	Reason          string
-	RequestedByType string
-	RequestedByID   string
-	RequestedByName string
-	RequestID       string
-	RequestedAt     time.Time
-	NotBefore       time.Time
-	StartedAt       *time.Time
-	CompletedAt     *time.Time
-	Passes          int32
-	KekVersions     []string
-	Removed         string
-	Audit           string
-	CompletionSeq   *int64
+	TenantID          string
+	State             string
+	Step              string
+	Reason            string
+	RequestedByType   string
+	RequestedByID     string
+	RequestedByName   string
+	RequestID         string
+	RequestedAt       time.Time
+	NotBefore         time.Time
+	StartedAt         *time.Time
+	CompletedAt       *time.Time
+	Passes            int32
+	KekVersions       []string
+	Removed           string
+	Audit             string
+	CompletionSeq     *int64
+	ExternalReference string
 }
 
 // Tenant deletion and its erasure (ADR 0067). The header of each statement says which scope it needs.
@@ -218,6 +221,7 @@ func (q *Queries) InsertTenantDeletion(ctx context.Context, arg InsertTenantDele
 		&i.Removed,
 		&i.Audit,
 		&i.CompletionSeq,
+		&i.ExternalReference,
 	)
 	return i, err
 }
@@ -282,7 +286,7 @@ func (q *Queries) ListOpenTenantDeletions(ctx context.Context) ([]ListOpenTenant
 
 const listTenantDeletions = `-- name: ListTenantDeletions :many
 SELECT d.tenant_id, d.state, d.step, d.reason, d.requested_by_type, d.requested_by_id, d.requested_by_name, d.request_id,
-       d.requested_at, d.not_before, d.started_at, d.completed_at, d.passes, d.kek_versions, d.removed, d.audit, d.completion_seq,
+       d.requested_at, d.not_before, d.started_at, d.completed_at, d.passes, d.kek_versions, d.removed, d.audit, d.completion_seq, d.external_reference,
        ARRAY(SELECT v.id FROM pandokos.kek_version v WHERE v.id = ANY (d.kek_versions) AND v.state <> 'retired' ORDER BY v.id)::text[] AS pending_kek_versions
   FROM pandokos.tenant_deletion d
  WHERE ($1::text = '' OR d.state = $1::text)
@@ -316,6 +320,7 @@ type ListTenantDeletionsRow struct {
 	Removed            string
 	Audit              string
 	CompletionSeq      *int64
+	ExternalReference  string
 	PendingKekVersions []string
 }
 
@@ -353,6 +358,7 @@ func (q *Queries) ListTenantDeletions(ctx context.Context, arg ListTenantDeletio
 			&i.Removed,
 			&i.Audit,
 			&i.CompletionSeq,
+			&i.ExternalReference,
 			&i.PendingKekVersions,
 		); err != nil {
 			return nil, err

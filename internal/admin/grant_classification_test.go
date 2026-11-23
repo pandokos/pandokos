@@ -7,6 +7,21 @@ package admin_test
 // operation is added here by the one who writes it, and the test fails until it is.
 func grantClassification() map[string]kind {
 	return map[string]kind{
+		// Sprint 6.4: the twelve operations of events confer and remove no permission. A destination
+		// is a way out for the tenant's data, a permission of its own (event_destination:write)
+		// that the table of roles gives; nothing of the destinations gives another permission.
+		"listEventDestinations":        grantNone,
+		"createEventDestination":       grantNone,
+		"getEventDestination":          grantNone,
+		"updateEventDestination":       grantNone,
+		"deleteEventDestination":       grantNone,
+		"listEventDeadLetters":         grantNone,
+		"replayEventDeadLetters":       grantNone,
+		"rewindEventDestination":       grantNone,
+		"rotateEventDestinationSecret": grantNone,
+		"testEventDestination":         grantNone,
+		"exportEvents":                 grantNone,
+		"exportPlatformEvents":         grantNone,
 		// Sprint 6.3: the deletion of a tenant, the log kept for a deleted one and the key versions confer
 		// no permission (a deletion ends access like a suspension, which is classified none).
 		"requestTenantDeletion":          grantNone,

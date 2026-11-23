@@ -110,7 +110,7 @@ func TestPlatformSeesNoTenantUsage(t *testing.T) {
 			}
 		})
 
-		t.Run("the definer functions are the eleven of sprint 5.3, the five of sprint 4.2, the four of sprint 6.2 and the five of sprint 6.3, with the result types pinned", func(t *testing.T) {
+		t.Run("the definer functions are the eleven of sprint 5.3, the five of sprint 4.2, the four of sprint 6.2, the five of sprint 6.3 and the eight of sprint 6.4, with the result types pinned", func(t *testing.T) {
 			rows, err := super.Query(ctx(t), `SELECT p.proname, pg_get_function_result(p.oid), p.prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 				WHERE n.nspname = 'pandokos' AND p.prosecdef ORDER BY 1`)
 			if err != nil {
@@ -147,6 +147,18 @@ func TestPlatformSeesNoTenantUsage(t *testing.T) {
 				"tenant_deletion_holds":    "trigger",
 				"tenant_erasure_step":      "text",
 				"deleted_tenant_retention": "record",
+				// Sprint 6.4: the five triggers that write events or the directory of destinations, the claim
+				// of the relay (identifiers), the state of the relay (counts and one age) and the retention of
+				// events (counts). The two triggers and the retention function may name the tables of the
+				// facts they turn into events or remove: they return no row of them.
+				"usage_record_outbox":              "trigger",
+				"limit_event_outbox":               "trigger",
+				"tenant_deletion_outbox":           "trigger",
+				"kek_version_outbox":               "trigger",
+				"event_destination_directory_sync": "trigger",
+				"outbox_relay_claim":               "TABLE(tenant_id uuid, destination_id uuid)",
+				"outbox_relay_state":               "record",
+				"tenant_outbox_retention":          "record",
 			}
 			got := map[string]string{}
 			for rows.Next() {
@@ -158,12 +170,15 @@ func TestPlatformSeesNoTenantUsage(t *testing.T) {
 				for _, tbl := range append([]string{"usage_record", "limit_event"}, "tenant_price_version", "tenant_price_rate") {
 					// The two retention functions name usage_record: they return counts only, and the
 					// platform one drops partitions (sprint 6.2, section 5.10).
-					if strings.Contains(body, tbl) && name != "ensure_usage_partitions" && name != "platform_retention" && name != "tenant_retention" && name != "deleted_tenant_retention" {
+					nameable := name == "ensure_usage_partitions" || name == "platform_retention" || name == "tenant_retention" || name == "deleted_tenant_retention" ||
+						(tbl == "usage_record" && name == "usage_record_outbox") || (tbl == "limit_event" && (name == "limit_event_outbox" || name == "tenant_outbox_retention"))
+					if strings.Contains(body, tbl) && !nameable {
 						t.Errorf("the body of %s names %s", name, tbl)
 					}
 				}
 				for _, tbl := range []string{"tenant_price_version", "tenant_price_rate", "limit_event"} {
-					if strings.Contains(body, tbl) {
+					nameable := tbl == "limit_event" && (name == "limit_event_outbox" || name == "tenant_outbox_retention")
+					if strings.Contains(body, tbl) && !nameable {
 						t.Errorf("the body of %s names %s", name, tbl)
 					}
 				}

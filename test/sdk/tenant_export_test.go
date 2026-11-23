@@ -82,13 +82,20 @@ func run(t *testing.T, env []string, args ...string) (int, string, string) {
 // serve starts `pandokos serve` on the database and returns the address of its administration listener.
 func serve(t *testing.T, d *dbtest.Database) string {
 	t.Helper()
+	return serveWith(t, d, d.Env(t))
+}
+
+// serveWith is serve with the environment given (d.Env or d.EnvWith).
+func serveWith(t *testing.T, d *dbtest.Database, env []string) string {
+	t.Helper()
+	_ = d
 	cfg := filepath.Join(t.TempDir(), "pandokos.yaml")
 	if err := os.WriteFile(cfg, []byte("log:\n  level: info\nlisteners:\n  inference:\n    address: 127.0.0.1:0\n  admin:\n    address: 127.0.0.1:0\nshutdown:\n  drain_timeout: 5s\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	logs := &testutil.LogBuffer{}
 	cmd := exec.Command(pandokosBinary(t), "serve", "--config", cfg)
-	cmd.Env = append([]string{"PATH=" + os.Getenv("PATH")}, d.Env(t)...)
+	cmd.Env = append([]string{"PATH=" + os.Getenv("PATH")}, env...)
 	cmd.Stdout, cmd.Stderr = logs, logs
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)

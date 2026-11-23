@@ -37,7 +37,13 @@ effect only together with `model:invoke`. `developer` issues keys, but only for 
 hold no more than it does (section 4). A member that holds `developer` or a custom role with
 `model:invoke` gains nothing from it in a session: the inference listener never reads sessions.
 
-**Reading the audit logs** ([audit guide](audit.md)). `audit:read` (tenant scope) is held by `owner`,
+**Reading the audit logs** ([audit guide](audit.md)). **Events and destinations** ([events guide](events.md)). `event_destination:read` is held by `owner`, `tenant-admin`,
+`auditor` and `read-only`; `event_destination:write` and `event_destination:delete` by `owner` and `tenant-admin`;
+`event:read`, the pull export of the tenant's events (usage data), by `owner`, `tenant-admin`, `usage-viewer` and
+`read-only`. `developer` and `credential-manager` hold none. `platform_event:read`, the export of the platform's
+events, is held by `platform-admin` and `platform-auditor`; no platform role reads a tenant's event.
+
+`audit:read` (tenant scope) is held by `owner`,
 `tenant-admin` and `auditor`; it is not held by `read-only` (which excludes it explicitly), by
 `usage-viewer`, `developer`, `credential-manager` or `inference`, and **it cannot be carried by a support
 action**: the log records price rates and budget amounts, so what a platform administrator did inside a
@@ -241,8 +247,8 @@ nothing is written.
 
 **Permissions a support action can carry**: `service_account:read`, `service_account:write`,
 `virtual_key:read`, `virtual_key:write`, `virtual_key:revoke`, `member:read`, `member:write`,
-`role:read`, `role:write`, `role:delete`, `support_action:read`. **It never carries** a permission that
-reads usage, limit events or prices, that reads or writes a credential, a limit, a price, an issuer, a
+`role:read`, `role:write`, `role:delete`, `support_action:read`, `event_destination:read`. **It never carries** a permission that
+reads usage, limit events, events or prices (`event:read`; the only event permission it carries is `event_destination:read`: the state, the URL and the dead letters of a destination, which is what an operator needs to help with a delivery, and no usage), that reads or writes a credential, a limit, a price, an issuer, a
 mapping, a model restriction or the tenant's settings, or that calls a model; `openSupportAction`
 refuses them before anything is written.
 

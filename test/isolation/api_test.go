@@ -50,6 +50,9 @@ type side struct {
 
 	// The price of sprint 5.4: a scheduled version of the side's own price list, seeded as superuser.
 	tenantPrice string
+
+	// The event destination of sprint 6.4, seeded as superuser with a placeholder secret.
+	destination string
 }
 
 type apiWorld struct {
@@ -90,6 +93,7 @@ func newSide(t *testing.T, api *apitest.API, name string) side {
 	s.mapping = api.SeedSubjectMapping(t, s.tenant.ID, s.tokenIssuer, s.sa.ID)
 	s.limitRule = api.SeedLimitRule(t, s.tenant.ID)
 	s.platformLimit = api.SeedPlatformLimit(t, s.tenant.ID)
+	s.destination = api.SeedEventDestination(t, s.tenant.ID)
 	return s
 }
 
@@ -135,7 +139,7 @@ func (s side) params() apitest.Params {
 	return apitest.Params{Tenant: s.tenant.ID, ServiceAccount: s.sa.ID, VirtualKey: s.key.Key.ID, PlatformKey: "pabcdefghijklmnop", Credential: s.cred.ID,
 		Provider: s.provider, Endpoint: s.endpoint, Model: s.model, PriceVersion: s.priceVersion, PriceImport: s.priceImport,
 		TokenIssuer: s.tokenIssuer, SubjectMapping: s.mapping, PlatformIssuer: s.platformIssuer,
-		LimitRule: s.limitRule, PlatformLimit: s.platformLimit, TenantPrice: s.tenantPrice}
+		LimitRule: s.limitRule, PlatformLimit: s.platformLimit, TenantPrice: s.tenantPrice, Destination: s.destination}
 }
 
 // seedTenantPrice seeds a scheduled version of the side's price list for the model of everybody, with a
@@ -198,6 +202,11 @@ func (w *apiWorld) fresh(t *testing.T, s side, op adminapi.Operation) apitest.Pa
 	// (the usage of a rule, of sprint 6.2) still find the rule of the tenant.
 	if op.ID == "deleteLimit" {
 		p.LimitRule = w.api.SeedExtraLimitRule(t, s.tenant.ID)
+	}
+	// The operation that deletes an event destination gets one of its own, so that the operations after
+	// it (rotate, test, rewind, dead letters) still find the destination of the tenant (sprint 6.4).
+	if op.ID == "deleteEventDestination" {
+		p.Destination = w.api.SeedEventDestination(t, s.tenant.ID)
 	}
 	// The operations of sprint 4.3 on a custom role or on a support action get one of their own.
 	if strings.Contains(op.Path, "{role}") {
@@ -337,6 +346,9 @@ var platformAndSelf = map[string]string{
 	// Sprint 4.3: the catalogue and the built-in roles, and the four platform operations on the support actions of a tenant.
 	"listPermissions": "self", "listBuiltinRoles": "self",
 	"listTenantSupportActions": "platform", "openSupportAction": "platform", "getTenantSupportAction": "platform", "closeSupportAction": "platform",
+
+	// Sprint 6.4: the export of the platform's events.
+	"exportPlatformEvents": "platform",
 }
 
 func scopeOf(t *testing.T, op adminapi.Operation) authz.Scope {
@@ -372,7 +384,7 @@ func TestCrossTenantIndistinguishable(t *testing.T) {
 			missing := apitest.Params{Tenant: randomUUID(t, w), ServiceAccount: randomUUID(t, w), VirtualKey: randomKeyID(t), PlatformKey: "pabcdefghijklmnoq", Credential: randomUUID(t, w),
 				Provider: "synthetic-missing", Endpoint: "ep-missing", Model: randomUUID(t, w), PriceVersion: randomUUID(t, w), PriceImport: randomUUID(t, w),
 				TokenIssuer: randomUUID(t, w), SubjectMapping: randomUUID(t, w), PlatformIssuer: randomUUID(t, w),
-				LimitRule: randomUUID(t, w), PlatformLimit: randomUUID(t, w), TenantPrice: randomUUID(t, w)}
+				LimitRule: randomUUID(t, w), PlatformLimit: randomUUID(t, w), TenantPrice: randomUUID(t, w), Destination: randomUUID(t, w)}
 			cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
 			if op.ID == "createTenant" {
 				cm.Body = cr.Body
@@ -402,9 +414,9 @@ func TestCrossTenantIndistinguishable(t *testing.T) {
 			real, missing := w.a.params(), w.a.params()
 			real.Tenant, missing.Tenant = w.b.tenant.ID, randomUUID(t, w)
 			real.ServiceAccount, real.VirtualKey, real.Credential = w.b.sa.ID, w.b.key.Key.ID, w.b.cred.ID
-			real.TokenIssuer, real.SubjectMapping, real.LimitRule, real.TenantPrice = w.b.tokenIssuer, w.b.mapping, w.b.limitRule, w.b.tenantPrice
+			real.TokenIssuer, real.SubjectMapping, real.LimitRule, real.TenantPrice, real.Destination = w.b.tokenIssuer, w.b.mapping, w.b.limitRule, w.b.tenantPrice, w.b.destination
 			missing.ServiceAccount, missing.VirtualKey, missing.Credential = randomUUID(t, w), randomKeyID(t), randomUUID(t, w)
-			missing.TokenIssuer, missing.SubjectMapping, missing.LimitRule, missing.TenantPrice = randomUUID(t, w), randomUUID(t, w), randomUUID(t, w), randomUUID(t, w)
+			missing.TokenIssuer, missing.SubjectMapping, missing.LimitRule, missing.TenantPrice, missing.Destination = randomUUID(t, w), randomUUID(t, w), randomUUID(t, w), randomUUID(t, w), randomUUID(t, w)
 			cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
 			r1 := w.api.Do(t, cr.Method, cr.Path, w.a.adminKey, cr.Body, nil)
 			r2 := w.api.Do(t, cm.Method, cm.Path, w.a.adminKey, cm.Body, nil)
@@ -423,12 +435,12 @@ func TestCrossTenantIndistinguishable(t *testing.T) {
 		// A second parameter: in A's own tenant, B's resource against a missing one.
 		if strings.Contains(op.Path, "{service_account}") || strings.Contains(op.Path, "{credential}") || (strings.Contains(op.Path, "{key}") && !strings.HasPrefix(op.Path, "/v1/platform-keys")) ||
 			strings.Contains(op.Path, "{mapping}") || (strings.Contains(op.Path, "{issuer}") && strings.HasPrefix(op.Path, "/v1/tenants/")) ||
-			(strings.Contains(op.Path, "{rule}") && strings.HasPrefix(op.Path, "/v1/tenants/")) || strings.Contains(op.Path, "{price}") {
+			(strings.Contains(op.Path, "{rule}") && strings.HasPrefix(op.Path, "/v1/tenants/")) || strings.Contains(op.Path, "{price}") || strings.Contains(op.Path, "{destination}") {
 			real, missing := w.a.params(), w.a.params()
 			real.ServiceAccount, real.VirtualKey, real.Credential = w.b.sa.ID, w.b.key.Key.ID, w.b.cred.ID
-			real.TokenIssuer, real.SubjectMapping, real.LimitRule, real.TenantPrice = w.b.tokenIssuer, w.b.mapping, w.b.limitRule, w.b.tenantPrice
+			real.TokenIssuer, real.SubjectMapping, real.LimitRule, real.TenantPrice, real.Destination = w.b.tokenIssuer, w.b.mapping, w.b.limitRule, w.b.tenantPrice, w.b.destination
 			missing.ServiceAccount, missing.VirtualKey, missing.Credential = randomUUID(t, w), randomKeyID(t), randomUUID(t, w)
-			missing.TokenIssuer, missing.SubjectMapping, missing.LimitRule, missing.TenantPrice = randomUUID(t, w), randomUUID(t, w), randomUUID(t, w), randomUUID(t, w)
+			missing.TokenIssuer, missing.SubjectMapping, missing.LimitRule, missing.TenantPrice, missing.Destination = randomUUID(t, w), randomUUID(t, w), randomUUID(t, w), randomUUID(t, w), randomUUID(t, w)
 			cr, cm := apitest.CallFor(t, op, real), apitest.CallFor(t, op, missing)
 			r1 := w.api.Do(t, cr.Method, cr.Path, w.a.adminKey, cr.Body, nil)
 			r2 := w.api.Do(t, cm.Method, cm.Path, w.a.adminKey, cm.Body, nil)
@@ -605,7 +617,7 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 		// The positive control: A's key does it in A.
 		own := apitest.CallFor(t, op, w.fresh(t, w.a, op))
 		r := w.api.Do(t, own.Method, own.Path, w.a.adminKey, own.Body, nil)
-		if r.Status != 200 && r.Status != 201 && r.Status != 204 { // deleteRole answers 204
+		if r.Status != 200 && r.Status != 201 && r.Status != 202 && r.Status != 204 { // deleteRole answers 204, testEventDestination 202
 			t.Errorf("%s in A: status %d\n%s", op.ID, r.Status, r.Body)
 		}
 		// And none in B.
@@ -618,8 +630,8 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 		}
 		n++
 	}
-	if n != 81 {
-		t.Errorf("%d tenant operations, want 81 (24, the two of sprint 3.3, the ten of sprint 4.1, the seven of sprint 5.2, the two of sprint 5.3, the seven of sprint 5.4, the ten of sprint 4.2, the ten of sprint 4.3 and the nine of sprint 6.2)", n)
+	if n != 92 {
+		t.Errorf("%d tenant operations, want 92 (24, the two of sprint 3.3, the ten of sprint 4.1, the seven of sprint 5.2, the two of sprint 5.3, the seven of sprint 5.4, the ten of sprint 4.2, the ten of sprint 4.3, the nine of sprint 6.2 and the eleven of sprint 6.4)", n)
 	}
 	if _, err := c.GetTenant(ctx(t), adminapi.GetTenantInput{Tenant: w.b.tenant.ID}); err == nil {
 		t.Error("a tenant key read a tenant")
@@ -707,7 +719,7 @@ func TestTenantAdminIsEnoughAndNoMore(t *testing.T) {
 						expect403(t, op, r) // sprint 4.3: kept for owners
 						continue
 					}
-					if r.Status != 200 && r.Status != 201 && r.Status != 204 {
+					if r.Status != 200 && r.Status != 201 && r.Status != 202 && r.Status != 204 {
 						t.Errorf("%s: a %s key got %d\n%s", op.ID, who.name, r.Status, r.Body)
 					}
 				default:
