@@ -65,3 +65,4 @@ isolation.
 
 - 2026-11: sprint 3.2 builds the ledger: admission by buffer slots, one transaction per tenant, idempotent inserts, a flush deadline of its own, monthly partitions with a default ([ADR 0039](0039-usage-record-admission-and-ledger-writer.md)).
 - 2026-11-18: sprint 5.3: `limit.delete` carries a cause (`cause`, `cause_id`); two audit actions are added, `limit.unlimited_traffic` and `tenant.time_zone_update`; two partial unique indexes on the audit logs make the first once per tenant and day ([ADR 0052](0052-administration-of-limits.md)).
+- 2026-11-23: sprint 6.2 builds the rollup and reports ([ADR 0064](0064-usage-rollup-reports-and-exports.md)), the hash chain, reading and retention; audit retention removes a chain's prefix instead of partitions ([ADR 0065](0065-the-audit-hash-chain-reading-and-retention.md))

@@ -106,6 +106,9 @@ replaced by `_`.
 | `idempotency.retention` | `PANDOKOS_IDEMPOTENCY_RETENTION` | duration | `24h` | Time an idempotency key is kept; 1h to 7d |
 | `support.enabled` | `PANDOKOS_SUPPORT_ENABLED` | boolean | `true` | Allow the platform to open support actions inside a tenant; `false`: none can be opened and none is honoured, and a tenant that loses its administrators cannot be recovered through the API (a warning at start) |
 | `support.max_duration` | `PANDOKOS_SUPPORT_MAX_DURATION` | duration | `1h` | Default and longest life of a support action; 1m to 24h |
+| `reports.rollup_interval` | `PANDOKOS_REPORTS_ROLLUP_INTERVAL` | duration | `1m` | How often the worker adds the new usage records to the rollup that reports and limit counters read; 10s to 1h; `serve` only ([usage guide](usage.md#13-rollup)) |
+| `retention.usage_months` | `PANDOKOS_RETENTION_USAGE_MONTHS` | integer | `0` | Months of usage kept besides the current UTC month: `0` keeps everything, otherwise 2 to 120; older monthly partitions are dropped and the rollup and default-partition rows of the tenants removed, for good; `serve` only ([usage guide](usage.md#7-partitions)) |
+| `retention.audit_months` | `PANDOKOS_RETENTION_AUDIT_MONTHS` | integer | `0` | Months of audit rows kept besides the current UTC month: `0` keeps everything, otherwise 1 to 1200; older rows are removed from the start of each chain and the anchor moves; a value below 12 is a start-up warning; `serve` only ([audit guide](audit.md#6-retention-of-the-logs)) |
 | `database.address` | `PANDOKOS_DATABASE_ADDRESS` | `host:port` | none, required | Address of PostgreSQL, or of the connection pooler in front of it |
 | `database.direct_address` | `PANDOKOS_DATABASE_DIRECT_ADDRESS` | `host:port` | none | Address of PostgreSQL itself, used only by the notification listener. Set it when `database.address` is a pooler in transaction mode |
 | `database.name` | `PANDOKOS_DATABASE_NAME` | name | `pandokos` | Database name |
@@ -243,6 +246,9 @@ All problems are reported together, not only the first. Each is attached to a ke
 | `tokens.max_lifetime` | 1m to 720h |
 | `tokens.private_hosts` | at most 32 entries, each a lower-case DNS name (letters, digits, hyphens, dots; at least one letter): no address literal, no wildcard, no port; no message quotes a host name |
 | `tokens.jwks.fetch_timeout`, `tokens.jwks.refresh_interval`, `tokens.jwks.min_refetch_interval` | 1s to 30s; 1m to 1h; 1s to 5m |
+| `reports.rollup_interval` | 10s to 1h |
+| `retention.usage_months` | 0, or 2 to 120 |
+| `retention.audit_months` | 0, or 1 to 1200 |
 | `tokens.jwks.max_stale` | at least twice `tokens.jwks.refresh_interval`, at most 72h |
 
 ## Warnings
@@ -268,6 +274,7 @@ they do not prevent start.
 | `support.enabled` | false | support actions are off: a tenant that loses its administrators cannot be recovered through the API |
 | `tokens.private_hosts` | the list is not empty (`serve` only) | issuer and key URLs of these hosts may resolve to private addresses: `<hosts>` |
 | `tokens.jwks.max_stale` | more than 24h | keys of an issuer are used for more than 24h after the last successful fetch: a key withdrawn by the issuer stays trusted that long while it is unreachable |
+| `retention.audit_months` | between 1 and 11 | audit rows older than the value are removed for good: a value below 12 months keeps less than a year of the log |
 | `environment` | an unknown `PANDOKOS_` variable | unknown variable `<NAME>` ignored (the value is never printed) |
 
 Variables starting with `PANDOKOS_SERVICE_` or `PANDOKOS_PORT` are ignored silently: Kubernetes

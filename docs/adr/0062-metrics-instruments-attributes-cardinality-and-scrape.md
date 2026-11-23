@@ -65,3 +65,4 @@ The conventions reserve it for counts obtained from the system.
 ## History
 
 - 2026-11-22: proposed with sprint 6.1.
+- 2026-11-23: sprint 6.2: five instruments, M42 to M46, with no tenant attribute

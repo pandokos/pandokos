@@ -69,6 +69,9 @@ A record is *proposed* until the maintainer accepts it, by merging its pull requ
 | [0061](0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md) | Support actions and reasons: how the platform acts inside a tenant | accepted |
 | [0062](0062-metrics-instruments-attributes-cardinality-and-scrape.md) | Metrics: instruments, attributes, cardinality and the scrape endpoint | proposed |
 | [0063](0063-the-log-redaction-and-the-log-reference.md) | The log: redaction by key and by shape, and the log reference | proposed |
+| [0064](0064-usage-rollup-reports-and-exports.md) | Usage rollup, reports and exports | proposed |
+| [0065](0065-the-audit-hash-chain-reading-and-retention.md) | The audit hash chain, reading and retention | proposed |
+| [0066](0066-declarative-export-and-apply.md) | Declarative export and apply | proposed |
 
 ## Questions from SOW 0.1 and where they were decided
 

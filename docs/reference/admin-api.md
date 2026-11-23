@@ -139,6 +139,39 @@ The required reason on `suspendTenant` and `reactivateTenant` changes the v0.1 c
 ([roles guide](../operations/roles.md#10-what-changes-for-an-installation-of-v01)). The permissions and
 roles are in the [permission reference](permissions.md).
 
+## Reports, exports and audit reading (sprint 6.2)
+
+Twelve operations ([usage guide](../operations/usage.md), [audit guide](../operations/audit.md)):
+
+| Operation | Method and path | Permission |
+|---|---|---|
+| `getUsageReport` | `GET /v1/tenants/{tenant}/usage-report` | `usage:read` |
+| `exportUsageRecords` | `GET /v1/tenants/{tenant}/usage-records/export` | `usage:read` |
+| `getLimitUsage` | `GET /v1/tenants/{tenant}/limits/{rule}/usage` | `usage:read` |
+| `getMetadataKeys` | `GET /v1/tenants/{tenant}/metadata-keys` | `usage:read` |
+| `setMetadataKeys`, `clearMetadataKeys` | `PUT`, `DELETE /v1/tenants/{tenant}/metadata-keys` | `tenant_setting:write` |
+| `listAuditEvents`, `getAuditHead`, `exportAuditEvents` | `GET /v1/tenants/{tenant}/audit-events`, `/audit-head`, `/audit-events/export` | `audit:read` |
+| `listPlatformAuditEvents`, `getPlatformAuditHead`, `exportPlatformAuditEvents` | `GET /v1/platform-audit-events`, `/v1/platform-audit-head`, `/v1/platform-audit-events/export` | `platform_audit:read` |
+
+No platform role reads a tenant's usage report or export ([ADR 0054](../adr/0054-usage-data-is-the-tenants.md)).
+
+**Two constructs of the generator** ([ADR 0028](../adr/0028-admin-api-generator.md),
+[ADR 0064](../adr/0064-usage-rollup-reports-and-exports.md)):
+
+- **Streamed answers.** A `200` whose content is `application/x-ndjson`, optionally also `text/csv`, with
+  the schema of one line. The server method returns `*adminapi.Stream` (content type, file name and a
+  function that writes), the client method `*adminapi.StreamBody` (content type and a body to read and
+  close); a `format` query parameter picks the content when there are two. The three exports use it.
+  The answer is `Content-Disposition: attachment`; an error before the first byte is the usual problem,
+  and after it the connection is aborted, so a client sees an incomplete transfer (a chunked response
+  without its terminator).
+- **Raw JSON members.** A member that holds a JSON value the server passes through without decoding it
+  (the `detail` of an audit event), so that its numbers keep the text the database stores and the chain
+  can be verified from the response.
+
+An optional integer query parameter is checked against its `minimum` only when it is given
+(`from_seq`, `to_seq` of the audit exports; an explicit `from_seq=0` is `400`).
+
 ## The accepted subset of OpenAPI 3.1
 
 `internal/apigen` accepts a deliberate subset and fails on anything else: `openapi: 3.1.0`; path
@@ -175,6 +208,14 @@ commands that return a generated password print it once on standard output, or w
 | `model-restriction get`, `set`, `clear` | `getModelRestriction`, `setModelRestriction`, `clearModelRestriction` |
 | `capability check` | `getCapability` |
 | `usage list` | `listUsageRecords` |
+| `usage report` (`--month`, `--from`, `--to`, `--period`, `--group-by`, `--provider`, `--model`) | `getUsageReport` |
+| `usage export` (`--from`, `--to`, `--provider`, `--format ndjson\|csv`, `--out`; a window over 31 days is split into requests) | `exportUsageRecords` |
+| `limit usage RULE` | `getLimitUsage` |
+| `metadata-keys get`, `set`, `clear` (with `--tenant`; keys as arguments) | `getMetadataKeys`, `setMetadataKeys`, `clearMetadataKeys` |
+| `audit list`, `head`, `export` (with `--tenant`; filters `--from`, `--to`, `--action`, `--resource-type`, `--resource-id`, `--actor-type`, `--actor-id`, `--outcome`, `--request-id`, `--support-action-id`; `--from-seq`, `--to-seq` on `export`) | `listAuditEvents`, `getAuditHead`, `exportAuditEvents` |
+| `platform-audit list`, `head`, `export` (as above, without `--tenant` and `--support-action-id`) | `listPlatformAuditEvents`, `getPlatformAuditHead`, `exportPlatformAuditEvents` |
+| `audit verify`, `platform-audit verify` (`--expect-head`, `--from-seq`, `--file`) | none: a composite command that reads the head and the export and checks the chain ([audit guide](../operations/audit.md)) |
+| `export (--platform \| --tenant ID) [--out FILE]`, `apply --file FILE (--platform \| --tenant ID) [--dry-run]` | none: composite commands over the API ([declarative guide](../operations/declarative.md)) |
 | `price-list lists`, `list`, `get`, `set`, `delete`, `currency get`, `currency set` | `listPriceLists`, `listPriceListVersions`, `getPriceListVersion`, `createPriceListVersion`, `deletePriceListVersion`, `getActiveCurrency`, `setActiveCurrency` |
 | `token-issuer list`, `create`, `get`, `update`, `delete`, `platform` | `listTokenIssuers`, `createTokenIssuer`, `getTokenIssuer`, `updateTokenIssuer`, `deleteTokenIssuer`, `listTenantPlatformIssuers` |
 | `subject-mapping list`, `create`, `get`, `delete` | `listSubjectMappings`, `createSubjectMapping`, `getSubjectMapping`, `deleteSubjectMapping` |

@@ -60,3 +60,4 @@ limiter for the sake of minutes.
 - 2026-11-18: after review of sprint 5.2: a tenant without a cut loads every period that began before the process followed it, also one that starts inside the horizon (a restart just after midnight), and the cut and the loads are installed together.
 - 2026-11-18: accepted by the maintainer after review. Point 5 (the ledger read with the worker role, also by the capability check) is reconsidered with sprint 8.2, when the roles run as separate processes.
 - 2026-11-18: sprint 5.3: counters are keyed by provider and model identifier; fold pieces are cut at the boundaries of the periods the store holds, which serves two time zones around a change ([ADR 0050](0050-quotas-and-budgets-periods-attribution-currencies.md)).
+- 2026-11-23: sprint 6.2: the counters' aggregate keeps its contract and reads the rollup ([ADR 0064](0064-usage-rollup-reports-and-exports.md))

@@ -333,7 +333,29 @@ key, the credential, the model and the price it names.
 Outcomes: `ok`, `upstream_error`, `cancelled`, `timeout`, `rejected_limit`, `rejected_policy`,
 `internal_error`. (`rejected_limit` is written for a request refused by a limit, with no usage and no cost.)
 
-Aggregated reports over the ledger come with sprint 6.2.
+## The usage rollup and reports (sprint 6.2)
+
+Migration 0015 ([database guide](../operations/database.md#20-grants-of-migration-0015),
+[ADR 0064](../adr/0064-usage-rollup-reports-and-exports.md)).
+
+- **`usage_rollup`** (tenant-scoped, forced row-level security, canonical policy) has one row per UTC hour
+  of the request start and per principal, key, provider, model, model ID, currency, price source, outcome
+  and whether a credential was opened, with the request count, the seven token sums as recorded, the sum
+  of the known costs and the counts of known and unknown costs. Currencies and price sources are never
+  merged. It is derived from the ledger and rebuildable, so it is not append-only.
+- **`usage_rollup_state`** holds one `watermark` per tenant: every record recorded before it is in the
+  rollup, none at or after it. The worker moves it in the tenant's session, one minute behind the clock.
+- **The exact reader** (`AggregateUsageForLimits`, `UsageReport`) takes the rollup for whole hours that no
+  period boundary cuts plus the ledger records of those hours recorded since the watermark, and the
+  ledger for everything else, in one statement. A stopped rollup makes it slower, never wrong. The limit
+  counters and the capability check read through it.
+- **`usage_record_recorded_idx`** on `(tenant_id, recorded_at)` serves the rollup.
+- **`metadata_key_policy`** is a tenant's list of the caller metadata keys it accepts (no row: every key
+  of the format); the gateway reads it with the tenant's catalogue view.
+- **Retention** (`usage_months`, `audit_months`, both off by default): usage by dropping monthly
+  partitions and removing a tenant's rollup and default-partition rows; audit by removing the oldest rows of
+  a chain and moving its anchor. Two audited functions of the database do it, run by the worker; see the
+  audit section.
 
 ## Audit log
 
@@ -341,6 +363,24 @@ Aggregated reports over the ledger come with sprint 6.2.
 same transaction as the change (AUD-03). Each row stores the hash of the previous row of the same
 tenant, forming a chain that makes removal or alteration detectable (AUD-04). Platform-level
 events have their own table and chain.
+
+**The chain as built (sprint 6.2, [ADR 0065](../adr/0065-the-audit-hash-chain-reading-and-retention.md)).**
+A `BEFORE INSERT` trigger that runs as the owner seals every row: it gives it its ID, time, a `seq`
+per chain, the previous hash and its own hash, under a lock of the chain's head row (`audit_chain` per
+tenant, `platform_audit_chain`: last `seq` and `hash`, and the anchor). A row that is not inserted leaves
+the head as it was, so numbers are consecutive in commit order. The hash is SHA-256 over a length-prefixed
+canonical encoding of the row (version 1) and the digest of its detail; it is defined in SQL and in Go
+(`internal/auditchain`) and verified client-side by `pandokos audit verify`. Rows that existed before
+migration 0015 were sealed once by it. The admin role reads the logs (`audit:read`,
+`platform_audit:read`); the details of price actions are withheld, with their digest, from a reader
+without `price_list:read`.
+
+**Retention as built.** The audit tables are not partitioned. `append_only` lets a `DELETE` through only
+under the setting `pandokos.retention`, which two definer functions alone set (`tenant_retention`,
+`platform_retention`, executable by the worker role): they remove the oldest rows of a chain as a prefix,
+move its anchor to the hash of the last removed row and write `audit.retention` in the chain, and the
+second also drops usage partitions and writes `usage.retention`. Sprint 6.3 reuses the switch for tenant
+deletion.
 
 ## Outbox
 

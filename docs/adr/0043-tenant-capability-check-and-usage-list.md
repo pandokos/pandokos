@@ -45,3 +45,4 @@ credential to answer a question.
 - 2026-11-18: accepted by the maintainer after review.
 - 2026-11-18: sprint 5.3: `checks.budget` uses the tenant's time zone and matches rules by identifier; the usage list shows and filters on `limit_state`.
 - 2026-11-18: sprint 5.4: `checks.budget` counts the budgets in the tenant's active currency and the price in it
+- 2026-11-23: sprint 6.2: the capability check reads through the exact reader ([ADR 0064](0064-usage-rollup-reports-and-exports.md))
