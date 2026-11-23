@@ -109,3 +109,24 @@ func validMetadataValue(v string) bool {
 	}
 	return true
 }
+
+// Restrict applies the keys a tenant accepts to what ParseMetadata kept: the entries whose key is
+// not in allowed move to the dropped count (which saturates). A nil allowed is no policy and
+// changes nothing; an empty one accepts no key.
+func Restrict(kept map[string]string, dropped int, allowed map[string]bool) (map[string]string, int) {
+	if allowed == nil || len(kept) == 0 {
+		return kept, dropped
+	}
+	var out map[string]string
+	for k, v := range kept {
+		if allowed[k] {
+			if out == nil {
+				out = make(map[string]string, len(kept))
+			}
+			out[k] = v
+			continue
+		}
+		dropped++
+	}
+	return out, min(dropped, maxDropped)
+}

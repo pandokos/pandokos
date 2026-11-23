@@ -213,6 +213,9 @@ type reqState struct {
 	traceID         string
 	metadata        map[string]string
 	metadataDropped int
+	// metaKept and metaDropped are what the headers gave, before the tenant's policy (step 7).
+	metaKept        map[string]string
+	metaDropped     int
 	streamKnown     bool // the stream flag was read (step 6 passed)
 	server, client  trace.Span
 	serverCx        context.Context
@@ -340,6 +343,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st.target, st.resolved = target, true
+	st.metadata, st.metadataDropped = usage.Restrict(st.metaKept, st.metaDropped, target.MetadataKeys)
+	metadataHeader(st.sw.Header(), st.metadataDropped)
 
 	// Step 7b: the limits.
 	if !h.reserve(st, parsed.OutputBound()) {
@@ -491,7 +496,10 @@ func (h *Handler) authenticate(r *http.Request, st *reqState) bool {
 	}
 	st.admitted = true
 	// Step 3b: attribution. Nothing of this runs for a caller that is not authenticated.
-	st.metadata, st.metadataDropped = usage.ParseMetadata(r.Header)
+	// What the tenant accepts is not known yet (step 7): until then nothing is recorded and every
+	// entry kept counts as dropped.
+	st.metaKept, st.metaDropped = usage.ParseMetadata(r.Header)
+	st.metadata, st.metadataDropped = usage.Restrict(st.metaKept, st.metaDropped, map[string]bool{})
 	metadataHeader(st.sw.Header(), st.metadataDropped)
 	st.recordID = usage.NewID(st.start)
 	ctx := h.propagator.Extract(r.Context(), propagation.HeaderCarrier(r.Header))

@@ -140,6 +140,17 @@ func LoadTenantAccess(ctx context.Context, db *store.DB, id tenant.ID, defaultCu
 				ta.Allowed[ref] = true
 			}
 		}
+		mk, err := q.GetMetadataKeyPolicy(ctx)
+		switch {
+		case errors.Is(err, store.ErrNoRows):
+		case err != nil:
+			return err
+		default:
+			ta.MetadataKeys = make(map[string]bool, len(mk.Keys))
+			for _, k := range mk.Keys {
+				ta.MetadataKeys[k] = true
+			}
+		}
 		ac, err := q.GetTenantActiveCurrency(ctx)
 		if err != nil {
 			return err

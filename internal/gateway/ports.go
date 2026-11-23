@@ -34,6 +34,8 @@ type Target struct {
 	// TenantPrices holds the tenant's price versions of the model, of the currencies of Currency;
 	// read-only.
 	TenantPrices []pricing.Version
+	// MetadataKeys is the set of caller metadata keys the tenant accepts; nil: no policy.
+	MetadataKeys map[string]bool
 }
 
 // PriceList is the price list of the tenant for the model: its currency, the catalogue's versions
