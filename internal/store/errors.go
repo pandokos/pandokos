@@ -34,6 +34,16 @@ func ConstraintViolation(err error) (kind, constraint string, ok bool) {
 	return kind, pe.ConstraintName, true
 }
 
+// ErrorConstraint returns the name a database error carries in its CONSTRAINT field, whatever its
+// SQLSTATE (the refusals of the functions of migration 0016 use states outside class 23), or "".
+func ErrorConstraint(err error) string {
+	var pe *pgconn.PgError
+	if errors.As(err, &pe) {
+		return pe.ConstraintName
+	}
+	return ""
+}
+
 // SQLState returns the SQLSTATE of a database error, or "".
 func SQLState(err error) string {
 	var pe *pgconn.PgError

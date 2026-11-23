@@ -22,6 +22,8 @@ const (
 	wrapFormat     = 0x01
 	localIDLabel   = "pandokos kek id v1"
 	localIDHexSize = 8
+	// maxUnwrapKeys is the most unwrap keys a provider holds (vault.kek.local.unwrap_key_files).
+	maxUnwrapKeys = 8
 )
 
 // LocalProvider wraps data keys with a key-encryption key read from a file. It holds a map from
@@ -38,6 +40,9 @@ type LocalProvider struct {
 // first key wraps; every unwrap key only unwraps data keys wrapped under its version. The same
 // version twice is ErrInvalidKey.
 func NewLocalProvider(active secret.Secret, unwrap ...secret.Secret) (*LocalProvider, error) {
+	if len(unwrap) > maxUnwrapKeys {
+		return nil, ErrInvalidKey
+	}
 	p := &LocalProvider{keys: map[string]cipher.AEAD{}}
 	for i, key := range append([]secret.Secret{active}, unwrap...) {
 		id, aead, err := localAEAD(key)

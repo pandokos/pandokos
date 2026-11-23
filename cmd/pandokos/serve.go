@@ -153,19 +153,20 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	}
 
 	gatewayDB, adminDB, workerDB := dbs[0], dbs[1], dbs[2]
-	kp, err := vault.NewLocalProvider(cfg.Vault.KEK.Local.Key)
+	kp, err := vault.NewLocalProvider(cfg.Vault.KEK.Local.Key, cfg.Vault.KEK.Local.UnwrapKeys...)
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
 	vctx, vcancel := context.WithTimeout(ctx, 30*time.Second)
-	kekVersion, err := vault.Check(vctx, adminDB, kp)
+	kekVersion, kekActivation, err := vault.Activate(vctx, adminDB, workerDB, kp)
 	vcancel()
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	logger.Info("vault ready", "kek_provider", kp.Name(), "kek_version", kekVersion)
+	logger.Info("vault ready", "kek_provider", kp.Name(), "kek_version", kekVersion, "kek_activation", kekActivation,
+		"kek_unwrap_versions", len(kp.Versions())-1)
 	sealer, err := vault.NewSealer(kp)
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())

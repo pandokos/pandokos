@@ -73,6 +73,10 @@ func (s *Sealer) EnsureDataKey(ctx context.Context, tx store.Tx, id tenant.ID) (
 		TenantID: id.String(), Version: dataKeyVersion, KekVersion: version, WrappedKey: wrapped,
 	})
 	if err != nil {
+		if _, name, ok := store.ConstraintViolation(err); ok && name == "tenant_data_key_kek_active" {
+			// Another instance activated another key: this one must not create a data key (§5.8).
+			return false, "", &SealError{Cause: "kek_replaced", TenantID: id, KEKVersion: version, DataKeyVersion: dataKeyVersion, msg: "the key-encryption key of this instance was replaced", err: ErrKeyReplaced}
+		}
 		return false, "", err
 	}
 	if n == 1 {
@@ -90,8 +94,9 @@ func (s *Sealer) EnsureDataKey(ctx context.Context, tx store.Tx, id tenant.ID) (
 // known at write time, so the log line can say what §5.10 says for a read. The text of the
 // provider error is kept for errors.Is, never for a log: it can carry paths.
 type SealError struct {
-	// Cause is "data_key_unwrap" (the stored data key does not unwrap) or "kek_unavailable"
-	// (the key-encryption key version is unknown or the provider cannot answer).
+	// Cause is "data_key_unwrap" (the stored data key does not unwrap), "kek_unavailable"
+	// (the key-encryption key version is unknown or the provider cannot answer) or "kek_replaced"
+	// (another instance activated another version, so this one creates no data key).
 	Cause string
 	// TenantID, CredentialID, KEKVersion and DataKeyVersion are empty or zero when not known.
 	TenantID       tenant.ID

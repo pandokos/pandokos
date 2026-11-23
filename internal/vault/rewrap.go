@@ -2,6 +2,7 @@ package vault
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
 	"github.com/pandokos/pandokos/internal/store"
@@ -30,3 +31,6 @@ func (r *Rewrapper) Pass(_ context.Context) error { return errNotImplemented }
 
 // Stats returns the counters.
 func (r *Rewrapper) Stats() RewrapStats { return RewrapStats{} }
+
+// errNotImplemented marks the part of sprint 6.3 that C2 fills in.
+var errNotImplemented = errors.New("vault: not implemented")

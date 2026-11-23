@@ -12,11 +12,18 @@ import (
 	"github.com/pandokos/pandokos/internal/store/queries"
 )
 
+// The states of a key-encryption key version (migration 0016).
+const (
+	stateActive  = "active"
+	stateRetired = "retired"
+)
+
 // checkAAD is the fixed associated data of the self-test of Check.
 var checkAAD = []byte("pandokos/check/v1")
 
-// Check runs at start. It wraps and unwraps 32 random bytes, then requires every row of
-// kek_version to name p and to be Available. It returns the active key version for the log
+// Check runs at start. It wraps and unwraps 32 random bytes, then requires every version the
+// database still needs (state active or retiring; a retired version wraps no data key) to name p
+// and to be Available. It returns the active key version for the log
 // line. A fresh database has no row and passes. It writes nothing.
 func Check(ctx context.Context, db *store.DB, p KeyProvider) (version string, err error) {
 	probe := make([]byte, dataKeyLen)
@@ -47,6 +54,9 @@ func Check(ctx context.Context, db *store.DB, p KeyProvider) (version string, er
 		return "", fmt.Errorf("vault: cannot read the key versions: %w", err)
 	}
 	for _, r := range rows {
+		if r.State == stateRetired {
+			continue
+		}
 		if r.Provider != p.Name() || p.Available(ctx, r.ID) != nil {
 			return "", fmt.Errorf("the database holds data keys wrapped by key-encryption key version %s which this configuration does not provide; see docs/operations/vault.md", r.ID)
 		}
