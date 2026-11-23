@@ -124,7 +124,7 @@ var reportCommands = []command{
 				if e.After(*toT) {
 					e = *toT
 				}
-				windows = append(windows, window{s.Format(time.RFC3339), e.Format(time.RFC3339)})
+				windows = append(windows, window{s.Format(time.RFC3339Nano), e.Format(time.RFC3339Nano)})
 				s = e
 			}
 		}
