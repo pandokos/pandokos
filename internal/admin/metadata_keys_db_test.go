@@ -156,13 +156,17 @@ func TestMetadataKeys(t *testing.T) {
 			}
 		}
 		before := w.api.Snapshot(t)
-		for op, c := range map[string]struct {
-			method string
-			body   any
-		}{"setMetadataKeys": {"PUT", map[string]any{"keys": []string{"team"}}}, "clearMetadataKeys": {"DELETE", nil}} {
+		// In a fixed order: earlier subtests leave a policy or not, so the
+		// clearing case sets its own.
+		for _, c := range []struct {
+			op, method string
+			body       any
+		}{{"setMetadataKeys", "PUT", map[string]any{"keys": []string{"team"}}}, {"clearMetadataKeys", "DELETE", nil}} {
+			op := c.op
 			if op == "clearMetadataKeys" {
 				// There must be a policy to clear for the change to be attempted.
-				if _, err := super.Exec(ctx(t), `INSERT INTO pandokos.metadata_key_policy (tenant_id, keys) VALUES ($1::uuid, ARRAY['team'])`, w.a.ID); err != nil {
+				if _, err := super.Exec(ctx(t), `INSERT INTO pandokos.metadata_key_policy (tenant_id, keys) VALUES ($1::uuid, ARRAY['team'])
+					ON CONFLICT (tenant_id) DO UPDATE SET keys = EXCLUDED.keys`, w.a.ID); err != nil {
 					t.Fatal(err)
 				}
 				before = w.api.Snapshot(t)
