@@ -152,7 +152,7 @@ func TestEventSchemas(t *testing.T) {
 	// Events of the tenant: usage records and both kinds of limit event; and a test request.
 	tenantID := mustTenant(t, tid)
 	d.SeedUsageRecords(t, tenantID, 4)
-	for _, kind := range []struct{ kind, percent string }{{"threshold_reached", "80"}, {"exhausted", "NULL"}} {
+	for _, kind := range []struct{ kind, percent string }{{"threshold_reached", "80"}, {"exhausted", "0"}} {
 		if _, err := d.Super(t).Exec(context.Background(), `INSERT INTO pandokos.limit_event (tenant_id, kind, rule_id, rule_level, subject_kind, metric, period_start, period_end, percent, limit_value, observed)
 			VALUES ($1::uuid, $2, pandokos.uuid_v7(), 'tenant', 'tenant', 'tokens_per_day', date_trunc('day', now()), date_trunc('day', now()) + interval '1 day', `+kind.percent+`, 10, 8)`, tid, kind.kind); err != nil {
 			t.Fatal(err)
