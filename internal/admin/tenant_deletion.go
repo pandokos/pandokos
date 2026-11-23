@@ -55,20 +55,23 @@ func (r deletionRow) out() adminapi.TenantDeletion {
 	if r.CompletionSeq != nil {
 		d.CompletionSeq = int(*r.CompletionSeq)
 	}
-	if r.State == string(adminapi.TenantDeletionStateCompleted) {
-		var a adminapi.TenantDeletionAudit
-		if r.Audit != "" && json.Unmarshal([]byte(r.Audit), &a) == nil && a.ResealedHead != "" {
-			d.Audit = &a
-		}
-		switch {
-		case len(r.Pending) > 0:
+	// §5.12: audit once the step audit ran (it fills the column), and the erasure in backups once
+	// the step secrets ran (the steps after it, or a second pass, which only follows the step audit).
+	var a adminapi.TenantDeletionAudit
+	if r.Audit != "" && json.Unmarshal([]byte(r.Audit), &a) == nil && a.ResealedHead != "" {
+		d.Audit = &a
+	}
+	if d.Audit != nil || secretsRan[r.Step] {
+		d.BackupErasure.State = adminapi.BackupErasureStateComplete
+		if len(r.Pending) > 0 {
 			d.BackupErasure.State = adminapi.BackupErasureStatePending
-		case len(r.KekVersions) > 0:
-			d.BackupErasure.State = adminapi.BackupErasureStateComplete
 		}
 	}
 	return d
 }
+
+// secretsRan are the steps a deletion reaches only after the step secrets ran.
+var secretsRan = map[string]bool{"configuration": true, "usage": true, "audit": true, "complete": true, "done": true}
 
 // RequestTenantDeletion suspends a tenant and schedules its deletion (§5.1).
 func (s *server) RequestTenantDeletion(ctx context.Context, in adminapi.RequestTenantDeletionInput) (*adminapi.TenantDeletion, error) {

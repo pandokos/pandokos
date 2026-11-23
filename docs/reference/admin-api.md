@@ -203,7 +203,8 @@ has 167 operations. The first six are under the tag `tenants`, `listKEKVersions`
 - **`TenantDeletion`** has `tenant_id`, `state` (`scheduled`, `running`, `completed`), `step`, `reason`,
   `requested_by` (`type`, `id`, `name`), `request_id`, the times `requested_at`, `not_before`,
   `started_at` and `completed_at`, `passes`, `removed` (counts by table), `kek_versions`,
-  `backup_erasure` (`state` `not_applicable`, `pending` or `complete`, and `pending_kek_versions`),
+  `backup_erasure` (`state`: `not_applicable` before the step `secrets` ran, then `pending` or
+  `complete`; and `pending_kek_versions`),
   `audit` (`anchor_seq`, `last_seq`, `rows`, `original_head`, `resealed_head`; absent before the step
   `audit` ran) and `completion_seq`. The salt of the pseudonyms is in no answer. After a restart of the
   worker `step` can read `unknown` until the next step runs.

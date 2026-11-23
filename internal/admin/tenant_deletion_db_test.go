@@ -198,6 +198,37 @@ func TestTenantDeletionRequest(t *testing.T) {
 		}
 	})
 
+	t.Run("audit and backup_erasure follow the steps that ran, not the end", func(t *testing.T) {
+		x, _ := api.Tenant(t, apitest.UniqueName("del-steps"))
+		id := parseTenant(t, x.ID)
+		get := func() adminapi.TenantDeletion {
+			return decode[adminapi.TenantDeletion](t, plat.Do(t, "GET", deletionPath(x.ID), nil, nil), 200)
+		}
+		api.DB.BeginDeletion(t, id) // the next step is access: neither has run
+		if d := get(); d.Audit != nil || d.BackupErasure.State != adminapi.BackupErasureStateNotApplicable {
+			t.Errorf("before the step secrets: audit %+v, backup_erasure %+v; want no audit and not_applicable", d.Audit, d.BackupErasure)
+		}
+		for _, want := range []string{"secrets", "configuration"} {
+			if got := api.DB.StepDeletion(t, id, 100); got != want {
+				t.Fatalf("the step answered %q, want %q", got, want)
+			}
+		}
+		d := get()
+		if d.Audit != nil || d.BackupErasure.State == adminapi.BackupErasureStateNotApplicable {
+			t.Errorf("after the step secrets: audit %+v, backup_erasure %+v; want no audit and a state of the erasure", d.Audit, d.BackupErasure)
+		}
+		for i := 0; i < 50 && d.Step != adminapi.TenantDeletionStepComplete; i++ {
+			api.DB.StepDeletion(t, id, 100)
+			d = get()
+		}
+		if d.State != adminapi.TenantDeletionStateRunning || d.Step != adminapi.TenantDeletionStepComplete {
+			t.Fatalf("the deletion is %s at %s, want running at complete", d.State, d.Step)
+		}
+		if d.Audit == nil || d.Audit.ResealedHead == "" || d.Audit.LastSeq < 1 || d.BackupErasure.State == adminapi.BackupErasureStateNotApplicable {
+			t.Errorf("after the step audit: audit %+v, backup_erasure %+v; want the audit of the re-seal", d.Audit, d.BackupErasure)
+		}
+	})
+
 	t.Run("get and list", func(t *testing.T) {
 		scheduled, _ := api.Tenant(t, apitest.UniqueName("del-list-a"))
 		running, _ := api.Tenant(t, apitest.UniqueName("del-list-b"))
