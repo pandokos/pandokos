@@ -53,6 +53,13 @@ func outboxStatements(c context.Context, t *testing.T, d *dbtest.Database, admin
 			len(row.EventTypes) != 1 || row.TestRequestedAt != nil || row.PreviousSecretExpiresAt != nil || row.ExpiredEvents != 0 {
 			t.Errorf("GetEventDestination: %+v, %v", row, err)
 		}
+		mark("ListEventDestinations")
+		if rows, err := q.ListEventDestinations(c, queries.ListEventDestinationsParams{AfterID: dest, PageSize: 10}); err != nil || len(rows) != 1 || rows[0].ID != dest {
+			t.Errorf("ListEventDestinations: %+v, %v", rows, err)
+		}
+		if rows, err := q.ListEventDestinations(c, queries.ListEventDestinationsParams{After: true, AfterID: dest, PageSize: 10}); err != nil || len(rows) != 0 {
+			t.Errorf("ListEventDestinations after the only one: %+v, %v", rows, err)
+		}
 		return nil
 	}))
 	// Events after the destination: work for the relay.

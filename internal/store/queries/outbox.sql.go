@@ -156,7 +156,7 @@ type GetEventDestinationRow struct {
 	DeadLetters             int64
 }
 
-// (A) also ListEventDestinations :many with the keyset of the other lists
+// (A)
 func (q *Queries) GetEventDestination(ctx context.Context, id string) (GetEventDestinationRow, error) {
 	row := q.db.QueryRow(ctx, getEventDestination, id)
 	var i GetEventDestinationRow
@@ -340,6 +340,104 @@ func (q *Queries) ListEventDeadLetters(ctx context.Context, arg ListEventDeadLet
 	return items, nil
 }
 
+const listEventDestinations = `-- name: ListEventDestinations :many
+SELECT d.id, d.tenant_id, d.name, d.description, d.url, d.event_types, d.enabled, d.secret_created_at,
+       d.previous_secret_expires_at, d.created_at, d.updated_at, d.cursor_seq, d.failures, d.failing_since,
+       d.next_attempt_at, d.last_success_at, d.last_failure_at, d.last_error, d.last_status, d.expired_events,
+       d.test_requested_at, d.test_event_id, d.test_completed_at, d.test_outcome, d.test_status,
+       COALESCE((SELECT s.last_seq FROM pandokos.outbox_stream s WHERE s.tenant_id = d.tenant_id), 0)::bigint AS head_seq,
+       (SELECT count(*) FROM pandokos.outbox_dead_letter l WHERE l.destination_id = d.id AND l.state = 'dead')::bigint AS dead_letters
+  FROM pandokos.event_destination d
+ WHERE (NOT $1::boolean OR d.id > $2::uuid)
+ ORDER BY d.id
+ LIMIT $3::integer
+`
+
+type ListEventDestinationsParams struct {
+	After    bool
+	AfterID  string
+	PageSize int32
+}
+
+type ListEventDestinationsRow struct {
+	ID                      string
+	TenantID                string
+	Name                    string
+	Description             string
+	Url                     string
+	EventTypes              []string
+	Enabled                 bool
+	SecretCreatedAt         time.Time
+	PreviousSecretExpiresAt *time.Time
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
+	CursorSeq               int64
+	Failures                int32
+	FailingSince            *time.Time
+	NextAttemptAt           time.Time
+	LastSuccessAt           *time.Time
+	LastFailureAt           *time.Time
+	LastError               string
+	LastStatus              *int32
+	ExpiredEvents           int64
+	TestRequestedAt         *time.Time
+	TestEventID             *string
+	TestCompletedAt         *time.Time
+	TestOutcome             string
+	TestStatus              *int32
+	HeadSeq                 int64
+	DeadLetters             int64
+}
+
+// (A) keyset on id (the order of creation)
+func (q *Queries) ListEventDestinations(ctx context.Context, arg ListEventDestinationsParams) ([]ListEventDestinationsRow, error) {
+	rows, err := q.db.Query(ctx, listEventDestinations, arg.After, arg.AfterID, arg.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListEventDestinationsRow{}
+	for rows.Next() {
+		var i ListEventDestinationsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Name,
+			&i.Description,
+			&i.Url,
+			&i.EventTypes,
+			&i.Enabled,
+			&i.SecretCreatedAt,
+			&i.PreviousSecretExpiresAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CursorSeq,
+			&i.Failures,
+			&i.FailingSince,
+			&i.NextAttemptAt,
+			&i.LastSuccessAt,
+			&i.LastFailureAt,
+			&i.LastError,
+			&i.LastStatus,
+			&i.ExpiredEvents,
+			&i.TestRequestedAt,
+			&i.TestEventID,
+			&i.TestCompletedAt,
+			&i.TestOutcome,
+			&i.TestStatus,
+			&i.HeadSeq,
+			&i.DeadLetters,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOutboxEventsAfter = `-- name: ListOutboxEventsAfter :many
 SELECT o.seq, o.id, o.type, o.subject, o.occurred_at, o.recorded_at, o.data
   FROM pandokos.outbox_event o
@@ -396,7 +494,7 @@ func (q *Queries) ListOutboxEventsAfter(ctx context.Context, arg ListOutboxEvent
 
 const listPlatformOutboxEventsAfter = `-- name: ListPlatformOutboxEventsAfter :many
 SELECT e.seq, e.id, e.type, e.subject, e.occurred_at, e.tenant_id, e.data,
-       COALESCE((SELECT t.external_reference FROM pandokos.tenant t WHERE t.id = e.tenant_id), '') AS external_reference
+       COALESCE((SELECT t.external_reference FROM pandokos.tenant t WHERE t.id = e.tenant_id), '')::text AS external_reference
   FROM pandokos.platform_outbox_event e
  WHERE e.seq > $1::bigint
    AND (cardinality($2::text[]) = 0 OR e.type = ANY ($2::text[]))
@@ -417,7 +515,7 @@ type ListPlatformOutboxEventsAfterRow struct {
 	OccurredAt        time.Time
 	TenantID          *string
 	Data              string
-	ExternalReference interface{}
+	ExternalReference string
 }
 
 // (A, platform scope)

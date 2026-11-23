@@ -355,7 +355,11 @@ func TestEventDestinationOperations(t *testing.T) {
 			case "302":
 				http.Redirect(w, r, "http://localhost:1/elsewhere", http.StatusFound)
 			case "stall":
-				<-release
+				// Ends with the client that gave up, or srv.Close would wait for it.
+				select {
+				case <-release:
+				case <-r.Context().Done():
+				}
 			default:
 				w.WriteHeader(204)
 			}
@@ -365,6 +369,9 @@ func TestEventDestinationOperations(t *testing.T) {
 		d := x.create(t, "outcomes", url).Destination
 		x.api.DB.SeedUsageRecords(t, xt, 2)
 		eventsBefore := len(x.api.DB.OutboxEvents(t, xt))
+		// The events seeded above are delivered first: the test requests start from a settled cursor.
+		for deadline := time.Now().Add(15 * time.Second); x.get(t, d.ID).Delivery.Cursor < 2 && time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		}
 		run := func(want string, status int, disabled bool) {
 			t.Helper()
 			if disabled {

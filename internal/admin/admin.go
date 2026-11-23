@@ -12,6 +12,7 @@ import (
 	"net/netip"
 	"regexp"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -151,6 +152,11 @@ type server struct {
 	authOpts    AuthOptions
 	// deletionGrace is Options.TenantDeletionGrace.
 	deletionGrace time.Duration
+	// events is Options.Events.
+	events struct {
+		source       string
+		privateHosts []string
+	}
 	// support is Options.Support.
 	support struct {
 		enabled     bool
@@ -228,6 +234,7 @@ func New(o Options) (*Handler, error) {
 	s.limits.OnUnknownPrice, s.limits.Ledger = o.Limits.OnUnknownPrice, o.Limits.Ledger
 	s.limits.Zones = o.Limits.Zones
 	s.support.enabled, s.support.maxDuration = o.Support.Enabled, o.Support.MaxDuration
+	s.events.source, s.events.privateHosts = o.Events.Source, slices.Clone(o.Events.PrivateHosts)
 	if s.defaultCurrency = o.DefaultCurrency; s.defaultCurrency == "" {
 		s.defaultCurrency = "USD"
 	}

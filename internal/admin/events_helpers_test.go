@@ -17,7 +17,7 @@ import (
 	"github.com/pandokos/pandokos/test/testutil"
 )
 
-// ew is a world of the event tests: an API whose handler accepts http for the host localhost, a
+// ew is a world of the event tests: an API (with idempotency keys) whose handler accepts http for the host localhost, a
 // tenant and its owner.
 type ew struct {
 	api    *apitest.API
@@ -28,10 +28,11 @@ type ew struct {
 
 func newEW(t *testing.T) *ew {
 	t.Helper()
-	api := apitest.New(t, func(o *admin.Options) {
+	// The API has the idempotency store: the creation and the rotation take an Idempotency-Key.
+	api := apitest.NewPeople(t, apitest.PeopleConfig{Admin: func(o *admin.Options) {
 		o.Events.Source = "urn:pandokos"
 		o.Events.PrivateHosts = []string{"localhost"}
-	})
+	}})
 	ten, _ := api.Tenant(t, apitest.UniqueName("events"))
 	return &ew{api: api, tenant: ten, owner: api.Owner(t, ten.ID), tid: ten.ID}
 }

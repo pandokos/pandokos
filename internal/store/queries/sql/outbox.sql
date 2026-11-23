@@ -90,7 +90,7 @@ VALUES (pandokos.current_tenant_id(), sqlc.arg(id)::uuid, sqlc.arg(name), sqlc.a
         sqlc.arg(enabled), sqlc.arg(secret), sqlc.arg(secret_key_version))
 RETURNING id;
 
--- (A) also ListEventDestinations :many with the keyset of the other lists
+-- (A)
 -- name: GetEventDestination :one
 SELECT d.id, d.tenant_id, d.name, d.description, d.url, d.event_types, d.enabled, d.secret_created_at,
        d.previous_secret_expires_at, d.created_at, d.updated_at, d.cursor_seq, d.failures, d.failing_since,
@@ -100,6 +100,19 @@ SELECT d.id, d.tenant_id, d.name, d.description, d.url, d.event_types, d.enabled
        (SELECT count(*) FROM pandokos.outbox_dead_letter l WHERE l.destination_id = d.id AND l.state = 'dead')::bigint AS dead_letters
   FROM pandokos.event_destination d
  WHERE d.id = sqlc.arg(id)::uuid;
+
+-- (A) keyset on id (the order of creation)
+-- name: ListEventDestinations :many
+SELECT d.id, d.tenant_id, d.name, d.description, d.url, d.event_types, d.enabled, d.secret_created_at,
+       d.previous_secret_expires_at, d.created_at, d.updated_at, d.cursor_seq, d.failures, d.failing_since,
+       d.next_attempt_at, d.last_success_at, d.last_failure_at, d.last_error, d.last_status, d.expired_events,
+       d.test_requested_at, d.test_event_id, d.test_completed_at, d.test_outcome, d.test_status,
+       COALESCE((SELECT s.last_seq FROM pandokos.outbox_stream s WHERE s.tenant_id = d.tenant_id), 0)::bigint AS head_seq,
+       (SELECT count(*) FROM pandokos.outbox_dead_letter l WHERE l.destination_id = d.id AND l.state = 'dead')::bigint AS dead_letters
+  FROM pandokos.event_destination d
+ WHERE (NOT sqlc.arg(after)::boolean OR d.id > sqlc.arg(after_id)::uuid)
+ ORDER BY d.id
+ LIMIT sqlc.arg(page_size)::integer;
 
 -- (A) enabling (false to true) also clears the failure state
 -- name: UpdateEventDestination :execrows
@@ -157,7 +170,7 @@ UPDATE pandokos.outbox_dead_letter
 -- (A, platform scope)
 -- name: ListPlatformOutboxEventsAfter :many
 SELECT e.seq, e.id, e.type, e.subject, e.occurred_at, e.tenant_id, e.data,
-       COALESCE((SELECT t.external_reference FROM pandokos.tenant t WHERE t.id = e.tenant_id), '') AS external_reference
+       COALESCE((SELECT t.external_reference FROM pandokos.tenant t WHERE t.id = e.tenant_id), '')::text AS external_reference
   FROM pandokos.platform_outbox_event e
  WHERE e.seq > sqlc.arg(after)::bigint
    AND (cardinality(sqlc.arg(types)::text[]) = 0 OR e.type = ANY (sqlc.arg(types)::text[]))

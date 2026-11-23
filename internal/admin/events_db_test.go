@@ -244,6 +244,21 @@ func TestEventPermissions(t *testing.T) {
 		t.Fatalf("%d operations of events, want 12", len(ops))
 	}
 	params := apitest.Params{Tenant: w.tid, Destination: dest}
+	// A probe of deleteEventDestination that succeeds removes its destination: it deletes a fresh one,
+	// and removes it after the call if the call was refused, so the other probes still find theirs.
+	probe := func(who apitest.Doer, op adminapi.Operation) *apitest.Response {
+		t.Helper()
+		if op.ID != "deleteEventDestination" {
+			return apitest.Probe(t, who, op, params)
+		}
+		p := params
+		p.Destination = w.api.SeedEventDestination(t, w.tid)
+		r := apitest.Probe(t, who, op, p)
+		if _, err := w.api.Super(t).Exec(ctx(t), `DELETE FROM pandokos.event_destination WHERE id = $1::uuid`, p.Destination); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
 	holds := map[string][]string{
 		authz.EventDestinationRead:   {"owner", "tenant-admin", "auditor", "read-only"},
 		authz.EventDestinationWrite:  {"owner", "tenant-admin"},
@@ -269,7 +284,7 @@ func TestEventPermissions(t *testing.T) {
 			if op.ID == "exportPlatformEvents" {
 				continue
 			}
-			r := apitest.Probe(t, who, op, params)
+			r := probe(who, op)
 			if has(role, op.Permission) {
 				if r.Status < 200 || r.Status > 299 {
 					t.Errorf("%s as %s: %d %s, want success", op.ID, role, r.Status, r.Body)
@@ -282,7 +297,7 @@ func TestEventPermissions(t *testing.T) {
 	for _, role := range []string{"platform-admin", "platform-auditor"} {
 		who, _ := w.api.PlatformAs(t, role)
 		for _, op := range ops {
-			r := apitest.Probe(t, who, op, params)
+			r := probe(who, op)
 			switch {
 			case op.ID == "exportPlatformEvents" && has(role, op.Permission):
 				if r.Status != 200 {
@@ -330,7 +345,7 @@ func TestEventPermissions(t *testing.T) {
 		if op.ID == "exportPlatformEvents" {
 			continue
 		}
-		r := apitest.Probe(t, plat, op, params)
+		r := probe(plat, op)
 		if op.Permission == authz.EventDestinationRead {
 			if r.Status < 200 || r.Status > 299 {
 				t.Errorf("%s under a support action that holds event_destination:read: %d %s", op.ID, r.Status, r.Body)
