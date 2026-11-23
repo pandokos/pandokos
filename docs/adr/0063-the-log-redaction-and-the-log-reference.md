@@ -1,6 +1,6 @@
 # 0063. The log: redaction by key and by shape, and the log reference
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-22
 
 Refines [ADR 0015](0015-observability.md) and [ADR 0055](0055-operational-telemetry-holds-no-tenant-data.md).
@@ -41,3 +41,4 @@ the installation.
 
 - 2026-11-22: proposed with sprint 6.1.
 - 2026-11-23: sprint 6.3: the eight lines are added or changed (`tenant deletion ready`, `started`, `completed`, `failing`, `recovered`, `key rewrap failing`, `key rotation complete`, and `vault ready` with two fields), none with a tenant or a count of one.
+- 2026-11-23: accepted by the maintainer after review.

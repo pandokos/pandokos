@@ -1,6 +1,6 @@
 # 0069. The tenant data export and its schema
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-23
 
 Refines [ADR 0054](0054-usage-data-is-the-tenants.md), [ADR 0064](0064-usage-rollup-reports-and-exports.md) and
@@ -58,3 +58,4 @@ covers configuration only; neither is the whole of what a tenant may read.
 ## History
 
 - 2026-11-23: proposed with sprint 6.3.
+- 2026-11-23: accepted by the maintainer after review.

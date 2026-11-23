@@ -1,6 +1,6 @@
 # 0065. The audit hash chain, reading and retention
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-23
 
 Refines [ADR 0013](0013-ledger-and-audit.md) and [ADR 0032](0032-audit-log-first-version.md); amends
@@ -53,3 +53,4 @@ functions of the gateway and by migrations; the tables are append-only for every
 
 - 2026-11-23: proposed with sprint 6.2.
 - 2026-11-23: sprint 6.3: a deleted tenant's chain is pseudonymized and sealed again from its anchor with the same encoding, and stays an ordinary chain; the platform's chain records both heads; retention of the kept log is recorded in the platform's log ([ADR 0067](0067-tenant-deletion-stages-closed-tenants-and-kept-records.md)).
+- 2026-11-23: accepted by the maintainer after review.

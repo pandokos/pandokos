@@ -1,6 +1,6 @@
 # 0067. Tenant deletion: stages, closed tenants and the records that are kept
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-23
 
 Refines [ADR 0013](0013-ledger-and-audit.md), [ADR 0027](0027-database-roles-and-session-context.md),
@@ -107,3 +107,4 @@ later (open point O-1); the epic and the data model keep them under the retentio
 ## History
 
 - 2026-11-23: proposed with sprint 6.3.
+- 2026-11-23: accepted by the maintainer after review.
