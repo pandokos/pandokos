@@ -493,23 +493,28 @@ BEGIN
     FOR t IN SELECT x.tenant_id FROM (SELECT DISTINCT d.tenant_id FROM pandokos.event_destination_directory d) x
               ORDER BY pg_catalog.random() LOOP
         PERFORM pg_catalog.set_config('app.tenant_id', t::text, true);
+        -- The rows are chosen once (MATERIALIZED): a subquery with LIMIT and FOR UPDATE inside an IN
+        -- is planned as a semi-join that may run it again, and the claim would then take more than
+        -- the limit.
         RETURN QUERY
+        WITH due AS MATERIALIZED (
+            SELECT y.id
+              FROM pandokos.event_destination y
+             WHERE y.tenant_id = t
+               AND (y.lease_until IS NULL OR y.lease_until <= pg_catalog.now())
+               AND ((y.test_requested_at IS NOT NULL
+                     AND (y.test_completed_at IS NULL OR y.test_completed_at < y.test_requested_at))
+                    OR (y.enabled AND y.next_attempt_at <= pg_catalog.now()
+                        AND (y.cursor_seq < COALESCE((SELECT s.last_seq FROM pandokos.outbox_stream s WHERE s.tenant_id = t), 0)
+                             OR EXISTS (SELECT 1 FROM pandokos.outbox_dead_letter l
+                                         WHERE l.tenant_id = t AND l.destination_id = y.id AND l.state = 'replay'))))
+             ORDER BY y.next_attempt_at
+             LIMIT v_left
+               FOR UPDATE SKIP LOCKED)
         UPDATE pandokos.event_destination u
            SET lease_token = p_token, lease_until = pg_catalog.now() + pg_catalog.make_interval(secs => p_lease_seconds)
-         WHERE u.tenant_id = t
-           AND u.id IN (SELECT y.id
-                          FROM pandokos.event_destination y
-                         WHERE y.tenant_id = t
-                           AND (y.lease_until IS NULL OR y.lease_until <= pg_catalog.now())
-                           AND ((y.test_requested_at IS NOT NULL
-                                 AND (y.test_completed_at IS NULL OR y.test_completed_at < y.test_requested_at))
-                                OR (y.enabled AND y.next_attempt_at <= pg_catalog.now()
-                                    AND (y.cursor_seq < COALESCE((SELECT s.last_seq FROM pandokos.outbox_stream s WHERE s.tenant_id = t), 0)
-                                         OR EXISTS (SELECT 1 FROM pandokos.outbox_dead_letter l
-                                                     WHERE l.tenant_id = t AND l.destination_id = y.id AND l.state = 'replay'))))
-                         ORDER BY y.next_attempt_at
-                         LIMIT v_left
-                           FOR UPDATE SKIP LOCKED)
+          FROM due
+         WHERE u.tenant_id = t AND u.id = due.id
         RETURNING u.tenant_id, u.id;
         GET DIAGNOSTICS v_count = ROW_COUNT;
         v_left := v_left - v_count;
@@ -734,6 +739,8 @@ CREATE TRIGGER tenant_deletion_outbox AFTER INSERT OR DELETE OR UPDATE OF state 
 
 -- A key-encryption key version that becomes active, and one that is retired (from then on the
 -- backups taken under it cannot yield a deleted tenant's credentials once its file is destroyed).
+-- kek_retire writes a retired version as a new row after removing the retiring one: that insert is
+-- the retirement.
 CREATE FUNCTION pandokos.kek_version_outbox() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path = pg_catalog, pg_temp
@@ -744,7 +751,7 @@ BEGIN
     IF NEW.state = 'active' AND (TG_OP = 'INSERT' OR OLD.state <> 'active') THEN
         PERFORM pandokos.platform_outbox_append('io.pandokos.kek.version_activated.v1', NULL, NEW.id,
             pg_catalog.jsonb_build_object('version', NEW.id, 'provider', NEW.provider));
-    ELSIF TG_OP = 'UPDATE' AND NEW.state = 'retired' AND OLD.state <> 'retired' THEN
+    ELSIF NEW.state = 'retired' AND (TG_OP = 'INSERT' OR OLD.state <> 'retired') THEN
         PERFORM pandokos.platform_outbox_append('io.pandokos.kek.version_retired.v1', NULL, NEW.id,
             pg_catalog.jsonb_build_object('version', NEW.id, 'provider', NEW.provider));
     END IF;
