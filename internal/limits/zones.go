@@ -94,19 +94,38 @@ func (c TenantCalendar) Day(t time.Time) string {
 }
 
 // Bounds returns the instants that cut [from, to) into periods of kind k, each in the calendar in
-// force at its own start: from, every period start strictly inside, and to. For PeriodTotal they
-// are from and to. Sprint 6.2 part C4 builds it; until then it returns nil.
+// force at its own start: from, every period start strictly inside, and to. For PeriodTotal, and
+// when there is no calendar, they are from and to.
 func (c TenantCalendar) Bounds(k PeriodKind, from, to time.Time) []time.Time {
-	_, _, _ = k, from, to
-	return nil
+	out := []time.Time{from}
+	if k == PerDay || k == PerMonth {
+		cur := from
+		for {
+			end := c.Of(k, cur).End
+			if !end.After(cur) || !end.Before(to) {
+				break
+			}
+			out = append(out, end)
+			cur = end
+		}
+	}
+	return append(out, to)
 }
 
 // CivilStart returns midnight of the date y-m-d in the calendar in force then, as an instant;
-// the zero Time when there is no calendar. Sprint 6.2 part C4 builds it; until then it returns the
-// zero Time.
+// the zero Time when there is no calendar. A date that lies before a pending change of zone takes
+// effect is read in the zone before it.
 func (c TenantCalendar) CivilStart(y int, m time.Month, d int) time.Time {
-	_, _, _ = y, m, d
-	return time.Time{}
+	if c.Current == nil {
+		return time.Time{}
+	}
+	label := y*10000 + int(m)*100 + d
+	if c.Previous != nil {
+		if t := c.Previous.start(PerDay, label); t.Before(c.From) {
+			return t
+		}
+	}
+	return c.Current.start(PerDay, label)
 }
 
 // NextChange returns the instant at which a change of zone made at now takes effect: the end of the

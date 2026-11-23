@@ -2,9 +2,13 @@ package admin
 
 import (
 	"context"
+	"errors"
 
 	"github.com/pandokos/pandokos/internal/adminapi"
 )
+
+// errNotImplemented is what the stubs of sprint 6.2 answer (a 500) until part C7 builds them.
+var errNotImplemented = errors.New("admin: not implemented")
 
 // GetMetadataKeys is a stub until sprint 6.2 part C7.
 func (s *server) GetMetadataKeys(context.Context, adminapi.GetMetadataKeysInput) (*adminapi.MetadataKeys, error) {

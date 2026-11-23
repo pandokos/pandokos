@@ -183,13 +183,12 @@ func TestUsageReport(t *testing.T) {
 			if usd := rowOf(t, doc.Rows, func(r reportRow) bool { return r.Model == "rpt-m2" }); usd.Currency != "USD" || costOf(usd) == "null" {
 				t.Errorf("%s: %+v", name, usd)
 			}
-			none := rowOf(t, doc.Rows, func(r reportRow) bool { return r.Model == "rpt-m1" && r.Currency == "" && r.RejectedLimit == 0 })
-			if none.Cost != nil || none.PriceSource != "" || none.Requests != 1 {
-				t.Errorf("%s: a record without a cost: %+v (cost %s), want cost null", name, none, costOf(none))
-			}
-			rej := rowOf(t, doc.Rows, func(r reportRow) bool { return r.RejectedLimit == 1 })
-			if rej.Requests != 0 || rej.RequestsOK != 0 || rej.Cost != nil {
-				t.Errorf("%s: a request refused for a limit is counted apart: %+v", name, rej)
+			// The record without a cost and the request refused for a limit have the same grouping
+			// (no currency, no price source), so they share a row, in which the refused request is
+			// counted apart from requests.
+			none := rowOf(t, doc.Rows, func(r reportRow) bool { return r.Model == "rpt-m1" && r.Currency == "" })
+			if none.Cost != nil || none.PriceSource != "" || none.Requests != 1 || none.RequestsOK != 1 || none.RejectedLimit != 1 {
+				t.Errorf("%s: a record without a cost and a request refused for a limit: %+v (cost %s), want cost null, 1 request, 1 refused", name, none, costOf(none))
 			}
 			for _, r := range doc.Rows {
 				if r.Currency == "" && r.Cost != nil {
@@ -273,12 +272,13 @@ func TestUsageReport(t *testing.T) {
 
 	t.Run("the default window is this month up to now", func(t *testing.T) {
 		now := time.Now().UTC()
-		d.SeedUsage(t, w.idA, dbtest.UsageRow{StartedAt: now.Add(-time.Second), PrincipalID: pa, Provider: "openai", Model: "rpt-m1", Cost: "64", Currency: "EUR"})
+		d.SeedModel(t, "openai", "rpt-m4") // a model of its own: the fixture above has records of any month
+		d.SeedUsage(t, w.idA, dbtest.UsageRow{StartedAt: now.Add(-time.Second), PrincipalID: pa, Provider: "openai", Model: "rpt-m4", Cost: "64", Currency: "EUR"})
 		doc := reportOf(t, w, w.ka, w.a.ID, "group_by=model")
 		if doc.Period != "month" || !doc.To.After(now.Add(-time.Minute)) || !doc.To.Before(now.Add(time.Minute)) || doc.From.After(now) || now.Sub(doc.From) > 32*24*time.Hour {
 			t.Errorf("the default window is %v to %v", doc.From, doc.To)
 		}
-		r := rowOf(t, doc.Rows, func(r reportRow) bool { return r.Model == "rpt-m1" && r.Currency == "EUR" })
+		r := rowOf(t, doc.Rows, func(r reportRow) bool { return r.Model == "rpt-m4" && r.Currency == "EUR" })
 		if costOf(r) != "64" && costOf(r) != "64.000000000000000000" {
 			t.Errorf("the record of this month is not in the default window: %+v", r)
 		}
@@ -373,6 +373,7 @@ func TestLimitUsage(t *testing.T) {
 	d := w.api.DB
 	d.SeedModel(t, "openai", "lu-m1")
 	d.SeedModel(t, "openai", "lu-m2")
+	d.SeedPrice(t, "openai", "lu-m1", "EUR", time.Time{}) // a cost rule needs a price in its currency
 	sa := w.saA.ID
 	keyA := decodeInto[adminapi.VirtualKeyCreated](t, w.do(t, w.ka, "POST", "/v1/tenants/"+w.a.ID+"/virtual-keys", map[string]any{"service_account_id": sa}), 201).Key.ID
 	now := time.Now().UTC()
@@ -474,7 +475,8 @@ func TestLimitUsage(t *testing.T) {
 		sameProblem(t, "another tenant's rule and a missing one", r1, r2)
 	})
 	t.Run("usage:read is the permission", func(t *testing.T) {
-		rule := create(map[string]any{"metric": "requests_per_day", "limit": 10})
+		// A rule of its own scope: the tenant already has a requests_per_day rule above.
+		rule := create(map[string]any{"metric": "tokens_per_month", "limit": 10, "provider": "openai", "model": "lu-m2"})
 		viewer := w.api.AsRole(t, w.a.ID, "usage-viewer")
 		if r := viewer.Do(t, "GET", base+"/"+rule.ID+"/usage", nil, nil); r.Status != 200 {
 			t.Errorf("a usage-viewer: %d %s", r.Status, r.Body)
