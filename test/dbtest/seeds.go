@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/tenant"
 )
 
@@ -325,7 +326,13 @@ func (d *Database) Count(tb testing.TB, sql string, args ...any) int {
 	ctx, cancel := ctx30()
 	defer cancel()
 	var n int
-	if err := d.s.helper.QueryRow(ctx, sql, args...).Scan(&n); err != nil {
+	err := d.s.helper.QueryRow(ctx, sql, args...).Scan(&n)
+	if err != nil && (d.s.helper.IsClosed() || store.SQLState(err) == "57P01") {
+		// The connection was dropped (a test made the database refuse connections): connect again once.
+		d.s.helper = d.Super(d.s.root)
+		err = d.s.helper.QueryRow(ctx, sql, args...).Scan(&n)
+	}
+	if err != nil {
 		tb.Fatalf("count: %v\n%s", err, sql)
 	}
 	return n
