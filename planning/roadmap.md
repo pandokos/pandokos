@@ -4,7 +4,7 @@
 - Requirements: [docs/requirements](../docs/requirements/README.md) · Architecture:
   [docs/architecture](../docs/architecture/overview.md)
 
-Ten epics, twenty-eight sprints, five releases. Epic numbers are identifiers, not an order, and
+Ten epics, thirty sprints, five releases. Epic numbers are identifiers, not an order, and
 numbers 7 and 11 are not used. Sprints are ordered; an epic can start when the epics it depends on
 are done, unless noted.
 
@@ -16,7 +16,7 @@ A release is the tag `vMAJOR.MINOR.PATCH` on the commit of `main` that met its a
 | Tag | Theme | Epics | Sprints | Status |
 |---|---|---|---|---|
 | **v0.1.0** | Core BYOK | 1, 2, 3 and sprint 4.1 | 9 | 9 done |
-| **v0.2.0** | Governance | 5, rest of 4, and 6 without sprint 6.4 | 7 | |
+| **v0.2.0** | Governance | 5, rest of 4, and 6 without sprint 6.4 | 9 | 9 done |
 | **v0.3.0** | Ready to operate | sprint 6.4, 12 | 4 | |
 | **v0.4.0** | Scale-out and providers | 8 without sprint 8.3, 9 | 4 | |
 | **v1.0.0** | Hardening | 10, sprint 8.3 | 4 | |
@@ -62,7 +62,7 @@ flowchart LR
 | 3.1 | Authenticated passthrough | The full pipeline for non-streaming OpenAI calls: principal, model check, credential from the vault, egress guard, error contract | done |
 | 3.2 | Streaming, usage and ledger | Streaming with usage extraction; one usage record with cost per call; cancellation; a span per provider call | done |
 | 3.3 | Anthropic and OpenAI-compatible providers | The Anthropic family; any OpenAI-compatible endpoint by configuration; SDK compatibility suite; Compose reference | done |
-| **4** | **[Identity federation and RBAC](epics/04-identity-and-rbac/epic.md)** | | |
+| **4** | **[Identity federation and RBAC](epics/04-identity-and-rbac/epic.md)** | | done |
 | 4.1 | Trusted token issuers | JWTs from registered issuers authenticate calls; the tenant comes from the registration or from a claim | done |
 | | **v0.2.0 — Governance** | | |
 | **5** | **[Limits and budgets](epics/05-limits-and-budgets/epic.md)** | | done |
@@ -70,13 +70,13 @@ flowchart LR
 | 5.2 | Quotas and budgets | Periodic quotas and monetary budgets with reservation; scopes; soft thresholds; reconciliation from the ledger | done |
 | 5.3 | Integrity of limit rules | Rules tied to their subjects and scopes by foreign keys, cleaned up with audit on deletion; unlimited traffic traced in the ledger and the audit log | done |
 | 5.4 | Tenant price lists | Price versions per tenant in its own currency, taking precedence over the catalogue price for that tenant; budgets in the tenant currency | done |
-| **4** | **Identity federation and RBAC** (continued) | | |
+| **4** | **Identity federation and RBAC** (continued) | | done |
 | 4.2 | Users, local accounts and sessions | People sign in to the administration API with a local account or through an external OIDC provider and obtain a session; memberships in several tenants; local disable | done |
 | 4.3 | Roles | All built-in roles, custom roles, platform roles, support actions with reason; the API reports a user's effective permissions | done |
-| **6** | **[Observability, reports and lifecycle](epics/06-observability-reports-lifecycle/epic.md)** | | |
-| 6.1 | Metrics and conventions | OTLP metrics, GenAI attributes at a pinned version, Prometheus endpoint, cardinality policy | |
-| 6.2 | Reports and audit reading | Usage rollups and report API; audit reading with hash chain and verification; retention; exports | |
-| 6.3 | Tenant deletion and key rotation | Staged deletion with cryptographic erasure; tenant export; rotation of the key-encryption key; backup and restore guide | |
+| **6** | **[Observability, reports and lifecycle](epics/06-observability-reports-lifecycle/epic.md)** | Sprints 6.1 to 6.3 are done and in v0.2.0; sprint 6.4 belongs to v0.3.0, so the epic stays open | in progress |
+| 6.1 | Metrics and conventions | OTLP metrics, GenAI attributes at a pinned version, Prometheus endpoint, cardinality policy | done |
+| 6.2 | Reports and audit reading | Usage rollups and report API; audit reading with hash chain and verification; retention; exports | done |
+| 6.3 | Tenant deletion and key rotation | Staged deletion with cryptographic erasure; tenant export; rotation of the key-encryption key; backup and restore guide | done |
 | | **v0.3.0 — Ready to operate** | | |
 | 6.4 | Events for external systems | Usage events and limit notifications through the outbox to a signed webhook; retries, dead letters, replay; export | |
 | **12** | **[Operability](epics/12-operability/epic.md)** | | |

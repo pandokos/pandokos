@@ -811,7 +811,7 @@ func TestMetricsRecords(t *testing.T) {
 
 // TestObservabilityDocuments is T-R70: OBS-07 has its new wording; the data-flows reference has a row
 // for the metrics export and one for the scrape endpoint; the telemetry guide names the three keys,
-// the version, the endpoint, the permission and the dashboards; the draft release notes of v0.2.0
+// the version, the endpoint, the permission and the dashboards; the release notes of v0.2.0
 // announce the version, the keys, the permission and the renamed line.
 func TestObservabilityDocuments(t *testing.T) {
 	requirements := read(t, "docs/requirements/README.md")
@@ -859,10 +859,10 @@ func TestObservabilityDocuments(t *testing.T) {
 		t.Error("docs/operations/telemetry.md still says that metrics come with a later release")
 	}
 
-	notes := read(t, "docs/releases/v0.2.0-draft.md")
+	notes := read(t, "docs/releases/v0.2.0.md")
 	for _, w := range []string{"1.41.0", "telemetry.metrics.otlp", "telemetry.metrics.export_interval", "telemetry.metrics.prometheus", "metrics:read", "telemetry error", "trace export failing"} {
 		if !strings.Contains(notes, w) {
-			t.Errorf("docs/releases/v0.2.0-draft.md does not announce %q", w)
+			t.Errorf("docs/releases/v0.2.0.md does not announce %q", w)
 		}
 	}
 }

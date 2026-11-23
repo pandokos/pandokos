@@ -8,6 +8,10 @@ depends_on: [EPIC-3]
 
 # Epic 6 — Observability, reports and lifecycle
 
+*State:* sprints 6.1, 6.2 and 6.3 are done and part of release [v0.2.0](../../../docs/releases/v0.2.0.md);
+sprint 6.4 belongs to v0.3.0, so the epic stays in progress and is closed, with its record in
+`docs/history/`, when 6.4 is done.
+
 ## Outcome
 
 Operators see what the system does, tenants see what they spent and who changed what, a tenant

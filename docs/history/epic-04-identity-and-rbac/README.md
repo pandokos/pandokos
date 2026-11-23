@@ -119,5 +119,5 @@ lines on earlier records (among them 0005, 0006, 0018, 0020, 0022, 0026, 0027, 0
   support commands were not routed by the binary, and that the Compose test copied a local `secrets`
   directory; both fixed in [#56](https://github.com/pandokos/pandokos/pull/56), with a test of the
   routing of every client command.
-- The draft of the v0.2.0 page is [`docs/releases/v0.2.0-draft.md`](../../releases/v0.2.0-draft.md).
+- The draft of the v0.2.0 page became the release page [`docs/releases/v0.2.0.md`](../../releases/v0.2.0.md).
 - Open: make the CI job `browser` a required check of `main`.
