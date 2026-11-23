@@ -99,6 +99,11 @@ var catalogue = []InstrumentSpec{
 	spec("pandokos.telemetry.spans", "OC", "{span}", "Spans of the trace provider by state: ended, exported, failed. ended minus exported minus failed is what the queue dropped.", "pandokos.telemetry.state"),
 	spec("pandokos.telemetry.export_failures", "OC", "{export}", "Exports of telemetry that failed, by signal and class.", "pandokos.telemetry.signal", "error.type"),
 	spec("pandokos.log.redactions", "OC", "{value}", "Log values rewritten because they had the shape of a secret; any non-zero value is a bug to report."),
+	spec("pandokos.reports.rollups", "OC", "{run}", "Passes of the usage rollup, one per tenant, by result.", resultAttr...),
+	spec("pandokos.reports.rollup.lag", "G", "s", "The largest time since the watermark among the tenants of the last rollup pass; 0 before the first."),
+	spec("pandokos.retention.removed", "OC", "{item}", "Items removed by retention, by kind.", AttrRetentionKind),
+	spec("pandokos.retention.runs", "OC", "{run}", "Runs of the retention job, by result.", resultAttr...),
+	spec("pandokos.exports", "OC", "{export}", "Usage and audit exports, by kind and result.", AttrExportKind, "pandokos.result"),
 }
 
 // Catalogue returns the instrument catalogue: the table of the metrics reference.

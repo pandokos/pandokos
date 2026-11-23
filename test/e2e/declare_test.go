@@ -23,7 +23,7 @@ func (p *proc) stateOf(t *testing.T, admin, tenantID string) string {
 		{"price-list", "list", "--tenant", tenantID}, {"price-list", "currency", "get", "--tenant", tenantID},
 	} {
 		out := p.mustCLI(t, admin, append(args, "-o", "json")...)
-		sb.WriteString(strings.Join(args, " ") + "\n" + out + "\n")
+		sb.WriteString(strings.ReplaceAll(strings.Join(args, " "), tenantID, "TENANT") + "\n" + out + "\n")
 	}
 	return sb.String()
 }
@@ -96,9 +96,14 @@ func TestExportApplyRoundTrip(t *testing.T) {
 	p.mustCLI(t, adminA, "service-account", "create", "--tenant", idA, "--role", "usage-viewer", "--role", "readers", "billing")
 	p.mustCLI(t, adminA, "service-account", "create", "--tenant", idA, "--role", "auditor", "reports")
 	// A rule on a key is not part of this scenario: the key ID is the key's own, and a second tenant cannot hold it.
+	// The rules are created in the order of the document's keys (a service account before the tenant), which is the
+	// order apply creates them in: the list of a tenant is in the order of creation.
+	p.mustCLI(t, adminA, "limit", "create", "--tenant", idA, "--subject", "service-account", "--service-account", "billing", "--metric", "tokens_per_day", "--limit", "50000", "--soft", "--threshold", "80")
 	p.mustCLI(t, adminA, "limit", "create", "--tenant", idA, "--metric", "requests_per_day", "--limit", "1000")
-	p.mustCLI(t, adminA, "limit", "create", "--tenant", idA, "--subject", "service-account", "--service-account", "billing", "--metric", "tokens_per_day", "--limit", "50000", "--soft")
-	p.mustCLI(t, adminA, "price-list", "set", "--tenant", idA, "--currency", "EUR", "--model", model, "--rate", "input=4", "--rate", "output=8")
+	// Both versions start later: apply never adds a version in the past, so a version that started when it
+	// was set could not be created in the second tenant.
+	soon := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Second).Format(time.RFC3339)
+	p.mustCLI(t, adminA, "price-list", "set", "--tenant", idA, "--currency", "EUR", "--model", model, "--rate", "input=4", "--rate", "output=8", "--valid-from", soon)
 	future := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Second).Format(time.RFC3339)
 	p.mustCLI(t, adminA, "price-list", "set", "--tenant", idA, "--currency", "EUR", "--model", model, "--rate", "input=5", "--rate", "output=9", "--valid-from", future)
 	p.mustCLI(t, adminA, "price-list", "currency", "set", "--tenant", idA, "EUR")

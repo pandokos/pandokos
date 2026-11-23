@@ -132,7 +132,7 @@ summarised in [data flows](../reference/data-flows.md).
 ## 9. Metrics
 
 Pandokos measures every request of the inference listener and the parts that keep it running, with
-41 instruments listed in the [metrics reference](../reference/metrics.md) (`docs/reference/metrics.md`): name, kind, unit,
+46 instruments listed in the [metrics reference](../reference/metrics.md) (`docs/reference/metrics.md`): name, kind, unit,
 attributes, Prometheus name and when each is recorded. The latency, token and operation metrics follow
 the OpenTelemetry GenAI semantic conventions, pinned at **1.41.0** (the conventions are in
 Development, and the Go package that carries them ends at that version; a change is announced in the

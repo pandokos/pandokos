@@ -11,6 +11,7 @@ import (
 	"github.com/pandokos/pandokos/internal/ledger"
 	"github.com/pandokos/pandokos/internal/limits"
 	"github.com/pandokos/pandokos/internal/password"
+	"github.com/pandokos/pandokos/internal/reports"
 	"github.com/pandokos/pandokos/internal/resolver"
 	"github.com/pandokos/pandokos/internal/telemetry"
 )
@@ -126,5 +127,28 @@ func resolverSource(l *resolver.Limits, u *resolver.UnlimitedAuditor) func() tel
 			AdmittedUnpriced: l.Stats().AdmittedUnpriced,
 			Unlimited:        map[string]int64{"written": us.Written, "skipped": us.Skipped, "failed": us.Failed},
 		}
+	}
+}
+
+// reportsSource reads the usage rollup, retention and the exports of the administration handler
+// (M42 to M46): the counters of the whole installation, never of a tenant.
+func reportsSource(r *reports.Rollup, t *reports.Retention, h *admin.Handler) func() telemetry.ReportsStats {
+	return func() telemetry.ReportsStats {
+		rs, ts, es := r.Stats(), t.Stats(), h.Stats()
+		out := telemetry.ReportsStats{
+			Rollups:          map[string]int64{"ok": rs.OK, "failed": rs.Failed},
+			RollupLag:        rs.Lag,
+			RetentionRemoved: map[string]int64{},
+			RetentionRuns:    map[string]int64{"ok": max(ts.Runs-ts.Failed, 0), "failed": ts.Failed},
+			Exports:          map[telemetry.ExportKey]int64{},
+		}
+		for _, kind := range telemetry.RetentionKinds {
+			out.RetentionRemoved[kind] = ts.Removed[kind]
+		}
+		for _, kind := range telemetry.ExportKinds {
+			out.Exports[telemetry.ExportKey{Kind: kind, Result: "complete"}] = es.ExportsComplete[kind]
+			out.Exports[telemetry.ExportKey{Kind: kind, Result: "aborted"}] = es.ExportsAborted[kind]
+		}
+		return out
 	}
 }

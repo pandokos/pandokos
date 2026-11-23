@@ -21,6 +21,8 @@ This page is a contract checked by tests: a message or a field that is not liste
 | `Views` | array | The views of an OpenTelemetry meter provider, as the SDK reports them. |
 | `address` | string | The address a listener is bound to, or an address the egress guard refused. |
 | `attributes` | object | The attributes of an OpenTelemetry scope. |
+| `audit_events` | integer | Audit events of the tenants removed by a retention run, in total over the installation. |
+| `audit_months` | integer | The configured retention of the audit logs, in months; 0 keeps them. |
 | `audited` | boolean | Whether the failure was recorded in the audit log. |
 | `cache` | string | The cache that was flushed. |
 | `cause` | string | The class of a failure of the vault. |
@@ -73,6 +75,8 @@ This page is a contract checked by tests: a message or a field that is not liste
 | `outcome` | string | How the request ended: ok, pandokos_error, client_error, client_cancelled, shutdown_aborted, timeout or upstream_aborted. |
 | `overridden` | integer | Rows overridden. |
 | `panic_type` | string | The Go type of a recovered panic, never its value. |
+| `partitions` | integer | Usage partitions dropped by a retention run, in total over the installation. |
+| `platform_audit_events` | integer | Rows of the platform audit log removed by a retention run. |
 | `principal_id` | string | The ID of a platform principal. Only on the lines marked as platform identities. |
 | `principal_type` | string | The kind of platform principal: platform or user. |
 | `problem` | string | What is wrong with the value of a configuration key; never the value. |
@@ -105,7 +109,9 @@ This page is a contract checked by tests: a message or a field that is not liste
 | `upstream_error` | string | The class of a failure of the call to the provider. |
 | `upstream_status` | integer | The status the provider answered with. |
 | `usage_injected` | boolean | Whether Pandokos asked the provider for usage in the stream. |
+| `usage_months` | integer | The configured retention of the usage records, in months; 0 keeps them. |
 | `usage_reader` | string | failed when the reader of the answer gave up. |
+| `usage_records` | integer | Usage records removed by a retention run, in total over the installation. |
 | `version` | string | The build version. |
 | `warning` | string | The text of a configuration warning; never a value. |
 
@@ -274,6 +280,13 @@ Level: warn
 Fields: `request_id`
 
 A password was reset but the record of failed sign-ins of that user could not be removed; any lock ends by itself.
+
+### `export aborted`
+
+Level: warn
+Fields: `request_id`, `error_class`, `duration_ms`
+
+A usage or audit export failed after its first byte: the connection was closed so that the client sees an incomplete file, and the metric `pandokos.exports` counts it as aborted. A failure before the first byte is an ordinary error answer and writes no such line.
 
 ## Serve
 
@@ -504,6 +517,43 @@ Level: debug
 Fields: `request_id`, `error_class`
 
 A row of the audit of traffic without limits could not be written; at debug, and counted by the metric `pandokos.limits.unlimited_traffic`.
+
+## Reports
+
+### `usage rollup failing`
+
+Level: warn
+Fields: `error_class`, `sqlstate`, `failures`
+
+The usage rollup of a tenant failed; reports and limits are still exact because they read the newest records from the ledger, but the rollup lags. At most once a minute, and the tenant is not named; `failures` counts the failed tenant passes since the last clean pass.
+
+### `usage rollup recovered`
+
+Level: info
+Fields: `failures`
+
+The first pass that succeeded after failures; `failures` is how many tenant passes failed before it.
+
+### `retention ready`
+
+Level: info
+Fields: `usage_months`, `audit_months`
+
+Written at start with the worker role: the configured retention. With both values 0 nothing is removed and the job ends.
+
+### `retention applied`
+
+Level: info
+Fields: `partitions`, `usage_records`, `audit_events`, `platform_audit_events`
+
+A retention run removed something; the numbers are totals over the installation, never of one tenant.
+
+### `retention failing`
+
+Level: warn
+Fields: `error_class`, `sqlstate`, `failures`
+
+A retention run failed in the whole or in part; the next run tries again. At most once an hour.
 
 ## Oidc
 

@@ -212,7 +212,8 @@ func TestAuditReadEndToEnd(t *testing.T) {
 			t.Errorf("the platform's log does not show %s:\n%s", a, platform)
 		}
 	}
-	if n := strings.Count(platform, "support.intervention"); n < 2 {
+	// The interventions of a support action are its open and its close: the two rows both logs hold (ADR 0061).
+	if n := strings.Count(platform, `"action": "support_action.`) + strings.Count(platform, `"action":"support_action.`); n < 2 {
 		t.Errorf("the platform's log shows %d interventions, want at least 2", n)
 	}
 	failures := p.mustCLI(t, w.admin, "audit", "list", "--tenant", w.tenant, "--action", "auth.failure", "-o", "json")

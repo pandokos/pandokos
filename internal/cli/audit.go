@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"iter"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/pandokos/pandokos/internal/adminapi"
@@ -231,7 +233,7 @@ func (a *app) verify(args []string, platform bool) error {
 			return fmt.Errorf("cannot read the export: %w", err)
 		}
 		defer f.Close()
-		return a.verifyStream(f, scope, nil, want)
+		return a.verifyStream(f, scope, nil, want, nil)
 	}
 	if err := a.connect(); err != nil {
 		return err
@@ -257,9 +259,51 @@ func (a *app) verify(args []string, platform bool) error {
 		return fmt.Errorf("invalid head: %w", err)
 	}
 	if head.Seq == 0 {
-		return a.verifyStream(strings.NewReader(""), scope, h, want)
+		return a.verifyStream(strings.NewReader(""), scope, h, want, nil)
 	}
 	var body *adminapi.StreamBody
+	// What the log holds past the head: rows written since the head was read, or rows that were put
+	// there. The export stops at the head; the newest rows are read from the list.
+	past := func() ([]auditchain.Row, error) {
+		var newer []auditchain.Row
+		cursor := ""
+		for page := 0; page < maxPastPages; page++ {
+			var items []adminapi.AuditEvent
+			var next string
+			if platform {
+				l, err := a.client.ListPlatformAuditEvents(a.ctx, adminapi.ListPlatformAuditEventsInput{Limit: 100, Cursor: cursor})
+				if err != nil {
+					return nil, err
+				}
+				items, next = l.Items, l.NextCursor
+			} else {
+				l, err := a.client.ListAuditEvents(a.ctx, adminapi.ListAuditEventsInput{Tenant: strings.TrimPrefix(scope, "tenant:"), Limit: 100, Cursor: cursor})
+				if err != nil {
+					return nil, err
+				}
+				items, next = l.Items, l.NextCursor
+			}
+			for _, e := range items {
+				if int64(e.Seq) <= h.Seq {
+					return reverseRows(newer), nil
+				}
+				line, err := json.Marshal(e)
+				if err != nil {
+					return nil, err
+				}
+				row, err := rowOf(scope, line)
+				if err != nil {
+					return nil, err
+				}
+				newer = append(newer, row)
+			}
+			if next == "" {
+				break
+			}
+			cursor = next
+		}
+		return reverseRows(newer), nil
+	}
 	if platform {
 		body, err = a.client.ExportPlatformAuditEvents(a.ctx, adminapi.ExportPlatformAuditEventsInput{FromSeq: *fromSeq, ToSeq: head.Seq})
 	} else {
@@ -269,7 +313,7 @@ func (a *app) verify(args []string, platform bool) error {
 		return err
 	}
 	defer body.Body.Close()
-	return a.verifyStream(body.Body, scope, h, want)
+	return a.verifyStream(body.Body, scope, h, want, past)
 }
 
 func headOf(h *adminapi.AuditHead) (*auditchain.Head, error) {
@@ -285,7 +329,7 @@ func headOf(h *adminapi.AuditHead) (*auditchain.Head, error) {
 }
 
 // verifyStream verifies the rows of an NDJSON export and prints the answer of section 5.9.
-func (a *app) verifyStream(r io.Reader, scope string, head *auditchain.Head, expect []byte) error {
+func (a *app) verifyStream(r io.Reader, scope string, head *auditchain.Head, expect []byte, past func() ([]auditchain.Row, error)) error {
 	var readErr error
 	rows := func(yield func(auditchain.Row, error) bool) {
 		readErr = readLines(r, func(line []byte) error {
@@ -300,6 +344,13 @@ func (a *app) verifyStream(r io.Reader, scope string, head *auditchain.Head, exp
 		})
 	}
 	res := auditchain.Verify(iter.Seq2[auditchain.Row, error](rows), head, expect)
+	if readErr == nil && head != nil && past != nil {
+		extra, err := past()
+		if err != nil {
+			return err
+		}
+		res.Breaks = append(res.Breaks, pastBreaks(head, extra)...)
+	}
 	if readErr != nil && !errors.Is(readErr, errStop) {
 		for _, b := range res.Breaks {
 			fmt.Fprintf(a.stdout, "break at seq %d: %s\n", b.Seq, b.Reason)
@@ -324,6 +375,38 @@ func (a *app) verifyStream(r io.Reader, scope string, head *auditchain.Head, exp
 }
 
 var errStop = errors.New("stop")
+
+// maxPastPages bounds the rows read past the head: 1000 rows of an active log.
+const maxPastPages = 10
+
+func reverseRows(in []auditchain.Row) []auditchain.Row {
+	slices.Reverse(in)
+	return in
+}
+
+// pastBreaks verifies the rows after the head, oldest first: they must continue the chain from the
+// head and verify among themselves. Rows written while the check ran do; a row that was put there does not.
+func pastBreaks(head *auditchain.Head, extra []auditchain.Row) []auditchain.Break {
+	if len(extra) == 0 {
+		return nil
+	}
+	var out []auditchain.Break
+	switch {
+	case extra[0].Seq != head.Seq+1:
+		out = append(out, auditchain.Break{Seq: extra[0].Seq, Reason: auditchain.ReasonSeqGap})
+	case !bytes.Equal(extra[0].PrevHash, head.Hash):
+		out = append(out, auditchain.Break{Seq: extra[0].Seq, Reason: auditchain.ReasonPrevMismatch})
+	}
+	seq := func(yield func(auditchain.Row, error) bool) {
+		for _, r := range extra {
+			if !yield(r, nil) {
+				return
+			}
+		}
+	}
+	res := auditchain.Verify(seq, nil, nil)
+	return append(out, res.Breaks...)
+}
 
 // rowOf decodes one line of an export into the row the chain hashes.
 func rowOf(scope string, line []byte) (auditchain.Row, error) {

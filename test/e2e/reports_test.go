@@ -158,9 +158,10 @@ func TestReportLastMonthByModel(t *testing.T) {
 	}
 
 	// The rollup catches up; the answer does not change.
+	super := p.db.Super(t) // one connection for the polling, not one for each poll
 	testutil.Eventually(t, 40*time.Second, "the rollup to hold the rows of tenant A", func() bool {
 		var n int
-		if err := p.db.Super(t).QueryRow(ctxT(t), `SELECT count(*) FROM pandokos.usage_rollup WHERE tenant_id = $1::uuid AND hour < $2`, idA, last.AddDate(0, 1, 0)).Scan(&n); err != nil {
+		if err := super.QueryRow(ctxT(t), `SELECT count(*) FROM pandokos.usage_rollup WHERE tenant_id = $1::uuid AND hour < $2`, idA, last.AddDate(0, 1, 0)).Scan(&n); err != nil {
 			t.Fatal(err)
 		}
 		return n > 0
