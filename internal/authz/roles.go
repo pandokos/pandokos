@@ -123,7 +123,7 @@ func buildRoles() []Role {
 		{RoleReadOnly, ScopeTenant, true, sorted(readOnly...), "Reads everything of the tenant that can be read"},
 		{RolePlatformAdmin, ScopePlatform, true, withIdentity(platformPermissions()...),
 			"Administers the installation: tenants and platform keys"},
-		{RolePlatformAuditor, ScopePlatform, true, withIdentity(TenantRead, PlatformKeyRead, MetricsRead, CatalogRead, PlatformIssuerRead, PlatformLimitRead, UserRead, TenantSupportRead, PlatformAuditRead),
+		{RolePlatformAuditor, ScopePlatform, true, withIdentity(TenantRead, PlatformKeyRead, MetricsRead, CatalogRead, PlatformIssuerRead, PlatformLimitRead, UserRead, TenantSupportRead, PlatformAuditRead, KEKRead),
 			"Reads the installation: tenants, keys, catalogue, issuers, limits, users, support actions and the platform's audit log"},
 	}
 }

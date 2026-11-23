@@ -69,9 +69,6 @@ func (s *Sealer) EnsureDataKey(ctx context.Context, tx store.Tx, id tenant.ID) (
 	if err != nil {
 		return false, "", &SealError{Cause: sealCause(err), TenantID: id, DataKeyVersion: dataKeyVersion, msg: "the data key cannot be wrapped", err: err}
 	}
-	if err := q.RegisterKEKVersion(ctx, queries.RegisterKEKVersionParams{ID: version, Provider: s.p.Name()}); err != nil {
-		return false, "", err
-	}
 	n, err := q.CreateDataKey(ctx, queries.CreateDataKeyParams{
 		TenantID: id.String(), Version: dataKeyVersion, KekVersion: version, WrappedKey: wrapped,
 	})

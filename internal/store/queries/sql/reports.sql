@@ -3,7 +3,7 @@
 -- is written by the worker role only; the admin role reads it.
 
 -- name: ListTenantsForWorker :many
-SELECT t.id FROM pandokos.tenant t WHERE t.state IN ('active', 'suspended', 'deleting') ORDER BY t.id;
+SELECT t.id FROM pandokos.tenant t WHERE t.state IN ('active', 'suspended') ORDER BY t.id;
 
 -- name: LockUsageRollup :one
 INSERT INTO pandokos.usage_rollup_state AS s (tenant_id, watermark)

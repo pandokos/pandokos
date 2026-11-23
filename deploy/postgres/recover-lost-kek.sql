@@ -3,6 +3,7 @@
 --   psql -v kek_version=local-0123456789abcdef -f recover-lost-kek.sql
 -- Credentials sealed under data keys of that version can never be opened again: they are
 -- revoked, the data keys and the version are removed, and tenants register credentials again.
+-- After it, no version may be active, and the next start of `serve` activates the new key.
 BEGIN;
 UPDATE pandokos.provider_credential c
    SET state = 'revoked', state_changed_by = 'platform', state_reason = 'key-encryption key lost'

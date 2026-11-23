@@ -25,37 +25,62 @@ const (
 )
 
 // LocalProvider wraps data keys with a key-encryption key read from a file. It holds a map from
-// version identifier to key and one active identifier; this sprint loads one key. Every
+// version identifier to key and one active identifier. Every
 // formatting path prints [REDACTED].
 type LocalProvider struct {
 	keys   map[string]cipher.AEAD
 	active string
+	order  []string // the active version, then the unwrap versions in the order given
 }
 
 // NewLocalProvider builds a provider from the content of a key file: the standard base64
-// encoding, with padding, of 32 bytes. Anything else is ErrInvalidKey, which quotes nothing.
-func NewLocalProvider(key secret.Secret) (*LocalProvider, error) {
+// encoding, with padding, of 32 bytes. Anything else is ErrInvalidKey, which quotes nothing. The
+// first key wraps; every unwrap key only unwraps data keys wrapped under its version. The same
+// version twice is ErrInvalidKey.
+func NewLocalProvider(active secret.Secret, unwrap ...secret.Secret) (*LocalProvider, error) {
+	p := &LocalProvider{keys: map[string]cipher.AEAD{}}
+	for i, key := range append([]secret.Secret{active}, unwrap...) {
+		id, aead, err := localAEAD(key)
+		if err != nil {
+			return nil, err
+		}
+		if _, dup := p.keys[id]; dup {
+			return nil, ErrInvalidKey
+		}
+		p.keys[id] = aead
+		if i == 0 {
+			p.active = id
+		}
+		p.order = append(p.order, id)
+	}
+	return p, nil
+}
+
+// localAEAD decodes a key file's content into its version and its cipher.
+func localAEAD(key secret.Secret) (string, cipher.AEAD, error) {
 	line := key.Reveal()
 	if len(line) != localKeyLine {
-		return nil, ErrInvalidKey
+		return "", nil, ErrInvalidKey
 	}
 	raw, err := base64.StdEncoding.Strict().DecodeString(line)
 	if err != nil || len(raw) != localKeyLen {
 		clear(raw)
-		return nil, ErrInvalidKey
+		return "", nil, ErrInvalidKey
 	}
 	defer clear(raw)
 	blk, err := aes.NewCipher(raw)
 	if err != nil {
-		return nil, ErrInvalidKey
+		return "", nil, ErrInvalidKey
 	}
 	aead, err := cipher.NewGCMWithRandomNonce(blk)
 	if err != nil {
-		return nil, ErrInvalidKey
+		return "", nil, ErrInvalidKey
 	}
-	id := localVersion(raw)
-	return &LocalProvider{keys: map[string]cipher.AEAD{id: aead}, active: id}, nil
+	return localVersion(raw), aead, nil
 }
+
+// Versions returns the versions the provider holds, the active one first.
+func (p *LocalProvider) Versions() []string { return append([]string(nil), p.order...) }
 
 // localVersion derives the identifier of a key: "local-" and the first 8 bytes, in
 // hexadecimal, of SHA-256("pandokos kek id v1" 0x00 key). A wrong file can never be taken for

@@ -50,6 +50,8 @@ tags:
   - name: support-actions
     description: What the platform was allowed to do in the tenant, seen by the tenant
   - name: platform-limits
+  - name: vault
+    description: Key-encryption key versions
 paths:
   /v1/me:
     get:
@@ -202,6 +204,155 @@ paths:
         "409": {$ref: '#/components/responses/Conflict'}
         "413": {$ref: '#/components/responses/RequestTooLarge'}
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/deletion:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    post:
+      operationId: requestTenantDeletion
+      tags: [tenants]
+      summary: Request the deletion of a tenant
+      description: >-
+        Suspends an active tenant and schedules its deletion after the grace period of the installation
+        (tenant_deletion.grace_period). confirm_name must be the tenant's name. Until not_before the request
+        can be cancelled; then the worker removes the tenant's access, destroys its data key and its
+        credentials, removes its configuration and keeps its usage ledger and audit log pseudonymized. A
+        second request while one exists answers the existing deletion and changes nothing.
+      x-pandokos-permission: tenant:delete
+      x-pandokos-reason: required
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TenantDeletionRequest'}
+      responses:
+        "200": {$ref: '#/components/responses/TenantDeletion'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    get:
+      operationId: getTenantDeletion
+      tags: [tenants]
+      summary: Read the deletion of a tenant
+      description: Answers 404 when no deletion was requested for the tenant.
+      x-pandokos-permission: tenant:read
+      responses:
+        "200": {$ref: '#/components/responses/TenantDeletion'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/deletion/cancel:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    post:
+      operationId: cancelTenantDeletion
+      tags: [tenants]
+      summary: Cancel a scheduled deletion
+      description: >-
+        Removes a deletion that has not started. The tenant stays suspended; reactivate it with
+        reactivateTenant. A deletion that started cannot be cancelled (409).
+      x-pandokos-permission: tenant:delete
+      x-pandokos-reason: required
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RequiredReason'}
+      responses:
+        "200": {$ref: '#/components/responses/Tenant'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenant-deletions:
+    get:
+      operationId: listTenantDeletions
+      tags: [tenants]
+      summary: List the deletions of tenants, newest request first
+      x-pandokos-permission: tenant:read
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - name: state
+          in: query
+          description: Only the deletions in this state.
+          schema: {$ref: '#/components/schemas/TenantDeletionState'}
+      responses:
+        "200": {$ref: '#/components/responses/TenantDeletionList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/deletion/audit-head:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: getDeletedTenantAuditHead
+      tags: [tenants]
+      summary: Read the head and the anchor of the audit chain kept for a deleted tenant
+      description: Answers 409 until the tenant is deleted.
+      x-pandokos-permission: platform_audit:read
+      responses:
+        "200": {$ref: '#/components/responses/AuditHead'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/deletion/audit-events/export:
+    parameters:
+      - {$ref: '#/components/parameters/Tenant'}
+    get:
+      operationId: exportDeletedTenantAuditEvents
+      tags: [tenants]
+      summary: Export the audit chain kept for a deleted tenant, oldest first, as NDJSON
+      description: >-
+        The pseudonymized events from the anchor of the chain to its head, one per line: actors, keys and
+        resources are pseudonyms, names, reasons and details are empty. Answers 409 until the tenant is
+        deleted. pandokos tenant deletion verify checks such an export against the completion record.
+      x-pandokos-permission: platform_audit:read
+      parameters:
+        - {$ref: '#/components/parameters/AuditFromSeq'}
+        - {$ref: '#/components/parameters/AuditToSeq'}
+      responses:
+        "200": {$ref: '#/components/responses/AuditEventExport'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/kek-versions:
+    get:
+      operationId: listKEKVersions
+      tags: [vault]
+      summary: List the versions of the key-encryption key
+      description: >-
+        Every version that wrapped a data key of this installation, oldest activation first. Exactly one is
+        active; a retiring version still wraps data keys and its key must stay configured; a retired version
+        wraps none. The key itself is never returned.
+      x-pandokos-permission: kek:read
+      responses:
+        "200": {$ref: '#/components/responses/KEKVersionList'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
   /v1/tenants/{tenant}/service-accounts:
@@ -3607,6 +3758,21 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Tenant'}
+    TenantDeletion:
+      description: The deletion of the tenant.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/TenantDeletion'}
+    TenantDeletionList:
+      description: A page of tenant deletions, newest request first.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/TenantDeletionList'}
+    KEKVersionList:
+      description: The versions of the key-encryption key.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/KEKVersionList'}
     TenantCreated:
       description: The tenant, its first service account and that account's key.
       content:
@@ -6081,3 +6247,108 @@ components:
         hash: {type: string, description: Lower-case hex of the last row's hash.}
         anchor_seq: {type: integer, description: The first row kept; 1 until retention removes rows.}
         anchor_hash: {type: string, description: Lower-case hex of the hash of the row before the anchor; zeros at the start.}
+    TenantDeletionRequest:
+      type: object
+      additionalProperties: false
+      required: [reason, confirm_name]
+      properties:
+        reason: {type: string, minLength: 1, maxLength: 500, description: Recorded in the audit log and with the deletion.}
+        confirm_name: {$ref: '#/components/schemas/Name', description: The name of the tenant, as a confirmation.}
+    TenantDeletionState:
+      type: string
+      enum: [scheduled, running, completed]
+    TenantDeletionStep:
+      type: string
+      enum: [begin, access, secrets, configuration, usage, audit, complete, done]
+      description: The step that runs next; done when the deletion is completed.
+    TenantDeletionRequesterType:
+      type: string
+      enum: [platform, user]
+    BackupErasureState:
+      type: string
+      enum: [not_applicable, pending, complete]
+    KEKVersionState:
+      type: string
+      enum: [active, retiring, retired]
+    TenantDeletionRequester:
+      type: object
+      additionalProperties: false
+      required: [type, id, name]
+      properties:
+        type: {$ref: '#/components/schemas/TenantDeletionRequesterType'}
+        id: {type: string}
+        name: {type: string}
+    TenantDeletionBackupErasure:
+      type: object
+      additionalProperties: false
+      required: [state, pending_kek_versions]
+      description: >-
+        Whether backups taken before the deletion can still open the tenant's credentials: pending while
+        one of kek_versions is not retired. A retired version protects only once its key file is destroyed.
+      properties:
+        state: {$ref: '#/components/schemas/BackupErasureState'}
+        pending_kek_versions: {type: array, items: {type: string}}
+    TenantDeletionAudit:
+      type: object
+      additionalProperties: false
+      required: [anchor_seq, last_seq, rows, original_head, resealed_head]
+      description: The tenant's audit chain as it was kept. Absent until the step audit ran.
+      properties:
+        anchor_seq: {type: integer, format: int64}
+        last_seq: {type: integer, format: int64}
+        rows: {type: integer, format: int64}
+        original_head: {type: string, description: The head of the chain before it was pseudonymized, in hexadecimal.}
+        resealed_head: {type: string, description: The head of the kept chain, in hexadecimal.}
+    TenantDeletion:
+      type: object
+      additionalProperties: false
+      required: [tenant_id, state, step, reason, requested_by, request_id, requested_at, not_before, passes, removed, kek_versions, backup_erasure]
+      properties:
+        tenant_id: {$ref: '#/components/schemas/ID'}
+        state: {$ref: '#/components/schemas/TenantDeletionState'}
+        step: {$ref: '#/components/schemas/TenantDeletionStep'}
+        reason: {type: string}
+        requested_by: {$ref: '#/components/schemas/TenantDeletionRequester'}
+        request_id: {type: string}
+        requested_at: {type: string, format: date-time}
+        not_before: {type: string, format: date-time, description: The deletion does not start before this instant.}
+        started_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time}
+        passes: {type: integer, description: How many times the removal ran; more than 1 when rows written by transactions older than the deletion were found.}
+        removed: {$ref: '#/components/schemas/RawObject', description: 'Rows removed so far, by table, as integers. Figures of the tenant usage are never counted here.'}
+        kek_versions:
+          type: array
+          items: {type: string}
+          description: The key-encryption key versions that wrapped the tenant's data keys when they were destroyed.
+        backup_erasure: {$ref: '#/components/schemas/TenantDeletionBackupErasure'}
+        audit: {$ref: '#/components/schemas/TenantDeletionAudit'}
+        completion_seq: {type: integer, format: int64, description: The sequence number of the completion record in the platform's audit chain.}
+    TenantDeletionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/TenantDeletion'}
+        next_cursor: {type: string, description: Absent on the last page.}
+    KEKVersion:
+      type: object
+      additionalProperties: false
+      required: [id, provider, state, created_at, activated_at, erasures_pending]
+      properties:
+        id: {type: string}
+        provider: {type: string}
+        state: {$ref: '#/components/schemas/KEKVersionState'}
+        created_at: {type: string, format: date-time}
+        activated_at: {type: string, format: date-time}
+        retired_at: {type: string, format: date-time}
+        erasures_pending: {type: integer, description: Completed tenant deletions whose backups stay readable until this version is retired and its key destroyed.}
+    KEKVersionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/KEKVersion'}

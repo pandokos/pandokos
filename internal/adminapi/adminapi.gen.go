@@ -271,6 +271,25 @@ func (v *AuthMethods) Validate() []FieldError {
 	return errs
 }
 
+// BackupErasureState is an enumeration of the administration API.
+type BackupErasureState string
+
+// Values of BackupErasureState.
+const (
+	BackupErasureStateNotApplicable BackupErasureState = "not_applicable"
+	BackupErasureStatePending       BackupErasureState = "pending"
+	BackupErasureStateComplete      BackupErasureState = "complete"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v BackupErasureState) Valid() bool {
+	switch v {
+	case BackupErasureStateNotApplicable, BackupErasureStatePending, BackupErasureStateComplete:
+		return true
+	}
+	return false
+}
+
 // BudgetAvailability: not_enforced when no enforced quota or budget in force matches (a budget in another currency than the tenant's active currency is not in force); unpriced when a budget matches and the model has no price in the active currency; exhausted when a matching quota or budget is used up for the current period.
 type BudgetAvailability string
 
@@ -914,6 +933,70 @@ const (
 func (v IssuerScope) Valid() bool {
 	switch v {
 	case IssuerScopeTenant, IssuerScopePlatform:
+		return true
+	}
+	return false
+}
+
+// KEKVersion is a schema of the administration API.
+type KEKVersion struct {
+	ID          string          `json:"id"`
+	Provider    string          `json:"provider"`
+	State       KEKVersionState `json:"state"`
+	CreatedAt   time.Time       `json:"created_at"`
+	ActivatedAt time.Time       `json:"activated_at"`
+	RetiredAt   *time.Time      `json:"retired_at,omitempty"`
+	// Completed tenant deletions whose backups stay readable until this version is retired and its key destroyed.
+	ErasuresPending int `json:"erasures_pending"`
+}
+
+var requiredKEKVersion = []string{"id", "provider", "state", "created_at", "activated_at", "erasures_pending"}
+
+var nestedKEKVersion []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *KEKVersion) Validate() []FieldError {
+	var errs []FieldError
+	if !v.State.Valid() {
+		errs = append(errs, FieldError{Field: "state", Message: "must be one of active, retiring, retired"})
+	}
+	return errs
+}
+
+// KEKVersionList is a schema of the administration API.
+type KEKVersionList struct {
+	Items []KEKVersion `json:"items"`
+}
+
+var requiredKEKVersionList = []string{"items"}
+
+var nestedKEKVersionList = []nestedSpec{{Name: "items", Many: true, Required: requiredKEKVersion, Nested: nestedKEKVersion}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *KEKVersionList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// KEKVersionState is an enumeration of the administration API.
+type KEKVersionState string
+
+// Values of KEKVersionState.
+const (
+	KEKVersionStateActive   KEKVersionState = "active"
+	KEKVersionStateRetiring KEKVersionState = "retiring"
+	KEKVersionStateRetired  KEKVersionState = "retired"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v KEKVersionState) Valid() bool {
+	switch v {
+	case KEKVersionStateActive, KEKVersionStateRetiring, KEKVersionStateRetired:
 		return true
 	}
 	return false
@@ -4544,6 +4627,231 @@ func (v *TenantCreated) Validate() []FieldError {
 	return errs
 }
 
+// TenantDeletion is a schema of the administration API.
+type TenantDeletion struct {
+	TenantID    string                  `json:"tenant_id"`
+	State       TenantDeletionState     `json:"state"`
+	Step        TenantDeletionStep      `json:"step"`
+	Reason      string                  `json:"reason"`
+	RequestedBy TenantDeletionRequester `json:"requested_by"`
+	RequestID   string                  `json:"request_id"`
+	RequestedAt time.Time               `json:"requested_at"`
+	// The deletion does not start before this instant.
+	NotBefore   time.Time  `json:"not_before"`
+	StartedAt   *time.Time `json:"started_at,omitempty"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	// How many times the removal ran; more than 1 when rows written by transactions older than the deletion were found.
+	Passes int `json:"passes"`
+	// Rows removed so far, by table, as integers. Figures of the tenant usage are never counted here.
+	Removed json.RawMessage `json:"removed"`
+	// The key-encryption key versions that wrapped the tenant's data keys when they were destroyed.
+	KekVersions   []string                    `json:"kek_versions"`
+	BackupErasure TenantDeletionBackupErasure `json:"backup_erasure"`
+	Audit         *TenantDeletionAudit        `json:"audit,omitempty"`
+	// The sequence number of the completion record in the platform's audit chain.
+	CompletionSeq int `json:"completion_seq,omitempty"`
+}
+
+var requiredTenantDeletion = []string{"tenant_id", "state", "step", "reason", "requested_by", "request_id", "requested_at", "not_before", "passes", "removed", "kek_versions", "backup_erasure"}
+
+var nestedTenantDeletion = []nestedSpec{{Name: "requested_by", Required: requiredTenantDeletionRequester, Nested: nestedTenantDeletionRequester}, {Name: "backup_erasure", Required: requiredTenantDeletionBackupErasure, Nested: nestedTenantDeletionBackupErasure}, {Name: "audit", Required: requiredTenantDeletionAudit, Nested: nestedTenantDeletionAudit}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TenantDeletion) Validate() []FieldError {
+	var errs []FieldError
+	if !re2.MatchString(v.TenantID) {
+		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !v.State.Valid() {
+		errs = append(errs, FieldError{Field: "state", Message: "must be one of scheduled, running, completed"})
+	}
+	if !v.Step.Valid() {
+		errs = append(errs, FieldError{Field: "step", Message: "must be one of begin, access, secrets, configuration, usage, audit, complete, done"})
+	}
+	for _, e := range v.RequestedBy.Validate() {
+		errs = append(errs, FieldError{Field: "requested_by." + e.Field, Message: e.Message})
+	}
+	for _, e := range v.BackupErasure.Validate() {
+		errs = append(errs, FieldError{Field: "backup_erasure." + e.Field, Message: e.Message})
+	}
+	if v.Audit != nil {
+		for _, e := range v.Audit.Validate() {
+			errs = append(errs, FieldError{Field: "audit." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// TenantDeletionAudit: The tenant's audit chain as it was kept. Absent until the step audit ran.
+type TenantDeletionAudit struct {
+	AnchorSeq int `json:"anchor_seq"`
+	LastSeq   int `json:"last_seq"`
+	Rows      int `json:"rows"`
+	// The head of the chain before it was pseudonymized
+	OriginalHead string `json:"original_head"`
+	// The head of the kept chain
+	ResealedHead string `json:"resealed_head"`
+}
+
+var requiredTenantDeletionAudit = []string{"anchor_seq", "last_seq", "rows", "original_head", "resealed_head"}
+
+var nestedTenantDeletionAudit []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TenantDeletionAudit) Validate() []FieldError {
+	var errs []FieldError
+	return errs
+}
+
+// TenantDeletionBackupErasure: Whether backups taken before the deletion can still open the tenant's credentials: pending while one of kek_versions is not retired. A retired version protects only once its key file is destroyed.
+type TenantDeletionBackupErasure struct {
+	State              BackupErasureState `json:"state"`
+	PendingKekVersions []string           `json:"pending_kek_versions"`
+}
+
+var requiredTenantDeletionBackupErasure = []string{"state", "pending_kek_versions"}
+
+var nestedTenantDeletionBackupErasure []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TenantDeletionBackupErasure) Validate() []FieldError {
+	var errs []FieldError
+	if !v.State.Valid() {
+		errs = append(errs, FieldError{Field: "state", Message: "must be one of not_applicable, pending, complete"})
+	}
+	return errs
+}
+
+// TenantDeletionList is a schema of the administration API.
+type TenantDeletionList struct {
+	Items []TenantDeletion `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredTenantDeletionList = []string{"items"}
+
+var nestedTenantDeletionList = []nestedSpec{{Name: "items", Many: true, Required: requiredTenantDeletion, Nested: nestedTenantDeletion}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TenantDeletionList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// TenantDeletionRequest is a schema of the administration API.
+type TenantDeletionRequest struct {
+	// Recorded in the audit log and with the deletion.
+	Reason string `json:"reason"`
+	// The name of the tenant
+	ConfirmName string `json:"confirm_name"`
+}
+
+var requiredTenantDeletionRequest = []string{"reason", "confirm_name"}
+
+var nestedTenantDeletionRequest []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TenantDeletionRequest) Validate() []FieldError {
+	var errs []FieldError
+	if runeCount(v.Reason) < 1 {
+		errs = append(errs, FieldError{Field: "reason", Message: "length must be at least 1"})
+	}
+	if runeCount(v.Reason) > 500 {
+		errs = append(errs, FieldError{Field: "reason", Message: "length must be at most 500"})
+	}
+	if !re6.MatchString(v.ConfirmName) {
+		errs = append(errs, FieldError{Field: "confirm_name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+	}
+	return errs
+}
+
+// TenantDeletionRequester is a schema of the administration API.
+type TenantDeletionRequester struct {
+	Type TenantDeletionRequesterType `json:"type"`
+	ID   string                      `json:"id"`
+	Name string                      `json:"name"`
+}
+
+var requiredTenantDeletionRequester = []string{"type", "id", "name"}
+
+var nestedTenantDeletionRequester []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *TenantDeletionRequester) Validate() []FieldError {
+	var errs []FieldError
+	if !v.Type.Valid() {
+		errs = append(errs, FieldError{Field: "type", Message: "must be one of platform, user"})
+	}
+	return errs
+}
+
+// TenantDeletionRequesterType is an enumeration of the administration API.
+type TenantDeletionRequesterType string
+
+// Values of TenantDeletionRequesterType.
+const (
+	TenantDeletionRequesterTypePlatform TenantDeletionRequesterType = "platform"
+	TenantDeletionRequesterTypeUser     TenantDeletionRequesterType = "user"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v TenantDeletionRequesterType) Valid() bool {
+	switch v {
+	case TenantDeletionRequesterTypePlatform, TenantDeletionRequesterTypeUser:
+		return true
+	}
+	return false
+}
+
+// TenantDeletionState is an enumeration of the administration API.
+type TenantDeletionState string
+
+// Values of TenantDeletionState.
+const (
+	TenantDeletionStateScheduled TenantDeletionState = "scheduled"
+	TenantDeletionStateRunning   TenantDeletionState = "running"
+	TenantDeletionStateCompleted TenantDeletionState = "completed"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v TenantDeletionState) Valid() bool {
+	switch v {
+	case TenantDeletionStateScheduled, TenantDeletionStateRunning, TenantDeletionStateCompleted:
+		return true
+	}
+	return false
+}
+
+// TenantDeletionStep: The step that runs next; done when the deletion is completed.
+type TenantDeletionStep string
+
+// Values of TenantDeletionStep.
+const (
+	TenantDeletionStepBegin         TenantDeletionStep = "begin"
+	TenantDeletionStepAccess        TenantDeletionStep = "access"
+	TenantDeletionStepSecrets       TenantDeletionStep = "secrets"
+	TenantDeletionStepConfiguration TenantDeletionStep = "configuration"
+	TenantDeletionStepUsage         TenantDeletionStep = "usage"
+	TenantDeletionStepAudit         TenantDeletionStep = "audit"
+	TenantDeletionStepComplete      TenantDeletionStep = "complete"
+	TenantDeletionStepDone          TenantDeletionStep = "done"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v TenantDeletionStep) Valid() bool {
+	switch v {
+	case TenantDeletionStepBegin, TenantDeletionStepAccess, TenantDeletionStepSecrets, TenantDeletionStepConfiguration, TenantDeletionStepUsage, TenantDeletionStepAudit, TenantDeletionStepComplete, TenantDeletionStepDone:
+		return true
+	}
+	return false
+}
+
 // TenantList is a schema of the administration API.
 type TenantList struct {
 	Items []Tenant `json:"items"`
@@ -5933,6 +6241,7 @@ var Operations = []Operation{
 	{ID: "deleteOwnSession", Method: "DELETE", Path: "/v1/auth/sessions/{session}", Permission: "session:self", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "session", Pattern: re2}}},
 	{ID: "signIn", Method: "POST", Path: "/v1/auth/sign-in", Permission: "", Public: true, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: true, PathParams: []PathParam{}},
 	{ID: "signOut", Method: "POST", Path: "/v1/auth/sign-out", Permission: "session:self", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
+	{ID: "listKEKVersions", Method: "GET", Path: "/v1/kek-versions", Permission: "kek:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "getMe", Method: "GET", Path: "/v1/me", Permission: "identity:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "listModels", Method: "GET", Path: "/v1/models", Permission: "catalog:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "createModel", Method: "POST", Path: "/v1/models", Permission: "catalog:write", Public: false, Idempotent: true, ReasonRequired: false, Status: 201, HasBody: true, PathParams: []PathParam{}},
@@ -5985,6 +6294,7 @@ var Operations = []Operation{
 	{ID: "getTenantCredential", Method: "GET", Path: "/v1/tenant-credentials/{tenant}/{credential}", Permission: "tenant_credential:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
 	{ID: "disableTenantCredential", Method: "POST", Path: "/v1/tenant-credentials/{tenant}/{credential}/disable", Permission: "tenant_credential:revoke", Public: false, Idempotent: false, ReasonRequired: true, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
 	{ID: "revokeTenantCredential", Method: "POST", Path: "/v1/tenant-credentials/{tenant}/{credential}/revoke", Permission: "tenant_credential:revoke", Public: false, Idempotent: false, ReasonRequired: true, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
+	{ID: "listTenantDeletions", Method: "GET", Path: "/v1/tenant-deletions", Permission: "tenant:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "listTenantSupportActions", Method: "GET", Path: "/v1/tenant-support/{tenant}/actions", Permission: "tenant_support:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "openSupportAction", Method: "POST", Path: "/v1/tenant-support/{tenant}/actions", Permission: "tenant_support:open", Public: false, Idempotent: true, ReasonRequired: true, Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "getTenantSupportAction", Method: "GET", Path: "/v1/tenant-support/{tenant}/actions/{action}", Permission: "tenant_support:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "action", Pattern: re2}}},
@@ -6009,6 +6319,11 @@ var Operations = []Operation{
 	{ID: "revokeCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/revoke", Permission: "credential:delete", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
 	{ID: "replaceCredentialSecret", Method: "PUT", Path: "/v1/tenants/{tenant}/credentials/{credential}/secret", Permission: "credential:rotate", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
 	{ID: "setDefaultCredential", Method: "POST", Path: "/v1/tenants/{tenant}/credentials/{credential}/set-default", Permission: "credential:write", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
+	{ID: "getTenantDeletion", Method: "GET", Path: "/v1/tenants/{tenant}/deletion", Permission: "tenant:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "requestTenantDeletion", Method: "POST", Path: "/v1/tenants/{tenant}/deletion", Permission: "tenant:delete", Public: false, Idempotent: false, ReasonRequired: true, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "exportDeletedTenantAuditEvents", Method: "GET", Path: "/v1/tenants/{tenant}/deletion/audit-events/export", Permission: "platform_audit:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "getDeletedTenantAuditHead", Method: "GET", Path: "/v1/tenants/{tenant}/deletion/audit-head", Permission: "platform_audit:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "cancelTenantDeletion", Method: "POST", Path: "/v1/tenants/{tenant}/deletion/cancel", Permission: "tenant:delete", Public: false, Idempotent: false, ReasonRequired: true, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "listLimitEvents", Method: "GET", Path: "/v1/tenants/{tenant}/limit-events", Permission: "limit:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "listLimits", Method: "GET", Path: "/v1/tenants/{tenant}/limits", Permission: "limit:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "createLimit", Method: "POST", Path: "/v1/tenants/{tenant}/limits", Permission: "limit:write", Public: false, Idempotent: true, ReasonRequired: false, Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
@@ -6124,6 +6439,10 @@ type SignInInput struct {
 
 // SignOutInput is the input of signOut.
 type SignOutInput struct {
+}
+
+// ListKEKVersionsInput is the input of listKEKVersions.
+type ListKEKVersionsInput struct {
 }
 
 // GetMeInput is the input of getMe.
@@ -6458,6 +6777,13 @@ type RevokeTenantCredentialInput struct {
 	Body       RequiredReason
 }
 
+// ListTenantDeletionsInput is the input of listTenantDeletions.
+type ListTenantDeletionsInput struct {
+	Limit  int                 // query; the zero value means absent
+	Cursor string              // query; the zero value means absent
+	State  TenantDeletionState // query; the zero value means absent
+}
+
 // ListTenantSupportActionsInput is the input of listTenantSupportActions.
 type ListTenantSupportActionsInput struct {
 	Tenant string              // path
@@ -6629,6 +6955,35 @@ type SetDefaultCredentialInput struct {
 	Tenant     string // path
 	Credential string // path
 	Body       Reason
+}
+
+// GetTenantDeletionInput is the input of getTenantDeletion.
+type GetTenantDeletionInput struct {
+	Tenant string // path
+}
+
+// RequestTenantDeletionInput is the input of requestTenantDeletion.
+type RequestTenantDeletionInput struct {
+	Tenant string // path
+	Body   TenantDeletionRequest
+}
+
+// ExportDeletedTenantAuditEventsInput is the input of exportDeletedTenantAuditEvents.
+type ExportDeletedTenantAuditEventsInput struct {
+	Tenant  string // path
+	FromSeq int    // query; the zero value means absent
+	ToSeq   int    // query; the zero value means absent
+}
+
+// GetDeletedTenantAuditHeadInput is the input of getDeletedTenantAuditHead.
+type GetDeletedTenantAuditHeadInput struct {
+	Tenant string // path
+}
+
+// CancelTenantDeletionInput is the input of cancelTenantDeletion.
+type CancelTenantDeletionInput struct {
+	Tenant string // path
+	Body   RequiredReason
 }
 
 // ListLimitEventsInput is the input of listLimitEvents.
@@ -7184,6 +7539,8 @@ type Server interface {
 	SignIn(ctx context.Context, in SignInInput) (*Session, error)
 	// SignOut: POST /v1/auth/sign-out. Sign out
 	SignOut(ctx context.Context, in SignOutInput) (*SignedOut, error)
+	// ListKEKVersions: GET /v1/kek-versions. List the versions of the key-encryption key
+	ListKEKVersions(ctx context.Context, in ListKEKVersionsInput) (*KEKVersionList, error)
 	// GetMe: GET /v1/me. Who the caller is and what it may do
 	GetMe(ctx context.Context, in GetMeInput) (*Me, error)
 	// ListModels: GET /v1/models. List the models of the catalogue
@@ -7288,6 +7645,8 @@ type Server interface {
 	DisableTenantCredential(ctx context.Context, in DisableTenantCredentialInput) (*Credential, error)
 	// RevokeTenantCredential: POST /v1/tenant-credentials/{tenant}/{credential}/revoke. Revoke a credential of a tenant as a platform administrator
 	RevokeTenantCredential(ctx context.Context, in RevokeTenantCredentialInput) (*Credential, error)
+	// ListTenantDeletions: GET /v1/tenant-deletions. List the deletions of tenants, newest request first
+	ListTenantDeletions(ctx context.Context, in ListTenantDeletionsInput) (*TenantDeletionList, error)
 	// ListTenantSupportActions: GET /v1/tenant-support/{tenant}/actions. List the support actions of a tenant as a platform principal
 	ListTenantSupportActions(ctx context.Context, in ListTenantSupportActionsInput) (*SupportActionList, error)
 	// OpenSupportAction: POST /v1/tenant-support/{tenant}/actions. Open a support action in a tenant
@@ -7336,6 +7695,16 @@ type Server interface {
 	ReplaceCredentialSecret(ctx context.Context, in ReplaceCredentialSecretInput) (*Credential, error)
 	// SetDefaultCredential: POST /v1/tenants/{tenant}/credentials/{credential}/set-default. Make a credential the default of its provider
 	SetDefaultCredential(ctx context.Context, in SetDefaultCredentialInput) (*Credential, error)
+	// GetTenantDeletion: GET /v1/tenants/{tenant}/deletion. Read the deletion of a tenant
+	GetTenantDeletion(ctx context.Context, in GetTenantDeletionInput) (*TenantDeletion, error)
+	// RequestTenantDeletion: POST /v1/tenants/{tenant}/deletion. Request the deletion of a tenant
+	RequestTenantDeletion(ctx context.Context, in RequestTenantDeletionInput) (*TenantDeletion, error)
+	// ExportDeletedTenantAuditEvents: GET /v1/tenants/{tenant}/deletion/audit-events/export. Export the audit chain kept for a deleted tenant, oldest first, as NDJSON
+	ExportDeletedTenantAuditEvents(ctx context.Context, in ExportDeletedTenantAuditEventsInput) (*Stream, error)
+	// GetDeletedTenantAuditHead: GET /v1/tenants/{tenant}/deletion/audit-head. Read the head and the anchor of the audit chain kept for a deleted tenant
+	GetDeletedTenantAuditHead(ctx context.Context, in GetDeletedTenantAuditHeadInput) (*AuditHead, error)
+	// CancelTenantDeletion: POST /v1/tenants/{tenant}/deletion/cancel. Cancel a scheduled deletion
+	CancelTenantDeletion(ctx context.Context, in CancelTenantDeletionInput) (*Tenant, error)
 	// ListLimitEvents: GET /v1/tenants/{tenant}/limit-events. List what the tenant's quotas and budgets recorded, newest first
 	ListLimitEvents(ctx context.Context, in ListLimitEventsInput) (*LimitEventList, error)
 	// ListLimits: GET /v1/tenants/{tenant}/limits. List the limit rules of a tenant
@@ -7648,6 +8017,18 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		out, err := h.server.SignOut(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "listKEKVersions":
+		var in ListKEKVersionsInput
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.ListKEKVersions(r.Context(), in)
 		if err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -9130,6 +9511,57 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		writeJSON(w, 200, out)
+	case "listTenantDeletions":
+		var in ListTenantDeletionsInput
+		q, err := parseQuery(r, "limit", "cursor", "state")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		if v, ok := q["state"]; ok {
+			in.State = TenantDeletionState(v)
+		}
+		if in.State != "" && !in.State.Valid() {
+			errs = append(errs, FieldError{Field: "state", Message: "must be one of scheduled, running, completed"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListTenantDeletions(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
 	case "listTenantSupportActions":
 		var in ListTenantSupportActionsInput
 		in.Tenant = params["tenant"]
@@ -9882,6 +10314,123 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		out, err := h.server.SetDefaultCredential(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "getTenantDeletion":
+		var in GetTenantDeletionInput
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GetTenantDeletion(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "requestTenantDeletion":
+		var in RequestTenantDeletionInput
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredTenantDeletionRequest, nestedTenantDeletionRequest, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := requireReason(in.Body.Reason); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.RequestTenantDeletion(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "exportDeletedTenantAuditEvents":
+		var in ExportDeletedTenantAuditEventsInput
+		in.Tenant = params["tenant"]
+		q, err := parseQuery(r, "from_seq", "to_seq")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		if v, ok := q["from_seq"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "from_seq", Message: "must be an integer"})
+			} else {
+				in.FromSeq = n
+			}
+			if err == nil && in.FromSeq < 1 {
+				errs = append(errs, FieldError{Field: "from_seq", Message: "must be at least 1"})
+			}
+		}
+		if v, ok := q["to_seq"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "to_seq", Message: "must be an integer"})
+			} else {
+				in.ToSeq = n
+			}
+			if err == nil && in.ToSeq < 1 {
+				errs = append(errs, FieldError{Field: "to_seq", Message: "must be at least 1"})
+			}
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ExportDeletedTenantAuditEvents(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		h.writeStream(w, r, op, out)
+	case "getDeletedTenantAuditHead":
+		var in GetDeletedTenantAuditHeadInput
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GetDeletedTenantAuditHead(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "cancelTenantDeletion":
+		var in CancelTenantDeletionInput
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredRequiredReason, nestedRequiredReason, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := requireReason(in.Body.Reason); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.CancelTenantDeletion(r.Context(), in)
 		if err != nil {
 			h.fail(w, r, op, err)
 			return
@@ -12242,6 +12791,16 @@ func (c *Client) SignOut(ctx context.Context, in SignOutInput) (*SignedOut, erro
 	return &out, nil
 }
 
+// ListKEKVersions calls GET /v1/kek-versions. List the versions of the key-encryption key
+func (c *Client) ListKEKVersions(ctx context.Context, in ListKEKVersionsInput) (*KEKVersionList, error) {
+	q := url.Values{}
+	var out KEKVersionList
+	if err := c.do(ctx, "GET", "/v1/kek-versions", q, nil, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // GetMe calls GET /v1/me. Who the caller is and what it may do
 func (c *Client) GetMe(ctx context.Context, in GetMeInput) (*Me, error) {
 	q := url.Values{}
@@ -12949,6 +13508,25 @@ func (c *Client) RevokeTenantCredential(ctx context.Context, in RevokeTenantCred
 	return &out, nil
 }
 
+// ListTenantDeletions calls GET /v1/tenant-deletions. List the deletions of tenants, newest request first
+func (c *Client) ListTenantDeletions(ctx context.Context, in ListTenantDeletionsInput) (*TenantDeletionList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	if in.State != "" {
+		q.Set("state", string(in.State))
+	}
+	var out TenantDeletionList
+	if err := c.do(ctx, "GET", "/v1/tenant-deletions", q, nil, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // ListTenantSupportActions calls GET /v1/tenant-support/{tenant}/actions. List the support actions of a tenant as a platform principal
 func (c *Client) ListTenantSupportActions(ctx context.Context, in ListTenantSupportActionsInput) (*SupportActionList, error) {
 	q := url.Values{}
@@ -13282,6 +13860,58 @@ func (c *Client) SetDefaultCredential(ctx context.Context, in SetDefaultCredenti
 	q := url.Values{}
 	var out Credential
 	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/credentials/"+url.PathEscape(in.Credential)+"/set-default", q, &in.Body, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetTenantDeletion calls GET /v1/tenants/{tenant}/deletion. Read the deletion of a tenant
+func (c *Client) GetTenantDeletion(ctx context.Context, in GetTenantDeletionInput) (*TenantDeletion, error) {
+	q := url.Values{}
+	var out TenantDeletion
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/deletion", q, nil, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// RequestTenantDeletion calls POST /v1/tenants/{tenant}/deletion. Request the deletion of a tenant
+func (c *Client) RequestTenantDeletion(ctx context.Context, in RequestTenantDeletionInput) (*TenantDeletion, error) {
+	q := url.Values{}
+	var out TenantDeletion
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/deletion", q, &in.Body, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ExportDeletedTenantAuditEvents calls GET /v1/tenants/{tenant}/deletion/audit-events/export. Export the audit chain kept for a deleted tenant, oldest first, as NDJSON
+func (c *Client) ExportDeletedTenantAuditEvents(ctx context.Context, in ExportDeletedTenantAuditEventsInput) (*StreamBody, error) {
+	q := url.Values{}
+	if in.FromSeq != 0 {
+		q.Set("from_seq", strconv.Itoa(in.FromSeq))
+	}
+	if in.ToSeq != 0 {
+		q.Set("to_seq", strconv.Itoa(in.ToSeq))
+	}
+	return c.doStream(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/deletion/audit-events/export", q, "application/x-ndjson")
+}
+
+// GetDeletedTenantAuditHead calls GET /v1/tenants/{tenant}/deletion/audit-head. Read the head and the anchor of the audit chain kept for a deleted tenant
+func (c *Client) GetDeletedTenantAuditHead(ctx context.Context, in GetDeletedTenantAuditHeadInput) (*AuditHead, error) {
+	q := url.Values{}
+	var out AuditHead
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/deletion/audit-head", q, nil, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CancelTenantDeletion calls POST /v1/tenants/{tenant}/deletion/cancel. Cancel a scheduled deletion
+func (c *Client) CancelTenantDeletion(ctx context.Context, in CancelTenantDeletionInput) (*Tenant, error) {
+	q := url.Values{}
+	var out Tenant
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/deletion/cancel", q, &in.Body, 200, &out, nil); err != nil {
 		return nil, err
 	}
 	return &out, nil

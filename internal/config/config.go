@@ -56,12 +56,22 @@ type Config struct {
 	Support     Support     `yaml:"support"`
 	Reports     Reports     `yaml:"reports"`
 	Retention   Retention   `yaml:"retention"`
+
+	TenantDeletion TenantDeletion `yaml:"tenant_deletion"`
 }
 
 // Reports configures the usage rollup that the worker keeps (ADR 0064). Only serve reads and
 // validates these settings.
 type Reports struct {
 	RollupInterval Duration `yaml:"rollup_interval"`
+}
+
+// TenantDeletion configures the deletion of tenants (ADR 0067): the grace period between a request
+// and the start of the removal, and the time between two passes of the worker's deletion job.
+// Only serve reads and validates these settings.
+type TenantDeletion struct {
+	GracePeriod Duration `yaml:"grace_period"`
+	Interval    Duration `yaml:"interval"`
 }
 
 // Retention configures how long usage and audit rows are kept, in months; 0 keeps everything
@@ -224,8 +234,12 @@ type VaultKEK struct {
 // VaultKEKLocal configures the local key provider: a key file.
 type VaultKEKLocal struct {
 	KeyFile string `yaml:"key_file"`
+	// UnwrapKeyFiles are the files of the earlier key-encryption keys that still unwrap data keys
+	// (ADR 0068); serve only.
+	UnwrapKeyFiles []string `yaml:"unwrap_key_files"`
 
-	Key secret.Secret `yaml:"-"` // filled by Load when the purpose is serve
+	Key        secret.Secret   `yaml:"-"` // filled by Load when the purpose is serve
+	UnwrapKeys []secret.Secret `yaml:"-"` // filled by Load when the purpose is serve, in the order of UnwrapKeyFiles
 }
 
 // Limits configures request limits.
@@ -420,11 +434,12 @@ func Defaults() *Config {
 				MaxStale:           Duration(6 * time.Hour),
 			},
 		},
-		Auth:        authDefaults(),
-		Idempotency: Idempotency{Retention: Duration(24 * time.Hour)},
-		Reports:     Reports{RollupInterval: Duration(time.Minute)},
-		Support:     Support{Enabled: true, MaxDuration: Duration(time.Hour)},
-		Vault:       Vault{KEK: VaultKEK{Provider: "local"}},
+		Auth:           authDefaults(),
+		Idempotency:    Idempotency{Retention: Duration(24 * time.Hour)},
+		Reports:        Reports{RollupInterval: Duration(time.Minute)},
+		TenantDeletion: TenantDeletion{GracePeriod: Duration(168 * time.Hour), Interval: Duration(time.Minute)},
+		Support:        Support{Enabled: true, MaxDuration: Duration(time.Hour)},
+		Vault:          Vault{KEK: VaultKEK{Provider: "local"}},
 		Database: Database{
 			Name:           "pandokos",
 			TLS:            DatabaseTLS{Mode: "verify-full"},

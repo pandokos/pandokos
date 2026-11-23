@@ -43,7 +43,8 @@ type constraint struct {
 
 // Lint reads the system catalogues of schema pandokos through the connection (a superuser's, so
 // that it can read every privilege) and returns one finding per violation of the rules L-01 to
-// L-16 of sprint 1.2, section 6.1, L-19 of sprint 2.1 and L-20 of sprint 3.2 (twenty rules), sorted by rule and object. A table is tenant-scoped unless
+// L-16 of sprint 1.2, section 6.1, L-19 of sprint 2.1, L-20 of sprint 3.2 and L-21 of sprint 6.3
+// (twenty-one rules), sorted by rule and object. A table is tenant-scoped unless
 // spec.Global lists it.
 func Lint(ctx context.Context, conn *pgx.Conn, spec Spec) ([]Finding, error) {
 	var findings []Finding
@@ -199,6 +200,9 @@ func Lint(ctx context.Context, conn *pgx.Conn, spec Spec) ([]Finding, error) {
 		return nil, err
 	}
 	if err := lintPartitions(ctx, conn, spec, rels, add); err != nil {
+		return nil, err
+	}
+	if err := lintTenantOpen(ctx, conn, add); err != nil {
 		return nil, err
 	}
 
@@ -687,6 +691,76 @@ func lintPartitions(ctx context.Context, conn *pgx.Conn, spec Spec, rels []relat
 			if !found {
 				add("L-20", p.name, "(d) no enabled BEFORE TRUNCATE trigger that executes pandokos.append_only()")
 			}
+		}
+	}
+	return nil
+}
+
+// rowGuardTables are the global tables that carry a tenant column and are guarded by the row
+// trigger tenant_open_row (L-21).
+var rowGuardTables = []string{"app_user", "model_tenant_grant", "platform_issuer_tenant", "platform_limit_rule", "support_action"}
+
+// lintTenantOpen is rule L-21 of sprint 6.3, section 6: every table that is not a partition and
+// has a policy named tenant_isolation, and idempotency_key, has an enabled BEFORE INSERT statement
+// trigger <table>_tenant_open that executes tenant_open; each of the global tables in
+// rowGuardTables has an enabled BEFORE INSERT row trigger of that name that executes
+// tenant_open_row. A table that took no new row once its tenant is closed would let a deletion be
+// undone.
+func lintTenantOpen(ctx context.Context, conn *pgx.Conn, add func(rule, object, format string, args ...any)) error {
+	rows, err := conn.Query(ctx, `SELECT DISTINCT c.relname::text
+  FROM pg_catalog.pg_class c
+  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+  LEFT JOIN pg_catalog.pg_policy p ON p.polrelid = c.oid AND p.polname = 'tenant_isolation'
+ WHERE n.nspname = 'pandokos' AND c.relkind IN ('r', 'p') AND NOT c.relispartition
+   AND (p.oid IS NOT NULL OR c.relname = 'idempotency_key')
+ ORDER BY 1`)
+	if err != nil {
+		return err
+	}
+	statement, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return err
+	}
+	check := func(table, fn string, wantRow bool) error {
+		trows, err := conn.Query(ctx, `SELECT t.tgtype::int, p.proname::text, t.tgenabled::text
+  FROM pg_catalog.pg_trigger t JOIN pg_catalog.pg_proc p ON p.oid = t.tgfoid
+ WHERE t.tgrelid = $1::regclass AND t.tgname = $2 AND NOT t.tgisinternal`, qualified(table), table+"_tenant_open")
+		if err != nil {
+			return err
+		}
+		defer trows.Close()
+		for trows.Next() {
+			var tgtype int
+			var name, enabled string
+			if err := trows.Scan(&tgtype, &name, &enabled); err != nil {
+				return err
+			}
+			const row, before, insert = 1, 2, 4
+			if name == fn && enabled != "D" && (tgtype&row != 0) == wantRow && tgtype&before != 0 && tgtype&insert != 0 {
+				return nil
+			}
+		}
+		if err := trows.Err(); err != nil {
+			return err
+		}
+		kind := "statement"
+		if wantRow {
+			kind = "row"
+		}
+		add("L-21", table, "no enabled BEFORE INSERT %s trigger %s_tenant_open that executes pandokos.%s()", kind, table, fn)
+		return nil
+	}
+	for _, table := range statement {
+		if contains(rowGuardTables, table) {
+			continue
+		}
+		if err := check(table, "tenant_open", false); err != nil {
+			return err
+		}
+	}
+	for _, table := range rowGuardTables {
+		if err := check(table, "tenant_open_row", true); err != nil {
+			return err
 		}
 	}
 	return nil

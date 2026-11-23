@@ -79,9 +79,12 @@ type PandokosIssuerDirectory struct {
 }
 
 type PandokosKekVersion struct {
-	ID        string
-	Provider  string
-	CreatedAt time.Time
+	ID          string
+	Provider    string
+	CreatedAt   time.Time
+	State       string
+	ActivatedAt time.Time
+	RetiredAt   *time.Time
 }
 
 type PandokosLimitEvent struct {
@@ -476,6 +479,11 @@ type PandokosTenant struct {
 	ActiveCurrencyEffectiveFrom *time.Time
 }
 
+type PandokosTenantClosed struct {
+	TenantID string
+	ClosedAt time.Time
+}
+
 type PandokosTenantDataKey struct {
 	TenantID   string
 	ID         string
@@ -484,6 +492,30 @@ type PandokosTenantDataKey struct {
 	WrappedKey []byte
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+}
+
+type PandokosTenantDeletion struct {
+	TenantID        string
+	State           string
+	Step            string
+	Reason          string
+	RequestedByType string
+	RequestedByID   string
+	RequestedByName string
+	RequestID       string
+	RequestedAt     time.Time
+	NotBefore       time.Time
+	StartedAt       *time.Time
+	SettleAt        *time.Time
+	CompletedAt     *time.Time
+	Passes          int32
+	Salt            []byte
+	UsageStartedAt  *time.Time
+	UsageID         *string
+	KekVersions     []string
+	Removed         string
+	Audit           string
+	CompletionSeq   *int64
 }
 
 type PandokosTenantModelRestriction struct {

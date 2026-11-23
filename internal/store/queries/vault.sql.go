@@ -7,7 +7,25 @@ package queries
 
 import (
 	"context"
+	"time"
 )
+
+const activateKEKVersion = `-- name: ActivateKEKVersion :one
+SELECT pandokos.kek_activate($1::text, $2::text)::text AS result
+`
+
+type ActivateKEKVersionParams struct {
+	ID       string
+	Provider string
+}
+
+// Scope: admin, platform scope
+func (q *Queries) ActivateKEKVersion(ctx context.Context, arg ActivateKEKVersionParams) (string, error) {
+	row := q.db.QueryRow(ctx, activateKEKVersion, arg.ID, arg.Provider)
+	var result string
+	err := row.Scan(&result)
+	return result, err
+}
 
 const createDataKey = `-- name: CreateDataKey :execrows
 INSERT INTO pandokos.tenant_data_key (tenant_id, version, kek_version, wrapped_key)
@@ -55,14 +73,22 @@ func (q *Queries) GetDataKey(ctx context.Context, version int32) (GetDataKeyRow,
 }
 
 const listKEKVersions = `-- name: ListKEKVersions :many
-SELECT id, provider FROM pandokos.kek_version ORDER BY id
+
+SELECT v.id, v.provider, v.state, v.created_at, v.activated_at, v.retired_at FROM pandokos.kek_version v ORDER BY v.activated_at, v.id
 `
 
 type ListKEKVersionsRow struct {
-	ID       string
-	Provider string
+	ID          string
+	Provider    string
+	State       string
+	CreatedAt   time.Time
+	ActivatedAt time.Time
+	RetiredAt   *time.Time
 }
 
+// Key-encryption key versions and tenant data keys. The kek_version statements run in any
+// transaction; the data key statements in a tenant session.
+// Scope: any transaction
 func (q *Queries) ListKEKVersions(ctx context.Context) ([]ListKEKVersionsRow, error) {
 	rows, err := q.db.Query(ctx, listKEKVersions)
 	if err != nil {
@@ -72,7 +98,14 @@ func (q *Queries) ListKEKVersions(ctx context.Context) ([]ListKEKVersionsRow, er
 	items := []ListKEKVersionsRow{}
 	for rows.Next() {
 		var i ListKEKVersionsRow
-		if err := rows.Scan(&i.ID, &i.Provider); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Provider,
+			&i.State,
+			&i.CreatedAt,
+			&i.ActivatedAt,
+			&i.RetiredAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -83,21 +116,144 @@ func (q *Queries) ListKEKVersions(ctx context.Context) ([]ListKEKVersionsRow, er
 	return items, nil
 }
 
-const registerKEKVersion = `-- name: RegisterKEKVersion :exec
-
-INSERT INTO pandokos.kek_version (id, provider)
-VALUES ($1::text, $2::text)
-ON CONFLICT (id) DO NOTHING
+const listKEKVersionsWithErasures = `-- name: ListKEKVersionsWithErasures :many
+SELECT v.id, v.provider, v.state, v.created_at, v.activated_at, v.retired_at,
+       (SELECT count(*) FROM pandokos.tenant_deletion d
+         WHERE d.state = 'completed' AND v.state <> 'retired' AND v.id = ANY (d.kek_versions))::bigint AS erasures_pending
+  FROM pandokos.kek_version v ORDER BY v.activated_at, v.id
 `
 
-type RegisterKEKVersionParams struct {
-	ID       string
-	Provider string
+type ListKEKVersionsWithErasuresRow struct {
+	ID              string
+	Provider        string
+	State           string
+	CreatedAt       time.Time
+	ActivatedAt     time.Time
+	RetiredAt       *time.Time
+	ErasuresPending int64
 }
 
-// Key-encryption key versions and tenant data keys. The kek_version statements run in any
-// transaction; the data key statements in a tenant session.
-func (q *Queries) RegisterKEKVersion(ctx context.Context, arg RegisterKEKVersionParams) error {
-	_, err := q.db.Exec(ctx, registerKEKVersion, arg.ID, arg.Provider)
-	return err
+// Scope: admin, platform scope
+func (q *Queries) ListKEKVersionsWithErasures(ctx context.Context) ([]ListKEKVersionsWithErasuresRow, error) {
+	rows, err := q.db.Query(ctx, listKEKVersionsWithErasures)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListKEKVersionsWithErasuresRow{}
+	for rows.Next() {
+		var i ListKEKVersionsWithErasuresRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Provider,
+			&i.State,
+			&i.CreatedAt,
+			&i.ActivatedAt,
+			&i.RetiredAt,
+			&i.ErasuresPending,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTenantsForRewrap = `-- name: ListTenantsForRewrap :many
+SELECT t.id FROM pandokos.tenant t WHERE t.state <> 'deleted' ORDER BY t.id
+`
+
+// Scope: worker, platform scope
+func (q *Queries) ListTenantsForRewrap(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, listTenantsForRewrap)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockDataKeysForRewrap = `-- name: LockDataKeysForRewrap :many
+SELECT k.version, k.kek_version, k.wrapped_key FROM pandokos.tenant_data_key k
+ WHERE k.kek_version <> $1::text ORDER BY k.version FOR UPDATE
+`
+
+type LockDataKeysForRewrapRow struct {
+	Version    int32
+	KekVersion string
+	WrappedKey []byte
+}
+
+// Scope: worker, session of the tenant
+func (q *Queries) LockDataKeysForRewrap(ctx context.Context, active string) ([]LockDataKeysForRewrapRow, error) {
+	rows, err := q.db.Query(ctx, lockDataKeysForRewrap, active)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LockDataKeysForRewrapRow{}
+	for rows.Next() {
+		var i LockDataKeysForRewrapRow
+		if err := rows.Scan(&i.Version, &i.KekVersion, &i.WrappedKey); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const retireKEKVersions = `-- name: RetireKEKVersions :one
+SELECT pandokos.kek_retire()::integer AS retired
+`
+
+// Scope: worker, platform scope
+func (q *Queries) RetireKEKVersions(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, retireKEKVersions)
+	var retired int32
+	err := row.Scan(&retired)
+	return retired, err
+}
+
+const rewrapDataKey = `-- name: RewrapDataKey :execrows
+UPDATE pandokos.tenant_data_key
+   SET kek_version = $1::text, wrapped_key = $2::bytea
+ WHERE version = $3::integer AND kek_version = $4::text
+`
+
+type RewrapDataKeyParams struct {
+	KekVersion    string
+	WrappedKey    []byte
+	Version       int32
+	OldKekVersion string
+}
+
+// Scope: worker, session of the tenant
+func (q *Queries) RewrapDataKey(ctx context.Context, arg RewrapDataKeyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, rewrapDataKey,
+		arg.KekVersion,
+		arg.WrappedKey,
+		arg.Version,
+		arg.OldKekVersion,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
