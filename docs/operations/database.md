@@ -384,8 +384,10 @@ Migration `0006_usage_ledger` adds the usage ledger ([usage guide](usage.md)): t
 - The only foreign key is `tenant_id`: a row outlives the key, the credential, the model and the
   price it names.
 - Rows are written in the tenant's session, one transaction per tenant and batch.
-- Nothing in the product reads the ledger yet; the `SELECT` grants exist so that a later release
-  needs no migration.
+- The ledger is read in the tenant's session only: by the worker for the usage rollup and the
+  reconciliation of the limit counters, and by the administration API for `usage list`, the export of
+  usage records and the part of a report that the rollup has not reached yet ([usage.md](usage.md#10-who-reads-usage),
+  [section 20](#20-grants-of-migration-0015))..
 
 ### Usage partitions
 
