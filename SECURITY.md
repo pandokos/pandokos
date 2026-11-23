@@ -43,4 +43,4 @@ Keys issued by Pandokos have a recognizable format; a leaked key matches the pat
 
 ## Supported versions
 
-Pandokos is not yet at 1.0, so only the latest minor version is supported (see [CONTRIBUTING.md](CONTRIBUTING.md)): today that is `0.1`, released as `v0.1.1` and maintained on the branch `release/0.1`. The `main` branch holds the development of the next version. A fix for the supported version is released as a new patch version of its maintenance branch.
+Pandokos is not yet at 1.0, so only the latest minor version is supported (see [CONTRIBUTING.md](CONTRIBUTING.md)): today that is `0.2`, released as `v0.2.0` and maintained on the branch `release/0.2` (created from the tag). `0.1` (`v0.1.1`, branch `release/0.1`) is no longer supported: upgrade to `0.2` as its [release page](docs/releases/v0.2.0.md#upgrade-notes) says. The `main` branch holds the development of the next version. A fix for the supported version is released as a new patch version of its maintenance branch.

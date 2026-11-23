@@ -418,6 +418,6 @@ func TestReportsDocuments(t *testing.T) {
 		"limits", "price_lists", "pandokos export", "pandokos apply", "--dry-run")
 	check("docs/operations/configuration.md", "reports.rollup_interval", "retention.usage_months", "retention.audit_months",
 		"PANDOKOS_REPORTS_ROLLUP_INTERVAL", "PANDOKOS_RETENTION_USAGE_MONTHS", "PANDOKOS_RETENTION_AUDIT_MONTHS")
-	check("docs/releases/v0.2.0-draft.md", "audit:read", "platform_audit:read", "reports.rollup_interval", "retention.usage_months", "retention.audit_months", "0015",
+	check("docs/releases/v0.2.0.md", "audit:read", "platform_audit:read", "reports.rollup_interval", "retention.usage_months", "retention.audit_months", "0015",
 		"pandokos audit verify", "pandokos export", "pandokos apply", "index")
 }

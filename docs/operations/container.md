@@ -6,8 +6,8 @@ product yet. It is not for production. It needs a PostgreSQL 16 database, and no
 
 ## The image
 
-- Name: `ghcr.io/pandokos/pandokos`. Tags on release: the version without `v` (`0.1.1`); for a
-  release that is not a pre-release also `0.1` and `latest`.
+- Name: `ghcr.io/pandokos/pandokos`. Tags on release: the version without `v` (`0.2.0`); for a
+  release that is not a pre-release also `0.2` and `latest`.
 - Platforms: `linux/amd64` and `linux/arm64`, one image index.
 - Base: `gcr.io/distroless/static-debian13:nonroot`. The image holds one file, `/pandokos`. No shell
   and no package manager.

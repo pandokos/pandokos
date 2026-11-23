@@ -271,8 +271,8 @@ func TestLifecycleDocuments(t *testing.T) {
 			"vault.kek.local.unwrap_key_files", "PANDOKOS_VAULT_KEK_LOCAL_UNWRAP_KEY_FILES")
 	})
 	t.Run("the release notes", func(t *testing.T) {
-		doc := read(t, "docs/releases/v0.2.0-draft.md")
-		has(t, "v0.2.0-draft.md", doc, "tenant:delete", "kek:read", "tenant_deletion.grace_period", "tenant_deletion.interval", "vault.kek.local.unwrap_key_files",
+		doc := read(t, "docs/releases/v0.2.0.md")
+		has(t, "v0.2.0.md", doc, "tenant:delete", "kek:read", "tenant_deletion.grace_period", "tenant_deletion.interval", "vault.kek.local.unwrap_key_files",
 			"seven operations", "0016_tenant_deletion_kek_rotation", "VLT-11", "kek_activation", "pandokos tenant delete", "pandokos tenant-export", "M47")
 	})
 	t.Run("the failure reference", func(t *testing.T) {
