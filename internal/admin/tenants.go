@@ -96,7 +96,7 @@ func (s *server) CreateTenant(ctx context.Context, in adminapi.CreateTenantInput
 		}
 		err = s.db.Provision(ctx, func(ctx context.Context, tx store.Tx, bind func(context.Context, tenant.ID) error) error {
 			q := queries.New(tx)
-			t, err := q.CreateTenant(ctx, queries.CreateTenantParams{Name: b.Name, DisplayName: b.DisplayName, TimeZone: b.TimeZone})
+			t, err := q.CreateTenant(ctx, queries.CreateTenantParams{Name: b.Name, DisplayName: b.DisplayName, TimeZone: b.TimeZone, ExternalReference: b.ExternalReference})
 			if err != nil {
 				return err
 			}
@@ -153,7 +153,7 @@ func (s *server) CreateTenant(ctx context.Context, in adminapi.CreateTenantInput
 				return err
 			}
 			if err := audit.RecordPlatform(ctx, tx, audit.Event{Actor: actor, Action: "tenant.create", ResourceType: "tenant", ResourceID: t.ID,
-				Outcome: "success", RequestID: st.id, Detail: map[string]any{"name": b.Name, "display_name": b.DisplayName, "time_zone": b.TimeZone,
+				Outcome: "success", RequestID: st.id, Detail: map[string]any{"name": b.Name, "display_name": b.DisplayName, "time_zone": b.TimeZone, "external_reference": b.ExternalReference,
 					"admin_service_account_id": sa.ID, "admin_key_id": keyID}}); err != nil {
 				return err
 			}
@@ -187,8 +187,8 @@ func (s *server) CreateTenant(ctx context.Context, in adminapi.CreateTenantInput
 func (s *server) UpdateTenant(ctx context.Context, in adminapi.UpdateTenantInput) (*adminapi.Tenant, error) {
 	p := principalOf(ctx)
 	st := stateOf(ctx)
-	if !in.Body.Name.Set && !in.Body.DisplayName.Set && !in.Body.TimeZone.Set {
-		return nil, invalid("body", "must change the name, the display name or the time zone")
+	if !in.Body.Name.Set && !in.Body.DisplayName.Set && !in.Body.TimeZone.Set && !in.Body.ExternalReference.Set {
+		return nil, invalid("body", "must change the name, the display name, the time zone or the external reference")
 	}
 	if in.Body.TimeZone.Set {
 		if err := s.checkZone(in.Body.TimeZone.Value); err != nil {
@@ -218,8 +218,13 @@ func (s *server) UpdateTenant(ctx context.Context, in adminapi.UpdateTenantInput
 			par.SetDisplayName, par.DisplayName = true, in.Body.DisplayName.Value
 			detail["display_name"] = change(cur.DisplayName, in.Body.DisplayName.Value)
 		}
+		if in.Body.ExternalReference.Set && in.Body.ExternalReference.Value != cur.ExternalReference {
+			v := in.Body.ExternalReference.Value
+			par.ExternalReference = &v
+			detail["external_reference"] = change(cur.ExternalReference, v)
+		}
 		upd := cur
-		if par.SetName || par.SetDisplayName {
+		if par.SetName || par.SetDisplayName || par.ExternalReference != nil {
 			if upd, err = q.UpdateTenant(ctx, par); err != nil {
 				return err
 			}

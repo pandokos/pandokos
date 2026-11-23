@@ -29,6 +29,10 @@ const (
 	exportPlatformAudit = "platform_audit"
 	// exportDeletedTenantAudit is the log kept for a deleted tenant.
 	exportDeletedTenantAudit = "deleted_tenant_audit"
+	// exportEvent and exportPlatformEvent are the pull exports of the events of a tenant and of the
+	// platform (sprint 6.4).
+	exportEvent         = "event"
+	exportPlatformEvent = "platform_event"
 )
 
 // exportPageFn reads the next page of an export into buf (with the header of a CSV when first) and
