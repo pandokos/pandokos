@@ -191,6 +191,51 @@ func TestTenantDeletionRequest(t *testing.T) {
 		}
 	})
 
+	t.Run("the cancel locks the deletion before the tenant, as the step does", func(t *testing.T) {
+		x, _ := api.Tenant(t, apitest.UniqueName("del-lock"))
+		plat.Do(t, "POST", deletionPath(x.ID), map[string]any{"reason": reason, "confirm_name": x.Name}, nil)
+		// The step's order: the row of the deletion, then the tenant. While a transaction holds the
+		// first, a cancel waits for it holding nothing it needs next; with the reverse order the two
+		// would deadlock.
+		step, err := api.DB.Super(t).Begin(ctx(t))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = step.Rollback(ctx(t)) }()
+		if _, err := step.Exec(ctx(t), `SELECT 1 FROM pandokos.tenant_deletion WHERE tenant_id = $1::uuid FOR UPDATE`, x.ID); err != nil {
+			t.Fatal(err)
+		}
+		answered := make(chan *apitest.Response, 1)
+		go func() {
+			answered <- plat.Do(t, "POST", deletionPath(x.ID)+"/cancel", map[string]any{"reason": reason}, nil)
+		}()
+		waiting := false
+		for i := 0; i < 200 && !waiting; i++ {
+			time.Sleep(25 * time.Millisecond)
+			waiting = api.DB.Count(t, `SELECT count(*)::int FROM pg_catalog.pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`) > 0
+		}
+		if !waiting {
+			t.Fatal("the cancel never waited for the row of the deletion")
+		}
+		if _, err := step.Exec(ctx(t), `SET LOCAL lock_timeout = '3s'`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := step.Exec(ctx(t), `SELECT 1 FROM pandokos.tenant WHERE id = $1::uuid FOR NO KEY UPDATE`, x.ID); err != nil {
+			t.Errorf("the step's second lock, the tenant, while the cancel waits: %v (the cancel holds the tenant)", err)
+		}
+		if err := step.Commit(ctx(t)); err != nil {
+			t.Logf("the step's transaction: %v", err)
+		}
+		select {
+		case r := <-answered:
+			if r.Status != 200 {
+				t.Errorf("the cancel after the step's transaction: %d %s, want 200", r.Status, r.Body)
+			}
+		case <-time.After(20 * time.Second):
+			t.Fatal("the cancel did not answer")
+		}
+	})
+
 	t.Run("a deletion that started cannot be cancelled", func(t *testing.T) {
 		x, _ := api.Tenant(t, apitest.UniqueName("del-running"))
 		api.DB.BeginDeletion(t, parseTenant(t, x.ID))

@@ -152,14 +152,16 @@ func (s *server) CancelTenantDeletion(ctx context.Context, in adminapi.CancelTen
 	var out adminapi.Tenant
 	err := s.db.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
 		q := queries.New(tx)
+		// The row of the deletion first, then the tenant: the order of tenant_erasure_step, so that a
+		// cancel and the first step wait for each other instead of deadlocking.
+		n, err := q.DeleteScheduledTenantDeletion(ctx, in.Tenant)
+		if err != nil {
+			return err
+		}
 		cur, err := q.GetTenantForUpdate(ctx, in.Tenant)
 		if isNoRowsErr(err) {
 			return errNotFound
 		}
-		if err != nil {
-			return err
-		}
-		n, err := q.DeleteScheduledTenantDeletion(ctx, cur.ID)
 		if err != nil {
 			return err
 		}
