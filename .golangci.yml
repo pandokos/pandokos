@@ -308,6 +308,7 @@ linters:
             - github.com/pandokos/pandokos/internal/auditchain
             - github.com/pandokos/pandokos/internal/declare
             - github.com/pandokos/pandokos/internal/tenantexport # the export and its schema: a client of the API too
+            - github.com/pandokos/pandokos/internal/outbox/schema # the event schemas, a leaf package: "pandokos event schema" prints them offline
         vault-is-below-the-planes:
           list-mode: lax
           files:

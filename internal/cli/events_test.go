@@ -246,13 +246,13 @@ func TestEventCommands(t *testing.T) {
 		if stdout, _ := mustRun(t, r, "event", "export", "--tenant", tid); stdout != "{\"sequence\":\"1\"}\n{\"sequence\":\"2\"}\n" {
 			t.Errorf("without --out the lines go to standard output: %q", stdout)
 		}
-		if got := r.f.only(t, "exportEvents"); !reflect.DeepEqual(got, adminapi.ExportEventsInput{Tenant: tid}) {
+		if got := r.f.only(t, "exportEvents"); !reflect.DeepEqual(got, adminapi.ExportEventsInput{Tenant: tid, Limit: 1000}) { // the API fills its default page size, 1000
 			t.Errorf("a flag that was not given was sent: %+v", got)
 		}
 		r = newRig(t)
 		r.f.streamState().streams["exportPlatformEvents"] = "{\"sequence\":\"9\"}\n"
 		out2, _ := mustRun(t, r, "platform-event", "export", "--after", "8", "--type", "io.pandokos.tenant.deleted.v1")
-		if got := r.f.only(t, "exportPlatformEvents"); !reflect.DeepEqual(got, adminapi.ExportPlatformEventsInput{After: 8, Type: []adminapi.PlatformEventType{adminapi.PlatformEventTypeIoPandokosTenantDeletedV1}}) || out2 != "{\"sequence\":\"9\"}\n" {
+		if got := r.f.only(t, "exportPlatformEvents"); !reflect.DeepEqual(got, adminapi.ExportPlatformEventsInput{After: 8, Limit: 1000, Type: []adminapi.PlatformEventType{adminapi.PlatformEventTypeIoPandokosTenantDeletedV1}}) || out2 != "{\"sequence\":\"9\"}\n" {
 			t.Errorf("platform-event export: %+v %q", got, out2)
 		}
 	})

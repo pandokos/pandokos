@@ -141,6 +141,9 @@ func TestEventReference(t *testing.T) {
 	}
 	for _, e := range entries {
 		name := e.Name()
+		if name == "schema.go" { // the leaf package that embeds the files
+			continue
+		}
 		if !strings.HasSuffix(name, ".schema.json") {
 			t.Errorf("internal/outbox/schema/%s is not a schema file", name)
 			continue

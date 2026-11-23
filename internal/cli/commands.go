@@ -115,6 +115,7 @@ var commands = []command{
 		expires := fs.String("admin-key-expires-at", "", "expiry of the first key (RFC 3339)")
 		keyFile := fs.String("admin-key-out", "", "write the first key to this new file")
 		zone := fs.String("time-zone", "", "IANA time zone of the tenant's days and months (default: the installation's)")
+		extRef := fs.String("external-reference", "", "your own identifier of the tenant, carried by its events")
 		pos, err := parse(fs, args, 1)
 		if err != nil {
 			return err
@@ -131,7 +132,7 @@ var commands = []command{
 			return err
 		}
 		res, err := a.client.CreateTenant(a.ctx, adminapi.CreateTenantInput{Body: adminapi.TenantCreate{
-			Name: pos[0], DisplayName: *display, TimeZone: *zone, AdminServiceAccountName: *adminName, AdminKeyExpiresAt: exp}})
+			Name: pos[0], DisplayName: *display, TimeZone: *zone, AdminServiceAccountName: *adminName, AdminKeyExpiresAt: exp, ExternalReference: *extRef}})
 		if err != nil {
 			out.abandon()
 			return err
@@ -169,14 +170,18 @@ var commands = []command{
 		name := fs.String("name", "", "new name")
 		display := fs.String("display-name", "", "new display name")
 		zone := fs.String("time-zone", "", "new IANA time zone; empty is the installation's default (takes effect at the start of the next month)")
+		extRef := fs.String("external-reference", "", "your own identifier of the tenant; empty clears it")
 		pos, err := a.begin(fs, args, 1)
 		if err != nil {
 			return err
 		}
-		if *name == "" && *display == "" && !given(fs, "time-zone") {
-			return usagef("tenant update needs --name, --display-name or --time-zone")
+		if *name == "" && *display == "" && !given(fs, "time-zone") && !given(fs, "external-reference") {
+			return usagef("tenant update needs --name, --display-name, --time-zone or --external-reference")
 		}
 		body := adminapi.TenantUpdate{Name: nonEmpty(*name), DisplayName: nonEmpty(*display)}
+		if given(fs, "external-reference") {
+			body.ExternalReference = adminapi.Some(*extRef)
+		}
 		if given(fs, "time-zone") {
 			body.TimeZone = adminapi.Some(*zone)
 		}

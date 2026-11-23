@@ -47,6 +47,10 @@ Commands:
   member list|add|get|update|remove|disable|enable|reset-password|unlock|revoke-sessions
   permission list
   role builtin|list|create|get|update|deactivate|activate|delete
+  event-destination list|create|get|update|delete|rotate-secret|test|rewind|dead-letters|replay
+  event export --tenant ID [--after N] [--limit N] [--type T] [--out FILE]
+  event schema [TYPE]              Print the JSON Schema of an event type (needs no server)
+  platform-event export [--after N] [--limit N] [--type T] [--out FILE]
   tenant-support open|list|get|close
   support-action list|get|end
                                    Administer through the administration API;
