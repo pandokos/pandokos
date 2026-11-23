@@ -207,8 +207,8 @@ has 167 operations. The first six are under the tag `tenants`, `listKEKVersions`
   `backup_erasure` (`state`: `not_applicable` before the step `secrets` ran, then `pending` or
   `complete`; and `pending_kek_versions`),
   `audit` (`anchor_seq`, `last_seq`, `rows`, `original_head`, `resealed_head`; absent before the step
-  `audit` ran) and `completion_seq`. The salt of the pseudonyms is in no answer. After a restart of the
-  worker `step` can read `unknown` until the next step runs.
+  `audit` ran) and `completion_seq`. The salt of the pseudonyms is in no answer. `step` is the step the
+  database records.
 - **The kept log.** The two operations of `platform_audit:read` answer `409 invalid_state` until the
   tenant is `deleted`. They read the rewritten log, which holds pseudonyms and no detail, no price and no
   person; the schema of the export is the one of `exportAuditEvents`.

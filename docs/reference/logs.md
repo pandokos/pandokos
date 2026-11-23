@@ -603,7 +603,7 @@ The last step of a tenant deletion answered done; `duration_ms` is the time sinc
 Level: warn
 Fields: `step`, `error_class`, `sqlstate`, `failures`
 
-A step of a tenant deletion failed; the next tick runs it again, from where the database left it. At most once a minute. Check the database, then `tenant deletion list`.
+A step of a tenant deletion failed; the next tick runs it again, from where the database left it. At most once a minute. `step` is the step the call ran: `begin`, `access`, `secrets`, `configuration`, `usage`, `audit` or `complete`, or `unknown` when the worker restarted after the deletion started and has had no answer of the step function since (the API reads the step from the database and never shows `unknown`). Check the database, then `tenant deletion list`.
 
 ### `tenant deletion recovered`
 

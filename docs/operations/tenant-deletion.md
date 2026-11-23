@@ -134,10 +134,11 @@ log with the head `resealed_head` and the last row `tenant.delete`; a log that r
 empty when the anchor is `last_seq + 1`. It exits 0, or exits 1 with one line per failure:
 `record_missing`, `record_mismatch`, `platform_chain_break`, `tenant_chain_break`, `head_mismatch`.
 
-`pandokos tenant deletion get` also shows `step`, `passes` and `removed` while it runs. After a restart of
-the worker the step can read `unknown` until the next step runs. A deletion that keeps failing shows in
-the gauge `pandokos.tenant_deletion.open` (M48), the counter `pandokos.tenant_deletion.steps` by result
-(M47) and the log line `tenant deletion failing` (at most once a minute; `tenant deletion recovered` after);
+`pandokos tenant deletion get` also shows `step`, `passes` and `removed` while it runs; `step` is the one
+the database records, never unknown. A deletion that keeps failing shows in the gauge
+`pandokos.tenant_deletion.open` (M48), the counter `pandokos.tenant_deletion.steps` by result (M47) and the
+log line `tenant deletion failing` (at most once a minute; `tenant deletion recovered` after), whose `step`
+reads `unknown` when the worker has restarted since the deletion started and has not yet seen a step answer;
 lines `tenant deletion started` and `tenant deletion completed` carry the request ID, never the tenant.
 Check the database, then `tenant deletion list`; the job tries the step again at every tick.
 
