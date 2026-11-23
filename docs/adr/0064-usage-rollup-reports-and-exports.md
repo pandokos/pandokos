@@ -1,6 +1,6 @@
 # 0064. Usage rollup, reports and exports
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-23
 
 Refines [ADR 0013](0013-ledger-and-audit.md), [ADR 0051](0051-period-counters-and-the-ledger.md),
@@ -50,3 +50,4 @@ the schema lint (L-02).
 ## History
 
 - 2026-11-23: proposed with sprint 6.2.
+- 2026-11-23: accepted by the maintainer after review.

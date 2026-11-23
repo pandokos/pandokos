@@ -55,6 +55,7 @@ type flowState struct {
 	tokenDelay                 time.Duration
 	tokenRedirect              string
 	callbackError, callbackIss *string
+	redirectURIs               []string
 	lastCode, lastIDToken      string
 	requests                   []TokenRequest
 	tokenRequests              atomic.Int64
@@ -83,6 +84,27 @@ func (s *Server) initFlow() {
 		f.signInAs = sub
 		break
 	}
+}
+
+// RegisterRedirectURI adds uri to the redirect URIs of the client, as at a real provider: the
+// authorization endpoint refuses a redirect_uri that is not one of them, compared exactly, and
+// redirects only to the registered value.
+func (s *Server) RegisterRedirectURI(uri string) {
+	s.flow.mu.Lock()
+	defer s.flow.mu.Unlock()
+	s.flow.redirectURIs = append(s.flow.redirectURIs, uri)
+}
+
+// registered returns the registered redirect URI equal to uri, or "" when there is none.
+func (f *flowState) registered(uri string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, r := range f.redirectURIs {
+		if r == uri {
+			return r
+		}
+	}
+	return ""
 }
 
 // ClientID returns the client ID that the token endpoint accepts.
@@ -225,8 +247,11 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		bad("state and nonce")
 		return
 	}
-	redirect, err := url.Parse(q.Get("redirect_uri"))
-	if err != nil || redirect.Host == "" || redirect.Fragment != "" || (redirect.Scheme != "https" && redirect.Scheme != "http") {
+	// Only a registered redirect URI, and the address redirected to is built from the registered
+	// value, never from the request.
+	target := s.flow.registered(q.Get("redirect_uri"))
+	redirect, err := url.Parse(target)
+	if target == "" || err != nil || redirect.Host == "" || redirect.Fragment != "" || (redirect.Scheme != "https" && redirect.Scheme != "http") {
 		bad("redirect_uri")
 		return
 	}
@@ -234,7 +259,7 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	cbErr, cbIss, subject := s.flow.callbackError, s.flow.callbackIss, s.flow.signInAs
 	code := "code-" + randomToken(s.tb, 20)
 	if cbErr == nil {
-		s.flow.codes[code] = &issuedCode{subject: subject, redirectURI: q.Get("redirect_uri"), challenge: q.Get("code_challenge"), nonce: q.Get("nonce"), at: time.Now()}
+		s.flow.codes[code] = &issuedCode{subject: subject, redirectURI: target, challenge: q.Get("code_challenge"), nonce: q.Get("nonce"), at: time.Now()}
 		s.flow.lastCode = code
 	}
 	s.flow.mu.Unlock()
@@ -247,11 +272,12 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	if cbIss != nil {
 		out.Set("iss", *cbIss)
 	}
-	sep := "?"
-	if redirect.RawQuery != "" {
-		sep = "&"
+	query := redirect.Query()
+	for k, v := range out {
+		query[k] = v
 	}
-	http.Redirect(w, r, redirect.String()+sep+out.Encode(), http.StatusSeeOther)
+	redirect.RawQuery = query.Encode()
+	http.Redirect(w, r, redirect.String(), http.StatusSeeOther)
 }
 
 func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {

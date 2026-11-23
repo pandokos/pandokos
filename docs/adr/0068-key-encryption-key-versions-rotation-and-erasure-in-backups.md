@@ -1,6 +1,6 @@
 # 0068. Key-encryption key versions: activation, re-wrap, retirement, and erasure in backups
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-23
 
 Refines [ADR 0008](0008-vault-envelope-encryption.md) and [ADR 0033](0033-vault-formats-and-key-identifiers.md);
@@ -89,3 +89,4 @@ disk.
 ## History
 
 - 2026-11-23: proposed with sprint 6.3.
+- 2026-11-23: accepted by the maintainer after review.
