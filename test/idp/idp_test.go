@@ -701,7 +701,10 @@ func TestAuthentikTokenShape(t *testing.T) {
 	}
 	iat, _ := pl["iat"].(float64)
 	exp, _ := pl["exp"].(float64)
-	if _, ok := pl["nbf"]; ok || exp-iat != 300 || pl["azp"] != authentikAudience {
+	// Authentik reads the clock once for exp and once for iat, so a second boundary between the two
+	// gives a life of 299 s (seen in CI); anything else means the lifetime of the provider changed.
+	_, hasNbf := pl["nbf"]
+	if life := exp - iat; hasNbf || (life != 300 && life != 299) || pl["azp"] != authentikAudience {
 		t.Errorf("claims %v: want no nbf, a life of 300 s and azp the client ID", pl)
 	}
 	// The key set at the discovery's jwks_uri (Authentik's own path), every key for signing.
