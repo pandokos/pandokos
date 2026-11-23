@@ -101,7 +101,7 @@ func TestUpgrade0015(t *testing.T) {
 	wantP := order(`SELECT id::text FROM pandokos.platform_audit_event ORDER BY occurred_at, id`)
 	beforeTenant, beforePlatform := snap("audit_event", ""), snap("platform_audit_event", "")
 
-	d.Migrate(t)
+	d.MigrateTo(t, 15) // its own version: the later migrations and the activation of a key version change the platform log
 
 	read := func(scope string, sql string, args ...any) ([]auditchain.Row, []string) {
 		t.Helper()

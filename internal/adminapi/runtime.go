@@ -573,6 +573,17 @@ func (c *Client) do(ctx context.Context, method, path string, q url.Values, body
 	return nil
 }
 
+// GetRaw calls a GET that answers 200 with a JSON object and returns the body as received, without
+// decoding it into a type: a copy of what the API says, member for member (the tenant data export
+// writes it unchanged). The path is the one of the document with its parameters filled in.
+func (c *Client) GetRaw(ctx context.Context, path string, q url.Values) (json.RawMessage, error) {
+	var out json.RawMessage
+	if err := c.do(ctx, http.MethodGet, path, q, nil, http.StatusOK, &out, nil); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // doRedirect calls a public GET that answers 303 and returns its Location; it does not follow it.
 func (c *Client) doRedirect(ctx context.Context, method, path string, q url.Values) (string, error) {
 	u := strings.TrimSuffix(c.BaseURL, "/") + path
@@ -737,12 +748,12 @@ type StreamBody struct {
 }
 
 // doStream calls a GET whose success is streamed. A non-200 answer is decoded as a problem.
-func (c *Client) doStream(ctx context.Context, method, path string, q url.Values, accept string) (*StreamBody, error) {
+func (c *Client) doStream(ctx context.Context, path string, q url.Values, accept string) (*StreamBody, error) {
 	u := strings.TrimSuffix(c.BaseURL, "/") + path
 	if len(q) > 0 {
 		u += "?" + q.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, method, u, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("adminapi: %w", err)
 	}

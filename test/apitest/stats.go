@@ -12,6 +12,9 @@ type AdminCounts struct {
 	SupportOpened int64
 	SupportEnded  map[string]int64 // by cause: closed, ended
 	OIDC          map[string]int64 // by result: ok, refused, unavailable
+	// ExportsComplete and ExportsAborted count the exports (M46) by kind: usage, audit, platform_audit
+	// and, since sprint 6.3, deleted_tenant_audit.
+	ExportsComplete, ExportsAborted map[string]int64
 }
 
 // AdminStats calls Stats() of the handler admin.New returned and reads the snapshot by field name:
@@ -41,6 +44,13 @@ func (a *API) AdminStats(tb testing.TB) AdminCounts {
 	out := AdminCounts{GrantsRefused: field("GrantsRefused").Int(), SupportOpened: field("SupportOpened").Int(), SupportEnded: map[string]int64{}, OIDC: map[string]int64{}}
 	for _, k := range field("SupportEnded").MapKeys() {
 		out.SupportEnded[k.String()] = field("SupportEnded").MapIndex(k).Int()
+	}
+	out.ExportsComplete, out.ExportsAborted = map[string]int64{}, map[string]int64{}
+	for name, into := range map[string]map[string]int64{"ExportsComplete": out.ExportsComplete, "ExportsAborted": out.ExportsAborted} {
+		f := field(name)
+		for _, k := range f.MapKeys() {
+			into[k.String()] = f.MapIndex(k).Int()
+		}
 	}
 	attempts := field("SignIn").FieldByName("Attempts")
 	if !attempts.IsValid() {

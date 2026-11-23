@@ -10,7 +10,7 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | Permission | Scope | Attributes | Allows | Operations | Held by |
 |---|---|---|---|---|---|
 | `identity:read` | self | - | Reading one's own identity, roles and permissions | `getMe`, `listBuiltinRoles`, `listPermissions` | `owner`, `tenant-admin`, `credential-manager`, `usage-viewer`, `auditor`, `developer`, `read-only`, `platform-admin`, `platform-auditor` |
-| `tenant:read` | platform | - | Reading and listing tenants, with their time zone and active currency | `getTenant`, `listTenants` | `platform-admin`, `platform-auditor` |
+| `tenant:read` | platform | - | Reading and listing tenants, with their time zone, their active currency and their deletion | `getTenant`, `getTenantDeletion`, `listTenantDeletions`, `listTenants` | `platform-admin`, `platform-auditor` |
 | `tenant:write` | platform | - | Creating a tenant with its first administrator; changing its name and display name | `createTenant`, `updateTenant` | `platform-admin` |
 | `tenant:suspend` | platform | - | Suspending and reactivating a tenant | `reactivateTenant`, `suspendTenant` | `platform-admin` |
 | `platform_key:read` | platform | - | Reading and listing platform keys (metadata) | `getPlatformKey`, `listPlatformKeys` | `platform-admin`, `platform-auditor` |
@@ -68,7 +68,9 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | `tenant_support:open` | platform | in tenant | Opening a support action in a tenant, with a reason, and closing support actions | `closeSupportAction`, `openSupportAction` | `platform-admin` |
 | `tenant_support:read` | platform | in tenant | Reading and listing the support actions of a tenant | `getTenantSupportAction`, `listTenantSupportActions` | `platform-admin`, `platform-auditor` |
 | `audit:read` | tenant | - | Reading the tenant's audit log, the head of its chain and its export | `exportAuditEvents`, `getAuditHead`, `listAuditEvents` | `owner`, `tenant-admin`, `auditor` |
-| `platform_audit:read` | platform | - | Reading the platform's audit log, the head of its chain and its export | `exportPlatformAuditEvents`, `getPlatformAuditHead`, `listPlatformAuditEvents` | `platform-admin`, `platform-auditor` |
+| `platform_audit:read` | platform | - | Reading the platform's audit log, the head of its chain and its export | `exportDeletedTenantAuditEvents`, `exportPlatformAuditEvents`, `getDeletedTenantAuditHead`, `getPlatformAuditHead`, `listPlatformAuditEvents` | `platform-admin`, `platform-auditor` |
+| `tenant:delete` | platform | - | Requesting and cancelling the deletion of a tenant, with a reason | `cancelTenantDeletion`, `requestTenantDeletion` | `platform-admin` |
+| `kek:read` | platform | - | Reading the versions of the key-encryption key and their state | `listKEKVersions` | `platform-admin`, `platform-auditor` |
 
 ## Built-in roles
 
@@ -82,8 +84,8 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | `developer` | tenant | yes | Issues virtual keys and calls models | `credential:read`, `credential:use`, `identity:read`, `limit:read`, `model:invoke`, `model:read`, `service_account:read`, `usage:read`, `virtual_key:read`, `virtual_key:revoke`, `virtual_key:write` |
 | `inference` | tenant | no | Calls models through the inference listener | `credential:use`, `model:invoke` |
 | `read-only` | tenant | yes | Reads everything of the tenant that can be read | `credential:read`, `identity:read`, `limit:read`, `member:read`, `model:read`, `price_list:read`, `role:read`, `service_account:read`, `subject_mapping:read`, `support_action:read`, `token_issuer:read`, `usage:read`, `virtual_key:read` |
-| `platform-admin` | platform | yes | Administers the installation: tenants and platform keys | `catalog:price`, `catalog:read`, `catalog:write`, `identity:read`, `metrics:read`, `platform_audit:read`, `platform_issuer:delete`, `platform_issuer:read`, `platform_issuer:write`, `platform_key:read`, `platform_key:revoke`, `platform_key:write`, `platform_limit:delete`, `platform_limit:read`, `platform_limit:write`, `tenant:read`, `tenant:suspend`, `tenant:write`, `tenant_credential:read`, `tenant_credential:revoke`, `tenant_support:open`, `tenant_support:read`, `user:read`, `user:write` |
-| `platform-auditor` | platform | yes | Reads the installation: tenants, keys, catalogue, issuers, limits, users, support actions and the platform's audit log | `catalog:read`, `identity:read`, `metrics:read`, `platform_audit:read`, `platform_issuer:read`, `platform_key:read`, `platform_limit:read`, `tenant:read`, `tenant_support:read`, `user:read` |
+| `platform-admin` | platform | yes | Administers the installation: tenants and platform keys | `catalog:price`, `catalog:read`, `catalog:write`, `identity:read`, `kek:read`, `metrics:read`, `platform_audit:read`, `platform_issuer:delete`, `platform_issuer:read`, `platform_issuer:write`, `platform_key:read`, `platform_key:revoke`, `platform_key:write`, `platform_limit:delete`, `platform_limit:read`, `platform_limit:write`, `tenant:delete`, `tenant:read`, `tenant:suspend`, `tenant:write`, `tenant_credential:read`, `tenant_credential:revoke`, `tenant_support:open`, `tenant_support:read`, `user:read`, `user:write` |
+| `platform-auditor` | platform | yes | Reads the installation: tenants, keys, catalogue, issuers, limits, users, support actions and the platform's audit log | `catalog:read`, `identity:read`, `kek:read`, `metrics:read`, `platform_audit:read`, `platform_issuer:read`, `platform_key:read`, `platform_limit:read`, `tenant:read`, `tenant_support:read`, `user:read` |
 
 ## Permissions by tenant role
 
@@ -129,7 +131,7 @@ default is deny: a request is allowed only when a role of the caller grants the 
 
 | Platform permission | `platform-admin` | `platform-auditor` | Allows |
 |---|---|---|---|
-| `tenant:read` | x | x | Reading and listing tenants, with their time zone and active currency |
+| `tenant:read` | x | x | Reading and listing tenants, with their time zone, their active currency and their deletion |
 | `tenant:write` | x | - | Creating a tenant with its first administrator; changing its name and display name |
 | `tenant:suspend` | x | - | Suspending and reactivating a tenant |
 | `platform_key:read` | x | x | Reading and listing platform keys (metadata) |
@@ -152,16 +154,20 @@ default is deny: a request is allowed only when a role of the caller grants the 
 | `tenant_support:open` | x | - | Opening a support action in a tenant, with a reason, and closing support actions |
 | `tenant_support:read` | x | x | Reading and listing the support actions of a tenant |
 | `platform_audit:read` | x | x | Reading the platform's audit log, the head of its chain and its export |
+| `tenant:delete` | x | - | Requesting and cancelling the deletion of a tenant, with a reason |
+| `kek:read` | x | x | Reading the versions of the key-encryption key and their state |
 
 ## Operations that require a reason
 
 The request body must carry a `reason` that is not empty after trimming; it is recorded in the audit log.
 
 - `activateRole`
+- `cancelTenantDeletion`
 - `deactivateRole`
 - `disableTenantCredential`
 - `openSupportAction`
 - `reactivateTenant`
+- `requestTenantDeletion`
 - `resetMemberPassword`
 - `resetUserPassword`
 - `revokeTenantCredential`

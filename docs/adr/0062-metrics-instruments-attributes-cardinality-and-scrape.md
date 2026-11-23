@@ -66,3 +66,4 @@ The conventions reserve it for counts obtained from the system.
 
 - 2026-11-22: proposed with sprint 6.1.
 - 2026-11-23: sprint 6.2: five instruments, M42 to M46, with no tenant attribute
+- 2026-11-23: sprint 6.3: five instruments, M47 to M51 (51 in all), with no tenant attribute: deletion steps and open deletions, re-wraps, key versions by state and pending erasures; two new values of `pandokos.retention.kind` and one of `pandokos.export.kind`.

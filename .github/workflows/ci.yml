@@ -89,12 +89,20 @@ jobs:
         with:
           go-version-file: .go-version
           cache-dependency-path: test/sdk/go.sum
+      - name: Start PostgreSQL and PgBouncer
+        run: |
+          sh test/db/up.sh
+          echo "::add-mask::$(cat local/testdb/postgres_password)"
+          cat local/testdb/env >> "$GITHUB_ENV"
       - run: go vet ./...
         working-directory: test/sdk
       - run: go mod tidy -diff
         working-directory: test/sdk
       - run: go test -race -count=1 -timeout 30m ./...
         working-directory: test/sdk
+      - name: Database logs
+        if: failure()
+        run: docker compose -f test/db/compose.yaml logs --no-color --tail 200
 
   idp:
     runs-on: ubuntu-24.04

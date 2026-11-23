@@ -63,6 +63,8 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 			"oidc_login":               {Reason: "sign-in transactions of the identity provider; platform scope only", Restricted: true},
 			"idempotency_key":          {Reason: "idempotency keys of create operations; a tenant's session sees its own, the platform scope those of the platform; protected by its own policies", Restricted: true},
 			"support_action":           {Reason: "Support actions of the platform inside tenants; protected by its own policies", Restricted: true},
+			"tenant_deletion":          {Reason: "the request and the progress of the deletion of a tenant; platform scope only; written by the erasure function", Restricted: true},
+			"tenant_closed":            {Reason: "the tenants that take no new row; a session reads its own tenant's row, the platform scope all; written by the erasure function", Restricted: true},
 			"membership_directory":     {Reason: "which tenants a user is a member of, for the lookup function; no runtime role has any privilege on it"},
 		},
 		Grants: map[string]map[string][]string{
@@ -73,12 +75,26 @@ func TestDefaultSpecMatchesDesign(t *testing.T) {
 			},
 			"kek_version": {
 				"pandokos_gateway": {"SELECT"},
-				"pandokos_admin":   {"INSERT(id,provider)", "SELECT"},
+				"pandokos_admin":   {"SELECT"},
 				"pandokos_worker":  {"SELECT"},
 			},
 			"tenant_data_key": {
 				"pandokos_gateway": {"SELECT"},
 				"pandokos_admin":   {"INSERT(kek_version,tenant_id,version,wrapped_key)", "SELECT"},
+				"pandokos_worker":  {"SELECT", "UPDATE(kek_version,wrapped_key)"},
+			},
+			"tenant_closed": {
+				"pandokos_gateway": {"SELECT"},
+				"pandokos_admin":   {"SELECT"},
+				"pandokos_worker":  {"SELECT"},
+			},
+			"tenant_deletion": {
+				"pandokos_admin": {
+					"DELETE",
+					"INSERT(not_before,reason,request_id,requested_by_id,requested_by_name,requested_by_type,tenant_id)",
+					"SELECT(audit,completed_at,completion_seq,kek_versions,not_before,passes,reason,removed,request_id,requested_at,requested_by_id,requested_by_name,requested_by_type,settle_at,started_at,state,step,tenant_id)",
+				},
+				"pandokos_worker": {"SELECT(kek_versions,not_before,request_id,started_at,state,step,tenant_id)"},
 			},
 			"provider_credential": {
 				"pandokos_gateway": {"SELECT"},
@@ -313,9 +329,8 @@ SELECT $1::uuid, sa.id, 't' || translate(substr(md5(random()::text), 1, 16), '01
 				Update: `description = 'changed'`,
 			},
 			"tenant_data_key": {
-				Insert: `WITH k AS (INSERT INTO pandokos.kek_version (id, provider) VALUES ('test-fixture', 'test') ON CONFLICT (id) DO NOTHING)
-INSERT INTO pandokos.tenant_data_key (tenant_id, kek_version, wrapped_key)
-VALUES ($1::uuid, 'test-fixture', decode(repeat('00', 61), 'hex')) RETURNING id::text`,
+				Insert: `INSERT INTO pandokos.tenant_data_key (tenant_id, kek_version, wrapped_key)
+SELECT $1::uuid, v.id, decode(repeat('00', 61), 'hex') FROM pandokos.kek_version v WHERE v.state = 'active' RETURNING id::text`,
 				Update: `wrapped_key = decode(repeat('11', 61), 'hex')`,
 			},
 			"provider_credential": {
@@ -429,7 +444,8 @@ SELECT r.price_version_id::text FROM r`,
 			"issuer_lookup", "platform_issuer_tenant_lookup", "record_token_auth_failure", "issuer_directory_sync", "platform_issuer_mapping_count",
 			"delete_platform_issuer_limit_rules", "record_unlimited_traffic",
 			"audit_seal_tenant", "audit_seal_platform", "platform_retention", "tenant_retention",
-			"membership_guard", "membership_directory_sync", "user_tenants", "platform_role_assignment_guard", "platform_user_lookup"},
+			"membership_guard", "membership_directory_sync", "user_tenants", "platform_role_assignment_guard", "platform_user_lookup",
+			"kek_activate", "kek_retire", "tenant_deletion_holds", "tenant_erasure_step", "deleted_tenant_retention"},
 		Views:      []string{"provider_credential_metadata"},
 		AppendOnly: []string{"audit_event", "platform_audit_event", "price_import", "usage_record", "limit_event"},
 	}
@@ -526,7 +542,32 @@ GRANT EXECUTE ON FUNCTION pandokos.zz_g() TO PUBLIC;`, rule: "L-14"},
 		{name: "append-only-wrong-function", ddl: `DROP TRIGGER audit_event_append_only ON pandokos.audit_event;
 CREATE TRIGGER audit_event_append_only BEFORE UPDATE OR DELETE ON pandokos.audit_event FOR EACH ROW EXECUTE FUNCTION pandokos.row_guard();`, rule: "L-17"},
 		{name: "definer-without-search-path", ddl: `ALTER FUNCTION pandokos.virtual_key_lookup(text) RESET search_path`, rule: "L-18"},
-		{name: "no-fixture", ddl: canonicalTable + ok, rule: "L-16", only: true},
+		{name: "definer-without-settings-off", ddl: `CREATE OR REPLACE FUNCTION pandokos.record_auth_failure(p_key_id text, p_reason text, p_request_id text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $$ BEGIN INSERT INTO pandokos.audit_event (tenant_id, actor_type, key_id, action, resource_type, resource_id, outcome, request_id)
+    VALUES ((SELECT pandokos.current_tenant_id()), 'anonymous', p_key_id, 'auth.failure', 'virtual_key', p_key_id, 'failure', p_request_id); END $$`, rule: "L-22"},
+		{name: "definer-without-restore", ddl: `CREATE OR REPLACE FUNCTION pandokos.virtual_key_directory_add() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
+BEGIN
+    INSERT INTO pandokos.virtual_key_directory (key_id, tenant_id) VALUES (NEW.key_id, NEW.tenant_id);
+    RETURN NULL;
+END $$`, rule: "L-22"},
+		{name: "guard-without-owner", ddl: `CREATE OR REPLACE FUNCTION pandokos.tenant_price_version_guard() RETURNS trigger
+    LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp
+AS $$ BEGIN
+    IF TG_OP = 'DELETE' AND pg_catalog.current_setting('pandokos.retention', true) IS DISTINCT FROM 'on' THEN
+        RAISE EXCEPTION 'no' USING ERRCODE = 'restrict_violation';
+    END IF;
+    RETURN OLD;
+END $$`, rule: "L-22"},
+		{name: "setting-policy-for-everybody", ddl: `CREATE POLICY zz_retention ON pandokos.service_account FOR SELECT USING (pg_catalog.current_setting('pandokos.retention', true) = 'on')`, rule: "L-22"},
+		{name: "new-definer-without-settings-off", ddl: `CREATE FUNCTION pandokos.zz_f() RETURNS integer LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, pg_temp RETURN 1`,
+			spec: func(s *Spec) { s.SecurityDefiner = append(s.SecurityDefiner, "zz_f") }, rule: "L-22"},
+		{name: "no-fixture", ddl: canonicalTable + ok + `CREATE TRIGGER zz_tenant_open BEFORE INSERT ON pandokos.zz FOR EACH STATEMENT EXECUTE FUNCTION pandokos.tenant_open();`, rule: "L-16", only: true},
+		{name: "no-tenant-open-trigger", ddl: canonicalTable + ok, rule: "L-21"},
 		{name: "stale-spec", spec: func(s *Spec) { s.Fixtures["gone"] = Fixture{Insert: "SELECT 1"} }, rule: "L-16"},
 	}
 	for _, r := range rows {

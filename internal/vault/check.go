@@ -12,12 +12,20 @@ import (
 	"github.com/pandokos/pandokos/internal/store/queries"
 )
 
+// The states of a key-encryption key version (migration 0016).
+const (
+	stateActive  = "active"
+	stateRetired = "retired"
+)
+
 // checkAAD is the fixed associated data of the self-test of Check.
 var checkAAD = []byte("pandokos/check/v1")
 
-// Check runs at start. It wraps and unwraps 32 random bytes, then requires every row of
-// kek_version to name p and to be Available. It returns the active key version for the log
-// line. A fresh database has no row and passes. It writes nothing.
+// Check runs at start. It wraps and unwraps 32 random bytes, then requires every version the
+// database still needs (state active or retiring; a retired version wraps no data key) to name p
+// and to be Available. It returns the active key version for the log
+// line. A fresh database has no row and passes. It writes nothing. When the provider's own version
+// is retiring or retired, it answers ErrKeyReplaced, naming that version and the active one.
 func Check(ctx context.Context, db *store.DB, p KeyProvider) (version string, err error) {
 	probe := make([]byte, dataKeyLen)
 	defer clear(probe)
@@ -46,7 +54,23 @@ func Check(ctx context.Context, db *store.DB, p KeyProvider) (version string, er
 	if err != nil {
 		return "", fmt.Errorf("vault: cannot read the key versions: %w", err)
 	}
+	// The configured version itself was replaced (retiring or retired): that is the cause to name,
+	// with the version that replaced it, whatever else the configuration lacks.
+	active := ""
 	for _, r := range rows {
+		if r.State == stateActive {
+			active = r.ID
+		}
+	}
+	for _, r := range rows {
+		if r.ID == version && r.State != stateActive {
+			return "", &replacedError{configured: version, active: active}
+		}
+	}
+	for _, r := range rows {
+		if r.State == stateRetired {
+			continue
+		}
 		if r.Provider != p.Name() || p.Available(ctx, r.ID) != nil {
 			return "", fmt.Errorf("the database holds data keys wrapped by key-encryption key version %s which this configuration does not provide; see docs/operations/vault.md", r.ID)
 		}

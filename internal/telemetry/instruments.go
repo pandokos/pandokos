@@ -104,6 +104,12 @@ var catalogue = []InstrumentSpec{
 	spec("pandokos.retention.removed", "OC", "{item}", "Items removed by retention, by kind.", AttrRetentionKind),
 	spec("pandokos.retention.runs", "OC", "{run}", "Runs of the retention job, by result.", resultAttr...),
 	spec("pandokos.exports", "OC", "{export}", "Usage and audit exports, by kind and result.", AttrExportKind, "pandokos.result"),
+
+	spec("pandokos.tenant_deletion.steps", "OC", "{step}", "Steps of tenant deletions that ran, by step and result.", AttrDeletionStep, "pandokos.result"),
+	spec("pandokos.tenant_deletion.open", "G", "{deletion}", "Tenant deletions not completed, by state: scheduled, running.", AttrDeletionState),
+	spec("pandokos.vault.rewraps", "OC", "{key}", "Data keys re-wrapped under the active key-encryption key version, by result.", resultAttr...),
+	spec("pandokos.vault.kek.versions", "G", "{version}", "Key-encryption key versions by state.", AttrKEKState),
+	spec("pandokos.vault.erasures.pending", "G", "{deletion}", "Completed tenant deletions whose backups stay readable until a key version is retired."),
 }
 
 // Catalogue returns the instrument catalogue: the table of the metrics reference.

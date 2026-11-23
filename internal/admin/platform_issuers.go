@@ -235,9 +235,6 @@ func (s *server) PutPlatformIssuerTenant(ctx context.Context, in adminapi.PutPla
 		if err != nil {
 			return err
 		}
-		if t.State == "deleting" || t.State == "deleted" {
-			return errNotFound
-		}
 		value := in.Body.ClaimValue
 		if value == "" {
 			value = t.ID

@@ -67,7 +67,7 @@ func Load(src Source) (*Config, []Warning, error) {
 	case PurposeMigrate, PurposeInit:
 		problems = append(problems, loadDatabaseSecrets(cfg, src.Purpose)...)
 	default:
-		problems = append(problems, loadSecrets(cfg)...)
+		problems = append(problems, loadSecrets(cfg, src.Purpose)...)
 		problems = append(problems, loadDatabaseSecrets(cfg, src.Purpose)...)
 	}
 

@@ -37,6 +37,8 @@ const (
 	TenantRead          = "tenant:read"
 	TenantWrite         = "tenant:write"
 	TenantSuspend       = "tenant:suspend"
+	TenantDelete        = "tenant:delete"
+	KEKRead             = "kek:read"
 	PlatformKeyRead     = "platform_key:read"
 	PlatformKeyWrite    = "platform_key:write"
 	PlatformKeyRevoke   = "platform_key:revoke"
@@ -104,7 +106,7 @@ const (
 
 var catalogue = []Permission{
 	{IdentityRead, ScopeSelf, "Reading one's own identity, roles and permissions", false, false},
-	{TenantRead, ScopePlatform, "Reading and listing tenants, with their time zone and active currency", false, false},
+	{TenantRead, ScopePlatform, "Reading and listing tenants, with their time zone, their active currency and their deletion", false, false},
 	{TenantWrite, ScopePlatform, "Creating a tenant with its first administrator; changing its name and display name", false, false},
 	{TenantSuspend, ScopePlatform, "Suspending and reactivating a tenant", false, false},
 	{PlatformKeyRead, ScopePlatform, "Reading and listing platform keys (metadata)", false, false},
@@ -163,6 +165,8 @@ var catalogue = []Permission{
 	{TenantSupportRead, ScopePlatform, "Reading and listing the support actions of a tenant", true, false},
 	{AuditRead, ScopeTenant, "Reading the tenant's audit log, the head of its chain and its export", false, false},
 	{PlatformAuditRead, ScopePlatform, "Reading the platform's audit log, the head of its chain and its export", false, false},
+	{TenantDelete, ScopePlatform, "Requesting and cancelling the deletion of a tenant, with a reason", false, false},
+	{KEKRead, ScopePlatform, "Reading the versions of the key-encryption key and their state", false, false},
 }
 
 // Catalogue returns the permissions, in a fixed order.

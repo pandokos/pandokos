@@ -63,6 +63,11 @@ var wantCatalogue = []want{
 	{"M44", "pandokos.retention.removed", "OC", "{item}", []string{"pandokos.retention.kind"}, "pandokos_retention_removed_total"},
 	{"M45", "pandokos.retention.runs", "OC", "{run}", []string{"pandokos.result"}, "pandokos_retention_runs_total"},
 	{"M46", "pandokos.exports", "OC", "{export}", []string{"pandokos.export.kind", "pandokos.result"}, "pandokos_exports_total"},
+	{"M47", "pandokos.tenant_deletion.steps", "OC", "{step}", []string{"pandokos.deletion.step", "pandokos.result"}, "pandokos_tenant_deletion_steps_total"},
+	{"M48", "pandokos.tenant_deletion.open", "G", "{deletion}", []string{"pandokos.deletion.state"}, "pandokos_tenant_deletion_open"},
+	{"M49", "pandokos.vault.rewraps", "OC", "{key}", []string{"pandokos.result"}, "pandokos_vault_rewraps_total"},
+	{"M50", "pandokos.vault.kek.versions", "G", "{version}", []string{"pandokos.kek.state"}, "pandokos_vault_kek_versions"},
+	{"M51", "pandokos.vault.erasures.pending", "G", "{deletion}", nil, "pandokos_vault_erasures_pending"},
 }
 
 // wantByName indexes wantCatalogue.
@@ -173,16 +178,28 @@ func fullSources() telemetry.Sources {
 		},
 		Reports: func() telemetry.ReportsStats {
 			return telemetry.ReportsStats{
-				Rollups:          map[string]int64{"ok": 61, "failed": 2},
-				RollupLag:        125 * time.Second,
-				RetentionRemoved: map[string]int64{"usage_partition": 3, "usage_record": 41, "usage_rollup": 17, "audit_event": 23, "platform_audit_event": 5},
-				RetentionRuns:    map[string]int64{"ok": 7, "failed": 1},
+				Rollups:   map[string]int64{"ok": 61, "failed": 2},
+				RollupLag: 125 * time.Second,
+				RetentionRemoved: map[string]int64{"usage_partition": 3, "usage_record": 41, "usage_rollup": 17, "audit_event": 23, "platform_audit_event": 5,
+					"deleted_tenant_usage_record": 6, "deleted_tenant_audit_event": 8},
+				RetentionRuns: map[string]int64{"ok": 7, "failed": 1},
 				Exports: map[telemetry.ExportKey]int64{
-					{Kind: "usage", Result: "complete"}:          11,
-					{Kind: "usage", Result: "aborted"}:           1,
-					{Kind: "audit", Result: "complete"}:          4,
-					{Kind: "platform_audit", Result: "complete"}: 2,
+					{Kind: "usage", Result: "complete"}:                11,
+					{Kind: "usage", Result: "aborted"}:                 1,
+					{Kind: "audit", Result: "complete"}:                4,
+					{Kind: "platform_audit", Result: "complete"}:       2,
+					{Kind: "deleted_tenant_audit", Result: "complete"}: 3,
 				},
+			}
+		},
+		Lifecycle: func() telemetry.LifecycleStats {
+			return telemetry.LifecycleStats{
+				Steps: map[[2]string]int64{{"begin", "ok"}: 4, {"access", "ok"}: 4, {"secrets", "ok"}: 4, {"configuration", "ok"}: 3, {"usage", "ok"}: 9,
+					{"usage", "failed"}: 1, {"audit", "ok"}: 3, {"complete", "ok"}: 2, {"complete", "failed"}: 1},
+				Open:            map[string]int64{"scheduled": 2, "running": 1},
+				Rewraps:         map[string]int64{"ok": 40, "failed": 2},
+				KEKVersions:     map[string]int64{"active": 1, "retiring": 1, "retired": 3},
+				ErasuresPending: 5,
 			}
 		},
 	}

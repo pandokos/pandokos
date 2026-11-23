@@ -189,7 +189,7 @@ func (q *Queries) GetMetadataKeyPolicy(ctx context.Context) (GetMetadataKeyPolic
 
 const listTenantsForWorker = `-- name: ListTenantsForWorker :many
 
-SELECT t.id FROM pandokos.tenant t WHERE t.state IN ('active', 'suspended', 'deleting') ORDER BY t.id
+SELECT t.id FROM pandokos.tenant t WHERE t.state IN ('active', 'suspended') ORDER BY t.id
 `
 
 // Usage rollup, reports and exports (ADR 0064). Every statement runs in the session of one tenant,

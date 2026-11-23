@@ -26,3 +26,11 @@ description = "Package list of the people imports test"
 paths = ['''^test/repo/people_test\.go$''']
 regexTarget = "line"
 regexes = ['''^\s*forbidden := \[\]string\{"internal/gateway", "internal/resolver",''']
+
+# False positive: the generic rule reads the synthetic hash argument of record_auth_failure in an
+# isolation test as a key (commit 8281057, already in history). Only that file and that call.
+[[allowlists]]
+description = "Synthetic hash in the closed-tenant isolation test"
+paths = ['''^test/isolation/tenant_open_test\.go$''']
+regexTarget = "line"
+regexes = ['''pandokos\.record_auth_failure\('tabcdefghijklmnop', 'bad_secret', '0123456789abcdef0123456789abcdef'\)''']

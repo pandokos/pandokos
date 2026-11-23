@@ -162,6 +162,21 @@ func TestTenantLifecycle(t *testing.T) {
 			t.Errorf("insert in state active: %v, want SQLSTATE %s", err, checkViolation)
 		}
 	})
+	t.Run("suspended to active is refused while a deletion is requested", func(t *testing.T) {
+		// Sprint 6.3 (D-3): a trigger holds it, whoever updates; the cancel (the removal of the request) frees it.
+		id := d.SeedTenant(t, "life-requested")
+		d.RequestDeletion(t, id, time.Now().Add(time.Hour))
+		err := exec(`UPDATE pandokos.tenant SET state = 'active' WHERE id = $1::uuid`, id.String())
+		if sqlstate(err) != restrictViolation || constraintOf(err) != "tenant_deletion_holds" {
+			t.Errorf("reactivation with a request: %v, want SQLSTATE %s tenant_deletion_holds", err, restrictViolation)
+		}
+		if err := exec(`DELETE FROM pandokos.tenant_deletion WHERE tenant_id = $1::uuid`, id.String()); err != nil {
+			t.Fatal(err)
+		}
+		if err := exec(`UPDATE pandokos.tenant SET state = 'active' WHERE id = $1::uuid`, id.String()); err != nil {
+			t.Errorf("reactivation after the cancel: %v", err)
+		}
+	})
 	t.Run("rows are never deleted", func(t *testing.T) {
 		if err := exec(`INSERT INTO pandokos.tenant (name) VALUES ('keep')`); err != nil {
 			t.Fatal(err)

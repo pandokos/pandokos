@@ -42,7 +42,7 @@ func newVWorld(t *testing.T) *vworld {
 
 func newVWorldOn(t *testing.T, d *dbtest.Database) *vworld {
 	t.Helper()
-	w := &vworld{d: d, admin: d.Open(t, store.RoleAdmin), gw: d.Open(t, store.RoleGateway), prov: vaulttest.NewKeyProvider(t)}
+	w := &vworld{d: d, admin: d.Open(t, store.RoleAdmin), gw: d.Open(t, store.RoleGateway), prov: vaulttest.ProviderFor(t, d)}
 	var err error
 	if w.sealer, err = vault.NewSealer(w.prov); err != nil {
 		t.Fatal(err)

@@ -49,12 +49,16 @@ This page is a contract checked by tests: a message or a field that is not liste
 | `failures` | integer | Failures counted since the last line. |
 | `forced` | boolean | Whether the shutdown had to cut open requests short. |
 | `go_version` | string | The Go version of the build. |
+| `grace_period` | string | The configured time between the request of a tenant deletion and its start, as a duration. |
 | `hint` | string | What to do. |
 | `import_id` | string | The ID of a price import. |
 | `in_use` | integer | Slots of the ledger buffer in use. |
+| `interval` | string | The configured time between two ticks of a job, as a duration. |
 | `invalid_reason` | string | Why the request was invalid, as a closed word. |
 | `issuer` | string | The issuer URL of a token issuer, in the lines of the key fetch. |
+| `kek_activation` | string | What the start did to the key-encryption key versions: `activated` or `unchanged`. |
 | `kek_provider` | string | The key provider of the vault. |
+| `kek_unwrap_versions` | integer | The number of replaced key versions this process can still unwrap. |
 | `kek_version` | string | The version of a key-encryption key. |
 | `key` | string | The name of a configuration key. |
 | `key_id` | string | The ID of a platform key. Only on the lines marked as platform identities. |
@@ -84,6 +88,7 @@ This page is a contract checked by tests: a message or a field that is not liste
 | `queued` | integer | Records waiting in the ledger buffer. |
 | `reason` | string | A closed word that says why. |
 | `request_id` | string | The request ID of the request the line is about (also the X-Pandokos-Request-Id header). |
+| `rewrapped` | integer | Data keys this process re-wrapped under the active key version before it retired the replaced one. |
 | `role` | string | The database role of the pool. |
 | `route` | string | The route of the request, as a template; "unmatched" when no route matched. |
 | `rule` | string | The text of a group rule that was skipped. |
@@ -95,6 +100,7 @@ This page is a contract checked by tests: a message or a field that is not liste
 | `sqlstate` | string | The five-character SQLSTATE of a database error. |
 | `stack` | string | The stack of a recovered panic. |
 | `status` | integer | The HTTP status written; 0 when none was. |
+| `step` | string | The step of a tenant deletion, as a closed word, or `unknown` after a restart. |
 | `stream` | boolean | Whether the request asked for a stream. |
 | `support` | boolean | True when the request ran under a support action. |
 | `target` | string | What a purge round was purging. |
@@ -392,9 +398,9 @@ The server could not start; the text of the error holds nothing of a secret. The
 ### `vault ready`
 
 Level: info
-Fields: `kek_provider`, `kek_version`
+Fields: `kek_provider`, `kek_version`, `kek_activation`, `kek_unwrap_versions`
 
-The vault is ready with the key provider and the version of the key-encryption key shown.
+The vault is ready with the key provider and the active version of the key-encryption key shown; `kek_activation` says whether the start activated that version or found it already active, and `kek_unwrap_versions` how many replaced versions this process can still unwrap.
 
 ## Store
 
@@ -443,6 +449,20 @@ Level: error
 Fields: `request_id`, `data_key_version`, `kek_version`, `cause`
 
 A stored provider credential could not be decrypted for a request, so the request failed; `cause` and the versions say whether the key provider or the key is at fault. Check the vault.
+
+### `key rewrap failing`
+
+Level: warn
+Fields: `cause`, `error_class`, `failures`
+
+A tenant's data key was not re-wrapped under the active key version; written at most once a minute with the number of failures since the last line. The replaced version stays `retiring` and the next pass tries again; check the key provider and the database, then `kek-version list`.
+
+### `key rotation complete`
+
+Level: info
+Fields: `kek_version`, `rewrapped`
+
+A replaced key-encryption key version wraps no data key any more and was retired; `rewrapped` counts the keys this process re-wrapped for it. Its key file may now be removed from `vault.kek.local.unwrap_key_files` once no backup that holds credentials sealed under it is to be restored.
 
 ### `vault cache flushed`
 
@@ -554,6 +574,43 @@ Level: warn
 Fields: `error_class`, `sqlstate`, `failures`
 
 A retention run failed in the whole or in part; the next run tries again. At most once an hour.
+
+## Lifecycle
+
+### `tenant deletion ready`
+
+Level: info
+Fields: `grace_period`, `interval`
+
+Written at start with the worker role: the grace period read when a deletion is requested and the interval of the deletion job.
+
+### `tenant deletion started`
+
+Level: info
+Fields: `request_id`
+
+The first step of a tenant deletion ran; `request_id` is the request that asked for it, never the tenant.
+
+### `tenant deletion completed`
+
+Level: info
+Fields: `request_id`, `duration_ms`
+
+The last step of a tenant deletion answered done; `duration_ms` is the time since its start.
+
+### `tenant deletion failing`
+
+Level: warn
+Fields: `step`, `error_class`, `sqlstate`, `failures`
+
+A step of a tenant deletion failed; the next tick runs it again, from where the database left it. At most once a minute. `step` is the step the call ran: `begin`, `access`, `secrets`, `configuration`, `usage`, `audit` or `complete`, or `unknown` when the worker restarted after the deletion started and has had no answer of the step function since (the API reads the step from the database and never shows `unknown`). Check the database, then `tenant deletion list`.
+
+### `tenant deletion recovered`
+
+Level: info
+Fields: `failures`
+
+The first step that succeeded after failures; `failures` is how many steps failed before it.
 
 ## Oidc
 

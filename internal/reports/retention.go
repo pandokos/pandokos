@@ -136,6 +136,44 @@ func (r *Retention) Pass(ctx context.Context) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+
+	// The third pass, for the tenants that are deleted: the ledger and the log kept for them (§5.6).
+	// The function records its removal in the platform log, since the closed chain takes no row.
+	var gone []string
+	note(r.DB.Platform(ctx, func(ctx context.Context, tx store.Tx) error {
+		var err error
+		gone, err = queries.New(tx).ListDeletedTenantsForWorker(ctx)
+		return err
+	}))
+	for _, id := range gone {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		tid, err := tenant.ParseID(id)
+		if err != nil {
+			continue
+		}
+		var res queries.DeletedTenantRetentionRow
+		err = r.DB.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
+			var err error
+			res, err = queries.New(tx).DeletedTenantRetention(ctx, queries.DeletedTenantRetentionParams{
+				UsageMonths: months(r.UsageMonths), AuditMonths: months(r.AuditMonths)})
+			return err
+		})
+		if err != nil {
+			note(err)
+			continue
+		}
+		if res.UsageRows != nil {
+			removed["deleted_tenant_usage_record"] += *res.UsageRows
+		}
+		if res.AuditRows != nil {
+			removed["deleted_tenant_audit_event"] += *res.AuditRows
+		}
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	return r.finish(first, removed)
 }
 

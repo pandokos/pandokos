@@ -251,6 +251,8 @@ var keyTable = []keyDef{
 		setString(func(c *Config) *string { return &c.Vault.KEK.Provider })),
 	def("vault.kek.local.key_file", "path", "", "File with the key-encryption key: 32 random bytes in standard base64 (required by serve; create it with pandokos kek generate)",
 		setString(func(c *Config) *string { return &c.Vault.KEK.Local.KeyFile })),
+	serveDef("vault.kek.local.unwrap_key_files", "list", "", "Files with earlier key-encryption keys that still unwrap data keys during a rotation, separated by commas in the environment; up to 8, each as key_file (see docs/operations/vault.md)",
+		func(c *Config, v string) error { c.Vault.KEK.Local.UnwrapKeyFiles = listValue(v); return nil }),
 	def("pricing.import_at_start", "boolean", "true", "Import the embedded price snapshot when serve starts, unless a newer or identical import exists",
 		setBool(func(c *Config) *bool { return &c.Pricing.ImportAtStart })),
 	serveDef("pricing.default_currency", "ISO 4217 code", "USD", "The currency in which the costs of the tenants that have not chosen an active currency are computed, and in which their cost budgets apply; three capital letters",

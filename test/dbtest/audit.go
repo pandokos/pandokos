@@ -2,9 +2,11 @@ package dbtest
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/pandokos/pandokos/internal/auditchain"
 	"github.com/pandokos/pandokos/internal/tenant"
 )
 
@@ -209,4 +211,56 @@ func (d *Database) RestoreAudit(tb testing.TB, s AuditSnapshot) {
 	if err := tx.Commit(ctx); err != nil {
 		tb.Fatal(err)
 	}
+}
+
+// VerifyAuditChain reads the audit log of a tenant (scope "tenant:<id>") or of the platform (scope
+// "platform") as the owner and verifies it against its head with auditchain.Verify, as the product's
+// verifier does. It returns the result and the head.
+func (d *Database) VerifyAuditChain(tb testing.TB, scope string) (auditchain.Result, auditchain.Head) {
+	tb.Helper()
+	ctx, cancel := ctx30()
+	defer cancel()
+	super := d.Super(tb)
+	var rowsSQL, headSQL string
+	var args []any
+	if scope == "platform" {
+		rowsSQL = `SELECT seq, id::text, occurred_at, actor_type, actor_id, actor_name, key_id, action, resource_type, resource_id, outcome, request_id, reason, '', detail::text, prev_hash, hash
+			FROM pandokos.platform_audit_event ORDER BY seq`
+		headSQL = `SELECT seq, hash, anchor_seq, anchor_hash FROM pandokos.platform_audit_chain WHERE id = 1`
+	} else {
+		args = []any{strings.TrimPrefix(scope, "tenant:")}
+		rowsSQL = `SELECT seq, id::text, occurred_at, actor_type, actor_id, actor_name, key_id, action, resource_type, resource_id, outcome, request_id, reason, COALESCE(support_action_id::text, ''), detail::text, prev_hash, hash
+			FROM pandokos.audit_event WHERE tenant_id = $1::uuid ORDER BY seq`
+		headSQL = `SELECT seq, hash, anchor_seq, anchor_hash FROM pandokos.audit_chain WHERE tenant_id = $1::uuid`
+	}
+	rows, err := super.Query(ctx, rowsSQL, args...)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	var chain []auditchain.Row
+	for rows.Next() {
+		r := auditchain.Row{Scope: scope}
+		var detail string
+		if err := rows.Scan(&r.Seq, &r.ID, &r.OccurredAt, &r.ActorType, &r.ActorID, &r.ActorName, &r.KeyID, &r.Action, &r.ResourceType, &r.ResourceID,
+			&r.Outcome, &r.RequestID, &r.Reason, &r.SupportActionID, &detail, &r.PrevHash, &r.Hash); err != nil {
+			tb.Fatal(err)
+		}
+		r.Detail = []byte(detail)
+		chain = append(chain, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		tb.Fatal(err)
+	}
+	var head auditchain.Head
+	if err := super.QueryRow(ctx, headSQL, args...).Scan(&head.Seq, &head.Hash, &head.AnchorSeq, &head.AnchorHash); err != nil {
+		tb.Fatalf("the head of %s: %v", scope, err)
+	}
+	return auditchain.Verify(func(yield func(auditchain.Row, error) bool) {
+		for _, r := range chain {
+			if !yield(r, nil) {
+				return
+			}
+		}
+	}, &head, nil), head
 }

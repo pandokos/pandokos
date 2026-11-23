@@ -18,6 +18,11 @@ func TestUpgradeWithRules(t *testing.T) {
 
 	// The world of 5.2, written as 5.2 wrote it: a tenant, an inference service account with a key, a
 	// quota of three requests a day (named by the old columns) and three requests in the ledger.
+	// The key of the installation was registered by the version that sealed its data keys (0003): 0016
+	// makes the one registered last the active one, and the start with the same key changes nothing.
+	if _, err := d.Super(t).Exec(context.Background(), `INSERT INTO pandokos.kek_version (id, provider) VALUES ($1, 'local')`, d.KEKVersion(t)); err != nil {
+		t.Fatal(err)
+	}
 	tn := d.SeedTenant(t, "upgrade")
 	sa := d.SeedServiceAccount(t, tn, "workload")
 	key, keyID, hash, err := authn.Generate(authn.KindTenant)
@@ -50,7 +55,7 @@ func TestUpgradeWithRules(t *testing.T) {
 
 	// The upgrade: stop, migrate, start.
 	code, out, errs := runBinary(t, d.Env(t), "migrate")
-	if code != 0 || !strings.Contains(out, "applied 0011_limit_integrity") || !strings.Contains(out, "applied 0012_tenant_price_lists") || !strings.Contains(out, "schema is at version 15") {
+	if code != 0 || !strings.Contains(out, "applied 0011_limit_integrity") || !strings.Contains(out, "applied 0012_tenant_price_lists") || !strings.Contains(out, "schema is at version 16") {
 		t.Fatalf("migrate: exit %d\nstdout: %s\nstderr: %s", code, out, errs)
 	}
 	var kept int
@@ -71,6 +76,10 @@ func TestUpgradeWithRules(t *testing.T) {
 			if !strings.Contains(text, want) {
 				t.Errorf("%s: the refusal lacks %q\n%s", label, want, text)
 			}
+		}
+		ready := completeLines(p.stdout, "vault ready")
+		if len(ready) != 1 || ready[0]["kek_activation"] != "unchanged" || ready[0]["kek_version"] != d.KEKVersion(t) {
+			t.Errorf("%s: vault ready lines %v, want one with kek_activation unchanged and the version of the installation's key", label, ready)
 		}
 		if got := p.stop(t); got != 0 {
 			t.Errorf("%s: the process exited with %d", label, got)

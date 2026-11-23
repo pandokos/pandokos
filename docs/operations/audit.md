@@ -159,3 +159,39 @@ before a retention run stays valid for the rows after its `seq`: continue from t
   ([security model](../architecture/security-model.md)).
 - Audit writes of one tenant, and every write of the platform's log, are serialized by the lock of the
   head; this is the cost of consecutive numbers.
+
+## 9. The log of a deleted tenant
+
+A tenant's log is **kept** when the tenant is deleted ([deletion guide](tenant-deletion.md),
+[ADR 0067](../adr/0067-tenant-deletion-stages-closed-tenants-and-kept-records.md)), and sealed again:
+
+- a closing row, `tenant.delete`, is appended;
+- in every row, `actor_id`, `key_id` and `resource_id` become pseudonyms (a `resource_id` equal to the
+  tenant's ID stays), and `actor_name`, `reason` and `detail` are emptied, because they hold sign-in
+  names, addresses, labels and free text;
+- `prev_hash` and `hash` are computed again, from the anchor, with the encoding of version 1; `seq`,
+  `id`, `occurred_at`, `actor_type`, `action`, `resource_type`, `outcome`, `request_id` and
+  `support_action_id` stay.
+
+The result is an ordinary chain: `audit verify` and `platform-audit verify` check it with no change, and
+nothing in a row says that it was rewritten. What says so is the platform's log, which is never
+rewritten: the record `tenant.delete_complete` holds `anchor_seq`, `last_seq`, the number of rows, the
+head before the rewrite (`original_head`) and the head after it (`resealed_head`). A tenant that exported
+its log before the deletion holds rows that end before `original_head`; its export is its own evidence,
+anchored by the head it read then.
+
+**Reading it.** Two operations under `platform_audit:read`, for a tenant that is `deleted` only
+(`409 invalid_state` before): `pandokos tenant deletion audit-head TENANT` and
+`pandokos tenant deletion audit-export TENANT [--out FILE]`. `pandokos tenant deletion verify TENANT`
+reads the deletion, the completion record and the kept log and checks them against both chains. Keep the
+heads of the platform's log off the installation as section 7 says: a restore takes the platform's log
+back with it.
+
+**Retention** applies to the kept log like to any log (`retention.audit_months`): the oldest rows go, the
+anchor moves, and the removal is recorded in the **platform's** log as `tenant.records_retention` (the
+closed chain takes no row). A log that retention has emptied verifies as empty when the anchor is
+`last_seq + 1`.
+
+**What a rewritten log does not hold:** the platform's own chain is not rewritten, so it still names the
+people who acted on the tenant (a user the platform manages is never deleted by a tenant's deletion);
+audit retention bounds how long. Deleting such users is a decision of the privacy review of epic 10.

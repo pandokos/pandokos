@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -43,7 +44,8 @@ type constraint struct {
 
 // Lint reads the system catalogues of schema pandokos through the connection (a superuser's, so
 // that it can read every privilege) and returns one finding per violation of the rules L-01 to
-// L-16 of sprint 1.2, section 6.1, L-19 of sprint 2.1 and L-20 of sprint 3.2 (twenty rules), sorted by rule and object. A table is tenant-scoped unless
+// L-16 of sprint 1.2, section 6.1, L-19 of sprint 2.1, L-20 of sprint 3.2 and L-21 and L-22 of
+// sprint 6.3 (twenty-two rules), sorted by rule and object. A table is tenant-scoped unless
 // spec.Global lists it.
 func Lint(ctx context.Context, conn *pgx.Conn, spec Spec) ([]Finding, error) {
 	var findings []Finding
@@ -199,6 +201,12 @@ func Lint(ctx context.Context, conn *pgx.Conn, spec Spec) ([]Finding, error) {
 		return nil, err
 	}
 	if err := lintPartitions(ctx, conn, spec, rels, add); err != nil {
+		return nil, err
+	}
+	if err := lintTenantOpen(ctx, conn, add); err != nil {
+		return nil, err
+	}
+	if err := lintSettingPolicies(ctx, conn, add); err != nil {
 		return nil, err
 	}
 
@@ -404,13 +412,59 @@ func lintPrivileges(ctx context.Context, conn *pgx.Conn, spec Spec, rels []relat
 	return nil
 }
 
-// lintFunctions is L-14.
+// settingInheritors are the definer functions that run under the pandokos.erasure and
+// pandokos.retention of their caller (L-22): audit_seal_tenant, the trigger that seals a row of a
+// tenant's log, through which tenant_erasure_step writes the closing row of a closed tenant. It is
+// reached only through an INSERT into audit_event, whose statement guard tenant_open has judged the
+// caller first. Every other definer function starts with both settings off, so that a runtime role
+// that sets one before the call gains nothing.
+var settingInheritors = []string{"audit_seal_tenant"}
+
+var (
+	// settingsOff is the first declaration of a definer function's body (migration 0016, section 1):
+	// both settings off for the function.
+	settingsOff = regexp.MustCompile(`^\s*DECLARE\s+v_settings\s+text\[\]\s*:=\s*pandokos\.definer_settings_off\(\);`)
+	// settingsRestore puts the caller's values back.
+	settingsRestore = regexp.MustCompile(`PERFORM\s+pandokos\.definer_settings_restore\(v_settings\);`)
+	// settingRead is a guard that reads one of the settings; ownerCheck the test of who runs the
+	// statement that it must hold beside it, since any role may set either (definer_settings_off
+	// only saves them).
+	settingRead = regexp.MustCompile(`current_setting\('pandokos\.(erasure|retention)'`)
+	ownerCheck  = regexp.MustCompile(`current_user\s*(=|<>)\s*'pandokos_owner'`)
+	// settingSet is a function that turns one of the settings on itself: it ends with both off.
+	settingSet = regexp.MustCompile(`set_config\('pandokos\.(erasure|retention)',\s*'on'`)
+)
+
+// lintDefinerSettings is L-22 of sprint 6.3 (review): a definer function runs as the owner, for whom
+// the guards, policies and triggers of migration 0016 admit a row under pandokos.erasure or
+// pandokos.retention, which any role may set. Unless it is one of settingInheritors (a trigger
+// function), its body starts by turning both off, and, unless it sets one itself, it puts the
+// caller's values back before it returns. The owner cannot attach a SET clause for a parameter that
+// no module defines, so the body does what the clause would.
+func lintDefinerSettings(name, source string, trigger bool, add func(rule, object, format string, args ...any)) {
+	if contains(settingInheritors, name) {
+		if !trigger {
+			add("L-22", name, "inherits the settings of its caller and is not a trigger function")
+		}
+		return
+	}
+	if !settingsOff.MatchString(source) {
+		add("L-22", name, "SECURITY DEFINER whose body does not start with v_settings text[] := pandokos.definer_settings_off()")
+		return
+	}
+	if !settingSet.MatchString(source) && !settingsRestore.MatchString(source) {
+		add("L-22", name, "SECURITY DEFINER that does not put back its caller's settings (pandokos.definer_settings_restore)")
+	}
+}
+
+// lintFunctions is L-14, L-18 and L-22.
 func lintFunctions(ctx context.Context, conn *pgx.Conn, spec Spec, add func(rule, object, format string, args ...any)) error {
 	rows, err := conn.Query(ctx, `SELECT p.proname::text, p.prosecdef, pg_catalog.pg_get_userbyid(p.proowner)::text,
        ARRAY(SELECT CASE WHEN a.grantee = 0 THEN 'public' ELSE pg_catalog.pg_get_userbyid(a.grantee)::text END
                FROM aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) AS a
               WHERE a.privilege_type = 'EXECUTE' ORDER BY 1)::text[],
-       COALESCE('search_path=pg_catalog, pg_temp' = ANY (p.proconfig), false)
+       COALESCE('search_path=pg_catalog, pg_temp' = ANY (p.proconfig), false),
+       p.prosrc, p.prorettype = 'pg_catalog.trigger'::pg_catalog.regtype
   FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
  WHERE n.nspname = 'pandokos'
  ORDER BY 1`)
@@ -422,11 +476,12 @@ func lintFunctions(ctx context.Context, conn *pgx.Conn, spec Spec, add func(rule
 		definer     bool
 		executors   []string
 
-		hasSearchPath bool
+		hasSearchPath, trigger bool
+		source                 string
 	}
 	funcs, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (fn, error) {
 		var f fn
-		err := r.Scan(&f.name, &f.definer, &f.owner, &f.executors, &f.hasSearchPath)
+		err := r.Scan(&f.name, &f.definer, &f.owner, &f.executors, &f.hasSearchPath, &f.source, &f.trigger)
 		return f, err
 	})
 	if err != nil {
@@ -435,6 +490,12 @@ func lintFunctions(ctx context.Context, conn *pgx.Conn, spec Spec, add func(rule
 	for _, f := range funcs {
 		if f.definer && !f.hasSearchPath {
 			add("L-18", f.name, "SECURITY DEFINER without search_path = pg_catalog, pg_temp")
+		}
+		if f.definer {
+			lintDefinerSettings(f.name, f.source, f.trigger, add)
+		}
+		if settingRead.MatchString(f.source) && !ownerCheck.MatchString(f.source) && f.name != "definer_settings_off" {
+			add("L-22", f.name, "reads pandokos.erasure or pandokos.retention without checking that current_user is %s", ownerRole)
 		}
 		if f.definer && !contains(spec.SecurityDefiner, f.name) {
 			add("L-14", f.name, "SECURITY DEFINER and not listed in Spec.SecurityDefiner")
@@ -690,4 +751,103 @@ func lintPartitions(ctx context.Context, conn *pgx.Conn, spec Spec, rels []relat
 		}
 	}
 	return nil
+}
+
+// rowGuardTables are the global tables that carry a tenant column and are guarded by the row
+// trigger tenant_open_row (L-21).
+var rowGuardTables = []string{"app_user", "model_tenant_grant", "platform_issuer_tenant", "platform_limit_rule", "support_action"}
+
+// lintTenantOpen is rule L-21 of sprint 6.3, section 6: every table that is not a partition and
+// has a policy named tenant_isolation, and idempotency_key, has an enabled BEFORE INSERT statement
+// trigger <table>_tenant_open that executes tenant_open; each of the global tables in
+// rowGuardTables has an enabled BEFORE INSERT row trigger of that name that executes
+// tenant_open_row. A table that took no new row once its tenant is closed would let a deletion be
+// undone.
+func lintTenantOpen(ctx context.Context, conn *pgx.Conn, add func(rule, object, format string, args ...any)) error {
+	rows, err := conn.Query(ctx, `SELECT DISTINCT c.relname::text
+  FROM pg_catalog.pg_class c
+  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+  LEFT JOIN pg_catalog.pg_policy p ON p.polrelid = c.oid AND p.polname = 'tenant_isolation'
+ WHERE n.nspname = 'pandokos' AND c.relkind IN ('r', 'p') AND NOT c.relispartition
+   AND (p.oid IS NOT NULL OR c.relname = 'idempotency_key')
+ ORDER BY 1`)
+	if err != nil {
+		return err
+	}
+	statement, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return err
+	}
+	check := func(table, fn string, wantRow bool) error {
+		trows, err := conn.Query(ctx, `SELECT t.tgtype::int, p.proname::text, t.tgenabled::text
+  FROM pg_catalog.pg_trigger t JOIN pg_catalog.pg_proc p ON p.oid = t.tgfoid
+ WHERE t.tgrelid = $1::regclass AND t.tgname = $2 AND NOT t.tgisinternal`, qualified(table), table+"_tenant_open")
+		if err != nil {
+			return err
+		}
+		defer trows.Close()
+		for trows.Next() {
+			var tgtype int
+			var name, enabled string
+			if err := trows.Scan(&tgtype, &name, &enabled); err != nil {
+				return err
+			}
+			const row, before, insert = 1, 2, 4
+			if name == fn && enabled != "D" && (tgtype&row != 0) == wantRow && tgtype&before != 0 && tgtype&insert != 0 {
+				return nil
+			}
+		}
+		if err := trows.Err(); err != nil {
+			return err
+		}
+		kind := "statement"
+		if wantRow {
+			kind = "row"
+		}
+		add("L-21", table, "no enabled BEFORE INSERT %s trigger %s_tenant_open that executes pandokos.%s()", kind, table, fn)
+		return nil
+	}
+	for _, table := range statement {
+		if contains(rowGuardTables, table) {
+			continue
+		}
+		if err := check(table, "tenant_open", false); err != nil {
+			return err
+		}
+	}
+	for _, table := range rowGuardTables {
+		if err := check(table, "tenant_open_row", true); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// lintSettingPolicies is the part of L-22 about policies: a policy whose expression reads
+// pandokos.erasure or pandokos.retention applies to the owner alone, since any role may set them.
+func lintSettingPolicies(ctx context.Context, conn *pgx.Conn, add func(rule, object, format string, args ...any)) error {
+	rows, err := conn.Query(ctx, `SELECT c.relname::text, p.polname::text,
+	       ARRAY(SELECT CASE WHEN r = 0 THEN 'public' ELSE pg_catalog.pg_get_userbyid(r)::text END FROM pg_catalog.unnest(p.polroles) r ORDER BY 1)::text[]
+	  FROM pg_catalog.pg_policy p
+	  JOIN pg_catalog.pg_class c ON c.oid = p.polrelid
+	  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+	 WHERE n.nspname = 'pandokos'
+	   AND (COALESCE(pg_catalog.pg_get_expr(p.polqual, p.polrelid), '') ~ 'pandokos\.(erasure|retention)'
+	        OR COALESCE(pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid), '') ~ 'pandokos\.(erasure|retention)')
+	 ORDER BY 1, 2`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var table, name string
+		var roles []string
+		if err := rows.Scan(&table, &name, &roles); err != nil {
+			return err
+		}
+		if len(roles) != 1 || roles[0] != ownerRole {
+			add("L-22", table, "the policy %s reads pandokos.erasure or pandokos.retention and applies to %s, not to %s alone", name, strings.Join(roles, ", "), ownerRole)
+		}
+	}
+	return rows.Err()
 }

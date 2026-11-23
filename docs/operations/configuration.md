@@ -128,6 +128,9 @@ replaced by `_`.
 | `database.owner.password_file` | `PANDOKOS_DATABASE_OWNER_PASSWORD_FILE` | path | none, required by `migrate` | File with that user's password. Never read by `serve` |
 | `vault.kek.provider` | `PANDOKOS_VAULT_KEK_PROVIDER` | `local` | `local` | Key-encryption key provider; only `local` exists |
 | `vault.kek.local.key_file` | `PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE` | path | none, required by `serve` | File with the key-encryption key: 32 random bytes in standard base64. Create it with `pandokos kek generate` ([vault guide](vault.md)) |
+| `vault.kek.local.unwrap_key_files` | `PANDOKOS_VAULT_KEK_LOCAL_UNWRAP_KEY_FILES` | list of paths | empty | Up to 8 more key-encryption key files the instance can unwrap with: a version being retired, or a new version that other instances already use. Each file is read as `key_file`; separated by commas in the environment; a key equal to `key_file` or to another entry is refused at start, whatever its path. `serve` only ([vault guide](vault.md), "Rotating the key") |
+| `tenant_deletion.grace_period` | `PANDOKOS_TENANT_DELETION_GRACE_PERIOD` | duration | `168h` | Time between the request of a tenant deletion and its start; the tenant is suspended meanwhile. `0` to `2160h` (90 days); `0` starts the deletion at the worker's next tick. Read when a deletion is requested, `serve` only ([deletion guide](tenant-deletion.md)) |
+| `tenant_deletion.interval` | `PANDOKOS_TENANT_DELETION_INTERVAL` | duration | `1m` | Time between two runs of the deletion job of the worker (`10s` to `1h`), `serve` only |
 | `pricing.import_at_start` | `PANDOKOS_PRICING_IMPORT_AT_START` | boolean | `true` | Import the embedded price snapshot when `serve` starts, unless an identical or a newer import exists ([catalogue guide](catalogue.md)) |
 | `pricing.default_currency` | `PANDOKOS_PRICING_DEFAULT_CURRENCY` | ISO 4217 code | `USD` | The currency in which the costs of the tenants that have not chosen an active currency are computed, and in which their cost budgets apply; three capital letters. It must be the same on every instance, like `limits.time_zone`, and set before the first start of a release that has tenant price lists if your prices and budgets are not in USD ([database guide](database.md), section 17). It takes effect at restart, for every such tenant at once ([catalogue guide](catalogue.md), section 7) |
 | `pricing.refresh.enabled` | `PANDOKOS_PRICING_REFRESH_ENABLED` | boolean | `false` | Download the price dataset periodically: an outbound request to `pricing.refresh.url` |
@@ -164,7 +167,7 @@ required and read:
 
 | | `serve`, `config check` (`--for serve`, the default) | `migrate`, `migrate status`, `config check --for migrate` | `init`, `config check --for init` |
 |---|---|---|---|
-| `vault.kek.local.key_file` | required, read | not read | not read |
+| `vault.kek.local.key_file`, `vault.kek.local.unwrap_key_files` | required, read | not read | not read |
 | `database.gateway.password_file`, `database.worker.password_file` | required, read | not read | not read |
 | `database.admin.password_file` | required, read | not read | required, read |
 | `database.owner.password_file` | **not read**, set or not; the file may be absent | required, read | not read |
@@ -231,6 +234,8 @@ All problems are reported together, not only the first. Each is attached to a ke
 | `pricing.refresh.url` | a valid `https` URL with a host and no user information; checked for `serve` as the interval is; no message quotes the URL |
 | `vault.kek.provider` | `local` |
 | `vault.kek.local.key_file` | set; a readable regular file holding 32 bytes in standard base64 (44 characters); no message quotes the content |
+| `vault.kek.local.unwrap_key_files` | at most 8 entries, each a file as `key_file`; no entry equals `key_file` or another entry in content or path; `serve` only; no message quotes a content |
+| `tenant_deletion.grace_period`, `tenant_deletion.interval` | `0` to `2160h`; `10s` to `1h` (`serve` only) |
 | `database.direct_address` | when set, the three address rules of `database.address` |
 | `ledger.flush_interval`, `ledger.shutdown_flush_timeout` | 1ms to 10s; 1s to 5m (`serve` only) |
 | `ledger.batch_size`, `ledger.buffer_size` | 1 to 5000; 100 to 1000000 and at least the batch size (`serve` only) |
@@ -271,6 +276,7 @@ they do not prevent start.
 | `listeners.<l>.tls.cert_file` | the certificate expires in less than 14 days | the certificate expires on `<date>` |
 | `database.tls.mode` | the mode is `disable` and the host of `database.address` is not a loopback address or `localhost` | the database connection is not encrypted |
 | `vault.kek.local.key_file` | the file grants any permission to other users (mode `& 0007`) | the file can be accessed by other users; restrict it to the service user (chmod 600) |
+| `vault.kek.local.unwrap_key_files` | an entry grants any permission to other users (mode `& 0007`) | the file can be accessed by other users; restrict it to the service user (chmod 600) |
 | `support.enabled` | false | support actions are off: a tenant that loses its administrators cannot be recovered through the API |
 | `tokens.private_hosts` | the list is not empty (`serve` only) | issuer and key URLs of these hosts may resolve to private addresses: `<hosts>` |
 | `tokens.jwks.max_stale` | more than 24h | keys of an issuer are used for more than 24h after the last successful fetch: a key withdrawn by the issuer stays trusted that long while it is unreachable |

@@ -1,0 +1,1835 @@
+{
+  "$defs": {
+    "ActiveCurrency": {
+      "additionalProperties": false,
+      "properties": {
+        "currency": {
+          "$ref": "#/$defs/CurrencyOrDefault"
+        },
+        "effective_from": {
+          "description": "Present while a change is pending; the instant from which currency is in force.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "in_force": {
+          "$ref": "#/$defs/Currency"
+        },
+        "inactive_limits": {
+          "description": "Only in the answer to a change: the cost rules of the tenant and the ceilings of the platform that apply to it whose currency is not the new one. From effective_from they are inactive: they count nothing and refuse nothing.",
+          "items": {
+            "$ref": "#/$defs/InactiveLimit"
+          },
+          "maxItems": 100,
+          "type": "array"
+        }
+      },
+      "required": [
+        "currency",
+        "in_force"
+      ],
+      "type": "object"
+    },
+    "AuditEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "actor_id": {
+          "type": "string"
+        },
+        "actor_name": {
+          "type": "string"
+        },
+        "actor_type": {
+          "type": "string"
+        },
+        "detail": {
+          "$ref": "#/$defs/RawObject"
+        },
+        "detail_digest": {
+          "description": "Lower-case hex SHA-256 of the canonical encoding of the detail; set when detail_withheld, empty otherwise.",
+          "type": "string"
+        },
+        "detail_withheld": {
+          "description": "True when detail is withheld from the caller and replaced by an empty object.",
+          "type": "boolean"
+        },
+        "hash": {
+          "description": "Lower-case hex.",
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/ID"
+        },
+        "key_id": {
+          "type": "string"
+        },
+        "occurred_at": {
+          "description": "UTC, six fraction digits.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "prev_hash": {
+          "description": "Lower-case hex.",
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "resource_id": {
+          "type": "string"
+        },
+        "resource_type": {
+          "type": "string"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "support_action_id": {
+          "description": "Empty when the event was not written under a support action; always empty in the platform log.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "seq",
+        "id",
+        "occurred_at",
+        "actor_type",
+        "actor_id",
+        "actor_name",
+        "key_id",
+        "action",
+        "resource_type",
+        "resource_id",
+        "outcome",
+        "request_id",
+        "reason",
+        "support_action_id",
+        "detail",
+        "detail_withheld",
+        "detail_digest",
+        "prev_hash",
+        "hash"
+      ],
+      "type": "object"
+    },
+    "ClaimName": {
+      "description": "A top-level member of the token's payload.",
+      "pattern": "^[A-Za-z0-9_.:/-]{1,64}$",
+      "type": "string"
+    },
+    "Credential": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "expires_at": {
+          "description": "Expiry as declared by the tenant. Informative.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "fingerprint": {
+          "description": "Keyed hash of the secret, 32 hexadecimal characters. Equal secrets of one tenant have equal fingerprints; it cannot be computed outside Pandokos.",
+          "type": "string"
+        },
+        "hint": {
+          "description": "The last four characters of the secret; empty when the secret is shorter than 16 characters.",
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/ID"
+        },
+        "is_default": {
+          "description": "Whether calls for the provider use this credential when the key is not pinned to another.",
+          "type": "boolean"
+        },
+        "label": {
+          "$ref": "#/$defs/Name"
+        },
+        "owner": {
+          "$ref": "#/$defs/CredentialOwner"
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderName"
+        },
+        "rotated_at": {
+          "description": "When the secret was last replaced.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/CredentialState"
+        },
+        "state_changed_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "state_changed_by": {
+          "$ref": "#/$defs/CredentialActor"
+        },
+        "state_reason": {
+          "description": "The reason given with the last change of state.",
+          "type": "string"
+        },
+        "tenant_id": {
+          "$ref": "#/$defs/ID"
+        },
+        "validated_at": {
+          "description": "When the provider last accepted the current secret.",
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "tenant_id",
+        "provider",
+        "label",
+        "description",
+        "owner",
+        "state",
+        "is_default",
+        "fingerprint",
+        "hint",
+        "state_changed_at",
+        "state_changed_by",
+        "created_at"
+      ],
+      "type": "object"
+    },
+    "CredentialActor": {
+      "description": "Which side last changed the state of the credential.",
+      "enum": [
+        "tenant",
+        "platform"
+      ],
+      "type": "string"
+    },
+    "CredentialOwner": {
+      "description": "Who owns the credential and pays the provider. Credentials of the platform come with a later version.",
+      "enum": [
+        "tenant"
+      ],
+      "type": "string"
+    },
+    "CredentialState": {
+      "description": "active, disabled (can be enabled again) or revoked (final; the sealed secret is destroyed).",
+      "enum": [
+        "active",
+        "disabled",
+        "revoked"
+      ],
+      "type": "string"
+    },
+    "Currency": {
+      "pattern": "^[A-Z]{3}$",
+      "type": "string"
+    },
+    "CurrencyOrDefault": {
+      "description": "An ISO 4217 code; empty for the default currency of the installation.",
+      "pattern": "^([A-Z]{3})?$",
+      "type": "string"
+    },
+    "DisplayName": {
+      "maxLength": 200,
+      "type": "string"
+    },
+    "Email": {
+      "maxLength": 254,
+      "type": "string"
+    },
+    "ID": {
+      "description": "A UUID in canonical lower-case form.",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "InactiveLimit": {
+      "additionalProperties": false,
+      "properties": {
+        "currency": {
+          "$ref": "#/$defs/Currency"
+        },
+        "level": {
+          "description": "platform (a ceiling) or tenant (a rule of the tenant).",
+          "type": "string"
+        },
+        "metric": {
+          "$ref": "#/$defs/LimitMetric"
+        },
+        "rule_id": {
+          "$ref": "#/$defs/ID"
+        }
+      },
+      "required": [
+        "level",
+        "rule_id",
+        "metric",
+        "currency"
+      ],
+      "type": "object"
+    },
+    "IssuerRef": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ID"
+        },
+        "name": {
+          "$ref": "#/$defs/Name",
+          "description": "In responses only; ignored in requests."
+        },
+        "scope": {
+          "$ref": "#/$defs/IssuerScope"
+        }
+      },
+      "required": [
+        "scope",
+        "id"
+      ],
+      "type": "object"
+    },
+    "IssuerScope": {
+      "description": "tenant for a registration of the tenant, platform for a platform-level one.",
+      "enum": [
+        "tenant",
+        "platform"
+      ],
+      "type": "string"
+    },
+    "IssuerURL": {
+      "description": "An https URL without query, fragment or user information, at most 255 bytes. Compared byte for byte with the iss claim.",
+      "maxLength": 255,
+      "pattern": "^https://[^\\s?#@]+$",
+      "type": "string"
+    },
+    "KeyState": {
+      "description": "active, expired (expires_at has passed) or revoked. A revoked key is revoked whatever its expiry.",
+      "enum": [
+        "active",
+        "expired",
+        "revoked"
+      ],
+      "type": "string"
+    },
+    "LimitEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "description": "The value of the rule as a decimal; empty unless a cost metric.",
+          "type": "string"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/ID"
+        },
+        "kind": {
+          "$ref": "#/$defs/LimitEventKind"
+        },
+        "limit": {
+          "description": "The value of the rule in requests or tokens; 0 for a cost metric.",
+          "type": "integer"
+        },
+        "metric": {
+          "$ref": "#/$defs/LimitMetric"
+        },
+        "model": {
+          "type": "string"
+        },
+        "observed": {
+          "description": "What was used when the event was recorded: a decimal in requests, tokens or the currency.",
+          "type": "string"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "percent": {
+          "description": "The threshold reached; 0 for exhausted.",
+          "type": "integer"
+        },
+        "period_end": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "period_start": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "rule_id": {
+          "$ref": "#/$defs/ID"
+        },
+        "rule_level": {
+          "$ref": "#/$defs/LimitRuleLevel"
+        },
+        "subject_id": {
+          "type": "string"
+        },
+        "subject_kind": {
+          "$ref": "#/$defs/LimitSubjectKind"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "rule_id",
+        "rule_level",
+        "subject_kind",
+        "subject_id",
+        "provider",
+        "model",
+        "metric",
+        "currency",
+        "period_start",
+        "period_end",
+        "percent",
+        "limit",
+        "amount",
+        "observed",
+        "occurred_at"
+      ],
+      "type": "object"
+    },
+    "LimitEventKind": {
+      "enum": [
+        "threshold_reached",
+        "exhausted"
+      ],
+      "type": "string"
+    },
+    "LimitMetric": {
+      "enum": [
+        "concurrent_requests",
+        "requests_per_minute",
+        "tokens_per_minute",
+        "requests_per_day",
+        "requests_per_month",
+        "tokens_per_day",
+        "tokens_per_month",
+        "cost_per_day",
+        "cost_per_month"
+      ],
+      "type": "string"
+    },
+    "LimitRule": {
+      "additionalProperties": false,
+      "properties": {
+        "active": {
+          "description": "false for a cost rule whose currency is not the active currency of the tenant in force now; such a rule counts and refuses nothing.",
+          "type": "boolean"
+        },
+        "amount": {
+          "description": "The budget as a decimal; empty unless a cost metric.",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "currency": {
+          "description": "Empty unless a cost metric.",
+          "type": "string"
+        },
+        "enforce": {
+          "description": "false means the rule never refuses and only records its thresholds.",
+          "type": "boolean"
+        },
+        "id": {
+          "$ref": "#/$defs/ID"
+        },
+        "limit": {
+          "description": "Requests or tokens; 0 for a cost metric.",
+          "type": "integer"
+        },
+        "metric": {
+          "$ref": "#/$defs/LimitMetric"
+        },
+        "model": {
+          "description": "Empty when the rule is not scoped to a model.",
+          "type": "string"
+        },
+        "model_id": {
+          "description": "Empty when the rule is not scoped to a provider (a model).",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Empty when the rule is not scoped to a provider.",
+          "type": "string"
+        },
+        "provider_id": {
+          "description": "Empty when the rule is not scoped to a provider (a model).",
+          "type": "string"
+        },
+        "subject_id": {
+          "description": "Empty for the tenant; a service account ID; a key ID or a subject mapping ID; a key that is revoked cannot be named.",
+          "type": "string"
+        },
+        "subject_kind": {
+          "$ref": "#/$defs/LimitSubjectKind"
+        },
+        "thresholds": {
+          "description": "Percentages of the limit at which an event is recorded, ascending.",
+          "items": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxItems": 4,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "subject_kind",
+        "subject_id",
+        "provider",
+        "provider_id",
+        "model",
+        "model_id",
+        "metric",
+        "limit",
+        "amount",
+        "currency",
+        "enforce",
+        "thresholds",
+        "active",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "LimitRuleLevel": {
+      "description": "Who owns the rule that recorded the event.",
+      "enum": [
+        "tenant",
+        "platform"
+      ],
+      "type": "string"
+    },
+    "LimitSubjectKind": {
+      "enum": [
+        "tenant",
+        "service_account",
+        "key"
+      ],
+      "type": "string"
+    },
+    "ManagedBy": {
+      "enum": [
+        "tenant",
+        "platform"
+      ],
+      "type": "string"
+    },
+    "Member": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "display_name": {
+          "$ref": "#/$defs/DisplayName"
+        },
+        "email": {
+          "$ref": "#/$defs/Email"
+        },
+        "locked_until": {
+          "description": "Members the tenant manages only.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "managed_by": {
+          "$ref": "#/$defs/ManagedBy"
+        },
+        "must_change_password": {
+          "description": "Members the tenant manages only.",
+          "type": "boolean"
+        },
+        "roles": {
+          "items": {
+            "$ref": "#/$defs/RoleName"
+          },
+          "type": "array"
+        },
+        "sign_in": {
+          "$ref": "#/$defs/SignInMethod"
+        },
+        "source": {
+          "$ref": "#/$defs/RoleSource"
+        },
+        "state": {
+          "$ref": "#/$defs/UserState"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "user_id": {
+          "$ref": "#/$defs/ID"
+        },
+        "username": {
+          "$ref": "#/$defs/Username"
+        }
+      },
+      "required": [
+        "user_id",
+        "sign_in",
+        "display_name",
+        "email",
+        "state",
+        "managed_by",
+        "roles",
+        "source",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "MetadataEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "type": "object"
+    },
+    "MetadataKeys": {
+      "additionalProperties": false,
+      "properties": {
+        "keys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "restricted": {
+          "description": "False when every key with the format is accepted.",
+          "type": "boolean"
+        },
+        "updated_at": {
+          "description": "Absent when not restricted.",
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "restricted",
+        "keys"
+      ],
+      "type": "object"
+    },
+    "ModelName": {
+      "description": "The public name callers send: letters, digits and . _ : @ / + -, 1 to 128 characters.",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$",
+      "type": "string"
+    },
+    "ModelRef": {
+      "description": "A model named as provider/name.",
+      "pattern": "^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$",
+      "type": "string"
+    },
+    "ModelRestriction": {
+      "additionalProperties": false,
+      "properties": {
+        "models": {
+          "items": {
+            "$ref": "#/$defs/ModelRef"
+          },
+          "type": "array"
+        },
+        "restricted": {
+          "description": "false when the tenant has no restriction.",
+          "type": "boolean"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "restricted",
+        "models"
+      ],
+      "type": "object"
+    },
+    "Name": {
+      "description": "Lower-case letters, digits and hyphens; 1 to 63 characters; no hyphen at either end.",
+      "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$",
+      "type": "string"
+    },
+    "PermissionName": {
+      "maxLength": 64,
+      "pattern": "^[a-z_]+:[a-z_]+$",
+      "type": "string"
+    },
+    "PriceCategory": {
+      "description": "The units a rate applies to.",
+      "enum": [
+        "input",
+        "output",
+        "cache_read",
+        "cache_write",
+        "cache_write_1h",
+        "input_audio",
+        "output_audio"
+      ],
+      "type": "string"
+    },
+    "PriceRate": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "$ref": "#/$defs/PriceCategory"
+        },
+        "rate": {
+          "description": "Price per million units, as a decimal string, in the currency of the version.",
+          "pattern": "^(0|[1-9][0-9]{0,6})(\\.[0-9]{1,12})?$",
+          "type": "string"
+        },
+        "threshold": {
+          "description": "Input tokens of a request from which this rate applies to every unit of the category; 0 for the base rate.",
+          "maximum": 100000000,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "category",
+        "threshold",
+        "rate"
+      ],
+      "type": "object"
+    },
+    "ProviderName": {
+      "description": "Identifier of a provider of the catalogue.",
+      "pattern": "^[a-z][a-z0-9-]{0,62}$",
+      "type": "string"
+    },
+    "RawObject": {
+      "description": "A JSON object passed through as the database holds it.",
+      "type": "object"
+    },
+    "Role": {
+      "additionalProperties": false,
+      "properties": {
+        "assignments": {
+          "$ref": "#/$defs/RoleAssignments"
+        },
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 500,
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/ID"
+        },
+        "name": {
+          "$ref": "#/$defs/RoleName"
+        },
+        "permissions": {
+          "items": {
+            "$ref": "#/$defs/PermissionName"
+          },
+          "type": "array"
+        },
+        "state": {
+          "$ref": "#/$defs/RoleState"
+        },
+        "tenant_id": {
+          "$ref": "#/$defs/ID"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "tenant_id",
+        "name",
+        "description",
+        "permissions",
+        "state",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "RoleAssignments": {
+      "additionalProperties": false,
+      "description": "How many members and service accounts hold the role. Present on a single read.",
+      "properties": {
+        "members": {
+          "type": "integer"
+        },
+        "service_accounts": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "members",
+        "service_accounts"
+      ],
+      "type": "object"
+    },
+    "RoleName": {
+      "pattern": "^[a-z][a-z0-9-]{0,62}$",
+      "type": "string"
+    },
+    "RoleSource": {
+      "enum": [
+        "manual",
+        "idp"
+      ],
+      "type": "string"
+    },
+    "RoleState": {
+      "enum": [
+        "active",
+        "inactive"
+      ],
+      "type": "string"
+    },
+    "ServiceAccount": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/ID"
+        },
+        "name": {
+          "$ref": "#/$defs/Name"
+        },
+        "roles": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "state": {
+          "$ref": "#/$defs/ServiceAccountState"
+        },
+        "tenant_id": {
+          "$ref": "#/$defs/ID"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "valid_from": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "valid_until": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "tenant_id",
+        "name",
+        "description",
+        "state",
+        "roles",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "ServiceAccountState": {
+      "enum": [
+        "active",
+        "disabled"
+      ],
+      "type": "string"
+    },
+    "SignInMethod": {
+      "enum": [
+        "local",
+        "oidc"
+      ],
+      "type": "string"
+    },
+    "SubjectMapping": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 200,
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/ID"
+        },
+        "issuer": {
+          "$ref": "#/$defs/IssuerRef"
+        },
+        "service_account_id": {
+          "$ref": "#/$defs/ID"
+        },
+        "service_account_name": {
+          "$ref": "#/$defs/Name"
+        },
+        "subject": {
+          "maxLength": 255,
+          "minLength": 1,
+          "type": "string"
+        },
+        "tenant_id": {
+          "$ref": "#/$defs/ID"
+        }
+      },
+      "required": [
+        "id",
+        "tenant_id",
+        "issuer",
+        "subject",
+        "service_account_id",
+        "service_account_name",
+        "description",
+        "created_at"
+      ],
+      "type": "object"
+    },
+    "SupportAction": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "$ref": "#/$defs/SupportActionActor"
+        },
+        "close_reason": {
+          "type": "string"
+        },
+        "closed_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "closed_by": {
+          "$ref": "#/$defs/SupportActionClosedBy"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/ID"
+        },
+        "opened_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "permissions": {
+          "items": {
+            "$ref": "#/$defs/PermissionName"
+          },
+          "type": "array"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/SupportActionState"
+        },
+        "tenant_id": {
+          "$ref": "#/$defs/ID"
+        }
+      },
+      "required": [
+        "id",
+        "tenant_id",
+        "actor",
+        "reason",
+        "permissions",
+        "state",
+        "opened_at",
+        "expires_at"
+      ],
+      "type": "object"
+    },
+    "SupportActionActor": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/SupportActionActorType"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "SupportActionActorType": {
+      "enum": [
+        "platform",
+        "user"
+      ],
+      "type": "string"
+    },
+    "SupportActionClosedBy": {
+      "enum": [
+        "platform",
+        "tenant",
+        "expiry"
+      ],
+      "type": "string"
+    },
+    "SupportActionState": {
+      "enum": [
+        "open",
+        "expired",
+        "closed",
+        "ended"
+      ],
+      "type": "string"
+    },
+    "TenantPlatformIssuer": {
+      "additionalProperties": false,
+      "description": "What a tenant sees of a platform-level registration that lists it.",
+      "properties": {
+        "audience": {
+          "type": "string"
+        },
+        "claim_value": {
+          "description": "The claim value that designates this tenant.",
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "$ref": "#/$defs/ID"
+        },
+        "issuer": {
+          "$ref": "#/$defs/IssuerURL"
+        },
+        "name": {
+          "$ref": "#/$defs/Name"
+        },
+        "subject_claim": {
+          "$ref": "#/$defs/ClaimName"
+        },
+        "tenant_claim": {
+          "$ref": "#/$defs/ClaimName"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description",
+        "issuer",
+        "audience",
+        "subject_claim",
+        "tenant_claim",
+        "claim_value",
+        "enabled"
+      ],
+      "type": "object"
+    },
+    "TenantPlatformLimitRule": {
+      "additionalProperties": false,
+      "properties": {
+        "active": {
+          "description": "Whether the ceiling applies to the tenant in its active currency in force: always present, true or false (a count ceiling is always active).",
+          "type": "boolean"
+        },
+        "amount": {
+          "description": "The budget as a decimal; empty unless a cost metric.",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "currency": {
+          "description": "Empty unless a cost metric.",
+          "type": "string"
+        },
+        "enforce": {
+          "description": "false means the rule never refuses and only records its thresholds.",
+          "type": "boolean"
+        },
+        "id": {
+          "$ref": "#/$defs/ID"
+        },
+        "limit": {
+          "description": "Requests or tokens; 0 for a cost metric.",
+          "type": "integer"
+        },
+        "metric": {
+          "$ref": "#/$defs/LimitMetric"
+        },
+        "model": {
+          "description": "Empty when the rule is not scoped to a model.",
+          "type": "string"
+        },
+        "model_id": {
+          "description": "Empty when the rule is not scoped to a provider (a model).",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Empty when the rule is not scoped to a provider.",
+          "type": "string"
+        },
+        "provider_id": {
+          "description": "Empty when the rule is not scoped to a provider (a model).",
+          "type": "string"
+        },
+        "tenant": {
+          "description": "The tenant the rule is for; empty for the default of every tenant.",
+          "type": "string"
+        },
+        "thresholds": {
+          "description": "Percentages of the limit at which an event is recorded, ascending.",
+          "items": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxItems": 4,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "tenant",
+        "provider",
+        "provider_id",
+        "model",
+        "model_id",
+        "metric",
+        "limit",
+        "amount",
+        "currency",
+        "enforce",
+        "thresholds",
+        "active",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "TenantPriceKind": {
+      "description": "price carries rates; end carries none, and from its start the list does not price the model.",
+      "enum": [
+        "price",
+        "end"
+      ],
+      "type": "string"
+    },
+    "TenantPriceVersion": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "currency": {
+          "$ref": "#/$defs/Currency"
+        },
+        "id": {
+          "$ref": "#/$defs/ID"
+        },
+        "in_force": {
+          "description": "true when this is the version of its list and model in force now. A list is used only while its currency is the active currency.",
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/$defs/TenantPriceKind"
+        },
+        "model": {
+          "$ref": "#/$defs/ModelName"
+        },
+        "model_id": {
+          "$ref": "#/$defs/ID"
+        },
+        "note": {
+          "type": "string"
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderName"
+        },
+        "rates": {
+          "items": {
+            "$ref": "#/$defs/PriceRate"
+          },
+          "type": "array"
+        },
+        "valid_from": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "model_id",
+        "provider",
+        "model",
+        "kind",
+        "valid_from",
+        "currency",
+        "rates",
+        "note",
+        "in_force",
+        "created_at"
+      ],
+      "type": "object"
+    },
+    "TenantTimeZone": {
+      "additionalProperties": false,
+      "properties": {
+        "effective_from": {
+          "description": "Present while a change is pending; the instant from which time_zone is in force.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "in_force": {
+          "description": "The name of the zone in force now; the default of the installation resolved.",
+          "type": "string"
+        },
+        "time_zone": {
+          "$ref": "#/$defs/TimeZoneName"
+        }
+      },
+      "required": [
+        "time_zone",
+        "in_force"
+      ],
+      "type": "object"
+    },
+    "TimeZoneName": {
+      "description": "An IANA time zone name; empty for the default of the installation.",
+      "maxLength": 64,
+      "pattern": "^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$",
+      "type": "string"
+    },
+    "TokenAlgorithm": {
+      "description": "One of RS256, RS384, RS512, PS256, PS384, PS512, ES256, ES384, ES512, EdDSA.",
+      "pattern": "^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$",
+      "type": "string"
+    },
+    "TokenIssuer": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithms": {
+          "items": {
+            "$ref": "#/$defs/TokenAlgorithm"
+          },
+          "maxItems": 10,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "audience": {
+          "description": "The value that must be among the token's aud entries. The pair of issuer and audience is unique in the installation.",
+          "maxLength": 255,
+          "minLength": 1,
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 200,
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "$ref": "#/$defs/ID"
+        },
+        "issuer": {
+          "$ref": "#/$defs/IssuerURL"
+        },
+        "jwks_uri": {
+          "description": "Empty for OpenID Connect discovery under the issuer; otherwise an https URL.",
+          "maxLength": 2048,
+          "type": "string"
+        },
+        "name": {
+          "$ref": "#/$defs/Name"
+        },
+        "required_claims": {
+          "additionalProperties": {
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "description": "Claim name to the string the claim must equal, or contain when it is an array of strings.",
+          "maxProperties": 16,
+          "type": "object"
+        },
+        "subject_claim": {
+          "$ref": "#/$defs/ClaimName"
+        },
+        "tenant_id": {
+          "$ref": "#/$defs/ID"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "tenant_id",
+        "name",
+        "description",
+        "issuer",
+        "audience",
+        "jwks_uri",
+        "algorithms",
+        "subject_claim",
+        "required_claims",
+        "enabled",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "UsageCounter": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "type": "object"
+    },
+    "UsageRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "api_family": {
+          "type": "string"
+        },
+        "cache_read_tokens": {
+          "type": "integer"
+        },
+        "cache_write_tokens": {
+          "type": "integer"
+        },
+        "cost": {
+          "description": "Decimal amount in currency; null unless cost_status is known. Informational under BYOK.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cost_fallbacks": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "cost_reason": {
+          "type": "string"
+        },
+        "cost_status": {
+          "description": "known, unknown or none.",
+          "type": "string"
+        },
+        "credential_id": {
+          "description": "Empty when no credential was opened.",
+          "type": "string"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "duration_ms": {
+          "type": "integer"
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "error_code": {
+          "type": "string"
+        },
+        "estimated_input_tokens": {
+          "description": "0 unless input_source is estimated.",
+          "type": "integer"
+        },
+        "estimated_output_tokens": {
+          "description": "0 unless output_source is estimated.",
+          "type": "integer"
+        },
+        "id": {
+          "$ref": "#/$defs/ID"
+        },
+        "input_source": {
+          "description": "provider, estimated or none.",
+          "type": "string"
+        },
+        "input_tokens": {
+          "description": "Reported by the provider; 0 unless input_source is provider. Includes cache_read_tokens and cache_write_tokens.",
+          "type": "integer"
+        },
+        "key_id": {
+          "type": "string"
+        },
+        "limit_state": {
+          "description": "limited, unlimited, unverified or not_evaluated; empty for a record written before the field existed.",
+          "type": "string"
+        },
+        "metadata": {
+          "items": {
+            "$ref": "#/$defs/MetadataEntry"
+          },
+          "type": "array"
+        },
+        "metadata_dropped": {
+          "type": "integer"
+        },
+        "model": {
+          "type": "string"
+        },
+        "model_id": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "other_units": {
+          "items": {
+            "$ref": "#/$defs/UsageCounter"
+          },
+          "type": "array"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "output_source": {
+          "description": "provider, estimated or none.",
+          "type": "string"
+        },
+        "output_tokens": {
+          "description": "Reported by the provider; 0 unless output_source is provider. Includes reasoning_tokens.",
+          "type": "integer"
+        },
+        "price_source": {
+          "description": "catalogue or tenant: the price list price_version_id belongs to; empty when the record has no price version.",
+          "type": "string"
+        },
+        "price_version_id": {
+          "type": "string"
+        },
+        "principal_id": {
+          "type": "string"
+        },
+        "principal_kind": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "provider_usage": {
+          "description": "The provider's own integer counters, by path.",
+          "items": {
+            "$ref": "#/$defs/UsageCounter"
+          },
+          "type": "array"
+        },
+        "reasoning_tokens": {
+          "type": "integer"
+        },
+        "request_bytes": {
+          "type": "integer"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "response_bytes": {
+          "type": "integer"
+        },
+        "started_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "stream": {
+          "description": "False also when the request was refused before its body was read.",
+          "type": "boolean"
+        },
+        "trace_id": {
+          "description": "Empty when the request had no trace.",
+          "type": "string"
+        },
+        "ttfb_ms": {
+          "description": "0 when no body byte arrived.",
+          "type": "integer"
+        },
+        "upstream_model": {
+          "type": "string"
+        },
+        "upstream_status": {
+          "description": "0 when the provider did not answer.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "request_id",
+        "trace_id",
+        "started_at",
+        "duration_ms",
+        "principal_kind",
+        "principal_id",
+        "key_id",
+        "credential_id",
+        "provider",
+        "api_family",
+        "operation",
+        "endpoint",
+        "model",
+        "model_id",
+        "upstream_model",
+        "stream",
+        "outcome",
+        "error_code",
+        "upstream_status",
+        "ttfb_ms",
+        "request_bytes",
+        "response_bytes",
+        "input_source",
+        "output_source",
+        "input_tokens",
+        "output_tokens",
+        "cache_read_tokens",
+        "cache_write_tokens",
+        "reasoning_tokens",
+        "estimated_input_tokens",
+        "estimated_output_tokens",
+        "other_units",
+        "provider_usage",
+        "cost_status",
+        "cost_reason",
+        "currency",
+        "price_version_id",
+        "price_source",
+        "cost_fallbacks",
+        "metadata",
+        "metadata_dropped",
+        "limit_state"
+      ],
+      "type": "object"
+    },
+    "UserState": {
+      "enum": [
+        "active",
+        "disabled"
+      ],
+      "type": "string"
+    },
+    "Username": {
+      "pattern": "^[a-z0-9][a-z0-9._@+-]{1,62}[a-z0-9]$",
+      "type": "string"
+    },
+    "VirtualKey": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "credential_id": {
+          "$ref": "#/$defs/ID"
+        },
+        "description": {
+          "type": "string"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/VirtualKeyID"
+        },
+        "models": {
+          "description": "Models the key is limited to, as provider/name. Absent means every model available to the tenant.",
+          "items": {
+            "$ref": "#/$defs/ModelRef"
+          },
+          "type": "array"
+        },
+        "revoked_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "scopes": {
+          "description": "Permissions the key is limited to. Absent means every permission of the service account's roles.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "service_account_id": {
+          "$ref": "#/$defs/ID"
+        },
+        "state": {
+          "$ref": "#/$defs/KeyState"
+        },
+        "tenant_id": {
+          "$ref": "#/$defs/ID"
+        }
+      },
+      "required": [
+        "id",
+        "tenant_id",
+        "service_account_id",
+        "description",
+        "state",
+        "created_at"
+      ],
+      "type": "object"
+    },
+    "VirtualKeyID": {
+      "pattern": "^t[a-z2-7]{16}$",
+      "type": "string"
+    },
+    "audit_event": {
+      "$ref": "#/$defs/AuditEvent"
+    },
+    "credential": {
+      "$ref": "#/$defs/Credential"
+    },
+    "limit": {
+      "$ref": "#/$defs/LimitRule"
+    },
+    "limit_event": {
+      "$ref": "#/$defs/LimitEvent"
+    },
+    "member": {
+      "$ref": "#/$defs/Member"
+    },
+    "platform_issuer": {
+      "$ref": "#/$defs/TenantPlatformIssuer"
+    },
+    "platform_limit": {
+      "$ref": "#/$defs/TenantPlatformLimitRule"
+    },
+    "price_list_version": {
+      "$ref": "#/$defs/TenantPriceVersion"
+    },
+    "role": {
+      "$ref": "#/$defs/Role"
+    },
+    "service_account": {
+      "$ref": "#/$defs/ServiceAccount"
+    },
+    "settings": {
+      "additionalProperties": false,
+      "description": "The tenant's settings: the answers of the four reads of the settings.",
+      "properties": {
+        "currency": {
+          "$ref": "#/$defs/ActiveCurrency"
+        },
+        "metadata_keys": {
+          "$ref": "#/$defs/MetadataKeys"
+        },
+        "model_restriction": {
+          "$ref": "#/$defs/ModelRestriction"
+        },
+        "time_zone": {
+          "$ref": "#/$defs/TenantTimeZone"
+        }
+      },
+      "required": [
+        "time_zone",
+        "currency",
+        "metadata_keys",
+        "model_restriction"
+      ],
+      "type": "object"
+    },
+    "subject_mapping": {
+      "$ref": "#/$defs/SubjectMapping"
+    },
+    "support_action": {
+      "$ref": "#/$defs/SupportAction"
+    },
+    "token_issuer": {
+      "$ref": "#/$defs/TokenIssuer"
+    },
+    "usage_record": {
+      "$ref": "#/$defs/UsageRecord"
+    },
+    "virtual_key": {
+      "$ref": "#/$defs/VirtualKey"
+    }
+  },
+  "$id": "urn:pandokos:schema:tenant-export:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "manifest.json of an export made by pandokos tenant-export. Each file of the export is validated against the entry of $defs that its kind names.",
+  "properties": {
+    "audit_head": {
+      "properties": {
+        "anchor_seq": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "hash": {
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "seq",
+        "hash",
+        "anchor_seq"
+      ],
+      "type": "object"
+    },
+    "created_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "files": {
+      "items": {
+        "properties": {
+          "kind": {
+            "description": "The entry of $defs that each line of the file validates against.",
+            "enum": [
+              "settings",
+              "service_account",
+              "virtual_key",
+              "credential",
+              "token_issuer",
+              "subject_mapping",
+              "platform_issuer",
+              "limit",
+              "platform_limit",
+              "limit_event",
+              "price_list_version",
+              "member",
+              "role",
+              "support_action",
+              "usage_record",
+              "audit_event"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "records": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "records",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "format": {
+      "const": "pandokos-tenant-export"
+    },
+    "pandokos_version": {
+      "type": "string"
+    },
+    "tenant_id": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "usage_from": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "usage_to": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "version": {
+      "const": 1
+    }
+  },
+  "required": [
+    "format",
+    "version",
+    "tenant_id",
+    "created_at",
+    "pandokos_version",
+    "files",
+    "audit_head",
+    "usage_from",
+    "usage_to"
+  ],
+  "title": "Pandokos tenant data export, manifest",
+  "type": "object"
+}

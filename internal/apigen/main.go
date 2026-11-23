@@ -198,10 +198,17 @@ type generator struct {
 func main() {
 	spec := flag.String("spec", "api/openapi/admin.v1.yaml", "OpenAPI document")
 	out := flag.String("out", "internal/adminapi/adminapi.gen.go", "output file")
+	schemaOut := flag.String("export-schema", "", "also write the JSON Schema of the tenant data export to this file")
 	flag.Parse()
 	src, err := generate(*spec)
 	if err == nil {
 		err = os.WriteFile(*out, src, 0o644) //nolint:gosec // generated source, not a secret
+	}
+	if err == nil && *schemaOut != "" {
+		var schemaDoc []byte
+		if schemaDoc, err = exportSchemaOf(*spec); err == nil {
+			err = os.WriteFile(*schemaOut, schemaDoc, 0o644) //nolint:gosec // generated document, not a secret
+		}
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "apigen:", err)
@@ -209,7 +216,8 @@ func main() {
 	}
 }
 
-func generate(path string) ([]byte, error) {
+// load reads the document.
+func load(path string) (*generator, error) {
 	b, err := os.ReadFile(path) //nolint:gosec // the path is a build input
 	if err != nil {
 		return nil, err
@@ -222,6 +230,14 @@ func generate(path string) ([]byte, error) {
 	}
 	if g.doc.OpenAPI != "3.1.0" {
 		return nil, errors.New("openapi must be 3.1.0")
+	}
+	return g, nil
+}
+
+func generate(path string) ([]byte, error) {
+	g, err := load(path)
+	if err != nil {
+		return nil, err
 	}
 	body, err := g.run()
 	if err != nil {
@@ -1176,7 +1192,10 @@ func (g *generator) operations() error {
 				g.p("if in.Format == %s { accept = \"text/csv\" }", enumConst("ExportFormat", "csv"))
 				accept = "accept"
 			}
-			g.p("return c.doStream(ctx, %q, %s, q, %s)", o.method, expr, accept)
+			if o.method != http.MethodGet {
+				return fmt.Errorf("%s: a streamed answer is the answer of a GET", o.id)
+			}
+			g.p("return c.doStream(ctx, %s, q, %s)", expr, accept)
 			g.p("}\n")
 			continue
 		}

@@ -202,6 +202,9 @@ func mapCatalogError(err error) error {
 	if !ok {
 		return err
 	}
+	if name == "tenant_open" {
+		return err // the Error hook answers it (§5.16)
+	}
 	switch kind {
 	case "unique":
 		switch name {

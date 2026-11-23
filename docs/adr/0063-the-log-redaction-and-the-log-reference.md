@@ -40,3 +40,4 @@ the installation.
 ## History
 
 - 2026-11-22: proposed with sprint 6.1.
+- 2026-11-23: sprint 6.3: the eight lines are added or changed (`tenant deletion ready`, `started`, `completed`, `failing`, `recovered`, `key rewrap failing`, `key rotation complete`, and `vault ready` with two fields), none with a tenant or a count of one.

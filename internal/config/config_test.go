@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -292,6 +293,7 @@ var wantKeys = []string{
 	"database.owner.password_file",
 	"vault.kek.provider",
 	"vault.kek.local.key_file",
+	"vault.kek.local.unwrap_key_files",
 	"pricing.import_at_start",
 	"pricing.default_currency",
 	"pricing.refresh.enabled",
@@ -354,6 +356,8 @@ var wantKeys = []string{
 	"idempotency.retention",
 	"support.enabled",
 	"support.max_duration",
+	"tenant_deletion.grace_period",
+	"tenant_deletion.interval",
 	"reports.rollup_interval",
 	"retention.usage_months",
 	"retention.audit_months",
@@ -363,12 +367,12 @@ var wantDefaultText = []string{"info", "0.0.0.0:8080", "10s", "120s", "65536", "
 	"127.0.0.1:8081", "10s", "120s", "65536", "", "", "TLS1.2", "false", "",
 	"10485760", "30s", "10m", "4096", "UTC", "refuse", "refuse", "5m", "10s", "", "", "30s", "30s", "30s", "5m", "30s", "30s",
 	"", "", "pandokos", "verify-full", "", "5s", "pandokos_gateway", "", "10", "pandokos_admin", "", "10", "pandokos_worker", "", "5", "pandokos_owner", "",
-	"local", "",
+	"local", "", "",
 	"true", "USD", "false", "https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json", "24h",
 	"50ms", "500", "10000", "10s", "", "http/protobuf", "", "10s", "1", "false", "true", "60s", "false", "",
 	"true", "8192", "60s", "24h", "", "5s", "15m", "10s", "6h",
 	"false", "", "true", "12", "72h", "10", "15m", "15m", "50", "65536", "3", "1", "4", "30m", "12h", "10",
-	"false", "", "", "", "basic", "openid profile email", "RS256 ES256", "Single sign-on", "name", "email", "groups", "", "false", "", "/", "24h", "true", "1h", "1m", "0", "0"}
+	"false", "", "", "", "basic", "openid profile email", "RS256 ES256", "Single sign-on", "name", "email", "groups", "", "false", "", "/", "24h", "true", "1h", "168h", "1m", "1m", "0", "0"}
 
 func leafKeys(t reflect.Type, prefix string, out *[]string) {
 	for i := 0; i < t.NumField(); i++ {
@@ -426,7 +430,11 @@ func TestKeysTable(t *testing.T) {
 	}
 	var fromStruct []string
 	leafKeys(reflect.TypeOf(Config{}), "", &fromStruct)
-	if !reflect.DeepEqual(fromStruct, wantKeys) {
+	// The table lists tenant_deletion with the other serve keys of the jobs; the structure ends with it.
+	sortedStruct, sortedWant := append([]string(nil), fromStruct...), append([]string(nil), wantKeys...)
+	sort.Strings(sortedStruct)
+	sort.Strings(sortedWant)
+	if !reflect.DeepEqual(sortedStruct, sortedWant) {
 		t.Errorf("struct leaves = %v, want %v", fromStruct, wantKeys)
 	}
 }

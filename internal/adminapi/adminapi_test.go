@@ -680,6 +680,34 @@ func (f *fake) ExportPlatformAuditEvents(_ context.Context, in adminapi.ExportPl
 	f.rec("exportPlatformAuditEvents", in)
 	return f.stream("exportPlatformAuditEvents", "application/x-ndjson")
 }
+func (f *fake) RequestTenantDeletion(_ context.Context, in adminapi.RequestTenantDeletionInput) (*adminapi.TenantDeletion, error) {
+	f.rec("requestTenantDeletion", in)
+	return &adminapi.TenantDeletion{}, nil
+}
+func (f *fake) GetTenantDeletion(_ context.Context, in adminapi.GetTenantDeletionInput) (*adminapi.TenantDeletion, error) {
+	f.rec("getTenantDeletion", in)
+	return &adminapi.TenantDeletion{}, nil
+}
+func (f *fake) CancelTenantDeletion(_ context.Context, in adminapi.CancelTenantDeletionInput) (*adminapi.Tenant, error) {
+	f.rec("cancelTenantDeletion", in)
+	return &adminapi.Tenant{}, nil
+}
+func (f *fake) ListTenantDeletions(_ context.Context, in adminapi.ListTenantDeletionsInput) (*adminapi.TenantDeletionList, error) {
+	f.rec("listTenantDeletions", in)
+	return &adminapi.TenantDeletionList{}, nil
+}
+func (f *fake) GetDeletedTenantAuditHead(_ context.Context, in adminapi.GetDeletedTenantAuditHeadInput) (*adminapi.AuditHead, error) {
+	f.rec("getDeletedTenantAuditHead", in)
+	return &adminapi.AuditHead{}, nil
+}
+func (f *fake) ExportDeletedTenantAuditEvents(_ context.Context, in adminapi.ExportDeletedTenantAuditEventsInput) (*adminapi.Stream, error) {
+	f.rec("exportDeletedTenantAuditEvents", in)
+	return f.stream("exportDeletedTenantAuditEvents", "application/x-ndjson")
+}
+func (f *fake) ListKEKVersions(_ context.Context, in adminapi.ListKEKVersionsInput) (*adminapi.KEKVersionList, error) {
+	f.rec("listKEKVersions", in)
+	return &adminapi.KEKVersionList{Items: []adminapi.KEKVersion{}}, nil
+}
 func (f *fake) GetMetadataKeys(_ context.Context, in adminapi.GetMetadataKeysInput) (*adminapi.MetadataKeys, error) {
 	f.rec("getMetadataKeys", in)
 	return &adminapi.MetadataKeys{Keys: []string{}}, nil
@@ -1451,8 +1479,36 @@ func TestRouterAndClient(t *testing.T) {
 			in := adminapi.ExportPlatformAuditEventsInput{FromSeq: 1}
 			add("exportPlatformAuditEvents", in, readAll("exportPlatformAuditEvents", func() (*adminapi.StreamBody, error) { return c.ExportPlatformAuditEvents(ctx, in) }))
 		}
-		if len(adminapi.Operations) != 160 {
-			t.Fatalf("%d operations, want 160 (the 35 of epic 1 and sprint 2.1, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1, the 12 of sprint 5.2, the 2 of sprint 5.3, the 7 of sprint 5.4, the 27 of sprint 4.2, the 16 of sprint 4.3 and the 12 of sprint 6.2)", len(adminapi.Operations))
+		{
+			in := adminapi.RequestTenantDeletionInput{Tenant: tid, Body: adminapi.TenantDeletionRequest{Reason: "why", ConfirmName: "acme"}}
+			add("requestTenantDeletion", in, func() error { _, err := c.RequestTenantDeletion(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetTenantDeletionInput{Tenant: tid}
+			add("getTenantDeletion", in, func() error { _, err := c.GetTenantDeletion(ctx, in); return err })
+		}
+		{
+			in := adminapi.CancelTenantDeletionInput{Tenant: tid, Body: adminapi.RequiredReason{Reason: "why"}}
+			add("cancelTenantDeletion", in, func() error { _, err := c.CancelTenantDeletion(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListTenantDeletionsInput{Limit: 2, State: adminapi.TenantDeletionStateCompleted}
+			add("listTenantDeletions", in, func() error { _, err := c.ListTenantDeletions(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetDeletedTenantAuditHeadInput{Tenant: tid}
+			add("getDeletedTenantAuditHead", in, func() error { _, err := c.GetDeletedTenantAuditHead(ctx, in); return err })
+		}
+		{
+			in := adminapi.ExportDeletedTenantAuditEventsInput{Tenant: tid, FromSeq: 2, ToSeq: 8}
+			add("exportDeletedTenantAuditEvents", in, readAll("exportDeletedTenantAuditEvents", func() (*adminapi.StreamBody, error) { return c.ExportDeletedTenantAuditEvents(ctx, in) }))
+		}
+		{
+			in := adminapi.ListKEKVersionsInput{}
+			add("listKEKVersions", in, func() error { _, err := c.ListKEKVersions(ctx, in); return err })
+		}
+		if len(adminapi.Operations) != 167 {
+			t.Fatalf("%d operations, want 167 (the 35 of epic 1 and sprint 2.1, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1, the 12 of sprint 5.2, the 2 of sprint 5.3, the 7 of sprint 5.4, the 27 of sprint 4.2, the 16 of sprint 4.3, the 12 of sprint 6.2 and the 7 of sprint 6.3)", len(adminapi.Operations))
 		}
 		for _, op := range adminapi.Operations {
 			tc, ok := calls[op.ID]

@@ -66,6 +66,9 @@ type Options struct {
 	Idempotency *idem.Store
 	Origin      OriginOptions
 	Auth        AuthOptions
+	// TenantDeletionGrace is tenant_deletion.grace_period: the time between a request for the
+	// deletion of a tenant and its start; 168 hours when nil.
+	TenantDeletionGrace *time.Duration
 	// Support is the configuration of support actions (sprint 4.3): support.enabled and
 	// support.max_duration.
 	Support struct {
@@ -139,6 +142,8 @@ type server struct {
 	idempotency *idem.Store
 	origin      OriginOptions
 	authOpts    AuthOptions
+	// deletionGrace is Options.TenantDeletionGrace.
+	deletionGrace time.Duration
 	// support is Options.Support.
 	support struct {
 		enabled     bool
@@ -221,6 +226,9 @@ func New(o Options) (*Handler, error) {
 	}
 	if s.now == nil {
 		s.now = time.Now
+	}
+	if s.deletionGrace = defaultDeletionGrace; o.TenantDeletionGrace != nil {
+		s.deletionGrace = *o.TenantDeletionGrace
 	}
 	s.limiter = newFailureLimiter(s.now)
 	api := adminapi.NewHandler(s, adminapi.Hooks{Before: s.before, Error: s.fail, MaxBodyBytes: maxBodyBytes})
@@ -638,6 +646,7 @@ func (s *server) fail(w http.ResponseWriter, r *http.Request, _ *adminapi.Operat
 		s.log.Error("credential cannot be sealed", attrs...)
 	case errors.Is(err, authz.ErrUnavailable) || store.IsUnavailable(err):
 		code = adminapi.ProblemCodeUnavailable
+	case constraintProblem(err, &code, &fields):
 	default:
 		attrs := []any{"request_id", st.id, "operation", st.operation}
 		if sqlstate := store.SQLState(err); sqlstate != "" {
@@ -803,4 +812,23 @@ func (s *server) memberPrincipal(ctx context.Context, u account.User, sess sessi
 		p.Name = u.DisplayName
 	}
 	return p, nil
+}
+
+// constraintProblem maps the refusals of the functions and triggers of migration 0016 (§5.16): a
+// write for a tenant that is being deleted or is deleted, a reactivation held by a requested
+// deletion, and a request that raced a reactivation. It reports whether err is one of them.
+func constraintProblem(err error, code *adminapi.ProblemCode, fields *[]adminapi.FieldError) bool {
+	switch store.ErrorConstraint(err) {
+	case "tenant_open":
+		*code = adminapi.ProblemCodeInvalidState
+		*fields = []adminapi.FieldError{{Field: "tenant", Message: "the tenant is being deleted or is deleted"}}
+	case "tenant_deletion_holds":
+		*code = adminapi.ProblemCodeInvalidState
+		*fields = []adminapi.FieldError{{Field: "state", Message: "the deletion of the tenant is requested; cancel it first"}}
+	case "tenant_deletion_suspended":
+		*code = adminapi.ProblemCodeInvalidState
+	default:
+		return false
+	}
+	return true
 }

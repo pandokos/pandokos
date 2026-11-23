@@ -267,6 +267,15 @@ var platformAndSelf = map[string]string{
 	"getPlatformKey":    "platform",
 	"revokePlatformKey": "platform",
 
+	// Sprint 6.3: the deletion of tenants, the log kept for a deleted one and the key versions.
+	"requestTenantDeletion":          "platform",
+	"cancelTenantDeletion":           "platform",
+	"getTenantDeletion":              "platform",
+	"listTenantDeletions":            "platform",
+	"getDeletedTenantAuditHead":      "platform",
+	"exportDeletedTenantAuditEvents": "platform",
+	"listKEKVersions":                "platform",
+
 	"listPlatformAuditEvents":   "platform",
 	"getPlatformAuditHead":      "platform",
 	"exportPlatformAuditEvents": "platform",

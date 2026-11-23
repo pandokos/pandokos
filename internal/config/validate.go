@@ -86,6 +86,7 @@ func validate(c *Config, purpose Purpose) []Problem {
 		ps = append(ps, validateUpstream(c)...)
 		ps = append(ps, validateLedger(c)...)
 		ps = append(ps, validateReports(c)...)
+		ps = append(ps, validateLifecycle(c)...)
 		ps = append(ps, validateTelemetry(c)...)
 		ps = append(ps, validateTokens(c)...)
 	}
@@ -454,43 +455,99 @@ func listenerAndURLWarnings(c *Config) []Warning {
 	return append(ws, keyFileWarning(c)...)
 }
 
-// loadSecrets reads the key-encryption key.
-func loadSecrets(c *Config) []Problem {
-	return loadKEK(c)
+// loadSecrets reads the key-encryption key and, for serve, the earlier keys that still unwrap.
+func loadSecrets(c *Config, purpose Purpose) []Problem {
+	ps := loadKEK(c)
+	if purpose == PurposeServe {
+		ps = append(ps, loadUnwrapKEKs(c)...)
+	}
+	return ps
 }
 
-// loadKEK reads the key file and checks that it holds 32 bytes in standard base64. No message
+// readKEKFile reads one key file and checks that it holds 32 bytes in standard base64. No message
 // quotes any of the content.
+func readKEKFile(key, path string) (secret.Secret, *Problem) {
+	s, err := secret.ReadFile(path)
+	if err != nil {
+		return secret.Secret{}, &Problem{Key: key, Message: err.Error()}
+	}
+	raw, err := base64.StdEncoding.Strict().DecodeString(s.Reveal())
+	if err != nil || len(raw) != 32 {
+		clear(raw)
+		return secret.Secret{}, &Problem{Key: key, Message: "must hold 32 bytes in standard base64 (44 characters); create one with pandokos kek generate"}
+	}
+	clear(raw)
+	return s, nil
+}
+
+// loadKEK reads the key file.
 func loadKEK(c *Config) []Problem {
 	const key = "vault.kek.local.key_file"
 	path := c.Vault.KEK.Local.KeyFile
 	if path == "" {
 		return []Problem{{Key: key, Message: "must be set"}}
 	}
-	s, err := secret.ReadFile(path)
-	if err != nil {
-		return []Problem{{Key: key, Message: err.Error()}}
+	s, p := readKEKFile(key, path)
+	if p != nil {
+		return []Problem{*p}
 	}
-	raw, err := base64.StdEncoding.Strict().DecodeString(s.Reveal())
-	if err != nil || len(raw) != 32 {
-		clear(raw)
-		return []Problem{{Key: key, Message: "must hold 32 bytes in standard base64 (44 characters); create one with pandokos kek generate"}}
-	}
-	clear(raw)
 	c.Vault.KEK.Local.Key = s
 	return nil
 }
 
-// keyFileWarning says when the key file can be accessed by users other than its owner and group.
+// loadUnwrapKEKs reads the files of vault.kek.local.unwrap_key_files. A key equal to the key file
+// or to another entry is an error, whatever its path.
+func loadUnwrapKEKs(c *Config) []Problem {
+	const key = "vault.kek.local.unwrap_key_files"
+	l := &c.Vault.KEK.Local
+	var ps []Problem
+	var keys []secret.Secret
+	for _, path := range l.UnwrapKeyFiles {
+		s, p := readKEKFile(key, path)
+		if p != nil {
+			ps = append(ps, *p)
+			continue
+		}
+		dup := !l.Key.IsZero() && l.Key.Reveal() == s.Reveal()
+		for _, k := range keys {
+			dup = dup || k.Reveal() == s.Reveal()
+		}
+		if dup {
+			ps = append(ps, Problem{Key: key, Message: "must not hold the same key twice or the key of vault.kek.local.key_file"})
+			continue
+		}
+		keys = append(keys, s)
+	}
+	if len(ps) == 0 {
+		l.UnwrapKeys = keys
+	}
+	return ps
+}
+
+// keyFileWarning says when the key file or an unwrap key file can be accessed by users other than
+// its owner and group.
 func keyFileWarning(c *Config) []Warning {
-	if c.Vault.KEK.Local.Key.IsZero() || runtime.GOOS == "windows" {
+	if runtime.GOOS == "windows" {
 		return nil
 	}
-	fi, err := os.Stat(c.Vault.KEK.Local.KeyFile) // follows links: the mode of the target counts
-	if err != nil || fi.Mode().Perm()&0o007 == 0 {
-		return nil
+	var ws []Warning
+	check := func(key, path string) {
+		fi, err := os.Stat(path) // follows links: the mode of the target counts
+		if err != nil || fi.Mode().Perm()&0o007 == 0 {
+			return
+		}
+		ws = append(ws, Warning{Key: key, Message: "the file can be accessed by other users; restrict it to the service user (chmod 600)"})
 	}
-	return []Warning{{Key: "vault.kek.local.key_file", Message: "the file can be accessed by other users; restrict it to the service user (chmod 600)"}}
+	l := c.Vault.KEK.Local
+	if !l.Key.IsZero() {
+		check("vault.kek.local.key_file", l.KeyFile)
+	}
+	if len(l.UnwrapKeys) == len(l.UnwrapKeyFiles) {
+		for _, f := range l.UnwrapKeyFiles {
+			check("vault.kek.local.unwrap_key_files", f)
+		}
+	}
+	return ws
 }
 
 // validatePricing applies the rules of the download settings; only serve reads them. No message

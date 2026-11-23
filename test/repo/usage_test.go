@@ -442,6 +442,9 @@ func TestUsageStaysWithTheTenant(t *testing.T) {
 			if p := filepath.ToSlash(file); strings.Contains(p, "internal/store/queries/") || strings.Contains(p, "internal/adminapi/") { // generated; the names of its methods are those of operations
 				continue
 			}
+			if strings.Contains(filepath.ToSlash(file), "internal/tenantexport/") { // a client of the administration API: it calls operations by name (exportUsageRecords), no statement
+				continue
+			}
 			f, err := parser.ParseFile(fset, file, nil, 0)
 			if err != nil {
 				t.Fatal(err)

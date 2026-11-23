@@ -24,6 +24,7 @@ import (
 	"github.com/pandokos/pandokos/internal/egress"
 	"github.com/pandokos/pandokos/internal/jwks"
 	"github.com/pandokos/pandokos/internal/ledger"
+	"github.com/pandokos/pandokos/internal/lifecycle"
 	"github.com/pandokos/pandokos/internal/limits"
 	"github.com/pandokos/pandokos/internal/pricing/genaiprices"
 	"github.com/pandokos/pandokos/internal/reports"
@@ -153,19 +154,20 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	}
 
 	gatewayDB, adminDB, workerDB := dbs[0], dbs[1], dbs[2]
-	kp, err := vault.NewLocalProvider(cfg.Vault.KEK.Local.Key)
+	kp, err := vault.NewLocalProvider(cfg.Vault.KEK.Local.Key, cfg.Vault.KEK.Local.UnwrapKeys...)
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
 	vctx, vcancel := context.WithTimeout(ctx, 30*time.Second)
-	kekVersion, err := vault.Check(vctx, adminDB, kp)
+	kekVersion, kekActivation, err := vault.Activate(vctx, adminDB, workerDB, kp)
 	vcancel()
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	logger.Info("vault ready", "kek_provider", kp.Name(), "kek_version", kekVersion)
+	logger.Info("vault ready", "kek_provider", kp.Name(), "kek_version", kekVersion, "kek_activation", kekActivation,
+		"kek_unwrap_versions", len(kp.Versions())-1)
 	sealer, err := vault.NewSealer(kp)
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
@@ -279,8 +281,10 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	if cfg.Pricing.Refresh.Enabled {
 		refresh = admin.RefreshOptions{Enabled: true, URL: cfg.Pricing.Refresh.ParsedURL.String(), Fetch: fetchPrices}
 	}
+	grace := time.Duration(cfg.TenantDeletion.GracePeriod)
 	adminOpts := admin.Options{
-		Logger: logger, DB: adminDB, Authenticator: adminAuth, Sealer: sealer,
+		TenantDeletionGrace: &grace,
+		Logger:              logger, DB: adminDB, Authenticator: adminAuth, Sealer: sealer,
 		Validator: vault.NewValidator(guard.Transport(false), guard.Transport(true), 10*time.Second),
 		Snapshot:  genaiprices.Snapshot(),
 		Refresh:   refresh,
@@ -364,6 +368,8 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		"on_unknown_price", cfg.Limits.OnUnknownPrice, "on_store_failure", cfg.Limits.OnStoreFailure)
 	partitioner := &ledger.Partitioner{DB: workerDB, Logger: logger}
 	rollup := &reports.Rollup{DB: workerDB, Interval: time.Duration(cfg.Reports.RollupInterval), Logger: logger}
+	rewrapper := &vault.Rewrapper{DB: workerDB, Provider: kp, Logger: logger}
+	deleter := &lifecycle.Deleter{DB: workerDB, Interval: time.Duration(cfg.TenantDeletion.Interval), Logger: logger}
 	retention := &reports.Retention{DB: workerDB, UsageMonths: cfg.Retention.UsageMonths, AuditMonths: cfg.Retention.AuditMonths, Logger: logger}
 	// Ensure bounds itself. A failure is a warning: the keeper retries, and rows whose month has
 	// no partition land in the default one.
@@ -386,6 +392,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		Limits:      limitsSource(memory, reconciler, events, ruleCache),
 		Resolver:    resolverSource(limitsPort, unlimited),
 		Reports:     reportsSource(rollup, retention, adminHandler),
+		Lifecycle:   lifecycleSource(deleter, rewrapper),
 	}
 	if keyCache != nil {
 		sources.JWKS = jwksSource(keyCache)
@@ -446,13 +453,16 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	background, stopBackground := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	defer func() { stopBackground(); wg.Wait() }()
-	wg.Add(8)
+	wg.Add(10)
 	go func() { defer wg.Done(); people.runPurge(background, logger) }()
 	go func() { defer wg.Done(); listener.Run(background) }()
 	go func() { defer wg.Done(); warnBootstrap(background, logger, adminDB) }()
 	go func() { defer wg.Done(); partitioner.Run(background) }()
 	go func() { defer wg.Done(); rollup.Run(background) }()
 	go func() { defer wg.Done(); retention.Run(background) }()
+	go func() { defer wg.Done(); rewrapper.Run(background) }()
+	logger.Info("tenant deletion ready", "grace_period", time.Duration(cfg.TenantDeletion.GracePeriod).String(), "interval", time.Duration(cfg.TenantDeletion.Interval).String())
+	go func() { defer wg.Done(); deleter.Run(background) }()
 	go func() { defer wg.Done(); memory.Run(background) }()
 	go func() { defer wg.Done(); reconciler.Run(background) }()
 	// The writer is not stopped by the signal: it runs until Close has returned.

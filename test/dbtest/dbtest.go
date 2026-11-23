@@ -39,6 +39,7 @@ type shared struct {
 	mu        sync.Mutex
 	helper    *pgx.Conn // the connection of Count, made by its first call
 	adminDB   *store.DB // the admin pool of the people seeds, made by the first of them
+	workerDB  *store.DB // the worker pool of the deletion helpers, made by the first of them
 }
 
 // Database is one test database with its four login users.
@@ -166,7 +167,8 @@ func embedded(tb testing.TB) []migrate.Migration {
 	return ms
 }
 
-// Migrate applies the embedded migrations with the owner user (store.Migrate).
+// Migrate applies the embedded migrations with the owner user (store.Migrate) and activates the
+// version of the database's key (KEKFile), as serve does at its start, when none is active.
 func (d *Database) Migrate(tb testing.TB) {
 	tb.Helper()
 	ctx, cancel := ctx30()
@@ -174,6 +176,7 @@ func (d *Database) Migrate(tb testing.TB) {
 	if _, err := store.Migrate(ctx, d.ConnOptions("owner"), embedded(tb), "test"); err != nil {
 		tb.Fatalf("migrate: %v", err)
 	}
+	d.activateKEK(tb)
 }
 
 // MigrateTo applies the first n embedded migrations with the owner user, for tests of an upgrade
@@ -458,12 +461,7 @@ func (d *Database) EnvWith(tb testing.TB, extra map[string]string) []string {
 		"PANDOKOS_DATABASE_NAME=" + d.Name,
 		"PANDOKOS_DATABASE_TLS_MODE=disable",
 	}
-	d.s.mu.Lock()
-	if d.s.kekFile == "" {
-		d.s.kekFile = testutil.WriteKEK(d.s.root)
-	}
-	env = append(env, "PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE="+d.s.kekFile)
-	d.s.mu.Unlock()
+	env = append(env, "PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE="+d.KEKFile(tb))
 	for _, r := range []string{"gateway", "admin", "worker", "owner"} {
 		up := strings.ToUpper(r)
 		env = append(env,
