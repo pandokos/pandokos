@@ -28,8 +28,8 @@ test: ## All tests of the root module, with the race detector (needs make db-up)
 test-nodb: ## The same without the tests that need PostgreSQL (local use only, refused in CI)
 	PANDOKOS_TEST_NO_DATABASE=1 PANDOKOS_TEST_NO_POOLER=1 PANDOKOS_TEST_NO_DATABASE_TLS=1 go test -race -count=1 ./...
 
-test-sdk: ## Official SDK suite (nested module, release toolchain)
-	cd test/sdk && GOTOOLCHAIN=go$(RELEASE_GO) go test -race -count=1 ./...
+test-sdk: ## Official SDK suite (nested module, release toolchain; needs make db-up)
+	@$(DBENV) cd test/sdk && GOTOOLCHAIN=go$(RELEASE_GO) go test -race -count=1 ./...
 
 test-sdk-python: ## Python SDK suite (needs python3.13 and the locked packages: make sdk-python-env)
 	cd test/sdk && PANDOKOS_SDK_PYTHON=$(CURDIR)/local/sdk-venv/bin/python GOTOOLCHAIN=go$(RELEASE_GO) \

@@ -277,8 +277,8 @@ func TestLifecycleDocuments(t *testing.T) {
 	})
 	t.Run("the failure reference", func(t *testing.T) {
 		doc := read(t, "docs/reference/failure-behaviour.md")
-		type row struct{ cells []string }
-		var header []string
+		type row struct{ cells, header []string }
+		var header, headers []string
 		var rows []row
 		for _, line := range strings.Split(doc, "\n") {
 			if !strings.HasPrefix(line, "|") {
@@ -294,9 +294,10 @@ func TestLifecycleDocuments(t *testing.T) {
 			}
 			if header == nil {
 				header = cells
+				headers = append(headers, cells...)
 				continue
 			}
-			rows = append(rows, row{cells})
+			rows = append(rows, row{cells, header})
 		}
 		if len(rows) < 15 {
 			t.Fatalf("the failure reference has %d rows", len(rows))
@@ -348,7 +349,7 @@ func TestLifecycleDocuments(t *testing.T) {
 						if !keys[tok] {
 							t.Errorf("the failure reference cites the key %s, which does not exist (row %q)", tok, r.cells[0])
 						}
-					case strings.Contains(strings.ToLower(header[min(len(header)-1, indexOfCell(r.cells, cell))]), "log"):
+					case strings.Contains(strings.ToLower(r.header[min(len(r.header)-1, indexOfCell(r.cells, cell))]), "log"):
 						if !strings.Contains(logRows, "`"+tok+"`") {
 							t.Errorf("the failure reference cites the log line %q, which is not in docs/reference/logs.md (row %q)", tok, r.cells[0])
 						}
@@ -357,10 +358,10 @@ func TestLifecycleDocuments(t *testing.T) {
 			}
 		}
 		// A row has the five things the design says: the caller's answer, what is kept or lost, the log line, the instrument and the test.
-		joined := strings.ToLower(strings.Join(header, " "))
+		joined := strings.ToLower(strings.Join(headers, " "))
 		for _, col := range []string{"log", "instrument", "test", "recover"} {
 			if !strings.Contains(joined, col) {
-				t.Errorf("the table of the failure reference has no column about %q: %v", col, header)
+				t.Errorf("the table of the failure reference has no column about %q: %v", col, headers)
 			}
 		}
 	})
