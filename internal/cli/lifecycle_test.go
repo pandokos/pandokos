@@ -250,6 +250,38 @@ func TestLifecycleCommands(t *testing.T) {
 		}
 	})
 
+	t.Run("a kept log that retention emptied verifies against the resealed head", func(t *testing.T) {
+		emptied := func(t *testing.T, change func(h *adminapi.AuditHead)) *verifyRig {
+			t.Helper()
+			v := newVerifyRig(t)
+			resealed := v.keptHead.Hash
+			v.keptLines = nil
+			v.keptHead = adminapi.AuditHead{AnchorSeq: v.deletion.Audit.LastSeq + 1, AnchorHash: resealed, Seq: v.deletion.Audit.LastSeq, Hash: resealed}
+			if change != nil {
+				change(&v.keptHead)
+			}
+			v.apply(t)
+			v.f.streamState().streams["exportDeletedTenantAuditEvents"] = ""
+			return v
+		}
+		v := emptied(t, nil)
+		code, out, errs := v.run(t, "tenant", "deletion", "verify", tid)
+		want := fmt.Sprintf("deletion of %s verified: record at seq 2, 0 audit rows kept, head %s", tid, v.deletion.Audit.ResealedHead)
+		if code != 0 || strings.TrimSpace(out) != want {
+			t.Errorf("an emptied log: exit %d\nstdout: %q\nstderr: %s\nwant: %s", code, out, errs, want)
+		}
+		for name, change := range map[string]func(h *adminapi.AuditHead){
+			"the head is another hash":   func(h *adminapi.AuditHead) { h.Hash = strings.Repeat("ee", 32) },
+			"the anchor is another hash": func(h *adminapi.AuditHead) { h.AnchorHash = strings.Repeat("ee", 32) },
+		} {
+			v := emptied(t, change)
+			code, out, errs := v.run(t, "tenant", "deletion", "verify", tid)
+			if code != 1 || !strings.Contains(out+errs, "head_mismatch") || strings.Contains(out, "verified:") {
+				t.Errorf("an emptied log, %s: exit %d\nstdout: %s\nstderr: %s\nwant exit 1 and head_mismatch", name, code, out, errs)
+			}
+		}
+	})
+
 	t.Run("a deletion that is not completed does not verify", func(t *testing.T) {
 		v := newVerifyRig(t)
 		v.deletion.State, v.deletion.Step = adminapi.TenantDeletionStateRunning, adminapi.TenantDeletionStepUsage

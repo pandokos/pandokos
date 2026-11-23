@@ -376,7 +376,8 @@ The audit actions of this sprint, all in the platform log: `tenant.delete_reques
    head as `platform-audit verify` does;
 3. reads the kept log (`exportDeletedTenantAuditEvents`) and verifies it with the expected head
    `resealed_head` and the expected last row `tenant.delete`; a log that retention has emptied
-   verifies as empty when the anchor is `last_seq + 1`;
+   verifies as empty when the anchor is `last_seq + 1` and its head and anchor hash are
+   `resealed_head` (§12, changes after review), and the line of point 4 names that head;
 4. prints `deletion of <tenant id> verified: record at seq <n>, <m> audit rows kept, head <hash>` and
    exits 0; or one line per failure and exit 1 (`record_missing`, `record_mismatch`,
    `platform_chain_break`, `tenant_chain_break`, `head_mismatch`).
@@ -1008,3 +1009,5 @@ checksum file follows it).
 | The CLI resolved a tenant name to the first tenant that held it, though a deleted tenant keeps its name and the name can be taken again | A name that more than one tenant holds (every page of the list is read) is refused with their IDs and states, asking for the ID; one holder resolves as before. The API reference and the deletion guide say so; `internal/cli` tests |
 | A start whose configured version is itself `retiring` or `retired`, without the active key, was refused with the message of a missing version | `vault.Check` answers `ErrKeyReplaced` first, naming the configured version and the active one, whatever else the configuration lacks (T-988); the case "the old key alone" of T-1007 now names both versions. The sealer test of another key starts from a database that knows only that key |
 | The cancel locked the tenant and then the row of the deletion, the step the reverse: a cancel and the first step could deadlock | The cancel removes the scheduled row first, then locks the tenant, the order of the step (T-996: a transaction holding the row of the deletion takes the tenant while a cancel waits) |
+| `tenant deletion verify` accepted an emptied kept log on its anchor alone and printed `head none` | The head and the anchor's hash of an emptied log must both be `resealed_head` (`head_mismatch` otherwise), and the line names it in the format of §5.5; `internal/cli` tests |
+| The guide and the API reference said that the API's `step` can read `unknown` | Only the log line `tenant deletion failing` can; the log reference lists its step values, `unknown` among them |

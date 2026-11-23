@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -339,6 +340,16 @@ func (a *app) verifyDeletion(args []string) error {
 		if kres.Rows != 0 {
 			fail(reasonTenantBreak, "the log is past its anchor but holds %d rows", kres.Rows)
 		}
+		// Retention removed every row: the head stays the last row's hash and the anchor took it, so
+		// both are the resealed head.
+		if resealed != nil {
+			if kh.Seq != int64(d.Audit.LastSeq) || !bytes.Equal(kh.Hash, resealed) {
+				fail(reasonHeadMismatch, "the head of the emptied log is not the resealed head")
+			}
+			if !bytes.Equal(kh.AnchorHash, resealed) {
+				fail(reasonHeadMismatch, "the anchor of the emptied log is not the resealed head")
+			}
+		}
 	} else {
 		kres = auditchain.Verify(rows, kh, resealed)
 	}
@@ -359,11 +370,7 @@ func (a *app) verifyDeletion(args []string) error {
 	if len(failures) > 0 {
 		return finish()
 	}
-	headHash := d.Audit.ResealedHead
-	if emptied {
-		headHash = "none"
-	}
-	fmt.Fprintf(a.stdout, "deletion of %s verified: record at seq %d, %d audit rows kept, head %s\n", tid, d.CompletionSeq, kres.Rows, headHash)
+	fmt.Fprintf(a.stdout, "deletion of %s verified: record at seq %d, %d audit rows kept, head %s\n", tid, d.CompletionSeq, kres.Rows, d.Audit.ResealedHead)
 	return nil
 }
 

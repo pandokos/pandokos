@@ -131,7 +131,8 @@ It needs `tenant:read` and `platform_audit:read`. It reads the deletion (it must
 platform's row and checks that its `seq` is `completion_seq` and that its detail equals the deletion's
 fields, verifies the platform's chain up to its head as `platform-audit verify` does, and verifies the kept
 log with the head `resealed_head` and the last row `tenant.delete`; a log that retention emptied verifies as
-empty when the anchor is `last_seq + 1`. It exits 0, or exits 1 with one line per failure:
+empty when the anchor is `last_seq + 1` and both the head and the anchor's hash are `resealed_head`, and
+the line names that head like any other. It exits 0, or exits 1 with one line per failure:
 `record_missing`, `record_mismatch`, `platform_chain_break`, `tenant_chain_break`, `head_mismatch`.
 
 `pandokos tenant deletion get` also shows `step`, `passes` and `removed` while it runs; `step` is the one
