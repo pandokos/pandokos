@@ -47,7 +47,7 @@ runs in a tenant's session with no standing right to delete anything. A deletion
    rows the owner has one policy each, limited to the tenant of the session under `pandokos.erasure`. (D-7)
 7. **The ledger is kept pseudonymized.** `principal_id` and `key_id` become pseudonyms and `metadata` becomes
    `{}`; a pseudonym is the text of a UUID made of the first 16 bytes of SHA-256 over a per-deletion salt and
-   the value, and the salt is destroyed at completion, so nothing can recompute it. Equal identifiers give
+   the value, marked as a UUID of version 8 so that a record that escaped it can be found, and the salt is destroyed at completion, so nothing can recompute it. Equal identifiers give
    equal pseudonyms inside one tenant. (D-8)
 8. **The audit log is kept, closed and sealed again.** A closing row `tenant.delete` is appended; `actor_id`,
    `key_id` and `resource_id` become pseudonyms; `actor_name`, `reason` and `detail` are emptied; the hashes are

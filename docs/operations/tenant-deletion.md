@@ -62,7 +62,7 @@ Go code issues no `DELETE` or `UPDATE` of a tenant's rows: the order and the con
 | `configuration` | The tenant's platform limit rules (ceilings) and model grants, model restriction, metadata key policy, price versions (started ones too, with their rates), limit events, usage rollup and its state |
 | `usage` | The ledger, in batches: `principal_id` and `key_id` become pseudonyms and `metadata` becomes `{}` |
 | `audit` | A closing row `tenant.delete`; then the tenant's log is pseudonymized and its chain sealed again (section 3) |
-| `complete` | At least two minutes after the start, the rows left in the tables of `access`, `secrets` and `configuration` are counted; if there are any (a transaction that began before the closing and committed later), a second pass runs those steps again (not `usage` and `audit`). Otherwise the completion record is written, the tenant becomes `deleted` and the salt is destroyed |
+| `complete` | At least two minutes after the start: ledger records and rows of the log that a transaction which began before the closing committed after `usage` or `audit` had passed are pseudonymized (the log gets a new closing row and is sealed again behind it), and the rows left in the tables of `access`, `secrets` and `configuration` are counted. If anything was found, a second pass runs those steps again (not `usage` and `audit`; `complete` looks at the ledger and the log again). Otherwise the completion record is written, the tenant becomes `deleted` and the salt is destroyed |
 
 **What is not touched:** other tenants; the catalogue (providers, endpoints, models and their prices),
 price imports, platform keys, the platform's users and role assignments, the platform's issuers (only the
@@ -79,7 +79,8 @@ could resolve the identifiers is gone. The `tenant` row stays, `deleted`, with i
 reused by a new tenant, never the ID).
 
 - **The pseudonym** of an identifier is the text of a UUID made of the first 16 bytes of SHA-256 over a
-  random 32-byte salt and the value; the empty text stays empty. The salt is made at the start of the
+  random 32-byte salt and the value, marked as a UUID of version 8 (no identifier the product makes has
+  that version); the empty text stays empty. The salt is made at the start of the
   deletion, can be read by no runtime role and is destroyed with the completion. Inside one tenant equal
   identifiers get equal pseudonyms, in the ledger and in the log alike ("one caller made these calls"
   survives); across tenants and after the completion nothing links a pseudonym to a value.

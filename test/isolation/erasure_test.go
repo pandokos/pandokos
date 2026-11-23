@@ -1164,3 +1164,133 @@ func TestDeletedTenantRetention(t *testing.T) {
 		t.Errorf("the emptied log has %d rows, anchor %d, head %x", len(empty), emptyHead.AnchorSeq, emptyHead.Hash)
 	}
 }
+
+// TestErasureLateRows is the part of T-981 and T-982 about rows that arrive late (review): a ledger
+// record whose insert passed the guard before the deletion began and that committed after the step
+// usage had passed it, and a row appended to the log after the step audit, still with the values
+// they were written with. The step complete finds both, pseudonymizes them like the others (the
+// same pseudonyms), seals the log again behind a new closing row and runs a second pass; the
+// deletion completes with no row that holds an identifier.
+func TestErasureLateRows(t *testing.T) {
+	d := dbtest.NewMigrated(t)
+	tid := d.PopulatedTenant(t)
+	id := tid.String()
+	principal := "0192f0f0-3333-7000-8000-00000000000a"
+	key := dbtest.NewKeyID(t)
+	seedLedger(t, d, tid, 20, []string{principal}, []string{key})
+	seeded := map[string]bool{}
+	for rid, r := range ledgerOf(t, d, tid) {
+		seeded[rid] = r.principal == principal
+	}
+	d.RequestDeletion(t, tid, time.Now().Add(-time.Minute))
+
+	// A writer of the ledger whose statement passed the guard before the start, still open.
+	gw := d.Connect(t, "gateway")
+	writer, err := gw.Begin(ctx(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = writer.Rollback(ctx(t)) }()
+	if _, err := writer.Exec(ctx(t), `SELECT pg_catalog.set_config('app.tenant_id', $1, true)`, id); err != nil {
+		t.Fatal(err)
+	}
+	lateID := dbText(t, d, `SELECT pandokos.uuid_v7()::text`)
+	if _, err := writer.Exec(ctx(t), `INSERT INTO pandokos.usage_record (tenant_id, id, started_at, request_id, principal_kind, principal_id, key_id, provider, api_family,
+			operation, model, outcome, duration_ms, input_source, output_source, cost_status, metadata)
+		VALUES ($1::uuid, $4::uuid, now(), md5('late'), 'service_account', $2, $3, 'openai', 'openai', 'chat.completions', 'gpt-x', 'ok', 1,
+		        'none', 'none', 'none', '{"team":"late-team"}')`, id, principal, key, lateID); err != nil {
+		t.Fatalf("the late record: %v", err)
+	}
+	worker := d.Connect(t, "worker")
+	stepUntil(t, d, worker, tid, 100, "audit") // the step usage passed the record, which it did not see
+	if err := writer.Commit(ctx(t)); err != nil {
+		t.Fatalf("the writer commits after the step usage: %v", err)
+	}
+	if got := ledgerOf(t, d, tid)[lateID]; got.principal != principal {
+		t.Fatalf("the late record holds %q after the step usage, want the principal it was written with", got.principal)
+	}
+	if next, err := stepOnce(t, worker, tid, 100); err != nil || next != "complete" {
+		t.Fatalf("the step audit: %q, %v", next, err)
+	}
+
+	// A row appended to the log after the step audit, sealed as any row is (the guard is held off
+	// for this transaction only: no role of the product could write it, a transaction that began
+	// before the deletion can).
+	err = pgx.BeginFunc(ctx(t), d.Super(t), func(tx pgx.Tx) error {
+		for _, q := range []string{
+			`ALTER TABLE pandokos.audit_event DISABLE TRIGGER audit_event_tenant_open`,
+			`ALTER TABLE pandokos.audit_chain DISABLE TRIGGER audit_chain_tenant_open`,
+		} {
+			if _, err := tx.Exec(ctx(t), q); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.Exec(ctx(t), `INSERT INTO pandokos.audit_event (tenant_id, actor_type, actor_id, actor_name, key_id, action, resource_type, resource_id, outcome, reason, detail)
+			VALUES ($1::uuid, 'service_account', $2, 'late-bot', $3, 'virtual_key.update', 'virtual_key', $3, 'success', 'late reason', '{"label":"late-label"}')`, id, principal, key); err != nil {
+			return err
+		}
+		for _, q := range []string{
+			`ALTER TABLE pandokos.audit_event ENABLE TRIGGER audit_event_tenant_open`,
+			`ALTER TABLE pandokos.audit_chain ENABLE TRIGGER audit_chain_tenant_open`,
+		} {
+			if _, err := tx.Exec(ctx(t), q); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("the late audit row: %v", err)
+	}
+
+	answers := stepUntil(t, d, worker, tid, 100, "done")
+	if want := []string{"settling", "access", "secrets", "configuration", "complete", "settling", "done"}; !reflect.DeepEqual(answers, want) {
+		t.Errorf("the step complete and after answered %v, want %v (the late rows make a second pass)", answers, want)
+	}
+	if n := dbNumber(t, d, `SELECT passes FROM pandokos.tenant_deletion WHERE tenant_id = $1::uuid`, id); n != 2 {
+		t.Errorf("%d passes, want 2", n)
+	}
+
+	// The ledger: the late record has the pseudonyms of the others, and no record an identifier.
+	ledger := ledgerOf(t, d, tid)
+	var pseudoPrincipal, pseudoKey string
+	for rid, r := range ledger {
+		if r.principal == principal || r.key == key || strings.Contains(r.metadata, "team") {
+			t.Errorf("the record %s holds %q, %q, %s after the deletion", rid, r.principal, r.key, r.metadata)
+		}
+		if seeded[rid] && pseudoPrincipal == "" {
+			pseudoPrincipal, pseudoKey = r.principal, r.key
+		}
+	}
+	if late := ledger[lateID]; late.principal != pseudoPrincipal || late.key != pseudoKey || late.metadata != "{}" {
+		t.Errorf("the late record became %q, %q, %s; the records of the same principal and key hold %q, %q", late.principal, late.key, late.metadata, pseudoPrincipal, pseudoKey)
+	}
+
+	// The log: an ordinary chain, ending with a closing row, holding no identifier, and the deletion's
+	// figures are those of the chain.
+	rows, head := chainOf(t, d.Super(t), "tenant:"+id)
+	requireChain(t, "the kept log", rows, head)
+	if len(rows) == 0 || rows[len(rows)-1].Action != "tenant.delete" {
+		t.Fatal("the last row of the kept log is not tenant.delete")
+	}
+	for _, r := range auditRowsOf(t, d, tid) {
+		if r.actorID == principal || r.keyID == key || r.resourceID == key || r.actorName != "" || r.reason != "" || r.detail != "{}" {
+			t.Errorf("the row %d of the kept log is not pseudonymized: %+v", r.seq, r)
+		}
+		if r.action == "virtual_key.update" && r.actorID != pseudoPrincipal {
+			t.Errorf("the late row's actor became %q, the ledger's pseudonym of the same identifier is %q", r.actorID, pseudoPrincipal)
+		}
+	}
+	var lastSeq, rowCount int64
+	var resealed string
+	if err := d.Super(t).QueryRow(ctx(t), `SELECT (audit ->> 'last_seq')::bigint, (audit ->> 'rows')::bigint, audit ->> 'resealed_head' FROM pandokos.tenant_deletion WHERE tenant_id = $1::uuid`, id).
+		Scan(&lastSeq, &rowCount, &resealed); err != nil {
+		t.Fatal(err)
+	}
+	if lastSeq != head.Seq || resealed != hex.EncodeToString(head.Hash) || rowCount != int64(len(rows)) {
+		t.Errorf("the deletion says last_seq %d, %d rows, head %s; the chain has %d, %d rows, head %x", lastSeq, rowCount, resealed, head.Seq, len(rows), head.Hash)
+	}
+	if got := dbText(t, d, `SELECT (detail -> 'audit')::text FROM pandokos.platform_audit_event WHERE action = 'tenant.delete_complete' AND resource_id = $1`, id); got != dbText(t, d, `SELECT audit::text FROM pandokos.tenant_deletion WHERE tenant_id = $1::uuid`, id) {
+		t.Errorf("the completion record's audit %s differs from the deletion's", got)
+	}
+}

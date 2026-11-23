@@ -494,13 +494,23 @@ CREATE POLICY user_session_erasure ON pandokos.user_session FOR ALL TO pandokos_
 -- ---------------------------------------------------------------------------------------------
 
 -- A pseudonym of an identifier: the text of a UUID made of the first 16 bytes of
--- SHA-256(salt, value). The salt is destroyed when the deletion completes, so a pseudonym cannot
--- be recomputed from a guessed value. The empty text stays empty.
+-- SHA-256(salt, value), with the version and variant bits of a UUID of version 8. The salt is
+-- destroyed when the deletion completes, so a pseudonym cannot be recomputed from a guessed value.
+-- The empty text stays empty. No identifier the product makes is of version 8 (uuid_v7 and
+-- gen_random_uuid), so a record that holds one is pseudonymized and one that does not is not.
 CREATE FUNCTION pandokos.pseudonym(p_salt bytea, p_value text) RETURNS text
     LANGUAGE sql IMMUTABLE
     SET search_path = pg_catalog, pg_temp
     RETURN CASE WHEN p_value = '' THEN ''
-                ELSE pg_catalog.encode(pg_catalog.substring(pg_catalog.sha256(p_salt || pg_catalog.convert_to(p_value, 'UTF8')), 1, 16), 'hex')::uuid::text END;
+                ELSE (SELECT pg_catalog.encode(pg_catalog.set_byte(pg_catalog.set_byte(h.b, 6, (pg_catalog.get_byte(h.b, 6) & 15) | 128),
+                                                                   8, (pg_catalog.get_byte(h.b, 8) & 63) | 128), 'hex')::uuid::text
+                        FROM (SELECT pg_catalog.substring(pg_catalog.sha256(p_salt || pg_catalog.convert_to(p_value, 'UTF8')), 1, 16) AS b) h) END;
+
+-- Whether a text is a pseudonym (a UUID of version 8).
+CREATE FUNCTION pandokos.is_pseudonym(p_value text) RETURNS boolean
+    LANGUAGE sql IMMUTABLE
+    SET search_path = pg_catalog, pg_temp
+    RETURN p_value ~ '^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$';
 
 -- The sum, key by key, of two objects of counts.
 CREATE FUNCTION pandokos.jsonb_counts_add(a jsonb, b jsonb) RETURNS jsonb
@@ -641,49 +651,117 @@ BEGIN
 END
 $$;
 
--- The audit log of the tenant is closed with a last row, then every row kept is pseudonymized
--- (the actor, the key and the resource become pseudonyms; the actor's name, the reason and the
--- detail are emptied) and the chain is sealed again from its anchor with the encoding of ADR
--- 0065. Returns the anchor, the last sequence number, the rows, and the head before and after.
+-- The records that the batches did not see: written by a transaction whose statement passed the
+-- guard before the deletion began and that committed after the cursor had passed them. Such a
+-- transaction began at most a little before the start (recorded_at is its start), as long as it
+-- lasts less than the two minutes the completion waits; its records are those recorded since then
+-- whose principal is not a pseudonym. They become pseudonyms like the others. Returns how many.
+CREATE FUNCTION pandokos.tenant_erasure_usage_late(p_salt bytea, p_since timestamptz) RETURNS bigint
+    LANGUAGE plpgsql
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    n bigint;
+BEGIN
+    UPDATE pandokos.usage_record u
+       SET principal_id = pandokos.pseudonym(p_salt, u.principal_id),
+           key_id       = pandokos.pseudonym(p_salt, u.key_id),
+           metadata     = '{}'
+     WHERE u.recorded_at >= p_since AND NOT pandokos.is_pseudonym(u.principal_id);
+    GET DIAGNOSTICS n = ROW_COUNT;
+    RETURN n;
+END
+$$;
+
+-- The rows of the tenant's log from p_from on are pseudonymized (the actor, the key and the
+-- resource become pseudonyms; the actor's name, the reason and the detail are emptied) and sealed
+-- again after p_prev with the encoding of ADR 0065; the head takes the last hash. The caller holds
+-- the head. Returns the last hash and the rows.
+CREATE FUNCTION pandokos.tenant_erasure_reseal(p_salt bytea, p_from bigint, p_prev bytea, OUT head bytea, OUT rows bigint)
+    LANGUAGE plpgsql
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    t       uuid := pandokos.current_tenant_id();
+    r       pandokos.audit_event%ROWTYPE;
+    v_hash  bytea;
+    v_actor text;
+    v_key   text;
+    v_res   text;
+BEGIN
+    head := p_prev;
+    rows := 0;
+    FOR r IN SELECT * FROM pandokos.audit_event e WHERE e.seq >= p_from ORDER BY e.seq LOOP
+        v_actor := pandokos.pseudonym(p_salt, r.actor_id);
+        v_key := pandokos.pseudonym(p_salt, r.key_id);
+        v_res := CASE WHEN r.resource_id = t::text THEN r.resource_id ELSE pandokos.pseudonym(p_salt, r.resource_id) END;
+        v_hash := pandokos.audit_row_hash('tenant:' || t::text, r.seq, r.id, r.occurred_at, r.actor_type, v_actor, '', v_key,
+                                          r.action, r.resource_type, v_res, r.outcome, r.request_id, '',
+                                          r.support_action_id, '{}'::jsonb, head);
+        UPDATE pandokos.audit_event e
+           SET actor_id = v_actor, actor_name = '', key_id = v_key, resource_id = v_res, reason = '', detail = '{}',
+               prev_hash = head, hash = v_hash
+         WHERE e.seq = r.seq;
+        head := v_hash;
+        rows := rows + 1;
+    END LOOP;
+    UPDATE pandokos.audit_chain SET hash = head WHERE tenant_id = t;
+END
+$$;
+
+-- The audit log of the tenant is closed with a last row, then every row kept is pseudonymized and
+-- the chain is sealed again from its anchor. Returns the anchor, the last sequence number, the
+-- rows, and the head before and after.
 CREATE FUNCTION pandokos.tenant_erasure_audit(p_salt bytea) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
     t        uuid := pandokos.current_tenant_id();
-    r        pandokos.audit_event%ROWTYPE;
     v_anchor bigint;
     v_prev   bytea;
     v_before bytea;
     v_last   bigint;
-    v_hash   bytea;
-    v_rows   bigint := 0;
-    v_actor  text;
-    v_key    text;
-    v_res    text;
+    v_head   bytea;
+    v_rows   bigint;
 BEGIN
     INSERT INTO pandokos.audit_event (tenant_id, actor_type, actor_name, action, resource_type, resource_id, outcome)
     VALUES (t, 'platform', 'deletion', 'tenant.delete', 'tenant', t::text, 'success');
     SELECT c.anchor_seq, c.anchor_hash, c.seq, c.hash INTO v_anchor, v_prev, v_last, v_before
       FROM pandokos.audit_chain c WHERE c.tenant_id = t FOR UPDATE;
-    FOR r IN SELECT * FROM pandokos.audit_event e WHERE e.seq >= v_anchor ORDER BY e.seq LOOP
-        v_actor := pandokos.pseudonym(p_salt, r.actor_id);
-        v_key := pandokos.pseudonym(p_salt, r.key_id);
-        v_res := CASE WHEN r.resource_id = t::text THEN r.resource_id ELSE pandokos.pseudonym(p_salt, r.resource_id) END;
-        v_hash := pandokos.audit_row_hash('tenant:' || t::text, r.seq, r.id, r.occurred_at, r.actor_type, v_actor, '', v_key,
-                                          r.action, r.resource_type, v_res, r.outcome, r.request_id, '',
-                                          r.support_action_id, '{}'::jsonb, v_prev);
-        UPDATE pandokos.audit_event e
-           SET actor_id = v_actor, actor_name = '', key_id = v_key, resource_id = v_res, reason = '', detail = '{}',
-               prev_hash = v_prev, hash = v_hash
-         WHERE e.seq = r.seq;
-        v_prev := v_hash;
-        v_rows := v_rows + 1;
-    END LOOP;
-    UPDATE pandokos.audit_chain SET hash = v_prev WHERE tenant_id = t;
+    SELECT s.head, s.rows INTO v_head, v_rows FROM pandokos.tenant_erasure_reseal(p_salt, v_anchor, v_prev) s;
     RETURN pg_catalog.jsonb_build_object('anchor_seq', v_anchor, 'last_seq', v_last, 'rows', v_rows,
                                          'original_head', pg_catalog.encode(v_before, 'hex'),
-                                         'resealed_head', pg_catalog.encode(v_prev, 'hex'));
+                                         'resealed_head', pg_catalog.encode(v_head, 'hex'));
+END
+$$;
+
+-- The rows appended to the log after the step audit (by a transaction whose statement passed the
+-- guard before the deletion began): when there are any, a new closing row follows them, they are
+-- pseudonymized and sealed after the resealed head, and the figures of p_audit are brought up to
+-- date (the anchor and original_head do not change). Returns them, or NULL when no row came.
+CREATE FUNCTION pandokos.tenant_erasure_audit_late(p_salt bytea, p_audit jsonb) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    t      uuid := pandokos.current_tenant_id();
+    v_seq  bigint;
+    v_last bigint := (p_audit ->> 'last_seq')::bigint;
+    v_head bytea;
+    v_rows bigint;
+BEGIN
+    SELECT c.seq INTO v_seq FROM pandokos.audit_chain c WHERE c.tenant_id = t FOR UPDATE;
+    IF v_seq <= v_last THEN
+        RETURN NULL;
+    END IF;
+    INSERT INTO pandokos.audit_event (tenant_id, actor_type, actor_name, action, resource_type, resource_id, outcome)
+    VALUES (t, 'platform', 'deletion', 'tenant.delete', 'tenant', t::text, 'success');
+    SELECT c.seq INTO v_seq FROM pandokos.audit_chain c WHERE c.tenant_id = t;
+    SELECT s.head, s.rows INTO v_head, v_rows
+      FROM pandokos.tenant_erasure_reseal(p_salt, v_last + 1, pg_catalog.decode(p_audit ->> 'resealed_head', 'hex')) s;
+    RETURN p_audit || pg_catalog.jsonb_build_object('last_seq', v_seq, 'rows', (p_audit ->> 'rows')::bigint + v_rows,
+                                                    'resealed_head', pg_catalog.encode(v_head, 'hex'));
 END
 $$;
 
@@ -710,13 +788,20 @@ REVOKE ALL ON FUNCTION pandokos.tenant_erasure_access() FROM PUBLIC;
 REVOKE ALL ON FUNCTION pandokos.tenant_erasure_secrets() FROM PUBLIC;
 REVOKE ALL ON FUNCTION pandokos.tenant_erasure_configuration() FROM PUBLIC;
 REVOKE ALL ON FUNCTION pandokos.tenant_erasure_usage(bytea, timestamptz, uuid, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pandokos.tenant_erasure_usage_late(bytea, timestamptz) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pandokos.tenant_erasure_reseal(bytea, bigint, bytea) FROM PUBLIC;
 REVOKE ALL ON FUNCTION pandokos.tenant_erasure_audit(bytea) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pandokos.tenant_erasure_audit_late(bytea, jsonb) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pandokos.is_pseudonym(text) FROM PUBLIC;
 
 -- In the session of a tenant whose deletion is requested: runs the step the deletion is at and
 -- answers the step that comes next: 'scheduled' (not due yet: nothing was done), 'access',
 -- 'secrets', 'configuration', 'usage' (again while records are left), 'audit', 'complete',
 -- 'settling' (the completion waits until two minutes after the start, or after a second pass, for
--- transactions that began before it) and 'done'. Every call is idempotent: a step that ran is not run again.
+-- transactions that began before it) and 'done'. The completion is written only when no row is
+-- left in the tables the steps empty, no ledger record and no row of the log escaped the
+-- pseudonyms; otherwise those rows are pseudonymized and a second pass runs ('access').
+-- Every call is idempotent: a step that ran is not run again.
 -- p_batch is the number of ledger records of one call of the step 'usage' (100 to 50000).
 CREATE FUNCTION pandokos.tenant_erasure_step(p_batch integer) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
@@ -733,6 +818,8 @@ DECLARE
     v_at    timestamptz;
     v_id    uuid;
     v_seq   bigint;
+    v_late  bigint;
+    v_audit jsonb;
 BEGIN
     IF t IS NULL THEN
         RAISE EXCEPTION 'tenant_erasure_step needs a tenant session' USING ERRCODE = 'insufficient_privilege';
@@ -800,9 +887,16 @@ BEGIN
             PERFORM pg_catalog.set_config('pandokos.erasure', 'off', true);
             RETURN 'settling';
         END IF;
+        -- A transaction that began before the deletion and committed after a step left rows: the
+        -- ledger records and the rows of the log that the steps did not see are pseudonymized
+        -- now, and the removal runs again.
+        v_late := pandokos.tenant_erasure_usage_late(d.salt, d.started_at - interval '2 minutes');
+        v_audit := pandokos.tenant_erasure_audit_late(d.salt, d.audit);
+        IF v_audit IS NOT NULL THEN
+            UPDATE pandokos.tenant_deletion SET audit = v_audit WHERE tenant_id = t;
+        END IF;
         v_out := pandokos.tenant_residue();
-        IF v_out <> '{}'::jsonb THEN
-            -- A transaction that began before the deletion left rows: the removal runs again.
+        IF v_out <> '{}'::jsonb OR v_late > 0 OR v_audit IS NOT NULL THEN
             UPDATE pandokos.tenant_deletion SET step = 'access', settle_at = pg_catalog.now() + interval '2 minutes' WHERE tenant_id = t;
             PERFORM pg_catalog.set_config('pandokos.erasure', 'off', true);
             RETURN 'access';
