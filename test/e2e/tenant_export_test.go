@@ -60,7 +60,7 @@ func TestTenantExportHoldsNoSecretOrForeignData(t *testing.T) {
 	if strings.Contains(text, memberPassword) {
 		t.Error("the export holds the initial password of a member")
 	}
-	for _, marker := range []string{"$argon2id$", "password_hash", "secret_hash", "token_hash", "wrapped_key", "kek"} {
+	for _, marker := range []string{"$argon2id$", "password_hash", "secret_hash", "token_hash", "wrapped_key", "kek_wrapped", "unwrap"} { // the audit detail of a credential names the key version that sealed it (kek_version): an identifier, not key material
 		if strings.Contains(text, marker) {
 			t.Errorf("the export holds %q", marker)
 		}

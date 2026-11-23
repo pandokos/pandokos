@@ -255,4 +255,39 @@ func registerSources(k *maker, o MetricsOptions) {
 			return nil
 		}, unpriced, unlimited)
 	}
+
+	if s.Lifecycle != nil {
+		steps := k.int64ObservableCounter("pandokos.tenant_deletion.steps")
+		open := k.int64ObservableGauge("pandokos.tenant_deletion.open")
+		rewraps := k.int64ObservableCounter("pandokos.vault.rewraps")
+		versions := k.int64ObservableGauge("pandokos.vault.kek.versions")
+		pending := k.int64ObservableGauge("pandokos.vault.erasures.pending")
+		register(func(_ context.Context, ob metric.Observer) error {
+			l := s.Lifecycle()
+			keys := make([][2]string, 0, len(l.Steps))
+			for key := range l.Steps {
+				keys = append(keys, key)
+			}
+			sort.Slice(keys, func(i, j int) bool {
+				if keys[i][0] != keys[j][0] {
+					return keys[i][0] < keys[j][0]
+				}
+				return keys[i][1] < keys[j][1]
+			})
+			for _, key := range keys {
+				ob.ObserveInt64(steps, l.Steps[key], attr(AttrDeletionStep, key[0], "pandokos.result", key[1]))
+			}
+			for _, state := range sortedKeys(l.Open) {
+				ob.ObserveInt64(open, l.Open[state], attr(AttrDeletionState, state))
+			}
+			for _, result := range sortedKeys(l.Rewraps) {
+				ob.ObserveInt64(rewraps, l.Rewraps[result], attr("pandokos.result", result))
+			}
+			for _, state := range sortedKeys(l.KEKVersions) {
+				ob.ObserveInt64(versions, l.KEKVersions[state], attr(AttrKEKState, state))
+			}
+			ob.ObserveInt64(pending, l.ErasuresPending)
+			return nil
+		}, steps, open, rewraps, versions, pending)
+	}
 }

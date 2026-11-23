@@ -92,8 +92,8 @@ func TestLifecycleInstruments(t *testing.T) {
 		o.Sources = telemetry.Sources{Lifecycle: func() telemetry.LifecycleStats { return telemetry.LifecycleStats{} }}
 	}).collect()
 	for _, name := range []string{"pandokos.tenant_deletion.steps", "pandokos.tenant_deletion.open", "pandokos.vault.rewraps", "pandokos.vault.kek.versions"} {
-		if pts := empty.points(t, name); len(pts) != 0 {
-			t.Errorf("%s has %d points for an empty snapshot", name, len(pts))
+		if m := empty.Series[name]; m != nil && len(m.Points) != 0 { // an instrument with no observation is not exported at all
+			t.Errorf("%s has %d points for an empty snapshot", name, len(m.Points))
 		}
 	}
 	expectValue(t, empty, "pandokos.vault.erasures.pending", 0)

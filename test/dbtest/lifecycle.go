@@ -231,8 +231,13 @@ func (d *Database) RequestDeletion(tb testing.TB, id tenant.ID, notBefore time.T
 // "begin" sets settle_at, and a second call after it moves that.
 func (d *Database) AgeDeletion(tb testing.TB, id tenant.ID) {
 	tb.Helper()
-	d.superExec(tb, "age the deletion", `UPDATE pandokos.tenant_deletion SET not_before = least(not_before, now()),
-		settle_at = CASE WHEN settle_at IS NULL THEN NULL ELSE least(settle_at, now()) END WHERE tenant_id = $1::uuid`, id.String())
+	// The tests poll with this helper: it uses the one connection the database keeps, not a new one per call.
+	ctx, cancel := ctx30()
+	defer cancel()
+	if _, err := d.SharedSuper(tb).Exec(ctx, `UPDATE pandokos.tenant_deletion SET not_before = least(not_before, now()),
+		settle_at = CASE WHEN settle_at IS NULL THEN NULL ELSE least(settle_at, now()) END WHERE tenant_id = $1::uuid`, id.String()); err != nil {
+		tb.Fatalf("age the deletion: %v", err)
+	}
 }
 
 // UseKEK makes the database look like one that was started with a key of that version: the versions

@@ -9,11 +9,13 @@ import (
 	"github.com/pandokos/pandokos/internal/idem"
 	"github.com/pandokos/pandokos/internal/jwks"
 	"github.com/pandokos/pandokos/internal/ledger"
+	"github.com/pandokos/pandokos/internal/lifecycle"
 	"github.com/pandokos/pandokos/internal/limits"
 	"github.com/pandokos/pandokos/internal/password"
 	"github.com/pandokos/pandokos/internal/reports"
 	"github.com/pandokos/pandokos/internal/resolver"
 	"github.com/pandokos/pandokos/internal/telemetry"
+	"github.com/pandokos/pandokos/internal/vault"
 )
 
 // The components import neither internal/telemetry nor the OpenTelemetry metric API; this file is
@@ -150,5 +152,18 @@ func reportsSource(r *reports.Rollup, t *reports.Retention, h *admin.Handler) fu
 			out.Exports[telemetry.ExportKey{Kind: kind, Result: "aborted"}] = es.ExportsAborted[kind]
 		}
 		return out
+	}
+}
+
+// lifecycleSource reads the deletion job and the re-wrap job (M47 to M51): counts of the whole
+// installation, never of a tenant.
+func lifecycleSource(d *lifecycle.Deleter, r *vault.Rewrapper) func() telemetry.LifecycleStats {
+	return func() telemetry.LifecycleStats {
+		ds, rs := d.Stats(), r.Stats()
+		return telemetry.LifecycleStats{
+			Steps: ds.Steps, Open: ds.Open,
+			Rewraps:     map[string]int64{"ok": rs.OK, "failed": rs.Failed},
+			KEKVersions: rs.Versions, ErasuresPending: rs.ErasuresPending,
+		}
 	}
 }

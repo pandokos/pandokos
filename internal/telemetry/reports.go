@@ -32,10 +32,10 @@ const (
 )
 
 // RetentionKinds are the values of AttrRetentionKind, in the order of the metrics reference.
-var RetentionKinds = []string{RetentionUsagePartition, RetentionUsageRecord, RetentionUsageRollup, RetentionAuditEvent, RetentionPlatformAuditEvent}
+var RetentionKinds = []string{RetentionUsagePartition, RetentionUsageRecord, RetentionUsageRollup, RetentionAuditEvent, RetentionPlatformAuditEvent, RetentionDeletedTenantUsageRecord, RetentionDeletedTenantAuditEvent}
 
 // ExportKinds are the values of AttrExportKind, in the order of the metrics reference.
-var ExportKinds = []string{ExportUsage, ExportAudit, ExportPlatformAudit}
+var ExportKinds = []string{ExportUsage, ExportAudit, ExportPlatformAudit, ExportDeletedTenantAudit}
 
 // ReportsStats is the usage rollup, retention and the exports. Nothing in it names a tenant.
 type ReportsStats struct {

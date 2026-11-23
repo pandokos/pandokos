@@ -145,7 +145,7 @@ func TestLifecycleOutputsHoldNoTenantData(t *testing.T) {
 	}
 	// The rotation.
 	_ = p.stop(t)
-	p2 := restart(t, p, opts{level: "debug", up: up, kekFiles: keys, metricsPrometheus: true, gracePeriod: "0s", deletionInterval: "10s"})
+	p2 := restart(t, p, opts{level: "debug", up: up, kekFiles: []vaulttest.Key{keys[1], keys[0]}, metricsPrometheus: true, gracePeriod: "0s", deletionInterval: "10s"})
 	_ = b
 	testutil.Eventually(t, 90*time.Second, "the old version to be retired", func() bool { return kekStates(t, p2, boot)[keys[0].Version] == "retired" })
 	status, scrape := p2.scrapeAs(t, "GET", readKeyFile(t, boot))

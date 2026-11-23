@@ -6,7 +6,7 @@ Every metric Pandokos exports, with its OpenTelemetry name, kind, unit, attribut
 
 The metrics follow the OpenTelemetry semantic conventions **1.41.0**, pinned by the import path `go.opentelemetry.io/otel/semconv/v1.41.0` and by the schema URL of the meter. Version 1.41.0 is the last that the Go semantic-convention packages ship with the GenAI conventions, which are in Development: names, units and attributes of `gen_ai.client.operation.duration`, `gen_ai.client.operation.time_to_first_chunk`, `gen_ai.client.token.usage` and `http.server.request.duration` come from that package. A change of version is a change of the import path and a line in the release notes. The instruments of the `pandokos.` namespace are the product's own.
 
-The set is closed: 46 instruments, no others, and this page is checked against the code by a test. The `Id` column is the number the guide and the dashboards use.
+The set is closed: 51 instruments, no others, and this page is checked against the code by a test. The `Id` column is the number the guide and the dashboards use.
 
 ## Instruments
 
@@ -57,9 +57,14 @@ Kinds: `H` histogram, `C` counter, `G` gauge, `OC` counter read at collection. A
 | `pandokos.log.redactions` | M41 | OC | `{value}` | none | `pandokos_log_redactions_total` | Read at collection: log values rewritten because they had the shape of a secret. Any non-zero value is a bug to report. |
 | `pandokos.reports.rollups` | M42 | OC | `{run}` | `pandokos.result` | `pandokos_reports_rollups_total` | Read at collection: passes of the usage rollup, one per tenant, that succeeded or failed. |
 | `pandokos.reports.rollup.lag` | M43 | G | `s` | none | `pandokos_reports_rollup_lag_seconds` | Read at collection: the largest time since the watermark among the tenants of the last pass; 0 before the first pass. |
-| `pandokos.retention.removed` | M44 | OC | `{item}` | `pandokos.retention.kind` | `pandokos_retention_removed_total` | Read at collection: what retention removed, summed over tenants: usage partitions, usage records, rollup rows, audit events and platform audit events. |
+| `pandokos.retention.removed` | M44 | OC | `{item}` | `pandokos.retention.kind` | `pandokos_retention_removed_total` | Read at collection: what retention removed, summed over tenants: usage partitions, usage records, rollup rows, audit events and platform audit events, and the usage records and audit events kept for deleted tenants. |
 | `pandokos.retention.runs` | M45 | OC | `{run}` | `pandokos.result` | `pandokos_retention_runs_total` | Read at collection: runs of the retention job that succeeded or failed. |
-| `pandokos.exports` | M46 | OC | `{export}` | `pandokos.export.kind`, `pandokos.result` | `pandokos_exports_total` | Read at collection: usage and audit exports that completed or were aborted after their first byte. |
+| `pandokos.exports` | M46 | OC | `{export}` | `pandokos.export.kind`, `pandokos.result` | `pandokos_exports_total` | Read at collection: usage and audit exports, and the export of the log kept for a deleted tenant, that completed or were aborted after their first byte. |
+| `pandokos.tenant_deletion.steps` | M47 | OC | `{step}` | `pandokos.deletion.step`, `pandokos.result` | `pandokos_tenant_deletion_steps_total` | Read at collection: steps of tenant deletions that ran or failed, summed over tenants. |
+| `pandokos.tenant_deletion.open` | M48 | G | `{deletion}` | `pandokos.deletion.state` | `pandokos_tenant_deletion_open` | Refreshed at each tick of the deletion job: deletions not completed, scheduled or running. |
+| `pandokos.vault.rewraps` | M49 | OC | `{key}` | `pandokos.result` | `pandokos_vault_rewraps_total` | Read at collection: data keys the re-wrap job re-wrapped under the active key-encryption key, or failed to. |
+| `pandokos.vault.kek.versions` | M50 | G | `{version}` | `pandokos.kek.state` | `pandokos_vault_kek_versions` | Refreshed at each tick of the re-wrap job: key-encryption key versions by state. |
+| `pandokos.vault.erasures.pending` | M51 | G | `{deletion}` | none | `pandokos_vault_erasures_pending` | Refreshed at each tick of the re-wrap job: completed deletions whose backups stay readable until a key version is retired. |
 
 `target_info` (the resource of the process as labels, value 1) is added by the scrape endpoint and by the OTLP receiver of Prometheus.
 
@@ -108,9 +113,12 @@ The duration of the HTTP server uses the boundaries of the GenAI durations, not 
 | `pandokos.limit.subject` | the kind of the subject: `tenant`, `service_account`, `key` |
 | `pandokos.limit.scope` | `all`, `provider`, `model` |
 | `pandokos.limit.quantity` | `tokens`, `cost` |
-| `pandokos.retention.kind` | `usage_partition`, `usage_record`, `usage_rollup`, `audit_event`, `platform_audit_event` |
-| `pandokos.export.kind` | `usage`, `audit`, `platform_audit` |
-| `pandokos.result` | `written`, `rejected`, `lost` (ledger); `ok`, `blocked`, `timeout`, `status`, `too_large`, `invalid_document`, `issuer_mismatch`, `no_usable_key`, `network` (issuer fetches); `ok`, `failed`, `locked`, `disabled`, `unavailable`, `refused` (sign-in); `ok`, `failed` (reconciliations and rule loads); `recorded`, `dropped`, `failed` (limit events); `written`, `skipped`, `failed` (unlimited traffic); `ok`, `failed` (usage rollup passes and retention runs); `complete`, `aborted` (exports) |
+| `pandokos.retention.kind` | `usage_partition`, `usage_record`, `usage_rollup`, `audit_event`, `platform_audit_event`, `deleted_tenant_usage_record`, `deleted_tenant_audit_event` |
+| `pandokos.export.kind` | `usage`, `audit`, `platform_audit`, `deleted_tenant_audit` |
+| `pandokos.deletion.step` | `begin`, `access`, `secrets`, `configuration`, `usage`, `audit`, `complete` |
+| `pandokos.deletion.state` | `scheduled`, `running` |
+| `pandokos.kek.state` | `active`, `retiring`, `retired` |
+| `pandokos.result` | `written`, `rejected`, `lost` (ledger); `ok`, `blocked`, `timeout`, `status`, `too_large`, `invalid_document`, `issuer_mismatch`, `no_usable_key`, `network` (issuer fetches); `ok`, `failed`, `locked`, `disabled`, `unavailable`, `refused` (sign-in); `ok`, `failed` (reconciliations and rule loads); `recorded`, `dropped`, `failed` (limit events); `written`, `skipped`, `failed` (unlimited traffic); `ok`, `failed` (usage rollup passes, retention runs, deletion steps and re-wraps); `complete`, `aborted` (exports) |
 | `pandokos.ledger.state` | `in_use`, `queued` |
 | `pandokos.egress.reason` | `not_tcp`, `unparsable`, `forbidden_address`, `private_address`, `scheme`, `user_info` |
 | `pandokos.listener` | `inference`, `admin` |

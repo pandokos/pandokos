@@ -392,6 +392,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		Limits:      limitsSource(memory, reconciler, events, ruleCache),
 		Resolver:    resolverSource(limitsPort, unlimited),
 		Reports:     reportsSource(rollup, retention, adminHandler),
+		Lifecycle:   lifecycleSource(deleter, rewrapper),
 	}
 	if keyCache != nil {
 		sources.JWKS = jwksSource(keyCache)
