@@ -265,6 +265,9 @@ func Verify(rows iter.Seq2[Row, error], head *Head, expect []byte) Result {
 				if !bytes.Equal(r.PrevHash, make([]byte, sha256.Size)) {
 					res.Breaks = append(res.Breaks, Break{r.Seq, ReasonAnchorMismatch})
 				}
+			case head != nil && r.Seq != max(head.Start, head.AnchorSeq):
+				// The oldest rows are gone: the chain must start where it was asked to.
+				res.Breaks = append(res.Breaks, Break{r.Seq, ReasonSeqGap})
 			default:
 				res.LinkUnverified = true
 			}

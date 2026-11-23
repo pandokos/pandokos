@@ -78,10 +78,11 @@ Without `--file` the command reads the head, then the export up to that head, th
 `--file` it verifies an NDJSON export offline, with no server (`--tenant` then names the tenant's ID,
 because the scope is part of every hash). The checks, row by row:
 
-- the sequence numbers are contiguous from the first row (the anchor, or `--from-seq`);
+- the first row is the one asked for (`--from-seq` when it is given, the anchor otherwise) and the
+  sequence numbers are contiguous from it, so a deleted oldest row is a break (`seq_gap`);
 - each row's `prev_hash` equals the previous row's `hash`, and the first row's equals the anchor's when
-  the export starts at the anchor (an export that starts later says the link to the rows before it is
-  not verified);
+  the export starts at the anchor (a `--from-seq` above the anchor, or an offline file without a head,
+  says the link to the rows before it is not verified);
 - each `hash` equals the recomputation (with `detail_digest` in place of the detail for a withheld row);
 - the last row equals the head, and `--expect-head` when it is given.
 

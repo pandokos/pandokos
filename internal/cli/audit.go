@@ -258,6 +258,8 @@ func (a *app) verify(args []string, platform bool) error {
 	if err != nil {
 		return fmt.Errorf("invalid head: %w", err)
 	}
+	// The first row read must be the one asked for, or the anchor: a deleted oldest row is a break.
+	h.Start = int64(*fromSeq)
 	if head.Seq == 0 {
 		return a.verifyStream(strings.NewReader(""), scope, h, want, nil)
 	}
@@ -423,11 +425,23 @@ func rowOf(scope string, line []byte) (auditchain.Row, error) {
 		KeyID: e.KeyID, Action: e.Action, ResourceType: e.ResourceType, ResourceID: e.ResourceID, Outcome: e.Outcome, RequestID: e.RequestID, Reason: e.Reason,
 		SupportActionID: e.SupportActionID, Detail: e.Detail, PrevHash: prev, Hash: hash}
 	if e.DetailWithheld {
+		// The verifier uses the digest and ignores the detail: the detail must then be empty, or an
+		// offline file could show any detail and still verify.
+		if !isEmptyObject(e.Detail) {
+			return auditchain.Row{}, fmt.Errorf("seq %d: a withheld detail must be {}", e.Seq)
+		}
 		d, err := hex.DecodeString(e.DetailDigest)
 		if err != nil || len(d) != 32 {
 			return auditchain.Row{}, fmt.Errorf("seq %d: detail_digest is not 64 hexadecimal digits", e.Seq)
 		}
 		r.DetailDigest = d
+	} else if e.DetailDigest != "" {
+		return auditchain.Row{}, fmt.Errorf("seq %d: detail_digest on a row that is not withheld", e.Seq)
 	}
 	return r, nil
+}
+
+func isEmptyObject(raw json.RawMessage) bool {
+	var m map[string]json.RawMessage
+	return json.Unmarshal(raw, &m) == nil && m != nil && len(m) == 0
 }
