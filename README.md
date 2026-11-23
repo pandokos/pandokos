@@ -32,9 +32,9 @@ isolation, custody of tenants' keys and federated identity in the open-source co
 | Key-encryption key in an external KMS or secret manager | 🗓️ v0.3 | 💼 | 💼 |
 | **Identity and control** | | | |
 | Calls authenticated with tokens from your IdP (JWT) | ✅ tested on Keycloak, Ory Hydra, Authentik | 💼 | 💼 OIDC and JWT (SSO) |
-| People sign in with SSO or OIDC | 🗓️ v0.2 | 💼 free up to 5 users | 💼 |
-| Roles (RBAC) | ✅ built-in roles · 🗓️ v0.2 ten roles, custom roles, support actions | 💼 | 💼 |
-| Audit log of administrative changes | ✅ atomic, append-only | 💼 | 💼 |
+| People sign in with SSO or OIDC | ✅ local accounts and any OpenID Connect provider, with group rules | 💼 free up to 5 users | 💼 |
+| Roles (RBAC) | ✅ ten built-in roles, custom roles per tenant, support actions with a stated reason | 💼 | 💼 |
+| Audit log of administrative changes | ✅ atomic, append-only, sealed in a hash chain per tenant that `pandokos audit verify` checks | 💼 | 💼 |
 | **Spend** | | | |
 | Usage and cost of every call | ✅ without prompts or completions, in the tenant's own currency with its own price lists, readable by the tenant only | ✅ | ✅ |
 | Rate limits, quotas, budgets | ✅ per instance, in the tenant's time zone and active currency · 🗓️ v0.4 shared across replicas | ✅ | ✅ |
