@@ -152,9 +152,13 @@ func (s *server) CreateTenant(ctx context.Context, in adminapi.CreateTenantInput
 			if err != nil {
 				return err
 			}
+			createDetail := map[string]any{"name": b.Name, "display_name": b.DisplayName, "time_zone": b.TimeZone,
+				"admin_service_account_id": sa.ID, "admin_key_id": keyID}
+			if b.ExternalReference != "" {
+				createDetail["external_reference"] = b.ExternalReference
+			}
 			if err := audit.RecordPlatform(ctx, tx, audit.Event{Actor: actor, Action: "tenant.create", ResourceType: "tenant", ResourceID: t.ID,
-				Outcome: "success", RequestID: st.id, Detail: map[string]any{"name": b.Name, "display_name": b.DisplayName, "time_zone": b.TimeZone, "external_reference": b.ExternalReference,
-					"admin_service_account_id": sa.ID, "admin_key_id": keyID}}); err != nil {
+				Outcome: "success", RequestID: st.id, Detail: createDetail}); err != nil {
 				return err
 			}
 			saOut := saRow{sa.ID, sa.TenantID, sa.Name, sa.Description, sa.State, sa.ValidFrom, sa.ValidUntil, sa.CreatedAt, sa.UpdatedAt, []string{authz.RoleOwner}}
