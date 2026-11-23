@@ -130,8 +130,8 @@ func TestReportAuditCommands(t *testing.T) {
 	t.Run("usage report sends what it is given", func(t *testing.T) {
 		r := newRig(t)
 		mustRun(t, r, "usage", "report", "--tenant", tid)
-		if got := r.f.only(t, "getUsageReport"); !reflect.DeepEqual(got, adminapi.GetUsageReportInput{Tenant: tid}) {
-			t.Errorf("without flags the API received %+v, want the tenant alone", got)
+		if got := r.f.only(t, "getUsageReport"); !reflect.DeepEqual(got, adminapi.GetUsageReportInput{Tenant: tid, Period: adminapi.ReportPeriodMonth}) {
+			t.Errorf("without flags the API received %+v, want the tenant and the default period", got)
 		}
 		r = newRig(t)
 		mustRun(t, r, "usage", "report", "--tenant", tid, "--from", "2026-10-01", "--to", "2026-11-01", "--period", "day", "--group-by", "model,key", "--provider", "openai", "--model", "gpt-4o")
@@ -194,7 +194,7 @@ func TestReportAuditCommands(t *testing.T) {
 	t.Run("audit list, head and export send what they are given", func(t *testing.T) {
 		r := newRig(t)
 		mustRun(t, r, "audit", "list", "--tenant", tid)
-		if got := r.f.only(t, "listAuditEvents"); !reflect.DeepEqual(got, adminapi.ListAuditEventsInput{Tenant: tid}) {
+		if got := r.f.only(t, "listAuditEvents"); !reflect.DeepEqual(got, adminapi.ListAuditEventsInput{Tenant: tid, Limit: 50}) {
 			t.Errorf("audit list without flags: %+v", got)
 		}
 		r = newRig(t)

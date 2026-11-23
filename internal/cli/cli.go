@@ -73,6 +73,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, environ [
 	case errors.Is(err, flag.ErrHelp):
 		return 0
 	}
+	if errors.Is(err, errBreaks) {
+		return 1
+	}
 	var ue *usageError
 	if errors.As(err, &ue) {
 		fmt.Fprintf(stderr, "pandokos: %s\n", ue.msg)
@@ -97,11 +100,12 @@ func (a *app) dispatch(args []string) error {
 		return usagef("a command is needed")
 	}
 	var matched *command
-	for i := range commands {
-		c := &commands[i]
-		if len(args) >= len(c.words) && equalWords(args[:len(c.words)], c.words) {
-			matched = c
-			break
+	for _, table := range [][]command{composites, commands} {
+		for i := range table {
+			c := &table[i]
+			if matched == nil && len(args) >= len(c.words) && equalWords(args[:len(c.words)], c.words) {
+				matched = c
+			}
 		}
 	}
 	if matched == nil {
@@ -124,7 +128,7 @@ func equalWords(a, b []string) bool {
 
 func subcommands(group string) []string {
 	var out []string
-	for _, c := range commands {
+	for _, c := range append(slices.Clone(commands), composites...) {
 		if len(c.words) == 2 && c.words[0] == group {
 			out = append(out, c.words[1])
 		}
@@ -451,7 +455,7 @@ func (a *app) printSecretCreated(what string, text func() error, full any, secre
 func Groups() []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, c := range commands {
+	for _, c := range append(slices.Clone(commands), composites...) {
 		if w := c.words[0]; !seen[w] {
 			seen[w] = true
 			out = append(out, w)
