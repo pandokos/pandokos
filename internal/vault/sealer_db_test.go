@@ -377,7 +377,9 @@ func TestCheck(t *testing.T) {
 			t.Fatal(err)
 		}
 		otherVersion := activeVersion(t, other)
-		w.d.ActivateKEK(t, otherVersion) // the other key is the active one; the harness's becomes retiring
+		// The database knows the other key only: the version of this provider is unknown to it (were it
+		// retiring, the answer would be that it was replaced, TestActivateAtStart).
+		w.d.UseKEK(t, otherVersion)
 		tid := w.d.SeedTenant(t, "other-key")
 		w.createCredential(t, otherSealer, tid, "openai", "main", "synthetic-secret-0001")
 		_, err = vault.Check(ctx(t), w.admin, w.prov)

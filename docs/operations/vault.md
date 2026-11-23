@@ -44,8 +44,8 @@ start but the first one after a rotation, and the first start after the upgrade 
 finds the version registered last already active. When the database holds a data key wrapped by a version
 that is `active` or `retiring` and the configuration does not provide it (as `key_file` or among the
 `unwrap_key_files`), `serve` refuses to start and names the version. A `retired` version is not needed.
-A version that was replaced never comes back: starting with its key as `key_file` is refused
-("the configured key-encryption key version X was replaced by Y; set vault.kek.local.key_file to the key
+A version that was replaced never comes back: starting with its key as `key_file` is refused, with
+the key of the active version among the unwrap keys or without it ("the configured key-encryption key version X was replaced by Y; set vault.kek.local.key_file to the key
 of Y"). `pandokos kek-version list` (permission `kek:read`) shows the versions, their state and times,
 and `erasures_pending`, the number of completed tenant deletions whose backups still hold credentials
 that this version can open.

@@ -119,9 +119,19 @@ func TestActivateAtStart(t *testing.T) {
 		if got := w.auditRows(t); got != rows {
 			t.Errorf("a refused activation wrote an audit row")
 		}
-		// With the old key alone the active version is not provided: the check refuses, as before.
-		if _, _, err := vault.Activate(ctx(t), w.admin, w.worker, old); err == nil || !strings.Contains(err.Error(), k[1].Version) {
-			t.Errorf("the old key alone: %v, want a refusal that names the active version %s", err, k[1].Version)
+		// With the old key alone the configured version is the retiring one: it was replaced, and the
+		// refusal says so, naming both versions (not only the active one that is not provided).
+		_, _, err = vault.Activate(ctx(t), w.admin, w.worker, old)
+		if !errors.Is(err, vault.ErrKeyReplaced) {
+			t.Errorf("the old key alone: %v, want ErrKeyReplaced", err)
+		}
+		for _, v := range []string{k[0].Version, k[1].Version} {
+			if err == nil || !strings.Contains(err.Error(), v) {
+				t.Errorf("the refusal of the old key alone does not name the version %s: %v", v, err)
+			}
+		}
+		if got := w.states(t); got != before {
+			t.Errorf("a refused activation changed the states: %s, was %s", got, before)
 		}
 	})
 
@@ -169,9 +179,18 @@ func TestActivateAtStart(t *testing.T) {
 		if _, res, err := vault.Activate(ctx(t), w.admin, w.worker, vaulttest.Provider(t, k[1])); err != nil || res != "unchanged" {
 			t.Errorf("a second start: %q %v", res, err)
 		}
-		// And a retired version never comes back as the key file.
-		if _, _, err := vault.Activate(ctx(t), w.admin, w.worker, vaulttest.Provider(t, k[0], k[1])); !errors.Is(err, vault.ErrKeyReplaced) {
-			t.Errorf("a retired key as the key file: %v, want ErrKeyReplaced", err)
+		// And a retired version never comes back as the key file, with the active key to unwrap or
+		// alone; the refusal names both versions.
+		for what, p := range map[string]vault.KeyProvider{"with the active key": vaulttest.Provider(t, k[0], k[1]), "alone": vaulttest.Provider(t, k[0])} {
+			_, _, err := vault.Activate(ctx(t), w.admin, w.worker, p)
+			if !errors.Is(err, vault.ErrKeyReplaced) {
+				t.Errorf("a retired key as the key file, %s: %v, want ErrKeyReplaced", what, err)
+			}
+			for _, v := range []string{k[0].Version, k[1].Version} {
+				if err == nil || !strings.Contains(err.Error(), v) {
+					t.Errorf("a retired key as the key file, %s: the refusal does not name %s: %v", what, v, err)
+				}
+			}
 		}
 	})
 }
