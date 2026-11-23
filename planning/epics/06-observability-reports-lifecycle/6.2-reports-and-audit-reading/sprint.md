@@ -3,7 +3,7 @@ id: SPRINT-6.2
 title: Reports and audit reading
 epic: EPIC-6
 release: v0.2
-status: in-progress
+status: done
 design: draft 2026-11-22
 ---
 
