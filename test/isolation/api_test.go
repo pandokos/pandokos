@@ -203,6 +203,11 @@ func (w *apiWorld) fresh(t *testing.T, s side, op adminapi.Operation) apitest.Pa
 	if op.ID == "deleteLimit" {
 		p.LimitRule = w.api.SeedExtraLimitRule(t, s.tenant.ID)
 	}
+	// The operation that deletes an event destination gets one of its own, so that the operations after
+	// it (rotate, test, rewind, dead letters) still find the destination of the tenant (sprint 6.4).
+	if op.ID == "deleteEventDestination" {
+		p.Destination = w.api.SeedEventDestination(t, s.tenant.ID)
+	}
 	// The operations of sprint 4.3 on a custom role or on a support action get one of their own.
 	if strings.Contains(op.Path, "{role}") {
 		p.Role = w.api.CustomRole(t, s.tenant.ID, "member:read")
@@ -612,7 +617,7 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 		// The positive control: A's key does it in A.
 		own := apitest.CallFor(t, op, w.fresh(t, w.a, op))
 		r := w.api.Do(t, own.Method, own.Path, w.a.adminKey, own.Body, nil)
-		if r.Status != 200 && r.Status != 201 && r.Status != 204 { // deleteRole answers 204
+		if r.Status != 200 && r.Status != 201 && r.Status != 202 && r.Status != 204 { // deleteRole answers 204, testEventDestination 202
 			t.Errorf("%s in A: status %d\n%s", op.ID, r.Status, r.Body)
 		}
 		// And none in B.
@@ -714,7 +719,7 @@ func TestTenantAdminIsEnoughAndNoMore(t *testing.T) {
 						expect403(t, op, r) // sprint 4.3: kept for owners
 						continue
 					}
-					if r.Status != 200 && r.Status != 201 && r.Status != 204 {
+					if r.Status != 200 && r.Status != 201 && r.Status != 202 && r.Status != 204 {
 						t.Errorf("%s: a %s key got %d\n%s", op.ID, who.name, r.Status, r.Body)
 					}
 				default:
