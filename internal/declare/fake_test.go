@@ -3,6 +3,7 @@ package declare_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -58,6 +59,7 @@ type fakeAPI struct {
 	failWrite int
 	// readCount counts the requests of each method.
 	readCount int
+	created   int
 }
 
 type route struct {
@@ -121,7 +123,9 @@ func newFake(t *testing.T, reads map[string]any) *fakeAPI {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(matched.Status)
 		if matched.Status != http.StatusNoContent {
-			_, _ = io.WriteString(w, `{}`)
+			// A created resource carries the ID the server gave it.
+			f.created++
+			_, _ = io.WriteString(w, fmt.Sprintf(`{"id":"0192f0f0-ffff-7000-8000-%012d"}`, f.created))
 		}
 	}))
 	t.Cleanup(f.srv.Close)

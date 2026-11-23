@@ -2,18 +2,8 @@
 // configuration of the platform or of a tenant into a Document, Plan compares a Document with the
 // current state by natural key, and Apply carries the plan out (ADR 0066). It reads and writes
 // only through the generated client: no secret, key, credential, person or usage figure is in a
-// document. Sprint 6.2 part C9 builds the behaviour; until then the functions return an error.
+// document.
 package declare
-
-import (
-	"context"
-	"errors"
-
-	"github.com/pandokos/pandokos/internal/adminapi"
-)
-
-// errNotImplemented is what the stubs of sprint 6.2 part A return until part C9 builds them.
-var errNotImplemented = errors.New("declare: not implemented")
 
 // Version is the value of the pandokos member of a document.
 const Version = "v1"
@@ -173,36 +163,27 @@ type Change struct {
 	Action   string // create, update, conflict, skipped, not in document
 	Resource string // the resource type and its natural key, as the output line writes it
 	Detail   string
+
+	run step // the call that carries a create or an update out; nil for the other actions
+}
+
+// Line is the line the command prints for the change.
+func (c Change) Line() string {
+	if c.Detail == "" {
+		return c.Action + " " + c.Resource
+	}
+	return c.Action + " " + c.Resource + ": " + c.Detail
 }
 
 // Plan is what Apply would do to bring the state in line with a document.
 type Plan struct {
 	Target  Target
 	Changes []Change
+	refs    *refs
 }
 
-// Result is what Apply did.
+// Result is what Apply did, or with a dry run what it would do.
 type Result struct {
 	Changes, Conflicts, LeftAlone int
 	Lines                         []string
-}
-
-// Export reads the configuration of target into a document. Sprint 6.2 part C9 builds it.
-func Export(ctx context.Context, c *adminapi.Client, target Target) (*Document, error) {
-	_, _, _ = ctx, c, target
-	return nil, errNotImplemented
-}
-
-// Diff compares doc with the current state of target by natural key and returns the plan. It is
-// the function the design calls Plan: that name is the type's. Sprint 6.2 part C9 builds it.
-func Diff(ctx context.Context, c *adminapi.Client, target Target, doc *Document) (Plan, error) {
-	_, _, _, _ = ctx, c, target, doc
-	return Plan{}, errNotImplemented
-}
-
-// Apply carries the plan out through the client and stops at the first failed call. Sprint 6.2
-// part C9 builds it.
-func (p Plan) Apply(ctx context.Context, c *adminapi.Client) (Result, error) {
-	_, _ = ctx, c
-	return Result{}, errNotImplemented
 }

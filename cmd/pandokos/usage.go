@@ -48,6 +48,10 @@ Commands:
   support-action list|get|end
                                    Administer through the administration API;
                                    "pandokos <command> --help" lists the flags
+  export (--platform | --tenant ID) [--out FILE]
+                                   Write the configuration as a declarative document
+  apply --file FILE (--platform | --tenant ID) [--dry-run]
+                                   Create and update what a document lists; never deletes
   import-prices [--config FILE] (--file FILE | --embedded) [--dry-run]
                                    Import a price dataset from a file or the embedded snapshot, then exit
   kek generate --out FILE          Write a new key-encryption key to a new file (mode 0600)

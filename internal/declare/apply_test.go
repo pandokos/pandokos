@@ -201,7 +201,9 @@ func TestApplyPlan(t *testing.T) {
 		}
 		// The platform: providers, endpoints, models, grants, overrides, ceilings.
 		g := newFake(t, map[string]any{"/v1/tenants": platformState()["/v1/tenants"]})
-		pp := plan(t, g, platform, wantPlatform())
+		pd := wantPlatform()
+		pd.PriceOverrides[0].ValidFrom = time.Now().UTC().Add(72 * time.Hour).Truncate(time.Second).Format(time.RFC3339) // an override is only added from now on
+		pp := plan(t, g, platform, pd)
 		if _, err := pp.Apply(ctx(t), g.client()); err != nil {
 			t.Fatalf("Apply: %v", err)
 		}
