@@ -20,9 +20,6 @@ import (
 	"github.com/pandokos/pandokos/internal/egress"
 )
 
-// errNotBuilt is what the stubs of the relay and the janitor answer until parts C4 and C5 of the plan replace them.
-var errNotBuilt = errors.New("outbox: not implemented yet")
-
 // Outcome is how one delivery request ended; the values are the label of the delivery metric and
 // the reason of a dead letter.
 type Outcome string

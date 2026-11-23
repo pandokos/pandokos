@@ -22,7 +22,7 @@ import (
 // limitEvent inserts a limit event of the kind as the superuser; its event is written by the trigger.
 func limitEvent(t *testing.T, d *dbtest.Database, id tenant.ID, kind string) {
 	t.Helper()
-	percent := "NULL"
+	percent := "0"
 	if kind == "threshold_reached" {
 		percent = "80"
 	}
@@ -431,7 +431,7 @@ func TestRelayReplayAndRewind(t *testing.T) {
 	r := newRig(t, d)
 	r.drain()
 	// Two letters are dead and the cursor is at the head, as after a long outage.
-	setSQL(t, d, `UPDATE pandokos.event_destination SET cursor_seq = 6 WHERE id = $1::uuid`, dest)
+	setSQL(t, d, `UPDATE pandokos.event_destination SET cursor_seq = 6, failures = 0, failing_since = NULL, next_attempt_at = now() - interval '1 second' WHERE id = $1::uuid`, dest)
 	for _, seq := range []int{2, 4} {
 		setSQL(t, d, `INSERT INTO pandokos.outbox_dead_letter (tenant_id, destination_id, seq, event_id, type, attempts, reason, status)
 			SELECT tenant_id, $1::uuid, seq, id, type, 10, 'status', 500 FROM pandokos.outbox_event WHERE tenant_id = $2::uuid AND seq = $3`, dest, tid.String(), seq)

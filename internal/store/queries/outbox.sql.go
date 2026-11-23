@@ -194,7 +194,7 @@ func (q *Queries) GetEventDestination(ctx context.Context, id string) (GetEventD
 
 const getEventDestinationForRelay = `-- name: GetEventDestinationForRelay :one
 SELECT d.id, d.name, d.url, d.event_types, d.enabled, d.secret, d.secret_key_version, d.previous_secret,
-       d.previous_secret_key_version, d.previous_secret_expires_at, d.cursor_seq, d.failures, d.next_attempt_at,
+       d.previous_secret_key_version, d.previous_secret_expires_at, d.cursor_seq, d.failures, d.next_attempt_at, d.last_error,
        d.test_event_id, (d.test_requested_at IS NOT NULL
                          AND (d.test_completed_at IS NULL OR d.test_completed_at < d.test_requested_at))::boolean AS test_pending,
        (SELECT t.external_reference FROM pandokos.tenant t WHERE t.id = d.tenant_id) AS external_reference,
@@ -222,6 +222,7 @@ type GetEventDestinationForRelayRow struct {
 	CursorSeq                int64
 	Failures                 int32
 	NextAttemptAt            time.Time
+	LastError                string
 	TestEventID              *string
 	TestPending              bool
 	ExternalReference        string
@@ -246,6 +247,7 @@ func (q *Queries) GetEventDestinationForRelay(ctx context.Context, arg GetEventD
 		&i.CursorSeq,
 		&i.Failures,
 		&i.NextAttemptAt,
+		&i.LastError,
 		&i.TestEventID,
 		&i.TestPending,
 		&i.ExternalReference,
