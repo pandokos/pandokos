@@ -307,6 +307,7 @@ linters:
             - github.com/pandokos/pandokos/internal/buildinfo
             - github.com/pandokos/pandokos/internal/auditchain
             - github.com/pandokos/pandokos/internal/declare
+            - github.com/pandokos/pandokos/internal/tenantexport # the export and its schema: a client of the API too
         vault-is-below-the-planes:
           list-mode: lax
           files:

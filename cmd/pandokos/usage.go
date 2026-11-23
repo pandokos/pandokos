@@ -15,6 +15,9 @@ Commands:
                                    Remove the lock of a local account, then exit
   whoami                           Show the identity of the key in use
   tenant list|create|get|update|suspend|reactivate
+  tenant delete TENANT --reason R --confirm-name NAME
+  tenant deletion get|cancel|list|audit-head|audit-export|verify
+  kek-version list
   service-account list|create|get|update|disable|enable
   key list|create|get|revoke
   platform-key list|create|get|revoke
@@ -52,6 +55,9 @@ Commands:
                                    Write the configuration as a declarative document
   apply --file FILE (--platform | --tenant ID) [--dry-run]
                                    Create and update what a document lists; never deletes
+  tenant-export --tenant ID --out DIR [--usage-from T]
+                                   Write the tenant's own data to a new directory, through the API
+  tenant-export schema             Print the JSON Schema of the export (needs no server)
   import-prices [--config FILE] (--file FILE | --embedded) [--dry-run]
                                    Import a price dataset from a file or the embedded snapshot, then exit
   kek generate --out FILE          Write a new key-encryption key to a new file (mode 0600)

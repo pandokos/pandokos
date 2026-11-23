@@ -153,7 +153,7 @@ func TestLifecycleCommands(t *testing.T) {
 		}
 		r = newRig(t)
 		mustRun(t, r, "tenant", "deletion", "list")
-		if got := r.f.only(t, "listTenantDeletions"); !reflect.DeepEqual(got, adminapi.ListTenantDeletionsInput{}) {
+		if got := r.f.only(t, "listTenantDeletions"); !reflect.DeepEqual(got, adminapi.ListTenantDeletionsInput{Limit: 50}) { // the router fills the default page size
 			t.Errorf("list without flags: %+v", got)
 		}
 		r = newRig(t)
