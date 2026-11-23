@@ -84,6 +84,20 @@ func (a *API) SeedLimitRule(tb testing.TB, tenantID string) string {
 	return id
 }
 
+// SeedExtraLimitRule inserts another limit rule of the tenant, as superuser, and returns its ID: a
+// daily budget in a currency that is unique in the process, for a test whose operation removes the
+// rule it is given (the rule of SeedLimitRule is the one the other operations name).
+func (a *API) SeedExtraLimitRule(tb testing.TB, tenantID string) string {
+	tb.Helper()
+	var id string
+	err := a.Super(tb).QueryRow(seedCtx(tb), `INSERT INTO pandokos.limit_rule (tenant_id, subject_kind, metric, limit_value, currency)
+		VALUES ($1::uuid, 'tenant', 'cost_per_day', 1000000, $2) RETURNING id::text`, tenantID, seedCurrency()).Scan(&id)
+	if err != nil {
+		tb.Fatalf("seed extra limit rule: %v", err)
+	}
+	return id
+}
+
 // seedCurrency is a currency code that is unique in the process.
 func seedCurrency() string {
 	n := int(unique.Add(1))

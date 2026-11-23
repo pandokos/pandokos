@@ -194,6 +194,11 @@ func (w *apiWorld) fresh(t *testing.T, s side, op adminapi.Operation) apitest.Pa
 	if strings.Contains(op.Path, "{price}") {
 		p.TenantPrice = w.seedTenantPrice(t, s)
 	}
+	// The operation that deletes a limit rule gets one of its own, so that the operations after it
+	// (the usage of a rule, of sprint 6.2) still find the rule of the tenant.
+	if op.ID == "deleteLimit" {
+		p.LimitRule = w.api.SeedExtraLimitRule(t, s.tenant.ID)
+	}
 	// The operations of sprint 4.3 on a custom role or on a support action get one of their own.
 	if strings.Contains(op.Path, "{role}") {
 		p.Role = w.api.CustomRole(t, s.tenant.ID, "member:read")
