@@ -232,7 +232,9 @@ error, so the document cannot state a rule the generated code does not enforce.
 
 Every operation has one CLI command that only calls the generated client, except the public
 operations and the operations on the caller's own session: the CLI authenticates with a key.
-`TENANT` and `SERVICE_ACCOUNT` accept an ID or a name; a user or a member also a username. The
+`TENANT` and `SERVICE_ACCOUNT` accept an ID or a name; a user or a member also a username. A
+deleted tenant keeps its name and a new tenant may take it again: a name that more than one tenant
+holds is refused with the IDs and states of those tenants, and the command is given the ID. The
 commands that return a generated password print it once on standard output, or write it with
 `--password-out FILE` to a new file of mode 0600.
 

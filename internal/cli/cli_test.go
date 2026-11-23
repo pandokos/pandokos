@@ -412,6 +412,35 @@ func TestCommands(t *testing.T) {
 		if code != 1 || !strings.Contains(errs, "error: ") || !strings.Contains(errs, "nobody") || len(r3.f.calls("getTenant")) != 0 {
 			t.Errorf("unknown name: exit %d, stderr %q", code, errs)
 		}
+		// A name that a deleted tenant kept and a new tenant took again: refused, with the IDs and
+		// the states, across the pages of the list; a prefix match of the filter is not a match.
+		deleted := adminapi.Tenant{ID: "0192f0f0-0000-7000-8000-0000000000d1", Name: "acme", State: adminapi.TenantStateDeleted, CreatedAt: t0, UpdatedAt: t0, StateChangedAt: t0}
+		other := adminapi.Tenant{ID: "0192f0f0-0000-7000-8000-0000000000d2", Name: "acme-two", State: adminapi.TenantStateActive, CreatedAt: t0, UpdatedAt: t0, StateChangedAt: t0}
+		r4 := newRig(t)
+		r4.f.pages = map[string]adminapi.TenantList{
+			"":   {Items: []adminapi.Tenant{deleted, other}, NextCursor: "c1"},
+			"c1": {Items: []adminapi.Tenant{tenant}},
+		}
+		code, _, errs = r4.run(t, "tenant", "get", "acme")
+		if code != 1 || len(r4.f.calls("getTenant")) != 0 {
+			t.Errorf("an ambiguous name: exit %d, stderr %q; want a refusal and no call", code, errs)
+		}
+		for _, want := range []string{"acme", deleted.ID + " (deleted)", tid + " (active)", "the ID"} {
+			if !strings.Contains(errs, want) {
+				t.Errorf("the refusal of an ambiguous name does not hold %q: %q", want, errs)
+			}
+		}
+		if strings.Contains(errs, other.ID) {
+			t.Errorf("the refusal names a tenant whose name only starts with the name: %q", errs)
+		}
+		// The same name held by the deleted tenant alone resolves to it (its deletion can be read).
+		r5 := newRig(t)
+		r5.f.pages = map[string]adminapi.TenantList{"": {Items: []adminapi.Tenant{deleted, other}}}
+		r5.f.out["getTenant"] = &deleted
+		mustRun(t, r5, "tenant", "get", "acme")
+		if got := r5.f.only(t, "getTenant"); !reflect.DeepEqual(got, adminapi.GetTenantInput{Tenant: deleted.ID}) {
+			t.Errorf("a name held by one tenant: %+v", got)
+		}
 	})
 
 	t.Run("tenant list and create", func(t *testing.T) {

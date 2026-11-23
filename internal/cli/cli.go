@@ -245,17 +245,40 @@ func (a *app) resolveTenant(v string) (string, error) {
 	case reUUID.MatchString(v):
 		return v, nil
 	}
-	l, err := a.client.ListTenants(a.ctx, adminapi.ListTenantsInput{Name: v})
-	if err != nil {
-		return "", err
-	}
-	for _, t := range l.Items {
-		if t.Name == v {
-			return t.ID, nil
+	// A deleted tenant keeps its name and a new tenant may take it again: a name that more than one
+	// tenant holds is refused, with their IDs and states, rather than resolved to one of them.
+	var matches []adminapi.Tenant
+	in := adminapi.ListTenantsInput{Name: v}
+	for page := 0; page < maxNamePages; page++ {
+		l, err := a.client.ListTenants(a.ctx, in)
+		if err != nil {
+			return "", err
 		}
+		for _, t := range l.Items {
+			if t.Name == v {
+				matches = append(matches, t)
+			}
+		}
+		if l.NextCursor == "" {
+			break
+		}
+		in.Cursor = l.NextCursor
 	}
-	return "", fmt.Errorf("no tenant named %q", v)
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf("no tenant named %q", v)
+	case 1:
+		return matches[0].ID, nil
+	}
+	held := make([]string, len(matches))
+	for i, t := range matches {
+		held[i] = fmt.Sprintf("%s (%s)", t.ID, t.State)
+	}
+	return "", fmt.Errorf("%d tenants are named %q: %s; give the ID of the one you mean", len(matches), v, strings.Join(held, ", "))
 }
+
+// maxNamePages bounds the pages of tenants read to resolve a name.
+const maxNamePages = 20
 
 func (a *app) resolveServiceAccount(tenantID, v string) (string, error) {
 	if reUUID.MatchString(v) {

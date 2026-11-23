@@ -77,7 +77,10 @@ such users, and the name the platform's log keeps, is a decision of epic 10.
 The ledger and the audit log of the tenant stay attributable to the tenant (the organisation), which an
 operator's own obligations ask for; nothing that names a person or a workload stays, and the directory that
 could resolve the identifiers is gone. The `tenant` row stays, `deleted`, with its name (the name can be
-reused by a new tenant, never the ID).
+reused by a new tenant, never the ID). Once two tenants hold one name, a command of the CLI that is given
+that name refuses it and lists the IDs with their states (`2 tenants are named "acme": … (deleted), …
+(active); give the ID of the one you mean`): give the ID, as `tenant deletion verify` of the deleted one
+needs.
 
 - **The pseudonym** of an identifier is the text of a UUID made of the first 16 bytes of SHA-256 over a
   random 32-byte salt and the value, marked as a UUID of version 8 (no identifier the product makes has
