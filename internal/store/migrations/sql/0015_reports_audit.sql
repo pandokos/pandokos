@@ -608,7 +608,8 @@ CREATE TABLE pandokos.metadata_key_policy (
     CONSTRAINT metadata_key_policy_keys_valid CHECK (
         cardinality(keys) <= 64 AND array_position(keys, NULL) IS NULL
         AND (cardinality(keys) = 0 OR array_to_string(keys, ',') <> '')
-        AND array_to_string(keys, ',') ~ '^([a-z0-9][a-z0-9_-]{0,31}(,[a-z0-9][a-z0-9_-]{0,31})*)?$')
+        AND array_to_string(keys, ',') ~ '^([a-z0-9][a-z0-9_-]{0,31}(,[a-z0-9][a-z0-9_-]{0,31})*)?$'
+        AND cardinality(keys) = cardinality(string_to_array(array_to_string(keys, ','), ',')))
 );
 
 CREATE TRIGGER metadata_key_policy_guard BEFORE INSERT OR UPDATE ON pandokos.metadata_key_policy
