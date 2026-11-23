@@ -3,7 +3,7 @@ id: SPRINT-6.4
 title: Events for external systems
 epic: EPIC-6
 release: v0.3
-status: in-progress
+status: done
 design: draft 2026-11-23
 ---
 
