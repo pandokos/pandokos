@@ -213,8 +213,10 @@ When the deletion starts, the tenant's ID is inserted in the global table `tenan
 
 A row passes only when the statement runs **as the owner** and under the setting
 `pandokos.erasure = on`: that is, inside a function of migration 0016. A runtime role that sets the
-setting gains nothing (T-977), and the gateway's own definer functions (`record_auth_failure`,
-`record_unlimited_traffic`), which run as the owner without the setting, are refused like anybody.
+setting gains nothing (T-977). Every definer function, which runs as the owner, starts with both
+settings off and puts its caller's values back when it returns (§12, changes after review): a
+runtime role that sets one and then calls `record_auth_failure`, `record_unlimited_traffic` or any
+other definer function is refused like anybody (T-977, lint rule L-22).
 
 So no data key can reappear (2.1 R-9): `tenant_data_key` is one of those tables, and a second
 trigger on it refuses a key wrapped by a version that is not the active one (§5.8). Updates are not
@@ -722,7 +724,10 @@ an instrument or a key that does not exist, or when a dependency or a worker job
   same `403` for its own tenant, another tenant and an unknown one.
 - `tenant_deletion` and `tenant_closed` are restricted global tables in `Spec.Global`; the lint gains
   **L-21**: every table with the policy `tenant_isolation`, and `idempotency_key`, has the trigger
-  `<table>_tenant_open`, and the five global tables of §5.2 the row trigger.
+  `<table>_tenant_open`, and the five global tables of §5.2 the row trigger; and **L-22** (after
+  review): every definer function but the trigger `audit_seal_tenant` starts its body with
+  `pandokos.definer_settings_off()` and, unless it sets one of the two settings itself, puts the
+  caller's values back with `pandokos.definer_settings_restore` before it returns.
 
 ## 7. Test infrastructure and CI
 
@@ -986,3 +991,12 @@ concurrency (T-990, T-991); the cost of the statement trigger on the ledger and 
 | O-12 | Confirmed: retention of `limit_event` for living tenants goes to 6.4; `price_import` retention is not planned |
 | O-13 | Confirmed: the completion record omits counts of ledger records, limit events and rollup rows (ADR 0054) |
 | O-14 | Confirmed: migration 0016 is incompatible with earlier binaries, stated in the v0.2.0 release notes |
+
+### Changes after review (2026-11-23)
+
+Migration 0016 differs from the text of plan A1 and its SHA-256 (the migration is unreleased; the
+checksum file follows it).
+
+| Finding | Change |
+|---|---|
+| A runtime role could set `pandokos.erasure` and then call an older definer function, which runs as the owner and so passed the guard of §5.2 | Every definer function starts with both settings off and puts its caller's values back when it returns; the four that set one themselves (`tenant_erasure_step`, `tenant_retention`, `platform_retention`, `deleted_tenant_retention`) end with both off. The decided `ALTER FUNCTION … SET pandokos.erasure = 'off'` cannot be used: PostgreSQL lets only a superuser, or a role granted `SET` on the parameter, attach a parameter that no module defines to a function, and migrations run as the owner. The equivalent is in the bodies: two owner-only functions, `definer_settings_off()` (the first declaration of each body) and `definer_settings_restore(text[])`; section 7 of the migration redefines the nineteen definer functions of migrations 0002 to 0015 with that start, their bodies otherwise unchanged (the four SQL lookups become PL/pgSQL to have a first statement). The exception is the trigger `audit_seal_tenant`, through which `tenant_erasure_step` writes the closing row of a closed tenant: it is reached only through an `INSERT` into `audit_event`, whose statement guard has judged the caller. Lint rule L-22; T-977 calls every definer function a runtime role may execute, as each such role, under each setting, for a deleting and a deleted tenant |

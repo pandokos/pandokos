@@ -51,6 +51,40 @@ BEGIN
 END
 $$;
 
+-- A definer function runs as the owner, for whom the guards of section 3, the policies of section 5
+-- and append_only admit a row under the two settings, which any role may set. Every definer
+-- function therefore starts with both off (definer_settings_off, the first declaration of its
+-- body) and, unless it sets one itself, puts back its caller's values before it returns
+-- (definer_settings_restore): what a SET clause on the function would do, which the owner cannot
+-- attach for a parameter that no module defines. Section 7 gives the functions of the earlier
+-- migrations the same start; lint rule L-22 asks it of every definer function.
+CREATE FUNCTION pandokos.definer_settings_off() RETURNS text[]
+    LANGUAGE plpgsql
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v text[] := ARRAY[COALESCE(pg_catalog.current_setting('pandokos.erasure', true), ''),
+                      COALESCE(pg_catalog.current_setting('pandokos.retention', true), '')];
+BEGIN
+    PERFORM pg_catalog.set_config('pandokos.erasure', 'off', true);
+    PERFORM pg_catalog.set_config('pandokos.retention', 'off', true);
+    RETURN v;
+END
+$$;
+
+CREATE FUNCTION pandokos.definer_settings_restore(p_saved text[]) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+    PERFORM pg_catalog.set_config('pandokos.erasure', p_saved[1], true);
+    PERFORM pg_catalog.set_config('pandokos.retention', p_saved[2], true);
+END
+$$;
+
+REVOKE ALL ON FUNCTION pandokos.definer_settings_off() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pandokos.definer_settings_restore(text[]) FROM PUBLIC;
+
 -- ---------------------------------------------------------------------------------------------
 -- 2. Key-encryption key versions: one is active, a replaced one is retiring until no data key is
 --    wrapped by it, then retired (VLT-10). The key itself is never here.
@@ -94,6 +128,7 @@ CREATE FUNCTION pandokos.kek_activate(p_id text, p_provider text) RETURNS text
     SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
     v_state    text;
     v_provider text;
     v_previous text;
@@ -112,6 +147,7 @@ BEGIN
             RAISE EXCEPTION 'key-encryption key version % is % and cannot become active again', p_id, v_state
                 USING ERRCODE = 'object_not_in_prerequisite_state', CONSTRAINT = 'kek_version_replaced';
         END IF;
+        PERFORM pandokos.definer_settings_restore(v_settings);
         RETURN 'unchanged';
     END IF;
     UPDATE pandokos.kek_version SET state = 'retiring' WHERE state = 'active' RETURNING id INTO v_previous;
@@ -119,6 +155,7 @@ BEGIN
     INSERT INTO pandokos.platform_audit_event (actor_type, actor_name, action, resource_type, resource_id, outcome, detail)
     VALUES ('host', 'serve', 'kek.activate', 'kek_version', p_id, 'success',
             pg_catalog.jsonb_build_object('provider', p_provider, 'previous', COALESCE(v_previous, '')));
+    PERFORM pandokos.definer_settings_restore(v_settings);
     RETURN 'activated';
 END
 $$;
@@ -132,8 +169,9 @@ CREATE FUNCTION pandokos.kek_retire() RETURNS integer
     SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
-    r pandokos.kek_version%ROWTYPE;
-    n integer := 0;
+    v_settings text[] := pandokos.definer_settings_off();
+    r          pandokos.kek_version%ROWTYPE;
+    n          integer := 0;
 BEGIN
     IF NOT pandokos.platform_scope() THEN
         RAISE EXCEPTION 'kek_retire needs the platform scope' USING ERRCODE = 'insufficient_privilege';
@@ -151,6 +189,7 @@ BEGIN
                 pg_catalog.jsonb_build_object('provider', r.provider));
         n := n + 1;
     END LOOP;
+    PERFORM pandokos.definer_settings_restore(v_settings);
     RETURN n;
 END
 $$;
@@ -219,7 +258,8 @@ CREATE POLICY tenant_erasure_update ON pandokos.tenant
 
 -- For the tables whose policy binds every row to the tenant of the session: one look at that
 -- tenant per statement. The setting lets a row through only for the owner, that is, inside a
--- function of this migration: a runtime role that sets it gains nothing.
+-- function of this migration: a runtime role that sets it gains nothing, and every definer function
+-- starts with both settings off (section 7), so setting one before calling it gains nothing either.
 CREATE FUNCTION pandokos.tenant_open() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path = pg_catalog, pg_temp
@@ -385,11 +425,14 @@ CREATE FUNCTION pandokos.tenant_deletion_holds() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path = pg_catalog, pg_temp
 AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
 BEGIN
     IF NEW.state = 'active' AND OLD.state = 'suspended'
        AND EXISTS (SELECT 1 FROM pandokos.tenant_deletion d WHERE d.tenant_id = NEW.id) THEN
         RAISE EXCEPTION 'the deletion of the tenant is requested' USING ERRCODE = 'restrict_violation', CONSTRAINT = 'tenant_deletion_holds';
     END IF;
+    PERFORM pandokos.definer_settings_restore(v_settings);
     RETURN NEW;
 END
 $$;
@@ -680,6 +723,7 @@ CREATE FUNCTION pandokos.tenant_erasure_step(p_batch integer) RETURNS text
     SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
     t       uuid := pandokos.current_tenant_id();
     d       pandokos.tenant_deletion%ROWTYPE;
     v_name  text;
@@ -791,6 +835,7 @@ CREATE FUNCTION pandokos.deleted_tenant_retention(p_usage_months integer, p_audi
     SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
     t       uuid := pandokos.current_tenant_id();
     v_month date := pg_catalog.date_trunc('month', pg_catalog.timezone('UTC', pg_catalog.now()))::date;
     v_cut   date;
@@ -840,3 +885,558 @@ REVOKE ALL ON FUNCTION pandokos.tenant_erasure_step(integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION pandokos.deleted_tenant_retention(integer, integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION pandokos.tenant_erasure_step(integer) TO pandokos_worker;
 GRANT EXECUTE ON FUNCTION pandokos.deleted_tenant_retention(integer, integer) TO pandokos_worker;
+
+-- ---------------------------------------------------------------------------------------------
+-- 7. The definer functions of the earlier migrations get the start of section 1: both settings
+--    off, the caller's values back before they return; the four that set one themselves
+--    (tenant_retention, platform_retention, and tenant_erasure_step and deleted_tenant_retention
+--    above) leave both off. Their bodies are otherwise unchanged, except that the lookups of
+--    migrations 0002, 0008 and 0013 become PL/pgSQL to have a first statement. The one exception
+--    is audit_seal_tenant, the trigger that seals a row of a tenant's log: tenant_erasure_step
+--    writes the closing row of a closed tenant through it, under the setting. It is reached only
+--    through an INSERT into audit_event, whose statement guard has judged the caller first (lint
+--    rule L-22).
+-- ---------------------------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION pandokos.virtual_key_lookup(p_key_id text) RETURNS uuid
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
+    v_tenant   uuid;
+BEGIN
+    v_tenant := (SELECT d.tenant_id FROM pandokos.virtual_key_directory d WHERE d.key_id = p_key_id);
+    PERFORM pandokos.definer_settings_restore(v_settings);
+    RETURN v_tenant;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION pandokos.virtual_key_directory_add() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
+BEGIN
+    INSERT INTO pandokos.virtual_key_directory (key_id, tenant_id) VALUES (NEW.key_id, NEW.tenant_id);
+    PERFORM pandokos.definer_settings_restore(v_settings);
+    RETURN NULL;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION pandokos.record_auth_failure(p_key_id text, p_reason text, p_request_id text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
+BEGIN
+    IF p_key_id !~ '^t[a-z2-7]{16}$' OR p_reason !~ '^[a-z_]{1,40}$' OR p_request_id !~ '^[0-9a-f]{32}$' THEN
+        RAISE EXCEPTION 'invalid authentication failure record' USING ERRCODE = 'check_violation';
+    END IF;
+    INSERT INTO pandokos.audit_event (tenant_id, actor_type, key_id, action, resource_type, resource_id,
+                                      outcome, request_id, detail)
+    VALUES ((SELECT pandokos.current_tenant_id()), 'anonymous', p_key_id, 'auth.failure', 'virtual_key', p_key_id,
+            'failure', p_request_id, pg_catalog.jsonb_build_object('reason', p_reason, 'listener', 'inference'));
+    PERFORM pandokos.definer_settings_restore(v_settings);
+END
+$$;
+
+CREATE OR REPLACE FUNCTION pandokos.ensure_usage_partitions(p_ahead integer, OUT created integer, OUT default_in_use boolean)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
+    v_month    date;
+    v_name     text;
+BEGIN
+    IF p_ahead IS NULL OR p_ahead < 1 OR p_ahead > 12 THEN
+        RAISE EXCEPTION 'p_ahead must be between 1 and 12' USING ERRCODE = 'check_violation';
+    END IF;
+    PERFORM pg_catalog.set_config('lock_timeout', '5s', true);
+    PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('pandokos.usage_record.partitions', 0));
+    created := 0;
+    FOR i IN -1 .. p_ahead LOOP
+        v_month := (pg_catalog.date_trunc('month', pg_catalog.timezone('UTC', pg_catalog.now()))
+                    + pg_catalog.make_interval(months => i))::date;
+        v_name := 'usage_record_' || pg_catalog.to_char(v_month, '"y"YYYY"m"MM');
+        IF pg_catalog.to_regclass('pandokos.' || pg_catalog.quote_ident(v_name)) IS NULL THEN
+            BEGIN
+                EXECUTE pg_catalog.format(
+                    'CREATE TABLE pandokos.%I PARTITION OF pandokos.usage_record FOR VALUES FROM (%L) TO (%L)',
+                    v_name,
+                    pg_catalog.to_char(v_month, 'YYYY-MM-DD') || ' 00:00:00+00',
+                    pg_catalog.to_char((v_month + pg_catalog.make_interval(months => 1))::date, 'YYYY-MM-DD')
+                        || ' 00:00:00+00');
+                PERFORM pandokos.protect_usage_partition(v_name);
+                created := created + 1;
+            EXCEPTION WHEN check_violation THEN
+                -- The default partition already holds rows of that month: they stay there, and
+                -- the month keeps going to the default partition.
+                NULL;
+            END;
+        END IF;
+    END LOOP;
+    default_in_use := pg_catalog.pg_relation_size('pandokos.usage_record_default'::pg_catalog.regclass) > 0;
+    PERFORM pandokos.definer_settings_restore(v_settings);
+END
+$$;
+
+CREATE OR REPLACE FUNCTION pandokos.issuer_directory_sync() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
+BEGIN
+    IF TG_OP IN ('UPDATE', 'DELETE') THEN
+        DELETE FROM pandokos.issuer_directory d WHERE d.issuer_id = OLD.id;
+    END IF;
+    IF TG_OP IN ('INSERT', 'UPDATE') THEN
+        INSERT INTO pandokos.issuer_directory (issuer, audience, scope, tenant_id, issuer_id)
+        VALUES (NEW.issuer, NEW.audience, TG_ARGV[0],
+                CASE WHEN TG_ARGV[0] = 'tenant' THEN (pg_catalog.to_jsonb(NEW) ->> 'tenant_id')::uuid END, NEW.id);
+    END IF;
+    PERFORM pandokos.definer_settings_restore(v_settings);
+    RETURN NULL;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION pandokos.issuer_lookup(p_issuer text, p_audiences text[])
+    RETURNS TABLE (scope text, tenant_id uuid, issuer_id uuid)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
+BEGIN
+    RETURN QUERY
+    SELECT d.scope, d.tenant_id, d.issuer_id
+      FROM pandokos.issuer_directory d
+     WHERE d.issuer = p_issuer
+       AND pg_catalog.cardinality(p_audiences) BETWEEN 1 AND 16
+       AND d.audience = ANY (p_audiences);
+    PERFORM pandokos.definer_settings_restore(v_settings);
+END
+$$;
+
+CREATE OR REPLACE FUNCTION pandokos.platform_issuer_tenant_lookup(p_issuer_id uuid, p_claim_value text) RETURNS uuid
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
+    v_tenant   uuid;
+BEGIN
+    v_tenant := (SELECT t.tenant_id FROM pandokos.platform_issuer_tenant t
+                  WHERE t.issuer_id = p_issuer_id AND t.claim_value = p_claim_value);
+    PERFORM pandokos.definer_settings_restore(v_settings);
+    RETURN v_tenant;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION pandokos.platform_issuer_mapping_count(p_issuer_id uuid, p_tenant_ids uuid[]) RETURNS bigint
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
+    prev       text := pg_catalog.current_setting('app.tenant_id', true);
+    t          uuid;
+    total      bigint := 0;
+BEGIN
+    IF NOT pandokos.platform_scope() THEN
+        RAISE EXCEPTION 'platform_issuer_mapping_count needs the platform scope' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    FOREACH t IN ARRAY COALESCE(p_tenant_ids, ARRAY[]::uuid[]) LOOP
+        PERFORM pg_catalog.set_config('app.tenant_id', t::text, true);
+        total := total + (SELECT pg_catalog.count(*) FROM pandokos.subject_mapping m WHERE m.platform_issuer_id = p_issuer_id);
+    END LOOP;
+    PERFORM pg_catalog.set_config('app.tenant_id', COALESCE(prev, ''), true);
+    PERFORM pandokos.definer_settings_restore(v_settings);
+    RETURN total;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION pandokos.record_token_auth_failure(p_scope text, p_issuer_id uuid, p_reason text, p_subject text, p_request_id text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
+BEGIN
+    IF p_scope IS NULL OR p_scope NOT IN ('tenant', 'platform') OR p_issuer_id IS NULL
+       OR p_reason IS NULL OR p_reason !~ '^[a-z_]{1,40}$'
+       OR p_request_id IS NULL OR p_request_id !~ '^[0-9a-f]{32}$'
+       OR p_subject IS NULL OR pg_catalog.char_length(p_subject) > 255 OR p_subject ~ '[[:cntrl:]]' THEN
+        RAISE EXCEPTION 'invalid authentication failure record' USING ERRCODE = 'check_violation';
+    END IF;
+    INSERT INTO pandokos.audit_event (tenant_id, actor_type, action, resource_type, resource_id,
+                                      outcome, request_id, detail)
+    VALUES ((SELECT pandokos.current_tenant_id()), 'anonymous', 'auth.failure', 'token_issuer', p_issuer_id::text,
+            'failure', p_request_id,
+            pg_catalog.jsonb_strip_nulls(pg_catalog.jsonb_build_object(
+                'reason', p_reason, 'listener', 'inference', 'issuer_scope', p_scope,
+                'subject', NULLIF(p_subject, ''))));
+    PERFORM pandokos.definer_settings_restore(v_settings);
+END
+$$;
+
+CREATE OR REPLACE FUNCTION pandokos.delete_platform_issuer_limit_rules(p_issuer_id uuid, p_tenant_ids uuid[], p_actor_id text,
+                                                                      p_actor_name text, p_key_id text, p_request_id text) RETURNS bigint
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
+    prev       text := pg_catalog.current_setting('app.tenant_id', true);
+    t          uuid;
+    n          bigint;
+    total      bigint := 0;
+BEGIN
+    IF NOT pandokos.platform_scope() THEN
+        RAISE EXCEPTION 'delete_platform_issuer_limit_rules needs the platform scope' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    IF p_issuer_id IS NULL
+       OR p_actor_id IS NULL OR p_actor_id !~ '^[A-Za-z0-9_-]{0,64}$'
+       OR p_actor_name IS NULL OR pg_catalog.char_length(p_actor_name) > 200 OR p_actor_name ~ '[[:cntrl:]]'
+       OR p_key_id IS NULL OR p_key_id !~ '^[A-Za-z0-9_-]{0,64}$'
+       OR p_request_id IS NULL OR p_request_id !~ '^([0-9a-f]{32})?$' THEN
+        RAISE EXCEPTION 'invalid audit actor' USING ERRCODE = 'check_violation';
+    END IF;
+    FOREACH t IN ARRAY ARRAY(SELECT DISTINCT x FROM pg_catalog.unnest(COALESCE(p_tenant_ids, ARRAY[]::uuid[])) AS x ORDER BY x) LOOP
+        PERFORM pg_catalog.set_config('app.tenant_id', t::text, true);
+        -- A tenant with no mapping of this issuer has nothing to delete: it is neither locked nor
+        -- touched (the caller may name every tenant of the installation). Safe without the lock: the
+        -- handler holds the row of the issuer, so no mapping of it is created meanwhile.
+        IF NOT EXISTS (SELECT 1 FROM pandokos.subject_mapping m WHERE m.tenant_id = t AND m.platform_issuer_id = p_issuer_id) THEN
+            CONTINUE;
+        END IF;
+        -- The lock of createLimit: no rule is created for one of these mappings meanwhile.
+        PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('pandokos.limit_rule:' || t::text, 0));
+        WITH gone AS (
+            DELETE FROM pandokos.limit_rule r
+             USING pandokos.subject_mapping m
+             WHERE m.tenant_id = r.tenant_id AND m.id = r.subject_mapping_id AND m.platform_issuer_id = p_issuer_id
+            RETURNING r.*
+        )
+        INSERT INTO pandokos.audit_event (tenant_id, actor_type, actor_id, actor_name, key_id, action, resource_type,
+                                          resource_id, outcome, request_id, detail)
+        SELECT g.tenant_id, 'platform', p_actor_id, p_actor_name, p_key_id, 'limit.delete', 'limit_rule', g.id::text,
+               'success', p_request_id,
+               pg_catalog.jsonb_strip_nulls(pg_catalog.jsonb_build_object(
+                   'cause', 'platform_issuer_deleted', 'cause_id', p_issuer_id::text,
+                   'subject_kind', g.subject_kind, 'subject_id', g.subject_mapping_id::text,
+                   'provider', COALESCE(p.name, ''), 'model', COALESCE(mo.name, ''),
+                   'provider_id', g.provider_id::text, 'model_id', g.model_id::text,
+                   'metric', g.metric,
+                   'limit', CASE WHEN g.metric NOT IN ('cost_per_day', 'cost_per_month') THEN g.limit_value END,
+                   'amount', CASE WHEN g.metric IN ('cost_per_day', 'cost_per_month')
+                                  THEN pg_catalog.trim_scale(g.limit_value::numeric / 1000000)::text END,
+                   'currency', NULLIF(g.currency, ''),
+                   'enforce', g.enforce, 'thresholds', pg_catalog.to_jsonb(g.thresholds)))
+          FROM gone g
+          LEFT JOIN pandokos.provider p ON p.id = g.provider_id
+          LEFT JOIN pandokos.model mo ON mo.id = g.model_id;
+        GET DIAGNOSTICS n = ROW_COUNT;
+        total := total + n;
+    END LOOP;
+    PERFORM pg_catalog.set_config('app.tenant_id', COALESCE(prev, ''), true);
+    PERFORM pandokos.definer_settings_restore(v_settings);
+    RETURN total;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION pandokos.membership_guard() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
+    home       uuid;
+BEGIN
+    IF TG_OP = 'UPDATE' THEN
+        IF NEW.user_id <> OLD.user_id THEN
+            RAISE EXCEPTION 'user_id of a membership is immutable' USING ERRCODE = 'check_violation';
+        END IF;
+        PERFORM pandokos.definer_settings_restore(v_settings);
+        RETURN NEW;
+    END IF;
+    SELECT u.tenant_id INTO home FROM pandokos.app_user u WHERE u.id = NEW.user_id;
+    IF home IS NOT NULL AND home <> NEW.tenant_id THEN
+        RAISE EXCEPTION 'a user managed by a tenant is a member of that tenant only' USING ERRCODE = 'check_violation';
+    END IF;
+    PERFORM pandokos.definer_settings_restore(v_settings);
+    RETURN NEW;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION pandokos.membership_directory_sync() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        DELETE FROM pandokos.membership_directory d WHERE d.user_id = OLD.user_id AND d.tenant_id = OLD.tenant_id;
+    ELSE
+        INSERT INTO pandokos.membership_directory (user_id, tenant_id) VALUES (NEW.user_id, NEW.tenant_id);
+    END IF;
+    PERFORM pandokos.definer_settings_restore(v_settings);
+    RETURN NULL;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION pandokos.user_tenants(p_user_id uuid) RETURNS SETOF uuid
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
+BEGIN
+    IF NOT pandokos.platform_scope() THEN
+        RAISE EXCEPTION 'user_tenants needs the platform scope' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    RETURN QUERY SELECT d.tenant_id FROM pandokos.membership_directory d WHERE d.user_id = p_user_id ORDER BY d.tenant_id;
+    PERFORM pandokos.definer_settings_restore(v_settings);
+END
+$$;
+
+CREATE OR REPLACE FUNCTION pandokos.platform_role_assignment_guard() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
+BEGIN
+    IF (SELECT u.tenant_id FROM pandokos.app_user u WHERE u.id = NEW.user_id) IS NOT NULL THEN
+        RAISE EXCEPTION 'a user managed by a tenant holds no platform role' USING ERRCODE = 'check_violation';
+    END IF;
+    PERFORM pandokos.definer_settings_restore(v_settings);
+    RETURN NEW;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION pandokos.platform_user_lookup(p_user_id uuid, p_username text) RETURNS uuid
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
+    v_user     uuid;
+BEGIN
+    v_user := (SELECT u.id
+                 FROM pandokos.app_user u LEFT JOIN pandokos.local_account a ON a.user_id = u.id
+                WHERE u.tenant_id IS NULL AND pandokos.current_tenant_id() IS NOT NULL
+                  AND pg_catalog.num_nonnulls(p_user_id, p_username) = 1
+                  AND (u.id = p_user_id OR a.username = p_username));
+    PERFORM pandokos.definer_settings_restore(v_settings);
+    RETURN v_user;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION pandokos.record_unlimited_traffic(p_day date, p_time_zone text, p_provider text, p_model text, p_request_id text) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
+    t          uuid := pandokos.current_tenant_id();
+    d          jsonb;
+    written    boolean := false;
+BEGIN
+    IF t IS NULL OR p_day IS NULL
+       OR p_day NOT BETWEEN (pg_catalog.timezone('UTC', pg_catalog.now()))::date - 2
+                        AND (pg_catalog.timezone('UTC', pg_catalog.now()))::date + 2
+       OR p_time_zone IS NULL OR p_time_zone !~ '^[A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2}$'
+       OR p_provider IS NULL OR p_provider !~ '^[a-z][a-z0-9-]{0,62}$'
+       OR p_model IS NULL OR p_model !~ '^([A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127})?$'
+       OR p_request_id IS NULL OR p_request_id !~ '^[0-9a-f]{32}$' THEN
+        RAISE EXCEPTION 'invalid unlimited traffic record' USING ERRCODE = 'check_violation';
+    END IF;
+    d := pg_catalog.jsonb_build_object('day', pg_catalog.to_char(p_day, 'YYYY-MM-DD'), 'time_zone', p_time_zone,
+                                       'provider', p_provider, 'model', p_model);
+    BEGIN
+        INSERT INTO pandokos.audit_event (tenant_id, actor_type, actor_name, action, resource_type, resource_id,
+                                          outcome, request_id, detail)
+        VALUES (t, 'platform', 'gateway', 'limit.unlimited_traffic', 'tenant', t::text, 'success', p_request_id, d);
+        written := true;
+    EXCEPTION WHEN unique_violation THEN
+        NULL;
+    END;
+    BEGIN
+        INSERT INTO pandokos.platform_audit_event (actor_type, actor_name, action, resource_type, resource_id,
+                                                   outcome, request_id, detail)
+        VALUES ('platform', 'gateway', 'limit.unlimited_traffic', 'tenant', t::text, 'success', p_request_id, d);
+    EXCEPTION WHEN unique_violation THEN
+        NULL;
+    END;
+    PERFORM pandokos.definer_settings_restore(v_settings);
+    RETURN written;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION pandokos.audit_seal_platform() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
+    h_seq      bigint;
+    h_hash     bytea;
+BEGIN
+    NEW.id := pandokos.uuid_v7();
+    NEW.occurred_at := pg_catalog.now();
+    SELECT c.seq, c.hash INTO h_seq, h_hash FROM pandokos.platform_audit_chain c WHERE c.id = 1 FOR UPDATE;
+    NEW.seq := h_seq + 1;
+    NEW.prev_hash := h_hash;
+    NEW.hash := pandokos.audit_row_hash('platform', NEW.seq, NEW.id, NEW.occurred_at, NEW.actor_type, NEW.actor_id,
+                                        NEW.actor_name, NEW.key_id, NEW.action, NEW.resource_type, NEW.resource_id,
+                                        NEW.outcome, NEW.request_id, NEW.reason, NULL, NEW.detail, NEW.prev_hash);
+    UPDATE pandokos.platform_audit_chain SET seq = NEW.seq, hash = NEW.hash WHERE id = 1;
+    PERFORM pandokos.definer_settings_restore(v_settings);
+    RETURN NEW;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION pandokos.platform_retention(p_usage_months integer, p_audit_months integer,
+                                           OUT partitions_dropped integer, OUT audit_rows bigint)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
+    v_month date := pg_catalog.date_trunc('month', pg_catalog.timezone('UTC', pg_catalog.now()))::date;
+    v_cut   date;
+    v_names text[] := '{}';
+    v_name  text;
+    v_last  bigint;
+    v_first bigint;
+    v_hash  bytea;
+BEGIN
+    IF NOT pandokos.platform_scope() THEN
+        RAISE EXCEPTION 'platform_retention needs the platform scope' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    IF p_usage_months IS NULL OR (p_usage_months <> 0 AND p_usage_months NOT BETWEEN 2 AND 120)
+       OR p_audit_months IS NULL OR (p_audit_months <> 0 AND p_audit_months NOT BETWEEN 1 AND 1200) THEN
+        RAISE EXCEPTION 'invalid retention' USING ERRCODE = 'check_violation';
+    END IF;
+    PERFORM pg_catalog.set_config('lock_timeout', '5s', true);
+    partitions_dropped := 0;
+    audit_rows := 0;
+    IF p_usage_months > 0 THEN
+        v_cut := (v_month - pg_catalog.make_interval(months => p_usage_months))::date;
+        PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('pandokos.usage_record.partitions', 0));
+        FOR v_name IN
+            SELECT c.relname::text
+              FROM pg_catalog.pg_inherits i
+              JOIN pg_catalog.pg_class c ON c.oid = i.inhrelid
+             WHERE i.inhparent = 'pandokos.usage_record'::pg_catalog.regclass
+               AND c.relname ~ '^usage_record_y[0-9]{4}m[0-9]{2}$'
+               AND (pg_catalog.to_date(pg_catalog.substr(c.relname, 14), '"y"YYYY"m"MM')
+                    + pg_catalog.make_interval(months => 1))::date <= v_cut
+             ORDER BY 1
+        LOOP
+            EXECUTE pg_catalog.format('DROP TABLE pandokos.%I', v_name);
+            v_names := v_names || v_name;
+        END LOOP;
+        partitions_dropped := pg_catalog.cardinality(v_names);
+        IF partitions_dropped > 0 THEN
+            INSERT INTO pandokos.platform_audit_event (actor_type, actor_name, action, resource_type, outcome, detail)
+            VALUES ('platform', 'retention', 'usage.retention', 'usage_record', 'success',
+                    pg_catalog.jsonb_build_object('before', pg_catalog.to_char(v_cut, 'YYYY-MM-DD'),
+                                                  'months', p_usage_months, 'partitions', pg_catalog.to_jsonb(v_names)));
+        END IF;
+    END IF;
+    IF p_audit_months > 0 THEN
+        v_cut := (v_month - pg_catalog.make_interval(months => p_audit_months))::date;
+        PERFORM pg_catalog.set_config('pandokos.retention', 'on', true);
+        SELECT c.anchor_seq INTO v_first FROM pandokos.platform_audit_chain c WHERE c.id = 1 FOR UPDATE;
+        SELECT pg_catalog.max(e.seq) INTO v_last FROM pandokos.platform_audit_event e
+         WHERE e.occurred_at < (v_cut::timestamp AT TIME ZONE 'UTC');
+        IF v_last IS NOT NULL AND v_last >= v_first THEN
+            SELECT e.hash INTO v_hash FROM pandokos.platform_audit_event e WHERE e.seq = v_last;
+            DELETE FROM pandokos.platform_audit_event e WHERE e.seq <= v_last;
+            GET DIAGNOSTICS audit_rows = ROW_COUNT;
+            UPDATE pandokos.platform_audit_chain SET anchor_seq = v_last + 1, anchor_hash = v_hash WHERE id = 1;
+        END IF;
+        PERFORM pg_catalog.set_config('pandokos.retention', 'off', true);
+        IF audit_rows > 0 THEN
+            INSERT INTO pandokos.platform_audit_event (actor_type, actor_name, action, resource_type, outcome, detail)
+            VALUES ('platform', 'retention', 'audit.retention', 'platform_audit_event', 'success',
+                    pg_catalog.jsonb_build_object('before', pg_catalog.to_char(v_cut, 'YYYY-MM-DD'),
+                                                  'months', p_audit_months, 'deleted', audit_rows,
+                                                  'first_seq', v_first, 'last_seq', v_last,
+                                                  'last_hash', pg_catalog.encode(v_hash, 'hex')));
+        END IF;
+    END IF;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION pandokos.tenant_retention(p_usage_months integer, p_audit_months integer,
+                                         OUT usage_rows bigint, OUT rollup_rows bigint, OUT audit_rows bigint)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
+    t       uuid := pandokos.current_tenant_id();
+    v_month date := pg_catalog.date_trunc('month', pg_catalog.timezone('UTC', pg_catalog.now()))::date;
+    v_cut   date;
+    v_at    timestamptz;
+    v_last  bigint;
+    v_first bigint;
+    v_hash  bytea;
+BEGIN
+    IF t IS NULL THEN
+        RAISE EXCEPTION 'tenant_retention needs a tenant session' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    IF p_usage_months IS NULL OR (p_usage_months <> 0 AND p_usage_months NOT BETWEEN 2 AND 120)
+       OR p_audit_months IS NULL OR (p_audit_months <> 0 AND p_audit_months NOT BETWEEN 1 AND 1200) THEN
+        RAISE EXCEPTION 'invalid retention' USING ERRCODE = 'check_violation';
+    END IF;
+    usage_rows := 0;
+    rollup_rows := 0;
+    audit_rows := 0;
+    IF p_usage_months > 0 THEN
+        v_cut := (v_month - pg_catalog.make_interval(months => p_usage_months))::date;
+        v_at := v_cut::timestamp AT TIME ZONE 'UTC';
+        DELETE FROM pandokos.usage_rollup r WHERE r.hour < v_at;
+        GET DIAGNOSTICS rollup_rows = ROW_COUNT;
+        PERFORM pg_catalog.set_config('pandokos.retention', 'on', true);
+        DELETE FROM pandokos.usage_record_default u WHERE u.started_at < v_at;
+        GET DIAGNOSTICS usage_rows = ROW_COUNT;
+        PERFORM pg_catalog.set_config('pandokos.retention', 'off', true);
+        IF usage_rows > 0 THEN
+            INSERT INTO pandokos.audit_event (tenant_id, actor_type, actor_name, action, resource_type, outcome, detail)
+            VALUES (t, 'platform', 'retention', 'usage.retention', 'usage_record', 'success',
+                    pg_catalog.jsonb_build_object('before', pg_catalog.to_char(v_cut, 'YYYY-MM-DD'),
+                                                  'months', p_usage_months, 'deleted', usage_rows));
+        END IF;
+    END IF;
+    IF p_audit_months > 0 THEN
+        v_cut := (v_month - pg_catalog.make_interval(months => p_audit_months))::date;
+        INSERT INTO pandokos.audit_chain (tenant_id) VALUES (t) ON CONFLICT (tenant_id) DO NOTHING;
+        SELECT c.anchor_seq INTO v_first FROM pandokos.audit_chain c WHERE c.tenant_id = t FOR UPDATE;
+        SELECT pg_catalog.max(e.seq) INTO v_last FROM pandokos.audit_event e
+         WHERE e.occurred_at < (v_cut::timestamp AT TIME ZONE 'UTC');
+        IF v_last IS NOT NULL AND v_last >= v_first THEN
+            SELECT e.hash INTO v_hash FROM pandokos.audit_event e WHERE e.seq = v_last;
+            PERFORM pg_catalog.set_config('pandokos.retention', 'on', true);
+            DELETE FROM pandokos.audit_event e WHERE e.seq <= v_last;
+            GET DIAGNOSTICS audit_rows = ROW_COUNT;
+            PERFORM pg_catalog.set_config('pandokos.retention', 'off', true);
+            UPDATE pandokos.audit_chain SET anchor_seq = v_last + 1, anchor_hash = v_hash WHERE tenant_id = t;
+            INSERT INTO pandokos.audit_event (tenant_id, actor_type, actor_name, action, resource_type, outcome, detail)
+            VALUES (t, 'platform', 'retention', 'audit.retention', 'audit_event', 'success',
+                    pg_catalog.jsonb_build_object('before', pg_catalog.to_char(v_cut, 'YYYY-MM-DD'),
+                                                  'months', p_audit_months, 'deleted', audit_rows,
+                                                  'first_seq', v_first, 'last_seq', v_last,
+                                                  'last_hash', pg_catalog.encode(v_hash, 'hex')));
+        END IF;
+    END IF;
+END
+$$;

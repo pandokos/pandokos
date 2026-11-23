@@ -244,3 +244,141 @@ func TestTenantOpenLintRule(t *testing.T) {
 		})
 	}
 }
+
+// definerCall is one valid call of a SECURITY DEFINER function that a runtime role may execute, the
+// scope it is made in (a closed tenant's session, or the platform scope), and whether it must be
+// refused by tenant_open in a closed tenant's session: the functions that write a row of the tenant.
+type definerCall struct {
+	sql      string
+	platform bool
+	refused  bool
+}
+
+// definerCalls holds one call for every definer function that the catalogue lets a runtime role
+// execute; the test fails for a function that has none. $1 is the deleting tenant, $2 the deleted
+// one, $3 the active key-encryption key version and $4 its provider: every call takes the four.
+var definerCalls = map[string]definerCall{
+	"record_auth_failure":       {sql: `SELECT pandokos.record_auth_failure('tabcdefghijklmnop', 'bad_secret', '0123456789abcdef0123456789abcdef'), $1::uuid, $2::uuid, $3, $4`, refused: true},
+	"record_token_auth_failure": {sql: `SELECT pandokos.record_token_auth_failure('tenant', '0192f0f0-5555-7000-8000-000000000001'::uuid, 'bad_token', 'subject', '0123456789abcdef0123456789abcdef'), $1::uuid, $2::uuid, $3, $4`, refused: true},
+	"record_unlimited_traffic":  {sql: `SELECT pandokos.record_unlimited_traffic(current_date, 'UTC', 'openai', 'gpt-4o', 'fedcba9876543210fedcba9876543210'), $1::uuid, $2::uuid, $3, $4`, refused: true},
+	// With an audit retention the function makes sure the tenant's chain exists: an insert.
+	"tenant_retention":              {sql: `SELECT r.*, $1::uuid, $2::uuid, $3, $4 FROM pandokos.tenant_retention(120, 1200) r`, refused: true},
+	"deleted_tenant_retention":      {sql: `SELECT r.*, $1::uuid, $2::uuid, $3, $4 FROM pandokos.deleted_tenant_retention(120, 1200) r`},
+	"tenant_erasure_step":           {sql: `SELECT pandokos.tenant_erasure_step(100), $1::uuid, $2::uuid, $3, $4`},
+	"virtual_key_lookup":            {sql: `SELECT pandokos.virtual_key_lookup('tabcdefghijklmnop'), $1::uuid, $2::uuid, $3, $4`},
+	"issuer_lookup":                 {sql: `SELECT r.*, $1::uuid, $2::uuid, $3, $4 FROM pandokos.issuer_lookup('https://idp.example.test', ARRAY['pandokos']) r`},
+	"platform_issuer_tenant_lookup": {sql: `SELECT pandokos.platform_issuer_tenant_lookup('0192f0f0-5555-7000-8000-000000000002'::uuid, 'claim'), $1::uuid, $2::uuid, $3, $4`},
+	"user_tenants":                  {sql: `SELECT r.*, $1::uuid, $2::uuid, $3, $4 FROM pandokos.user_tenants('0192f0f0-5555-7000-8000-000000000003'::uuid) r`, platform: true},
+	"platform_user_lookup":          {sql: `SELECT pandokos.platform_user_lookup('0192f0f0-5555-7000-8000-000000000003'::uuid, 'someone'), $1::uuid, $2::uuid, $3, $4`, platform: true},
+	"platform_issuer_mapping_count": {sql: `SELECT pandokos.platform_issuer_mapping_count('0192f0f0-5555-7000-8000-000000000002'::uuid, ARRAY[$1::uuid, $2::uuid]), $3, $4`, platform: true},
+	"delete_platform_issuer_limit_rules": {sql: `SELECT pandokos.delete_platform_issuer_limit_rules('0192f0f0-5555-7000-8000-000000000002'::uuid, ARRAY[$1::uuid, $2::uuid],
+		'pkeytest', 'test', 'pkeytest', '0123456789abcdef0123456789abcdef'), $3, $4`, platform: true},
+	"ensure_usage_partitions": {sql: `SELECT r.*, $1::uuid, $2::uuid, $3, $4 FROM pandokos.ensure_usage_partitions(1) r`, platform: true},
+	"platform_retention":      {sql: `SELECT r.*, $1::uuid, $2::uuid, $3, $4 FROM pandokos.platform_retention(120, 1200) r`, platform: true},
+	"kek_activate":            {sql: `SELECT pandokos.kek_activate($3, $4), $1::uuid, $2::uuid`, platform: true},
+	"kek_retire":              {sql: `SELECT pandokos.kek_retire(), $1::uuid, $2::uuid, $3, $4`, platform: true},
+}
+
+// TestTenantOpenDefinerFunctions is the part of T-977 about the definer functions: a runtime role
+// that sets pandokos.erasure, pandokos.retention or both and then calls a definer function, which
+// runs as the owner, writes no row for a closed tenant. Each function the catalogue lets a runtime
+// role execute is called by every runtime role that may, under each setting, in the session of a
+// tenant that is being deleted and of one that is deleted (or in platform scope for the functions
+// of the platform); the functions that write a row of the tenant are refused by tenant_open, and no
+// row of either tenant changes. tenant_erasure_step is called for the deleted tenant only: for the
+// one being deleted it is the deletion itself.
+func TestTenantOpenDefinerFunctions(t *testing.T) {
+	d := dbtest.NewMigrated(t)
+	deleting, deleted := closedTenants(t, d)
+	kek := dbText(t, d, `SELECT id FROM pandokos.kek_version WHERE state = 'active'`)
+	provider := dbText(t, d, `SELECT provider FROM pandokos.kek_version WHERE state = 'active'`)
+	tenantTables := map[string]bool{}
+	{
+		rows, err := d.Super(t).Query(ctx(t), `SELECT c.relname FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = 'pandokos' AND c.relkind IN ('r', 'p') AND NOT c.relispartition
+			  AND EXISTS (SELECT 1 FROM pg_catalog.pg_attribute a WHERE a.attrelid = c.oid AND a.attname = 'tenant_id' AND NOT a.attisdropped AND a.attnum > 0)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		names, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range names {
+			tenantTables[n] = true
+		}
+	}
+	digests := func() map[string]string {
+		out := map[string]string{}
+		for _, id := range []tenant.ID{deleting, deleted} {
+			for tbl, dg := range d.TableDigests(t, id) {
+				if tenantTables[tbl] {
+					out[id.String()+" "+tbl] = dg
+				}
+			}
+		}
+		return out
+	}
+	before := digests()
+
+	settings := []map[string]string{{"pandokos.erasure": "on"}, {"pandokos.retention": "on"}, {"pandokos.erasure": "on", "pandokos.retention": "on"}}
+	called := map[string]bool{}
+	for _, role := range runtimeRoles {
+		rows, err := d.Super(t).Query(ctx(t), `SELECT p.proname::text FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+			WHERE n.nspname = 'pandokos' AND p.prosecdef AND pg_catalog.has_function_privilege($1, p.oid, 'EXECUTE') ORDER BY 1`, "pandokos_"+role)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fns, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			t.Fatal(err)
+		}
+		conn := d.Connect(t, role)
+		for _, fn := range fns {
+			call, ok := definerCalls[fn]
+			if !ok {
+				t.Errorf("%s may execute the definer function %s, which has no call in definerCalls", role, fn)
+				continue
+			}
+			called[fn] = true
+			for _, closed := range []tenant.ID{deleting, deleted} {
+				if fn == "tenant_erasure_step" && closed == deleting {
+					continue
+				}
+				s := tenantSession(closed)
+				if call.platform {
+					s = platformSession
+				}
+				for _, set := range settings {
+					var got error
+					err := inSession(t, conn, s, func(c context.Context, tx pgx.Tx) error {
+						for k, v := range set {
+							if _, err := tx.Exec(c, `SELECT pg_catalog.set_config($1, $2, true)`, k, v); err != nil {
+								t.Fatalf("set %s: %v", k, err)
+							}
+						}
+						_, got = tx.Exec(c, call.sql, deleting.String(), deleted.String(), kek, provider)
+						return got // a call that succeeds is committed: its rows would show below
+					})
+					if err != nil && !errors.Is(err, got) {
+						t.Fatalf("the transaction ended with %v", err)
+					}
+					if call.refused && (sqlstate(got) != restrictViolation || constraintOf(got) != "tenant_open") {
+						t.Errorf("%s calls %s for a closed tenant under %v: %v, want SQLSTATE %s tenant_open", role, fn, set, got, restrictViolation)
+					}
+				}
+			}
+		}
+	}
+	for fn := range definerCalls {
+		if !called[fn] {
+			t.Errorf("definerCalls has a call of %s, which no runtime role may execute", fn)
+		}
+	}
+	after := digests()
+	for k, was := range before {
+		if after[k] != was {
+			t.Errorf("a definer function called under a setting changed the rows of %s", k)
+		}
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -43,8 +44,8 @@ type constraint struct {
 
 // Lint reads the system catalogues of schema pandokos through the connection (a superuser's, so
 // that it can read every privilege) and returns one finding per violation of the rules L-01 to
-// L-16 of sprint 1.2, section 6.1, L-19 of sprint 2.1, L-20 of sprint 3.2 and L-21 of sprint 6.3
-// (twenty-one rules), sorted by rule and object. A table is tenant-scoped unless
+// L-16 of sprint 1.2, section 6.1, L-19 of sprint 2.1, L-20 of sprint 3.2 and L-21 and L-22 of
+// sprint 6.3 (twenty-two rules), sorted by rule and object. A table is tenant-scoped unless
 // spec.Global lists it.
 func Lint(ctx context.Context, conn *pgx.Conn, spec Spec) ([]Finding, error) {
 	var findings []Finding
@@ -408,13 +409,54 @@ func lintPrivileges(ctx context.Context, conn *pgx.Conn, spec Spec, rels []relat
 	return nil
 }
 
-// lintFunctions is L-14.
+// settingInheritors are the definer functions that run under the pandokos.erasure and
+// pandokos.retention of their caller (L-22): audit_seal_tenant, the trigger that seals a row of a
+// tenant's log, through which tenant_erasure_step writes the closing row of a closed tenant. It is
+// reached only through an INSERT into audit_event, whose statement guard tenant_open has judged the
+// caller first. Every other definer function starts with both settings off, so that a runtime role
+// that sets one before the call gains nothing.
+var settingInheritors = []string{"audit_seal_tenant"}
+
+var (
+	// settingsOff is the first declaration of a definer function's body (migration 0016, section 1):
+	// both settings off for the function.
+	settingsOff = regexp.MustCompile(`^\s*DECLARE\s+v_settings\s+text\[\]\s*:=\s*pandokos\.definer_settings_off\(\);`)
+	// settingsRestore puts the caller's values back.
+	settingsRestore = regexp.MustCompile(`PERFORM\s+pandokos\.definer_settings_restore\(v_settings\);`)
+	// settingSet is a function that turns one of the settings on itself: it ends with both off.
+	settingSet = regexp.MustCompile(`set_config\('pandokos\.(erasure|retention)',\s*'on'`)
+)
+
+// lintDefinerSettings is L-22 of sprint 6.3 (review): a definer function runs as the owner, for whom
+// the guards, policies and triggers of migration 0016 admit a row under pandokos.erasure or
+// pandokos.retention, which any role may set. Unless it is one of settingInheritors (a trigger
+// function), its body starts by turning both off, and, unless it sets one itself, it puts the
+// caller's values back before it returns. The owner cannot attach a SET clause for a parameter that
+// no module defines, so the body does what the clause would.
+func lintDefinerSettings(name, source string, trigger bool, add func(rule, object, format string, args ...any)) {
+	if contains(settingInheritors, name) {
+		if !trigger {
+			add("L-22", name, "inherits the settings of its caller and is not a trigger function")
+		}
+		return
+	}
+	if !settingsOff.MatchString(source) {
+		add("L-22", name, "SECURITY DEFINER whose body does not start with v_settings text[] := pandokos.definer_settings_off()")
+		return
+	}
+	if !settingSet.MatchString(source) && !settingsRestore.MatchString(source) {
+		add("L-22", name, "SECURITY DEFINER that does not put back its caller's settings (pandokos.definer_settings_restore)")
+	}
+}
+
+// lintFunctions is L-14, L-18 and L-22.
 func lintFunctions(ctx context.Context, conn *pgx.Conn, spec Spec, add func(rule, object, format string, args ...any)) error {
 	rows, err := conn.Query(ctx, `SELECT p.proname::text, p.prosecdef, pg_catalog.pg_get_userbyid(p.proowner)::text,
        ARRAY(SELECT CASE WHEN a.grantee = 0 THEN 'public' ELSE pg_catalog.pg_get_userbyid(a.grantee)::text END
                FROM aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) AS a
               WHERE a.privilege_type = 'EXECUTE' ORDER BY 1)::text[],
-       COALESCE('search_path=pg_catalog, pg_temp' = ANY (p.proconfig), false)
+       COALESCE('search_path=pg_catalog, pg_temp' = ANY (p.proconfig), false),
+       p.prosrc, p.prorettype = 'pg_catalog.trigger'::pg_catalog.regtype
   FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
  WHERE n.nspname = 'pandokos'
  ORDER BY 1`)
@@ -426,11 +468,12 @@ func lintFunctions(ctx context.Context, conn *pgx.Conn, spec Spec, add func(rule
 		definer     bool
 		executors   []string
 
-		hasSearchPath bool
+		hasSearchPath, trigger bool
+		source                 string
 	}
 	funcs, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (fn, error) {
 		var f fn
-		err := r.Scan(&f.name, &f.definer, &f.owner, &f.executors, &f.hasSearchPath)
+		err := r.Scan(&f.name, &f.definer, &f.owner, &f.executors, &f.hasSearchPath, &f.source, &f.trigger)
 		return f, err
 	})
 	if err != nil {
@@ -439,6 +482,9 @@ func lintFunctions(ctx context.Context, conn *pgx.Conn, spec Spec, add func(rule
 	for _, f := range funcs {
 		if f.definer && !f.hasSearchPath {
 			add("L-18", f.name, "SECURITY DEFINER without search_path = pg_catalog, pg_temp")
+		}
+		if f.definer {
+			lintDefinerSettings(f.name, f.source, f.trigger, add)
 		}
 		if f.definer && !contains(spec.SecurityDefiner, f.name) {
 			add("L-14", f.name, "SECURITY DEFINER and not listed in Spec.SecurityDefiner")

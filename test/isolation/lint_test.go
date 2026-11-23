@@ -542,6 +542,21 @@ GRANT EXECUTE ON FUNCTION pandokos.zz_g() TO PUBLIC;`, rule: "L-14"},
 		{name: "append-only-wrong-function", ddl: `DROP TRIGGER audit_event_append_only ON pandokos.audit_event;
 CREATE TRIGGER audit_event_append_only BEFORE UPDATE OR DELETE ON pandokos.audit_event FOR EACH ROW EXECUTE FUNCTION pandokos.row_guard();`, rule: "L-17"},
 		{name: "definer-without-search-path", ddl: `ALTER FUNCTION pandokos.virtual_key_lookup(text) RESET search_path`, rule: "L-18"},
+		{name: "definer-without-settings-off", ddl: `CREATE OR REPLACE FUNCTION pandokos.record_auth_failure(p_key_id text, p_reason text, p_request_id text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $$ BEGIN INSERT INTO pandokos.audit_event (tenant_id, actor_type, key_id, action, resource_type, resource_id, outcome, request_id)
+    VALUES ((SELECT pandokos.current_tenant_id()), 'anonymous', p_key_id, 'auth.failure', 'virtual_key', p_key_id, 'failure', p_request_id); END $$`, rule: "L-22"},
+		{name: "definer-without-restore", ddl: `CREATE OR REPLACE FUNCTION pandokos.virtual_key_directory_add() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_settings text[] := pandokos.definer_settings_off();
+BEGIN
+    INSERT INTO pandokos.virtual_key_directory (key_id, tenant_id) VALUES (NEW.key_id, NEW.tenant_id);
+    RETURN NULL;
+END $$`, rule: "L-22"},
+		{name: "new-definer-without-settings-off", ddl: `CREATE FUNCTION pandokos.zz_f() RETURNS integer LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, pg_temp RETURN 1`,
+			spec: func(s *Spec) { s.SecurityDefiner = append(s.SecurityDefiner, "zz_f") }, rule: "L-22"},
 		{name: "no-fixture", ddl: canonicalTable + ok + `CREATE TRIGGER zz_tenant_open BEFORE INSERT ON pandokos.zz FOR EACH STATEMENT EXECUTE FUNCTION pandokos.tenant_open();`, rule: "L-16", only: true},
 		{name: "no-tenant-open-trigger", ddl: canonicalTable + ok, rule: "L-21"},
 		{name: "stale-spec", spec: func(s *Spec) { s.Fixtures["gone"] = Fixture{Insert: "SELECT 1"} }, rule: "L-16"},
