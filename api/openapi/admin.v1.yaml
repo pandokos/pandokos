@@ -5604,7 +5604,7 @@ components:
       required: [reason, permissions]
       properties:
         reason: {type: string, minLength: 1, maxLength: 500, description: Recorded in the audit log of the tenant and on the action.}
-        permissions: {type: array, minItems: 1, maxItems: 11, uniqueItems: true, items: {$ref: '#/components/schemas/PermissionName'}}
+        permissions: {type: array, minItems: 1, maxItems: 12, uniqueItems: true, items: {$ref: '#/components/schemas/PermissionName'}}
         duration_seconds: {type: integer, minimum: 0, maximum: 86400, description: 'Absent or 0 is the default, support.max_duration; otherwise 60 to support.max_duration (1 to 59 is refused).'}
     SupportGrant:
       type: object

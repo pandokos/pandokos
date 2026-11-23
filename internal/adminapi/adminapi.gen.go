@@ -4987,8 +4987,8 @@ func (v *SupportActionOpen) Validate() []FieldError {
 	if v.Permissions != nil && len(v.Permissions) < 1 {
 		errs = append(errs, FieldError{Field: "permissions", Message: "must have at least 1 items"})
 	}
-	if len(v.Permissions) > 11 {
-		errs = append(errs, FieldError{Field: "permissions", Message: "must have at most 11 items"})
+	if len(v.Permissions) > 12 {
+		errs = append(errs, FieldError{Field: "permissions", Message: "must have at most 12 items"})
 	}
 	if !unique(v.Permissions) {
 		errs = append(errs, FieldError{Field: "permissions", Message: "must not repeat an item"})
