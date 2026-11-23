@@ -35,6 +35,15 @@ func outboxStatements(c context.Context, t *testing.T, d *dbtest.Database, admin
 	}
 	var dest string
 	must("an ID", d.Super(t).QueryRow(c, `SELECT pandokos.uuid_v7()::text`).Scan(&dest))
+	// The administration chooses the ID of a destination before its row, to seal the secret for it.
+	must("an ID of the administration", admin.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
+		mark("NewEventDestinationID")
+		id, err := queries.New(tx).NewEventDestinationID(c)
+		if err == nil && len(id) != 36 {
+			t.Errorf("NewEventDestinationID: %q", id)
+		}
+		return err
+	}))
 
 	// The administration creates and reads a destination; it starts at the head of the log.
 	var head int64

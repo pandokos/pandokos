@@ -601,6 +601,18 @@ func (q *Queries) ListReplayDeadLetters(ctx context.Context, arg ListReplayDeadL
 	return items, nil
 }
 
+const newEventDestinationID = `-- name: NewEventDestinationID :one
+SELECT pandokos.uuid_v7()::text AS id
+`
+
+// (A) the ID of a destination, chosen before the row so that its secret can be sealed for it
+func (q *Queries) NewEventDestinationID(ctx context.Context) (string, error) {
+	row := q.db.QueryRow(ctx, newEventDestinationID)
+	var id string
+	err := row.Scan(&id)
+	return id, err
+}
+
 const parkDeadLetter = `-- name: ParkDeadLetter :exec
 INSERT INTO pandokos.outbox_dead_letter (tenant_id, destination_id, seq, event_id, type, attempts, reason, status)
 VALUES (pandokos.current_tenant_id(), $1::uuid, $2::bigint, $3::uuid,

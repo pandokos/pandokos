@@ -43,7 +43,7 @@ func equalTime(t *testing.T, what string, got *time.Time, want *time.Time) {
 }
 
 // TestEveryStatement is T-230, extended by T-323 and by T-393: each of the generated methods
-// (299 after sprint 6.4: the twenty-one statements of events and destinations are new; 278 after sprint 6.3: RegisterKEKVersion is gone, ten statements of the deletion and six of the key versions are new) is called through a store helper,
+// (300 after sprint 6.4: the twenty-two statements of events and destinations are new; 278 after sprint 6.3: RegisterKEKVersion is gone, ten statements of the deletion and six of the key versions are new) is called through a store helper,
 // directly and through the pooler.
 // Identifiers, times, null times, arrays, null arrays, hashes, sealed bytes and JSON go in and
 // come back unchanged.
@@ -500,7 +500,7 @@ func TestEveryStatement(t *testing.T) {
 		// Sprint 6.4: the destinations, the claim of the relay, dead letters, retention and the exports.
 		outboxStatements(c, t, d, admin, tid, called)
 
-		// The 299 statements, and nothing was prepared on the server.
+		// The 300 statements, and nothing was prepared on the server.
 		var names []string
 		typ := reflect.TypeOf(&queries.Queries{})
 		for i := 0; i < typ.NumMethod(); i++ {
@@ -509,8 +509,8 @@ func TestEveryStatement(t *testing.T) {
 			}
 		}
 		sort.Strings(names)
-		if len(names) != 299 {
-			t.Errorf("the generated package has %d statements, want 299: %v", len(names), names)
+		if len(names) != 300 {
+			t.Errorf("the generated package has %d statements, want 300: %v", len(names), names)
 		}
 		for _, name := range names {
 			if !called[name] {

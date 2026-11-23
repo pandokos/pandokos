@@ -65,6 +65,13 @@ Kinds: `H` histogram, `C` counter, `G` gauge, `OC` counter read at collection. A
 | `pandokos.vault.rewraps` | M49 | OC | `{key}` | `pandokos.result` | `pandokos_vault_rewraps_total` | Read at collection: data keys the re-wrap job re-wrapped under the active key-encryption key, or failed to. |
 | `pandokos.vault.kek.versions` | M50 | G | `{version}` | `pandokos.kek.state` | `pandokos_vault_kek_versions` | Refreshed at each tick of the re-wrap job: key-encryption key versions by state. |
 | `pandokos.vault.erasures.pending` | M51 | G | `{deletion}` | none | `pandokos_vault_erasures_pending` | Refreshed at each tick of the re-wrap job: completed deletions whose backups stay readable until a key version is retired. |
+| `pandokos.events.deliveries` | M52 | OC | `{delivery}` | `pandokos.delivery.outcome` | `pandokos_events_deliveries_total` | Read at collection: requests sent to event destinations by outcome, replays and test requests included. |
+| `pandokos.events.delivery.duration` | M53 | H | `s` | `pandokos.result` | `pandokos_events_delivery_duration_seconds` | Recorded as it happens: the time of one delivery request, ok for a 2xx answer, failed for anything else. |
+| `pandokos.events.dead_letters` | M54 | OC | `{event}` | none | `pandokos_events_dead_letters_total` | Read at collection: events parked after too many attempts. |
+| `pandokos.events.expired` | M55 | OC | `{event}` | none | `pandokos_events_expired_total` | Read at collection: events removed by retention before an enabled destination passed them. |
+| `pandokos.events.destinations` | M56 | G | `{destination}` | `pandokos.destination.state` | `pandokos_events_destinations` | Refreshed once a minute by the relay: destinations by state; failing is a subset of enabled. |
+| `pandokos.events.lag` | M57 | G | `s` | none | `pandokos_events_lag_seconds` | Refreshed once a minute by the relay: the age of the oldest event that an enabled destination has not settled; 0 when none. |
+| `pandokos.events.relay.passes` | M58 | OC | `{pass}` | `pandokos.result` | `pandokos_events_relay_passes_total` | Read at collection: passes of the event relay that succeeded or failed. |
 
 `target_info` (the resource of the process as labels, value 1) is added by the scrape endpoint and by the OTLP receiver of Prometheus.
 
@@ -113,8 +120,10 @@ The duration of the HTTP server uses the boundaries of the GenAI durations, not 
 | `pandokos.limit.subject` | the kind of the subject: `tenant`, `service_account`, `key` |
 | `pandokos.limit.scope` | `all`, `provider`, `model` |
 | `pandokos.limit.quantity` | `tokens`, `cost` |
-| `pandokos.retention.kind` | `usage_partition`, `usage_record`, `usage_rollup`, `audit_event`, `platform_audit_event`, `deleted_tenant_usage_record`, `deleted_tenant_audit_event` |
-| `pandokos.export.kind` | `usage`, `audit`, `platform_audit`, `deleted_tenant_audit` |
+| `pandokos.retention.kind` | `usage_partition`, `usage_record`, `usage_rollup`, `audit_event`, `platform_audit_event`, `deleted_tenant_usage_record`, `deleted_tenant_audit_event`, `outbox_event`, `limit_event` |
+| `pandokos.delivery.outcome` | `delivered`, `status`, `redirect`, `timeout`, `connection`, `tls`, `blocked` |
+| `pandokos.destination.state` | `enabled`, `failing`, `disabled` |
+| `pandokos.export.kind` | `usage`, `audit`, `platform_audit`, `deleted_tenant_audit`, `event`, `platform_event` |
 | `pandokos.deletion.step` | `begin`, `access`, `secrets`, `configuration`, `usage`, `audit`, `complete` |
 | `pandokos.deletion.state` | `scheduled`, `running` |
 | `pandokos.kek.state` | `active`, `retiring`, `retired` |

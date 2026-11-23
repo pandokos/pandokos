@@ -57,7 +57,9 @@ func TestEventInstruments(t *testing.T) {
 	for _, o := range telemetry.DeliveryOutcomes {
 		allowed["pandokos.delivery.outcome"][o] = true
 	}
-	for _, name := range []string{"pandokos.events.deliveries", "pandokos.events.delivery.duration", "pandokos.events.dead_letters", "pandokos.events.expired", "pandokos.events.destinations", "pandokos.events.lag", "pandokos.events.relay.passes"} {
+	// M53 is a histogram that is recorded as it happens: it has no point before the first request
+	// (it is checked below), so it is not in this list.
+	for _, name := range []string{"pandokos.events.deliveries", "pandokos.events.dead_letters", "pandokos.events.expired", "pandokos.events.destinations", "pandokos.events.lag", "pandokos.events.relay.passes"} {
 		if s := snap.Series[name]; s == nil || len(s.Points) == 0 {
 			t.Errorf("%s has no data point", name)
 			continue

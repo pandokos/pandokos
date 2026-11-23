@@ -129,9 +129,7 @@ func destinationConstraint(err error) error {
 // newID asks the database for a version 7 identifier, so that the secret of a destination can be
 // sealed for the ID it will have.
 func newID(ctx context.Context, tx store.Tx) (string, error) {
-	var id string
-	err := tx.QueryRow(ctx, `SELECT pandokos.uuid_v7()::text`).Scan(&id)
-	return id, err
+	return queries.New(tx).NewEventDestinationID(ctx)
 }
 
 func (s *server) recordDestination(ctx context.Context, tx store.Tx, tid tenant.ID, action, id string, detail map[string]any) error {

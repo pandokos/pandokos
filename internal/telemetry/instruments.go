@@ -20,17 +20,18 @@ var (
 
 // The names of the pushed instruments.
 const (
-	nameHTTPDuration = "http.server.request.duration"
-	nameRequests     = "pandokos.gateway.requests"
-	nameOpDuration   = "gen_ai.client.operation.duration"
-	nameFirstChunk   = "gen_ai.client.operation.time_to_first_chunk"
-	nameTokenUsage   = "gen_ai.client.token.usage" //nolint:gosec // an instrument name, not a credential
-	nameEstimated    = "pandokos.gen_ai.client.estimated_tokens"
-	nameCost         = "pandokos.gen_ai.client.cost"
-	nameCostUnknown  = "pandokos.gen_ai.client.cost_unknown"
-	nameRateLimited  = "pandokos.provider.rate_limited"
-	nameRefusals     = "pandokos.limits.refusals"
-	nameEstimate     = "pandokos.limits.estimate_ratio"
+	nameHTTPDuration  = "http.server.request.duration"
+	nameRequests      = "pandokos.gateway.requests"
+	nameOpDuration    = "gen_ai.client.operation.duration"
+	nameFirstChunk    = "gen_ai.client.operation.time_to_first_chunk"
+	nameTokenUsage    = "gen_ai.client.token.usage" //nolint:gosec // an instrument name, not a credential
+	nameEstimated     = "pandokos.gen_ai.client.estimated_tokens"
+	nameCost          = "pandokos.gen_ai.client.cost"
+	nameCostUnknown   = "pandokos.gen_ai.client.cost_unknown"
+	nameRateLimited   = "pandokos.provider.rate_limited"
+	nameRefusals      = "pandokos.limits.refusals"
+	nameEstimate      = "pandokos.limits.estimate_ratio"
+	nameEventDuration = "pandokos.events.delivery.duration"
 )
 
 // Attribute lists shared by several instruments.
@@ -110,6 +111,14 @@ var catalogue = []InstrumentSpec{
 	spec("pandokos.vault.rewraps", "OC", "{key}", "Data keys re-wrapped under the active key-encryption key version, by result.", resultAttr...),
 	spec("pandokos.vault.kek.versions", "G", "{version}", "Key-encryption key versions by state.", AttrKEKState),
 	spec("pandokos.vault.erasures.pending", "G", "{deletion}", "Completed tenant deletions whose backups stay readable until a key version is retired."),
+
+	spec("pandokos.events.deliveries", "OC", "{delivery}", "Event delivery requests sent, by outcome; replays and test requests included.", AttrDeliveryOutcome),
+	spec(nameEventDuration, "H", "s", "The time of one event delivery request, by result: ok for a 2xx answer, failed for anything else.", "pandokos.result"),
+	spec("pandokos.events.dead_letters", "OC", "{event}", "Events parked as dead letters after too many attempts."),
+	spec("pandokos.events.expired", "OC", "{event}", "Events removed by retention before an enabled destination passed them."),
+	spec("pandokos.events.destinations", "G", "{destination}", "Event destinations by state: enabled, failing (a subset of enabled), disabled.", AttrDestinationState),
+	spec("pandokos.events.lag", "G", "s", "The age of the oldest event that an enabled destination has not settled; 0 when none."),
+	spec("pandokos.events.relay.passes", "OC", "{pass}", "Passes of the event relay, by result.", resultAttr...),
 }
 
 // Catalogue returns the instrument catalogue: the table of the metrics reference.
@@ -195,5 +204,6 @@ func views() []sdkmetric.View {
 		hist(nameFirstChunk, durationBounds),
 		hist(nameTokenUsage, tokenBounds),
 		hist(nameEstimate, ratioBounds),
+		hist(nameEventDuration, durationBounds),
 	}
 }

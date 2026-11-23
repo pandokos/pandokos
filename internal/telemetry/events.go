@@ -1,6 +1,12 @@
 package telemetry
 
-import "time"
+import (
+	"context"
+	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+)
 
 // The attribute keys of the event instruments (M52 and M56) and their closed values (sprint 6.4,
 // section 5.15).
@@ -35,8 +41,7 @@ var DestinationStates = []string{DestinationEnabled, DestinationFailing, Destina
 
 // EventsStats is the relay of events (M52 and M54 to M58). Nothing in it names a tenant, a
 // destination or a URL. The duration of a request (M53) is recorded as it happens, with
-// ObserveEventDelivery. This is the stub of the tests of part B of the plan; step C10 writes the
-// instruments.
+// ObserveEventDelivery.
 type EventsStats struct {
 	Deliveries   map[string]int64 // requests by outcome, one of DeliveryOutcomes (M52)
 	DeadLetters  int64            // events parked (M54)
@@ -49,5 +54,8 @@ type EventsStats struct {
 // ObserveEventDelivery records the time of one delivery request (M53) with its result: ok for a
 // 2xx answer, failed for anything else.
 func (m *Metrics) ObserveEventDelivery(result string, d time.Duration) {
-	_, _ = result, d
+	if m.inst == nil {
+		return
+	}
+	m.inst.eventDur.Record(context.Background(), d.Seconds(), metric.WithAttributes(attribute.String("pandokos.result", result)))
 }

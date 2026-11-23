@@ -33,6 +33,9 @@ type Relay struct {
 	BackoffMax  time.Duration
 	Logger      *slog.Logger
 	Now         func() time.Time
+	// OnDelivery, when set, is called with the result (ok or failed) and the time of every
+	// request, for the histogram M53.
+	OnDelivery func(result string, d time.Duration)
 
 	// Hooks for tests (plan step C4); nil in production. The round of a destination calls them in
 	// this order: beforeRound after the claim, afterSend after its last request and before the
@@ -614,6 +617,13 @@ func minTime(a, b time.Time) time.Time {
 func (r *Relay) observe(res Result) {
 	secs := res.Duration.Seconds()
 	now := r.now()
+	if r.OnDelivery != nil {
+		result := "failed"
+		if res.Outcome == OutcomeDelivered {
+			result = "ok"
+		}
+		r.OnDelivery(result, res.Duration)
+	}
 	r.mu.Lock()
 	if r.stats.Deliveries == nil {
 		r.stats.Deliveries = map[Outcome]uint64{}

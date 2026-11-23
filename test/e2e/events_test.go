@@ -45,9 +45,12 @@ func TestEventsExactlyOncePerCall(t *testing.T) {
 	boot := p.bootstrap(t)
 	a := newLifeTenant(t, p, boot, "events-once", "workload")
 	recv := newFaultReceiver(t, "/hook")
+	// The call that prepared the tenant: its event is before the destination. The ledger writer
+	// flushes by interval, so its record is awaited before the destination is created.
+	testutil.Eventually(t, 30*time.Second, "the record of the call that prepared the tenant", func() bool { return len(ledgerOf(t, p, a.id)) >= 1 })
 	destID, secretText := newDestination(t, p, a.adminFile, a.id, "billing", recv.url("/hook"))
 	recv.setSecret(secretText)
-	before := ledgerOf(t, p, a.id) // the call that prepared the tenant: its event is before the destination
+	before := ledgerOf(t, p, a.id)
 
 	var cur atomic.Pointer[proc]
 	cur.Store(p)
@@ -112,10 +115,20 @@ func TestEventsExactlyOncePerCall(t *testing.T) {
 		gate.Unlock()
 	}
 	wg.Wait()
-	close(stopScript)
-	recv.setMode("ok")
-
 	final := cur.Load()
+	// The calls can end before the script has gone through every fault (they are quick, and a
+	// failing destination waits for its next attempt): the script stops, and the receiver answers
+	// "late" until the relay has sent one request; the event is stored after the relay gave up, so
+	// that the next attempt delivers it twice.
+	close(stopScript)
+	sent := recv.requests.Load()
+	recv.setMode("late")
+	testutil.Eventually(t, time.Minute, "a request sent while the receiver answers late", func() bool { return recv.requests.Load() > sent })
+	recv.setMode("ok")
+	// The ledger writer flushes by interval: the last calls are recorded a moment after they were answered.
+	testutil.Eventually(t, 30*time.Second, "the ledger to hold the records of every call", func() bool {
+		return len(ledgerOf(t, final, a.id)) >= len(before)+total
+	})
 	records := ledgerOf(t, final, a.id)
 	expected := map[string]string{}
 	for id, req := range records {
@@ -232,9 +245,11 @@ func TestEventsReceiverDown(t *testing.T) {
 		d := destinationDelivery(t, p, a.adminFile, a.id, destID)
 		return d.State == "failing" && d.Failures > 0
 	})
-	expected := 200
-	if n := p.db.Count(t, `SELECT count(*)::int FROM pandokos.outbox_event WHERE tenant_id = $1::uuid`, a.id); n != len(before)+expected {
-		t.Errorf("the outbox holds %d events, want %d", n, len(before)+expected)
+	// One event per record of the ledger: the record of the call that prepared the tenant may be
+	// flushed after the snapshot "before" was taken, so the ledger is read again.
+	expected := len(ledgerOf(t, p, a.id))
+	if n := p.db.Count(t, `SELECT count(*)::int FROM pandokos.outbox_event WHERE tenant_id = $1::uuid`, a.id); n != expected || expected < len(before)+200 {
+		t.Errorf("the outbox holds %d events and the ledger %d records, want equal and at least %d", n, expected, len(before)+200)
 	}
 	testutil.Eventually(t, 120*time.Second, "the lag of the relay to show in the scrape", func() bool {
 		_, scrape := p.scrapeAs(t, "GET", key)

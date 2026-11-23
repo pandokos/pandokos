@@ -175,3 +175,7 @@ SELECT e.seq, e.id, e.type, e.subject, e.occurred_at, e.tenant_id, e.data,
  WHERE e.seq > sqlc.arg(after)::bigint
    AND (cardinality(sqlc.arg(types)::text[]) = 0 OR e.type = ANY (sqlc.arg(types)::text[]))
  ORDER BY e.seq LIMIT sqlc.arg(max)::integer;
+
+-- (A) the ID of a destination, chosen before the row so that its secret can be sealed for it
+-- name: NewEventDestinationID :one
+SELECT pandokos.uuid_v7()::text AS id;
