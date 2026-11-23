@@ -555,6 +555,15 @@ BEGIN
     INSERT INTO pandokos.virtual_key_directory (key_id, tenant_id) VALUES (NEW.key_id, NEW.tenant_id);
     RETURN NULL;
 END $$`, rule: "L-22"},
+		{name: "guard-without-owner", ddl: `CREATE OR REPLACE FUNCTION pandokos.tenant_price_version_guard() RETURNS trigger
+    LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp
+AS $$ BEGIN
+    IF TG_OP = 'DELETE' AND pg_catalog.current_setting('pandokos.retention', true) IS DISTINCT FROM 'on' THEN
+        RAISE EXCEPTION 'no' USING ERRCODE = 'restrict_violation';
+    END IF;
+    RETURN OLD;
+END $$`, rule: "L-22"},
+		{name: "setting-policy-for-everybody", ddl: `CREATE POLICY zz_retention ON pandokos.service_account FOR SELECT USING (pg_catalog.current_setting('pandokos.retention', true) = 'on')`, rule: "L-22"},
 		{name: "new-definer-without-settings-off", ddl: `CREATE FUNCTION pandokos.zz_f() RETURNS integer LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, pg_temp RETURN 1`,
 			spec: func(s *Spec) { s.SecurityDefiner = append(s.SecurityDefiner, "zz_f") }, rule: "L-22"},
 		{name: "no-fixture", ddl: canonicalTable + ok + `CREATE TRIGGER zz_tenant_open BEFORE INSERT ON pandokos.zz FOR EACH STATEMENT EXECUTE FUNCTION pandokos.tenant_open();`, rule: "L-16", only: true},

@@ -952,7 +952,8 @@ func TestAppendOnlyUnderErasure(t *testing.T) {
 	}
 
 	// The triggers themselves, for everybody who has the privilege (the superuser, and the owner in the
-	// session of the tenant). Each statement runs in a transaction that is rolled back.
+	// session of the tenant): only the owner changes a row, under the setting. Each statement runs in
+	// a transaction that is rolled back.
 	run := func(who string, _ struct{ name, update, scope string }, set map[string]string, sql string) error {
 		var got error
 		err := pgx.BeginFunc(ctx(t), d.Super(t), func(tx pgx.Tx) error {
@@ -998,6 +999,9 @@ func TestAppendOnlyUnderErasure(t *testing.T) {
 					ok  bool
 				}{{upd, c.updateOK}, {del, c.deleteOK}} {
 					err := run(who, tb, c.set, s.sql)
+					if who == "superuser" {
+						s.ok = false // the triggers admit a change for the owner alone, whatever the settings
+					}
 					switch {
 					case s.ok && err != nil:
 						t.Errorf("%s %s on %s: %q failed: %v", who, c.describing, tb.name, s.sql, err)
@@ -1029,6 +1033,42 @@ func TestAppendOnlyUnderErasure(t *testing.T) {
 	}
 	if err := run("owner", struct{ name, update, scope string }{"tenant_price_version", "", "tenant"}, map[string]string{"pandokos.erasure": "on", "pandokos.retention": "on"}, `UPDATE pandokos.tenant_price_version SET note = 'x'`); sqlstate(err) != restrictViolation {
 		t.Errorf("updating a price version: %v, want SQLSTATE %s", err, restrictViolation)
+	}
+	// Only the owner, inside a function of the migrations: a runtime role that sets the retention
+	// removes no started version, whether it holds DELETE (the admin role) or not.
+	started := `DELETE FROM pandokos.tenant_price_version WHERE valid_from <= now()`
+	before := dbNumber(t, d, `SELECT count(*) FROM pandokos.tenant_price_version WHERE tenant_id = $1::uuid AND valid_from <= now()`, id)
+	for _, role := range runtimeRoles {
+		conn := d.Connect(t, role)
+		for _, set := range settings {
+			var removed int64
+			err := inSession(t, conn, tenantSession(tid), func(c context.Context, tx pgx.Tx) error {
+				for k, v := range set {
+					if _, err := tx.Exec(c, `SELECT pg_catalog.set_config($1, $2, true)`, k, v); err != nil {
+						t.Fatalf("set %s: %v", k, err)
+					}
+				}
+				tag, err := tx.Exec(c, started)
+				removed = tag.RowsAffected()
+				if err != nil {
+					return err
+				}
+				return errRollBack
+			})
+			if err == nil || errors.Is(err, errRollBack) || removed != 0 {
+				t.Errorf("%s removes a started price version with %v: %d rows, %v", role, set, removed, err)
+			}
+			want := insufficientPrivilege
+			if role == "admin" {
+				want = restrictViolation // it holds DELETE: the guard refuses
+			}
+			if sqlstate(err) != want {
+				t.Errorf("%s removes a started price version with %v: %v, want SQLSTATE %s", role, set, err, want)
+			}
+		}
+	}
+	if got := dbNumber(t, d, `SELECT count(*) FROM pandokos.tenant_price_version WHERE tenant_id = $1::uuid AND valid_from <= now()`, id); got != before || got == 0 {
+		t.Errorf("%d started price versions, were %d", got, before)
 	}
 
 	findings, err := Lint(ctx(t), d.Super(t), DefaultSpec())

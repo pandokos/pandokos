@@ -9,18 +9,18 @@
 -- ---------------------------------------------------------------------------------------------
 
 -- A row of an append-only table is removed only under pandokos.retention and rewritten only
--- under pandokos.erasure. Only functions that run as the owner set them around their own
--- statement: no runtime role holds DELETE or UPDATE on these tables, so the settings give a
--- runtime role nothing. TRUNCATE stays refused for everybody.
+-- under pandokos.erasure, and only by the owner. Only functions that run as the owner set them
+-- around their own statement: any role may set them, so the guard also asks who runs the
+-- statement (lint rule L-22). TRUNCATE stays refused for everybody.
 CREATE OR REPLACE FUNCTION pandokos.append_only() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path = pg_catalog, pg_temp
 AS $$
 BEGIN
-    IF TG_OP = 'DELETE' AND pg_catalog.current_setting('pandokos.retention', true) = 'on' THEN
+    IF TG_OP = 'DELETE' AND current_user = 'pandokos_owner' AND pg_catalog.current_setting('pandokos.retention', true) = 'on' THEN
         RETURN OLD;
     END IF;
-    IF TG_OP = 'UPDATE' AND pg_catalog.current_setting('pandokos.erasure', true) = 'on' THEN
+    IF TG_OP = 'UPDATE' AND current_user = 'pandokos_owner' AND pg_catalog.current_setting('pandokos.erasure', true) = 'on' THEN
         RETURN NEW;
     END IF;
     RAISE EXCEPTION '% is append-only', TG_TABLE_NAME USING ERRCODE = 'restrict_violation';
@@ -28,7 +28,8 @@ END
 $$;
 
 -- A started price version of a tenant is removed only with its tenant, under the same setting as
--- the rows of the append-only tables (one mechanism, 5.4 section 11).
+-- the rows of the append-only tables (one mechanism, 5.4 section 11), and only by the owner: the
+-- admin role holds DELETE on the table and may set the setting.
 CREATE OR REPLACE FUNCTION pandokos.tenant_price_version_guard() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path = pg_catalog, pg_temp
@@ -44,7 +45,8 @@ BEGIN
     IF TG_OP = 'UPDATE' THEN
         RAISE EXCEPTION 'price versions are immutable' USING ERRCODE = 'restrict_violation';
     END IF;
-    IF OLD.valid_from <= now() AND pg_catalog.current_setting('pandokos.retention', true) IS DISTINCT FROM 'on' THEN
+    IF OLD.valid_from <= now()
+       AND (current_user <> 'pandokos_owner' OR pg_catalog.current_setting('pandokos.retention', true) IS DISTINCT FROM 'on') THEN
         RAISE EXCEPTION 'a price version that has started cannot be removed' USING ERRCODE = 'restrict_violation';
     END IF;
     RETURN OLD;

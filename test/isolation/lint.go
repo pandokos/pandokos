@@ -206,6 +206,9 @@ func Lint(ctx context.Context, conn *pgx.Conn, spec Spec) ([]Finding, error) {
 	if err := lintTenantOpen(ctx, conn, add); err != nil {
 		return nil, err
 	}
+	if err := lintSettingPolicies(ctx, conn, add); err != nil {
+		return nil, err
+	}
 
 	for name := range spec.Global {
 		if !tables[name] {
@@ -423,6 +426,11 @@ var (
 	settingsOff = regexp.MustCompile(`^\s*DECLARE\s+v_settings\s+text\[\]\s*:=\s*pandokos\.definer_settings_off\(\);`)
 	// settingsRestore puts the caller's values back.
 	settingsRestore = regexp.MustCompile(`PERFORM\s+pandokos\.definer_settings_restore\(v_settings\);`)
+	// settingRead is a guard that reads one of the settings; ownerCheck the test of who runs the
+	// statement that it must hold beside it, since any role may set either (definer_settings_off
+	// only saves them).
+	settingRead = regexp.MustCompile(`current_setting\('pandokos\.(erasure|retention)'`)
+	ownerCheck  = regexp.MustCompile(`current_user\s*(=|<>)\s*'pandokos_owner'`)
 	// settingSet is a function that turns one of the settings on itself: it ends with both off.
 	settingSet = regexp.MustCompile(`set_config\('pandokos\.(erasure|retention)',\s*'on'`)
 )
@@ -485,6 +493,9 @@ func lintFunctions(ctx context.Context, conn *pgx.Conn, spec Spec, add func(rule
 		}
 		if f.definer {
 			lintDefinerSettings(f.name, f.source, f.trigger, add)
+		}
+		if settingRead.MatchString(f.source) && !ownerCheck.MatchString(f.source) && f.name != "definer_settings_off" {
+			add("L-22", f.name, "reads pandokos.erasure or pandokos.retention without checking that current_user is %s", ownerRole)
 		}
 		if f.definer && !contains(spec.SecurityDefiner, f.name) {
 			add("L-14", f.name, "SECURITY DEFINER and not listed in Spec.SecurityDefiner")
@@ -810,4 +821,33 @@ func lintTenantOpen(ctx context.Context, conn *pgx.Conn, add func(rule, object, 
 		}
 	}
 	return nil
+}
+
+// lintSettingPolicies is the part of L-22 about policies: a policy whose expression reads
+// pandokos.erasure or pandokos.retention applies to the owner alone, since any role may set them.
+func lintSettingPolicies(ctx context.Context, conn *pgx.Conn, add func(rule, object, format string, args ...any)) error {
+	rows, err := conn.Query(ctx, `SELECT c.relname::text, p.polname::text,
+	       ARRAY(SELECT CASE WHEN r = 0 THEN 'public' ELSE pg_catalog.pg_get_userbyid(r)::text END FROM pg_catalog.unnest(p.polroles) r ORDER BY 1)::text[]
+	  FROM pg_catalog.pg_policy p
+	  JOIN pg_catalog.pg_class c ON c.oid = p.polrelid
+	  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+	 WHERE n.nspname = 'pandokos'
+	   AND (COALESCE(pg_catalog.pg_get_expr(p.polqual, p.polrelid), '') ~ 'pandokos\.(erasure|retention)'
+	        OR COALESCE(pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid), '') ~ 'pandokos\.(erasure|retention)')
+	 ORDER BY 1, 2`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var table, name string
+		var roles []string
+		if err := rows.Scan(&table, &name, &roles); err != nil {
+			return err
+		}
+		if len(roles) != 1 || roles[0] != ownerRole {
+			add("L-22", table, "the policy %s reads pandokos.erasure or pandokos.retention and applies to %s, not to %s alone", name, strings.Join(roles, ", "), ownerRole)
+		}
+	}
+	return rows.Err()
 }
