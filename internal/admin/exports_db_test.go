@@ -33,7 +33,7 @@ func poison(t *testing.T, api *apitest.API, table, policyColumn string) (failAt 
 		`CREATE TABLE public.probe_flag (fail_at bigint NOT NULL DEFAULT 0, delay_ms double precision NOT NULL DEFAULT 0)`,
 		`INSERT INTO public.probe_flag VALUES (0, 0)`,
 		`GRANT SELECT ON public.probe_flag TO PUBLIC`,
-		`CREATE FUNCTION public.probe_row(n bigint) RETURNS boolean LANGUAGE plpgsql VOLATILE AS $$
+		`CREATE FUNCTION public.probe_row(n bigint) RETURNS boolean LANGUAGE plpgsql VOLATILE COST 100000 AS $$
 			DECLARE f public.probe_flag;
 			BEGIN
 			  SELECT * INTO f FROM public.probe_flag;
@@ -112,6 +112,11 @@ func TestAuditExport(t *testing.T) {
 	w, _ := auditWorld(t)
 	failAt, _ := poison(t, w.api, "audit_event", "seq")
 	bulkAudit(t, w.api, w.a.ID, 2300)
+	// The planner reads the rows in the order of the index and stops at the page only when it knows the table; without
+	// statistics it may evaluate the failing row of the probe while it looks for the first page.
+	if _, err := w.api.Super(t).Exec(ctx(t), `ANALYZE pandokos.audit_event`); err != nil {
+		t.Fatal(err)
+	}
 	path := "/v1/tenants/" + w.a.ID + "/audit-events/export"
 	head := decodeInto[adminapi.AuditHead](t, w.do(t, w.ka, "GET", "/v1/tenants/"+w.a.ID+"/audit-head", nil), 200)
 

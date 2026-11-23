@@ -97,7 +97,7 @@ func TestPlatformReadsNoTenantReports(t *testing.T) {
 					if inReports && (cn == "ListTenantsForWorker" || cn == "PlatformRetention") {
 						return true
 					}
-					if inReports && isQueryCall(c) {
+					if inReports && isQueryCall(c) && cn != "New" { // queries.New(tx) builds the statements, it runs none
 						t.Errorf("%s: internal/reports runs %s in platform scope: only ListTenantsForWorker and PlatformRetention", fset.Position(c.Pos()), cn)
 					}
 					return true

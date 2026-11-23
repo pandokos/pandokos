@@ -69,7 +69,9 @@ func TestMetadataKeyPolicy(t *testing.T) {
 		var c captured
 		testutil.Eventually(t, 5*time.Second, "the policy to be seen after the notification", func() bool {
 			c = send(http.Header{p + "Team": {"alpha"}, p + "Project": {metaCanary}}, nil)
-			return c.header.Get("X-Pandokos-Metadata-Dropped") == "1"
+			// The record of the request is written after its answer: wait for it too.
+			recs := s.h.rec.Records()
+			return c.header.Get("X-Pandokos-Metadata-Dropped") == "1" && len(recs) > 0 && recs[len(recs)-1].MetadataDropped == 1
 		})
 		recs := s.h.rec.Records()
 		r := recs[len(recs)-1]
@@ -94,7 +96,9 @@ func TestMetadataKeyPolicy(t *testing.T) {
 		setPolicy(`ARRAY[]::text[]`)
 		testutil.Eventually(t, 5*time.Second, "the empty policy to be seen", func() bool {
 			c := send(http.Header{p + "Team": {"alpha"}}, nil)
-			return c.header.Get("X-Pandokos-Metadata-Dropped") == "1"
+			// The record of the request is written after its answer: wait for it too.
+			recs := s.h.rec.Records()
+			return c.header.Get("X-Pandokos-Metadata-Dropped") == "1" && len(recs) > 0 && len(recs[len(recs)-1].Metadata) == 0
 		})
 		recs := s.h.rec.Records()
 		if r := recs[len(recs)-1]; len(r.Metadata) != 0 || r.MetadataDropped != 1 {
