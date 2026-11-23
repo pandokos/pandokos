@@ -157,13 +157,15 @@ func startWorld(t *testing.T) *world {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The origin of the API is written in the page by the server, not passed in its address.
+	attackerPage = []byte(strings.Replace(string(attackerPage), "{{API}}", html.EscapeString(w.origin), 1))
 	attLn, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, port, _ := net.SplitHostPort(attLn.Addr().String())
 	w.attacker = "http://localhost:" + port
-	att := &http.Server{ReadHeaderTimeout: 5 * time.Second, Handler: http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+	att := &http.Server{ReadHeaderTimeout: 5 * time.Second, Handler: http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
 		rw.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = rw.Write(attackerPage)
 	})}
@@ -296,7 +298,7 @@ func TestCrossSite(t *testing.T) {
 	users := w.d.Count(t, "SELECT count(*) FROM pandokos.app_user")
 	sessions := w.d.Count(t, "SELECT count(*) FROM pandokos.user_session")
 
-	res := dump(t, profile, w.attacker+"/#api="+url.QueryEscape(w.origin))
+	res := dump(t, profile, w.attacker+"/")
 	for _, name := range []string{"json", "simple", "read"} {
 		r, _ := res[name].(map[string]any)
 		// No answer a script of another site can read: an error, or an opaque response.

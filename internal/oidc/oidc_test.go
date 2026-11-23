@@ -73,6 +73,7 @@ func newRig(t testing.TB, mutate ...func(*oidc.Options)) *rig {
 func newRigOn(t testing.TB, idp *fakeidp.Server, mutate ...func(*oidc.Options)) *rig {
 	t.Helper()
 	r := &rig{idp: idp, logs: &testutil.LogBuffer{}}
+	idp.RegisterRedirectURI(callback)
 	logger := telemetry.NewLogger(r.logs, "debug")
 	g := guardFor(t, idp)
 	cache, err := jwks.New(jwks.Options{

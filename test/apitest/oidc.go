@@ -51,6 +51,7 @@ func NewPeopleOIDC(tb testing.TB, cfg PeopleConfig, oc OIDCConfig) (*API, *OIDC)
 	if o.IDP == nil {
 		o.IDP = fakeidp.Start(tb, fakeidp.Options{Users: oc.Users})
 	}
+	o.IDP.RegisterRedirectURI(PublicOrigin + "/v1/auth/oidc/callback")
 	if o.Post == "" {
 		o.Post = "/console"
 	}
