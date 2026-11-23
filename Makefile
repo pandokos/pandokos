@@ -8,7 +8,7 @@ LDFLAGS := -s -w -buildid= -X $(PKG)/internal/buildinfo.Version=$(VERSION) -X $(
 GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.9.0
 GITLEAKS := github.com/zricethezav/gitleaks/v8@v8.30.1
 SQLC := github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
-GENERATED := internal/adminapi internal/store/queries docs/reference/permissions.md
+GENERATED := internal/adminapi internal/store/queries docs/reference/permissions.md docs/reference/tenant-export.v1.schema.json internal/tenantexport
 FUZZTIME ?= 30s
 
 # Loads local/testdb/env (written by make db-up) unless the variable is already set.
@@ -71,8 +71,9 @@ test-idp: ## Trusted issuer tests against Keycloak, Hydra and Authentik (needs m
 migrations-sum: ## Rewrite the checksum file of the migrations
 	@cd internal/store/migrations/sql && for f in *.sql; do printf '%s %s\n' "$$f" "$$(sha256sum "$$f" | cut -d' ' -f1)"; done > ../migrations.sum
 
-generate: ## Regenerate internal/adminapi (apigen), docs/reference/permissions.md (permdoc) and internal/store/queries (sqlc)
-	go run ./internal/apigen -spec api/openapi/admin.v1.yaml -out internal/adminapi/adminapi.gen.go
+generate: ## Regenerate internal/adminapi and the export schema (apigen), docs/reference/permissions.md (permdoc) and internal/store/queries (sqlc)
+	go run ./internal/apigen -spec api/openapi/admin.v1.yaml -out internal/adminapi/adminapi.gen.go -export-schema docs/reference/tenant-export.v1.schema.json
+	cp docs/reference/tenant-export.v1.schema.json internal/tenantexport/tenant-export.v1.schema.json
 	go run ./internal/permdoc -out docs/reference/permissions.md
 	CGO_ENABLED=0 GOTOOLCHAIN=go$(RELEASE_GO) go run $(SQLC) generate
 
