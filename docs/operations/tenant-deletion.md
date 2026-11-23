@@ -28,8 +28,9 @@ the [vault guide](vault.md).
    `tenant_deletion.grace_period` (7 days by default, installation-wide). The request is audited in the
    platform's log (`tenant.delete_request`, with the actor, the reason and the time it starts). A wrong
    name is `400 invalid_request` on `confirm_name`; a tenant that is `provisioning`, `deleting` or
-   `deleted` is `409 invalid_state`; a second request while one is scheduled or running answers `200`
-   with the existing deletion and writes nothing.
+   `deleted` is `409 invalid_state`. A second request while the deletion is scheduled answers `200` with
+   the existing deletion and writes nothing; once it is running the tenant is `deleting`, so a second
+   request is `409 invalid_state` too.
 4. **The grace period.** Nothing is removed. `pandokos tenant deletion get acme` shows the state and
    `not_before`. While it is scheduled the tenant cannot be reactivated (`409 invalid_state` on `state`).
 5. **Cancel**, if it was a mistake: `pandokos tenant deletion cancel acme --reason "..."` (also

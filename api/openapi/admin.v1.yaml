@@ -218,7 +218,8 @@ paths:
         (tenant_deletion.grace_period). confirm_name must be the tenant's name. Until not_before the request
         can be cancelled; then the worker removes the tenant's access, destroys its data key and its
         credentials, removes its configuration and keeps its usage ledger and audit log pseudonymized. A
-        second request while one exists answers the existing deletion and changes nothing.
+        second request while the deletion is scheduled answers it and changes nothing; once it has started
+        the tenant is deleting, and a request answers 409 invalid_state.
       x-pandokos-permission: tenant:delete
       x-pandokos-reason: required
       requestBody:

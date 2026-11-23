@@ -88,10 +88,15 @@ func TestTenantDeletionRequest(t *testing.T) {
 		d3, _ := api.Tenant(t, deleted)
 		api.DB.BeginDeletion(t, parseTenant(t, d2.ID))
 		api.DB.CompleteDeletion(t, parseTenant(t, d3.ID))
+		// A tenant that is deleting has a running deletion: a repeated request is refused, not answered 200.
 		for name, c := range map[string]struct{ id, name string }{"provisioning": {provisioningID, provisioning}, "deleting": {d2.ID, d2.Name}, "deleted": {d3.ID, d3.Name}} {
+			rows := len(api.DB.PlatformAuditRows(t))
 			r := plat.Do(t, "POST", deletionPath(c.id), map[string]any{"reason": reason, "confirm_name": c.name}, nil)
 			if r.Status != 409 || r.Problem() != "invalid_state" {
 				t.Errorf("a tenant that is %s: %d %s, want 409 invalid_state", name, r.Status, r.Body)
+			}
+			if got := len(api.DB.PlatformAuditRows(t)); got != rows {
+				t.Errorf("a refused request for a tenant that is %s wrote %d audit rows", name, got-rows)
 			}
 		}
 	})

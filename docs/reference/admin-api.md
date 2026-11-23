@@ -195,8 +195,9 @@ has 167 operations. The first six are under the tag `tenants`, `listKEKVersions`
 - **Request.** The body is `reason` (1 to 500 characters, required) and `confirm_name`, which must equal
   the tenant's name (`400 invalid_request` on `confirm_name` otherwise). An `active` tenant becomes
   `suspended`; the deletion is scheduled after `tenant_deletion.grace_period`. A tenant that is
-  `provisioning`, `deleting` or `deleted` answers `409 invalid_state`. A repeated request while one is
-  scheduled or running answers `200` with the existing deletion and writes nothing.
+  `provisioning`, `deleting` or `deleted` answers `409 invalid_state`. A repeated request while the
+  deletion is scheduled answers `200` with the existing deletion and writes nothing; once it is running
+  the tenant is `deleting`, so a request answers `409 invalid_state`.
 - **Cancel** removes a `scheduled` deletion and leaves the tenant `suspended`. A deletion that started
   answers `409 invalid_state`. While a deletion is scheduled, `reactivateTenant` answers
   `409 invalid_state` with one `errors` entry on `state`.
