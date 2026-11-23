@@ -28,8 +28,9 @@ the moment migration 0017 is applied: **nothing is produced for the past**. A de
 what is recorded after it; a consumer that needs the past reads the usage export ([usage guide](usage.md)).
 
 The sequence number (`sequence`) of a tenant's log follows the order of commits: when a reader has seen
-sequence `n`, it has seen every smaller number. A transaction that rolls back leaves a gap, so the numbers
-increase but are not gapless.
+sequence `n`, it has seen every smaller number. A transaction that rolls back leaves no gap: its reservation of
+numbers rolls back with it. Do not assume the numbers a consumer sees are gapless all the same: a destination
+with a type filter skips the events of other types, and retention removes old events.
 
 What is **not** an event: audit rows (read them with the [audit guide](audit.md)), a request that was refused, a
 change of the active currency, unlimited traffic. A usage event holds no content: no prompt and no completion.
@@ -69,8 +70,8 @@ caller cannot supply one, and it is never shown again.
   `io.pandokos.destination.test.v1`, to a disabled destination too. The administration only records the request
   (it answers `202`); the **worker** makes the request, within a relay interval, and the outcome appears as
   `test` of the destination (the command polls every 500 ms for up to two minutes). A test event is not written to
-  the log and moves no cursor or failure state. A new test request while one is in flight does not start a second
-  request; ask again after the outcome appears.
+  the log and moves no cursor or failure state. A test request made while another test is in flight stays
+  pending: the outcome of the first is not recorded for it, and the next round sends a new test event.
 - **Audit.** Every change is a row of the tenant's audit log: `event_destination.create`, `.update`,
   `.rotate_secret`, `.rewind`, `.replay`, `.delete`, with the name and the host of the URL, never a secret.
 
@@ -278,5 +279,6 @@ a log of ten million events is sprint 10.1.
 - No platform webhook, no destination kind other than a webhook, no batching of events in one request, no
   automatic disabling of a failing destination.
 - Destinations and the external reference are not in `export`/`apply` (sprint 12.3).
-- A new test request while one is in flight keeps the earlier outcome; the failures of the relay's gauge refresh
-  are not counted in `pandokos.events.relay.passes`.
+- The next claim of the relay waits for the slowest round of a pass: a receiver that answers slowly, though it
+  succeeds, holds back the destinations of other tenants until its round ends (a round's own time is bounded:
+  no request starts after half the lease, counted from the start of that round). Sprint 10.1 measures it.

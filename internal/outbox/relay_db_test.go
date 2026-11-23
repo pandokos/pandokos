@@ -679,6 +679,29 @@ func TestRelayNotTheDestinationsFault(t *testing.T) {
 		}
 	})
 
+	t.Run("a refresh of the gauges that fails is not a failed pass", func(t *testing.T) {
+		d := dbtest.NewMigrated(t)
+		tid := d.SeedTenant(t, "relay-state")
+		recv := newSink(t, nil)
+		d.SeedEventDestination(t, tid, recv.url("/s"))
+		r := newRig(t, d)
+		r.drain()
+		d.SetAcceptingConnections(t, false)
+		r.relay.refreshGauges(context.Background())
+		d.SetAcceptingConnections(t, true)
+		lines := r.logs.Find(t, "event relay failing")
+		if len(lines) != 1 || lines[0]["cause"] != "state" {
+			t.Errorf("the lines %v, want one with the cause state", lines)
+		}
+		r.drain()
+		if rec := r.logs.Find(t, "event relay recovered"); len(rec) != 0 {
+			t.Errorf("%v: a recovery line for a failure that no pass had", rec)
+		}
+		if st := r.relay.Stats(); st.PassesFailed != 0 {
+			t.Errorf("the refresh counted a failed pass: %+v", st)
+		}
+	})
+
 	t.Run("a key-encryption key that is unavailable", func(t *testing.T) {
 		d := dbtest.NewMigrated(t)
 		tid := d.SeedTenant(t, "relay-kek")
@@ -873,4 +896,126 @@ func dbNumber(t *testing.T, d *dbtest.Database, sql string, args ...any) int64 {
 		t.Fatalf("%v\n%s", err, sql)
 	}
 	return n
+}
+
+// TestRelayTestRequests covers two defects of the settle (review of sprint 6.4): a round that sends
+// only the test event leaves last_status as it was, and a test requested while another is in
+// flight is not completed with the outcome of the first.
+func TestRelayTestRequests(t *testing.T) {
+	testPending := func(t *testing.T, d *dbtest.Database, dest string) bool {
+		t.Helper()
+		var p bool
+		err := d.Super(t).QueryRow(context.Background(), `SELECT test_requested_at IS NOT NULL AND (test_completed_at IS NULL OR test_completed_at < test_requested_at)
+			FROM pandokos.event_destination WHERE id = $1::uuid`, dest).Scan(&p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	request := func(t *testing.T, d *dbtest.Database, dest string) string {
+		t.Helper()
+		var id string
+		err := d.Super(t).QueryRow(context.Background(), `UPDATE pandokos.event_destination SET test_requested_at = now(), test_event_id = gen_random_uuid()
+			WHERE id = $1::uuid RETURNING test_event_id::text`, dest).Scan(&id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+
+	t.Run("a test-only round keeps the last status", func(t *testing.T) {
+		d := dbtest.NewMigrated(t)
+		tid := d.SeedTenant(t, "relay-test-status")
+		var testID atomic.Value
+		testID.Store("")
+		recv := newSink(t, func(dl delivery, _ int) int {
+			if dl.ID == testID.Load().(string) {
+				return 204
+			}
+			return 500
+		})
+		dest, _ := d.SeedEventDestination(t, tid, recv.url("/q"))
+		d.SeedUsageRecords(t, tid, 2)
+		r := newRig(t, d)
+		if _, err := r.pass(); err != nil {
+			t.Fatal(err)
+		}
+		before := readDest(t, d, dest)
+		if before.LastStatus == nil || *before.LastStatus != 500 || before.Failures != 1 {
+			t.Fatalf("setup: %+v, want a failing destination with status 500", before)
+		}
+		testID.Store(request(t, d, dest)) // the destination is not due: only the test is sent
+		if _, err := r.pass(); err != nil {
+			t.Fatal(err)
+		}
+		after := readDest(t, d, dest)
+		if after.TestOutcome != "delivered" || after.LastStatus == nil || *after.LastStatus != 500 || after.LastError != "status" || after.Failures != 1 {
+			t.Errorf("after a test-only round: %+v, want the test delivered and last_status 500, last_error status, one failure as before", after)
+		}
+	})
+
+	t.Run("a request made in flight stays pending", func(t *testing.T) {
+		d := dbtest.NewMigrated(t)
+		tid := d.SeedTenant(t, "relay-test-flight")
+		recv := newSink(t, nil)
+		dest, _ := d.SeedEventDestination(t, tid, recv.url("/q"))
+		var once sync.Once
+		var second string
+		r := newRig(t, d, func(rl *Relay) {
+			rl.beforeSettle = func(string) { once.Do(func() { second = request(t, d, dest) }) }
+		})
+		first := request(t, d, dest)
+		if _, err := r.pass(); err != nil {
+			t.Fatal(err)
+		}
+		if second == "" || second == first {
+			t.Fatalf("the second request was not made (%q)", second)
+		}
+		if row := readDest(t, d, dest); row.TestOutcome != "" {
+			t.Errorf("the second request was completed with the outcome of the first: %q", row.TestOutcome)
+		}
+		if !testPending(t, d, dest) {
+			t.Fatal("the second request is not pending")
+		}
+		if recv.count("/q", second) != 0 {
+			t.Fatal("the second test event was sent in the round of the first")
+		}
+		if _, err := r.pass(); err != nil {
+			t.Fatal(err)
+		}
+		if recv.count("/q", second) != 1 || testPending(t, d, dest) {
+			t.Errorf("the next round sent the second test event %d times, pending %v", recv.count("/q", second), testPending(t, d, dest))
+		}
+		if row := readDest(t, d, dest); row.TestOutcome != "delivered" {
+			t.Errorf("outcome %q after the second round", row.TestOutcome)
+		}
+	})
+}
+
+// TestRelaySlowRounds: the half lease of a round counts from its own start, so a round that was
+// queued behind slow ones of the same pass still delivers (review of sprint 6.4).
+func TestRelaySlowRounds(t *testing.T) {
+	d := dbtest.NewMigrated(t)
+	tid := d.SeedTenant(t, "relay-slow")
+	var skew atomic.Int64 // nanoseconds the clock of the relay is ahead: every request takes 40 s of it
+	recv := newSink(t, func(delivery, int) int {
+		skew.Add(int64(40 * time.Second))
+		return 204
+	})
+	for _, n := range []string{"a", "b"} {
+		d.SeedEventDestinationNamed(t, tid, n, recv.url("/"+n))
+	}
+	d.SeedUsageRecords(t, tid, 1)
+	r := newRig(t, d, func(rl *Relay) {
+		rl.Workers = 1
+		rl.Now = func() time.Time { return time.Now().Add(time.Duration(skew.Load())) }
+	})
+	if n, err := r.pass(); err != nil || n != 2 {
+		t.Fatalf("a pass ran %d rounds (%v), want 2", n, err)
+	}
+	for _, p := range []string{"/a", "/b"} {
+		if _, n := recv.ids(p); n != 1 {
+			t.Errorf("%s received %d requests in the pass, want 1: a round queued behind slow ones sent nothing", p, n)
+		}
+	}
 }

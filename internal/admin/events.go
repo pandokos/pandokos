@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"strings"
 
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/outbox"
@@ -117,7 +116,7 @@ func (s *server) ExportPlatformEvents(ctx context.Context, in adminapi.ExportPla
 			if r.TenantID != nil {
 				if tid, err := tenant.ParseID(*r.TenantID); err == nil {
 					env.TenantID = tid
-					env.TenantRef = platformEventRef(r)
+					env.TenantRef = r.ExternalReference // the tenant's, as it is now (its row is never deleted); absent when empty
 				}
 			}
 			buf.Write(outbox.Render(outbox.Event{Seq: r.Seq, ID: r.ID, Type: r.Type, Subject: r.Subject, Time: r.OccurredAt, Data: json.RawMessage(r.Data)}, env))
@@ -130,19 +129,4 @@ func (s *server) ExportPlatformEvents(ctx context.Context, in adminapi.ExportPla
 		return len(rows) == size && remaining > 0, nil
 	}
 	return s.stream(exportPlatformEvent, "application/x-ndjson", "platform-events-"+fileStamp(s.now())+".ndjson", stateOf(ctx), page), nil
-}
-
-// platformEventRef is the external reference of the tenant of a platform event: the tenant's own
-// while its row exists, else the one the event carries (the tenant is gone once it is deleted).
-func platformEventRef(r queries.ListPlatformOutboxEventsAfterRow) string {
-	if ref := r.ExternalReference; ref != "" {
-		return ref
-	}
-	var d struct {
-		ExternalReference string `json:"external_reference"`
-	}
-	if strings.Contains(r.Data, "external_reference") && json.Unmarshal([]byte(r.Data), &d) == nil {
-		return d.ExternalReference
-	}
-	return ""
 }

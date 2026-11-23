@@ -29,7 +29,7 @@ kept when a receiver never takes it, and what happens to undelivered events when
 2. **The sequence follows commit order.** `seq` comes from `outbox_stream`, one row for each tenant; the first
    event of a transaction locks that row and the lock is held to the end of the transaction. So when a reader has
    seen `seq = n`, every event with a smaller number is visible to it, and "every event after `n`" is `seq > n`,
-   exactly. A rollback leaves a gap: the sequence increases but is not gapless. Transaction IDs were the
+   exactly. A rollback leaves no gap (the reservation of numbers rolls back with the transaction), but a consumer must not assume the sequence it sees is gapless: type filters and retention leave holes. Transaction IDs were the
    alternative; they break on dump and restore. **Lock order:** a transaction that also writes the audit chain of
    the same log locks the chain first; the platform's append function does, and no tenant event of this sprint
    writes an audit row.

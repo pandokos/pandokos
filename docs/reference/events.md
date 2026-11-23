@@ -33,7 +33,7 @@ and the enumerations of the OpenAPI document as one set of types.
 | `datacontenttype` | `application/json` |
 | `tenantid` | Extension: the tenant. Absent on the two `kek` types |
 | `tenantref` | Extension: the tenant's external reference as it is when the document is rendered (set by the platform with `tenant create|update --external-reference`); absent when empty and on the two `kek` types |
-| `sequence` | Extension, a string of digits: `seq` in the tenant's log, or in the platform's; absent on a test event. A webhook consumer may use it to notice a gap; the pull export asks for `after=<sequence>` |
+| `sequence` | Extension, a string of digits: `seq` in the tenant's log, or in the platform's; absent on a test event. A rollback leaves no gap, but a gap is not a loss (type filters and retention leave holes), so a consumer does not rely on gaplessness; the pull export asks for `after=<sequence>` |
 | `data` | Stored with the event when it is written and never changed. Members with no value are absent |
 
 Over webhook the request has `Content-Type: application/cloudevents+json; charset=utf-8`; over the pull export

@@ -32,7 +32,9 @@ as well as a provider credential, and nothing may write it to a log.
    the tenant, the destination, the data key version): `vault.SealNamed` and `OpenNamed`. A credential's
    ciphertext does not open as a signing secret, nor one destination's as another's. **This amends ADR 0033**: the
    vault seals a second kind of object, with its own associated data, beside provider credentials. The worker opens
-   a secret for one round and clears it. The admin role cannot read the sealed columns (column grants, as for
+   a secret for one round; at the end of the round it zeroes the 32 bytes of the signing key and the buffers of the
+   vault and of the parser. The plaintext text `whsec_…` is a Go string (`secret.Secret`), which cannot be
+   zeroed: it is left to the garbage collector. The admin role cannot read the sealed columns (column grants, as for
    provider credentials): it seals a new secret and a trigger keeps the replaced one as the previous one. A secret is
    a `secret.Secret` from generation to the HMAC; the shape `whsec_…` joins the shapes the log handler redacts;
    it appears in no audit row, log line, error or export, and in no response but the two that show it once.

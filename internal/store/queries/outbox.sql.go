@@ -194,7 +194,7 @@ func (q *Queries) GetEventDestination(ctx context.Context, id string) (GetEventD
 
 const getEventDestinationForRelay = `-- name: GetEventDestinationForRelay :one
 SELECT d.id, d.name, d.url, d.event_types, d.enabled, d.secret, d.secret_key_version, d.previous_secret,
-       d.previous_secret_key_version, d.previous_secret_expires_at, d.cursor_seq, d.failures, d.next_attempt_at, d.last_error,
+       d.previous_secret_key_version, d.previous_secret_expires_at, d.cursor_seq, d.failures, d.next_attempt_at, d.last_error, d.last_status,
        d.test_event_id, (d.test_requested_at IS NOT NULL
                          AND (d.test_completed_at IS NULL OR d.test_completed_at < d.test_requested_at))::boolean AS test_pending,
        (SELECT t.external_reference FROM pandokos.tenant t WHERE t.id = d.tenant_id) AS external_reference,
@@ -223,6 +223,7 @@ type GetEventDestinationForRelayRow struct {
 	Failures                 int32
 	NextAttemptAt            time.Time
 	LastError                string
+	LastStatus               *int32
 	TestEventID              *string
 	TestPending              bool
 	ExternalReference        string
@@ -248,6 +249,7 @@ func (q *Queries) GetEventDestinationForRelay(ctx context.Context, arg GetEventD
 		&i.Failures,
 		&i.NextAttemptAt,
 		&i.LastError,
+		&i.LastStatus,
 		&i.TestEventID,
 		&i.TestPending,
 		&i.ExternalReference,
@@ -773,11 +775,11 @@ UPDATE pandokos.event_destination
        last_failure_at = COALESCE($5::timestamptz, last_failure_at),
        last_error = $6::text,
        last_status = $7::integer,
-       test_completed_at = CASE WHEN $8::text <> '' THEN now() ELSE test_completed_at END,
-       test_outcome = CASE WHEN $8::text <> '' THEN $8::text ELSE test_outcome END,
-       test_status = CASE WHEN $8::text <> '' THEN $9::integer ELSE test_status END,
+       test_completed_at = CASE WHEN $8::text <> '' AND test_event_id = $9::uuid THEN now() ELSE test_completed_at END,
+       test_outcome = CASE WHEN $8::text <> '' AND test_event_id = $9::uuid THEN $8::text ELSE test_outcome END,
+       test_status = CASE WHEN $8::text <> '' AND test_event_id = $9::uuid THEN $10::integer ELSE test_status END,
        lease_token = NULL, lease_until = NULL
- WHERE id = $10::uuid AND lease_token = $11::uuid
+ WHERE id = $11::uuid AND lease_token = $12::uuid
 `
 
 type SettleEventDestinationParams struct {
@@ -789,12 +791,14 @@ type SettleEventDestinationParams struct {
 	LastError     string
 	LastStatus    *int32
 	TestOutcome   string
+	TestSentID    *string
 	TestStatus    *int32
 	ID            string
 	Token         string
 }
 
-// (W) 0 rows: the lease is not ours any more
+// (W) 0 rows: the lease is not ours any more. The outcome of a test is recorded only for the test
+// event that was sent: a request made while it was in flight stays pending.
 func (q *Queries) SettleEventDestination(ctx context.Context, arg SettleEventDestinationParams) (int64, error) {
 	result, err := q.db.Exec(ctx, settleEventDestination,
 		arg.CursorSeq,
@@ -805,6 +809,7 @@ func (q *Queries) SettleEventDestination(ctx context.Context, arg SettleEventDes
 		arg.LastError,
 		arg.LastStatus,
 		arg.TestOutcome,
+		arg.TestSentID,
 		arg.TestStatus,
 		arg.ID,
 		arg.Token,

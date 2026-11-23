@@ -155,3 +155,11 @@ func TestSign(t *testing.T) {
 		}
 	})
 }
+
+func TestKeyClear(t *testing.T) {
+	k := mustKey(t, secretText(1))
+	k.Clear()
+	if k.b != [keyLen]byte{} {
+		t.Errorf("the key still holds its bytes after Clear")
+	}
+}

@@ -154,7 +154,7 @@ admin role reads it for the export, the worker for the relay, the gateway not at
 locks that row (`INSERT … ON CONFLICT DO UPDATE`) and the lock is held until the transaction ends.
 So `seq` grows in the order of the commits: when a reader sees `seq = n`, every event with a
 smaller number is already visible to it, and "every event after `n`" is `seq > n`, exactly. A
-transaction that rolls back leaves a gap; the sequence is increasing, not gapless. The lock is per
+transaction that rolls back leaves no gap (T-1016: the reservation of numbers rolls back with it); the sequence is increasing, but a consumer must not assume it sees every number (type filters, retention). The lock is per
 tenant, taken once per statement of the ledger writer (one batch), and held for the rest of that
 transaction, which is that statement.
 
@@ -305,7 +305,7 @@ pass found a full batch:
    secrets are opened (§5.9).
 3. **Deliver**, with no transaction open: a waiting test request; then, for a destination that is
    enabled and due, replays (one attempt each) and, if no failure is pending, the batch with up to
-   4 requests at a time, otherwise the head event alone. No new request starts after the first failure in sequence order, or after half the lease.
+   4 requests at a time, otherwise the head event alone. No new request starts after the first failure in sequence order, or after half the lease counted from the start of that round (and not past the lease of its claim, less two delivery timeouts).
 4. **Settle**, one transaction in the tenant's session, conditional on the token: the cursor moves
    to the last event before the first failure (to the head of the log when the batch was not full
    and nothing failed); the failure state of §5.7 is written; dead letters are written; the lease
@@ -388,7 +388,7 @@ neither key (the example does).
 **Secrets.** Sealed by `vault.Sealer.SealNamed` under the tenant's data key, with associated data of
 a kind of their own (`pandokos/webhook-secret/v1`, the tenant, the destination, the data key
 version): a credential's ciphertext does not open as a signing secret, nor one destination's as
-another's. The worker opens them for one round (`vault.OpenNamed`) and clears them after. The admin
+another's. The worker opens them for one round (`vault.OpenNamed`) and, at the end of the round, zeroes the 32 bytes of each signing key (`Key.Clear`) and the buffers of the vault and of the parser; the text `whsec_…` is a Go string and is left to the garbage collector. The admin
 role cannot read the sealed columns (column grants, as for provider credentials): it seals a new
 secret, and in a rotation a database trigger keeps the replaced one as the previous secret. They are a `secret.Secret` from generation to the HMAC;
 the shape `whsec_…` joins the shapes the log handler redacts; they appear in no audit row, log
@@ -750,7 +750,9 @@ harness and the schema), E end to end (the binary), R repository.
 - **Sprint 8.2 (separate processes).** The relay and the janitor belong to the worker process, which
   needs the key files (it opens signing secrets) and the egress settings. Several workers already
   share the work (T-1033). The gateway process needs nothing of this sprint.
-- **Sprint 10.1 (load).** Measures the trigger under concurrent writers of one tenant (the lock of
+- **Sprint 10.1 (load) and epic 8.** The next claim waits for the slowest round of a pass, so a receiver that
+  is slow but succeeds delays the destinations of other tenants; pass gating (a claim while rounds are still
+  running, one slot per tenant) is left to the load measurements. 10.1 measures the trigger under concurrent writers of one tenant (the lock of
   `outbox_stream`), a log of 10⁷ events with retention running (bloat, the vacuum that follows; a
   log partitioned by day is the alternative), the claim over 10⁴ destinations, and a receiver slower
   than the tenant's traffic. The failure suite uses the two new rows of the failure reference.
@@ -859,7 +861,17 @@ The migration is unreleased. The file in the repository is authoritative.
 | The rotation overlap, the batches and the guide's figures | A rotation with no `previous_valid_for_seconds` overlaps 24 hours (at most 7 days); a batch is sent in waves of four requests; T-1050 measured a batch of 500 at a median of 108.7 ms without the trigger and 145.5 ms with it (ratio 1.34) on the development machine, recorded in `docs/operations/events.md`; the figure on the CI machine is plan F4 |
 | Declared deviations of tests | T-1016 expects no gap in the sequence after a rollback (the reservation of numbers rolls back with the transaction); T-1043 answers 404 for the destination of another tenant; T-1055 expects a sealed secret not to open after the deletion; `PopulatedTenant` seals a placeholder as the destination secret |
 
-Known limits left in 6.4: a new test request while a test is in flight completes with the earlier outcome (the
-design said it replaces a waiting one); failures of the refresh of `outbox_relay_state` are not counted in
-`pandokos.events.relay.passes`; one combined run of the end-to-end tests of the sprint once hung for more than
+Known limits left in 6.4: one combined run of the end-to-end tests of the sprint once hung for more than
 five minutes under load and was not diagnosed.
+
+### Changes after review (2026-11-23)
+
+| Finding | Change |
+|---|---|
+| A round that sent nothing but the test event erased `last_status` (the settle wrote it unconditionally) | `GetEventDestinationForRelay` reads `last_status` and the round seeds the settle with it; it is cleared only together with `last_error` (the batch that succeeded). Test: `TestRelayTestRequests` |
+| A test requested while another was in flight was completed with the first one's outcome | The settle takes the ID of the test event that was sent (`test_sent_id`) and records the outcome only `WHEN test_event_id` is that ID; the newer request stays pending and the next round sends it. The known limit is removed from §12 and from the guide |
+| Signing keys were not cleared after a round | `Key.Clear` (pointer receiver) zeroes the bytes; `round` clears every key of the round when it ends. The text `whsec_…` that `OpenNamed` returns is an immutable Go string and cannot be zeroed: ADR 0071, §5.9 and the guide now say that the key bytes and the vault's and parser's buffers are cleared, not that "the secret" is |
+| The guide and ADR 0070 said a rollback leaves a gap, T-1016 shows none | They say no gap after a rollback, and that a consumer must not assume gaplessness (type filters, retention) |
+| The half-lease deadline of a round counted from the start of the pass, so a round queued behind slow ones sent nothing | It counts from the start of the round, bounded by the lease of its claim (less two delivery timeouts). Pass gating is not redesigned: §11 (10.1, epic 8) and the guide record that the next claim waits for the slowest round of a pass. Test: `TestRelaySlowRounds` |
+| A failing refresh of `outbox_relay_state` called `noteFailure`, so `event relay recovered failures=1` appeared with no failed pass | The refresh only writes `event relay failing` with the cause `state` and leaves the count of failed passes alone; the log reference lists the cause |
+| The `tenantref` of a platform event fell back to the reference in the event's data, which only fired when the tenant's current reference was empty and rendered a stale one | The fallback is dropped: the tenant's current reference, absent when empty, as the event reference says |

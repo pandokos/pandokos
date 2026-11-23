@@ -57,6 +57,10 @@ func ParseKey(text secret.Secret) (Key, error) {
 	return k, nil
 }
 
+// Clear zeroes the 32 bytes of the key. The text form it was read from is a Go string, which cannot
+// be zeroed: only these bytes, and the buffers the vault and ParseKey clear themselves, are.
+func (k *Key) Clear() { clear(k.b[:]) }
+
 // Text returns the text form of the key.
 func (k Key) Text() secret.Secret {
 	return secret.New(keyPrefix + base64.StdEncoding.EncodeToString(k.b[:]))

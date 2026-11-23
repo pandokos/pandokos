@@ -633,7 +633,7 @@ Written at start with the worker role: the settings of the event relay and the t
 Level: warn
 Fields: `error_class`, `sqlstate`, `cause`, `failures`
 
-A claim, a read or a settle of the relay failed, or the secret of a destination could not be opened. At most once a minute; no tenant, destination or URL is named.
+A claim, a read or a settle of the relay failed, the secret of a destination could not be opened, or the refresh of the gauges failed (`cause` `claim`, `read`, `secret`, `settle` or `state`; `state` does not count as a failed pass, so it has no line `event relay recovered`). At most once a minute; no tenant, destination or URL is named.
 
 ### `event relay recovered`
 

@@ -179,7 +179,8 @@ func (r *Relay) refreshGauges(ctx context.Context) {
 	})
 	if err != nil {
 		if ctx.Err() == nil {
-			r.noteFailure(&relayError{cause: "state", err: err})
+			// Not a failed pass: the pass counter and its recovery line stay as the passes made them.
+			r.logStateFailure(err)
 		}
 		return
 	}
@@ -260,10 +261,26 @@ func (r *Relay) noteFailure(err error) {
 	if errors.As(err, &re) {
 		cause = re.cause
 	}
-	now := r.now()
 	r.mu.Lock()
 	r.failedPasses++
 	n := r.failedPasses
+	r.mu.Unlock()
+	r.failingLine(err, cause, n)
+}
+
+// logStateFailure writes "event relay failing" with the cause "state" for a refresh of the gauges
+// that failed, at most once a minute. It does not count a failed pass, so that the line "event relay
+// recovered" stays the pair of the passes' failures.
+func (r *Relay) logStateFailure(err error) {
+	r.mu.Lock()
+	n := r.failedPasses
+	r.mu.Unlock()
+	r.failingLine(err, "state", n)
+}
+
+func (r *Relay) failingLine(err error, cause string, n int) {
+	now := r.now()
+	r.mu.Lock()
 	quiet := !r.lastFailLine.IsZero() && now.Sub(r.lastFailLine) < lineEvery
 	if !quiet {
 		r.lastFailLine = now
@@ -327,6 +344,11 @@ func (r *Relay) round(ctx context.Context, started time.Time, token string, c qu
 		return &relayError{cause: "claim", err: err}
 	}
 	in, err := r.read(ctx, tid, token, c.DestinationID)
+	defer func() { // the signing keys live for one round
+		for i := range in.keys {
+			in.keys[i].Clear()
+		}
+	}()
 	if err != nil {
 		return err
 	}
@@ -335,7 +357,11 @@ func (r *Relay) round(ctx context.Context, started time.Time, token string, c qu
 	}
 	row := in.row
 	env := Envelope{Source: r.Source, TenantID: tid, TenantRef: row.ExternalReference}
-	deadline := started.Add(r.lease() / 2) // no request starts after half the lease
+	// No request starts after half the lease, counted from the start of this round (a round queued
+	// behind slow ones must not find its time spent), nor so late that the settle would come after
+	// the lease of the claim: the last request may last the delivery timeout, and a wave the same.
+	roundStart := r.now()
+	deadline := minTime(roundStart.Add(r.lease()/2), started.Add(r.lease()-2*r.Deliverer.Timeout))
 	send := func(e Event) Result {
 		res := r.Deliverer.Send(ctx, row.Url, e, env, in.keys...)
 		r.observe(res)
@@ -344,7 +370,7 @@ func (r *Relay) round(ctx context.Context, started time.Time, token string, c qu
 	now := r.now()
 	set := queries.SettleEventDestinationParams{
 		CursorSeq: row.CursorSeq, Failures: row.Failures, NextAttemptAt: row.NextAttemptAt, LastError: row.LastError,
-		ID: row.ID, Token: token,
+		LastStatus: row.LastStatus, ID: row.ID, Token: token,
 	}
 	var (
 		park    *queries.ParkDeadLetterParams
@@ -359,7 +385,7 @@ func (r *Relay) round(ctx context.Context, started time.Time, token string, c qu
 			Name          string `json:"name"`
 		}{row.ID, row.Name})
 		res := send(Event{ID: *row.TestEventID, Type: "io.pandokos.destination.test.v1", Time: now, Data: data})
-		set.TestOutcome, set.TestStatus = string(res.Outcome), statusPtr(res)
+		set.TestOutcome, set.TestStatus, set.TestSentID = string(res.Outcome), statusPtr(res), row.TestEventID
 	}
 
 	if in.work {
@@ -413,7 +439,7 @@ func (r *Relay) round(ctx context.Context, started time.Time, token string, c qu
 		case k == len(events):
 			set.Failures = 0
 			if k > 0 {
-				set.LastError = ""
+				set.LastError, set.LastStatus = "", nil
 			}
 			if len(events) < in.limit {
 				// Nothing is left of the types of the destination: the cursor goes to the head.
@@ -424,7 +450,7 @@ func (r *Relay) round(ctx context.Context, started time.Time, token string, c qu
 			set.NextAttemptAt = minTime(row.NextAttemptAt, now)
 		default: // the time ran out before the next request
 			if k > 0 {
-				set.Failures, set.LastError = 0, ""
+				set.Failures, set.LastError, set.LastStatus = 0, "", nil
 				set.NextAttemptAt = minTime(row.NextAttemptAt, now)
 			}
 		}

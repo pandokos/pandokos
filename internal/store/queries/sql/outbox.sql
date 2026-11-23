@@ -16,7 +16,7 @@ SELECT s.destinations::bigint, s.failing::bigint, s.disabled::bigint, s.dead_let
 -- (W) the first statement of a round: it reads the head
 -- name: GetEventDestinationForRelay :one
 SELECT d.id, d.name, d.url, d.event_types, d.enabled, d.secret, d.secret_key_version, d.previous_secret,
-       d.previous_secret_key_version, d.previous_secret_expires_at, d.cursor_seq, d.failures, d.next_attempt_at, d.last_error,
+       d.previous_secret_key_version, d.previous_secret_expires_at, d.cursor_seq, d.failures, d.next_attempt_at, d.last_error, d.last_status,
        d.test_event_id, (d.test_requested_at IS NOT NULL
                          AND (d.test_completed_at IS NULL OR d.test_completed_at < d.test_requested_at))::boolean AS test_pending,
        (SELECT t.external_reference FROM pandokos.tenant t WHERE t.id = d.tenant_id) AS external_reference,
@@ -42,7 +42,8 @@ SELECT l.seq, l.attempts, o.id, o.type, o.subject, o.occurred_at, o.data
  ORDER BY l.seq
  LIMIT sqlc.arg(max)::integer;
 
--- (W) 0 rows: the lease is not ours any more
+-- (W) 0 rows: the lease is not ours any more. The outcome of a test is recorded only for the test
+-- event that was sent: a request made while it was in flight stays pending.
 -- name: SettleEventDestination :execrows
 UPDATE pandokos.event_destination
    SET cursor_seq = GREATEST(cursor_seq, sqlc.arg(cursor_seq)::bigint),
@@ -53,9 +54,9 @@ UPDATE pandokos.event_destination
        last_failure_at = COALESCE(sqlc.narg(last_failure_at)::timestamptz, last_failure_at),
        last_error = sqlc.arg(last_error)::text,
        last_status = sqlc.narg(last_status)::integer,
-       test_completed_at = CASE WHEN sqlc.arg(test_outcome)::text <> '' THEN now() ELSE test_completed_at END,
-       test_outcome = CASE WHEN sqlc.arg(test_outcome)::text <> '' THEN sqlc.arg(test_outcome)::text ELSE test_outcome END,
-       test_status = CASE WHEN sqlc.arg(test_outcome)::text <> '' THEN sqlc.narg(test_status)::integer ELSE test_status END,
+       test_completed_at = CASE WHEN sqlc.arg(test_outcome)::text <> '' AND test_event_id = sqlc.narg(test_sent_id)::uuid THEN now() ELSE test_completed_at END,
+       test_outcome = CASE WHEN sqlc.arg(test_outcome)::text <> '' AND test_event_id = sqlc.narg(test_sent_id)::uuid THEN sqlc.arg(test_outcome)::text ELSE test_outcome END,
+       test_status = CASE WHEN sqlc.arg(test_outcome)::text <> '' AND test_event_id = sqlc.narg(test_sent_id)::uuid THEN sqlc.narg(test_status)::integer ELSE test_status END,
        lease_token = NULL, lease_until = NULL
  WHERE id = sqlc.arg(id)::uuid AND lease_token = sqlc.arg(token)::uuid;
 
