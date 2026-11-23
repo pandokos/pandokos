@@ -176,7 +176,8 @@ disk the operator's database administrators can read, and by auditing every admi
 | A signed-in user reaches functions beyond their role | The API authorizes every call. What `/v1/me` reports comes from the same permissions and is tested against them (AZ-11) |
 | A session is used to call models | Sessions are accepted only on the administration listener; no code of the gateway reads a cookie and its database role has no privilege on any table of people or sessions, in any session (IAM-22) |
 | The database or a backup is copied | Credentials are ciphertext under per-tenant keys wrapped by a key that is not in the database (VLT-09, VLT-13). Virtual keys are stored as hashes |
-| The key-encryption key leaks | Rotation by re-wrapping (VLT-10). The leak alone exposes nothing without the database |
+| The key-encryption key leaks | Rotation by re-wrapping (VLT-10): a new key file becomes the active version at start, the worker re-wraps every data key and retires the old version, and the old file is destroyed ([vault guide](../operations/vault.md#6a-rotating-the-key)). The leak alone exposes nothing without the database; a backup taken before the rotation stays readable with the leaked key until the backups expire or are destroyed |
+| A tenant leaves | A staged deletion run by the worker: the tenant is suspended during a grace period, then closed to new rows, its access removed, its data key and credentials destroyed, its configuration removed, its ledger and audit log kept with every identifier of a person or workload replaced by a pseudonym, and a completion record written in the platform's log that `pandokos tenant deletion verify` checks. Nothing global and nothing of another tenant is touched, and the platform reads no usage ([deletion guide](../operations/tenant-deletion.md), [ADR 0067](../adr/0067-tenant-deletion-stages-closed-tenants-and-kept-records.md)) |
 | A ciphertext is copied onto another tenant's row | The tenant and credential IDs are bound into the ciphertext as associated data, so decryption fails (VLT-07) |
 | An attacker with the database guesses a credential from its fingerprint or hint | The fingerprint is a keyed hash under a key derived from the tenant's data key, which needs the key-encryption key; fingerprints differ between tenants. The hint is four characters and absent for short secrets |
 | A platform administrator abuses the role | No read path for secrets, usage, limit events or prices in API or database grants (AZ-08, ADR 0054). The platform holds no tenant permission. It acts inside a tenant only under a **support action**: a reason, a closed set of eleven permissions that read no usage, price or secret, at most 24 h (1 h by default), one transaction for the row and both audit events, visible to the tenant and ended by its owner, and switched by `support.enabled` (AZ-09, [ADR 0061](../adr/0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md)). **The residual path:** under an action the platform grants with the tenant's authority, so an administrator can make an identity in the tenant (a key, a member) and act as it; there is no other path (`resetUserPassword` refuses a platform user that holds permissions in a tenant, whose recovery is the host command `pandokos user reset-password`) but the known gap below, a membership or role gained while a platform-issued password is pending, each step names the action in the tenant's log, and `support.enabled: false` removes the path together with the recovery |
@@ -258,14 +259,25 @@ flowchart TB
   in two tenants cannot be compared. Formats and numbers: [ADR 0033](../adr/0033-vault-formats-and-key-identifiers.md).
 - One data key per tenant limits the effect of a leaked data key to one tenant and makes
   cryptographic erasure a single deletion.
-- Rotating the key-encryption key re-wraps the data keys; credentials are not touched.
+- Rotating the key-encryption key re-wraps the data keys; credentials are not touched. Versions have a state (`active`, `retiring`, `retired`), exactly one is active, and the database refuses a data key under any other.
 - Losing the key-encryption key makes every tenant credential unrecoverable. Tenants must then
   re-enter them. This is stated in the operations guide and is the reason the key has its own
   backup procedure.
-- Backups and erasure: a database backup also holds the wrapped data key. Destroying a data key
-  therefore makes older backups unreadable only once the key-encryption key version that wrapped it
-  is retired, or when the backups have expired (open point O-8; the remedy is designed with tenant
-  deletion). The [vault guide](../operations/vault.md) states the limit.
+- Backups and erasure, stated exactly ([ADR 0068](../adr/0068-key-encryption-key-versions-rotation-and-erasure-in-backups.md)).
+  When a tenant is deleted, its wrapped data keys and sealed secrets are gone from the database at
+  once; the gateways forget the data key within `cache.data_key_ttl` plus `cache.credential_ttl`. A
+  **backup taken before** still holds them: whoever has that backup and a key file of the version
+  that wrapped the data key can open them, and deleting the tenant does not change that. Only two
+  things do: the backup expires, or the key version is retired and every copy of its file destroyed.
+  The deletion records the versions concerned; `getTenantDeletion` shows `backup_erasure` as `pending`
+  until they are retired, `listKEKVersions` shows how many completed deletions wait for each, and the
+  gauge `pandokos.vault.erasures.pending` counts them. The product cannot see whether the file was
+  destroyed: that is the operator's act. The rule is to rotate the key within the time erasure is
+  promised in, wait for `key rotation complete`, take a new backup and destroy the old file; the price
+  is that backups older than the rotation open no credential afterwards. A restored backup also brings
+  deleted tenants back and takes the platform's log with it: the backup guide says to keep the list of
+  completed deletions outside the database. The [vault guide](../operations/vault.md) and the
+  [backup guide](../operations/backup-and-restore.md) state the procedure.
 
 ## Credentials issued by Pandokos
 

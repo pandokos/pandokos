@@ -451,3 +451,29 @@ before the model is resolved records no metadata and counts every entry it had k
 the tenant's list is not known yet and storing a key the tenant may refuse is what the restriction
 forbids ([PRV-03](../requirements/README.md)). A change reaches the gateways through
 the tenant's catalogue notification (ADR 0030).
+
+## 15. The ledger of a deleted tenant
+
+When a tenant is deleted ([deletion guide](tenant-deletion.md)) its usage records are **kept**, not
+removed, until the installation's retention removes them (`retention.usage_months`; with `0`, never). A
+batch step of the deletion replaces `principal_id` and `key_id` by pseudonyms (a UUID-shaped value made
+with a salt that is destroyed at the end, equal for equal identifiers inside the tenant and not
+recomputable) and `metadata` by `{}`. Every other column stays: times, provider, model, outcome, tokens,
+cost, currency, `request_id`, `trace_id`, `credential_id` and `price_version_id`.
+
+- **Nobody reads the kept ledger through the product.** The tenant has no identity left, and the platform
+  reads no usage ([ADR 0054](../adr/0054-usage-data-is-the-tenants.md)); there is no operation, report or
+  export for it. The rows are the operator's evidence at the database.
+- **A tenant that wants its records exports them before the request** (`pandokos tenant-export`, the
+  file `usage_records.ndjson`, [export guide](tenant-export.md)): a suspended tenant reads nothing.
+- **Retention.** The monthly partitions of the ledger leave when `platform_retention` drops them; the
+  third pass of the retention job (`deleted_tenant_retention`) removes a deleted tenant's rows of the
+  default partition that are older than the cut. The removal is recorded in the platform's log
+  (`tenant.records_retention`) with no usage figure.
+- **The platform's records of a deletion hold no usage figure**: the completion record has no count of
+  ledger records, limit events or rollup rows. The rollup and the retention of living tenants do not run
+  for a tenant that is being deleted or deleted.
+- **A closed tenant takes no new record.** From the start of the deletion the ledger refuses an insert for
+  the tenant (`usage record rejected` with `constraint: tenant_open`); a request still in flight at that
+  moment ends without a record. With the default grace period no request exists then, because the tenant
+  has been suspended for days; with `tenant_deletion.grace_period` of `0` it can.

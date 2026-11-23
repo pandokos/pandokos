@@ -172,6 +172,50 @@ No platform role reads a tenant's usage report or export ([ADR 0054](../adr/0054
 An optional integer query parameter is checked against its `minimum` only when it is given
 (`from_seq`, `to_seq` of the audit exports; an explicit `from_seq=0` is `400`).
 
+## Tenant deletion and key versions (sprint 6.3)
+
+Seven operations ([deletion guide](../operations/tenant-deletion.md), [vault guide](../operations/vault.md),
+[ADR 0067](../adr/0067-tenant-deletion-stages-closed-tenants-and-kept-records.md),
+[ADR 0068](../adr/0068-key-encryption-key-versions-rotation-and-erasure-in-backups.md)); the document
+has 167 operations. The first six are under the tag `tenants`, `listKEKVersions` under the new tag
+`vault`.
+
+| Operation | Method and path | Permission | Answer |
+|---|---|---|---|
+| `requestTenantDeletion` | `POST /v1/tenants/{tenant}/deletion` | `tenant:delete`, reason required | `200` `TenantDeletion` |
+| `getTenantDeletion` | `GET /v1/tenants/{tenant}/deletion` | `tenant:read` | `200` `TenantDeletion`; `404` when none was requested |
+| `cancelTenantDeletion` | `POST /v1/tenants/{tenant}/deletion/cancel` | `tenant:delete`, reason required | `200` `Tenant` |
+| `listTenantDeletions` | `GET /v1/tenant-deletions` | `tenant:read` | a page, newest request first; filter `state` |
+| `getDeletedTenantAuditHead` | `GET /v1/tenants/{tenant}/deletion/audit-head` | `platform_audit:read` | `200` `AuditHead` |
+| `exportDeletedTenantAuditEvents` | `GET /v1/tenants/{tenant}/deletion/audit-events/export` | `platform_audit:read` | NDJSON stream of `AuditEvent` |
+| `listKEKVersions` | `GET /v1/kek-versions` | `kek:read` | every version: `id`, `provider`, `state`, `created_at`, `activated_at`, `retired_at`, `erasures_pending` |
+
+- **`tenant:delete`** is held by `platform-admin` only; `kek:read` by both platform roles. No tenant
+  role holds either, and no support action can carry them.
+- **Request.** The body is `reason` (1 to 500 characters, required) and `confirm_name`, which must equal
+  the tenant's name (`400 invalid_request` on `confirm_name` otherwise). An `active` tenant becomes
+  `suspended`; the deletion is scheduled after `tenant_deletion.grace_period`. A tenant that is
+  `provisioning`, `deleting` or `deleted` answers `409 invalid_state`. A repeated request while one is
+  scheduled or running answers `200` with the existing deletion and writes nothing.
+- **Cancel** removes a `scheduled` deletion and leaves the tenant `suspended`. A deletion that started
+  answers `409 invalid_state`. While a deletion is scheduled, `reactivateTenant` answers
+  `409 invalid_state` with one `errors` entry on `state`.
+- **`TenantDeletion`** has `tenant_id`, `state` (`scheduled`, `running`, `completed`), `step`, `reason`,
+  `requested_by` (`type`, `id`, `name`), `request_id`, the times `requested_at`, `not_before`,
+  `started_at` and `completed_at`, `passes`, `removed` (counts by table), `kek_versions`,
+  `backup_erasure` (`state` `not_applicable`, `pending` or `complete`, and `pending_kek_versions`),
+  `audit` (`anchor_seq`, `last_seq`, `rows`, `original_head`, `resealed_head`; absent before the step
+  `audit` ran) and `completion_seq`. The salt of the pseudonyms is in no answer. After a restart of the
+  worker `step` can read `unknown` until the next step runs.
+- **The kept log.** The two operations of `platform_audit:read` answer `409 invalid_state` until the
+  tenant is `deleted`. They read the rewritten log, which holds pseudonyms and no detail, no price and no
+  person; the schema of the export is the one of `exportAuditEvents`.
+- **Writes for a closed tenant.** Every platform operation that would write a row for a tenant being
+  deleted or deleted (`grantModel`, `createPlatformLimit`, `putPlatformIssuerTenant`,
+  `openSupportAction`, creating a user that tenant manages, and the others) answers `409 invalid_state`
+  with one `errors` entry on `tenant` ("the tenant is being deleted or is deleted"). A principal of the
+  tenant gets `403 tenant_suspended`, then `401` once its identities are removed. No new error code was added.
+
 ## The accepted subset of OpenAPI 3.1
 
 `internal/apigen` accepts a deliberate subset and fails on anything else: `openapi: 3.1.0`; path
@@ -227,6 +271,12 @@ commands that return a generated password print it once on standard output, or w
 | `tenant-support open` (`--reason` required, `--permission` repeatable, `--duration`), `list`, `get`, `close` (with `--tenant`) | `openSupportAction`, `listTenantSupportActions`, `getTenantSupportAction`, `closeSupportAction` |
 | `support-action list`, `get`, `end` (with `--tenant`) | `listSupportActions`, `getSupportAction`, `endSupportAction` |
 | `import-prices (--file FILE \| --embedded) [--dry-run]` | none: a host command that reads a price dataset and writes through the database ([catalogue guide](../operations/catalogue.md)) |
+| `tenant delete TENANT --reason R --confirm-name NAME` | `requestTenantDeletion` |
+| `tenant deletion get TENANT`, `tenant deletion cancel TENANT --reason R`, `tenant deletion list` (`--state`) | `getTenantDeletion`, `cancelTenantDeletion`, `listTenantDeletions` |
+| `tenant deletion audit-head TENANT`, `tenant deletion audit-export TENANT` (`--out FILE`) | `getDeletedTenantAuditHead`, `exportDeletedTenantAuditEvents` |
+| `tenant deletion verify TENANT` | none: a composite command that checks the completion record against both chains ([deletion guide](../operations/tenant-deletion.md)) |
+| `kek-version list` | `listKEKVersions` |
+| `tenant-export --tenant ID --out DIR` (`--usage-from`), `tenant-export schema` | none: composite commands over the API; the second needs no server ([export guide](../operations/tenant-export.md)) |
 | `kek generate --out FILE` | none: a local command that writes a key-encryption key ([vault guide](../operations/vault.md)) |
 
 ### Credentials

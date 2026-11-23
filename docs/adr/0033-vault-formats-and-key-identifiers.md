@@ -27,8 +27,9 @@ fingerprint that does not help an attacker who holds the database, and numbers f
    is the last four characters, withheld for secrets shorter than 16 characters.
 5. `KeyProvider` has `Wrap`, `Unwrap`, `Available` and `Name`. The local provider reads one
    base64 line of 32 bytes; the version identifier is derived from the key (`local-` and 16
-   hexadecimal characters of a SHA-256). Versions that wrapped a data key are registered in
-   the global table `kek_version`; `serve` refuses to start when one of them is not available.
+   hexadecimal characters of a SHA-256). Versions are registered in the global table `kek_version`
+   by activation at start, have a state, and `serve` refuses to start when an active or retiring one
+   is not available ([ADR 0068](0068-key-encryption-key-versions-rotation-and-erasure-in-backups.md)).
 6. The gateway caches opened credentials for `cache.credential_ttl` (30 s, at most 60 s) and
    derived data keys for `cache.data_key_ttl` (5 m, at most 15 m), each bounded to 10 000
    entries, invalidated by the payload `vault:<tenant>` on the notification channel of ADR
@@ -51,3 +52,4 @@ wrong file); no registry of versions (a wrong file would fail tenant by tenant).
 ## History
 
 - 2026-11-18: recorded as accepted by the maintainer.
+- 2026-11-23: sprint 6.3 amends point 5: versions are registered by activation at start (`kek_activate`), not when a data key is wrapped, and have a state (`active`, `retiring`, `retired`); `serve` needs the active and the retiring ones ([ADR 0068](0068-key-encryption-key-versions-rotation-and-erasure-in-backups.md)).

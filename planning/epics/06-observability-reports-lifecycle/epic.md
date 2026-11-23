@@ -81,6 +81,16 @@ Exit: after deletion, a backup taken before it cannot yield the tenant's credent
 current keys; after rotation every credential still works and no data key is wrapped by the old
 version; a tenant export can be read with the published schema.
 
+*Deferred from 6.3 (sprint 6.3 §2):* a restore that is tested, a restore drill and the loss of the key as a
+drill are sprint 12.3; a key-encryption key held by an external service (transit API), after which a deletion
+may trigger a rotation by itself, is sprint 12.1; the event "tenant deleted" and the external reference of a
+tenant are 6.4; retention of `limit_event` for living tenants is 6.4 (limit events become outbox events and
+are retained with them), and `price_import` retention is not planned; failure injection for every dependency
+as a suite, and published figures (a deletion of a tenant with 10^7 ledger records, a re-seal of a log of 10^5
+rows, a rotation over 10^4 tenants), are sprint 10.1; deleting or anonymising a user the platform manages,
+rewriting the platform's chain and scrubbing a deleted tenant's name are the privacy review of epic 10; separate
+processes for the worker and the gateway are sprint 8.2.
+
 ### 6.4 Events for external systems — part of v0.3
 
 - Outbox table written in the transaction that records the fact; relay in the worker with
@@ -92,6 +102,15 @@ version; a tenant export can be read with the published schema.
 - Administration API and CLI for destinations, delivery state and replay.
 - Receiver example that shows idempotent handling.
 - Failure tests: worker crash in mid-delivery, receiver outage, duplicate delivery.
+
+*Carried to 6.4 from 6.3 (sprint 6.3 §11):* the event "tenant deleted" is written by `tenant_erasure_step` in the
+transaction of the completion record, with the tenant's ID and the **external reference** that 6.4 adds to a
+tenant; the reference must be copied into `tenant_deletion` at the request, because the event is produced after
+the tenant's configuration is gone. The outbox table of a tenant is one more table for the erasure steps (the
+test that reads the catalogue will ask for it) and needs the `tenant_open` trigger (lint rule L-21 asks for it).
+What happens to events of a closed tenant that still wait for delivery (deliver, then remove) is 6.4's decision.
+"Deletion requested" and "key rotated" can be platform events. Limit events gain their retention here. The list
+of completed deletions that a restore needs can come from these events.
 
 Requirements: EVT-01 to EVT-04, LIM-13.
 

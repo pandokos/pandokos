@@ -38,3 +38,4 @@ can break the nested module without the root build noticing; the CI job catches 
 
 - 2026-11: sprint 3.3: the nested module also runs the Python and TypeScript suites behind a build tag ([ADR 0044](0044-sdk-compatibility-suite-python-typescript.md)).
 - 2026-11-18: recorded as accepted by the maintainer.
+- 2026-11-23: sprint 6.3: the nested module `test/sdk` gains a JSON Schema validator (`github.com/santhosh-tekuri/jsonschema/v6`, v6.0.3) to read a tenant export with its published schema, and its CI job gets a PostgreSQL database ([ADR 0069](0069-tenant-data-export.md)).

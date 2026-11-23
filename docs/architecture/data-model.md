@@ -224,7 +224,7 @@ opening and expiry (at most 24 hours after opening, by constraint) and, once, of
 it (`platform`, `tenant` or `expiry`) and why. One open action per actor and tenant (a unique index). A
 trigger lets a row change once, when it is closed. Three policies: the platform scope sees and writes
 every row; a tenant's session reads its tenant's rows and may close them as the tenant. A row is never
-deleted before tenant deletion (sprint 6.3).
+deleted before tenant deletion (sprint 6.3), which removes the tenant's rows.
 
 **Audit.** `audit_event` gains the nullable column `support_action_id`, filled for what a support
 principal changes in a tenant. Opening and closing write one event in the tenant's chain and one in the
@@ -390,14 +390,52 @@ worker claims them with `FOR UPDATE SKIP LOCKED`, delivers, and records the atte
 
 ## Tenant deletion
 
-1. The tenant moves to `deleting`: inference and administration stop.
-2. Virtual keys, issuer registrations and memberships are removed.
-3. The tenant data key is destroyed. Every credential ciphertext of the tenant, in the database
-   and in any backup, is now unreadable.
-4. Configuration rows are deleted. Usage and audit rows are kept for the configured retention,
-   with the principal fields pseudonymized, then dropped.
-5. A completion record goes to the platform audit log; the tenant becomes `deleted` and its ID is
-   never reused.
+Design: [ADR 0067](../adr/0067-tenant-deletion-stages-closed-tenants-and-kept-records.md); procedure:
+[deletion guide](../operations/tenant-deletion.md).
+
+**Two global tables.** `tenant_deletion` (one row per tenant: state `scheduled`, `running` or
+`completed`, the step, the reason and who requested it, `not_before`, `started_at`, `settle_at`, the
+counts removed so far, `passes`, the key versions that wrapped the tenant's data keys, the salt of the
+pseudonyms and the cursor of the ledger, `completion_seq`) and `tenant_closed` (identifiers only: the
+tenants that take no new row). Both have forced row-level security; no runtime role reads the salt or the
+cursor.
+
+**The request** suspends the tenant and inserts the row, scheduled after `tenant_deletion.grace_period`;
+while it is scheduled the tenant cannot be reactivated, and the request can be cancelled.
+
+**The steps.** The worker calls one function, `tenant_erasure_step`, in the tenant's session until it
+answers `done`; each call is one transaction and one step (or one batch of 5000 ledger records), recorded
+in the row and safe to repeat.
+
+1. `begin`: the tenant becomes `deleting` and enters `tenant_closed`; from then on every tenant-scoped
+   table and five global tables refuse an insert for it (the trigger `tenant_open`).
+2. `access`: limit rules, subject mappings, trusted issuers and their directory, the tenant's entries of
+   platform issuers, virtual keys, role assignments, idempotency keys, support actions, memberships,
+   the sessions, accounts and identities of the users the tenant manages and those users, service
+   accounts, custom roles.
+3. `secrets`: the key-encryption key versions that wrap the tenant's data keys are noted; then the data
+   keys, then the provider credentials: the secrets are cryptographically erased.
+4. `configuration`: the tenant's platform limit rules and model grants, restrictions, metadata key
+   policy, price versions (started ones too, with their rates), limit events, rollup and its state.
+5. `usage`: batches of the ledger: `principal_id` and `key_id` become pseudonyms, `metadata` becomes `{}`.
+6. `audit`: a closing row `tenant.delete`, then the pseudonymization of the log and the new sealing of its
+   chain from the anchor.
+7. `complete`: at least two minutes after the start, the rows left in the tables of steps 2 to 4 are
+   counted; if any, a second pass runs; else the completion record is written in the platform's log, the
+   tenant becomes `deleted`, the salt is destroyed and the row `completed`.
+
+**What is kept.** The `tenant` row (the name can be reused), `tenant_deletion`, `tenant_closed`; the ledger
+and the audit log, pseudonymized, until the installation's retention removes them; the platform's own log
+and the rest of the global tables. A user the platform manages is not deleted: it loses the membership.
+Every table with a tenant column is in exactly one of these groups, and a test reads the catalogue to
+prove it: a new table must be placed in a step.
+
+**Append-only tables.** `append_only` admits a `DELETE` only under `pandokos.retention` and an `UPDATE`
+only under `pandokos.erasure`; only functions of migrations 0015 and 0016 set them.
+
+**Key versions.** `kek_version` has a `state` (`active`, `retiring`, `retired`), `activated_at` and
+`retired_at`; one row at most is active; a data key is created and re-wrapped under the active version
+only; versions are written by `kek_activate` and `kek_retire` only ([vault guide](../operations/vault.md)).
 
 ## Testing isolation
 

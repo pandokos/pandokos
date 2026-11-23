@@ -835,3 +835,68 @@ reports and the limit counters are correct without it, only slower.
 
 **Manual inserts into the ledger are not supported.** The rollup counts a record when its `recorded_at`
 passes the watermark; a record put in by hand with a `recorded_at` behind it is not counted by the rollup.
+
+## 21. Grants of migration 0016
+
+Migration `0016_tenant_deletion_kek_rotation` adds the states of the key-encryption key versions, the
+deletion of tenants and the retention of the records a deletion keeps ([deletion guide](tenant-deletion.md),
+[vault guide](vault.md), [ADR 0067](../adr/0067-tenant-deletion-stages-closed-tenants-and-kept-records.md),
+[ADR 0068](../adr/0068-key-encryption-key-versions-rotation-and-erasure-in-backups.md)). It runs in one
+transaction as the owner role and adds no role. Its file is immutable once released; a fix is a later
+migration.
+
+**What changes.**
+
+- **Key versions.** `kek_version` gains `state` (`active`, `retiring`, `retired`), `activated_at` and
+  `retired_at`, and a unique index that allows one `active` row. The version registered last becomes
+  `active` and any other `retiring`. The admin role **loses `INSERT`** on `kek_version`: a version is
+  registered by `kek_activate(version, provider)`, which only the admin role may execute, in platform
+  scope, and which writes `kek.activate` in the platform log. `kek_retire()` (the worker role only)
+  retires every `retiring` version that no data key is wrapped by, and writes `kek.retire`. They are the
+  only code that writes `kek_version`. A trigger on `tenant_data_key` refuses a data key, and a re-wrap,
+  under any version but the active one. The worker role gains `SELECT` on `tenant_data_key` and `UPDATE
+  (kek_version, wrapped_key)`, in the session of the tenant only.
+- **A closed tenant takes no row.** `tenant_closed` (global, forced row-level security; identifiers
+  only) holds the tenants whose deletion started. The 21 tenant-scoped tables and `idempotency_key` carry
+  a statement trigger `<table>_tenant_open`, and the five global tables that name a tenant in a row
+  written in platform scope (`app_user`, `model_tenant_grant`, `platform_issuer_tenant`,
+  `platform_limit_rule`, `support_action`) a row trigger of the same name. A row passes only when the
+  statement runs as the owner under `pandokos.erasure = on`, that is, inside a function of this
+  migration; the refusal is `restrict_violation` with the constraint name `tenant_open`. The cost on the
+  ledger's insert path is one primary-key lookup per statement, one per batch of the writer.
+- **The deletion.** `tenant_deletion` (global, forced row-level security, one row per tenant). The admin
+  role reads every column but the salt of the pseudonyms and the cursor of the ledger, inserts the
+  request columns (only as `scheduled`, only for a suspended tenant) and deletes a `scheduled` row; the
+  worker role reads seven columns (`tenant_id`, `state`, `step`, `request_id`, `not_before`,
+  `started_at`, `kek_versions`) in platform scope. A trigger on `tenant` (`tenant_deletion_holds`)
+  refuses to reactivate a tenant whose deletion is requested.
+- **The erasure functions.** `tenant_erasure_step(batch)` is `SECURITY DEFINER`, executable by the
+  **worker role** only, and works for the tenant of the session and only when a deletion was requested.
+  It calls `tenant_erasure_state`, `tenant_erasure_access`, `tenant_erasure_secrets`,
+  `tenant_erasure_configuration`, `tenant_erasure_usage`, `tenant_erasure_audit`, `tenant_residue`,
+  `pseudonym` and `jsonb_counts_add`, which only the owner may call. For the global tables of the list
+  the owner has one policy each, limited to the rows of the tenant of the session under
+  `pandokos.erasure`; the owner still sees no tenant outside those functions.
+  `deleted_tenant_retention(usage_months, audit_months)` (worker role, session of a deleted tenant)
+  applies the retention of the installation to the records a deletion keeps.
+- **One mechanism for the append-only tables.** `append_only` admits a `DELETE` under
+  `pandokos.retention = on` (0015) and now an `UPDATE` under `pandokos.erasure = on`; the guard on a
+  started price version lets a version go under `pandokos.retention`. Only functions of migrations
+  0015 and 0016 set the two settings (`grep -rn pandokos.erasure internal/store/migrations/sql/` finds
+  0016 only); no runtime role holds `UPDATE` or `DELETE` on an append-only table. `TRUNCATE` stays
+  refused for everybody.
+
+**Locks and duration.** The migration creates two small tables, adds columns to `kek_version` and
+creates the triggers; it does not read the ledger. The triggers take effect for every insert at once.
+
+**The two rules for a database administrator.** Do not hold a transaction open against a tenant for
+longer than the bounds of the product allow: a transaction that began before a tenant was closed and
+commits after its deletion completed leaves a row behind (the completion waits two minutes and counts what
+is left, [deletion guide](tenant-deletion.md)). And never insert a row for a closed tenant by hand: the
+guards exist to refuse it.
+
+**Upgrade: stop, migrate, start. Migration 0016 is not compatible with earlier binaries**, like 0011 to
+0015. A binary of release 0.1 or of sprint 6.2 refuses the schema, and one that did start could not
+create a first data key, since the admin role no longer holds `INSERT` on `kek_version`. The new binary
+registers the key it starts with as the active version (`kek_activation: activated` in `vault ready` on a
+database that had none, `unchanged` on one whose last registered version it holds).

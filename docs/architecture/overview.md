@@ -74,7 +74,7 @@ run any combination of three roles ([ADR 0003](../adr/0003-single-binary-with-ro
 |---|---|---|---|
 | `gateway` | data | Authenticates callers, authorizes, enforces limits, injects the provider credential, forwards, extracts usage | inference port |
 | `admin` | control | Administration API for tenants, identities, roles, catalogue, credentials, limits, reports. Handles sign-in and sessions | admin port |
-| `worker` | background | Event delivery, retention, tenant deletion, price refresh, key re-wrapping, counter reconciliation | none |
+| `worker` | background | Event delivery, retention (also of the records a deleted tenant keeps), the staged deletion of tenants, price refresh, key re-wrapping and retirement of replaced key versions, counter reconciliation | none |
 
 Two more commands exist: `migrate` (schema changes, with owner credentials) and `init` (first
 platform admin credential).
@@ -321,7 +321,10 @@ host name to its cell. Pandokos does not create or scale cells; the operator's t
 
 ## 9. Failure behaviour
 
-The rule: when Pandokos cannot verify that a request is allowed, it does not forward it.
+The rule: when Pandokos cannot verify that a request is allowed, or cannot open the credential, it does
+not forward it. The table below is the summary; the [failure reference](../reference/failure-behaviour.md)
+defines the behaviour per dependency and per part of Pandokos, with the log line, the instrument and the
+test that hold each row.
 
 | Dependency down | Inference | Administration |
 |---|---|---|

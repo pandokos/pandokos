@@ -32,8 +32,9 @@ The vault is a package inside Pandokos, not a separate product.
   most a minute) and attaches it to the outbound request.
 - *KEK rotation*: a new KEK version becomes active; the worker re-wraps every DEK; the old version
   stays available for decryption until the job completes. Credentials are untouched.
-- *Erasure*: deleting the tenant's wrapped DEK makes all its credentials unreadable, including in
-  backups taken before the deletion.
+- *Erasure*: deleting the tenant's wrapped DEK makes all its credentials unreadable in the database
+  at once. In backups taken before the deletion they become unreadable when the KEK version that
+  wrapped the DEK is retired and every copy of its file destroyed ([ADR 0068](0068-key-encryption-key-versions-rotation-and-erasure-in-backups.md)).
 - *Fingerprint*: the last four characters and a keyed hash of the secret are stored so a tenant
   can recognize which key is registered without reading it.
 
@@ -71,3 +72,4 @@ of one AEAD and one key hierarchy.
 ## History
 
 - 2026-11: sprint 2.1 fixes formats, derived subkeys, key identifiers and cache numbers (ADR 0033) and the credential model (ADR 0034).
+- 2026-11-23: sprint 6.3 amends the erasure sentence: the data key is destroyed in the database at once, and backups taken before stop yielding the credentials once the key-encryption key version that wrapped it is retired and its file destroyed; rotation is by configuration, with versions that have a state ([ADR 0068](0068-key-encryption-key-versions-rotation-and-erasure-in-backups.md)).

@@ -72,6 +72,9 @@ A record is *proposed* until the maintainer accepts it, by merging its pull requ
 | [0064](0064-usage-rollup-reports-and-exports.md) | Usage rollup, reports and exports | proposed |
 | [0065](0065-the-audit-hash-chain-reading-and-retention.md) | The audit hash chain, reading and retention | proposed |
 | [0066](0066-declarative-export-and-apply.md) | Declarative export and apply | proposed |
+| [0067](0067-tenant-deletion-stages-closed-tenants-and-kept-records.md) | Tenant deletion: stages, closed tenants and the records that are kept | proposed |
+| [0068](0068-key-encryption-key-versions-rotation-and-erasure-in-backups.md) | Key-encryption key versions: activation, re-wrap, retirement, and erasure in backups | proposed |
+| [0069](0069-tenant-data-export.md) | The tenant data export and its schema | proposed |
 
 ## Questions from SOW 0.1 and where they were decided
 
