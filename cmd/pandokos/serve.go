@@ -281,8 +281,10 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	if cfg.Pricing.Refresh.Enabled {
 		refresh = admin.RefreshOptions{Enabled: true, URL: cfg.Pricing.Refresh.ParsedURL.String(), Fetch: fetchPrices}
 	}
+	grace := time.Duration(cfg.TenantDeletion.GracePeriod)
 	adminOpts := admin.Options{
-		Logger: logger, DB: adminDB, Authenticator: adminAuth, Sealer: sealer,
+		TenantDeletionGrace: &grace,
+		Logger:              logger, DB: adminDB, Authenticator: adminAuth, Sealer: sealer,
 		Validator: vault.NewValidator(guard.Transport(false), guard.Transport(true), 10*time.Second),
 		Snapshot:  genaiprices.Snapshot(),
 		Refresh:   refresh,

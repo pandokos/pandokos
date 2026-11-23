@@ -20,12 +20,12 @@ type adminCounters struct {
 	supportClosed atomic.Int64 // by the platform
 	supportEnded  atomic.Int64 // by the tenant
 	oidc          account.SignInCounter
-	// exports counts the exports by kind (usage, audit, platform_audit) and by result (complete, aborted).
-	exports [3][2]atomic.Int64
+	// exports counts the exports by kind (usage, audit, platform_audit, deleted_tenant_audit) and by result (complete, aborted).
+	exports [4][2]atomic.Int64
 }
 
 // exportKinds are the kinds of export in the order of adminCounters.exports.
-var exportKinds = [3]string{exportUsage, exportAudit, exportPlatformAudit}
+var exportKinds = [4]string{exportUsage, exportAudit, exportPlatformAudit, exportDeletedTenantAudit}
 
 // exportDone counts an export that ended: complete or aborted.
 func (c *adminCounters) exportDone(kind string, complete bool) {
@@ -46,7 +46,7 @@ type Stats struct {
 	SupportOpened int64
 	SupportEnded  map[string]int64 // by cause: closed (by the platform), ended (by the tenant)
 	SignIn        account.SignInStats
-	// ExportsComplete and ExportsAborted count the exports by kind: usage, audit, platform_audit.
+	// ExportsComplete and ExportsAborted count the exports by kind: usage, audit, platform_audit, deleted_tenant_audit.
 	ExportsComplete, ExportsAborted map[string]int64
 }
 

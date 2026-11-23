@@ -760,6 +760,13 @@ func TestErasureResealsAuditChain(t *testing.T) {
 	}
 	// The same identifier is a principal of the ledger and an actor of the log.
 	seedLedger(t, d, tid, 5, []string{ledgerPrincipal}, []string{""})
+	// The populated tenant has records of its own: only those of the shared identifier are looked at.
+	sharedRecords := map[string]bool{}
+	for rid, r := range ledgerOf(t, d, tid) {
+		if r.principal == ledgerPrincipal {
+			sharedRecords[rid] = true
+		}
+	}
 
 	beforeRows := auditRowsOf(t, d, tid)
 	beforeChain, beforeHead := chainOf(t, d.Super(t), "tenant:"+id)
@@ -790,8 +797,10 @@ func TestErasureResealsAuditChain(t *testing.T) {
 	}
 	ledgerPseudonym := ledgerOf(t, d, tid) // after the usage step the ledger holds the pseudonyms
 	var principalPseudonym string
-	for _, r := range ledgerPseudonym {
-		principalPseudonym = r.principal
+	for rid, r := range ledgerPseudonym {
+		if sharedRecords[rid] {
+			principalPseudonym = r.principal
+		}
 	}
 	for i, was := range beforeRows {
 		now := afterRows[i]

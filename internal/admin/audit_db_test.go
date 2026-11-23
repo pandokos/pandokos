@@ -753,8 +753,13 @@ func TestEveryChangeIsAudited(t *testing.T) {
 			}
 		}
 		c := apitest.CallFor(t, op, params)
-		if resp := api.Do(t, c.Method, c.Path, key, c.Body, nil); resp.Status != 200 {
-			t.Errorf("%s: status %d\n%s", op.ID, resp.Status, resp.Body)
+		// The tenant of the fixture is active: it has no deletion (404), and no log kept for a deleted tenant (409).
+		want := map[string]int{"getTenantDeletion": 404, "getDeletedTenantAuditHead": 409, "exportDeletedTenantAuditEvents": 409}[op.ID]
+		if want == 0 {
+			want = 200
+		}
+		if resp := api.Do(t, c.Method, c.Path, key, c.Body, nil); resp.Status != want {
+			t.Errorf("%s: status %d, want %d\n%s", op.ID, resp.Status, want, resp.Body)
 		}
 	}
 	if rows := newRows(t, api, seen); len(rows) != 0 {

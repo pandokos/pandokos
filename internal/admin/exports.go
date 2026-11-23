@@ -27,6 +27,8 @@ const (
 	exportUsage         = "usage"
 	exportAudit         = "audit"
 	exportPlatformAudit = "platform_audit"
+	// exportDeletedTenantAudit is the log kept for a deleted tenant.
+	exportDeletedTenantAudit = "deleted_tenant_audit"
 )
 
 // exportPageFn reads the next page of an export into buf (with the header of a CSV when first) and
@@ -319,16 +321,24 @@ func (s *server) auditExport(kind, namePrefix string, st *reqState, from, to int
 // ExportAuditEvents streams the audit log of a tenant from the anchor (or from_seq) to the head
 // read at the start (or to_seq), oldest first.
 func (s *server) ExportAuditEvents(ctx context.Context, in adminapi.ExportAuditEventsInput) (*adminapi.Stream, error) {
-	head, err := s.GetAuditHead(ctx, adminapi.GetAuditHeadInput{Tenant: in.Tenant})
+	tid, err := tenantID(in.Tenant)
 	if err != nil {
 		return nil, err
 	}
-	from, to, err := auditRange(struct{ From, To int }{in.FromSeq, in.ToSeq}, head)
+	return s.tenantAuditExport(ctx, in.Tenant, exportAudit, in.FromSeq, in.ToSeq, canReadPrices(ctx, authz.Target{TenantID: tid}))
+}
+
+// tenantAuditExport streams the chain of a tenant in its own session, of the kind given.
+func (s *server) tenantAuditExport(ctx context.Context, tenantParam, kind string, fromSeq, toSeq int, prices bool) (*adminapi.Stream, error) {
+	head, err := s.GetAuditHead(ctx, adminapi.GetAuditHeadInput{Tenant: tenantParam})
 	if err != nil {
 		return nil, err
 	}
-	tid, _ := tenantID(in.Tenant) // GetAuditHead checked it
-	prices := canReadPrices(ctx, authz.Target{TenantID: tid})
+	from, to, err := auditRange(struct{ From, To int }{fromSeq, toSeq}, head)
+	if err != nil {
+		return nil, err
+	}
+	tid, _ := tenantID(tenantParam) // GetAuditHead checked it
 	read := func(ctx context.Context, after, to int64) ([]auditRow, error) {
 		var out []auditRow
 		err := s.db.WithTenant(ctx, tid, func(ctx context.Context, tx store.Tx) error {
@@ -341,7 +351,7 @@ func (s *server) ExportAuditEvents(ctx context.Context, in adminapi.ExportAuditE
 		})
 		return out, err
 	}
-	return s.auditExport(exportAudit, "audit-"+in.Tenant, stateOf(ctx), from, to, prices, read), nil
+	return s.auditExport(kind, "audit-"+tenantParam, stateOf(ctx), from, to, prices, read), nil
 }
 
 // ExportPlatformAuditEvents streams the platform's audit log the same way.
