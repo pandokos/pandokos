@@ -126,9 +126,11 @@ type Limit struct {
 
 // Settings are the settings of a tenant.
 type Settings struct {
-	TimeZone       string   `yaml:"time_zone,omitempty"`
-	ActiveCurrency string   `yaml:"active_currency,omitempty"`
-	MetadataKeys   []string `yaml:"metadata_keys,omitempty"`
+	TimeZone       string `yaml:"time_zone,omitempty"`
+	ActiveCurrency string `yaml:"active_currency,omitempty"`
+	// MetadataKeys is the caller metadata keys the tenant accepts. Absent leaves the policy alone;
+	// an explicit empty list is the empty policy (no key accepted), which is not the same as no policy.
+	MetadataKeys *[]string `yaml:"metadata_keys,omitempty"`
 }
 
 // Restriction is the model restriction of a tenant, by model reference.

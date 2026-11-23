@@ -521,8 +521,8 @@ func (p *planner) tenant(ctx context.Context, c *adminapi.Client, id string, doc
 			return err
 		})
 	}
-	if len(set.MetadataKeys) > 0 && !sameSet(set.MetadataKeys, st.metadataKeys) {
-		keys := slices.Clone(set.MetadataKeys)
+	if set.MetadataKeys != nil && (!st.metadataLimited || !sameSet(*set.MetadataKeys, st.metadataKeys)) {
+		keys := nonNilStrings(slices.Clone(*set.MetadataKeys))
 		p.update("setting metadata_keys", join(sorted(keys)), func(ctx context.Context, c *adminapi.Client) error {
 			_, err := c.SetMetadataKeys(ctx, adminapi.SetMetadataKeysInput{Tenant: id, Body: adminapi.MetadataKeysSet{Keys: keys}})
 			return err

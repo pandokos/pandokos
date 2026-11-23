@@ -123,6 +123,7 @@ var reKeyID = regexp.MustCompile(`^t[a-z2-7]{16}$`)
 type tenantState struct {
 	zone, currency  string
 	metadataKeys    []string
+	metadataLimited bool // restricted to metadataKeys, which may be none
 	restricted      bool
 	restriction     []string
 	roles           []adminapi.Role
@@ -189,7 +190,7 @@ func readTenant(ctx context.Context, c *adminapi.Client, id string) (*tenantStat
 		return nil, err
 	}
 	if mk != nil && mk.Restricted {
-		s.metadataKeys = sorted(mk.Keys)
+		s.metadataKeys, s.metadataLimited = sorted(mk.Keys), true
 	}
 	mr, err := soft(c.GetModelRestriction(ctx, adminapi.GetModelRestrictionInput{Tenant: id}))
 	if err != nil {
@@ -242,8 +243,12 @@ func subjectKey(l Limit) string { return limitKey(l.Subject, l) }
 // document builds the document of a tenant, sorted by natural key. Left-out notes are returned with it.
 func (s *tenantState) document() *Document {
 	d := &Document{Pandokos: Version, Kind: KindTenant}
-	if s.zone != "" || s.currency != "" || len(s.metadataKeys) > 0 {
-		d.Settings = &Settings{TimeZone: s.zone, ActiveCurrency: s.currency, MetadataKeys: s.metadataKeys}
+	if s.zone != "" || s.currency != "" || s.metadataLimited {
+		d.Settings = &Settings{TimeZone: s.zone, ActiveCurrency: s.currency}
+		if s.metadataLimited {
+			keys := nonNilStrings(s.metadataKeys)
+			d.Settings.MetadataKeys = &keys
+		}
 	}
 	if s.restricted {
 		d.ModelRestriction = &Restriction{Models: nonNilStrings(s.restriction)}

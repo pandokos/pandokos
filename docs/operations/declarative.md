@@ -46,9 +46,11 @@ left out of the export and listed in a comment line at the end. Platform-level i
 issuers and subject mappings are not in the document (sprint 12.3); members, credentials and keys never
 will be.
 
-**Settings the document cannot clear.** An empty or absent `time_zone` or `metadata_keys` leaves the
-setting as it is; a document cannot return a tenant to "every metadata key" or to the installation's
-time zone. Use `pandokos metadata-keys clear` for that.
+**Settings the document cannot clear.** An absent or empty `time_zone` leaves the setting as it is,
+and so does an absent `metadata_keys`; a document cannot return a tenant to "every metadata key" or to
+the installation's time zone. Use `pandokos metadata-keys clear` for that. An explicit empty list,
+`metadata_keys: []`, is different: it sets the empty policy, a tenant that accepts no caller metadata
+key at all, and the export of such a tenant says so.
 
 ## 2. `export`
 

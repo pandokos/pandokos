@@ -40,7 +40,7 @@ func marshal(t testing.TB, d *declare.Document) []byte {
 func wantTenant() *declare.Document {
 	return &declare.Document{
 		Pandokos: declare.Version, Kind: declare.KindTenant,
-		Settings:         &declare.Settings{TimeZone: "Europe/Rome", ActiveCurrency: "EUR", MetadataKeys: []string{"project", "team"}},
+		Settings:         &declare.Settings{TimeZone: "Europe/Rome", ActiveCurrency: "EUR", MetadataKeys: &[]string{"project", "team"}},
 		ModelRestriction: &declare.Restriction{Models: []string{"openai/gpt-4o"}},
 		Roles:            []declare.Role{{Name: "billing-readers", Description: "Reads usage and limits for billing", Permissions: []string{"limit:read", "usage:read"}}},
 		ServiceAccounts: []declare.ServiceAccount{
