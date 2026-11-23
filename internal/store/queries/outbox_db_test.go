@@ -33,7 +33,7 @@ func outboxStatements(c context.Context, t *testing.T, d *dbtest.Database, admin
 		}
 		return out
 	}
-	var dest string
+	var dest, testID string // testID: the event ID of the test request
 	must("an ID", d.Super(t).QueryRow(c, `SELECT pandokos.uuid_v7()::text`).Scan(&dest))
 	// The administration chooses the ID of a destination before its row, to seal the secret for it.
 	must("an ID of the administration", admin.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
@@ -97,7 +97,7 @@ func outboxStatements(c context.Context, t *testing.T, d *dbtest.Database, admin
 			t.Errorf("RotateEventDestinationSecret: %d, %v", n, err)
 		}
 		mark("RequestEventDestinationTest")
-		testID := dest[:len(dest)-1] + "f"
+		testID = dest[:len(dest)-1] + "f"
 		if n, err := q.RequestEventDestinationTest(c, queries.RequestEventDestinationTestParams{ID: dest, EventID: testID}); err != nil || n != 1 {
 			t.Errorf("RequestEventDestinationTest: %d, %v", n, err)
 		}
@@ -225,11 +225,39 @@ func outboxStatements(c context.Context, t *testing.T, d *dbtest.Database, admin
 		mark("SettleEventDestination")
 		now := time.Now().UTC()
 		status := int32(200)
-		p := queries.SettleEventDestinationParams{ID: dest, Token: "0192f0f0-0000-7000-8000-0000000000f2", CursorSeq: head + 2, NextAttemptAt: now, LastSuccessAt: &now, LastStatus: &status, TestOutcome: "delivered", TestStatus: &status}
+		p := queries.SettleEventDestinationParams{ID: dest, Token: "0192f0f0-0000-7000-8000-0000000000f2", CursorSeq: head + 2, NextAttemptAt: now, LastSuccessAt: &now, LastStatus: &status, TestOutcome: "delivered", TestSentID: &testID, TestStatus: &status}
 		if n, err := q.SettleEventDestination(c, p); err != nil || n != 0 {
 			t.Errorf("a settle with another token: %d rows, %v, want none", n, err)
 		}
-		p.Token = token
+		// The outcome of a test is recorded only for the test event that was sent: a settle that
+		// sent another one leaves the request pending (and releases the lease).
+		other := dest[:len(dest)-1] + "e"
+		stale := p
+		stale.Token, stale.TestSentID = token, &other
+		if n, err := q.SettleEventDestination(c, stale); err != nil || n != 1 {
+			t.Errorf("a settle for the test event of an earlier request: %d, %v", n, err)
+		}
+		return nil
+	}))
+	must("the request that was not settled", admin.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
+		row, err := queries.New(tx).GetEventDestination(c, dest)
+		if err != nil || row.TestOutcome != "" || row.TestCompletedAt != nil || row.TestRequestedAt == nil {
+			t.Errorf("a test settled with another event ID: %+v, %v, want the request still pending", row, err)
+		}
+		return nil
+	}))
+	const token2 = "0192f0f0-0000-7000-8000-0000000000f3"
+	must("the second claim", worker.Platform(c, func(c context.Context, tx store.Tx) error {
+		if rows, err := queries.New(tx).ClaimOutboxDestinations(c, queries.ClaimOutboxDestinationsParams{Token: token2, LeaseSeconds: 60, Max: 100}); err != nil || len(rows) == 0 {
+			t.Errorf("the second claim: %+v, %v, want the destination", rows, err)
+		}
+		return nil
+	}))
+	must("the settle of the test that was sent", worker.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
+		q := queries.New(tx)
+		now := time.Now().UTC()
+		status := int32(200)
+		p := queries.SettleEventDestinationParams{ID: dest, Token: token2, CursorSeq: head + 2, NextAttemptAt: now, LastSuccessAt: &now, LastStatus: &status, TestOutcome: "delivered", TestSentID: &testID, TestStatus: &status}
 		if n, err := q.SettleEventDestination(c, p); err != nil || n != 1 {
 			t.Errorf("SettleEventDestination: %d, %v", n, err)
 		}
