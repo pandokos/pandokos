@@ -110,7 +110,7 @@ func TestPlatformSeesNoTenantUsage(t *testing.T) {
 			}
 		})
 
-		t.Run("the definer functions are the eleven of sprint 5.3, the five of sprint 4.2 and the four of sprint 6.2, with the result types pinned", func(t *testing.T) {
+		t.Run("the definer functions are the eleven of sprint 5.3, the five of sprint 4.2, the four of sprint 6.2 and the five of sprint 6.3, with the result types pinned", func(t *testing.T) {
 			rows, err := super.Query(ctx(t), `SELECT p.proname, pg_get_function_result(p.oid), p.prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 				WHERE n.nspname = 'pandokos' AND p.prosecdef ORDER BY 1`)
 			if err != nil {
@@ -139,6 +139,14 @@ func TestPlatformSeesNoTenantUsage(t *testing.T) {
 				"audit_seal_platform": "trigger",
 				"platform_retention":  "record",
 				"tenant_retention":    "record",
+				// Sprint 6.3: the activation and retirement of key versions, the guard of reactivation, the
+				// erasure step (it answers a step name) and the retention of a deleted tenant's records (it
+				// names usage_record and returns two counts).
+				"kek_activate":             "text",
+				"kek_retire":               "integer",
+				"tenant_deletion_holds":    "trigger",
+				"tenant_erasure_step":      "text",
+				"deleted_tenant_retention": "record",
 			}
 			got := map[string]string{}
 			for rows.Next() {
@@ -150,7 +158,7 @@ func TestPlatformSeesNoTenantUsage(t *testing.T) {
 				for _, tbl := range append([]string{"usage_record", "limit_event"}, "tenant_price_version", "tenant_price_rate") {
 					// The two retention functions name usage_record: they return counts only, and the
 					// platform one drops partitions (sprint 6.2, section 5.10).
-					if strings.Contains(body, tbl) && name != "ensure_usage_partitions" && name != "platform_retention" && name != "tenant_retention" {
+					if strings.Contains(body, tbl) && name != "ensure_usage_partitions" && name != "platform_retention" && name != "tenant_retention" && name != "deleted_tenant_retention" {
 						t.Errorf("the body of %s names %s", name, tbl)
 					}
 				}
@@ -167,6 +175,47 @@ func TestPlatformSeesNoTenantUsage(t *testing.T) {
 				t.Errorf("the definer functions:\n got %v\nwant %v", got, want)
 			}
 			_ = model
+		})
+
+		t.Run("the functions of the erasure that only the owner calls are pinned, and none returns a ledger row", func(t *testing.T) {
+			want := map[string]string{
+				"tenant_erasure_access": "jsonb", "tenant_erasure_secrets": "record", "tenant_erasure_configuration": "jsonb", "tenant_erasure_usage": "record",
+				"tenant_erasure_audit": "jsonb", "tenant_erasure_state": "void", "tenant_residue": "jsonb", "pseudonym": "text", "jsonb_counts_add": "jsonb",
+				"tenant_open": "trigger", "tenant_open_row": "trigger", "tenant_data_key_kek_guard": "trigger", "tenant_deletion_guard": "trigger",
+			}
+			rows, err := super.Query(ctx(t), `SELECT p.proname, pg_get_function_result(p.oid), p.prosecdef,
+					bool_or(has_function_privilege(r, p.oid, 'EXECUTE')) FILTER (WHERE true)
+				FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace,
+				     unnest(ARRAY['pandokos_gateway', 'pandokos_admin', 'pandokos_worker']) r
+				WHERE n.nspname = 'pandokos' AND p.proname = ANY ($1) GROUP BY p.oid, p.proname ORDER BY 1`, mapKeys(want))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer rows.Close()
+			got := map[string]string{}
+			for rows.Next() {
+				var name, result string
+				var definer, runtime bool
+				if err := rows.Scan(&name, &result, &definer, &runtime); err != nil {
+					t.Fatal(err)
+				}
+				got[name] = result
+				if definer {
+					t.Errorf("%s is a definer function: only the five of sprint 6.3 are", name)
+				}
+				if strings.Contains(result, "usage_record") {
+					t.Errorf("%s returns %s: a ledger row", name, result)
+				}
+				if runtime && strings.HasPrefix(name, "tenant_erasure_") || runtime && name == "tenant_residue" {
+					t.Errorf("a runtime role may execute %s: the owner alone may", name)
+				}
+			}
+			if err := rows.Err(); err != nil {
+				t.Fatal(err)
+			}
+			if fmt.Sprint(got) != fmt.Sprint(want) {
+				t.Errorf("the owner-only functions:\n got %v\nwant %v", got, want)
+			}
 		})
 	})
 }
@@ -254,4 +303,12 @@ func TestPlatformAPISeesNoTenantUsage(t *testing.T) {
 	if !slices.ContainsFunc(texts, func(s string) bool { return strings.Contains(s, w.a.tenant.ID) }) {
 		t.Log("no row of the platform's log names tenant A: the calls on A changed nothing it logs")
 	}
+}
+
+func mapKeys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }

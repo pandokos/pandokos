@@ -165,6 +165,13 @@ var reportsMutations = map[string]bool{
 	"setMetadataKeys": true, "clearMetadataKeys": true,
 }
 
+// lifecycleMutations are the mutating operations of sprint 6.3 (the request and the cancellation of
+// the deletion of a tenant) that TestTenantDeletionRequest (T-996) covers, with their audit rows;
+// the enumerating tests of earlier sprints (T-281, T-282) leave them to it.
+var lifecycleMutations = map[string]bool{
+	"requestTenantDeletion": true, "cancelTenantDeletion": true,
+}
+
 // peopleMutations are the mutating operations of sprint 4.2 (sign-in, own sessions, users and
 // members) that the audit tests of that sprint cover (T-796, T-826), with their atomicity; the
 // enumerating tests of earlier sprints (T-281, T-282) leave them to those, as they leave the token

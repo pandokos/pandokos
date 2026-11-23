@@ -119,6 +119,14 @@ func CallFor(tb testing.TB, op adminapi.Operation, p Params) Call {
 		"listAuditEvents", "getAuditHead", "exportAuditEvents", "listPlatformAuditEvents", "getPlatformAuditHead", "exportPlatformAuditEvents":
 	case "setMetadataKeys":
 		body = map[string]any{"keys": []string{"team"}}
+	case "getTenantDeletion", "listTenantDeletions", "getDeletedTenantAuditHead", "exportDeletedTenantAuditEvents", "listKEKVersions":
+		// Sprint 6.3: reads of the deletion of a tenant, of the log kept for a deleted one, and of the key versions.
+	case "requestTenantDeletion":
+		// The name is wrong on purpose: a call that is let through ends in 400 and changes nothing,
+		// so that a test that calls every operation as every role does not delete the tenant.
+		body = map[string]any{"reason": "test", "confirm_name": "not-the-name-of-the-tenant"}
+	case "cancelTenantDeletion":
+		body = map[string]any{"reason": "test"}
 	case "getCapability":
 		query = "?provider=openai&model=gpt-4o-mini"
 	case "createProvider":

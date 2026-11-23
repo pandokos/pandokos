@@ -270,6 +270,7 @@ func TestAuditChainConcurrent(t *testing.T) {
 		return queries.InsertPlatformAuditEventParams{ActorType: "platform", ActorName: "w", Action: "load.platform", ResourceType: "test",
 			ResourceID: fmt.Sprint(i), Outcome: "success", RequestID: strings.Repeat("b", 32), Detail: "{}"}
 	}
+	platformBase := int(dbNumber(t, d, `SELECT count(*) FROM pandokos.platform_audit_event`)) // the activation of the key version that dbtest wrote
 	var wg sync.WaitGroup
 	errs := make(chan error, 200)
 	run := func(fn func() error) {
@@ -312,7 +313,7 @@ func TestAuditChainConcurrent(t *testing.T) {
 	for err := range errs {
 		t.Errorf("a transaction failed: %v", err)
 	}
-	for scope, want := range map[string]int{tenantScope(a): 8*50 + 20, "platform": 40} {
+	for scope, want := range map[string]int{tenantScope(a): 8*50 + 20, "platform": platformBase + 40} {
 		rows, head := chainOf(t, super, scope)
 		if len(rows) != want {
 			t.Errorf("%s: %d rows, want %d", scope, len(rows), want)

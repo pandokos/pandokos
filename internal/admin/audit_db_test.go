@@ -630,7 +630,7 @@ func TestEveryChangeIsAudited(t *testing.T) {
 		byOp[s.op] = true
 	}
 	for _, op := range adminapi.Operations {
-		if op.Method != "GET" && !byOp[op.ID] && !catalogueMutations[op.ID] && !issuerMutations[op.ID] && !limitMutations[op.ID] && !peopleMutations[op.ID] && !reportsMutations[op.ID] {
+		if op.Method != "GET" && !byOp[op.ID] && !catalogueMutations[op.ID] && !issuerMutations[op.ID] && !limitMutations[op.ID] && !peopleMutations[op.ID] && !reportsMutations[op.ID] && !lifecycleMutations[op.ID] {
 			t.Errorf("the mutating operation %s has no audit step: add it (the catalogue operations are in TestCatalogAudit, the token issuer operations in TestIssuerAudit)", op.ID)
 		}
 	}
@@ -907,7 +907,7 @@ func TestAuditIsAtomic(t *testing.T) {
 		},
 	}
 	for _, op := range adminapi.Operations {
-		if op.Method != "GET" && calls[op.ID] == nil && !catalogueMutations[op.ID] && !issuerMutations[op.ID] && !limitMutations[op.ID] && !peopleMutations[op.ID] && !reportsMutations[op.ID] {
+		if op.Method != "GET" && calls[op.ID] == nil && !catalogueMutations[op.ID] && !issuerMutations[op.ID] && !limitMutations[op.ID] && !peopleMutations[op.ID] && !reportsMutations[op.ID] && !lifecycleMutations[op.ID] {
 			t.Errorf("the mutating operation %s has no call here: add it (the catalogue operations are in TestCatalogAudit, the token issuer operations in TestIssuerAudit)", op.ID)
 		}
 	}

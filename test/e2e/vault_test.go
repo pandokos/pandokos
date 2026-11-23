@@ -56,6 +56,8 @@ func TestVault(t *testing.T) {
 	up := fakeprovider.New(t)
 	d := dbtest.New(t)
 	keyFile, version := generateKEK(t)
+	d.Migrate(t)
+	d.UseKEK(t, version) // as if the installation had started with this key
 	secretFile := testutil.WriteSecret(t, "provider-secret", fixtures.CanaryCredential)
 
 	p := startBinary(t, opts{level: "info", up: up, db: d, env: []string{kekEnv + "=" + keyFile}})
@@ -185,7 +187,9 @@ func TestVaultCanaries(t *testing.T) {
 	up := fakeprovider.New(t)
 	up.Accept(fixtures.CanaryCredential)
 	d := dbtest.New(t)
-	keyFile, _ := generateKEK(t)
+	keyFile, kekVersion := generateKEK(t)
+	d.Migrate(t)
+	d.UseKEK(t, kekVersion) // as if the installation had started with this key
 	kekText, err := os.ReadFile(keyFile)
 	if err != nil {
 		t.Fatal(err)

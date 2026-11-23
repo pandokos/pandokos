@@ -114,7 +114,13 @@ func TestPlatformReadsNoTenantReports(t *testing.T) {
 				}
 				ast.Inspect(fn, func(m ast.Node) bool {
 					if c, ok := m.(*ast.CallExpr); ok && banned[calledName(c)] {
-						t.Errorf("%s: the platform-scoped handler %s calls %s", fset.Position(c.Pos()), fn.Name.Name, calledName(c))
+						// Sprint 6.3 (T-R71 changed): the two operations of the kept log of a deleted tenant read its
+						// head and export it, in the tenant's session, for a tenant that is deleted; nothing else.
+						keptLog := (fn.Name.Name == "GetDeletedTenantAuditHead" && calledName(c) == "GetAuditHead") ||
+							(fn.Name.Name == "ExportDeletedTenantAuditEvents" && calledName(c) == "ExportAuditEvents")
+						if !keptLog {
+							t.Errorf("%s: the platform-scoped handler %s calls %s", fset.Position(c.Pos()), fn.Name.Name, calledName(c))
+						}
 					}
 					return true
 				})

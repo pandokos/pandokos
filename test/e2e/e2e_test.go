@@ -30,6 +30,7 @@ import (
 	"github.com/pandokos/pandokos/test/otlptest"
 	"github.com/pandokos/pandokos/test/testcert"
 	"github.com/pandokos/pandokos/test/testutil"
+	"github.com/pandokos/pandokos/test/vaulttest"
 )
 
 var binary string
@@ -85,6 +86,11 @@ type opts struct {
 	rollupInterval       string // reports.rollup_interval, for example "10s" (the configuration allows 10s to 1h)
 	retentionUsageMonths string // retention.usage_months
 	retentionAuditMonths string // retention.audit_months
+
+	// Sprint 6.3: tenant deletion and key rotation.
+	kekFiles         []vaulttest.Key // the first is vault.kek.local.key_file, the others vault.kek.local.unwrap_key_files; none keeps the database's key
+	gracePeriod      string          // tenant_deletion.grace_period, for example "0s"
+	deletionInterval string          // tenant_deletion.interval, for example "10s" (the configuration allows 10s to 1h)
 }
 
 type proc struct {
@@ -306,6 +312,19 @@ func startBinary(t *testing.T, o opts) *proc {
 	extra := append(o.db.Env(t), o.sprint32Env(t)...)
 	for name, v := range map[string]string{"PANDOKOS_REPORTS_ROLLUP_INTERVAL": o.rollupInterval, "PANDOKOS_RETENTION_USAGE_MONTHS": o.retentionUsageMonths,
 		"PANDOKOS_RETENTION_AUDIT_MONTHS": o.retentionAuditMonths} {
+		if v != "" {
+			extra = append(extra, name+"="+v)
+		}
+	}
+	if len(o.kekFiles) > 0 {
+		extra = append(extra, "PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE="+o.kekFiles[0].File)
+		var unwrap []string
+		for _, k := range o.kekFiles[1:] {
+			unwrap = append(unwrap, k.File)
+		}
+		extra = append(extra, "PANDOKOS_VAULT_KEK_LOCAL_UNWRAP_KEY_FILES="+strings.Join(unwrap, ","))
+	}
+	for name, v := range map[string]string{"PANDOKOS_TENANT_DELETION_GRACE_PERIOD": o.gracePeriod, "PANDOKOS_TENANT_DELETION_INTERVAL": o.deletionInterval} {
 		if v != "" {
 			extra = append(extra, name+"="+v)
 		}
@@ -716,20 +735,20 @@ func TestMigrateCommand(t *testing.T) { // T-160
 	}
 
 	code, out, errs := runBinary(t, env, "migrate", "status")
-	if code != 1 || errs != "" || out != "0001_init  pending\n0002_identity_audit  pending\n0003_vault  pending\n0004_catalogue  pending\n0005_gateway_auth_failures  pending\n0006_usage_ledger  pending\n0007_provider_stream_usage  pending\n0008_trusted_issuers  pending\n0009_limit_rules  pending\n0010_quotas_budgets  pending\n0011_limit_integrity  pending\n0012_tenant_price_lists  pending\n0013_users_sessions  pending\n0014_roles_support  pending\n0015_reports_audit  pending\nschema is at version 0; this binary needs version 15\n" {
+	if code != 1 || errs != "" || out != "0001_init  pending\n0002_identity_audit  pending\n0003_vault  pending\n0004_catalogue  pending\n0005_gateway_auth_failures  pending\n0006_usage_ledger  pending\n0007_provider_stream_usage  pending\n0008_trusted_issuers  pending\n0009_limit_rules  pending\n0010_quotas_budgets  pending\n0011_limit_integrity  pending\n0012_tenant_price_lists  pending\n0013_users_sessions  pending\n0014_roles_support  pending\n0015_reports_audit  pending\n0016_tenant_deletion_kek_rotation  pending\nschema is at version 0; this binary needs version 16\n" {
 		t.Fatalf("status before: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate")
-	if code != 0 || errs != "" || out != "applied 0001_init\napplied 0002_identity_audit\napplied 0003_vault\napplied 0004_catalogue\napplied 0005_gateway_auth_failures\napplied 0006_usage_ledger\napplied 0007_provider_stream_usage\napplied 0008_trusted_issuers\napplied 0009_limit_rules\napplied 0010_quotas_budgets\napplied 0011_limit_integrity\napplied 0012_tenant_price_lists\napplied 0013_users_sessions\napplied 0014_roles_support\napplied 0015_reports_audit\nschema is at version 15\n" {
+	if code != 0 || errs != "" || out != "applied 0001_init\napplied 0002_identity_audit\napplied 0003_vault\napplied 0004_catalogue\napplied 0005_gateway_auth_failures\napplied 0006_usage_ledger\napplied 0007_provider_stream_usage\napplied 0008_trusted_issuers\napplied 0009_limit_rules\napplied 0010_quotas_budgets\napplied 0011_limit_integrity\napplied 0012_tenant_price_lists\napplied 0013_users_sessions\napplied 0014_roles_support\napplied 0015_reports_audit\napplied 0016_tenant_deletion_kek_rotation\nschema is at version 16\n" {
 		t.Fatalf("migrate: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate")
-	if code != 0 || errs != "" || out != "schema is at version 15\n" {
+	if code != 0 || errs != "" || out != "schema is at version 16\n" {
 		t.Fatalf("second migrate: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	code, out, errs = runBinary(t, env, "migrate", "status")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if code != 0 || errs != "" || len(lines) != 16 || !applied("0001_init").MatchString(lines[0]) || !applied("0002_identity_audit").MatchString(lines[1]) || !applied("0003_vault").MatchString(lines[2]) || !applied("0004_catalogue").MatchString(lines[3]) || !applied("0005_gateway_auth_failures").MatchString(lines[4]) || !applied("0006_usage_ledger").MatchString(lines[5]) || !applied("0007_provider_stream_usage").MatchString(lines[6]) || !applied("0008_trusted_issuers").MatchString(lines[7]) || !applied("0009_limit_rules").MatchString(lines[8]) || !applied("0010_quotas_budgets").MatchString(lines[9]) || !applied("0011_limit_integrity").MatchString(lines[10]) || !applied("0012_tenant_price_lists").MatchString(lines[11]) || !applied("0013_users_sessions").MatchString(lines[12]) || !applied("0014_roles_support").MatchString(lines[13]) || !applied("0015_reports_audit").MatchString(lines[14]) || lines[15] != "schema is at version 15; this binary needs version 15" {
+	if code != 0 || errs != "" || len(lines) != 17 || !applied("0001_init").MatchString(lines[0]) || !applied("0002_identity_audit").MatchString(lines[1]) || !applied("0003_vault").MatchString(lines[2]) || !applied("0004_catalogue").MatchString(lines[3]) || !applied("0005_gateway_auth_failures").MatchString(lines[4]) || !applied("0006_usage_ledger").MatchString(lines[5]) || !applied("0007_provider_stream_usage").MatchString(lines[6]) || !applied("0008_trusted_issuers").MatchString(lines[7]) || !applied("0009_limit_rules").MatchString(lines[8]) || !applied("0010_quotas_budgets").MatchString(lines[9]) || !applied("0011_limit_integrity").MatchString(lines[10]) || !applied("0012_tenant_price_lists").MatchString(lines[11]) || !applied("0013_users_sessions").MatchString(lines[12]) || !applied("0014_roles_support").MatchString(lines[13]) || !applied("0015_reports_audit").MatchString(lines[14]) || !applied("0016_tenant_deletion_kek_rotation").MatchString(lines[15]) || lines[16] != "schema is at version 16; this binary needs version 16" {
 		t.Fatalf("status after: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	testutil.AssertAbsent(t, "migrate output", out+errs, d.Passwords()...)
@@ -751,7 +770,7 @@ func TestServeRefusesUnmigratedDatabase(t *testing.T) { // T-161
 	}
 
 	d.Migrate(t)
-	if _, err := d.Super(t).Exec(context.Background(), "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (16, 'future', repeat('0', 64), 'x')"); err != nil {
+	if _, err := d.Super(t).Exec(context.Background(), "INSERT INTO pandokos.schema_migration (version, name, checksum, pandokos_version) VALUES (17, 'future', repeat('0', 64), 'x')"); err != nil {
 		t.Fatal(err)
 	}
 	code, out, errs = runBinary(t, serveEnv(t, d), "serve", "--config", writeConfig(t, "info"))
@@ -807,7 +826,7 @@ func TestServeBehindPooler(t *testing.T) { // T-163
 	d := dbtest.New(t)
 	pooled := d.Pooled(t)
 	code, out, errs := runBinary(t, pooled.Env(t), "migrate")
-	if code != 0 || !strings.Contains(out, "schema is at version 15") {
+	if code != 0 || !strings.Contains(out, "schema is at version 16") {
 		t.Fatalf("migrate through the pooler: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	up := fakeprovider.New(t)
@@ -1051,7 +1070,7 @@ func TestInit(t *testing.T) {
 		t.Errorf("me: %s", text)
 	}
 	var action, actorType, actorName, detail string
-	if err := d.Super(t).QueryRow(context.Background(), "SELECT action, actor_type, actor_name, detail::text FROM pandokos.platform_audit_event").Scan(&action, &actorType, &actorName, &detail); err != nil ||
+	if err := d.Super(t).QueryRow(context.Background(), "SELECT action, actor_type, actor_name, detail::text FROM pandokos.platform_audit_event WHERE action = 'platform_key.bootstrap'").Scan(&action, &actorType, &actorName, &detail); err != nil ||
 		action != "platform_key.bootstrap" || actorType != "host" || actorName != "pandokos init" || !strings.Contains(detail, `"recover": false`) {
 		t.Errorf("audit: %v %s %s %s %s", err, action, actorType, actorName, detail)
 	}
@@ -1213,7 +1232,7 @@ func TestExitScenario(t *testing.T) {
 	// Every step is in the audit logs, in order. The rows of unlimited traffic (one per tenant and day, written
 	// in the background) are not steps of this scenario.
 	got := auditActions(t, p.db, "SELECT action FROM pandokos.platform_audit_event WHERE action <> 'limit.unlimited_traffic' ORDER BY occurred_at, action")
-	want := "platform_key.bootstrap,platform_key.create,tenant.create,endpoint.update," + strings.Repeat("model.create,", len(fakeModels)) + "tenant.create"
+	want := "kek.activate,platform_key.bootstrap,platform_key.create,tenant.create,endpoint.update," + strings.Repeat("model.create,", len(fakeModels)) + "tenant.create"
 	if strings.Join(got, ",") != want {
 		t.Errorf("platform log: %v, want %s", got, want)
 	}

@@ -42,8 +42,8 @@ func equalTime(t *testing.T, what string, got *time.Time, want *time.Time) {
 	}
 }
 
-// TestEveryStatement is T-230, extended by T-323 and by T-393: each of the 124 generated methods
-// (28 of epic 1, the 19 of sprint 2.1, the 45 of sprint 2.2 and the 28 of sprint 4.1) is called through a store helper,
+// TestEveryStatement is T-230, extended by T-323 and by T-393: each of the generated methods
+// (278 after sprint 6.3: RegisterKEKVersion is gone, ten statements of the deletion and six of the key versions are new) is called through a store helper,
 // directly and through the pooler.
 // Identifiers, times, null times, arrays, null arrays, hashes, sealed bytes and JSON go in and
 // come back unchanged.
@@ -494,7 +494,10 @@ func TestEveryStatement(t *testing.T) {
 		// Sprint 6.2: the rollup, the report, the export, retention, the metadata key policy and the audit reads.
 		reportStatements(c, t, d, admin, tid, called)
 
-		// The 263 statements, and nothing was prepared on the server.
+		// Sprint 6.3: the deletion of tenants and the versions of the key-encryption key.
+		lifecycleStatements(c, t, d, tid, called)
+
+		// The 278 statements, and nothing was prepared on the server.
 		var names []string
 		typ := reflect.TypeOf(&queries.Queries{})
 		for i := 0; i < typ.NumMethod(); i++ {
@@ -503,8 +506,8 @@ func TestEveryStatement(t *testing.T) {
 			}
 		}
 		sort.Strings(names)
-		if len(names) != 263 {
-			t.Errorf("the generated package has %d statements, want 263: %v", len(names), names)
+		if len(names) != 278 {
+			t.Errorf("the generated package has %d statements, want 278: %v", len(names), names)
 		}
 		for _, name := range names {
 			if !called[name] {
@@ -546,24 +549,20 @@ func vaultStatements(c context.Context, t *testing.T, admin, gateway *store.DB, 
 		b[0], b[1], b[2] = 0x00, '\\', '\'' // bytes that text protocols mangle
 		return b
 	}
-	const kek = "local-0123456789abcdef"
+	var kek string // the version dbtest activated
 	wrapped, sealed1, sealed2 := random(61), random(48), random(52)
 	expires := usec(time.Now().Add(72 * time.Hour))
 	var c1, c2, c3 queries.CreateCredentialRow
 
 	must("vault statements", admin.WithTenant(c, tid, func(c context.Context, tx store.Tx) error {
 		q := queries.New(tx)
-		mark("RegisterKEKVersion")
-		for i := 0; i < 2; i++ { // the second call changes nothing
-			if err := q.RegisterKEKVersion(c, queries.RegisterKEKVersionParams{ID: kek, Provider: "local"}); err != nil {
-				return err
-			}
-		}
 		mark("ListKEKVersions")
 		versions, err := q.ListKEKVersions(c)
-		if err != nil || !reflect.DeepEqual(versions, []queries.ListKEKVersionsRow{{ID: kek, Provider: "local"}}) {
-			t.Errorf("ListKEKVersions: %+v %v", versions, err)
+		if err != nil || len(versions) != 1 || versions[0].State != "active" || versions[0].Provider != "local" || versions[0].RetiredAt != nil ||
+			versions[0].CreatedAt.IsZero() || versions[0].ActivatedAt.IsZero() {
+			t.Fatalf("ListKEKVersions: %+v %v, want the one active version dbtest activated", versions, err)
 		}
+		kek = versions[0].ID
 		mark("CreateDataKey")
 		if n, err := q.CreateDataKey(c, queries.CreateDataKeyParams{TenantID: tenantID, Version: 1, KekVersion: kek, WrappedKey: wrapped}); err != nil || n != 1 {
 			t.Errorf("CreateDataKey: %d %v", n, err)

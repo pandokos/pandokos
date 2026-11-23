@@ -10,11 +10,11 @@ import (
 )
 
 // TestReasonConstruct is the generated half of T-883: x-pandokos-reason: required sets
-// Operation.ReasonRequired on exactly the nine operations of section 5.8 and generates the
+// Operation.ReasonRequired on exactly the eleven operations of section 5.8 of sprint 5.4 and 5.12 of sprint 6.3 and generates the
 // check of the trimmed reason, so that no handler has to remember it.
 func TestReasonConstruct(t *testing.T) {
-	want := []string{"activateRole", "deactivateRole", "disableTenantCredential", "openSupportAction", "reactivateTenant",
-		"resetMemberPassword", "resetUserPassword", "revokeTenantCredential", "suspendTenant"}
+	want := []string{"activateRole", "cancelTenantDeletion", "deactivateRole", "disableTenantCredential", "openSupportAction", "reactivateTenant",
+		"requestTenantDeletion", "resetMemberPassword", "resetUserPassword", "revokeTenantCredential", "suspendTenant"}
 	var got []string
 	for _, op := range adminapi.Operations {
 		if op.ReasonRequired {
@@ -26,7 +26,7 @@ func TestReasonConstruct(t *testing.T) {
 	}
 	sort.Strings(got)
 	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Errorf("the operations that require a reason are %v, want the nine %v", got, want)
+		t.Errorf("the operations that require a reason are %v, want the eleven %v", got, want)
 	}
 
 	fill := regexp.MustCompile(`\{(\w+)\}`)
@@ -43,6 +43,9 @@ func TestReasonConstruct(t *testing.T) {
 	extra := func(op adminapi.Operation, reason string) string {
 		if op.ID == "openSupportAction" {
 			return `{"reason":` + reason + `,"permissions":["member:read"]}`
+		}
+		if op.ID == "requestTenantDeletion" {
+			return `{"reason":` + reason + `,"confirm_name":"acme"}`
 		}
 		return `{"reason":` + reason + `}`
 	}

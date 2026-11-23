@@ -212,8 +212,8 @@ VALUES ($1::uuid, 'openai', 'ret-' || substr(md5(random()::text), 1, 8), 1, deco
 				for _, sess := range []string{"none", "empty", "platform"} {
 					for _, tbl := range []string{"pandokos.tenant_data_key", pc, "pandokos.provider_credential_metadata"} {
 						want := noRows
-						if role == "worker" || (role == "gateway" && strings.HasSuffix(tbl, "_metadata")) {
-							want = denied // no privilege at all
+						if (role == "worker" && tbl != "pandokos.tenant_data_key") || (role == "gateway" && strings.HasSuffix(tbl, "_metadata")) {
+							want = denied // no privilege at all (since 0016 the worker re-wraps data keys: it reads them in a tenant's session)
 						}
 						p := try{role: role, sess: sess, sql: `SELECT tenant_id::text AS tenant_id FROM ` + tbl, want: want}
 						rows, _, err := p.run(t, d, a, conns)
@@ -279,9 +279,15 @@ VALUES ($1::uuid, 'openai', 'ret-' || substr(md5(random()::text), 1, 8), 1, deco
 			}
 		})
 
-		t.Run("the worker role has no privilege on the vault", func(t *testing.T) {
+		t.Run("the worker role has no privilege on the credentials; on the data keys only to re-wrap them", func(t *testing.T) {
+			// Sprint 6.3: SELECT and UPDATE of kek_version and wrapped_key, in the tenant's session (T-985).
+			p := try{role: "worker", sess: "tenant-a", sql: `SELECT tenant_id FROM pandokos.tenant_data_key`, want: allowed}
+			rows, _, err := p.run(t, d, a, conns)
+			p.check(t, rows, err)
 			for _, sql := range []string{
-				`SELECT tenant_id FROM ` + pc, `SELECT tenant_id FROM pandokos.tenant_data_key`, `SELECT tenant_id FROM pandokos.provider_credential_metadata`,
+				`SELECT tenant_id FROM ` + pc, `SELECT tenant_id FROM pandokos.provider_credential_metadata`,
+				`INSERT INTO pandokos.tenant_data_key (tenant_id, kek_version, wrapped_key) VALUES ('` + a.String() + `', 'worker-test', decode(repeat('00', 61), 'hex'))`, `DELETE FROM pandokos.tenant_data_key`,
+				`UPDATE pandokos.tenant_data_key SET updated_at = now()`,
 				`SELECT secret FROM ` + pc, `UPDATE ` + pc + ` SET description = 'x'`, `DELETE FROM ` + pc, `TRUNCATE ` + pc,
 				`INSERT INTO pandokos.kek_version (id, provider) VALUES ('worker-test', 'test')`,
 			} {
@@ -291,29 +297,26 @@ VALUES ($1::uuid, 'openai', 'ret-' || substr(md5(random()::text), 1, 8), 1, deco
 			}
 		})
 
-		t.Run("kek_version is readable by every role and insertable by the admin role only", func(t *testing.T) {
+		t.Run("kek_version is readable by every role and written by none of them", func(t *testing.T) {
 			id := "t321-" + strings.ToLower(strings.ReplaceAll(a.String()[:8], "-", ""))
 			for _, role := range runtimeRoles {
 				for _, sess := range []string{"tenant-a", "none", "empty", "platform"} {
-					p := try{role: role, sess: sess, sql: `SELECT id, provider FROM pandokos.kek_version`, want: allowed}
+					p := try{role: role, sess: sess, sql: `SELECT id, provider, state, created_at, activated_at, retired_at FROM pandokos.kek_version`, want: allowed}
 					rows, _, err := p.run(t, d, a, conns)
 					p.check(t, rows, err)
 					_ = rows
 				}
 			}
+			// Versions are registered by kek_activate (T-985): since 0016 not even the admin role inserts one.
 			for _, sess := range []string{"tenant-a", "none", "platform"} {
 				for _, role := range runtimeRoles {
-					want := denied
 					sql := `INSERT INTO pandokos.kek_version (id, provider) VALUES ('` + id + `-` + role + `-` + sess + `', 'test')`
-					if role == "admin" {
-						want = allowed
-					}
-					p := try{role: role, sess: sess, sql: sql, want: want}
+					p := try{role: role, sess: sess, sql: sql, want: denied}
 					rows, _, err := p.run(t, d, a, conns)
 					p.check(t, rows, err)
 				}
 			}
-			// The admin role may name nothing but id and provider, and never changes a row.
+			// Nobody names a column, changes a row or removes one.
 			for _, p := range []try{
 				{role: "admin", sess: "tenant-a", sql: `INSERT INTO pandokos.kek_version (id, provider, created_at) VALUES ('t321-created', 'test', now())`, want: denied},
 				{role: "admin", sess: "tenant-a", sql: `UPDATE pandokos.kek_version SET provider = 'other'`, want: denied},
@@ -336,9 +339,9 @@ VALUES ($1::uuid, 'openai', 'ret-' || substr(md5(random()::text), 1, 8), 1, deco
 
 		t.Run("the data key table: the admin role inserts for its tenant and changes nothing", func(t *testing.T) {
 			for _, p := range []try{
-				{role: "admin", sess: "tenant-a", sql: `INSERT INTO pandokos.tenant_data_key (tenant_id, version, kek_version, wrapped_key) VALUES ($1::uuid, 2, 'test-fixture', decode(repeat('00', 61), 'hex'))`, args: []any{a.String()}, want: allowed},
-				{role: "admin", sess: "tenant-a", sql: `INSERT INTO pandokos.tenant_data_key (tenant_id, version, kek_version, wrapped_key) VALUES ($1::uuid, 2, 'test-fixture', decode(repeat('00', 61), 'hex'))`, args: []any{b.String()}, want: denied},
-				{role: "admin", sess: "tenant-a", sql: `INSERT INTO pandokos.tenant_data_key (tenant_id, version, kek_version, wrapped_key, id) VALUES ($1::uuid, 3, 'test-fixture', decode(repeat('00', 61), 'hex'), pandokos.uuid_v7())`, args: []any{a.String()}, want: denied},
+				{role: "admin", sess: "tenant-a", sql: `INSERT INTO pandokos.tenant_data_key (tenant_id, version, kek_version, wrapped_key) VALUES ($1::uuid, 2, (SELECT id FROM pandokos.kek_version WHERE state = 'active'), decode(repeat('00', 61), 'hex'))`, args: []any{a.String()}, want: allowed},
+				{role: "admin", sess: "tenant-a", sql: `INSERT INTO pandokos.tenant_data_key (tenant_id, version, kek_version, wrapped_key) VALUES ($1::uuid, 2, (SELECT id FROM pandokos.kek_version WHERE state = 'active'), decode(repeat('00', 61), 'hex'))`, args: []any{b.String()}, want: denied},
+				{role: "admin", sess: "tenant-a", sql: `INSERT INTO pandokos.tenant_data_key (tenant_id, version, kek_version, wrapped_key, id) VALUES ($1::uuid, 3, (SELECT id FROM pandokos.kek_version WHERE state = 'active'), decode(repeat('00', 61), 'hex'), pandokos.uuid_v7())`, args: []any{a.String()}, want: denied},
 				{role: "admin", sess: "tenant-a", sql: `UPDATE pandokos.tenant_data_key SET wrapped_key = wrapped_key`, want: denied},
 				{role: "admin", sess: "tenant-a", sql: `UPDATE pandokos.tenant_data_key SET kek_version = kek_version`, want: denied},
 				{role: "admin", sess: "tenant-a", sql: `DELETE FROM pandokos.tenant_data_key`, want: denied},
@@ -691,7 +694,7 @@ VALUES ($1::uuid, $2::uuid, 't' || translate(substr(md5(random()::text), 1, 16),
 		}
 		check("an update of no row", map[tenant.ID]bool{})
 		// Data keys: an update and a removal notify, an insert does not.
-		if _, err := super.Exec(ctx(t), `INSERT INTO pandokos.tenant_data_key (tenant_id, version, kek_version, wrapped_key) VALUES ($1::uuid, 7, 'test-fixture', decode(repeat('00', 61), 'hex'))`, a.String()); err != nil {
+		if _, err := super.Exec(ctx(t), `INSERT INTO pandokos.tenant_data_key (tenant_id, version, kek_version, wrapped_key) VALUES ($1::uuid, 7, (SELECT id FROM pandokos.kek_version WHERE state = 'active'), decode(repeat('00', 61), 'hex'))`, a.String()); err != nil {
 			t.Fatal(err)
 		}
 		check("insert of a data key", map[tenant.ID]bool{})
@@ -714,13 +717,13 @@ VALUES ($1::uuid, $2::uuid, 't' || translate(substr(md5(random()::text), 1, 16),
 		if _, err := super.Exec(ctx(t), `UPDATE pandokos.tenant_data_key SET version = 9 WHERE id = $1::uuid`, id); sqlstate(err) != checkViolation {
 			t.Errorf("a data key changed its version: %v", err)
 		}
-		// It names a key-encryption key version that is registered.
+		// It names the active key-encryption key version (a trigger since 0016, ahead of the foreign key).
 		_, err := super.Exec(ctx(t), `INSERT INTO pandokos.tenant_data_key (tenant_id, version, kek_version, wrapped_key) VALUES ($1::uuid, 8, 'not-registered', decode(repeat('00', 61), 'hex'))`, a.String())
-		if sqlstate(err) != foreignKey {
+		if sqlstate(err) != restrictViolation {
 			t.Errorf("a data key of an unregistered version: %v", err)
 		}
 		// And is a wrapped key, not an empty value.
-		_, err = super.Exec(ctx(t), `INSERT INTO pandokos.tenant_data_key (tenant_id, version, kek_version, wrapped_key) VALUES ($1::uuid, 8, 'test-fixture', decode('00', 'hex'))`, a.String())
+		_, err = super.Exec(ctx(t), `INSERT INTO pandokos.tenant_data_key (tenant_id, version, kek_version, wrapped_key) VALUES ($1::uuid, 8, (SELECT id FROM pandokos.kek_version WHERE state = 'active'), decode('00', 'hex'))`, a.String())
 		if sqlstate(err) != checkViolation {
 			t.Errorf("a wrapped key of one byte: %v", err)
 		}

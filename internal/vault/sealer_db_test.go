@@ -343,12 +343,13 @@ func TestCheck(t *testing.T) {
 	version := activeVersion(t, w.prov)
 
 	t.Run("an empty database passes and names the active version", func(t *testing.T) {
+		before := count(t, w, `SELECT count(*) FROM pandokos.kek_version`) // the one dbtest activated
 		got, err := vault.Check(ctx(t), w.admin, w.prov)
 		if err != nil || got != version {
 			t.Errorf("Check = %q, %v; want %q", got, err, version)
 		}
-		if n := count(t, w, `SELECT count(*) FROM pandokos.kek_version`); n != 0 {
-			t.Errorf("Check registered %d versions: it must only read", n)
+		if n := count(t, w, `SELECT count(*) FROM pandokos.kek_version`); n != before {
+			t.Errorf("Check changed the versions from %d to %d: it must only read", before, n)
 		}
 	})
 
@@ -375,9 +376,10 @@ func TestCheck(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		otherVersion := activeVersion(t, other)
+		w.d.ActivateKEK(t, otherVersion) // the other key is the active one; the harness's becomes retiring
 		tid := w.d.SeedTenant(t, "other-key")
 		w.createCredential(t, otherSealer, tid, "openai", "main", "synthetic-secret-0001")
-		otherVersion := activeVersion(t, other)
 		_, err = vault.Check(ctx(t), w.admin, w.prov)
 		if err == nil {
 			t.Fatal("Check passed with a database wrapped by another key")
@@ -395,7 +397,8 @@ func TestCheck(t *testing.T) {
 
 	t.Run("a registered version of another provider fails", func(t *testing.T) {
 		w := newVWorld(t)
-		if _, err := w.d.Super(t).Exec(ctx(t), `INSERT INTO pandokos.kek_version (id, provider) VALUES ($1, 'vault-transit')`, version); err != nil {
+		version := activeVersion(t, w.prov)
+		if _, err := w.d.Super(t).Exec(ctx(t), `UPDATE pandokos.kek_version SET provider = 'vault-transit' WHERE id = $1`, version); err != nil {
 			t.Fatal(err)
 		}
 		_, err := vault.Check(ctx(t), w.admin, w.prov)
@@ -406,7 +409,7 @@ func TestCheck(t *testing.T) {
 
 	t.Run("one bad version among good ones fails", func(t *testing.T) {
 		w := newVWorld(t)
-		if _, err := w.d.Super(t).Exec(ctx(t), `INSERT INTO pandokos.kek_version (id, provider) VALUES ($1, 'local'), ('local-0000000000000000', 'local')`, version); err != nil {
+		if _, err := w.d.Super(t).Exec(ctx(t), `INSERT INTO pandokos.kek_version (id, provider) VALUES ('local-0000000000000000', 'local')`); err != nil {
 			t.Fatal(err)
 		}
 		_, err := vault.Check(ctx(t), w.admin, w.prov)
@@ -438,6 +441,7 @@ func TestLostKeyRecovery(t *testing.T) {
 	cLost1 := w.createCredential(t, w.sealer, lost1, "openai", "main", "synthetic-secret-lost-1")
 	cLost2 := w.createCredential(t, w.sealer, lost2, "openai", "main", "synthetic-secret-lost-2")
 	w.setState(t, lost2, cLost2, "disabled")
+	w.d.ActivateKEK(t, keptVersion) // the kept key is now the active one; the lost version retires
 	cKept := w.createCredential(t, keptSealer, ok1, "openai", "main", "synthetic-secret-kept-1")
 	if n := count(t, w, `SELECT count(*) FROM pandokos.kek_version`); n != 2 {
 		t.Fatalf("%d versions registered before the recovery, want 2", n)
@@ -529,5 +533,21 @@ func TestLostKeyRecovery(t *testing.T) {
 	// A start-up check now passes for the key that is left.
 	if v, err := vault.Check(ctx(t), w.admin, kept); err != nil || v != keptVersion {
 		t.Errorf("Check after the recovery: %q, %v", v, err)
+	}
+
+	// When the lost version was the active one, the script leaves no version active, and the next
+	// activation of the new key makes it the active one (the header of the script says so).
+	w2 := newVWorld(t)
+	only := activeVersion(t, w2.prov)
+	tid2 := w2.d.SeedTenant(t, "lost-active")
+	w2.createCredential(t, w2.sealer, tid2, "openai", "main", "synthetic-secret-lost-3")
+	if _, err := w2.d.Super(t).Exec(ctx(t), strings.ReplaceAll(src, ":'kek_version'", "'"+only+"'")); err != nil {
+		t.Fatalf("the script failed on the active version: %v", err)
+	}
+	if n := count(t, w2, `SELECT count(*) FROM pandokos.kek_version WHERE state = 'active'`); n != 0 {
+		t.Errorf("%d versions are active after the recovery of the active version, want none", n)
+	}
+	if got := w2.d.ActivateKEK(t, keptVersion); got != "activated" {
+		t.Errorf("the activation of the new key after the recovery answered %q, want activated", got)
 	}
 }

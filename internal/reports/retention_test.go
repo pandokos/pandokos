@@ -115,13 +115,13 @@ func TestRetentionJob(t *testing.T) {
 		if len(applied) != 1 || applied[0]["level"] != "INFO" {
 			t.Fatalf("the line retention applied: %v", applied)
 		}
-		for k, want := range map[string]float64{"partitions": 1, "usage_records": 2, "audit_events": 4, "platform_audit_events": 2} {
+		for k, want := range map[string]float64{"partitions": 1, "usage_records": 2, "audit_events": 4, "platform_audit_events": 3} { // 3: the activation of the key version that dbtest wrote first goes with the old rows
 			if applied[0][k] != want {
 				t.Errorf("retention applied: %s = %v, want %v (%v)", k, applied[0][k], want, applied[0])
 			}
 		}
 		st := job.Stats()
-		if st.Runs != 1 || st.Failed != 0 || st.Removed["usage_partition"] != 1 || st.Removed["usage_record"] != 2 || st.Removed["audit_event"] != 4 || st.Removed["platform_audit_event"] != 2 {
+		if st.Runs != 1 || st.Failed != 0 || st.Removed["usage_partition"] != 1 || st.Removed["usage_record"] != 2 || st.Removed["audit_event"] != 4 || st.Removed["platform_audit_event"] != 3 {
 			t.Errorf("Stats %+v", st)
 		}
 		for _, tid := range []tenant.ID{w.a, w.b} {

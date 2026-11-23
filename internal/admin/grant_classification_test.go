@@ -7,6 +7,15 @@ package admin_test
 // operation is added here by the one who writes it, and the test fails until it is.
 func grantClassification() map[string]kind {
 	return map[string]kind{
+		// Sprint 6.3: the deletion of a tenant, the log kept for a deleted one and the key versions confer
+		// no permission (a deletion ends access like a suspension, which is classified none).
+		"requestTenantDeletion":          grantNone,
+		"cancelTenantDeletion":           grantNone,
+		"getTenantDeletion":              grantNone,
+		"listTenantDeletions":            grantNone,
+		"getDeletedTenantAuditHead":      grantNone,
+		"exportDeletedTenantAuditEvents": grantNone,
+		"listKEKVersions":                grantNone,
 		// Sprint 6.2: reading reports and logs, and the metadata keys a tenant accepts, confer no permission.
 		"getUsageReport":             grantNone,
 		"exportUsageRecords":         grantNone,

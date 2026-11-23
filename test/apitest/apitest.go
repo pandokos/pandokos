@@ -41,7 +41,7 @@ type API struct {
 	Admin *store.DB           // the admin pool the handler uses
 
 	// KeyProvider and Sealer are what the handler seals credentials with: a local provider on a
-	// key generated for this test.
+	// key of the database (dbtest.Database.KEKFile), the version that migration activated.
 	KeyProvider vault.KeyProvider
 	Sealer      *vault.Sealer
 
@@ -99,7 +99,7 @@ func NewWithServer(tb testing.TB, d *dbtest.Database, configure func(*http.Serve
 	if err != nil {
 		tb.Fatal(err)
 	}
-	a.KeyProvider = vaulttest.NewKeyProvider(tb)
+	a.KeyProvider = vaulttest.ProviderFor(tb, d)
 	if a.Sealer, err = vault.NewSealer(a.KeyProvider); err != nil {
 		tb.Fatal(err)
 	}

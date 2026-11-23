@@ -8,9 +8,11 @@ import (
 	"reflect"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/authz"
+	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/test/apitest"
 	"github.com/pandokos/pandokos/test/dbtest"
 )
@@ -46,6 +48,23 @@ func reasonDrivers(t *testing.T, w *sw) map[string]func() reasonCall {
 				t.Fatal(err)
 			}
 			return reasonCall{plat, "POST", "/v1/tenants/" + x.ID + "/reactivate", plain}
+		},
+		"requestTenantDeletion": func() reasonCall {
+			x, _ := w.api.Tenant(t, apitest.UniqueName("reason-delete"))
+			return reasonCall{plat, "POST", "/v1/tenants/" + x.ID + "/deletion", func(reason any) map[string]any {
+				b := plain(reason)
+				b["confirm_name"] = x.Name
+				return b
+			}}
+		},
+		"cancelTenantDeletion": func() reasonCall {
+			x, _ := w.api.Tenant(t, apitest.UniqueName("reason-cancel"))
+			id, err := tenant.ParseID(x.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			w.d.RequestDeletion(t, id, time.Now().Add(24*time.Hour))
+			return reasonCall{plat, "POST", "/v1/tenants/" + x.ID + "/deletion/cancel", plain}
 		},
 		"disableTenantCredential": func() reasonCall {
 			c := w.api.Credential(t, w.tenant.ID, w.adminKey, "openai", apitest.UniqueName("reason-disable"))
@@ -96,8 +115,8 @@ func allAuditRows(w *sw, t *testing.T) []dbtest.AuditRow {
 // TestReasonRequired is T-877.
 func TestReasonRequired(t *testing.T) {
 	w := newSW(t)
-	nine := []string{"activateRole", "deactivateRole", "disableTenantCredential", "openSupportAction", "reactivateTenant",
-		"resetMemberPassword", "resetUserPassword", "revokeTenantCredential", "suspendTenant"}
+	nine := []string{"activateRole", "cancelTenantDeletion", "deactivateRole", "disableTenantCredential", "openSupportAction", "reactivateTenant",
+		"requestTenantDeletion", "resetMemberPassword", "resetUserPassword", "revokeTenantCredential", "suspendTenant"}
 	var got []string
 	for _, op := range adminapi.Operations {
 		if op.ReasonRequired {
@@ -106,7 +125,7 @@ func TestReasonRequired(t *testing.T) {
 	}
 	sort.Strings(got)
 	if !reflect.DeepEqual(got, nine) {
-		t.Fatalf("the operations with ReasonRequired are %v, want the nine %v", got, nine)
+		t.Fatalf("the operations with ReasonRequired are %v, want the eleven %v", got, nine)
 	}
 	drivers := reasonDrivers(t, w)
 	for _, id := range nine {
