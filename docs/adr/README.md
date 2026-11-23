@@ -67,14 +67,14 @@ A record is *proposed* until the maintainer accepts it, by merging its pull requ
 | [0059](0059-idempotency-keys.md) | Idempotency keys | accepted |
 | [0060](0060-built-in-roles-custom-roles-and-the-rule-against-escalation.md) | Built-in roles, custom roles and the rule against escalation | accepted |
 | [0061](0061-support-actions-and-reasons-how-the-platform-acts-inside-a-tenant.md) | Support actions and reasons: how the platform acts inside a tenant | accepted |
-| [0062](0062-metrics-instruments-attributes-cardinality-and-scrape.md) | Metrics: instruments, attributes, cardinality and the scrape endpoint | proposed |
-| [0063](0063-the-log-redaction-and-the-log-reference.md) | The log: redaction by key and by shape, and the log reference | proposed |
-| [0064](0064-usage-rollup-reports-and-exports.md) | Usage rollup, reports and exports | proposed |
-| [0065](0065-the-audit-hash-chain-reading-and-retention.md) | The audit hash chain, reading and retention | proposed |
-| [0066](0066-declarative-export-and-apply.md) | Declarative export and apply | proposed |
-| [0067](0067-tenant-deletion-stages-closed-tenants-and-kept-records.md) | Tenant deletion: stages, closed tenants and the records that are kept | proposed |
-| [0068](0068-key-encryption-key-versions-rotation-and-erasure-in-backups.md) | Key-encryption key versions: activation, re-wrap, retirement, and erasure in backups | proposed |
-| [0069](0069-tenant-data-export.md) | The tenant data export and its schema | proposed |
+| [0062](0062-metrics-instruments-attributes-cardinality-and-scrape.md) | Metrics: instruments, attributes, cardinality and the scrape endpoint | accepted |
+| [0063](0063-the-log-redaction-and-the-log-reference.md) | The log: redaction by key and by shape, and the log reference | accepted |
+| [0064](0064-usage-rollup-reports-and-exports.md) | Usage rollup, reports and exports | accepted |
+| [0065](0065-the-audit-hash-chain-reading-and-retention.md) | The audit hash chain, reading and retention | accepted |
+| [0066](0066-declarative-export-and-apply.md) | Declarative export and apply | accepted |
+| [0067](0067-tenant-deletion-stages-closed-tenants-and-kept-records.md) | Tenant deletion: stages, closed tenants and the records that are kept | accepted |
+| [0068](0068-key-encryption-key-versions-rotation-and-erasure-in-backups.md) | Key-encryption key versions: activation, re-wrap, retirement, and erasure in backups | accepted |
+| [0069](0069-tenant-data-export.md) | The tenant data export and its schema | accepted |
 
 ## Questions from SOW 0.1 and where they were decided
 

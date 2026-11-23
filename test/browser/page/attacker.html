@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>Another site</title></head>
+<head><meta charset="utf-8"><meta name="api" content="{{API}}"><title>Another site</title></head>
 <body>
 <pre id="result">pending</pre>
 <iframe name="sink" style="display:none"></iframe>
@@ -9,10 +9,11 @@
   <input name="username" value="attacker.form">
 </form>
 <script>
-// The page of a site that is not the one of the API. The address of the API is in the fragment: #api=<origin>.
+// The page of a site that is not the one of the API. The test server writes the origin of the API in the
+// meta element "api" when it serves the page; nothing is read from the address of the page.
 (async () => {
   const out = {};
-  const api = new URLSearchParams(location.hash.slice(1)).get("api");
+  const api = new URL(document.querySelector('meta[name="api"]').content).origin;
   document.getElementById("forged").action = api + "/v1/users";
   document.getElementById("forged").submit();
   const attempt = async (name, init) => {

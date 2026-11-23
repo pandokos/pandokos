@@ -77,6 +77,7 @@ type oidcProc struct {
 func startOIDC(t *testing.T, d *dbtest.Database, idp *fakeidp.Server, o opts, env ...string) *oidcProc {
 	t.Helper()
 	addr := freeAddr(t)
+	idp.RegisterRedirectURI("http://" + addr + "/v1/auth/oidc/callback")
 	o.db, o.noMigrate = d, true
 	if o.level == "" {
 		o.level = "info"

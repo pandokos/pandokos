@@ -1,6 +1,6 @@
 # 0066. Declarative export and apply
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-23
 
 Refines [ADR 0019](0019-configuration.md). Requirement CAT-10.
@@ -39,3 +39,4 @@ authorization.
 ## History
 
 - 2026-11-23: proposed with sprint 6.2.
+- 2026-11-23: accepted by the maintainer after review.
