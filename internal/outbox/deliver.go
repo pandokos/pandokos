@@ -56,3 +56,12 @@ func (d *Deliverer) Send(ctx context.Context, url string, e Event, env Envelope,
 	_, _, _, _, _ = ctx, url, e, env, keys
 	return Result{}
 }
+
+// Backoff returns the wait after the failures-th consecutive failure of the event at the head of a
+// destination's queue (sprint 6.4, section 5.7): min(5 s * 2^(failures-1), max), less a part of up
+// to 20 % taken with rnd, a function that returns a number in [0, 1). The stub of part A answers
+// zero until plan step C3 writes it.
+func Backoff(failures int, max time.Duration, rnd func() float64) time.Duration {
+	_, _, _ = failures, max, rnd
+	return 0
+}

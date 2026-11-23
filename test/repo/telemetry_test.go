@@ -93,8 +93,8 @@ func TestMetricsReference(t *testing.T) {
 		t.Error("docs/reference/metrics.md does not state the pinned version 1.41.0")
 	}
 	catalogue := telemetry.Catalogue()
-	if len(catalogue) != 51 {
-		t.Fatalf("telemetry.Catalogue() has %d instruments, want the 51 of the design", len(catalogue))
+	if len(catalogue) != 58 {
+		t.Fatalf("telemetry.Catalogue() has %d instruments, want the 58 of the design (the seven of sprint 6.4 included)", len(catalogue))
 	}
 	rows := metricsRows(t)
 	names := map[string]bool{}
@@ -359,7 +359,9 @@ func TestLogReference(t *testing.T) {
 	}
 	// The messages the sprint adds or renames are rows (the page committed with the tests has the lines that
 	// existed before it).
-	for _, msg := range []string{"telemetry error", "metric export failing", "trace export failing", "metrics observation failed", "session count failed"} {
+	for _, msg := range []string{"telemetry error", "metric export failing", "trace export failing", "metrics observation failed", "session count failed",
+		// Sprint 6.4: the six lines of the event relay and of the retention of events.
+		"event relay ready", "event relay failing", "event relay recovered", "event deliveries failing", "event retention applied", "event retention failing"} {
 		if _, ok := rows[msg]; !ok {
 			t.Errorf("docs/reference/logs.md has no row for %q", msg)
 		}

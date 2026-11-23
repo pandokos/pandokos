@@ -24,6 +24,16 @@ type Relay struct {
 	BackoffMax  time.Duration
 	Logger      *slog.Logger
 	Now         func() time.Time
+
+	// Hooks for tests (plan step C4); nil in production. The round of a destination calls them in
+	// this order: beforeRound after the claim, afterSend after its last request and before the
+	// settle, beforeSettle just before the settle transaction begins, afterRound when the round is
+	// over, settled or not. A test that cancels the context of Pass in afterSend or beforeRound
+	// stands for a worker that dies at that point: the lease is left to expire.
+	beforeRound  func(destination string)
+	afterSend    func(destination string)
+	beforeSettle func(destination string)
+	afterRound   func(destination string)
 }
 
 // RelayStats holds the counters behind the instruments M52 to M58. Nothing in it names a tenant, a

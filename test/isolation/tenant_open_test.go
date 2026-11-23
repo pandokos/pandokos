@@ -277,6 +277,12 @@ var definerCalls = map[string]definerCall{
 	"platform_retention":      {sql: `SELECT r.*, $1::uuid, $2::uuid, $3, $4 FROM pandokos.platform_retention(120, 1200) r`, platform: true},
 	"kek_activate":            {sql: `SELECT pandokos.kek_activate($3, $4), $1::uuid, $2::uuid`, platform: true},
 	"kek_retire":              {sql: `SELECT pandokos.kek_retire(), $1::uuid, $2::uuid, $3, $4`, platform: true},
+	// Sprint 6.4: the claim of the relay and its state (platform scope; PopulatedTenant's destination is at
+	// the head of its log and has no work, so the claim changes no row) and the retention of events, which
+	// removes nothing that is not old and writes nothing.
+	"outbox_relay_claim":      {sql: `SELECT r.*, $1::uuid, $2::uuid, $3, $4 FROM pandokos.outbox_relay_claim('0192f0f0-5555-7000-8000-000000000004'::uuid, 60, 10) r`, platform: true},
+	"outbox_relay_state":      {sql: `SELECT r.*, $1::uuid, $2::uuid, $3, $4 FROM pandokos.outbox_relay_state() r`, platform: true},
+	"tenant_outbox_retention": {sql: `SELECT r.*, $1::uuid, $2::uuid, $3, $4 FROM pandokos.tenant_outbox_retention(168, 0, 100) r`},
 }
 
 // TestTenantOpenDefinerFunctions is the part of T-977 about the definer functions: a runtime role

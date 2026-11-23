@@ -117,3 +117,17 @@ func (a *API) SeedPlatformLimit(tb testing.TB, tenantID string) string {
 	}
 	return id
 }
+
+// SeedEventDestination inserts an event destination of the tenant, as superuser, and returns its
+// ID. The sealed secret is a placeholder: the destination is there to be named, not to deliver
+// (sprint 6.4; a test that delivers uses dbtest.SeedEventDestination).
+func (a *API) SeedEventDestination(tb testing.TB, tenantID string) string {
+	tb.Helper()
+	var id string
+	err := a.Super(tb).QueryRow(seedCtx(tb), `INSERT INTO pandokos.event_destination (tenant_id, name, url, secret, secret_key_version)
+		VALUES ($1::uuid, 'seeded-' || substr(md5(random()::text), 1, 12), 'https://hooks.example.test/in', decode(repeat('ab', 40), 'hex'), 1) RETURNING id::text`, tenantID).Scan(&id)
+	if err != nil {
+		tb.Fatalf("seed event destination: %v", err)
+	}
+	return id
+}

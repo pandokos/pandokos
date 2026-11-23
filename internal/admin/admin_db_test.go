@@ -108,6 +108,7 @@ type world struct {
 
 	// A scheduled price version of the tenant's own price lists (sprint 5.4), seeded as superuser.
 	tenantPrice string
+	destination string // an event destination of the tenant (sprint 6.4), with a placeholder secret
 }
 
 func newWorld(t *testing.T, name string) *world {
@@ -157,6 +158,7 @@ func (w *world) fill(t *testing.T, name string) {
 	w.api.SeedPlatformIssuerTenant(t, w.platformIssuer, w.tenant.ID)
 	w.limitRule = w.api.SeedLimitRule(t, w.tenant.ID)
 	w.platformLimit = w.api.SeedPlatformLimit(t, w.tenant.ID)
+	w.destination = w.api.SeedEventDestination(t, w.tenant.ID)
 	tid, err := tenant.ParseID(w.tenant.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +170,7 @@ func (w *world) params() apitest.Params {
 	return apitest.Params{Tenant: w.tenant.ID, ServiceAccount: w.sa.ID, VirtualKey: w.key.Key.ID, PlatformKey: w.platformK.Key.ID, Credential: w.cred.ID,
 		Provider: w.cat.Provider.Name, Endpoint: w.cat.Endpoint.Name, Model: w.cat.All.ID, PriceVersion: w.pv.ID, PriceImport: w.imp,
 		TokenIssuer: w.tokenIssuer, SubjectMapping: w.mapping, PlatformIssuer: w.platformIssuer,
-		LimitRule: w.limitRule, PlatformLimit: w.platformLimit, TenantPrice: w.tenantPrice}
+		LimitRule: w.limitRule, PlatformLimit: w.platformLimit, TenantPrice: w.tenantPrice, Destination: w.destination}
 }
 
 // call makes the valid call of op with the key.

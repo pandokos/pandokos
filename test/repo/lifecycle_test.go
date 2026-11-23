@@ -20,7 +20,7 @@ import (
 var settingRef = regexp.MustCompile("['\"`]pandokos\\.(erasure|retention)['\"`]")
 
 // TestErasureOnlyInTheDatabase is T-R77: the two settings that let a statement change an append-only row
-// appear in migrations 0015 and 0016 and nowhere else; the deletion job holds no statement but the three of
+// appear in migrations 0015, 0016 and 0017 and nowhere else; the deletion job holds no statement but the three of
 // the design; and no handler of a platform-scoped operation runs a statement of the kept log but the two of
 // section 5.4.
 func TestErasureOnlyInTheDatabase(t *testing.T) {
@@ -28,7 +28,7 @@ func TestErasureOnlyInTheDatabase(t *testing.T) {
 	for _, dir := range []string{"cmd", "internal", "test"} {
 		for _, file := range goFiles(t, dir) {
 			if m := settingRef.FindString(read(t, relPath(t, file))); m != "" {
-				t.Errorf("%s names the setting %s: only functions of migrations 0015 and 0016 set it", relPath(t, file), m)
+				t.Errorf("%s names the setting %s: only functions of migrations 0015, 0016 and 0017 set it", relPath(t, file), m)
 			}
 		}
 	}
@@ -47,13 +47,15 @@ func TestErasureOnlyInTheDatabase(t *testing.T) {
 			continue
 		}
 		base := filepath.Base(rel)
-		if !strings.HasPrefix(base, "0015_") && !strings.HasPrefix(base, "0016_") {
-			t.Errorf("%s names a setting of the erasure: only migrations 0015 and 0016 do", rel)
+		// Sprint 6.4: migration 0017 has the retention of events, and the bodies of the erasure steps
+		// that it replaces with the tables of events.
+		if !strings.HasPrefix(base, "0015_") && !strings.HasPrefix(base, "0016_") && !strings.HasPrefix(base, "0017_") {
+			t.Errorf("%s names a setting of the erasure: only migrations 0015, 0016 and 0017 do", rel)
 		}
 		found[base[:4]] = true
 	}
-	if !found["0015"] || !found["0016"] {
-		t.Errorf("the settings are in %v: they are set by migrations 0015 and 0016", found)
+	if !found["0015"] || !found["0016"] || !found["0017"] {
+		t.Errorf("the settings are in %v: they are set by migrations 0015, 0016 and 0017", found)
 	}
 
 	// The deletion job: three statements, no SQL of its own.

@@ -54,14 +54,14 @@ func TestCatalogueAdditions(t *testing.T) {
 			support = append(support, p)
 		}
 	}
-	if count[ScopeTenant] != 35 || count[ScopePlatform] != 25 || count[ScopeSelf] != 2 || len(Catalogue()) != 62 {
-		t.Errorf("scopes %v (%d permissions), want 35 tenant, 25 platform, 2 self (62)", count, len(Catalogue()))
+	if count[ScopeTenant] != 39 || count[ScopePlatform] != 26 || count[ScopeSelf] != 2 || len(Catalogue()) != 67 {
+		t.Errorf("scopes %v (%d permissions), want 39 tenant, 26 platform, 2 self (67)", count, len(Catalogue()))
 	}
 	wantInTenant := []string{"tenant_credential:read", "tenant_credential:revoke", "tenant_support:open", "tenant_support:read"}
 	if got := names(inTenant); !reflect.DeepEqual(got, wantInTenant) {
 		t.Errorf("InTenant is %v, want %v", got, wantInTenant)
 	}
-	wantSupport := []string{"member:read", "member:write", "role:delete", "role:read", "role:write", "service_account:read", "service_account:write",
+	wantSupport := []string{"event_destination:read", "member:read", "member:write", "role:delete", "role:read", "role:write", "service_account:read", "service_account:write",
 		"support_action:read", "virtual_key:read", "virtual_key:revoke", "virtual_key:write"}
 	if got := names(support); !reflect.DeepEqual(got, wantSupport) {
 		t.Errorf("Support is %v, want %v", got, wantSupport)
@@ -89,7 +89,7 @@ func TestCatalogueAdditions(t *testing.T) {
 			t.Errorf("%s has the resource %s, which a support action or the platform must never reach", p.Name, resourceOf(p.Name))
 		}
 	}
-	if got := TenantPermissions(); len(got) != 35 || !sort.StringsAreSorted(got) {
+	if got := TenantPermissions(); len(got) != 39 || !sort.StringsAreSorted(got) {
 		t.Errorf("TenantPermissions: %d names, sorted %v", len(got), sort.StringsAreSorted(got))
 	}
 }
@@ -207,7 +207,7 @@ func TestBuiltinRolesGolden(t *testing.T) {
 		}
 	}
 	sort.Strings(readOnly)
-	if !reflect.DeepEqual(golden[RoleReadOnly].permissions, readOnly) || len(readOnly) != 13 {
+	if !reflect.DeepEqual(golden[RoleReadOnly].permissions, readOnly) || len(readOnly) != 15 {
 		t.Errorf("read-only (golden) is %v, want every tenant permission that ends in :read and identity:read (%v)", golden[RoleReadOnly].permissions, readOnly)
 	}
 	for _, g := range []string{RoleOwner, RoleTenantAdmin, RoleReadOnly} {
@@ -247,11 +247,11 @@ func TestEffectiveGranted(t *testing.T) {
 		{"granted counts for a service account with a tenant role", Principal{Kind: KindServiceAccount, TenantID: a, TenantState: tenant.StateActive, Roles: []string{RoleInference}, Granted: []string{MemberRead}},
 			[]string{CredentialUse, MemberRead, ModelInvoke}},
 		{"granted counts for a member", Principal{Kind: KindUser, TenantID: a, TenantState: tenant.StateActive, Roles: []string{RoleUsageViewer, "custom"}, Granted: []string{RoleRead}},
-			[]string{IdentityRead, LimitRead, ModelRead, PriceListRead, RoleRead, SessionSelf, UsageRead}},
+			[]string{EventRead, IdentityRead, LimitRead, ModelRead, PriceListRead, RoleRead, SessionSelf, UsageRead}},
 		{"granted does not count for a platform principal", Principal{Kind: KindPlatform, Roles: []string{RolePlatformAuditor}, Granted: []string{MemberRead, RoleRead}},
-			[]string{CatalogRead, IdentityRead, KEKRead, MetricsRead, PlatformAuditRead, PlatformIssuerRead, PlatformKeyRead, PlatformLimitRead, TenantRead, TenantSupportRead, UserRead}},
+			[]string{CatalogRead, IdentityRead, KEKRead, MetricsRead, PlatformAuditRead, PlatformEventRead, PlatformIssuerRead, PlatformKeyRead, PlatformLimitRead, TenantRead, TenantSupportRead, UserRead}},
 		{"granted does not count for a platform user", Principal{Kind: KindUser, Roles: []string{RolePlatformAuditor}, Granted: []string{MemberRead}},
-			[]string{CatalogRead, IdentityRead, KEKRead, MetricsRead, PlatformAuditRead, PlatformIssuerRead, PlatformKeyRead, PlatformLimitRead, SessionSelf, TenantRead, TenantSupportRead, UserRead}},
+			[]string{CatalogRead, IdentityRead, KEKRead, MetricsRead, PlatformAuditRead, PlatformEventRead, PlatformIssuerRead, PlatformKeyRead, PlatformLimitRead, SessionSelf, TenantRead, TenantSupportRead, UserRead}},
 		{"a principal without tenant roles gets nothing from granted", Principal{Kind: KindServiceAccount, TenantID: a, Roles: nil, Granted: []string{MemberRead}}, nil},
 		{"an unknown name, a platform and a self permission are dropped", Principal{Kind: KindServiceAccount, TenantID: a, Roles: []string{RoleInference},
 			Granted: []string{"ghost:thing", TenantRead, IdentityRead, SessionSelf, "not-a-permission", MemberRead}},

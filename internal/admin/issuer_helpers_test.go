@@ -172,6 +172,15 @@ var lifecycleMutations = map[string]bool{
 	"requestTenantDeletion": true, "cancelTenantDeletion": true,
 }
 
+// eventsMutations are the mutating operations of sprint 6.4 (the event destinations) that
+// TestEventDestinationAPI and TestEventDestinationOperations (T-1040, T-1041) cover, with the six
+// audit rows of section 5.11; the enumerating tests of earlier sprints leave them to those.
+// testEventDestination writes no audit row: it records a request that the worker sends.
+var eventsMutations = map[string]bool{
+	"createEventDestination": true, "updateEventDestination": true, "deleteEventDestination": true, "rotateEventDestinationSecret": true,
+	"testEventDestination": true, "rewindEventDestination": true, "replayEventDeadLetters": true,
+}
+
 // peopleMutations are the mutating operations of sprint 4.2 (sign-in, own sessions, users and
 // members) that the audit tests of that sprint cover (T-796, T-826), with their atomicity; the
 // enumerating tests of earlier sprints (T-281, T-282) leave them to those, as they leave the token

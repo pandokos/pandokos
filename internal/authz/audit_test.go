@@ -76,10 +76,16 @@ func TestAuditPermissions(t *testing.T) {
 		t.Errorf("a platform key scoped to catalog:read reads the platform audit log: %v", d)
 	}
 
-	// The permissions a support action may carry are the eleven of sprint 4.3, unchanged.
+	// The permissions a support action may carry are the eleven of sprint 4.3 and, of sprint 6.4,
+	// event_destination:read (the export of events is usage data and stays out).
 	support := SupportPermissions()
-	if len(support) != 11 {
-		t.Errorf("SupportPermissions() has %d names, want the eleven of sprint 4.3: %v", len(support), support)
+	if len(support) != 12 {
+		t.Errorf("SupportPermissions() has %d names, want the eleven of sprint 4.3 and event_destination:read: %v", len(support), support)
+	}
+	for _, s := range support {
+		if s == EventRead || s == EventDestinationWrite || s == EventDestinationDelete || s == PlatformEventRead {
+			t.Errorf("SupportPermissions() holds %s", s)
+		}
 	}
 	for _, s := range support {
 		if s == AuditRead || s == PlatformAuditRead {

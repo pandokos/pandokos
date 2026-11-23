@@ -28,10 +28,12 @@ import (
 var erasureGroups = map[string][]string{
 	"access": {"limit_rule", "subject_mapping", "trusted_issuer", "issuer_directory", "platform_issuer_tenant", "virtual_key",
 		"virtual_key_directory", "role_assignment", "idempotency_key", "support_action", "membership_role", "membership",
-		"membership_directory", "user_session", "local_account", "user_identity", "app_user", "service_account", "tenant_role"},
-	"secrets":       {"tenant_data_key", "provider_credential"},
-	"configuration": {"platform_limit_rule", "model_tenant_grant", "tenant_model_restriction", "metadata_key_policy", "tenant_price_rate", "tenant_price_version", "limit_event", "usage_rollup", "usage_rollup_state"},
-	"kept":          {"usage_record", "audit_event", "audit_chain", "tenant", "tenant_deletion", "tenant_closed"},
+		"membership_directory", "user_session", "local_account", "user_identity", "app_user", "service_account", "tenant_role",
+		"outbox_dead_letter", "event_destination", "event_destination_directory"},
+	"secrets": {"tenant_data_key", "provider_credential"},
+	"configuration": {"platform_limit_rule", "model_tenant_grant", "tenant_model_restriction", "metadata_key_policy", "tenant_price_rate", "tenant_price_version", "limit_event", "usage_rollup", "usage_rollup_state",
+		"outbox_event", "outbox_stream"},
+	"kept": {"usage_record", "audit_event", "audit_chain", "tenant", "tenant_deletion", "tenant_closed", "platform_outbox_event"},
 }
 
 // noTenantColumn are the tables of the groups that have no tenant_id column: they refer to the
@@ -159,7 +161,7 @@ func TestTenantErasureSteps(t *testing.T) {
 	// At the end only the kept tables hold the tenant's ID.
 	for _, tbl := range catalogue {
 		got := rowsOf(t, d, tbl, victim)
-		kept := tbl == "usage_record" || tbl == "audit_event" || tbl == "audit_chain" || tbl == "tenant_deletion" || tbl == "tenant_closed"
+		kept := tbl == "usage_record" || tbl == "audit_event" || tbl == "audit_chain" || tbl == "tenant_deletion" || tbl == "tenant_closed" || tbl == "platform_outbox_event"
 		if kept && got == 0 {
 			t.Errorf("%s holds no row of the deleted tenant, want the kept records", tbl)
 		}
@@ -178,7 +180,9 @@ func TestTenantErasureSteps(t *testing.T) {
 
 	// Nothing of the other tenant or of the global tables changed.
 	after := d.TableDigests(t, bystander)
-	exempt := map[string]bool{"platform_audit_event": true, "platform_audit_chain": true, "tenant": true, "user_session": true, "local_account": true, "user_identity": true}
+	// The platform's log of events gains the events of the deletion (sprint 6.4): it is kept, and grows.
+	exempt := map[string]bool{"platform_audit_event": true, "platform_audit_chain": true, "tenant": true, "user_session": true, "local_account": true, "user_identity": true,
+		"platform_outbox_event": true, "platform_outbox_stream": true}
 	for tbl, dg := range before {
 		if !exempt[tbl] && after[tbl] != dg {
 			t.Errorf("the table %s changed for the other tenant or as a global table", tbl)
@@ -226,17 +230,18 @@ func TestTenantErasureSteps(t *testing.T) {
 	}
 	for _, tbl := range []string{"limit_rule", "subject_mapping", "trusted_issuer", "platform_issuer_tenant", "virtual_key", "role_assignment", "idempotency_key", "support_action",
 		"membership_role", "membership", "app_user", "service_account", "tenant_role", "tenant_data_key", "provider_credential", "platform_limit_rule", "model_tenant_grant",
-		"tenant_model_restriction", "metadata_key_policy", "tenant_price_version"} {
+		"tenant_model_restriction", "metadata_key_policy", "tenant_price_version", "event_destination"} {
 		if removed[tbl] < 1 {
 			t.Errorf("the completion record counts %d rows removed from %s, want at least 1", removed[tbl], tbl)
 		}
 	}
-	for _, tbl := range []string{"usage_record", "limit_event", "usage_rollup", "usage_rollup_state"} {
+	// The count of destinations is in the record; counts of events and of dead letters are not (ADR 0054).
+	for _, tbl := range []string{"usage_record", "limit_event", "usage_rollup", "usage_rollup_state", "outbox_event", "outbox_stream", "outbox_dead_letter"} {
 		if _, ok := removed[tbl]; ok {
 			t.Errorf("the completion record holds a count for %s: a figure of the tenant's usage (ADR 0054)", tbl)
 		}
 	}
-	for _, forbidden := range []string{"usage_record", "limit_event", "usage_rollup", "ledger"} {
+	for _, forbidden := range []string{"usage_record", "limit_event", "usage_rollup", "ledger", "outbox_event", "outbox_dead_letter"} {
 		if strings.Contains(detail, `"`+forbidden) {
 			t.Errorf("the completion record names %s: %s", forbidden, detail)
 		}

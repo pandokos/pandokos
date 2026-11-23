@@ -68,6 +68,13 @@ var wantCatalogue = []want{
 	{"M49", "pandokos.vault.rewraps", "OC", "{key}", []string{"pandokos.result"}, "pandokos_vault_rewraps_total"},
 	{"M50", "pandokos.vault.kek.versions", "G", "{version}", []string{"pandokos.kek.state"}, "pandokos_vault_kek_versions"},
 	{"M51", "pandokos.vault.erasures.pending", "G", "{deletion}", nil, "pandokos_vault_erasures_pending"},
+	{"M52", "pandokos.events.deliveries", "OC", "{delivery}", []string{"pandokos.delivery.outcome"}, "pandokos_events_deliveries_total"},
+	{"M53", "pandokos.events.delivery.duration", "H", "s", []string{"pandokos.result"}, "pandokos_events_delivery_duration_seconds"},
+	{"M54", "pandokos.events.dead_letters", "OC", "{event}", nil, "pandokos_events_dead_letters_total"},
+	{"M55", "pandokos.events.expired", "OC", "{event}", nil, "pandokos_events_expired_total"},
+	{"M56", "pandokos.events.destinations", "G", "{destination}", []string{"pandokos.destination.state"}, "pandokos_events_destinations"},
+	{"M57", "pandokos.events.lag", "G", "s", nil, "pandokos_events_lag_seconds"},
+	{"M58", "pandokos.events.relay.passes", "OC", "{pass}", []string{"pandokos.result"}, "pandokos_events_relay_passes_total"},
 }
 
 // wantByName indexes wantCatalogue.
@@ -181,7 +188,7 @@ func fullSources() telemetry.Sources {
 				Rollups:   map[string]int64{"ok": 61, "failed": 2},
 				RollupLag: 125 * time.Second,
 				RetentionRemoved: map[string]int64{"usage_partition": 3, "usage_record": 41, "usage_rollup": 17, "audit_event": 23, "platform_audit_event": 5,
-					"deleted_tenant_usage_record": 6, "deleted_tenant_audit_event": 8},
+					"deleted_tenant_usage_record": 6, "deleted_tenant_audit_event": 8, "outbox_event": 12, "limit_event": 3},
 				RetentionRuns: map[string]int64{"ok": 7, "failed": 1},
 				Exports: map[telemetry.ExportKey]int64{
 					{Kind: "usage", Result: "complete"}:                11,
@@ -189,6 +196,8 @@ func fullSources() telemetry.Sources {
 					{Kind: "audit", Result: "complete"}:                4,
 					{Kind: "platform_audit", Result: "complete"}:       2,
 					{Kind: "deleted_tenant_audit", Result: "complete"}: 3,
+					{Kind: "event", Result: "complete"}:                5,
+					{Kind: "platform_event", Result: "complete"}:       1,
 				},
 			}
 		},
@@ -200,6 +209,16 @@ func fullSources() telemetry.Sources {
 				Rewraps:         map[string]int64{"ok": 40, "failed": 2},
 				KEKVersions:     map[string]int64{"active": 1, "retiring": 1, "retired": 3},
 				ErasuresPending: 5,
+			}
+		},
+		Events: func() telemetry.EventsStats {
+			return telemetry.EventsStats{
+				Deliveries:   map[string]int64{"delivered": 120, "status": 7, "redirect": 1, "timeout": 3, "connection": 2, "tls": 1, "blocked": 1},
+				DeadLetters:  4,
+				Expired:      9,
+				Destinations: map[string]int64{"enabled": 6, "failing": 2, "disabled": 3},
+				Lag:          90 * time.Second,
+				Passes:       map[string]int64{"ok": 300, "failed": 2},
 			}
 		},
 	}

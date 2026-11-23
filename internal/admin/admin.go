@@ -75,6 +75,13 @@ type Options struct {
 		Enabled     bool
 		MaxDuration time.Duration
 	}
+	// Events are the settings of the event operations (sprint 6.4): events.source, which the
+	// exports put in the source of every document, and events.webhook.private_hosts, the hosts for
+	// which an http URL and a private address are valid. Part B declares them; step C6 reads them.
+	Events struct {
+		Source       string
+		PrivateHosts []string
+	}
 	// Limits are the settings of the capability check: limits.on_unknown_price ("refuse", the
 	// default, or "allow") and the zones that give the calendar of each tenant.
 	Limits struct {

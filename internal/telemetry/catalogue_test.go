@@ -28,6 +28,9 @@ func exercise(t *testing.T, r *rig) {
 	for _, q := range exerciseRequests() {
 		r.m.ObserveRequest(q)
 	}
+	// M53: the time of two delivery requests (sprint 6.4).
+	r.m.ObserveEventDelivery("ok", 120*time.Millisecond)
+	r.m.ObserveEventDelivery("failed", 2*time.Second)
 }
 
 // exerciseRequests is a table of observations that touches every pushed instrument.
@@ -118,7 +121,7 @@ func TestInstrumentCatalogue(t *testing.T) {
 		snap := r.observe(chatRequest("model-a"))
 		for _, w := range wantCatalogue {
 			id := w.ID
-			sourced := len(id) == 3 && (id >= "M12" && id <= "M38" || id >= "M42" && id <= "M51") // M12 to M38 and M42 to M51 (two digits)
+			sourced := len(id) == 3 && (id >= "M12" && id <= "M38" || id >= "M42" && id <= "M58") // M12 to M38 and M42 to M58 (two digits)
 			if sourced {
 				if _, ok := snap.Series[w.Name]; ok {
 					t.Errorf("%s (%s) is exported although its source is nil", id, w.Name)

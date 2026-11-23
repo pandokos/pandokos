@@ -30,5 +30,5 @@ func probeParams(t testing.TB, _ *apitest.API, tenantID string) apitest.Params {
 	return apitest.Params{Tenant: tenantID, ServiceAccount: apitest.NoUser, VirtualKey: keyID, PlatformKey: "pabcdefghijklmnop", Credential: apitest.NoUser,
 		Provider: "synthetic-missing", Endpoint: "ep-missing", Model: apitest.NoUser, PriceVersion: apitest.NoUser, PriceImport: apitest.NoUser,
 		TokenIssuer: apitest.NoUser, SubjectMapping: apitest.NoUser, PlatformIssuer: apitest.NoUser, LimitRule: apitest.NoLimitRule, PlatformLimit: apitest.NoLimitRule,
-		TenantPrice: apitest.NoUser, User: apitest.NoUser, Session: apitest.NoUser, Role: apitest.NoRole, SupportAction: apitest.NoUser}
+		TenantPrice: apitest.NoUser, User: apitest.NoUser, Session: apitest.NoUser, Role: apitest.NoRole, SupportAction: apitest.NoUser, Destination: apitest.NoUser}
 }

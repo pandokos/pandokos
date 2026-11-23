@@ -26,6 +26,7 @@ const (
 	cid  = "0192f0f0-0000-7000-8000-000000000003"
 	mid  = "0192f0f0-0000-7000-8000-000000000004" // a model
 	pvid = "0192f0f0-0000-7000-8000-000000000005" // a price version, a price import
+	did  = "0192f0f0-0000-7000-8000-000000000006" // an event destination
 )
 
 // fake is an adminapi.Server that records the input of every call and answers with zero values.
@@ -708,6 +709,57 @@ func (f *fake) ListKEKVersions(_ context.Context, in adminapi.ListKEKVersionsInp
 	f.rec("listKEKVersions", in)
 	return &adminapi.KEKVersionList{Items: []adminapi.KEKVersion{}}, nil
 }
+
+// The twelve operations of sprint 6.4.
+func (f *fake) ListEventDestinations(_ context.Context, in adminapi.ListEventDestinationsInput) (*adminapi.EventDestinationList, error) {
+	f.rec("listEventDestinations", in)
+	return &adminapi.EventDestinationList{Items: []adminapi.EventDestination{}}, nil
+}
+func (f *fake) CreateEventDestination(_ context.Context, in adminapi.CreateEventDestinationInput) (*adminapi.EventDestinationCreated, error) {
+	f.rec("createEventDestination", in)
+	return &adminapi.EventDestinationCreated{}, nil
+}
+func (f *fake) GetEventDestination(_ context.Context, in adminapi.GetEventDestinationInput) (*adminapi.EventDestination, error) {
+	f.rec("getEventDestination", in)
+	return &adminapi.EventDestination{}, nil
+}
+func (f *fake) UpdateEventDestination(_ context.Context, in adminapi.UpdateEventDestinationInput) (*adminapi.EventDestination, error) {
+	f.rec("updateEventDestination", in)
+	return &adminapi.EventDestination{}, nil
+}
+func (f *fake) DeleteEventDestination(_ context.Context, in adminapi.DeleteEventDestinationInput) (*adminapi.NoContent, error) {
+	f.rec("deleteEventDestination", in)
+	return &adminapi.NoContent{}, nil
+}
+func (f *fake) ListEventDeadLetters(_ context.Context, in adminapi.ListEventDeadLettersInput) (*adminapi.EventDeadLetterList, error) {
+	f.rec("listEventDeadLetters", in)
+	return &adminapi.EventDeadLetterList{Items: []adminapi.EventDeadLetter{}}, nil
+}
+func (f *fake) ReplayEventDeadLetters(_ context.Context, in adminapi.ReplayEventDeadLettersInput) (*adminapi.EventDeadLetterReplayed, error) {
+	f.rec("replayEventDeadLetters", in)
+	return &adminapi.EventDeadLetterReplayed{}, nil
+}
+func (f *fake) RewindEventDestination(_ context.Context, in adminapi.RewindEventDestinationInput) (*adminapi.EventDestination, error) {
+	f.rec("rewindEventDestination", in)
+	return &adminapi.EventDestination{}, nil
+}
+func (f *fake) RotateEventDestinationSecret(_ context.Context, in adminapi.RotateEventDestinationSecretInput) (*adminapi.EventDestinationCreated, error) {
+	f.rec("rotateEventDestinationSecret", in)
+	return &adminapi.EventDestinationCreated{}, nil
+}
+func (f *fake) TestEventDestination(_ context.Context, in adminapi.TestEventDestinationInput) (*adminapi.EventDestinationTest, error) {
+	f.rec("testEventDestination", in)
+	return &adminapi.EventDestinationTest{}, nil
+}
+func (f *fake) ExportEvents(_ context.Context, in adminapi.ExportEventsInput) (*adminapi.Stream, error) {
+	f.rec("exportEvents", in)
+	return f.stream("exportEvents", "application/x-ndjson")
+}
+func (f *fake) ExportPlatformEvents(_ context.Context, in adminapi.ExportPlatformEventsInput) (*adminapi.Stream, error) {
+	f.rec("exportPlatformEvents", in)
+	return f.stream("exportPlatformEvents", "application/x-ndjson")
+}
+
 func (f *fake) GetMetadataKeys(_ context.Context, in adminapi.GetMetadataKeysInput) (*adminapi.MetadataKeys, error) {
 	f.rec("getMetadataKeys", in)
 	return &adminapi.MetadataKeys{Keys: []string{}}, nil
@@ -1507,8 +1559,57 @@ func TestRouterAndClient(t *testing.T) {
 			in := adminapi.ListKEKVersionsInput{}
 			add("listKEKVersions", in, func() error { _, err := c.ListKEKVersions(ctx, in); return err })
 		}
-		if len(adminapi.Operations) != 167 {
-			t.Fatalf("%d operations, want 167 (the 35 of epic 1 and sprint 2.1, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1, the 12 of sprint 5.2, the 2 of sprint 5.3, the 7 of sprint 5.4, the 27 of sprint 4.2, the 16 of sprint 4.3, the 12 of sprint 6.2 and the 7 of sprint 6.3)", len(adminapi.Operations))
+		{
+			in := adminapi.ListEventDestinationsInput{Tenant: tid, Limit: 2, Cursor: "abc"}
+			add("listEventDestinations", in, func() error { _, err := c.ListEventDestinations(ctx, in); return err })
+		}
+		{
+			in := adminapi.CreateEventDestinationInput{Tenant: tid, IdempotencyKey: "idem-1", Body: adminapi.EventDestinationCreate{Name: "billing", URL: "https://hooks.example.test/in", Enabled: true,
+				EventTypes: []adminapi.EventType{adminapi.EventTypeIoPandokosUsageRecordedV1}}}
+			add("createEventDestination", in, func() error { _, err := c.CreateEventDestination(ctx, in); return err })
+		}
+		{
+			in := adminapi.GetEventDestinationInput{Tenant: tid, Destination: did}
+			add("getEventDestination", in, func() error { _, err := c.GetEventDestination(ctx, in); return err })
+		}
+		{
+			in := adminapi.UpdateEventDestinationInput{Tenant: tid, Destination: did, Body: adminapi.EventDestinationUpdate{Enabled: adminapi.Optional[bool]{Set: true, Value: false}}}
+			add("updateEventDestination", in, func() error { _, err := c.UpdateEventDestination(ctx, in); return err })
+		}
+		{
+			in := adminapi.DeleteEventDestinationInput{Tenant: tid, Destination: did}
+			add("deleteEventDestination", in, func() error { _, err := c.DeleteEventDestination(ctx, in); return err })
+		}
+		{
+			in := adminapi.ListEventDeadLettersInput{Tenant: tid, Destination: did, Limit: 2, Cursor: "abc"}
+			add("listEventDeadLetters", in, func() error { _, err := c.ListEventDeadLetters(ctx, in); return err })
+		}
+		{
+			in := adminapi.ReplayEventDeadLettersInput{Tenant: tid, Destination: did, Body: adminapi.EventDeadLetterReplay{Seqs: []int{3, 5}}}
+			add("replayEventDeadLetters", in, func() error { _, err := c.ReplayEventDeadLetters(ctx, in); return err })
+		}
+		{
+			in := adminapi.RewindEventDestinationInput{Tenant: tid, Destination: did, Body: adminapi.EventDestinationRewind{After: adminapi.Optional[int]{Set: true, Value: 7}}}
+			add("rewindEventDestination", in, func() error { _, err := c.RewindEventDestination(ctx, in); return err })
+		}
+		{
+			in := adminapi.RotateEventDestinationSecretInput{Tenant: tid, Destination: did, IdempotencyKey: "idem-2", Body: adminapi.EventDestinationSecretRotate{PreviousValidForSeconds: adminapi.Optional[int]{Set: true, Value: 3600}}}
+			add("rotateEventDestinationSecret", in, func() error { _, err := c.RotateEventDestinationSecret(ctx, in); return err })
+		}
+		{
+			in := adminapi.TestEventDestinationInput{Tenant: tid, Destination: did}
+			add("testEventDestination", in, func() error { _, err := c.TestEventDestination(ctx, in); return err })
+		}
+		{
+			in := adminapi.ExportEventsInput{Tenant: tid, After: 4, Limit: 50, Type: []adminapi.EventType{adminapi.EventTypeIoPandokosUsageRecordedV1, adminapi.EventTypeIoPandokosLimitExhaustedV1}}
+			add("exportEvents", in, readAll("exportEvents", func() (*adminapi.StreamBody, error) { return c.ExportEvents(ctx, in) }))
+		}
+		{
+			in := adminapi.ExportPlatformEventsInput{After: 4, Limit: 50, Type: []adminapi.PlatformEventType{adminapi.PlatformEventTypeIoPandokosTenantDeletedV1}}
+			add("exportPlatformEvents", in, readAll("exportPlatformEvents", func() (*adminapi.StreamBody, error) { return c.ExportPlatformEvents(ctx, in) }))
+		}
+		if len(adminapi.Operations) != 179 {
+			t.Fatalf("%d operations, want 179 (the 167 before sprint 6.4 and its twelve)", len(adminapi.Operations))
 		}
 		for _, op := range adminapi.Operations {
 			tc, ok := calls[op.ID]
@@ -1539,8 +1640,12 @@ func TestRouterAndClient(t *testing.T) {
 	t.Run("operations carry a permission and a status", func(t *testing.T) {
 		for _, op := range adminapi.Operations {
 			// Sprint 4.2: a public operation has no permission; a redirect answers 303.
-			if (op.Permission == "") != op.Public || (op.Status != 200 && op.Status != 201 && op.Status != 204 && op.Status != 303) || !strings.HasPrefix(op.Path, "/v1/") {
+			if (op.Permission == "") != op.Public || (op.Status != 200 && op.Status != 201 && op.Status != 202 && op.Status != 204 && op.Status != 303) || !strings.HasPrefix(op.Path, "/v1/") {
 				t.Errorf("%+v", op)
+			}
+			// 202 for the one operation that asks for work (sprint 6.4: the test request).
+			if (op.Status == 202) != (op.ID == "testEventDestination") {
+				t.Errorf("%s: status %d", op.ID, op.Status)
 			}
 			// 201 for the operations that make a resource, and for the one that runs an import.
 			if (op.Status == 201) != (op.Method == "POST" && (strings.HasPrefix(op.ID, "create") || op.ID == "runPriceImport" || op.ID == "openSupportAction")) {

@@ -649,8 +649,8 @@ func TestOpenAPIDocument(t *testing.T) {
 	}
 	// Sprint 2.2: 64 operations (66 with the two of sprint 3.3), and money is never a JSON number: no schema of the document has a
 	// number type, and a rate is a string with a pattern.
-	if n != 167 {
-		t.Errorf("the document has %d operations, want 167 (35, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1, the 12 of sprint 5.2, the 2 of sprint 5.3, the 7 of sprint 5.4, the 27 of sprint 4.2, the 16 of sprint 4.3, the 12 of sprint 6.2 and the 7 of sprint 6.3)", n)
+	if n != 179 {
+		t.Errorf("the document has %d operations, want 179 (35, the 29 of sprint 2.2, the 2 of sprint 3.3, the 18 of sprint 4.1, the 12 of sprint 5.2, the 2 of sprint 5.3, the 7 of sprint 5.4, the 27 of sprint 4.2, the 16 of sprint 4.3, the 12 of sprint 6.2, the 7 of sprint 6.3 and the 12 of sprint 6.4)", n)
 	}
 	if regexp.MustCompile(`(?m)type:\s*(number|\[[^\]]*number)`).MatchString(raw) || regexp.MustCompile(`format:\s*(float|double)`).MatchString(raw) {
 		t.Error("the document uses a floating-point type: prices travel as decimal strings")
@@ -699,9 +699,10 @@ func TestOpenAPIDocument(t *testing.T) {
 	}
 	sort.Strings(withSecret)
 	// A secret is written by two request bodies (a provider credential is created and replaced)
-	// and returned by the two ...Created schemas, and by no schema of a response about credentials.
-	if strings.Join(withSecret, ",") != "CredentialCreate,CredentialSecret,PlatformKeyCreated,VirtualKeyCreated" {
-		t.Errorf("secret occurs in %v, want only CredentialCreate, CredentialSecret and the two ...Created schemas", withSecret)
+	// and returned by the ...Created schemas (the two of the keys and, since sprint 6.4, the one that shows a
+	// signing secret once), and by no schema of a response about credentials.
+	if strings.Join(withSecret, ",") != "CredentialCreate,CredentialSecret,EventDestinationCreated,PlatformKeyCreated,VirtualKeyCreated" {
+		t.Errorf("secret occurs in %v, want only CredentialCreate, CredentialSecret and the three ...Created schemas", withSecret)
 	}
 }
 
