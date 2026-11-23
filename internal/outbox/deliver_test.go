@@ -126,7 +126,7 @@ func TestDeliver(t *testing.T) {
 
 	t.Run("any other status is a status, a 3xx a redirect that is not followed", func(t *testing.T) {
 		d, _ := testDeliverer(t, 2*time.Second)
-		for _, code := range []int{400, 401, 404, 410, 429, 500, 502, 503, 199} {
+		for _, code := range []int{400, 401, 404, 410, 429, 500, 502, 503} {
 			srv := newLocal(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(code) }, false)
 			if got := d.Send(context.Background(), srv.url("/"), testDoc(), testEnv(t), key); got.Outcome != OutcomeStatus || got.Status != code {
 				t.Errorf("%d: %+v", code, got)

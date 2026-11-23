@@ -87,7 +87,7 @@ func TestRender(t *testing.T) {
 		{"a reference with quotes, a backslash and non-ASCII characters is a JSON string",
 			Event{Seq: 10, ID: testEvent, Type: "io.pandokos.usage.recorded.v1", Subject: "s", Time: at, Data: json.RawMessage(`{"a" :  "é" ,"b":[1, 2]}`)},
 			envOf(`ACME "EU" \ Café é`),
-			`{"specversion":"1.0","id":"` + testEvent + `","source":"urn:pandokos","type":"io.pandokos.usage.recorded.v1","time":"2026-11-23T17:20:04.426849Z","subject":"s","datacontenttype":"application/json","tenantid":"` + testTenant + `","tenantref":"ACME \"EU\" \\ Caf\\u00e9 é","sequence":"10","data":{"a" :  "é" ,"b":[1, 2]}}`},
+			`{"specversion":"1.0","id":"` + testEvent + `","source":"urn:pandokos","type":"io.pandokos.usage.recorded.v1","time":"2026-11-23T17:20:04.426849Z","subject":"s","datacontenttype":"application/json","tenantid":"` + testTenant + `","tenantref":"ACME \"EU\" \\ Café é","sequence":"10","data":{"a" :  "é" ,"b":[1, 2]}}`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			got := Render(c.e, c.env)

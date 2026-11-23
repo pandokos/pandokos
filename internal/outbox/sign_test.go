@@ -68,7 +68,7 @@ func TestSign(t *testing.T) {
 		_, b := Sign("id-b", when, body, k1)
 		_, c := Sign("id-a", when.Add(time.Second), body, k1)
 		_, d := Sign("id-a", when, append(append([]byte(nil), body...), ' '), k1)
-		_, same := Sign("id-a", when.Add(500*time.Millisecond), body, k1)
+		_, same := Sign("id-a", when.Add(-500*time.Millisecond), body, k1)
 		if a == b || a == c || a == d {
 			t.Errorf("the id, the timestamp and the body do not all change the signature: %s %s %s %s", a, b, c, d)
 		}
@@ -118,7 +118,7 @@ func TestSign(t *testing.T) {
 				t.Errorf("%s: accepted", what)
 				continue
 			}
-			if text != "" && (strings.Contains(err.Error(), text) || strings.Contains(err.Error(), canary) || strings.Contains(err.Error(), strings.TrimPrefix(text, "whsec_"))) {
+			if text != "" && (strings.Contains(err.Error(), text) || strings.Contains(err.Error(), canary) || (strings.TrimPrefix(text, "whsec_") != "" && strings.Contains(err.Error(), strings.TrimPrefix(text, "whsec_")))) {
 				t.Errorf("%s: the error quotes the text: %v", what, err)
 			}
 		}

@@ -1,0 +1,264 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Usage recorded",
+  "type": "object",
+  "properties": {
+    "specversion": {
+      "const": "1.0"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Stable identifier of the event; the receiver's idempotency key."
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The events.source of the installation."
+    },
+    "type": {
+      "const": "io.pandokos.usage.recorded.v1"
+    },
+    "time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the fact was recorded, UTC, microseconds."
+    },
+    "subject": {
+      "type": "string",
+      "description": "The request ID."
+    },
+    "datacontenttype": {
+      "const": "application/json"
+    },
+    "tenantid": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The tenant the event belongs to."
+    },
+    "tenantref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The tenant's external reference, when it has one."
+    },
+    "sequence": {
+      "type": "string",
+      "pattern": "^[0-9]+$",
+      "description": "Position in the log, a string of digits."
+    },
+    "data": {
+      "type": "object",
+      "properties": {
+        "record_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "request_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "trace_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "principal": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "service_account"
+              ]
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        "key_id": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "api_family": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "upstream_model": {
+          "type": "string"
+        },
+        "stream": {
+          "type": "boolean"
+        },
+        "outcome": {
+          "enum": [
+            "ok",
+            "upstream_error",
+            "cancelled",
+            "timeout",
+            "rejected_limit",
+            "rejected_policy",
+            "internal_error"
+          ]
+        },
+        "error_code": {
+          "type": "string"
+        },
+        "usage": {
+          "type": "object",
+          "properties": {
+            "input_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "output_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cache_read_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cache_write_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reasoning_tokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "input_source": {
+              "enum": [
+                "provider",
+                "estimated",
+                "none"
+              ]
+            },
+            "output_source": {
+              "enum": [
+                "provider",
+                "estimated",
+                "none"
+              ]
+            },
+            "other_units": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "required": [
+            "input_source",
+            "output_source"
+          ],
+          "additionalProperties": false
+        },
+        "cost": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "known",
+                "unknown",
+                "none"
+              ]
+            },
+            "reason": {
+              "enum": [
+                "no_price",
+                "category_unpriced",
+                "inconsistent_usage"
+              ]
+            },
+            "amount": {
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+              "description": "Decimal string, in currency."
+            },
+            "currency": {
+              "type": "string"
+            },
+            "price_version_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "price_source": {
+              "enum": [
+                "catalogue",
+                "tenant"
+              ]
+            },
+            "fallbacks": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "additionalProperties": false
+        },
+        "limit_state": {
+          "enum": [
+            "limited",
+            "unlimited",
+            "unverified",
+            "not_evaluated"
+          ]
+        },
+        "metadata": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "record_id",
+        "request_id",
+        "started_at",
+        "duration_ms",
+        "principal",
+        "provider",
+        "api_family",
+        "operation",
+        "outcome",
+        "usage",
+        "cost"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "specversion",
+    "id",
+    "source",
+    "type",
+    "time",
+    "subject",
+    "datacontenttype",
+    "tenantid",
+    "sequence",
+    "data"
+  ],
+  "additionalProperties": true
+}

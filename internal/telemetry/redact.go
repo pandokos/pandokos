@@ -29,7 +29,9 @@ var (
 	bearerPattern  = regexp.MustCompile(`(?i)\bbearer\s+(?:[A-Za-z0-9._~+/=-]{16,}|[A-Za-z0-9_-]+\.[A-Za-z0-9._~+/=-]+)`)
 	keyPattern     = regexp.MustCompile(`pdk_[tp][a-z2-7]{16}_[a-z2-7]{59}`)
 	sessionPattern = regexp.MustCompile(`pds_[A-Za-z0-9_-]{43}`)
-	jwsPattern     = regexp.MustCompile(`eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*`)
+	// The signing secret of a webhook destination (sprint 6.4): whsec_ and the standard, padded base64 of 32 bytes.
+	whsecPattern = regexp.MustCompile(`whsec_[A-Za-z0-9+/]{43}=`)
+	jwsPattern   = regexp.MustCompile(`eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*`)
 )
 
 const bearerRedacted = "Bearer " + secret.Redacted
@@ -37,7 +39,7 @@ const bearerRedacted = "Bearer " + secret.Redacted
 // mayHoldSecret is the prefilter: one scan of the string for the text every pattern needs, so that
 // a line without any costs no regular expression.
 func mayHoldSecret(s string) bool {
-	if strings.Contains(s, "pdk_") || strings.Contains(s, "pds_") || strings.Contains(s, "eyJ") {
+	if strings.Contains(s, "pdk_") || strings.Contains(s, "pds_") || strings.Contains(s, "whsec_") || strings.Contains(s, "eyJ") {
 		return true
 	}
 	for i := 0; i+6 <= len(s); i++ {
@@ -58,6 +60,7 @@ func redactValue(s string) (string, bool) {
 	out = keyPattern.ReplaceAllLiteralString(out, secret.Redacted)
 	out = sessionPattern.ReplaceAllLiteralString(out, secret.Redacted)
 	out = jwsPattern.ReplaceAllLiteralString(out, secret.Redacted)
+	out = whsecPattern.ReplaceAllLiteralString(out, secret.Redacted)
 	return out, out != s
 }
 
@@ -122,8 +125,54 @@ func redactAttr(a slog.Attr) (slog.Attr, bool) {
 				return slog.String(a.Key, s), true
 			}
 		}
+		if v, ok := redactContainer(a.Value.Any()); ok {
+			return slog.Any(a.Key, v), true
+		}
 	}
 	return a, false
+}
+
+// redactContainer rewrites the secret shapes in the strings of the plain containers an attribute
+// can hold (a map of strings, a slice of strings, and the generic forms of both), without changing
+// their structure. It copies a container it changes and reports whether it did.
+func redactContainer(v any) (any, bool) {
+	switch x := v.(type) {
+	case string:
+		return redactString(x)
+	case []string:
+		out, changed := make([]string, len(x)), false
+		for i, e := range x {
+			var c bool
+			out[i], c = redactString(e)
+			changed = changed || c
+		}
+		return out, changed
+	case map[string]string:
+		out, changed := make(map[string]string, len(x)), false
+		for k, e := range x {
+			var c bool
+			out[k], c = redactString(e)
+			changed = changed || c
+		}
+		return out, changed
+	case []any:
+		out, changed := make([]any, len(x)), false
+		for i, e := range x {
+			var c bool
+			out[i], c = redactContainer(e)
+			changed = changed || c
+		}
+		return out, changed
+	case map[string]any:
+		out, changed := make(map[string]any, len(x)), false
+		for k, e := range x {
+			var c bool
+			out[k], c = redactContainer(e)
+			changed = changed || c
+		}
+		return out, changed
+	}
+	return v, false
 }
 
 // redactingHandler wraps the JSON handler and rewrites every secret shape in the message and in
