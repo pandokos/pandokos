@@ -165,6 +165,7 @@ func TestHandler(t *testing.T) {
 		for i, r := range []req{good(s1), func() req {
 			r := good(s2)
 			r.id = "second"
+			r.body = strings.Replace(doc, eventID, "second", 1) // the ID of the document is the one of the header
 			r.sig = sign(s2, "second", now.Unix(), []byte(r.body))
 			return r
 		}()} {
@@ -178,6 +179,7 @@ func TestHandler(t *testing.T) {
 		// A delivery signed with both (a rotation) is accepted by a receiver that knows either.
 		both := good(s1, s2)
 		both.id = "both"
+		both.body = strings.Replace(doc, eventID, "both", 1) // the ID of the document is the one of the header
 		both.sig = sign(s1, "both", now.Unix(), []byte(both.body)) + " " + sign(s2, "both", now.Unix(), []byte(both.body))
 		for _, secrets := range [][]string{{s1}, {s2}, {s1, s2}} {
 			hh, _ := newHandler(secrets...)
