@@ -87,6 +87,7 @@ func validate(c *Config, purpose Purpose) []Problem {
 		ps = append(ps, validateLedger(c)...)
 		ps = append(ps, validateReports(c)...)
 		ps = append(ps, validateLifecycle(c)...)
+		ps = append(ps, validateEvents(c)...)
 		ps = append(ps, validateTelemetry(c)...)
 		ps = append(ps, validateTokens(c)...)
 	}

@@ -111,10 +111,10 @@ func buildRoles() []Role {
 			"Administers one tenant day to day: everything but what is kept for owners"},
 		{RoleCredentialManager, ScopeTenant, true, withIdentity(CredentialRead, CredentialWrite, CredentialRotate, CredentialDelete, ModelRead),
 			"Manages the provider credentials of the tenant"},
-		{RoleUsageViewer, ScopeTenant, true, withIdentity(UsageRead, PriceListRead, LimitRead, ModelRead),
+		{RoleUsageViewer, ScopeTenant, true, withIdentity(UsageRead, PriceListRead, LimitRead, ModelRead, EventRead),
 			"Reads usage, prices and limits"},
 		{RoleAuditor, ScopeTenant, true, withIdentity(ServiceAccountRead, VirtualKeyRead, CredentialRead, MemberRead, RoleRead, TokenIssuerRead,
-			SubjectMappingRead, LimitRead, ModelRead, SupportActionRead, AuditRead),
+			SubjectMappingRead, LimitRead, ModelRead, SupportActionRead, AuditRead, EventDestinationRead),
 			"Reads how the tenant is configured, who may do what, what the platform did in it, and the tenant's audit log"},
 		{RoleDeveloper, ScopeTenant, true, withIdentity(ModelInvoke, CredentialUse, ModelRead, CredentialRead, ServiceAccountRead, VirtualKeyRead,
 			VirtualKeyWrite, VirtualKeyRevoke, UsageRead, LimitRead),
@@ -123,7 +123,7 @@ func buildRoles() []Role {
 		{RoleReadOnly, ScopeTenant, true, sorted(readOnly...), "Reads everything of the tenant that can be read"},
 		{RolePlatformAdmin, ScopePlatform, true, withIdentity(platformPermissions()...),
 			"Administers the installation: tenants and platform keys"},
-		{RolePlatformAuditor, ScopePlatform, true, withIdentity(TenantRead, PlatformKeyRead, MetricsRead, CatalogRead, PlatformIssuerRead, PlatformLimitRead, UserRead, TenantSupportRead, PlatformAuditRead, KEKRead),
+		{RolePlatformAuditor, ScopePlatform, true, withIdentity(TenantRead, PlatformKeyRead, MetricsRead, CatalogRead, PlatformIssuerRead, PlatformLimitRead, UserRead, TenantSupportRead, PlatformAuditRead, KEKRead, PlatformEventRead),
 			"Reads the installation: tenants, keys, catalogue, issuers, limits, users, support actions and the platform's audit log"},
 	}
 }

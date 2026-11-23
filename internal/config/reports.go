@@ -2,7 +2,9 @@ package config
 
 import "time"
 
-func init() { keyTable = append(keyTable, reportsKeys()...) }
+// The keys of the events (events.go) follow those of the reports: the table keeps one order, the
+// order in which the sprints added their keys.
+func init() { keyTable = append(append(keyTable, reportsKeys()...), eventsKeys()...) }
 
 // reportsKeys returns the keys of sprint 6.2, in the order of the fields of Config.
 func reportsKeys() []keyDef {

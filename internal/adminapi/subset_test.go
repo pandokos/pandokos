@@ -20,8 +20,9 @@ func TestSubsetAdditions(t *testing.T) {
 		if op.Public != public[op.ID] || op.Public == (op.Permission != "") {
 			t.Errorf("%s: Public=%v Permission=%q", op.ID, op.Public, op.Permission)
 		}
-		// The header parameter is allowed only on the operations that answer 201, and they all declare it.
-		if op.Idempotent != (op.Status == 201) {
+		// The header parameter is allowed only on the operations that answer 201, and they all declare
+		// it; the one exception is the rotation of the signing secret of a destination (200, sprint 6.4).
+		if op.Idempotent != (op.Status == 201 || op.ID == "rotateEventDestinationSecret") {
 			t.Errorf("%s: Idempotent=%v and status %d", op.ID, op.Idempotent, op.Status)
 		}
 		if op.Idempotent {

@@ -44,9 +44,9 @@ type constraint struct {
 
 // Lint reads the system catalogues of schema pandokos through the connection (a superuser's, so
 // that it can read every privilege) and returns one finding per violation of the rules L-01 to
-// L-16 of sprint 1.2, section 6.1, L-19 of sprint 2.1, L-20 of sprint 3.2 and L-21 and L-22 of
-// sprint 6.3 (twenty-two rules), sorted by rule and object. A table is tenant-scoped unless
-// spec.Global lists it.
+// L-16 of sprint 1.2, section 6.1, L-19 of sprint 2.1, L-20 of sprint 3.2, L-21 and L-22 of
+// sprint 6.3 and L-23 of sprint 6.4 (twenty-three rules), sorted by rule and object. A table is
+// tenant-scoped unless spec.Global lists it.
 func Lint(ctx context.Context, conn *pgx.Conn, spec Spec) ([]Finding, error) {
 	var findings []Finding
 	add := func(rule, object, format string, args ...any) {
@@ -207,6 +207,9 @@ func Lint(ctx context.Context, conn *pgx.Conn, spec Spec) ([]Finding, error) {
 		return nil, err
 	}
 	if err := lintSettingPolicies(ctx, conn, add); err != nil {
+		return nil, err
+	}
+	if err := lintOutboxTriggers(ctx, conn, add); err != nil {
 		return nil, err
 	}
 
@@ -818,6 +821,47 @@ func lintTenantOpen(ctx context.Context, conn *pgx.Conn, add func(rule, object, 
 	for _, table := range rowGuardTables {
 		if err := check(table, "tenant_open_row", true); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// lintOutboxTriggers is L-23 of sprint 6.4: the facts that are events are written by the database
+// in the statement that records them. usage_record has the enabled AFTER INSERT statement trigger
+// usage_record_outbox and limit_event the enabled AFTER INSERT row trigger limit_event_outbox; a
+// table that lost its trigger would record facts that no destination ever hears of.
+func lintOutboxTriggers(ctx context.Context, conn *pgx.Conn, add func(rule, object, format string, args ...any)) error {
+	for _, want := range []struct {
+		table, name string
+		row         bool
+	}{{"usage_record", "usage_record_outbox", false}, {"limit_event", "limit_event_outbox", true}} {
+		rows, err := conn.Query(ctx, `SELECT t.tgtype::int, t.tgenabled::text
+  FROM pg_catalog.pg_trigger t
+ WHERE t.tgrelid = $1::regclass AND t.tgname = $2 AND NOT t.tgisinternal`, qualified(want.table), want.name)
+		if err != nil {
+			return err
+		}
+		ok := false
+		for rows.Next() {
+			var tgtype int
+			var enabled string
+			if err := rows.Scan(&tgtype, &enabled); err != nil {
+				rows.Close()
+				return err
+			}
+			const row, before, insert = 1, 2, 4
+			ok = ok || (enabled == "O" && (tgtype&row != 0) == want.row && tgtype&before == 0 && tgtype&insert != 0)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		if !ok {
+			kind := "statement"
+			if want.row {
+				kind = "row"
+			}
+			add("L-23", want.table, "no enabled AFTER INSERT %s trigger %s", kind, want.name)
 		}
 	}
 	return nil

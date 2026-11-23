@@ -6,12 +6,12 @@ INSERT INTO pandokos.tenant_deletion (tenant_id, reason, requested_by_type, requ
 VALUES (sqlc.arg(tenant_id)::uuid, sqlc.arg(reason)::text, sqlc.arg(requested_by_type)::text, sqlc.arg(requested_by_id)::text,
         sqlc.arg(requested_by_name)::text, sqlc.arg(request_id)::text, now() + sqlc.arg(grace)::interval)
 RETURNING tenant_id, state, step, reason, requested_by_type, requested_by_id, requested_by_name, request_id, requested_at,
-          not_before, started_at, completed_at, passes, kek_versions, removed, audit, completion_seq;
+          not_before, started_at, completed_at, passes, kek_versions, removed, audit, completion_seq, external_reference;
 
 -- Scope: admin, platform scope
 -- name: GetTenantDeletion :one
 SELECT d.tenant_id, d.state, d.step, d.reason, d.requested_by_type, d.requested_by_id, d.requested_by_name, d.request_id,
-       d.requested_at, d.not_before, d.started_at, d.completed_at, d.passes, d.kek_versions, d.removed, d.audit, d.completion_seq,
+       d.requested_at, d.not_before, d.started_at, d.completed_at, d.passes, d.kek_versions, d.removed, d.audit, d.completion_seq, d.external_reference,
        ARRAY(SELECT v.id FROM pandokos.kek_version v WHERE v.id = ANY (d.kek_versions) AND v.state <> 'retired' ORDER BY v.id)::text[] AS pending_kek_versions
   FROM pandokos.tenant_deletion d
  WHERE d.tenant_id = sqlc.arg(tenant_id)::uuid;
@@ -19,7 +19,7 @@ SELECT d.tenant_id, d.state, d.step, d.reason, d.requested_by_type, d.requested_
 -- Scope: admin, platform scope; newest request first
 -- name: ListTenantDeletions :many
 SELECT d.tenant_id, d.state, d.step, d.reason, d.requested_by_type, d.requested_by_id, d.requested_by_name, d.request_id,
-       d.requested_at, d.not_before, d.started_at, d.completed_at, d.passes, d.kek_versions, d.removed, d.audit, d.completion_seq,
+       d.requested_at, d.not_before, d.started_at, d.completed_at, d.passes, d.kek_versions, d.removed, d.audit, d.completion_seq, d.external_reference,
        ARRAY(SELECT v.id FROM pandokos.kek_version v WHERE v.id = ANY (d.kek_versions) AND v.state <> 'retired' ORDER BY v.id)::text[] AS pending_kek_versions
   FROM pandokos.tenant_deletion d
  WHERE (sqlc.arg(state)::text = '' OR d.state = sqlc.arg(state)::text)

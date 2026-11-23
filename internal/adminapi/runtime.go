@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -240,6 +241,31 @@ func parseQuery(r *http.Request, allowed ...string) (map[string]string, error) {
 		return nil, invalid(errs[:1])
 	}
 	return out, nil
+}
+
+// parseQueryLists is parseQuery for an operation with parameters that may be repeated (lists): their
+// values are returned in the second map, in the order given; every other declared parameter is
+// given once, as with parseQuery.
+func parseQueryLists(r *http.Request, lists []string, allowed ...string) (map[string]string, map[string][]string, error) {
+	values, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		return nil, nil, invalidField("query", "is not a valid query string")
+	}
+	out := map[string]string{}
+	many := map[string][]string{}
+	for name, vs := range values {
+		switch {
+		case slices.Contains(lists, name):
+			many[name] = vs
+		case !slices.Contains(allowed, name):
+			return nil, nil, invalid([]FieldError{{Field: "query", Message: "has a parameter this operation does not take"}})
+		case len(vs) != 1:
+			return nil, nil, invalid([]FieldError{{Field: name, Message: "must be given once"}})
+		default:
+			out[name] = vs[0]
+		}
+	}
+	return out, many, nil
 }
 
 // parseQueryLenient is parseQuery for an operation marked x-pandokos-lenient-query: a parameter

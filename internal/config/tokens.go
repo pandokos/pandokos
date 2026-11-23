@@ -37,17 +37,7 @@ func validateTokens(c *Config) []Problem {
 		add("tokens.jwks.max_stale", "must be at least twice tokens.jwks.refresh_interval")
 	}
 
-	if len(t.PrivateHosts) > maxPrivateHosts {
-		add("tokens.private_hosts", "must have at most 32 entries")
-	}
-	hosts := make([]string, len(t.PrivateHosts))
-	for i, h := range t.PrivateHosts {
-		hosts[i] = strings.ToLower(strings.TrimSpace(h))
-		if !validDNSName(hosts[i]) {
-			add("tokens.private_hosts", "entry "+strconv.Itoa(i+1)+" must be a lower-case DNS name: no address literal, no wildcard, no port")
-		}
-	}
-	t.PrivateHosts = hosts
+	t.PrivateHosts = validatePrivateHosts("tokens.private_hosts", t.PrivateHosts, add)
 	return ps
 }
 

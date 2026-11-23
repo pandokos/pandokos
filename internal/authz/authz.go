@@ -84,6 +84,12 @@ const (
 	AuditRead           = "audit:read"
 	PlatformAuditRead   = "platform_audit:read"
 
+	EventDestinationRead   = "event_destination:read"
+	EventDestinationWrite  = "event_destination:write"
+	EventDestinationDelete = "event_destination:delete"
+	EventRead              = "event:read"
+	PlatformEventRead      = "platform_event:read"
+
 	PriceListRead   = "price_list:read"
 	PriceListWrite  = "price_list:write"
 	PriceListDelete = "price_list:delete"
@@ -165,6 +171,11 @@ var catalogue = []Permission{
 	{TenantSupportRead, ScopePlatform, "Reading and listing the support actions of a tenant", true, false},
 	{AuditRead, ScopeTenant, "Reading the tenant's audit log, the head of its chain and its export", false, false},
 	{PlatformAuditRead, ScopePlatform, "Reading the platform's audit log, the head of its chain and its export", false, false},
+	{EventDestinationRead, ScopeTenant, "Reading and listing the tenant's event destinations, their delivery state and their dead letters", false, true},
+	{EventDestinationWrite, ScopeTenant, "Creating and changing an event destination; enabling and disabling it; rotating its signing secret; sending a test event; rewinding it and replaying its dead letters", false, false},
+	{EventDestinationDelete, ScopeTenant, "Deleting an event destination with its dead letters", false, false},
+	{EventRead, ScopeTenant, "Exporting the tenant's events (usage data)", false, false},
+	{PlatformEventRead, ScopePlatform, "Exporting the platform's events", false, false},
 	{TenantDelete, ScopePlatform, "Requesting and cancelling the deletion of a tenant, with a reason", false, false},
 	{KEKRead, ScopePlatform, "Reading the versions of the key-encryption key and their state", false, false},
 }

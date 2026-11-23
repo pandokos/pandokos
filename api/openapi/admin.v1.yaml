@@ -52,6 +52,8 @@ tags:
   - name: platform-limits
   - name: vault
     description: Key-encryption key versions
+  - name: events
+    description: Event destinations, the event export and the events of the platform
 paths:
   /v1/me:
     get:
@@ -3562,6 +3564,213 @@ paths:
         "415": {$ref: '#/components/responses/UnsupportedMediaType'}
         "500": {$ref: '#/components/responses/Internal'}
         "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/event-destinations:
+    parameters: [{$ref: '#/components/parameters/Tenant'}]
+    get:
+      operationId: listEventDestinations
+      tags: [events]
+      summary: List the event destinations of a tenant, with the state of their delivery
+      x-pandokos-permission: event_destination:read
+      parameters: [{$ref: '#/components/parameters/Limit'}, {$ref: '#/components/parameters/Cursor'}]
+      responses:
+        "200": {$ref: '#/components/responses/EventDestinationList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: createEventDestination
+      tags: [events]
+      summary: Register a webhook destination; the signing secret is returned once
+      description: >-
+        The destination receives the events recorded after it is created. A tenant has at most 8
+        (409 conflict), and names are unique in the tenant (409 conflict).
+      x-pandokos-permission: event_destination:write
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/EventDestinationCreate'}}}}
+      responses:
+        "201": {$ref: '#/components/responses/EventDestinationCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/IdempotencyKeyReused'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/event-destinations/{destination}:
+    parameters: [{$ref: '#/components/parameters/Tenant'}, {$ref: '#/components/parameters/EventDestination'}]
+    get:
+      operationId: getEventDestination
+      tags: [events]
+      summary: Read an event destination and the state of its delivery
+      x-pandokos-permission: event_destination:read
+      responses:
+        "200": {$ref: '#/components/responses/EventDestination'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    patch:
+      operationId: updateEventDestination
+      tags: [events]
+      summary: Change an event destination; enable or disable it
+      description: Enabling a disabled destination clears its failure state; it resumes at its cursor.
+      x-pandokos-permission: event_destination:write
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/EventDestinationUpdate'}}}}
+      responses:
+        "200": {$ref: '#/components/responses/EventDestination'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "409": {$ref: '#/components/responses/Conflict'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+    delete:
+      operationId: deleteEventDestination
+      tags: [events]
+      summary: Delete an event destination with its dead letters
+      x-pandokos-permission: event_destination:delete
+      responses:
+        "204": {$ref: '#/components/responses/Deleted'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/event-destinations/{destination}/rotate-secret:
+    parameters: [{$ref: '#/components/parameters/Tenant'}, {$ref: '#/components/parameters/EventDestination'}]
+    post:
+      operationId: rotateEventDestinationSecret
+      tags: [events]
+      summary: Replace the signing secret; the new one is returned once
+      description: The previous secret keeps signing, beside the new one, for previous_valid_for_seconds.
+      x-pandokos-permission: event_destination:write
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: false, content: {application/json: {schema: {$ref: '#/components/schemas/EventDestinationSecretRotate'}}}}
+      responses:
+        "200": {$ref: '#/components/responses/EventDestinationCreated'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "422": {$ref: '#/components/responses/IdempotencyKeyReused'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/event-destinations/{destination}/test:
+    parameters: [{$ref: '#/components/parameters/Tenant'}, {$ref: '#/components/parameters/EventDestination'}]
+    post:
+      operationId: testEventDestination
+      tags: [events]
+      summary: Ask the worker to send one signed test event to the destination
+      description: >-
+        The event has the type io.pandokos.destination.test.v1 and the ID of the answer; it is not kept
+        and moves no cursor. It is sent within seconds, to a disabled destination too; the outcome is
+        the member test of the destination. A new request replaces one that is still waiting.
+      x-pandokos-permission: event_destination:write
+      responses:
+        "202": {$ref: '#/components/responses/EventDestinationTest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/event-destinations/{destination}/rewind:
+    parameters: [{$ref: '#/components/parameters/Tenant'}, {$ref: '#/components/parameters/EventDestination'}]
+    post:
+      operationId: rewindEventDestination
+      tags: [events]
+      summary: Deliver again the events after a sequence number or a time
+      description: Exactly one of after and since. Events that retention removed are not delivered again. The cursor never moves forward.
+      x-pandokos-permission: event_destination:write
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/EventDestinationRewind'}}}}
+      responses:
+        "200": {$ref: '#/components/responses/EventDestination'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/event-destinations/{destination}/dead-letters:
+    parameters: [{$ref: '#/components/parameters/Tenant'}, {$ref: '#/components/parameters/EventDestination'}]
+    get:
+      operationId: listEventDeadLetters
+      tags: [events]
+      summary: List the events the destination refused, oldest first
+      x-pandokos-permission: event_destination:read
+      parameters: [{$ref: '#/components/parameters/Limit'}, {$ref: '#/components/parameters/Cursor'}]
+      responses:
+        "200": {$ref: '#/components/responses/EventDeadLetterList'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/event-destinations/{destination}/dead-letters/replay:
+    parameters: [{$ref: '#/components/parameters/Tenant'}, {$ref: '#/components/parameters/EventDestination'}]
+    post:
+      operationId: replayEventDeadLetters
+      tags: [events]
+      summary: Deliver dead letters again, all of them or the given sequence numbers
+      x-pandokos-permission: event_destination:write
+      requestBody: {required: false, content: {application/json: {schema: {$ref: '#/components/schemas/EventDeadLetterReplay'}}}}
+      responses:
+        "200": {$ref: '#/components/responses/EventDeadLetterReplayed'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "413": {$ref: '#/components/responses/RequestTooLarge'}
+        "415": {$ref: '#/components/responses/UnsupportedMediaType'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/tenants/{tenant}/events/export:
+    parameters: [{$ref: '#/components/parameters/Tenant'}]
+    get:
+      operationId: exportEvents
+      tags: [events]
+      summary: Export the tenant's events after a sequence number, oldest first, as NDJSON
+      description: >-
+        One CloudEvents 1.0 document per line. Ask again with the sequence of the last line: no
+        event is missed and none is repeated. Events older than the retention are gone.
+      x-pandokos-permission: event:read
+      parameters: [{$ref: '#/components/parameters/EventAfter'}, {$ref: '#/components/parameters/EventExportLimit'}, {$ref: '#/components/parameters/EventTypeFilter'}]
+      responses:
+        "200": {$ref: '#/components/responses/EventExport'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "404": {$ref: '#/components/responses/NotFound'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
+  /v1/platform-events/export:
+    get:
+      operationId: exportPlatformEvents
+      tags: [events]
+      summary: Export the platform's events after a sequence number, oldest first, as NDJSON
+      x-pandokos-permission: platform_event:read
+      parameters: [{$ref: '#/components/parameters/EventAfter'}, {$ref: '#/components/parameters/EventExportLimit'}, {$ref: '#/components/parameters/PlatformEventTypeFilter'}]
+      responses:
+        "200": {$ref: '#/components/responses/EventExport'}
+        "400": {$ref: '#/components/responses/InvalidRequest'}
+        "401": {$ref: '#/components/responses/Unauthenticated'}
+        "403": {$ref: '#/components/responses/Forbidden'}
+        "500": {$ref: '#/components/responses/Internal'}
+        "503": {$ref: '#/components/responses/Unavailable'}
 components:
   securitySchemes:
     key:
@@ -3748,6 +3957,11 @@ components:
     AuditRequestID: {name: request_id, in: query, description: Only events of this request., schema: {type: string, pattern: '^[0-9a-f]{32}$'}}
     AuditFromSeq: {name: from_seq, in: query, description: First sequence number; the anchor of the chain by default., schema: {type: integer, minimum: 1}}
     AuditToSeq: {name: to_seq, in: query, description: Last sequence number; the head when the export starts by default., schema: {type: integer, minimum: 1}}
+    EventDestination: {name: destination, in: path, required: true, description: Event destination ID., schema: {$ref: '#/components/schemas/ID'}}
+    EventAfter: {name: after, in: query, description: Only events with a greater sequence number., schema: {type: integer, format: int64, minimum: 0, default: 0}}
+    EventExportLimit: {name: limit, in: query, description: Maximum number of events., schema: {type: integer, minimum: 1, maximum: 10000, default: 1000}}
+    EventTypeFilter: {name: type, in: query, description: Only events of these types., explode: true, schema: {type: array, maxItems: 16, uniqueItems: true, items: {$ref: '#/components/schemas/EventType'}}}
+    PlatformEventTypeFilter: {name: type, in: query, description: Only events of these types., explode: true, schema: {type: array, maxItems: 16, uniqueItems: true, items: {$ref: '#/components/schemas/PlatformEventType'}}}
   responses:
     Me:
       description: The caller.
@@ -4324,6 +4538,13 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/AuditHead'}
+    EventDestination: {description: The destination., content: {application/json: {schema: {$ref: '#/components/schemas/EventDestination'}}}}
+    EventDestinationList: {description: One page of destinations., content: {application/json: {schema: {$ref: '#/components/schemas/EventDestinationList'}}}}
+    EventDestinationCreated: {description: The destination and its signing secret., content: {application/json: {schema: {$ref: '#/components/schemas/EventDestinationCreated'}}}}
+    EventDestinationTest: {description: The test request as recorded., content: {application/json: {schema: {$ref: '#/components/schemas/EventDestinationTest'}}}}
+    EventDeadLetterList: {description: One page of dead letters., content: {application/json: {schema: {$ref: '#/components/schemas/EventDeadLetterList'}}}}
+    EventDeadLetterReplayed: {description: How many dead letters will be delivered again., content: {application/json: {schema: {$ref: '#/components/schemas/EventDeadLetterReplayed'}}}}
+    EventExport: {description: 'The events, oldest first, one CloudEvents document per line.', content: {application/x-ndjson: {schema: {$ref: '#/components/schemas/CloudEvent'}}}}
   schemas:
     ApiFamily:
       type: string
@@ -5447,7 +5668,7 @@ components:
       type: object
       additionalProperties: false
       required: [id, name, display_name, state, created_at, updated_at, state_changed_at, time_zone, time_zone_in_force,
-                 active_currency, active_currency_in_force]
+                 active_currency, active_currency_in_force, external_reference]
       properties:
         id: {$ref: '#/components/schemas/ID'}
         name: {$ref: '#/components/schemas/Name'}
@@ -5462,6 +5683,7 @@ components:
         active_currency: {$ref: '#/components/schemas/CurrencyOrDefault'}
         active_currency_in_force: {type: string}
         active_currency_effective_from: {type: string, format: date-time}
+        external_reference: {$ref: '#/components/schemas/ExternalReference'}
     TenantCreate:
       type: object
       additionalProperties: false
@@ -5477,6 +5699,7 @@ components:
           type: string
           format: date-time
           description: Expiry of the first key. Absent means that it does not expire.
+        external_reference: {$ref: '#/components/schemas/ExternalReference'}
     TenantCreated:
       type: object
       additionalProperties: false
@@ -5492,6 +5715,7 @@ components:
         name: {$ref: '#/components/schemas/Name'}
         display_name: {type: string, maxLength: 200}
         time_zone: {$ref: '#/components/schemas/TimeZoneName'}
+        external_reference: {$ref: '#/components/schemas/ExternalReference'}
     TenantList:
       type: object
       additionalProperties: false
@@ -6303,9 +6527,10 @@ components:
     TenantDeletion:
       type: object
       additionalProperties: false
-      required: [tenant_id, state, step, reason, requested_by, request_id, requested_at, not_before, passes, removed, kek_versions, backup_erasure]
+      required: [tenant_id, state, step, reason, requested_by, request_id, requested_at, not_before, passes, removed, kek_versions, backup_erasure, external_reference]
       properties:
         tenant_id: {$ref: '#/components/schemas/ID'}
+        external_reference: {$ref: '#/components/schemas/ExternalReference'}
         state: {$ref: '#/components/schemas/TenantDeletionState'}
         step: {$ref: '#/components/schemas/TenantDeletionStep'}
         reason: {type: string}
@@ -6353,3 +6578,158 @@ components:
         items:
           type: array
           items: {$ref: '#/components/schemas/KEKVersion'}
+    EventType:
+      type: string
+      enum: [io.pandokos.usage.recorded.v1, io.pandokos.limit.threshold_reached.v1, io.pandokos.limit.exhausted.v1]
+    PlatformEventType:
+      type: string
+      enum: [io.pandokos.tenant.deletion_requested.v1, io.pandokos.tenant.deletion_cancelled.v1, io.pandokos.tenant.deleted.v1,
+             io.pandokos.kek.version_activated.v1, io.pandokos.kek.version_retired.v1]
+    EventDeliveryState: {type: string, enum: [idle, delivering, failing, disabled]}
+    EventDeadLetterState: {type: string, enum: [dead, replay]}
+    DeliveryOutcome: {type: string, enum: [delivered, status, redirect, timeout, connection, tls, blocked]}
+    ExternalReference: {type: string, maxLength: 255, pattern: '^[^\x00-\x1f\x7f]*$', description: What the operator's other systems call the tenant; carried by every event.}
+    WebhookURL: {type: string, minLength: 9, maxLength: 2048, description: 'An https URL without user information or fragment. It is readable by every holder of event_destination:read: put no secret in it.'}
+    CloudEvent:
+      type: object
+      description: A CloudEvents 1.0 document; docs/reference/events.md has the types and their schemas.
+      additionalProperties: false
+      required: [specversion, id, source, type, time, data]
+      properties:
+        specversion: {type: string, pattern: '^1\.0$'}
+        id: {type: string}
+        source: {type: string}
+        type: {type: string}
+        time: {type: string, format: date-time}
+        subject: {type: string}
+        datacontenttype: {type: string}
+        tenantid: {type: string}
+        tenantref: {type: string}
+        sequence: {type: string, pattern: '^[0-9]+$'}
+        data: {$ref: '#/components/schemas/RawObject'}
+    EventDelivery:
+      type: object
+      additionalProperties: false
+      required: [state, cursor, head, failures, next_attempt_at, last_error, dead_letters, expired_events]
+      properties:
+        state: {$ref: '#/components/schemas/EventDeliveryState'}
+        cursor: {type: integer, format: int64, description: Every event up to this sequence number is settled for the destination.}
+        head: {type: integer, format: int64, description: The newest sequence number of the tenant's log.}
+        failures: {type: integer, description: Consecutive failed attempts of the event at the head of the queue.}
+        failing_since: {type: string, format: date-time}
+        next_attempt_at: {type: string, format: date-time}
+        last_success_at: {type: string, format: date-time}
+        last_failure_at: {type: string, format: date-time}
+        last_error: {type: string, description: 'The outcome of the last failed request; empty when none.'}
+        last_status: {type: integer}
+        dead_letters: {type: integer, format: int64}
+        expired_events: {type: integer, format: int64, description: Events that retention removed before the destination received them.}
+    EventDestination:
+      type: object
+      additionalProperties: false
+      required: [id, tenant_id, name, description, url, event_types, enabled, secret_created_at, created_at, updated_at, delivery]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        tenant_id: {$ref: '#/components/schemas/ID'}
+        name: {$ref: '#/components/schemas/Name'}
+        description: {type: string}
+        url: {$ref: '#/components/schemas/WebhookURL'}
+        event_types: {type: array, items: {$ref: '#/components/schemas/EventType'}, description: Empty means every type.}
+        enabled: {type: boolean}
+        secret_created_at: {type: string, format: date-time}
+        previous_secret_expires_at: {type: string, format: date-time, description: Present while a replaced secret still signs.}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        delivery: {$ref: '#/components/schemas/EventDelivery'}
+        test: {$ref: '#/components/schemas/EventDestinationTest', description: The last test request; absent when none was made.}
+    EventDestinationCreate:
+      type: object
+      additionalProperties: false
+      required: [name, url]
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        description: {type: string, maxLength: 500}
+        url: {$ref: '#/components/schemas/WebhookURL'}
+        event_types: {type: array, maxItems: 16, uniqueItems: true, items: {$ref: '#/components/schemas/EventType'}}
+        enabled: {type: boolean, default: true}
+    EventDestinationUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        description: {type: string, maxLength: 500}
+        url: {$ref: '#/components/schemas/WebhookURL'}
+        event_types: {type: array, maxItems: 16, uniqueItems: true, items: {$ref: '#/components/schemas/EventType'}}
+        enabled: {type: boolean}
+    EventDestinationCreated:
+      type: object
+      additionalProperties: false
+      required: [destination]
+      properties:
+        destination: {$ref: '#/components/schemas/EventDestination'}
+        secret: {type: string, description: 'The signing secret (whsec_…). It is returned by the first response only; absent on an idempotent replay.'}
+    EventDestinationSecretRotate:
+      type: object
+      x-pandokos-presence: true
+      additionalProperties: false
+      properties:
+        previous_valid_for_seconds: {type: integer, minimum: 0, maximum: 604800, default: 86400}
+    EventDestinationRewind:
+      type: object
+      x-pandokos-presence: true
+      additionalProperties: false
+      minProperties: 1
+      maxProperties: 1
+      properties:
+        after: {type: integer, format: int64, minimum: 0}
+        since: {type: string, format: date-time}
+    EventDestinationTest:
+      type: object
+      additionalProperties: false
+      required: [event_id, requested_at]
+      properties:
+        event_id: {type: string, description: The ID the test event carries.}
+        requested_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time, description: Absent while the request waits for the worker.}
+        outcome: {$ref: '#/components/schemas/DeliveryOutcome'}
+        status: {type: integer}
+    EventDestinationList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/EventDestination'}}
+        next_cursor: {type: string, description: Absent on the last page.}
+    EventDeadLetter:
+      type: object
+      additionalProperties: false
+      required: [seq, event_id, type, state, attempts, reason, parked_at]
+      properties:
+        seq: {type: integer, format: int64}
+        event_id: {type: string}
+        type: {$ref: '#/components/schemas/EventType'}
+        state: {$ref: '#/components/schemas/EventDeadLetterState'}
+        attempts: {type: integer}
+        reason: {$ref: '#/components/schemas/DeliveryOutcome'}
+        status: {type: integer}
+        parked_at: {type: string, format: date-time}
+        replay_requested_at: {type: string, format: date-time}
+    EventDeadLetterList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/EventDeadLetter'}}
+        next_cursor: {type: string, description: Absent on the last page.}
+    EventDeadLetterReplay:
+      type: object
+      additionalProperties: false
+      properties:
+        seqs: {type: array, maxItems: 1000, uniqueItems: true, items: {type: integer, format: int64, minimum: 1}, description: Absent or empty means every dead letter of the destination.}
+    EventDeadLetterReplayed:
+      type: object
+      additionalProperties: false
+      required: [replayed]
+      properties:
+        replayed: {type: integer, format: int64}

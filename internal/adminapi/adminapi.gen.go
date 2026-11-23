@@ -28,30 +28,33 @@ var (
 	re3  = regexp.MustCompile("^[a-z][a-z0-9-]{0,62}$")
 	re4  = regexp.MustCompile("^[a-z_]+:[a-z_]+$")
 	re5  = regexp.MustCompile("^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$")
-	re6  = regexp.MustCompile("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
-	re7  = regexp.MustCompile("^https?://[^/?#@\\s]+(/[^?#\\s]*)?$")
-	re8  = regexp.MustCompile("^[a-z0-9][a-z0-9-]{0,62}$")
-	re9  = regexp.MustCompile("^([a-z0-9][a-z0-9-]{0,62})?$")
-	re10 = regexp.MustCompile("^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,6})?$")
-	re11 = regexp.MustCompile("^[a-z0-9][a-z0-9._@+-]{1,62}[a-z0-9]$")
-	re12 = regexp.MustCompile("^[a-z0-9][a-z0-9_-]{0,31}$")
-	re13 = regexp.MustCompile("^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$")
-	re14 = regexp.MustCompile("^[!-~]+$")
-	re15 = regexp.MustCompile("^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$")
-	re16 = regexp.MustCompile("^https://[^\\s?#@]+$")
-	re17 = regexp.MustCompile("^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$")
-	re18 = regexp.MustCompile("^[A-Za-z0-9_.:/-]{1,64}$")
-	re19 = regexp.MustCompile("^p[a-z2-7]{16}$")
-	re20 = regexp.MustCompile("^(0|[1-9][0-9]{0,6})(\\.[0-9]{1,12})?$")
-	re21 = regexp.MustCompile("^[a-z0-9][a-z0-9_.-]{0,62}$")
-	re22 = regexp.MustCompile("^([a-z0-9][a-z0-9_.-]{0,62})?$")
-	re23 = regexp.MustCompile("^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$")
-	re24 = regexp.MustCompile("^t[a-z2-7]{16}$")
-	re25 = regexp.MustCompile("^[a-z_]+\\.([a-z_]+)?$")
-	re26 = regexp.MustCompile("^[a-z_]{1,64}$")
-	re27 = regexp.MustCompile("^[A-Za-z0-9_-]{1,64}$")
-	re28 = regexp.MustCompile("^[0-9a-f]{32}$")
-	re29 = regexp.MustCompile("^(provider|model|caller|key)(,(provider|model|caller|key)){0,3}$")
+	re6  = regexp.MustCompile("^1\\.0$")
+	re7  = regexp.MustCompile("^[0-9]+$")
+	re8  = regexp.MustCompile("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
+	re9  = regexp.MustCompile("^https?://[^/?#@\\s]+(/[^?#\\s]*)?$")
+	re10 = regexp.MustCompile("^[a-z0-9][a-z0-9-]{0,62}$")
+	re11 = regexp.MustCompile("^([a-z0-9][a-z0-9-]{0,62})?$")
+	re12 = regexp.MustCompile("^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,6})?$")
+	re13 = regexp.MustCompile("^[a-z0-9][a-z0-9._@+-]{1,62}[a-z0-9]$")
+	re14 = regexp.MustCompile("^[a-z0-9][a-z0-9_-]{0,31}$")
+	re15 = regexp.MustCompile("^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$")
+	re16 = regexp.MustCompile("^[!-~]+$")
+	re17 = regexp.MustCompile("^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$")
+	re18 = regexp.MustCompile("^https://[^\\s?#@]+$")
+	re19 = regexp.MustCompile("^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$")
+	re20 = regexp.MustCompile("^[A-Za-z0-9_.:/-]{1,64}$")
+	re21 = regexp.MustCompile("^p[a-z2-7]{16}$")
+	re22 = regexp.MustCompile("^(0|[1-9][0-9]{0,6})(\\.[0-9]{1,12})?$")
+	re23 = regexp.MustCompile("^[a-z0-9][a-z0-9_.-]{0,62}$")
+	re24 = regexp.MustCompile("^([a-z0-9][a-z0-9_.-]{0,62})?$")
+	re25 = regexp.MustCompile("^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$")
+	re26 = regexp.MustCompile("^[^\\x00-\\x1f\\x7f]*$")
+	re27 = regexp.MustCompile("^t[a-z2-7]{16}$")
+	re28 = regexp.MustCompile("^[a-z_]+\\.([a-z_]+)?$")
+	re29 = regexp.MustCompile("^[a-z_]{1,64}$")
+	re30 = regexp.MustCompile("^[A-Za-z0-9_-]{1,64}$")
+	re31 = regexp.MustCompile("^[0-9a-f]{32}$")
+	re32 = regexp.MustCompile("^(provider|model|caller|key)(,(provider|model|caller|key)){0,3}$")
 )
 
 // ActiveCurrency is a schema of the administration API.
@@ -422,6 +425,37 @@ func (v *CapabilityChecks) Validate() []FieldError {
 	return errs
 }
 
+// CloudEvent: A CloudEvents 1.0 document; docs/reference/events.md has the types and their schemas.
+type CloudEvent struct {
+	Specversion     string          `json:"specversion"`
+	ID              string          `json:"id"`
+	Source          string          `json:"source"`
+	Type            string          `json:"type"`
+	Time            time.Time       `json:"time"`
+	Subject         string          `json:"subject,omitempty"`
+	Datacontenttype string          `json:"datacontenttype,omitempty"`
+	Tenantid        string          `json:"tenantid,omitempty"`
+	Tenantref       string          `json:"tenantref,omitempty"`
+	Sequence        string          `json:"sequence,omitempty"`
+	Data            json.RawMessage `json:"data"`
+}
+
+var requiredCloudEvent = []string{"specversion", "id", "source", "type", "time", "data"}
+
+var nestedCloudEvent []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *CloudEvent) Validate() []FieldError {
+	var errs []FieldError
+	if !re6.MatchString(v.Specversion) {
+		errs = append(errs, FieldError{Field: "specversion", Message: "must match ^1\\.0$"})
+	}
+	if v.Sequence != "" && !re7.MatchString(v.Sequence) {
+		errs = append(errs, FieldError{Field: "sequence", Message: "must match ^[0-9]+$"})
+	}
+	return errs
+}
+
 // Credential is a schema of the administration API.
 type Credential struct {
 	ID          string          `json:"id"`
@@ -466,7 +500,7 @@ func (v *Credential) Validate() []FieldError {
 	if !re3.MatchString(v.Provider) {
 		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
-	if !re6.MatchString(v.Label) {
+	if !re8.MatchString(v.Label) {
 		errs = append(errs, FieldError{Field: "label", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if !v.Owner.Valid() {
@@ -541,7 +575,7 @@ func (v *CredentialCreate) Validate() []FieldError {
 	if !re3.MatchString(v.Provider) {
 		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
-	if !re6.MatchString(v.Label) {
+	if !re8.MatchString(v.Label) {
 		errs = append(errs, FieldError{Field: "label", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if runeCount(v.Secret) < 8 {
@@ -654,7 +688,7 @@ var nestedCredentialUpdate []nestedSpec
 func (v *CredentialUpdate) Validate() []FieldError {
 	var errs []FieldError
 	if v.Label.Set {
-		if !re6.MatchString(v.Label.Value) {
+		if !re8.MatchString(v.Label.Value) {
 			errs = append(errs, FieldError{Field: "label", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 	}
@@ -664,6 +698,29 @@ func (v *CredentialUpdate) Validate() []FieldError {
 		}
 	}
 	return errs
+}
+
+// DeliveryOutcome is an enumeration of the administration API.
+type DeliveryOutcome string
+
+// Values of DeliveryOutcome.
+const (
+	DeliveryOutcomeDelivered  DeliveryOutcome = "delivered"
+	DeliveryOutcomeStatus     DeliveryOutcome = "status"
+	DeliveryOutcomeRedirect   DeliveryOutcome = "redirect"
+	DeliveryOutcomeTimeout    DeliveryOutcome = "timeout"
+	DeliveryOutcomeConnection DeliveryOutcome = "connection"
+	DeliveryOutcomeTls        DeliveryOutcome = "tls"
+	DeliveryOutcomeBlocked    DeliveryOutcome = "blocked"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v DeliveryOutcome) Valid() bool {
+	switch v {
+	case DeliveryOutcomeDelivered, DeliveryOutcomeStatus, DeliveryOutcomeRedirect, DeliveryOutcomeTimeout, DeliveryOutcomeConnection, DeliveryOutcomeTls, DeliveryOutcomeBlocked:
+		return true
+	}
+	return false
 }
 
 // EnabledFilter: A filter on the enabled flag.
@@ -715,7 +772,7 @@ func (v *Endpoint) Validate() []FieldError {
 	if !re3.MatchString(v.Provider) {
 		errs = append(errs, FieldError{Field: "provider", Message: "must match ^[a-z][a-z0-9-]{0,62}$"})
 	}
-	if !re6.MatchString(v.Name) {
+	if !re8.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	return errs
@@ -738,10 +795,10 @@ var nestedEndpointCreate []nestedSpec
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *EndpointCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re6.MatchString(v.Name) {
+	if !re8.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
-	if !re7.MatchString(v.BaseURL) {
+	if !re9.MatchString(v.BaseURL) {
 		errs = append(errs, FieldError{Field: "base_url", Message: "must match ^https?://[^/?#@\\s]+(/[^?#\\s]*)?$"})
 	}
 	if runeCount(v.BaseURL) < 8 {
@@ -750,7 +807,7 @@ func (v *EndpointCreate) Validate() []FieldError {
 	if runeCount(v.BaseURL) > 2048 {
 		errs = append(errs, FieldError{Field: "base_url", Message: "length must be at most 2048"})
 	}
-	if v.Region != "" && !re8.MatchString(v.Region) {
+	if v.Region != "" && !re10.MatchString(v.Region) {
 		errs = append(errs, FieldError{Field: "region", Message: "must match ^[a-z0-9][a-z0-9-]{0,62}$"})
 	}
 	if runeCount(v.Description) > 500 {
@@ -800,7 +857,7 @@ var nestedEndpointUpdate []nestedSpec
 func (v *EndpointUpdate) Validate() []FieldError {
 	var errs []FieldError
 	if v.BaseURL.Set {
-		if !re7.MatchString(v.BaseURL.Value) {
+		if !re9.MatchString(v.BaseURL.Value) {
 			errs = append(errs, FieldError{Field: "base_url", Message: "must match ^https?://[^/?#@\\s]+(/[^?#\\s]*)?$"})
 		}
 		if runeCount(v.BaseURL.Value) < 8 {
@@ -811,7 +868,7 @@ func (v *EndpointUpdate) Validate() []FieldError {
 		}
 	}
 	if v.Region.Set {
-		if !re9.MatchString(v.Region.Value) {
+		if !re11.MatchString(v.Region.Value) {
 			errs = append(errs, FieldError{Field: "region", Message: "must match ^([a-z0-9][a-z0-9-]{0,62})?$"})
 		}
 	}
@@ -827,6 +884,491 @@ func (v *EndpointUpdate) Validate() []FieldError {
 		}
 	}
 	return errs
+}
+
+// EventDeadLetter is a schema of the administration API.
+type EventDeadLetter struct {
+	Seq               int                  `json:"seq"`
+	EventID           string               `json:"event_id"`
+	Type              EventType            `json:"type"`
+	State             EventDeadLetterState `json:"state"`
+	Attempts          int                  `json:"attempts"`
+	Reason            DeliveryOutcome      `json:"reason"`
+	Status            int                  `json:"status,omitempty"`
+	ParkedAt          time.Time            `json:"parked_at"`
+	ReplayRequestedAt *time.Time           `json:"replay_requested_at,omitempty"`
+}
+
+var requiredEventDeadLetter = []string{"seq", "event_id", "type", "state", "attempts", "reason", "parked_at"}
+
+var nestedEventDeadLetter []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *EventDeadLetter) Validate() []FieldError {
+	var errs []FieldError
+	if !v.Type.Valid() {
+		errs = append(errs, FieldError{Field: "type", Message: "must be one of io.pandokos.usage.recorded.v1, io.pandokos.limit.threshold_reached.v1, io.pandokos.limit.exhausted.v1"})
+	}
+	if !v.State.Valid() {
+		errs = append(errs, FieldError{Field: "state", Message: "must be one of dead, replay"})
+	}
+	if !v.Reason.Valid() {
+		errs = append(errs, FieldError{Field: "reason", Message: "must be one of delivered, status, redirect, timeout, connection, tls, blocked"})
+	}
+	return errs
+}
+
+// EventDeadLetterList is a schema of the administration API.
+type EventDeadLetterList struct {
+	Items []EventDeadLetter `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredEventDeadLetterList = []string{"items"}
+
+var nestedEventDeadLetterList = []nestedSpec{{Name: "items", Many: true, Required: requiredEventDeadLetter, Nested: nestedEventDeadLetter}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *EventDeadLetterList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// EventDeadLetterReplay is a schema of the administration API.
+type EventDeadLetterReplay struct {
+	// Absent or empty means every dead letter of the destination.
+	Seqs []int `json:"seqs,omitempty"`
+}
+
+var requiredEventDeadLetterReplay = []string{}
+
+var nestedEventDeadLetterReplay []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *EventDeadLetterReplay) Validate() []FieldError {
+	var errs []FieldError
+	if len(v.Seqs) > 1000 {
+		errs = append(errs, FieldError{Field: "seqs", Message: "must have at most 1000 items"})
+	}
+	if !unique(v.Seqs) {
+		errs = append(errs, FieldError{Field: "seqs", Message: "must not repeat an item"})
+	}
+	if anyBelow(v.Seqs, 1) {
+		errs = append(errs, FieldError{Field: "seqs", Message: "every item must be at least 1"})
+	}
+	return errs
+}
+
+// EventDeadLetterReplayed is a schema of the administration API.
+type EventDeadLetterReplayed struct {
+	Replayed int `json:"replayed"`
+}
+
+var requiredEventDeadLetterReplayed = []string{"replayed"}
+
+var nestedEventDeadLetterReplayed []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *EventDeadLetterReplayed) Validate() []FieldError {
+	var errs []FieldError
+	return errs
+}
+
+// EventDeadLetterState is an enumeration of the administration API.
+type EventDeadLetterState string
+
+// Values of EventDeadLetterState.
+const (
+	EventDeadLetterStateDead   EventDeadLetterState = "dead"
+	EventDeadLetterStateReplay EventDeadLetterState = "replay"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v EventDeadLetterState) Valid() bool {
+	switch v {
+	case EventDeadLetterStateDead, EventDeadLetterStateReplay:
+		return true
+	}
+	return false
+}
+
+// EventDelivery is a schema of the administration API.
+type EventDelivery struct {
+	State EventDeliveryState `json:"state"`
+	// Every event up to this sequence number is settled for the destination.
+	Cursor int `json:"cursor"`
+	// The newest sequence number of the tenant's log.
+	Head int `json:"head"`
+	// Consecutive failed attempts of the event at the head of the queue.
+	Failures      int        `json:"failures"`
+	FailingSince  *time.Time `json:"failing_since,omitempty"`
+	NextAttemptAt time.Time  `json:"next_attempt_at"`
+	LastSuccessAt *time.Time `json:"last_success_at,omitempty"`
+	LastFailureAt *time.Time `json:"last_failure_at,omitempty"`
+	// The outcome of the last failed request; empty when none.
+	LastError   string `json:"last_error"`
+	LastStatus  int    `json:"last_status,omitempty"`
+	DeadLetters int    `json:"dead_letters"`
+	// Events that retention removed before the destination received them.
+	ExpiredEvents int `json:"expired_events"`
+}
+
+var requiredEventDelivery = []string{"state", "cursor", "head", "failures", "next_attempt_at", "last_error", "dead_letters", "expired_events"}
+
+var nestedEventDelivery []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *EventDelivery) Validate() []FieldError {
+	var errs []FieldError
+	if !v.State.Valid() {
+		errs = append(errs, FieldError{Field: "state", Message: "must be one of idle, delivering, failing, disabled"})
+	}
+	return errs
+}
+
+// EventDeliveryState is an enumeration of the administration API.
+type EventDeliveryState string
+
+// Values of EventDeliveryState.
+const (
+	EventDeliveryStateIdle       EventDeliveryState = "idle"
+	EventDeliveryStateDelivering EventDeliveryState = "delivering"
+	EventDeliveryStateFailing    EventDeliveryState = "failing"
+	EventDeliveryStateDisabled   EventDeliveryState = "disabled"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v EventDeliveryState) Valid() bool {
+	switch v {
+	case EventDeliveryStateIdle, EventDeliveryStateDelivering, EventDeliveryStateFailing, EventDeliveryStateDisabled:
+		return true
+	}
+	return false
+}
+
+// EventDestination is a schema of the administration API.
+type EventDestination struct {
+	ID          string `json:"id"`
+	TenantID    string `json:"tenant_id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	URL         string `json:"url"`
+	// Empty means every type.
+	EventTypes      []EventType `json:"event_types"`
+	Enabled         bool        `json:"enabled"`
+	SecretCreatedAt time.Time   `json:"secret_created_at"`
+	// Present while a replaced secret still signs.
+	PreviousSecretExpiresAt *time.Time    `json:"previous_secret_expires_at,omitempty"`
+	CreatedAt               time.Time     `json:"created_at"`
+	UpdatedAt               time.Time     `json:"updated_at"`
+	Delivery                EventDelivery `json:"delivery"`
+	// The last test request; absent when none was made.
+	Test *EventDestinationTest `json:"test,omitempty"`
+}
+
+var requiredEventDestination = []string{"id", "tenant_id", "name", "description", "url", "event_types", "enabled", "secret_created_at", "created_at", "updated_at", "delivery"}
+
+var nestedEventDestination = []nestedSpec{{Name: "delivery", Required: requiredEventDelivery, Nested: nestedEventDelivery}, {Name: "test", Required: requiredEventDestinationTest, Nested: nestedEventDestinationTest}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *EventDestination) Validate() []FieldError {
+	var errs []FieldError
+	if !re2.MatchString(v.ID) {
+		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !re2.MatchString(v.TenantID) {
+		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !re8.MatchString(v.Name) {
+		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+	}
+	if runeCount(v.URL) < 9 {
+		errs = append(errs, FieldError{Field: "url", Message: "length must be at least 9"})
+	}
+	if runeCount(v.URL) > 2048 {
+		errs = append(errs, FieldError{Field: "url", Message: "length must be at most 2048"})
+	}
+	for _, item := range v.EventTypes {
+		if !item.Valid() {
+			errs = append(errs, FieldError{Field: "event_types", Message: "every item must be one of io.pandokos.usage.recorded.v1, io.pandokos.limit.threshold_reached.v1, io.pandokos.limit.exhausted.v1"})
+		}
+	}
+	for _, e := range v.Delivery.Validate() {
+		errs = append(errs, FieldError{Field: "delivery." + e.Field, Message: e.Message})
+	}
+	if v.Test != nil {
+		for _, e := range v.Test.Validate() {
+			errs = append(errs, FieldError{Field: "test." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// EventDestinationCreate is a schema of the administration API.
+type EventDestinationCreate struct {
+	Name        string      `json:"name"`
+	Description string      `json:"description,omitempty"`
+	URL         string      `json:"url"`
+	EventTypes  []EventType `json:"event_types,omitempty"`
+	Enabled     bool        `json:"enabled"`
+}
+
+var requiredEventDestinationCreate = []string{"name", "url"}
+
+var nestedEventDestinationCreate []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *EventDestinationCreate) Validate() []FieldError {
+	var errs []FieldError
+	if !re8.MatchString(v.Name) {
+		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+	}
+	if runeCount(v.Description) > 500 {
+		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 500"})
+	}
+	if runeCount(v.URL) < 9 {
+		errs = append(errs, FieldError{Field: "url", Message: "length must be at least 9"})
+	}
+	if runeCount(v.URL) > 2048 {
+		errs = append(errs, FieldError{Field: "url", Message: "length must be at most 2048"})
+	}
+	if len(v.EventTypes) > 16 {
+		errs = append(errs, FieldError{Field: "event_types", Message: "must have at most 16 items"})
+	}
+	if !unique(v.EventTypes) {
+		errs = append(errs, FieldError{Field: "event_types", Message: "must not repeat an item"})
+	}
+	for _, item := range v.EventTypes {
+		if !item.Valid() {
+			errs = append(errs, FieldError{Field: "event_types", Message: "every item must be one of io.pandokos.usage.recorded.v1, io.pandokos.limit.threshold_reached.v1, io.pandokos.limit.exhausted.v1"})
+		}
+	}
+	return errs
+}
+
+// EventDestinationCreated is a schema of the administration API.
+type EventDestinationCreated struct {
+	Destination EventDestination `json:"destination"`
+	// The signing secret (whsec_…). It is returned by the first response only; absent on an idempotent replay.
+	Secret string `json:"secret,omitempty"`
+}
+
+var requiredEventDestinationCreated = []string{"destination"}
+
+var nestedEventDestinationCreated = []nestedSpec{{Name: "destination", Required: requiredEventDestination, Nested: nestedEventDestination}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *EventDestinationCreated) Validate() []FieldError {
+	var errs []FieldError
+	for _, e := range v.Destination.Validate() {
+		errs = append(errs, FieldError{Field: "destination." + e.Field, Message: e.Message})
+	}
+	return errs
+}
+
+// EventDestinationList is a schema of the administration API.
+type EventDestinationList struct {
+	Items []EventDestination `json:"items"`
+	// Absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+var requiredEventDestinationList = []string{"items"}
+
+var nestedEventDestinationList = []nestedSpec{{Name: "items", Many: true, Required: requiredEventDestination, Nested: nestedEventDestination}}
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *EventDestinationList) Validate() []FieldError {
+	var errs []FieldError
+	for i := range v.Items {
+		for _, e := range v.Items[i].Validate() {
+			errs = append(errs, FieldError{Field: "items[" + strconv.Itoa(i) + "]." + e.Field, Message: e.Message})
+		}
+	}
+	return errs
+}
+
+// EventDestinationRewind is a schema of the administration API.
+type EventDestinationRewind struct {
+	After Optional[int]        `json:"after,omitzero"`
+	Since Optional[*time.Time] `json:"since,omitzero"`
+}
+
+var requiredEventDestinationRewind = []string{}
+
+var nestedEventDestinationRewind []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *EventDestinationRewind) Validate() []FieldError {
+	var errs []FieldError
+	if v.After.Set {
+		if v.After.Value < 0 {
+			errs = append(errs, FieldError{Field: "after", Message: "must be at least 0"})
+		}
+	}
+	if v.Since.Set {
+	}
+	{
+		n := 0
+		if v.After.Set {
+			n++
+		}
+		if v.Since.Set {
+			n++
+		}
+		if n < 1 {
+			errs = append(errs, FieldError{Field: "body", Message: "must have at least 1 members"})
+		}
+		if n > 1 {
+			errs = append(errs, FieldError{Field: "body", Message: "must have at most 1 members"})
+		}
+	}
+	return errs
+}
+
+// EventDestinationSecretRotate is a schema of the administration API.
+type EventDestinationSecretRotate struct {
+	PreviousValidForSeconds Optional[int] `json:"previous_valid_for_seconds,omitzero"`
+}
+
+var requiredEventDestinationSecretRotate = []string{}
+
+var nestedEventDestinationSecretRotate []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *EventDestinationSecretRotate) Validate() []FieldError {
+	var errs []FieldError
+	if v.PreviousValidForSeconds.Set {
+		if v.PreviousValidForSeconds.Value < 0 {
+			errs = append(errs, FieldError{Field: "previous_valid_for_seconds", Message: "must be at least 0"})
+		}
+		if v.PreviousValidForSeconds.Value > 604800 {
+			errs = append(errs, FieldError{Field: "previous_valid_for_seconds", Message: "must be at most 604800"})
+		}
+	}
+	return errs
+}
+
+// EventDestinationTest is a schema of the administration API.
+type EventDestinationTest struct {
+	// The ID the test event carries.
+	EventID     string    `json:"event_id"`
+	RequestedAt time.Time `json:"requested_at"`
+	// Absent while the request waits for the worker.
+	CompletedAt *time.Time      `json:"completed_at,omitempty"`
+	Outcome     DeliveryOutcome `json:"outcome,omitempty"`
+	Status      int             `json:"status,omitempty"`
+}
+
+var requiredEventDestinationTest = []string{"event_id", "requested_at"}
+
+var nestedEventDestinationTest []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *EventDestinationTest) Validate() []FieldError {
+	var errs []FieldError
+	if v.Outcome != "" && !v.Outcome.Valid() {
+		errs = append(errs, FieldError{Field: "outcome", Message: "must be one of delivered, status, redirect, timeout, connection, tls, blocked"})
+	}
+	return errs
+}
+
+// EventDestinationUpdate is a schema of the administration API.
+type EventDestinationUpdate struct {
+	Name        Optional[string]      `json:"name,omitzero"`
+	Description Optional[string]      `json:"description,omitzero"`
+	URL         Optional[string]      `json:"url,omitzero"`
+	EventTypes  Optional[[]EventType] `json:"event_types,omitzero"`
+	Enabled     Optional[bool]        `json:"enabled,omitzero"`
+}
+
+var requiredEventDestinationUpdate = []string{}
+
+var nestedEventDestinationUpdate []nestedSpec
+
+// Validate returns the rules of the document that v breaks. A message never repeats a value.
+func (v *EventDestinationUpdate) Validate() []FieldError {
+	var errs []FieldError
+	if v.Name.Set {
+		if !re8.MatchString(v.Name.Value) {
+			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+		}
+	}
+	if v.Description.Set {
+		if runeCount(v.Description.Value) > 500 {
+			errs = append(errs, FieldError{Field: "description", Message: "length must be at most 500"})
+		}
+	}
+	if v.URL.Set {
+		if runeCount(v.URL.Value) < 9 {
+			errs = append(errs, FieldError{Field: "url", Message: "length must be at least 9"})
+		}
+		if runeCount(v.URL.Value) > 2048 {
+			errs = append(errs, FieldError{Field: "url", Message: "length must be at most 2048"})
+		}
+	}
+	if v.EventTypes.Set {
+		if len(v.EventTypes.Value) > 16 {
+			errs = append(errs, FieldError{Field: "event_types", Message: "must have at most 16 items"})
+		}
+		if !unique(v.EventTypes.Value) {
+			errs = append(errs, FieldError{Field: "event_types", Message: "must not repeat an item"})
+		}
+		for _, item := range v.EventTypes.Value {
+			if !item.Valid() {
+				errs = append(errs, FieldError{Field: "event_types", Message: "every item must be one of io.pandokos.usage.recorded.v1, io.pandokos.limit.threshold_reached.v1, io.pandokos.limit.exhausted.v1"})
+			}
+		}
+	}
+	if v.Enabled.Set {
+	}
+	{
+		n := 0
+		if v.Name.Set {
+			n++
+		}
+		if v.Description.Set {
+			n++
+		}
+		if v.URL.Set {
+			n++
+		}
+		if v.EventTypes.Set {
+			n++
+		}
+		if v.Enabled.Set {
+			n++
+		}
+		if n < 1 {
+			errs = append(errs, FieldError{Field: "body", Message: "must have at least 1 members"})
+		}
+	}
+	return errs
+}
+
+// EventType is an enumeration of the administration API.
+type EventType string
+
+// Values of EventType.
+const (
+	EventTypeIoPandokosUsageRecordedV1         EventType = "io.pandokos.usage.recorded.v1"
+	EventTypeIoPandokosLimitThresholdReachedV1 EventType = "io.pandokos.limit.threshold_reached.v1"
+	EventTypeIoPandokosLimitExhaustedV1        EventType = "io.pandokos.limit.exhausted.v1"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v EventType) Valid() bool {
+	switch v {
+	case EventTypeIoPandokosUsageRecordedV1, EventTypeIoPandokosLimitThresholdReachedV1, EventTypeIoPandokosLimitExhaustedV1:
+		return true
+	}
+	return false
 }
 
 // ExportFormat is an enumeration of the administration API.
@@ -914,7 +1456,7 @@ func (v *IssuerRef) Validate() []FieldError {
 	if !re2.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if v.Name != "" && !re6.MatchString(v.Name) {
+	if v.Name != "" && !re8.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	return errs
@@ -1252,7 +1794,7 @@ func (v *LimitRuleCreate) Validate() []FieldError {
 	if v.Limit > 1000000000000 {
 		errs = append(errs, FieldError{Field: "limit", Message: "must be at most 1000000000000"})
 	}
-	if v.Amount != "" && !re10.MatchString(v.Amount) {
+	if v.Amount != "" && !re12.MatchString(v.Amount) {
 		errs = append(errs, FieldError{Field: "amount", Message: "must match ^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,6})?$"})
 	}
 	if v.Currency != "" && !re1.MatchString(v.Currency) {
@@ -1345,7 +1887,7 @@ func (v *LimitRuleUpdate) Validate() []FieldError {
 		}
 	}
 	if v.Amount.Set {
-		if !re10.MatchString(v.Amount.Value) {
+		if !re12.MatchString(v.Amount.Value) {
 			errs = append(errs, FieldError{Field: "amount", Message: "must match ^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,6})?$"})
 		}
 	}
@@ -1556,7 +2098,7 @@ func (v *Member) Validate() []FieldError {
 	if !v.SignIn.Valid() {
 		errs = append(errs, FieldError{Field: "sign_in", Message: "must be one of local, oidc"})
 	}
-	if v.Username != "" && !re11.MatchString(v.Username) {
+	if v.Username != "" && !re13.MatchString(v.Username) {
 		errs = append(errs, FieldError{Field: "username", Message: "must match ^[a-z0-9][a-z0-9._@+-]{1,62}[a-z0-9]$"})
 	}
 	if runeCount(v.DisplayName) > 200 {
@@ -1620,7 +2162,7 @@ func (v *MemberCreate) Validate() []FieldError {
 	if !v.Account.Valid() {
 		errs = append(errs, FieldError{Field: "account", Message: "must be one of new, existing"})
 	}
-	if v.Username != "" && !re11.MatchString(v.Username) {
+	if v.Username != "" && !re13.MatchString(v.Username) {
 		errs = append(errs, FieldError{Field: "username", Message: "must match ^[a-z0-9][a-z0-9._@+-]{1,62}[a-z0-9]$"})
 	}
 	if v.UserID != "" && !re2.MatchString(v.UserID) {
@@ -1810,7 +2352,7 @@ func (v *MetadataKeysSet) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "keys", Message: "must have at most 64 items"})
 	}
 	for _, item := range v.Keys {
-		if !re12.MatchString(item) {
+		if !re14.MatchString(item) {
 			errs = append(errs, FieldError{Field: "keys", Message: "must match ^[a-z0-9][a-z0-9_-]{0,31}$"})
 		}
 	}
@@ -1862,7 +2404,7 @@ func (v *Model) Validate() []FieldError {
 	if !re5.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 	}
-	if !re13.MatchString(v.Ref) {
+	if !re15.MatchString(v.Ref) {
 		errs = append(errs, FieldError{Field: "ref", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 	}
 	if !v.Status.Valid() {
@@ -1920,7 +2462,7 @@ func (v *ModelCreate) Validate() []FieldError {
 	if !re5.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 	}
-	if v.UpstreamID != "" && !re14.MatchString(v.UpstreamID) {
+	if v.UpstreamID != "" && !re16.MatchString(v.UpstreamID) {
 		errs = append(errs, FieldError{Field: "upstream_id", Message: "must match ^[!-~]+$"})
 	}
 	if runeCount(v.UpstreamID) > 256 {
@@ -1945,7 +2487,7 @@ func (v *ModelCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "capabilities", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Capabilities {
-		if !re15.MatchString(item) {
+		if !re17.MatchString(item) {
 			errs = append(errs, FieldError{Field: "capabilities", Message: "must match ^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$"})
 		}
 	}
@@ -1991,7 +2533,7 @@ func (v *ModelGrant) Validate() []FieldError {
 	if !re2.MatchString(v.TenantID) {
 		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re6.MatchString(v.TenantName) {
+	if !re8.MatchString(v.TenantName) {
 		errs = append(errs, FieldError{Field: "tenant_name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	return errs
@@ -2057,7 +2599,7 @@ var nestedModelRestriction []nestedSpec
 func (v *ModelRestriction) Validate() []FieldError {
 	var errs []FieldError
 	for _, item := range v.Models {
-		if !re13.MatchString(item) {
+		if !re15.MatchString(item) {
 			errs = append(errs, FieldError{Field: "models", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 		}
 	}
@@ -2083,7 +2625,7 @@ func (v *ModelRestrictionSet) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "models", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Models {
-		if !re13.MatchString(item) {
+		if !re15.MatchString(item) {
 			errs = append(errs, FieldError{Field: "models", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 		}
 	}
@@ -2133,7 +2675,7 @@ var nestedModelUpdate []nestedSpec
 func (v *ModelUpdate) Validate() []FieldError {
 	var errs []FieldError
 	if v.UpstreamID.Set {
-		if !re14.MatchString(v.UpstreamID.Value) {
+		if !re16.MatchString(v.UpstreamID.Value) {
 			errs = append(errs, FieldError{Field: "upstream_id", Message: "must match ^[!-~]+$"})
 		}
 		if runeCount(v.UpstreamID.Value) > 256 {
@@ -2168,7 +2710,7 @@ func (v *ModelUpdate) Validate() []FieldError {
 			errs = append(errs, FieldError{Field: "capabilities", Message: "must not repeat an item"})
 		}
 		for _, item := range v.Capabilities.Value {
-			if !re15.MatchString(item) {
+			if !re17.MatchString(item) {
 				errs = append(errs, FieldError{Field: "capabilities", Message: "must match ^(text|vision|audio|tools|reasoning|embeddings|structured_output|streaming)$"})
 			}
 		}
@@ -2356,6 +2898,27 @@ func (v PermissionScope) Valid() bool {
 	return false
 }
 
+// PlatformEventType is an enumeration of the administration API.
+type PlatformEventType string
+
+// Values of PlatformEventType.
+const (
+	PlatformEventTypeIoPandokosTenantDeletionRequestedV1 PlatformEventType = "io.pandokos.tenant.deletion_requested.v1"
+	PlatformEventTypeIoPandokosTenantDeletionCancelledV1 PlatformEventType = "io.pandokos.tenant.deletion_cancelled.v1"
+	PlatformEventTypeIoPandokosTenantDeletedV1           PlatformEventType = "io.pandokos.tenant.deleted.v1"
+	PlatformEventTypeIoPandokosKekVersionActivatedV1     PlatformEventType = "io.pandokos.kek.version_activated.v1"
+	PlatformEventTypeIoPandokosKekVersionRetiredV1       PlatformEventType = "io.pandokos.kek.version_retired.v1"
+)
+
+// Valid reports whether v is a value of the enumeration.
+func (v PlatformEventType) Valid() bool {
+	switch v {
+	case PlatformEventTypeIoPandokosTenantDeletionRequestedV1, PlatformEventTypeIoPandokosTenantDeletionCancelledV1, PlatformEventTypeIoPandokosTenantDeletedV1, PlatformEventTypeIoPandokosKekVersionActivatedV1, PlatformEventTypeIoPandokosKekVersionRetiredV1:
+		return true
+	}
+	return false
+}
+
 // PlatformIssuer is a schema of the administration API.
 type PlatformIssuer struct {
 	ID          string `json:"id"`
@@ -2388,13 +2951,13 @@ func (v *PlatformIssuer) Validate() []FieldError {
 	if !re2.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re6.MatchString(v.Name) {
+	if !re8.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if runeCount(v.Description) > 200 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
 	}
-	if !re16.MatchString(v.Issuer) {
+	if !re18.MatchString(v.Issuer) {
 		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 	}
 	if runeCount(v.Issuer) > 255 {
@@ -2419,14 +2982,14 @@ func (v *PlatformIssuer) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Algorithms {
-		if !re17.MatchString(item) {
+		if !re19.MatchString(item) {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 		}
 	}
-	if !re18.MatchString(v.SubjectClaim) {
+	if !re20.MatchString(v.SubjectClaim) {
 		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
-	if !re18.MatchString(v.TenantClaim) {
+	if !re20.MatchString(v.TenantClaim) {
 		errs = append(errs, FieldError{Field: "tenant_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
 	if len(v.RequiredClaims) > 16 {
@@ -2471,13 +3034,13 @@ func (*PlatformIssuerCreate) sentEmpty() []string { return []string{"subject_cla
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformIssuerCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re6.MatchString(v.Name) {
+	if !re8.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if runeCount(v.Description) > 200 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
 	}
-	if !re16.MatchString(v.Issuer) {
+	if !re18.MatchString(v.Issuer) {
 		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 	}
 	if runeCount(v.Issuer) > 255 {
@@ -2502,14 +3065,14 @@ func (v *PlatformIssuerCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Algorithms {
-		if !re17.MatchString(item) {
+		if !re19.MatchString(item) {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 		}
 	}
-	if v.SubjectClaim != "" && !re18.MatchString(v.SubjectClaim) {
+	if v.SubjectClaim != "" && !re20.MatchString(v.SubjectClaim) {
 		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
-	if !re18.MatchString(v.TenantClaim) {
+	if !re20.MatchString(v.TenantClaim) {
 		errs = append(errs, FieldError{Field: "tenant_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
 	if len(v.RequiredClaims) > 16 {
@@ -2570,7 +3133,7 @@ func (v *PlatformIssuerTenant) Validate() []FieldError {
 	if !re2.MatchString(v.TenantID) {
 		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re6.MatchString(v.TenantName) {
+	if !re8.MatchString(v.TenantName) {
 		errs = append(errs, FieldError{Field: "tenant_name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if runeCount(v.ClaimValue) < 1 {
@@ -2651,7 +3214,7 @@ var nestedPlatformIssuerUpdate []nestedSpec
 func (v *PlatformIssuerUpdate) Validate() []FieldError {
 	var errs []FieldError
 	if v.Name.Set {
-		if !re6.MatchString(v.Name.Value) {
+		if !re8.MatchString(v.Name.Value) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 	}
@@ -2661,7 +3224,7 @@ func (v *PlatformIssuerUpdate) Validate() []FieldError {
 		}
 	}
 	if v.Issuer.Set {
-		if !re16.MatchString(v.Issuer.Value) {
+		if !re18.MatchString(v.Issuer.Value) {
 			errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 		}
 		if runeCount(v.Issuer.Value) > 255 {
@@ -2692,18 +3255,18 @@ func (v *PlatformIssuerUpdate) Validate() []FieldError {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 		}
 		for _, item := range v.Algorithms.Value {
-			if !re17.MatchString(item) {
+			if !re19.MatchString(item) {
 				errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 			}
 		}
 	}
 	if v.SubjectClaim.Set {
-		if !re18.MatchString(v.SubjectClaim.Value) {
+		if !re20.MatchString(v.SubjectClaim.Value) {
 			errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 		}
 	}
 	if v.TenantClaim.Set {
-		if !re18.MatchString(v.TenantClaim.Value) {
+		if !re20.MatchString(v.TenantClaim.Value) {
 			errs = append(errs, FieldError{Field: "tenant_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 		}
 	}
@@ -2744,7 +3307,7 @@ var nestedPlatformKey []nestedSpec
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *PlatformKey) Validate() []FieldError {
 	var errs []FieldError
-	if !re19.MatchString(v.ID) {
+	if !re21.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^p[a-z2-7]{16}$"})
 	}
 	if !v.State.Valid() {
@@ -2918,7 +3481,7 @@ func (v *PlatformLimitRuleCreate) Validate() []FieldError {
 	if v.Limit > 1000000000000 {
 		errs = append(errs, FieldError{Field: "limit", Message: "must be at most 1000000000000"})
 	}
-	if v.Amount != "" && !re10.MatchString(v.Amount) {
+	if v.Amount != "" && !re12.MatchString(v.Amount) {
 		errs = append(errs, FieldError{Field: "amount", Message: "must match ^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,6})?$"})
 	}
 	if v.Currency != "" && !re1.MatchString(v.Currency) {
@@ -3218,7 +3781,7 @@ func (v *PriceRate) Validate() []FieldError {
 	if v.Threshold > 100000000 {
 		errs = append(errs, FieldError{Field: "threshold", Message: "must be at most 100000000"})
 	}
-	if !re20.MatchString(v.Rate) {
+	if !re22.MatchString(v.Rate) {
 		errs = append(errs, FieldError{Field: "rate", Message: "must match ^(0|[1-9][0-9]{0,6})(\\.[0-9]{1,12})?$"})
 	}
 	return errs
@@ -3463,7 +4026,7 @@ func (v *ProviderCreate) Validate() []FieldError {
 	if runeCount(v.Description) > 500 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 500"})
 	}
-	if v.DatasetProvider != "" && !re21.MatchString(v.DatasetProvider) {
+	if v.DatasetProvider != "" && !re23.MatchString(v.DatasetProvider) {
 		errs = append(errs, FieldError{Field: "dataset_provider", Message: "must match ^[a-z0-9][a-z0-9_.-]{0,62}$"})
 	}
 	if v.StreamUsageOption != "" && !v.StreamUsageOption.Valid() {
@@ -3524,7 +4087,7 @@ func (v *ProviderUpdate) Validate() []FieldError {
 	if v.Enabled.Set {
 	}
 	if v.DatasetProvider.Set {
-		if !re22.MatchString(v.DatasetProvider.Value) {
+		if !re24.MatchString(v.DatasetProvider.Value) {
 			errs = append(errs, FieldError{Field: "dataset_provider", Message: "must match ^([a-z0-9][a-z0-9_.-]{0,62})?$"})
 		}
 	}
@@ -3829,7 +4392,7 @@ func (v *ServiceAccount) Validate() []FieldError {
 	if !re2.MatchString(v.TenantID) {
 		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re6.MatchString(v.Name) {
+	if !re8.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if !v.State.Valid() {
@@ -3855,7 +4418,7 @@ var nestedServiceAccountCreate []nestedSpec
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *ServiceAccountCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re6.MatchString(v.Name) {
+	if !re8.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if runeCount(v.Description) > 500 {
@@ -3932,7 +4495,7 @@ var nestedServiceAccountUpdate []nestedSpec
 func (v *ServiceAccountUpdate) Validate() []FieldError {
 	var errs []FieldError
 	if v.Name.Set {
-		if !re6.MatchString(v.Name.Value) {
+		if !re8.MatchString(v.Name.Value) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 	}
@@ -4031,7 +4594,7 @@ func (v *SessionUser) Validate() []FieldError {
 	if !v.SignIn.Valid() {
 		errs = append(errs, FieldError{Field: "sign_in", Message: "must be one of local, oidc"})
 	}
-	if v.Username != "" && !re11.MatchString(v.Username) {
+	if v.Username != "" && !re13.MatchString(v.Username) {
 		errs = append(errs, FieldError{Field: "username", Message: "must match ^[a-z0-9][a-z0-9._@+-]{1,62}[a-z0-9]$"})
 	}
 	if runeCount(v.DisplayName) > 200 {
@@ -4190,7 +4753,7 @@ func (v *SubjectMapping) Validate() []FieldError {
 	if !re2.MatchString(v.ServiceAccountID) {
 		errs = append(errs, FieldError{Field: "service_account_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re6.MatchString(v.ServiceAccountName) {
+	if !re8.MatchString(v.ServiceAccountName) {
 		errs = append(errs, FieldError{Field: "service_account_name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if runeCount(v.Description) > 200 {
@@ -4532,9 +5095,10 @@ type Tenant struct {
 	ActiveCurrency              string      `json:"active_currency"`
 	ActiveCurrencyInForce       string      `json:"active_currency_in_force"`
 	ActiveCurrencyEffectiveFrom *time.Time  `json:"active_currency_effective_from,omitempty"`
+	ExternalReference           string      `json:"external_reference"`
 }
 
-var requiredTenant = []string{"id", "name", "display_name", "state", "created_at", "updated_at", "state_changed_at", "time_zone", "time_zone_in_force", "active_currency", "active_currency_in_force"}
+var requiredTenant = []string{"id", "name", "display_name", "state", "created_at", "updated_at", "state_changed_at", "time_zone", "time_zone_in_force", "active_currency", "active_currency_in_force", "external_reference"}
 
 var nestedTenant []nestedSpec
 
@@ -4544,13 +5108,13 @@ func (v *Tenant) Validate() []FieldError {
 	if !re2.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re6.MatchString(v.Name) {
+	if !re8.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if !v.State.Valid() {
 		errs = append(errs, FieldError{Field: "state", Message: "must be one of provisioning, active, suspended, deleting, deleted"})
 	}
-	if !re23.MatchString(v.TimeZone) {
+	if !re25.MatchString(v.TimeZone) {
 		errs = append(errs, FieldError{Field: "time_zone", Message: "must match ^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$"})
 	}
 	if runeCount(v.TimeZone) > 64 {
@@ -4558,6 +5122,12 @@ func (v *Tenant) Validate() []FieldError {
 	}
 	if !re0.MatchString(v.ActiveCurrency) {
 		errs = append(errs, FieldError{Field: "active_currency", Message: "must match ^([A-Z]{3})?$"})
+	}
+	if !re26.MatchString(v.ExternalReference) {
+		errs = append(errs, FieldError{Field: "external_reference", Message: "must match ^[^\\x00-\\x1f\\x7f]*$"})
+	}
+	if runeCount(v.ExternalReference) > 255 {
+		errs = append(errs, FieldError{Field: "external_reference", Message: "length must be at most 255"})
 	}
 	return errs
 }
@@ -4571,6 +5141,7 @@ type TenantCreate struct {
 	AdminServiceAccountName string `json:"admin_service_account_name,omitempty"`
 	// Expiry of the first key. Absent means that it does not expire.
 	AdminKeyExpiresAt *time.Time `json:"admin_key_expires_at,omitempty"`
+	ExternalReference string     `json:"external_reference,omitempty"`
 }
 
 var requiredTenantCreate = []string{"name"}
@@ -4580,20 +5151,26 @@ var nestedTenantCreate []nestedSpec
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re6.MatchString(v.Name) {
+	if !re8.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if runeCount(v.DisplayName) > 200 {
 		errs = append(errs, FieldError{Field: "display_name", Message: "length must be at most 200"})
 	}
-	if v.TimeZone != "" && !re23.MatchString(v.TimeZone) {
+	if v.TimeZone != "" && !re25.MatchString(v.TimeZone) {
 		errs = append(errs, FieldError{Field: "time_zone", Message: "must match ^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$"})
 	}
 	if runeCount(v.TimeZone) > 64 {
 		errs = append(errs, FieldError{Field: "time_zone", Message: "length must be at most 64"})
 	}
-	if v.AdminServiceAccountName != "" && !re6.MatchString(v.AdminServiceAccountName) {
+	if v.AdminServiceAccountName != "" && !re8.MatchString(v.AdminServiceAccountName) {
 		errs = append(errs, FieldError{Field: "admin_service_account_name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
+	}
+	if v.ExternalReference != "" && !re26.MatchString(v.ExternalReference) {
+		errs = append(errs, FieldError{Field: "external_reference", Message: "must match ^[^\\x00-\\x1f\\x7f]*$"})
+	}
+	if runeCount(v.ExternalReference) > 255 {
+		errs = append(errs, FieldError{Field: "external_reference", Message: "length must be at most 255"})
 	}
 	return errs
 }
@@ -4629,13 +5206,14 @@ func (v *TenantCreated) Validate() []FieldError {
 
 // TenantDeletion is a schema of the administration API.
 type TenantDeletion struct {
-	TenantID    string                  `json:"tenant_id"`
-	State       TenantDeletionState     `json:"state"`
-	Step        TenantDeletionStep      `json:"step"`
-	Reason      string                  `json:"reason"`
-	RequestedBy TenantDeletionRequester `json:"requested_by"`
-	RequestID   string                  `json:"request_id"`
-	RequestedAt time.Time               `json:"requested_at"`
+	TenantID          string                  `json:"tenant_id"`
+	ExternalReference string                  `json:"external_reference"`
+	State             TenantDeletionState     `json:"state"`
+	Step              TenantDeletionStep      `json:"step"`
+	Reason            string                  `json:"reason"`
+	RequestedBy       TenantDeletionRequester `json:"requested_by"`
+	RequestID         string                  `json:"request_id"`
+	RequestedAt       time.Time               `json:"requested_at"`
 	// The deletion does not start before this instant.
 	NotBefore   time.Time  `json:"not_before"`
 	StartedAt   *time.Time `json:"started_at,omitempty"`
@@ -4652,7 +5230,7 @@ type TenantDeletion struct {
 	CompletionSeq int `json:"completion_seq,omitempty"`
 }
 
-var requiredTenantDeletion = []string{"tenant_id", "state", "step", "reason", "requested_by", "request_id", "requested_at", "not_before", "passes", "removed", "kek_versions", "backup_erasure"}
+var requiredTenantDeletion = []string{"tenant_id", "state", "step", "reason", "requested_by", "request_id", "requested_at", "not_before", "passes", "removed", "kek_versions", "backup_erasure", "external_reference"}
 
 var nestedTenantDeletion = []nestedSpec{{Name: "requested_by", Required: requiredTenantDeletionRequester, Nested: nestedTenantDeletionRequester}, {Name: "backup_erasure", Required: requiredTenantDeletionBackupErasure, Nested: nestedTenantDeletionBackupErasure}, {Name: "audit", Required: requiredTenantDeletionAudit, Nested: nestedTenantDeletionAudit}}
 
@@ -4661,6 +5239,12 @@ func (v *TenantDeletion) Validate() []FieldError {
 	var errs []FieldError
 	if !re2.MatchString(v.TenantID) {
 		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
+	}
+	if !re26.MatchString(v.ExternalReference) {
+		errs = append(errs, FieldError{Field: "external_reference", Message: "must match ^[^\\x00-\\x1f\\x7f]*$"})
+	}
+	if runeCount(v.ExternalReference) > 255 {
+		errs = append(errs, FieldError{Field: "external_reference", Message: "length must be at most 255"})
 	}
 	if !v.State.Valid() {
 		errs = append(errs, FieldError{Field: "state", Message: "must be one of scheduled, running, completed"})
@@ -4765,7 +5349,7 @@ func (v *TenantDeletionRequest) Validate() []FieldError {
 	if runeCount(v.Reason) > 500 {
 		errs = append(errs, FieldError{Field: "reason", Message: "length must be at most 500"})
 	}
-	if !re6.MatchString(v.ConfirmName) {
+	if !re8.MatchString(v.ConfirmName) {
 		errs = append(errs, FieldError{Field: "confirm_name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	return errs
@@ -4955,19 +5539,19 @@ func (v *TenantPlatformIssuer) Validate() []FieldError {
 	if !re2.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re6.MatchString(v.Name) {
+	if !re8.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
-	if !re16.MatchString(v.Issuer) {
+	if !re18.MatchString(v.Issuer) {
 		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 	}
 	if runeCount(v.Issuer) > 255 {
 		errs = append(errs, FieldError{Field: "issuer", Message: "length must be at most 255"})
 	}
-	if !re18.MatchString(v.SubjectClaim) {
+	if !re20.MatchString(v.SubjectClaim) {
 		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
-	if !re18.MatchString(v.TenantClaim) {
+	if !re20.MatchString(v.TenantClaim) {
 		errs = append(errs, FieldError{Field: "tenant_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
 	return errs
@@ -5270,7 +5854,7 @@ func (v *TenantRef) Validate() []FieldError {
 	if !re2.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re6.MatchString(v.Name) {
+	if !re8.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if !v.State.Valid() {
@@ -5316,7 +5900,7 @@ var nestedTenantTimeZone []nestedSpec
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantTimeZone) Validate() []FieldError {
 	var errs []FieldError
-	if !re23.MatchString(v.TimeZone) {
+	if !re25.MatchString(v.TimeZone) {
 		errs = append(errs, FieldError{Field: "time_zone", Message: "must match ^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$"})
 	}
 	if runeCount(v.TimeZone) > 64 {
@@ -5337,7 +5921,7 @@ var nestedTenantTimeZoneSet []nestedSpec
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TenantTimeZoneSet) Validate() []FieldError {
 	var errs []FieldError
-	if !re23.MatchString(v.TimeZone) {
+	if !re25.MatchString(v.TimeZone) {
 		errs = append(errs, FieldError{Field: "time_zone", Message: "must match ^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$"})
 	}
 	if runeCount(v.TimeZone) > 64 {
@@ -5348,9 +5932,10 @@ func (v *TenantTimeZoneSet) Validate() []FieldError {
 
 // TenantUpdate is a schema of the administration API.
 type TenantUpdate struct {
-	Name        Optional[string] `json:"name,omitzero"`
-	DisplayName Optional[string] `json:"display_name,omitzero"`
-	TimeZone    Optional[string] `json:"time_zone,omitzero"`
+	Name              Optional[string] `json:"name,omitzero"`
+	DisplayName       Optional[string] `json:"display_name,omitzero"`
+	TimeZone          Optional[string] `json:"time_zone,omitzero"`
+	ExternalReference Optional[string] `json:"external_reference,omitzero"`
 }
 
 var requiredTenantUpdate = []string{}
@@ -5361,7 +5946,7 @@ var nestedTenantUpdate []nestedSpec
 func (v *TenantUpdate) Validate() []FieldError {
 	var errs []FieldError
 	if v.Name.Set {
-		if !re6.MatchString(v.Name.Value) {
+		if !re8.MatchString(v.Name.Value) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 	}
@@ -5371,11 +5956,19 @@ func (v *TenantUpdate) Validate() []FieldError {
 		}
 	}
 	if v.TimeZone.Set {
-		if !re23.MatchString(v.TimeZone.Value) {
+		if !re25.MatchString(v.TimeZone.Value) {
 			errs = append(errs, FieldError{Field: "time_zone", Message: "must match ^([A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,31}){0,2})?$"})
 		}
 		if runeCount(v.TimeZone.Value) > 64 {
 			errs = append(errs, FieldError{Field: "time_zone", Message: "length must be at most 64"})
+		}
+	}
+	if v.ExternalReference.Set {
+		if !re26.MatchString(v.ExternalReference.Value) {
+			errs = append(errs, FieldError{Field: "external_reference", Message: "must match ^[^\\x00-\\x1f\\x7f]*$"})
+		}
+		if runeCount(v.ExternalReference.Value) > 255 {
+			errs = append(errs, FieldError{Field: "external_reference", Message: "length must be at most 255"})
 		}
 	}
 	return errs
@@ -5414,13 +6007,13 @@ func (v *TokenIssuer) Validate() []FieldError {
 	if !re2.MatchString(v.TenantID) {
 		errs = append(errs, FieldError{Field: "tenant_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
-	if !re6.MatchString(v.Name) {
+	if !re8.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if runeCount(v.Description) > 200 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
 	}
-	if !re16.MatchString(v.Issuer) {
+	if !re18.MatchString(v.Issuer) {
 		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 	}
 	if runeCount(v.Issuer) > 255 {
@@ -5445,11 +6038,11 @@ func (v *TokenIssuer) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Algorithms {
-		if !re17.MatchString(item) {
+		if !re19.MatchString(item) {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 		}
 	}
-	if !re18.MatchString(v.SubjectClaim) {
+	if !re20.MatchString(v.SubjectClaim) {
 		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
 	if len(v.RequiredClaims) > 16 {
@@ -5490,13 +6083,13 @@ func (*TokenIssuerCreate) sentEmpty() []string { return []string{"subject_claim"
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *TokenIssuerCreate) Validate() []FieldError {
 	var errs []FieldError
-	if !re6.MatchString(v.Name) {
+	if !re8.MatchString(v.Name) {
 		errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 	}
 	if runeCount(v.Description) > 200 {
 		errs = append(errs, FieldError{Field: "description", Message: "length must be at most 200"})
 	}
-	if !re16.MatchString(v.Issuer) {
+	if !re18.MatchString(v.Issuer) {
 		errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 	}
 	if runeCount(v.Issuer) > 255 {
@@ -5521,11 +6114,11 @@ func (v *TokenIssuerCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Algorithms {
-		if !re17.MatchString(item) {
+		if !re19.MatchString(item) {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 		}
 	}
-	if v.SubjectClaim != "" && !re18.MatchString(v.SubjectClaim) {
+	if v.SubjectClaim != "" && !re20.MatchString(v.SubjectClaim) {
 		errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 	}
 	if len(v.RequiredClaims) > 16 {
@@ -5585,7 +6178,7 @@ var nestedTokenIssuerUpdate []nestedSpec
 func (v *TokenIssuerUpdate) Validate() []FieldError {
 	var errs []FieldError
 	if v.Name.Set {
-		if !re6.MatchString(v.Name.Value) {
+		if !re8.MatchString(v.Name.Value) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 	}
@@ -5595,7 +6188,7 @@ func (v *TokenIssuerUpdate) Validate() []FieldError {
 		}
 	}
 	if v.Issuer.Set {
-		if !re16.MatchString(v.Issuer.Value) {
+		if !re18.MatchString(v.Issuer.Value) {
 			errs = append(errs, FieldError{Field: "issuer", Message: "must match ^https://[^\\s?#@]+$"})
 		}
 		if runeCount(v.Issuer.Value) > 255 {
@@ -5626,13 +6219,13 @@ func (v *TokenIssuerUpdate) Validate() []FieldError {
 			errs = append(errs, FieldError{Field: "algorithms", Message: "must not repeat an item"})
 		}
 		for _, item := range v.Algorithms.Value {
-			if !re17.MatchString(item) {
+			if !re19.MatchString(item) {
 				errs = append(errs, FieldError{Field: "algorithms", Message: "must match ^(RS256|RS384|RS512|PS256|PS384|PS512|ES256|ES384|ES512|EdDSA)$"})
 			}
 		}
 	}
 	if v.SubjectClaim.Set {
-		if !re18.MatchString(v.SubjectClaim.Value) {
+		if !re20.MatchString(v.SubjectClaim.Value) {
 			errs = append(errs, FieldError{Field: "subject_claim", Message: "must match ^[A-Za-z0-9_.:/-]{1,64}$"})
 		}
 	}
@@ -5897,7 +6490,7 @@ func (v *User) Validate() []FieldError {
 	if !v.SignIn.Valid() {
 		errs = append(errs, FieldError{Field: "sign_in", Message: "must be one of local, oidc"})
 	}
-	if v.Username != "" && !re11.MatchString(v.Username) {
+	if v.Username != "" && !re13.MatchString(v.Username) {
 		errs = append(errs, FieldError{Field: "username", Message: "must match ^[a-z0-9][a-z0-9._@+-]{1,62}[a-z0-9]$"})
 	}
 	if runeCount(v.DisplayName) > 200 {
@@ -5937,7 +6530,7 @@ func (v *UserCreate) Validate() []FieldError {
 	if !v.SignIn.Valid() {
 		errs = append(errs, FieldError{Field: "sign_in", Message: "must be one of local, oidc"})
 	}
-	if v.Username != "" && !re11.MatchString(v.Username) {
+	if v.Username != "" && !re13.MatchString(v.Username) {
 		errs = append(errs, FieldError{Field: "username", Message: "must match ^[a-z0-9][a-z0-9._@+-]{1,62}[a-z0-9]$"})
 	}
 	if v.Subject != "" && runeCount(v.Subject) < 1 {
@@ -6109,7 +6702,7 @@ var nestedVirtualKey []nestedSpec
 // Validate returns the rules of the document that v breaks. A message never repeats a value.
 func (v *VirtualKey) Validate() []FieldError {
 	var errs []FieldError
-	if !re24.MatchString(v.ID) {
+	if !re27.MatchString(v.ID) {
 		errs = append(errs, FieldError{Field: "id", Message: "must match ^t[a-z2-7]{16}$"})
 	}
 	if !re2.MatchString(v.TenantID) {
@@ -6122,7 +6715,7 @@ func (v *VirtualKey) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "credential_id", Message: "must match ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"})
 	}
 	for _, item := range v.Models {
-		if !re13.MatchString(item) {
+		if !re15.MatchString(item) {
 			errs = append(errs, FieldError{Field: "models", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 		}
 	}
@@ -6168,7 +6761,7 @@ func (v *VirtualKeyCreate) Validate() []FieldError {
 		errs = append(errs, FieldError{Field: "models", Message: "must not repeat an item"})
 	}
 	for _, item := range v.Models {
-		if !re13.MatchString(item) {
+		if !re15.MatchString(item) {
 			errs = append(errs, FieldError{Field: "models", Message: "must match ^[a-z][a-z0-9-]{0,62}/[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"})
 		}
 	}
@@ -6259,6 +6852,7 @@ var Operations = []Operation{
 	{ID: "listPlatformAuditEvents", Method: "GET", Path: "/v1/platform-audit-events", Permission: "platform_audit:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "exportPlatformAuditEvents", Method: "GET", Path: "/v1/platform-audit-events/export", Permission: "platform_audit:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "getPlatformAuditHead", Method: "GET", Path: "/v1/platform-audit-head", Permission: "platform_audit:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
+	{ID: "exportPlatformEvents", Method: "GET", Path: "/v1/platform-events/export", Permission: "platform_event:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "listPlatformIssuers", Method: "GET", Path: "/v1/platform-issuers", Permission: "platform_issuer:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "createPlatformIssuer", Method: "POST", Path: "/v1/platform-issuers", Permission: "platform_issuer:write", Public: false, Idempotent: true, ReasonRequired: false, Status: 201, HasBody: true, PathParams: []PathParam{}},
 	{ID: "getPlatformIssuer", Method: "GET", Path: "/v1/platform-issuers/{issuer}", Permission: "platform_issuer:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re2}}},
@@ -6269,8 +6863,8 @@ var Operations = []Operation{
 	{ID: "deletePlatformIssuerTenant", Method: "DELETE", Path: "/v1/platform-issuers/{issuer}/tenants/{tenant}", Permission: "platform_issuer:write", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "issuer", Pattern: re2}, {Name: "tenant", Pattern: re2}}},
 	{ID: "listPlatformKeys", Method: "GET", Path: "/v1/platform-keys", Permission: "platform_key:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "createPlatformKey", Method: "POST", Path: "/v1/platform-keys", Permission: "platform_key:write", Public: false, Idempotent: true, ReasonRequired: false, Status: 201, HasBody: true, PathParams: []PathParam{}},
-	{ID: "getPlatformKey", Method: "GET", Path: "/v1/platform-keys/{key}", Permission: "platform_key:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "key", Pattern: re19}}},
-	{ID: "revokePlatformKey", Method: "POST", Path: "/v1/platform-keys/{key}/revoke", Permission: "platform_key:revoke", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "key", Pattern: re19}}},
+	{ID: "getPlatformKey", Method: "GET", Path: "/v1/platform-keys/{key}", Permission: "platform_key:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "key", Pattern: re21}}},
+	{ID: "revokePlatformKey", Method: "POST", Path: "/v1/platform-keys/{key}/revoke", Permission: "platform_key:revoke", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "key", Pattern: re21}}},
 	{ID: "listPlatformLimits", Method: "GET", Path: "/v1/platform-limits", Permission: "platform_limit:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "createPlatformLimit", Method: "POST", Path: "/v1/platform-limits", Permission: "platform_limit:write", Public: false, Idempotent: true, ReasonRequired: false, Status: 201, HasBody: true, PathParams: []PathParam{}},
 	{ID: "getPlatformLimit", Method: "GET", Path: "/v1/platform-limits/{rule}", Permission: "platform_limit:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "rule", Pattern: re2}}},
@@ -6286,9 +6880,9 @@ var Operations = []Operation{
 	{ID: "deleteProvider", Method: "DELETE", Path: "/v1/providers/{provider}", Permission: "catalog:write", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re3}}},
 	{ID: "listEndpoints", Method: "GET", Path: "/v1/providers/{provider}/endpoints", Permission: "catalog:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re3}}},
 	{ID: "createEndpoint", Method: "POST", Path: "/v1/providers/{provider}/endpoints", Permission: "catalog:write", Public: false, Idempotent: true, ReasonRequired: false, Status: 201, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re3}}},
-	{ID: "getEndpoint", Method: "GET", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re3}, {Name: "endpoint", Pattern: re6}}},
-	{ID: "updateEndpoint", Method: "PATCH", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:write", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re3}, {Name: "endpoint", Pattern: re6}}},
-	{ID: "deleteEndpoint", Method: "DELETE", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:write", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re3}, {Name: "endpoint", Pattern: re6}}},
+	{ID: "getEndpoint", Method: "GET", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re3}, {Name: "endpoint", Pattern: re8}}},
+	{ID: "updateEndpoint", Method: "PATCH", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:write", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "provider", Pattern: re3}, {Name: "endpoint", Pattern: re8}}},
+	{ID: "deleteEndpoint", Method: "DELETE", Path: "/v1/providers/{provider}/endpoints/{endpoint}", Permission: "catalog:write", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "provider", Pattern: re3}, {Name: "endpoint", Pattern: re8}}},
 	{ID: "listBuiltinRoles", Method: "GET", Path: "/v1/roles", Permission: "identity:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "listTenantCredentials", Method: "GET", Path: "/v1/tenant-credentials/{tenant}", Permission: "tenant_credential:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "getTenantCredential", Method: "GET", Path: "/v1/tenant-credentials/{tenant}/{credential}", Permission: "tenant_credential:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "credential", Pattern: re2}}},
@@ -6324,6 +6918,17 @@ var Operations = []Operation{
 	{ID: "exportDeletedTenantAuditEvents", Method: "GET", Path: "/v1/tenants/{tenant}/deletion/audit-events/export", Permission: "platform_audit:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "getDeletedTenantAuditHead", Method: "GET", Path: "/v1/tenants/{tenant}/deletion/audit-head", Permission: "platform_audit:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "cancelTenantDeletion", Method: "POST", Path: "/v1/tenants/{tenant}/deletion/cancel", Permission: "tenant:delete", Public: false, Idempotent: false, ReasonRequired: true, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "listEventDestinations", Method: "GET", Path: "/v1/tenants/{tenant}/event-destinations", Permission: "event_destination:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "createEventDestination", Method: "POST", Path: "/v1/tenants/{tenant}/event-destinations", Permission: "event_destination:write", Public: false, Idempotent: true, ReasonRequired: false, Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
+	{ID: "getEventDestination", Method: "GET", Path: "/v1/tenants/{tenant}/event-destinations/{destination}", Permission: "event_destination:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "destination", Pattern: re2}}},
+	{ID: "updateEventDestination", Method: "PATCH", Path: "/v1/tenants/{tenant}/event-destinations/{destination}", Permission: "event_destination:write", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "destination", Pattern: re2}}},
+	{ID: "deleteEventDestination", Method: "DELETE", Path: "/v1/tenants/{tenant}/event-destinations/{destination}", Permission: "event_destination:delete", Public: false, Idempotent: false, ReasonRequired: false, Status: 204, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "destination", Pattern: re2}}},
+	{ID: "listEventDeadLetters", Method: "GET", Path: "/v1/tenants/{tenant}/event-destinations/{destination}/dead-letters", Permission: "event_destination:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "destination", Pattern: re2}}},
+	{ID: "replayEventDeadLetters", Method: "POST", Path: "/v1/tenants/{tenant}/event-destinations/{destination}/dead-letters/replay", Permission: "event_destination:write", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "destination", Pattern: re2}}},
+	{ID: "rewindEventDestination", Method: "POST", Path: "/v1/tenants/{tenant}/event-destinations/{destination}/rewind", Permission: "event_destination:write", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "destination", Pattern: re2}}},
+	{ID: "rotateEventDestinationSecret", Method: "POST", Path: "/v1/tenants/{tenant}/event-destinations/{destination}/rotate-secret", Permission: "event_destination:write", Public: false, Idempotent: true, ReasonRequired: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "destination", Pattern: re2}}},
+	{ID: "testEventDestination", Method: "POST", Path: "/v1/tenants/{tenant}/event-destinations/{destination}/test", Permission: "event_destination:write", Public: false, Idempotent: false, ReasonRequired: false, Status: 202, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "destination", Pattern: re2}}},
+	{ID: "exportEvents", Method: "GET", Path: "/v1/tenants/{tenant}/events/export", Permission: "event:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "listLimitEvents", Method: "GET", Path: "/v1/tenants/{tenant}/limit-events", Permission: "limit:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "listLimits", Method: "GET", Path: "/v1/tenants/{tenant}/limits", Permission: "limit:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "createLimit", Method: "POST", Path: "/v1/tenants/{tenant}/limits", Permission: "limit:write", Public: false, Idempotent: true, ReasonRequired: false, Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
@@ -6389,8 +6994,8 @@ var Operations = []Operation{
 	{ID: "getUsageReport", Method: "GET", Path: "/v1/tenants/{tenant}/usage-report", Permission: "usage:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "listVirtualKeys", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
 	{ID: "createVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys", Permission: "virtual_key:write", Public: false, Idempotent: true, ReasonRequired: false, Status: 201, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}}},
-	{ID: "getVirtualKey", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys/{key}", Permission: "virtual_key:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "key", Pattern: re24}}},
-	{ID: "revokeVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys/{key}/revoke", Permission: "virtual_key:revoke", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "key", Pattern: re24}}},
+	{ID: "getVirtualKey", Method: "GET", Path: "/v1/tenants/{tenant}/virtual-keys/{key}", Permission: "virtual_key:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "key", Pattern: re27}}},
+	{ID: "revokeVirtualKey", Method: "POST", Path: "/v1/tenants/{tenant}/virtual-keys/{key}/revoke", Permission: "virtual_key:revoke", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: true, PathParams: []PathParam{{Name: "tenant", Pattern: re2}, {Name: "key", Pattern: re27}}},
 	{ID: "listUsers", Method: "GET", Path: "/v1/users", Permission: "user:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{}},
 	{ID: "createUser", Method: "POST", Path: "/v1/users", Permission: "user:write", Public: false, Idempotent: true, ReasonRequired: false, Status: 201, HasBody: true, PathParams: []PathParam{}},
 	{ID: "getUser", Method: "GET", Path: "/v1/users/{user}", Permission: "user:read", Public: false, Idempotent: false, ReasonRequired: false, Status: 200, HasBody: false, PathParams: []PathParam{{Name: "user", Pattern: re2}}},
@@ -6555,6 +7160,13 @@ type ExportPlatformAuditEventsInput struct {
 
 // GetPlatformAuditHeadInput is the input of getPlatformAuditHead.
 type GetPlatformAuditHeadInput struct {
+}
+
+// ExportPlatformEventsInput is the input of exportPlatformEvents.
+type ExportPlatformEventsInput struct {
+	After int                 // query; the zero value means absent
+	Limit int                 // query; the zero value means absent
+	Type  []PlatformEventType // query; the zero value means absent
 }
 
 // ListPlatformIssuersInput is the input of listPlatformIssuers.
@@ -6984,6 +7596,83 @@ type GetDeletedTenantAuditHeadInput struct {
 type CancelTenantDeletionInput struct {
 	Tenant string // path
 	Body   RequiredReason
+}
+
+// ListEventDestinationsInput is the input of listEventDestinations.
+type ListEventDestinationsInput struct {
+	Tenant string // path
+	Limit  int    // query; the zero value means absent
+	Cursor string // query; the zero value means absent
+}
+
+// CreateEventDestinationInput is the input of createEventDestination.
+type CreateEventDestinationInput struct {
+	Tenant         string // path
+	IdempotencyKey string // header Idempotency-Key; checked by the hook, not by the router
+	Body           EventDestinationCreate
+}
+
+// GetEventDestinationInput is the input of getEventDestination.
+type GetEventDestinationInput struct {
+	Tenant      string // path
+	Destination string // path
+}
+
+// UpdateEventDestinationInput is the input of updateEventDestination.
+type UpdateEventDestinationInput struct {
+	Tenant      string // path
+	Destination string // path
+	Body        EventDestinationUpdate
+}
+
+// DeleteEventDestinationInput is the input of deleteEventDestination.
+type DeleteEventDestinationInput struct {
+	Tenant      string // path
+	Destination string // path
+}
+
+// ListEventDeadLettersInput is the input of listEventDeadLetters.
+type ListEventDeadLettersInput struct {
+	Tenant      string // path
+	Destination string // path
+	Limit       int    // query; the zero value means absent
+	Cursor      string // query; the zero value means absent
+}
+
+// ReplayEventDeadLettersInput is the input of replayEventDeadLetters.
+type ReplayEventDeadLettersInput struct {
+	Tenant      string // path
+	Destination string // path
+	Body        EventDeadLetterReplay
+}
+
+// RewindEventDestinationInput is the input of rewindEventDestination.
+type RewindEventDestinationInput struct {
+	Tenant      string // path
+	Destination string // path
+	Body        EventDestinationRewind
+}
+
+// RotateEventDestinationSecretInput is the input of rotateEventDestinationSecret.
+type RotateEventDestinationSecretInput struct {
+	Tenant         string // path
+	Destination    string // path
+	IdempotencyKey string // header Idempotency-Key; checked by the hook, not by the router
+	Body           EventDestinationSecretRotate
+}
+
+// TestEventDestinationInput is the input of testEventDestination.
+type TestEventDestinationInput struct {
+	Tenant      string // path
+	Destination string // path
+}
+
+// ExportEventsInput is the input of exportEvents.
+type ExportEventsInput struct {
+	Tenant string      // path
+	After  int         // query; the zero value means absent
+	Limit  int         // query; the zero value means absent
+	Type   []EventType // query; the zero value means absent
 }
 
 // ListLimitEventsInput is the input of listLimitEvents.
@@ -7575,6 +8264,8 @@ type Server interface {
 	ExportPlatformAuditEvents(ctx context.Context, in ExportPlatformAuditEventsInput) (*Stream, error)
 	// GetPlatformAuditHead: GET /v1/platform-audit-head. Read the head and the anchor of the platform's audit chain
 	GetPlatformAuditHead(ctx context.Context, in GetPlatformAuditHeadInput) (*AuditHead, error)
+	// ExportPlatformEvents: GET /v1/platform-events/export. Export the platform's events after a sequence number, oldest first, as NDJSON
+	ExportPlatformEvents(ctx context.Context, in ExportPlatformEventsInput) (*Stream, error)
 	// ListPlatformIssuers: GET /v1/platform-issuers. List the platform-level token issuers
 	ListPlatformIssuers(ctx context.Context, in ListPlatformIssuersInput) (*PlatformIssuerList, error)
 	// CreatePlatformIssuer: POST /v1/platform-issuers. Register a platform-level token issuer
@@ -7705,6 +8396,28 @@ type Server interface {
 	GetDeletedTenantAuditHead(ctx context.Context, in GetDeletedTenantAuditHeadInput) (*AuditHead, error)
 	// CancelTenantDeletion: POST /v1/tenants/{tenant}/deletion/cancel. Cancel a scheduled deletion
 	CancelTenantDeletion(ctx context.Context, in CancelTenantDeletionInput) (*Tenant, error)
+	// ListEventDestinations: GET /v1/tenants/{tenant}/event-destinations. List the event destinations of a tenant, with the state of their delivery
+	ListEventDestinations(ctx context.Context, in ListEventDestinationsInput) (*EventDestinationList, error)
+	// CreateEventDestination: POST /v1/tenants/{tenant}/event-destinations. Register a webhook destination; the signing secret is returned once
+	CreateEventDestination(ctx context.Context, in CreateEventDestinationInput) (*EventDestinationCreated, error)
+	// GetEventDestination: GET /v1/tenants/{tenant}/event-destinations/{destination}. Read an event destination and the state of its delivery
+	GetEventDestination(ctx context.Context, in GetEventDestinationInput) (*EventDestination, error)
+	// UpdateEventDestination: PATCH /v1/tenants/{tenant}/event-destinations/{destination}. Change an event destination; enable or disable it
+	UpdateEventDestination(ctx context.Context, in UpdateEventDestinationInput) (*EventDestination, error)
+	// DeleteEventDestination: DELETE /v1/tenants/{tenant}/event-destinations/{destination}. Delete an event destination with its dead letters
+	DeleteEventDestination(ctx context.Context, in DeleteEventDestinationInput) (*NoContent, error)
+	// ListEventDeadLetters: GET /v1/tenants/{tenant}/event-destinations/{destination}/dead-letters. List the events the destination refused, oldest first
+	ListEventDeadLetters(ctx context.Context, in ListEventDeadLettersInput) (*EventDeadLetterList, error)
+	// ReplayEventDeadLetters: POST /v1/tenants/{tenant}/event-destinations/{destination}/dead-letters/replay. Deliver dead letters again, all of them or the given sequence numbers
+	ReplayEventDeadLetters(ctx context.Context, in ReplayEventDeadLettersInput) (*EventDeadLetterReplayed, error)
+	// RewindEventDestination: POST /v1/tenants/{tenant}/event-destinations/{destination}/rewind. Deliver again the events after a sequence number or a time
+	RewindEventDestination(ctx context.Context, in RewindEventDestinationInput) (*EventDestination, error)
+	// RotateEventDestinationSecret: POST /v1/tenants/{tenant}/event-destinations/{destination}/rotate-secret. Replace the signing secret; the new one is returned once
+	RotateEventDestinationSecret(ctx context.Context, in RotateEventDestinationSecretInput) (*EventDestinationCreated, error)
+	// TestEventDestination: POST /v1/tenants/{tenant}/event-destinations/{destination}/test. Ask the worker to send one signed test event to the destination
+	TestEventDestination(ctx context.Context, in TestEventDestinationInput) (*EventDestinationTest, error)
+	// ExportEvents: GET /v1/tenants/{tenant}/events/export. Export the tenant's events after a sequence number, oldest first, as NDJSON
+	ExportEvents(ctx context.Context, in ExportEventsInput) (*Stream, error)
 	// ListLimitEvents: GET /v1/tenants/{tenant}/limit-events. List what the tenant's quotas and budgets recorded, newest first
 	ListLimitEvents(ctx context.Context, in ListLimitEventsInput) (*LimitEventList, error)
 	// ListLimits: GET /v1/tenants/{tenant}/limits. List the limit rules of a tenant
@@ -8462,7 +9175,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Action = v
 		}
-		if in.Action != "" && !re25.MatchString(in.Action) {
+		if in.Action != "" && !re28.MatchString(in.Action) {
 			errs = append(errs, FieldError{Field: "action", Message: "must match ^[a-z_]+\\.([a-z_]+)?$"})
 		}
 		if v, ok := q["resource_type"]; ok {
@@ -8471,7 +9184,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.ResourceType = v
 		}
-		if in.ResourceType != "" && !re26.MatchString(in.ResourceType) {
+		if in.ResourceType != "" && !re29.MatchString(in.ResourceType) {
 			errs = append(errs, FieldError{Field: "resource_type", Message: "must match ^[a-z_]{1,64}$"})
 		}
 		if v, ok := q["resource_id"]; ok {
@@ -8498,7 +9211,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.ActorID = v
 		}
-		if in.ActorID != "" && !re27.MatchString(in.ActorID) {
+		if in.ActorID != "" && !re30.MatchString(in.ActorID) {
 			errs = append(errs, FieldError{Field: "actor_id", Message: "must match ^[A-Za-z0-9_-]{1,64}$"})
 		}
 		if v, ok := q["outcome"]; ok {
@@ -8513,7 +9226,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.RequestID = v
 		}
-		if in.RequestID != "" && !re28.MatchString(in.RequestID) {
+		if in.RequestID != "" && !re31.MatchString(in.RequestID) {
 			errs = append(errs, FieldError{Field: "request_id", Message: "must match ^[0-9a-f]{32}$"})
 		}
 		if len(errs) > 0 {
@@ -8578,6 +9291,64 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		writeJSON(w, 200, out)
+	case "exportPlatformEvents":
+		var in ExportPlatformEventsInput
+		q, ql, err := parseQueryLists(r, []string{"type"}, "after", "limit")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		_ = q
+		var errs []FieldError
+		in.After = 0
+		if v, ok := q["after"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "after", Message: "must be an integer"})
+			} else {
+				in.After = n
+			}
+		}
+		if in.After < 0 {
+			errs = append(errs, FieldError{Field: "after", Message: "must be at least 0"})
+		}
+		in.Limit = 1000
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 10000 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 10000"})
+		}
+		for _, v := range ql["type"] {
+			in.Type = append(in.Type, PlatformEventType(v))
+			if !PlatformEventType(v).Valid() {
+				errs = append(errs, FieldError{Field: "type", Message: "must be one of io.pandokos.tenant.deletion_requested.v1, io.pandokos.tenant.deletion_cancelled.v1, io.pandokos.tenant.deleted.v1, io.pandokos.kek.version_activated.v1, io.pandokos.kek.version_retired.v1"})
+			}
+		}
+		if len(in.Type) > 16 {
+			errs = append(errs, FieldError{Field: "type", Message: "must have at most 16 items"})
+		}
+		if !unique(in.Type) {
+			errs = append(errs, FieldError{Field: "type", Message: "must not repeat an item"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ExportPlatformEvents(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		h.writeStream(w, r, op, out)
 	case "listPlatformIssuers":
 		var in ListPlatformIssuersInput
 		q, err := parseQuery(r, "limit", "cursor", "sort", "name", "enabled")
@@ -8626,7 +9397,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Name = v
 		}
-		if in.Name != "" && !re6.MatchString(in.Name) {
+		if in.Name != "" && !re8.MatchString(in.Name) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 		if v, ok := q["enabled"]; ok {
@@ -9737,7 +10508,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Name = v
 		}
-		if in.Name != "" && !re6.MatchString(in.Name) {
+		if in.Name != "" && !re8.MatchString(in.Name) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 		if len(errs) > 0 {
@@ -9905,7 +10676,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Action = v
 		}
-		if in.Action != "" && !re25.MatchString(in.Action) {
+		if in.Action != "" && !re28.MatchString(in.Action) {
 			errs = append(errs, FieldError{Field: "action", Message: "must match ^[a-z_]+\\.([a-z_]+)?$"})
 		}
 		if v, ok := q["resource_type"]; ok {
@@ -9914,7 +10685,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.ResourceType = v
 		}
-		if in.ResourceType != "" && !re26.MatchString(in.ResourceType) {
+		if in.ResourceType != "" && !re29.MatchString(in.ResourceType) {
 			errs = append(errs, FieldError{Field: "resource_type", Message: "must match ^[a-z_]{1,64}$"})
 		}
 		if v, ok := q["resource_id"]; ok {
@@ -9941,7 +10712,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.ActorID = v
 		}
-		if in.ActorID != "" && !re27.MatchString(in.ActorID) {
+		if in.ActorID != "" && !re30.MatchString(in.ActorID) {
 			errs = append(errs, FieldError{Field: "actor_id", Message: "must match ^[A-Za-z0-9_-]{1,64}$"})
 		}
 		if v, ok := q["outcome"]; ok {
@@ -9956,7 +10727,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.RequestID = v
 		}
-		if in.RequestID != "" && !re28.MatchString(in.RequestID) {
+		if in.RequestID != "" && !re31.MatchString(in.RequestID) {
 			errs = append(errs, FieldError{Field: "request_id", Message: "must match ^[0-9a-f]{32}$"})
 		}
 		if v, ok := q["support_action_id"]; ok {
@@ -10436,6 +11207,313 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			return
 		}
 		writeJSON(w, 200, out)
+	case "listEventDestinations":
+		var in ListEventDestinationsInput
+		in.Tenant = params["tenant"]
+		q, err := parseQuery(r, "limit", "cursor")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListEventDestinations(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "createEventDestination":
+		var in CreateEventDestinationInput
+		in.Tenant = params["tenant"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		in.IdempotencyKey = r.Header.Get("Idempotency-Key")
+		in.Body.Enabled = true
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredEventDestinationCreate, nestedEventDestinationCreate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.CreateEventDestination(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 201, out)
+	case "getEventDestination":
+		var in GetEventDestinationInput
+		in.Tenant = params["tenant"]
+		in.Destination = params["destination"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.GetEventDestination(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "updateEventDestination":
+		var in UpdateEventDestinationInput
+		in.Tenant = params["tenant"]
+		in.Destination = params["destination"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredEventDestinationUpdate, nestedEventDestinationUpdate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.UpdateEventDestination(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "deleteEventDestination":
+		var in DeleteEventDestinationInput
+		in.Tenant = params["tenant"]
+		in.Destination = params["destination"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.DeleteEventDestination(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		_ = out
+		writeNoContent(w)
+	case "listEventDeadLetters":
+		var in ListEventDeadLettersInput
+		in.Tenant = params["tenant"]
+		in.Destination = params["destination"]
+		q, err := parseQuery(r, "limit", "cursor")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		var errs []FieldError
+		in.Limit = 50
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 200 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 200"})
+		}
+		if v, ok := q["cursor"]; ok {
+			if v == "" {
+				errs = append(errs, FieldError{Field: "cursor", Message: "must not be empty"})
+			}
+			in.Cursor = v
+		}
+		if in.Cursor != "" && runeCount(in.Cursor) < 1 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at least 1"})
+		}
+		if runeCount(in.Cursor) > 512 {
+			errs = append(errs, FieldError{Field: "cursor", Message: "length must be at most 512"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ListEventDeadLetters(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "replayEventDeadLetters":
+		var in ReplayEventDeadLettersInput
+		in.Tenant = params["tenant"]
+		in.Destination = params["destination"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredEventDeadLetterReplay, nestedEventDeadLetterReplay, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ReplayEventDeadLetters(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "rewindEventDestination":
+		var in RewindEventDestinationInput
+		in.Tenant = params["tenant"]
+		in.Destination = params["destination"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, true, requiredEventDestinationRewind, nestedEventDestinationRewind, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.RewindEventDestination(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "rotateEventDestinationSecret":
+		var in RotateEventDestinationSecretInput
+		in.Tenant = params["tenant"]
+		in.Destination = params["destination"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		in.IdempotencyKey = r.Header.Get("Idempotency-Key")
+		if err := decodeBody(r, h.hooks.MaxBodyBytes, false, requiredEventDestinationSecretRotate, nestedEventDestinationSecretRotate, &in.Body); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		if errs := in.Body.Validate(); len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.RotateEventDestinationSecret(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 200, out)
+	case "testEventDestination":
+		var in TestEventDestinationInput
+		in.Tenant = params["tenant"]
+		in.Destination = params["destination"]
+		if _, err := parseQuery(r); err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		out, err := h.server.TestEventDestination(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		writeJSON(w, 202, out)
+	case "exportEvents":
+		var in ExportEventsInput
+		in.Tenant = params["tenant"]
+		q, ql, err := parseQueryLists(r, []string{"type"}, "after", "limit")
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		_ = q
+		var errs []FieldError
+		in.After = 0
+		if v, ok := q["after"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "after", Message: "must be an integer"})
+			} else {
+				in.After = n
+			}
+		}
+		if in.After < 0 {
+			errs = append(errs, FieldError{Field: "after", Message: "must be at least 0"})
+		}
+		in.Limit = 1000
+		if v, ok := q["limit"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				errs = append(errs, FieldError{Field: "limit", Message: "must be an integer"})
+			} else {
+				in.Limit = n
+			}
+		}
+		if in.Limit < 1 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at least 1"})
+		}
+		if in.Limit > 10000 {
+			errs = append(errs, FieldError{Field: "limit", Message: "must be at most 10000"})
+		}
+		for _, v := range ql["type"] {
+			in.Type = append(in.Type, EventType(v))
+			if !EventType(v).Valid() {
+				errs = append(errs, FieldError{Field: "type", Message: "must be one of io.pandokos.usage.recorded.v1, io.pandokos.limit.threshold_reached.v1, io.pandokos.limit.exhausted.v1"})
+			}
+		}
+		if len(in.Type) > 16 {
+			errs = append(errs, FieldError{Field: "type", Message: "must have at most 16 items"})
+		}
+		if !unique(in.Type) {
+			errs = append(errs, FieldError{Field: "type", Message: "must not repeat an item"})
+		}
+		if len(errs) > 0 {
+			h.fail(w, r, op, invalid(errs))
+			return
+		}
+		out, err := h.server.ExportEvents(r.Context(), in)
+		if err != nil {
+			h.fail(w, r, op, err)
+			return
+		}
+		h.writeStream(w, r, op, out)
 	case "listLimitEvents":
 		var in ListLimitEventsInput
 		in.Tenant = params["tenant"]
@@ -10728,7 +11806,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Username = v
 		}
-		if in.Username != "" && !re11.MatchString(in.Username) {
+		if in.Username != "" && !re13.MatchString(in.Username) {
 			errs = append(errs, FieldError{Field: "username", Message: "must match ^[a-z0-9][a-z0-9._@+-]{1,62}[a-z0-9]$"})
 		}
 		if len(errs) > 0 {
@@ -11587,7 +12665,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Name = v
 		}
-		if in.Name != "" && !re6.MatchString(in.Name) {
+		if in.Name != "" && !re8.MatchString(in.Name) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 		if len(errs) > 0 {
@@ -12038,7 +13116,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Name = v
 		}
-		if in.Name != "" && !re6.MatchString(in.Name) {
+		if in.Name != "" && !re8.MatchString(in.Name) {
 			errs = append(errs, FieldError{Field: "name", Message: "must match ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"})
 		}
 		if v, ok := q["enabled"]; ok {
@@ -12308,7 +13386,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.GroupBy = v
 		}
-		if in.GroupBy != "" && !re29.MatchString(in.GroupBy) {
+		if in.GroupBy != "" && !re32.MatchString(in.GroupBy) {
 			errs = append(errs, FieldError{Field: "group_by", Message: "must match ^(provider|model|caller|key)(,(provider|model|caller|key)){0,3}$"})
 		}
 		if v, ok := q["provider"]; ok {
@@ -12519,7 +13597,7 @@ func (h *handler) serve(op *Operation, w http.ResponseWriter, r *http.Request, p
 			}
 			in.Username = v
 		}
-		if in.Username != "" && !re11.MatchString(in.Username) {
+		if in.Username != "" && !re13.MatchString(in.Username) {
 			errs = append(errs, FieldError{Field: "username", Message: "must match ^[a-z0-9][a-z0-9._@+-]{1,62}[a-z0-9]$"})
 		}
 		if len(errs) > 0 {
@@ -13048,6 +14126,21 @@ func (c *Client) GetPlatformAuditHead(ctx context.Context, in GetPlatformAuditHe
 		return nil, err
 	}
 	return &out, nil
+}
+
+// ExportPlatformEvents calls GET /v1/platform-events/export. Export the platform's events after a sequence number, oldest first, as NDJSON
+func (c *Client) ExportPlatformEvents(ctx context.Context, in ExportPlatformEventsInput) (*StreamBody, error) {
+	q := url.Values{}
+	if in.After != 0 {
+		q.Set("after", strconv.Itoa(in.After))
+	}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	for _, v := range in.Type {
+		q.Add("type", string(v))
+	}
+	return c.doStream(ctx, "/v1/platform-events/export", q, "application/x-ndjson")
 }
 
 // ListPlatformIssuers calls GET /v1/platform-issuers. List the platform-level token issuers
@@ -13915,6 +15008,141 @@ func (c *Client) CancelTenantDeletion(ctx context.Context, in CancelTenantDeleti
 		return nil, err
 	}
 	return &out, nil
+}
+
+// ListEventDestinations calls GET /v1/tenants/{tenant}/event-destinations. List the event destinations of a tenant, with the state of their delivery
+func (c *Client) ListEventDestinations(ctx context.Context, in ListEventDestinationsInput) (*EventDestinationList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	var out EventDestinationList
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/event-destinations", q, nil, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreateEventDestination calls POST /v1/tenants/{tenant}/event-destinations. Register a webhook destination; the signing secret is returned once
+func (c *Client) CreateEventDestination(ctx context.Context, in CreateEventDestinationInput) (*EventDestinationCreated, error) {
+	q := url.Values{}
+	var hdr map[string]string
+	if in.IdempotencyKey != "" {
+		hdr = map[string]string{"Idempotency-Key": in.IdempotencyKey}
+	}
+	var out EventDestinationCreated
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/event-destinations", q, &in.Body, 201, &out, hdr); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetEventDestination calls GET /v1/tenants/{tenant}/event-destinations/{destination}. Read an event destination and the state of its delivery
+func (c *Client) GetEventDestination(ctx context.Context, in GetEventDestinationInput) (*EventDestination, error) {
+	q := url.Values{}
+	var out EventDestination
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/event-destinations/"+url.PathEscape(in.Destination)+"", q, nil, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateEventDestination calls PATCH /v1/tenants/{tenant}/event-destinations/{destination}. Change an event destination; enable or disable it
+func (c *Client) UpdateEventDestination(ctx context.Context, in UpdateEventDestinationInput) (*EventDestination, error) {
+	q := url.Values{}
+	var out EventDestination
+	if err := c.do(ctx, "PATCH", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/event-destinations/"+url.PathEscape(in.Destination)+"", q, &in.Body, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeleteEventDestination calls DELETE /v1/tenants/{tenant}/event-destinations/{destination}. Delete an event destination with its dead letters
+func (c *Client) DeleteEventDestination(ctx context.Context, in DeleteEventDestinationInput) (*NoContent, error) {
+	q := url.Values{}
+	var out NoContent
+	if err := c.do(ctx, "DELETE", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/event-destinations/"+url.PathEscape(in.Destination)+"", q, nil, 204, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListEventDeadLetters calls GET /v1/tenants/{tenant}/event-destinations/{destination}/dead-letters. List the events the destination refused, oldest first
+func (c *Client) ListEventDeadLetters(ctx context.Context, in ListEventDeadLettersInput) (*EventDeadLetterList, error) {
+	q := url.Values{}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	if in.Cursor != "" {
+		q.Set("cursor", string(in.Cursor))
+	}
+	var out EventDeadLetterList
+	if err := c.do(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/event-destinations/"+url.PathEscape(in.Destination)+"/dead-letters", q, nil, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ReplayEventDeadLetters calls POST /v1/tenants/{tenant}/event-destinations/{destination}/dead-letters/replay. Deliver dead letters again, all of them or the given sequence numbers
+func (c *Client) ReplayEventDeadLetters(ctx context.Context, in ReplayEventDeadLettersInput) (*EventDeadLetterReplayed, error) {
+	q := url.Values{}
+	var out EventDeadLetterReplayed
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/event-destinations/"+url.PathEscape(in.Destination)+"/dead-letters/replay", q, &in.Body, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// RewindEventDestination calls POST /v1/tenants/{tenant}/event-destinations/{destination}/rewind. Deliver again the events after a sequence number or a time
+func (c *Client) RewindEventDestination(ctx context.Context, in RewindEventDestinationInput) (*EventDestination, error) {
+	q := url.Values{}
+	var out EventDestination
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/event-destinations/"+url.PathEscape(in.Destination)+"/rewind", q, &in.Body, 200, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// RotateEventDestinationSecret calls POST /v1/tenants/{tenant}/event-destinations/{destination}/rotate-secret. Replace the signing secret; the new one is returned once
+func (c *Client) RotateEventDestinationSecret(ctx context.Context, in RotateEventDestinationSecretInput) (*EventDestinationCreated, error) {
+	q := url.Values{}
+	var hdr map[string]string
+	if in.IdempotencyKey != "" {
+		hdr = map[string]string{"Idempotency-Key": in.IdempotencyKey}
+	}
+	var out EventDestinationCreated
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/event-destinations/"+url.PathEscape(in.Destination)+"/rotate-secret", q, &in.Body, 200, &out, hdr); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// TestEventDestination calls POST /v1/tenants/{tenant}/event-destinations/{destination}/test. Ask the worker to send one signed test event to the destination
+func (c *Client) TestEventDestination(ctx context.Context, in TestEventDestinationInput) (*EventDestinationTest, error) {
+	q := url.Values{}
+	var out EventDestinationTest
+	if err := c.do(ctx, "POST", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/event-destinations/"+url.PathEscape(in.Destination)+"/test", q, nil, 202, &out, nil); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ExportEvents calls GET /v1/tenants/{tenant}/events/export. Export the tenant's events after a sequence number, oldest first, as NDJSON
+func (c *Client) ExportEvents(ctx context.Context, in ExportEventsInput) (*StreamBody, error) {
+	q := url.Values{}
+	if in.After != 0 {
+		q.Set("after", strconv.Itoa(in.After))
+	}
+	if in.Limit != 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	for _, v := range in.Type {
+		q.Add("type", string(v))
+	}
+	return c.doStream(ctx, "/v1/tenants/"+url.PathEscape(in.Tenant)+"/events/export", q, "application/x-ndjson")
 }
 
 // ListLimitEvents calls GET /v1/tenants/{tenant}/limit-events. List what the tenant's quotas and budgets recorded, newest first
