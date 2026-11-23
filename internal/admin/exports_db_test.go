@@ -343,10 +343,10 @@ func TestUsageExport(t *testing.T) {
 		// A value that starts with = is not changed in NDJSON.
 		found := false
 		for _, l := range lines {
-			found = found || bytes.Contains(l, []byte(`"team":"=1+1"`))
+			found = found || bytes.Contains(l, []byte(`{"key":"team","value":"=1+1"}`)) // metadata is an array of entries
 		}
 		if !found {
-			t.Error(`the NDJSON does not hold "team":"=1+1" as written`)
+			t.Error(`the NDJSON does not hold the entry team = "=1+1" as written`)
 		}
 	})
 
@@ -392,9 +392,13 @@ func TestUsageExport(t *testing.T) {
 		if formula == nil {
 			t.Fatal("the record with a formula is not in the CSV")
 		}
-		var m map[string]string
-		if err := json.Unmarshal([]byte(formula[meta]), &m); err != nil {
-			t.Fatalf("an object is its JSON text in one cell: %v %q", err, formula[meta])
+		var entries []struct{ Key, Value string }
+		if err := json.Unmarshal([]byte(formula[meta]), &entries); err != nil {
+			t.Fatalf("an array is its JSON text in one cell: %v %q", err, formula[meta])
+		}
+		m := map[string]string{}
+		for _, e := range entries {
+			m[e.Key] = e.Value
 		}
 		// The JSON text of the cell starts with {: only a text cell that starts with a formula character is quoted.
 		if formula[col("model")] != "'=cmd" {

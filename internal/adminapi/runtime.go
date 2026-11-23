@@ -714,6 +714,8 @@ func (h *handler) writeStream(w http.ResponseWriter, r *http.Request, op *Operat
 	ctx, cancel := context.WithTimeout(r.Context(), streamMaxDuration)
 	defer cancel()
 	sw := &streamWriter{w: w, rc: http.NewResponseController(w)}
+	// The first page may take longer than what is left of the server's write timeout.
+	_ = sw.rc.SetWriteDeadline(time.Now().Add(streamWriteExtend))
 	if err := out.Write(ctx, sw); err != nil {
 		if !sw.sent {
 			w.Header().Del("Content-Disposition")

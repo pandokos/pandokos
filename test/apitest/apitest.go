@@ -161,6 +161,9 @@ type teeWriter struct {
 	buf bytes.Buffer
 }
 
+// Unwrap lets http.ResponseController reach the connection (deadlines, flushing) through the tee.
+func (t *teeWriter) Unwrap() http.ResponseWriter { return t.ResponseWriter }
+
 func (t *teeWriter) Write(p []byte) (int, error) {
 	t.buf.Write(p)
 	return t.ResponseWriter.Write(p)
