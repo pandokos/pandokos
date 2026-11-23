@@ -209,6 +209,8 @@ completion waits two minutes after the start for exactly this case.
 - **No self-service.** Only the platform requests a deletion; a tenant's owner cannot delete its own tenant.
 - **The platform's chain is never rewritten**, so it still names the people who acted on the tenant, until audit
   retention removes the rows.
-- **No event.** "Tenant deleted" is not announced to other systems yet (sprint 6.4); keep your own list.
+- **Events of the platform only.** "Deletion requested", "deletion cancelled" and "tenant deleted" are events of the
+  platform's log, pulled with `pandokos platform-event export`; there is no platform webhook
+  ([events guide](events.md#7-the-platforms-events)).
 - **No automatic rotation after a deletion** (section 6) and no restore drill yet (sprint 12.3).
 - Nothing waits two minutes in tests: they move the clocks of the row; in production the settle time is real.
