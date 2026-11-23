@@ -70,7 +70,7 @@ func (f *fakeAPI) opOf(r *http.Request) (adminapi.Operation, bool) {
 		if op.Method != r.Method {
 			continue
 		}
-		re := regexp.MustCompile("^" + regexp.MustCompile(`\{[a-z_]+\}`).ReplaceAllString(regexp.QuoteMeta(op.Path), `[^/]+`) + "$")
+		re := regexp.MustCompile("^" + regexp.MustCompile(`\\\{[a-z_]+\\\}`).ReplaceAllString(regexp.QuoteMeta(op.Path), `[^/]+`) + "$")
 		if re.MatchString(r.URL.Path) {
 			return op, true
 		}

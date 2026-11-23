@@ -3,12 +3,8 @@
 package tenantexport
 
 import (
-	"context"
 	_ "embed"
-	"errors"
 	"time"
-
-	"github.com/pandokos/pandokos/internal/adminapi"
 )
 
 // Schema is the JSON Schema (draft 2020-12) of the manifest and of every kind; the file is
@@ -77,10 +73,4 @@ type Manifest struct {
 	AuditHead       ManifestAuditHead `json:"audit_head"`
 	UsageFrom       time.Time         `json:"usage_from"`
 	UsageTo         time.Time         `json:"usage_to"`
-}
-
-// Write reads the tenant's data through c and writes the export to dir (through dir.partial,
-// renamed at the end).
-func Write(_ context.Context, _ *adminapi.Client, _, _ string, _ Options) (Manifest, error) {
-	return Manifest{}, errors.New("tenantexport: not implemented")
 }

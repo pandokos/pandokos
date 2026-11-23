@@ -573,6 +573,17 @@ func (c *Client) do(ctx context.Context, method, path string, q url.Values, body
 	return nil
 }
 
+// GetRaw calls a GET that answers 200 with a JSON object and returns the body as received, without
+// decoding it into a type: a copy of what the API says, member for member (the tenant data export
+// writes it unchanged). The path is the one of the document with its parameters filled in.
+func (c *Client) GetRaw(ctx context.Context, path string, q url.Values) (json.RawMessage, error) {
+	var out json.RawMessage
+	if err := c.do(ctx, http.MethodGet, path, q, nil, http.StatusOK, &out, nil); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // doRedirect calls a public GET that answers 303 and returns its Location; it does not follow it.
 func (c *Client) doRedirect(ctx context.Context, method, path string, q url.Values) (string, error) {
 	u := strings.TrimSuffix(c.BaseURL, "/") + path
