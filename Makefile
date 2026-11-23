@@ -103,11 +103,12 @@ fuzz: ## Run each fuzz target for FUZZTIME
 	go test ./internal/oidc/ -run '^$$' -fuzz '^FuzzGroups$$' -fuzztime $(FUZZTIME)
 	go test ./internal/authz/ -run '^$$' -fuzz '^FuzzEffective$$' -fuzztime $(FUZZTIME)
 
-bench: ## Usage reader, limits and gateway metrics benchmarks
+bench: ## Usage reader, limits, gateway metrics and event-trigger benchmarks (the last needs make db-up)
 	go test ./internal/family/openai/ -run '^$$' -bench . -benchmem
 	go test ./internal/limits/ -run '^$$' -bench . -benchmem
 	go test ./internal/resolver/ -run '^$$' -bench . -benchmem
 	go test ./internal/gateway/ -run '^$$' -bench BenchmarkRequestWithMetrics -benchmem
+	go test ./internal/ledger/ -run '^$$' -bench BenchmarkLedgerBatchOutbox -benchmem
 
 fmt: ## Format the code
 	gofmt -w cmd internal test

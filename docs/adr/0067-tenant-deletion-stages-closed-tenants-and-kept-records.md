@@ -108,3 +108,4 @@ later (open point O-1); the epic and the data model keep them under the retentio
 
 - 2026-11-23: proposed with sprint 6.3.
 - 2026-11-23: accepted by the maintainer after review.
+- 2026-11-23: sprint 6.4 places the five event tables in the erasure groups and states that events not delivered when the deletion begins are removed; the platform's deletion events are kept ([ADR 0070](0070-the-outbox-as-a-log-relay-by-destination-and-retention.md)).

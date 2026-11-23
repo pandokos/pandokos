@@ -42,3 +42,4 @@ the installation.
 - 2026-11-22: proposed with sprint 6.1.
 - 2026-11-23: sprint 6.3: the eight lines are added or changed (`tenant deletion ready`, `started`, `completed`, `failing`, `recovered`, `key rewrap failing`, `key rotation complete`, and `vault ready` with two fields), none with a tenant or a count of one.
 - 2026-11-23: accepted by the maintainer after review.
+- 2026-11-23: sprint 6.4 adds six log lines (`event relay ready` to `event retention failing`) and the redaction of the shape `whsec_…` ([ADR 0071](0071-webhook-destinations-signature-secrets-and-egress.md), [log reference](../reference/logs.md#events)).

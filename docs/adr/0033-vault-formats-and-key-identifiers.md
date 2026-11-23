@@ -53,3 +53,4 @@ wrong file); no registry of versions (a wrong file would fail tenant by tenant).
 
 - 2026-11-18: recorded as accepted by the maintainer.
 - 2026-11-23: sprint 6.3 amends point 5: versions are registered by activation at start (`kek_activate`), not when a data key is wrapped, and have a state (`active`, `retiring`, `retired`); `serve` needs the active and the retiring ones ([ADR 0068](0068-key-encryption-key-versions-rotation-and-erasure-in-backups.md)).
+- 2026-11-23: sprint 6.4 amends the vault's scope: it seals a second kind of object, a webhook signing secret, under the tenant's data key with associated data of its own ([ADR 0071](0071-webhook-destinations-signature-secrets-and-egress.md)).

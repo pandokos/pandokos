@@ -52,7 +52,8 @@ erDiagram
 | Policy | `tenant_model_restriction`, `limit_rule` | tenant |
 | Tenant prices | `tenant_price_version`, `tenant_price_rate` | tenant; no policy shows them to the platform scope |
 | Records | `usage_record`, `audit_event`, `platform_audit_event` | tenant, except the platform audit |
-| Delivery | `outbox_event`, `outbox_delivery` | tenant |
+| Events | `outbox_event`, `outbox_stream`, `event_destination`, `outbox_dead_letter` | tenant |
+| Events, global | `event_destination_directory` (identifiers only, no grant to a runtime role), `platform_outbox_stream`, `platform_outbox_event` (restricted: the admin role reads it in platform scope) | global |
 
 ## The catalogue (sprint 2.2)
 
@@ -123,9 +124,9 @@ are granted to the role, so users and passwords can change without a migration. 
 | Role | Used by | Can | Cannot |
 |---|---|---|---|
 | `pandokos_owner` | `migrate` only | Own and alter the schema | Be used at run time |
-| `pandokos_gateway` | gateway | Read identities, catalogue, policy and credentials of the session tenant (not platform keys); call the key lookup function, which crosses the policy for one fact only: the tenant of a key ID; insert usage and outbox rows; execute `record_auth_failure`, which writes one `auth.failure` audit row in the session tenant | Write identities, catalogue or credentials; hold any privilege on the audit tables (it can only call that function); update or delete usage |
+| `pandokos_gateway` | gateway | Read identities, catalogue, policy and credentials of the session tenant (not platform keys); call the key lookup function, which crosses the policy for one fact only: the tenant of a key ID; insert usage rows (the triggers write their events); execute `record_auth_failure`, which writes one `auth.failure` audit row in the session tenant | Write identities, catalogue or credentials; hold any privilege on the audit tables (it can only call that function); update or delete usage |
 | `pandokos_admin` | admin API | Read and write the session tenant's configuration; write platform tables when acting as platform; insert audit rows (it cannot read them yet); read usage; read and write the tables of people and sessions (sprint 4.2), and execute the five definer functions of migration 0013 and the two issuer lookups that tokens on the administration listener need | Read the sealed secret of a credential, in any session (it holds no `SELECT` on that column); update or delete usage or audit |
-| `pandokos_worker` | worker | List tenants (in platform scope); run one job for one tenant inside that tenant's session; manage outbox deliveries; import prices in platform scope (prices, rates, imports and the platform audit rows of the refresh job) | Run a statement over several tenants' data at once |
+| `pandokos_worker` | worker | List tenants (in platform scope); run one job for one tenant inside that tenant's session; claim event destinations, deliver, settle and write dead letters; import prices in platform scope (prices, rates, imports and the platform audit rows of the refresh job) | Run a statement over several tenants' data at once |
 
 Three details make this hold:
 
@@ -384,9 +385,43 @@ deletion.
 
 ## Outbox
 
-`outbox_event` rows are inserted in the transaction that produces the fact they describe. The
-worker claims them with `FOR UPDATE SKIP LOCKED`, delivers, and records the attempt in
-`outbox_delivery`. An event's ID is stable and is the idempotency key for the receiver.
+Events are rows of an append-only log, one log for each tenant and one for the platform; the database writes them
+in the transaction of the fact ([ADR 0070](../adr/0070-the-outbox-as-a-log-relay-by-destination-and-retention.md),
+[events guide](../operations/events.md)). Six tables, plus one directory:
+
+| Table | Scope | Holds |
+|---|---|---|
+| `outbox_event` | tenant | One row for each event: `seq`, `id`, `type`, `subject`, `occurred_at`, `recorded_at`, `data`. Append-only like the ledger (`append_only`: a `DELETE` only under `pandokos.retention`). No runtime role may `INSERT`, `UPDATE` or `DELETE` it; admin and worker `SELECT` it, the gateway not at all |
+| `outbox_stream` | tenant | One row for each tenant: the last `seq`. The first event of a transaction locks it (`INSERT … ON CONFLICT DO UPDATE`) until the transaction ends, so `seq` follows the order of commits and a reader that sees `n` sees everything before it. A rolled-back transaction leaves a gap |
+| `event_destination` | tenant | A webhook: name, URL, types, `enabled`, the signing secret sealed under the tenant's data key and, during a rotation, the previous one with its expiry; the cursor `cursor_seq`, the failure state, the lease and the test request. At most 8 for each tenant (a trigger under an advisory lock) |
+| `outbox_dead_letter` | tenant | An event parked by a destination after its attempts: destination, `seq`, event ID, type, attempts, last outcome and status, state `dead` or `replay` |
+| `platform_outbox_event` | global, restricted | The platform's log, written only by `platform_outbox_append`; read by the admin role in platform scope |
+| `platform_outbox_stream` | global | The platform's last `seq` |
+| `event_destination_directory` | global | Which tenants have destinations (identifiers only): what the claim walks |
+
+`outbox_delivery`, a row for each delivery, never existed: the log is the queue and each destination has a
+**cursor** in it; a delivery that succeeds writes no row and an outage writes nothing.
+
+**Writers.** `usage_record_outbox` (an `AFTER INSERT … FOR EACH STATEMENT` trigger with a transition table on
+`usage_record`: one event for each record actually inserted, one reservation of sequence numbers for the
+statement) and `limit_event_outbox` (a row trigger on `limit_event`) are `SECURITY DEFINER` functions that write
+under the policy of the tenant of the rows. `tenant_deletion_outbox` and `kek_version_outbox` write the platform's
+log through `platform_outbox_append`, which locks the head of the platform's audit chain before the stream row, so
+that every transaction takes the two in one order; a transaction that writes a tenant's audit chain and its log
+must do the same (lock the chain first). Isolation lint L-23 keeps the two ledger triggers present and enabled.
+
+**Readers and rights.** The worker claims destinations with `outbox_relay_claim` (a definer function in platform
+scope that answers identifiers, `FOR UPDATE SKIP LOCKED`, a lease) and reads installation-wide counts with
+`outbox_relay_state`; retention is `tenant_outbox_retention`, executable by the worker in the tenant's session. The
+worker holds no `UPDATE` on a destination's `url`, `event_types`, `enabled` or secret, so it cannot redirect a
+tenant's events; the admin role holds no `SELECT` on the two sealed secret columns and no `UPDATE` on the delivery
+history, so it cannot read a secret or forge a history.
+
+**Erasure groups.** Group A, removed by the step `access`: `outbox_dead_letter`, `event_destination` and the
+tenant's rows of `event_destination_directory`. Group C, removed by the step `configuration`: `outbox_event` and
+`outbox_stream`. Kept: `platform_outbox_event`. `tenant_residue` counts these five tables.
+
+An event's ID is stable and is the receiver's idempotency key.
 
 ## Tenant deletion
 

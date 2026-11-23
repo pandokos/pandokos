@@ -50,3 +50,4 @@ to a third party.
 ## History
 
 - 2026-11-18: sprint 5.2 records limit facts (a threshold reached, a limit exhausted) in `limit_event`; the outbox row follows in sprint 6.4 ([ADR 0052](0052-administration-of-limits.md)).
+- 2026-11-23: sprint 6.4 refines "Relay" and "Guarantee": the relay claims destinations, each with a cursor in an append-only log, not single events; events live for `events.retention`; the format, the types and the content of the event are in the new records ([ADR 0070](0070-the-outbox-as-a-log-relay-by-destination-and-retention.md), [ADR 0071](0071-webhook-destinations-signature-secrets-and-egress.md), [ADR 0072](0072-event-types-the-envelope-the-external-reference-and-platform-events.md)).

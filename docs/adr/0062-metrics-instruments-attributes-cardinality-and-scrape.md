@@ -68,3 +68,4 @@ The conventions reserve it for counts obtained from the system.
 - 2026-11-23: sprint 6.2: five instruments, M42 to M46, with no tenant attribute
 - 2026-11-23: sprint 6.3: five instruments, M47 to M51 (51 in all), with no tenant attribute: deletion steps and open deletions, re-wraps, key versions by state and pending erasures; two new values of `pandokos.retention.kind` and one of `pandokos.export.kind`.
 - 2026-11-23: accepted by the maintainer after review.
+- 2026-11-23: sprint 6.4 adds seven instruments, `pandokos.events.*` (M52 to M58), and the values `outbox_event`, `limit_event`, `event` and `platform_event` of two attributes, with no tenant attribute ([metrics reference](../reference/metrics.md)).

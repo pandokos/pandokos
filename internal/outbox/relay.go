@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -104,7 +103,7 @@ func (r *Relay) log() *slog.Logger {
 	if r.Logger != nil {
 		return r.Logger
 	}
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
+	return slog.New(slog.DiscardHandler)
 }
 
 func (r *Relay) batch() int {

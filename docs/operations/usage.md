@@ -477,3 +477,14 @@ cost, currency, `request_id`, `trace_id`, `credential_id` and `price_version_id`
   the tenant (`usage record rejected` with `constraint: tenant_open`); a request still in flight at that
   moment ends without a record. With the default grace period no request exists then, because the tenant
   has been suspended for days; with `tenant_deletion.grace_period` of `0` it can.
+
+## 16. Events of usage
+
+Every usage record the ledger writer inserts is also an event, `io.pandokos.usage.recorded.v1`, written by a
+trigger of the table in the same statement: no record exists without its event, and none is produced for a
+record the writer skipped as a duplicate. The event holds the record's quantities by token category, the
+estimated cost with its status and currency, the price version, the principal and key IDs, the request and trace
+IDs, `limit_state` and the caller's metadata, and **no content**. Tenants receive them by webhook or pull them
+([events guide](events.md), [event reference](../reference/events.md)); events are kept for `events.retention`,
+the ledger for `retention.usage_months`, so the ledger and its export stay the record. The event doubles the rows
+of a ledger batch: the cost is measured and written in the [events guide](events.md#11-the-cost-on-the-ledger).

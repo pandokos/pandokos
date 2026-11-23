@@ -842,3 +842,24 @@ the implementer check it against the published text before coding).
 | O-13 | Confirmed: the proposed defaults |
 | O-14 | Confirmed: a support action may carry `event_destination:read` only |
 | O-15 | Confirmed: a top-level `examples/` directory in the root module |
+
+### Changes during implementation (2026-11-23)
+
+Migration 0017 in the repository differs from the text of plan appendix A1 in two statements (commit
+519fafa), and so does its SHA-256: the file now has
+`1c5a7b23d96a98c79da2e666367e1e89252daedcc4d191881586b695c024c865` (`sha256sum
+internal/store/migrations/sql/0017_events.sql`), not the digest in plan A1; `migrations.sum` follows the file.
+The migration is unreleased. The file in the repository is authoritative.
+
+| Finding | Change |
+|---|---|
+| `outbox_relay_claim` answered more destinations than its limit: the subquery with `LIMIT` and `FOR UPDATE` inside an `IN` may be run again by the semi-join | The subquery is a `MATERIALIZED` CTE, so the limit holds |
+| `kek_version_outbox` wrote no event when a version was inserted already retired, though its retirement is the fact | The insert of a retired version is treated as the retirement |
+| The plan listed twenty statements for the outbox | Two more were needed: `ListEventDestinations` and `NewEventDestinationID` (300 statements in `TestEveryStatement`); the administration's SQL for destinations moved into sqlc statements (T-R81 keeps SQL that writes the log out of Go) |
+| The rotation overlap, the batches and the guide's figures | A rotation with no `previous_valid_for_seconds` overlaps 24 hours (at most 7 days); a batch is sent in waves of four requests; T-1050 measured a batch of 500 at a median of 108.7 ms without the trigger and 145.5 ms with it (ratio 1.34) on the development machine, recorded in `docs/operations/events.md`; the figure on the CI machine is plan F4 |
+| Declared deviations of tests | T-1016 expects no gap in the sequence after a rollback (the reservation of numbers rolls back with the transaction); T-1043 answers 404 for the destination of another tenant; T-1055 expects a sealed secret not to open after the deletion; `PopulatedTenant` seals a placeholder as the destination secret |
+
+Known limits left in 6.4: a new test request while a test is in flight completes with the earlier outcome (the
+design said it replaces a waiting one); failures of the refresh of `outbox_relay_state` are not counted in
+`pandokos.events.relay.passes`; one combined run of the end-to-end tests of the sprint once hung for more than
+five minutes under load and was not diagnosed.

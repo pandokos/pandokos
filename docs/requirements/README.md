@@ -267,6 +267,14 @@ SOW 0.1; *new* marks requirements added in this revision.
 | EVT-03 | Delivery is asynchronous and at least once, with retries, a dead-letter state and replay. No event is lost when Pandokos or the destination fails, and a failing destination never delays inference | M | R3 | BILLING-03 to 05, DB-09 |
 | EVT-04 | Destinations are generic: a signed webhook and a file export, both in a documented open format | M | R3 | BILLING-06 |
 
+**Delivered (sprint 6.4).** EVT-01 to EVT-04 and LIM-13 are met by [ADR 0070](../adr/0070-the-outbox-as-a-log-relay-by-destination-and-retention.md)
+to [ADR 0072](../adr/0072-event-types-the-envelope-the-external-reference-and-platform-events.md); the
+[events guide](../operations/events.md) describes them. **A bound on EVT-03:** "no event is lost" holds within
+`events.retention` (168 hours by default). An event is removed after that time even if a destination never
+received it (counted in `expired_events` and `pandokos.events.expired`), and the events of a tenant that
+is being deleted and were not delivered when the deletion began are removed with it; the usage ledger and its
+export remain the record. The requirement keeps its text.
+
 ### 5.11 Observability
 
 | ID | Requirement | Pri | Rel | Source |

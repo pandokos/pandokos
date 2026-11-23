@@ -40,3 +40,4 @@ authorization.
 
 - 2026-11-23: proposed with sprint 6.2.
 - 2026-11-23: accepted by the maintainer after review.
+- 2026-11-23: sprint 6.4 keeps event destinations and the external reference out of `export` and `apply`; they join in sprint 12.3 ([ADR 0072](0072-event-types-the-envelope-the-external-reference-and-platform-events.md)).
