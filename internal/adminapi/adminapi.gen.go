@@ -13037,7 +13037,7 @@ func (c *Client) ExportPlatformAuditEvents(ctx context.Context, in ExportPlatfor
 	if in.ToSeq != 0 {
 		q.Set("to_seq", strconv.Itoa(in.ToSeq))
 	}
-	return c.doStream(ctx, "GET", "/v1/platform-audit-events/export", q, "application/x-ndjson")
+	return c.doStream(ctx, "/v1/platform-audit-events/export", q, "application/x-ndjson")
 }
 
 // GetPlatformAuditHead calls GET /v1/platform-audit-head. Read the head and the anchor of the platform's audit chain
@@ -13717,7 +13717,7 @@ func (c *Client) ExportAuditEvents(ctx context.Context, in ExportAuditEventsInpu
 	if in.ToSeq != 0 {
 		q.Set("to_seq", strconv.Itoa(in.ToSeq))
 	}
-	return c.doStream(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/audit-events/export", q, "application/x-ndjson")
+	return c.doStream(ctx, "/v1/tenants/"+url.PathEscape(in.Tenant)+"/audit-events/export", q, "application/x-ndjson")
 }
 
 // GetAuditHead calls GET /v1/tenants/{tenant}/audit-head. Read the head and the anchor of the tenant's audit chain
@@ -13894,7 +13894,7 @@ func (c *Client) ExportDeletedTenantAuditEvents(ctx context.Context, in ExportDe
 	if in.ToSeq != 0 {
 		q.Set("to_seq", strconv.Itoa(in.ToSeq))
 	}
-	return c.doStream(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/deletion/audit-events/export", q, "application/x-ndjson")
+	return c.doStream(ctx, "/v1/tenants/"+url.PathEscape(in.Tenant)+"/deletion/audit-events/export", q, "application/x-ndjson")
 }
 
 // GetDeletedTenantAuditHead calls GET /v1/tenants/{tenant}/deletion/audit-head. Read the head and the anchor of the audit chain kept for a deleted tenant
@@ -14754,7 +14754,7 @@ func (c *Client) ExportUsageRecords(ctx context.Context, in ExportUsageRecordsIn
 	if in.Format == ExportFormatCsv {
 		accept = "text/csv"
 	}
-	return c.doStream(ctx, "GET", "/v1/tenants/"+url.PathEscape(in.Tenant)+"/usage-records/export", q, accept)
+	return c.doStream(ctx, "/v1/tenants/"+url.PathEscape(in.Tenant)+"/usage-records/export", q, accept)
 }
 
 // GetUsageReport calls GET /v1/tenants/{tenant}/usage-report. Report the tenant's usage by period, provider, model, caller and key

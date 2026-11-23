@@ -737,12 +737,12 @@ type StreamBody struct {
 }
 
 // doStream calls a GET whose success is streamed. A non-200 answer is decoded as a problem.
-func (c *Client) doStream(ctx context.Context, method, path string, q url.Values, accept string) (*StreamBody, error) {
+func (c *Client) doStream(ctx context.Context, path string, q url.Values, accept string) (*StreamBody, error) {
 	u := strings.TrimSuffix(c.BaseURL, "/") + path
 	if len(q) > 0 {
 		u += "?" + q.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, method, u, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("adminapi: %w", err)
 	}

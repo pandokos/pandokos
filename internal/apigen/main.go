@@ -1192,7 +1192,10 @@ func (g *generator) operations() error {
 				g.p("if in.Format == %s { accept = \"text/csv\" }", enumConst("ExportFormat", "csv"))
 				accept = "accept"
 			}
-			g.p("return c.doStream(ctx, %q, %s, q, %s)", o.method, expr, accept)
+			if o.method != http.MethodGet {
+				return fmt.Errorf("%s: a streamed answer is the answer of a GET", o.id)
+			}
+			g.p("return c.doStream(ctx, %s, q, %s)", expr, accept)
 			g.p("}\n")
 			continue
 		}
