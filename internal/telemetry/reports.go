@@ -17,6 +17,9 @@ const (
 	RetentionUsageRollup        = "usage_rollup"
 	RetentionAuditEvent         = "audit_event"
 	RetentionPlatformAuditEvent = "platform_audit_event"
+	// The records kept for deleted tenants (sprint 6.3).
+	RetentionDeletedTenantUsageRecord = "deleted_tenant_usage_record"
+	RetentionDeletedTenantAuditEvent  = "deleted_tenant_audit_event"
 )
 
 // The values of AttrExportKind.
@@ -24,6 +27,8 @@ const (
 	ExportUsage         = "usage"
 	ExportAudit         = "audit"
 	ExportPlatformAudit = "platform_audit"
+	// ExportDeletedTenantAudit is the log kept for a deleted tenant (sprint 6.3).
+	ExportDeletedTenantAudit = "deleted_tenant_audit"
 )
 
 // RetentionKinds are the values of AttrRetentionKind, in the order of the metrics reference.

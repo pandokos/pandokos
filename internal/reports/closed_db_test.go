@@ -69,7 +69,8 @@ func TestJobsSkipClosedTenants(t *testing.T) {
 		t.Errorf("the active tenant keeps %d old audit rows", n)
 	}
 	// The tenant being deleted is skipped entirely: not one row of it changed.
-	if got := d.TableDigests(t, deleting); fmtMap(got) != fmtMap(deletingBefore) {
+	// (The platform log is a global table: the retention record of the deleted tenant is in it.)
+	if got := d.TableDigests(t, deleting); fmtMap(withoutPlatformLog(got)) != fmtMap(withoutPlatformLog(deletingBefore)) {
 		t.Error("retention changed a tenant that is being deleted")
 	}
 	// The deleted tenant: the third pass removed its old records and the prefix of its log.
@@ -103,6 +104,18 @@ func TestJobsSkipClosedTenants(t *testing.T) {
 	if n := d.Count(t, `SELECT count(*)::int FROM pandokos.platform_audit_event WHERE action = 'tenant.records_retention'`); n != rows {
 		t.Errorf("a second pass wrote %d more records of retention", n-rows)
 	}
+}
+
+// withoutPlatformLog drops the digests of the platform's own log, which the retention of a deleted
+// tenant writes to.
+func withoutPlatformLog(m map[string]string) map[string]string {
+	out := map[string]string{}
+	for k, v := range m {
+		if k != "platform_audit_event" && k != "platform_audit_chain" {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 func fmtMap(m map[string]string) string {
