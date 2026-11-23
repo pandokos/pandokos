@@ -218,7 +218,8 @@ func (q *Queries) ListTenantsForWorker(ctx context.Context) ([]string, error) {
 const lockUsageRollup = `-- name: LockUsageRollup :one
 INSERT INTO pandokos.usage_rollup_state AS s (tenant_id, watermark)
 VALUES (pandokos.current_tenant_id(),
-        COALESCE((SELECT min(u.recorded_at) FROM pandokos.usage_record u), now() - interval '1 minute'))
+        LEAST(COALESCE((SELECT min(u.recorded_at) FROM pandokos.usage_record u), now() - interval '1 minute'),
+              now() - interval '1 minute'))
 ON CONFLICT (tenant_id) DO UPDATE SET watermark = s.watermark
 RETURNING s.watermark
 `

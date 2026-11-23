@@ -8,7 +8,8 @@ SELECT t.id FROM pandokos.tenant t WHERE t.state IN ('active', 'suspended', 'del
 -- name: LockUsageRollup :one
 INSERT INTO pandokos.usage_rollup_state AS s (tenant_id, watermark)
 VALUES (pandokos.current_tenant_id(),
-        COALESCE((SELECT min(u.recorded_at) FROM pandokos.usage_record u), now() - interval '1 minute'))
+        LEAST(COALESCE((SELECT min(u.recorded_at) FROM pandokos.usage_record u), now() - interval '1 minute'),
+              now() - interval '1 minute'))
 ON CONFLICT (tenant_id) DO UPDATE SET watermark = s.watermark
 RETURNING s.watermark;
 
