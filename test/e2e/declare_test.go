@@ -152,6 +152,23 @@ func TestExportApplyRoundTrip(t *testing.T) {
 	if a, b := stateWithoutIDs(p.stateOf(t, adminA, idA)), stateWithoutIDs(p.stateOf(t, adminB, idB)); a != b {
 		t.Errorf("the two tenants differ although they were configured by the same document:\n%s\n---\n%s", a, b)
 	}
+
+	// A tenant restricted to no key: the export says so, and the apply to another tenant restricts it too.
+	p.mustCLI(t, adminA, "metadata-keys", "set", "--tenant", idA)
+	emptyDoc := filepath.Join(dir, "empty.yaml")
+	p.mustCLI(t, adminA, "export", "--tenant", idA, "--out", emptyDoc)
+	if b, _ := os.ReadFile(emptyDoc); !strings.Contains(string(b), "metadata_keys: []") {
+		t.Errorf("the export of a tenant restricted to no key:\n%s", b)
+	}
+	if out := p.mustCLI(t, adminA, "apply", "--tenant", idA, "--file", emptyDoc); !strings.Contains(out, "0 changes") {
+		t.Errorf("apply of the export of a tenant restricted to no key:\n%s\nwant 0 changes", out)
+	}
+	if out := p.mustCLI(t, adminB, "apply", "--tenant", idB, "--file", emptyDoc); !strings.Contains(out, "setting metadata_keys") {
+		t.Errorf("apply to a tenant that accepts the keys:\n%s\nwant the empty policy set", out)
+	}
+	if a, b := stateWithoutIDs(p.stateOf(t, adminA, idA)), stateWithoutIDs(p.stateOf(t, adminB, idB)); a != b {
+		t.Errorf("the empty policy was not carried over:\n%s\n---\n%s", a, b)
+	}
 	_ = json.Valid
 	_ = fmt.Sprint
 }

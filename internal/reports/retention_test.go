@@ -80,7 +80,7 @@ func TestRetentionJob(t *testing.T) {
 		}
 	})
 
-	t.Run("a pass removes what is old, tenants first, and says so", func(t *testing.T) {
+	t.Run("a pass removes what is old, the platform first, and says so", func(t *testing.T) {
 		w := newRetentionWorld(t)
 		logs := &logBuffer{}
 		job := &reports.Retention{DB: w.d.Open(t, store.RoleWorker), UsageMonths: 2, AuditMonths: 1, Logger: jsonLogger(logs)}
@@ -105,10 +105,11 @@ func TestRetentionJob(t *testing.T) {
 		if n := w.count(t, `SELECT count(*) FROM pandokos.platform_audit_event WHERE action IN ('audit.retention', 'usage.retention')`); n != 2 {
 			t.Errorf("the platform log has %d retention rows, want 2 (usage.retention and audit.retention)", n)
 		}
-		// The tenant pass is first: no tenant row is written after the first platform row.
+		// The platform pass is first: no platform row is written after the first tenant row, so a failure
+		// of the platform pass can stop the tenant pass that removes the rollup of the months it keeps.
 		if w.count(t, `SELECT count(*) FROM pandokos.audit_event e, pandokos.platform_audit_event p
-			WHERE e.action IN ('audit.retention', 'usage.retention') AND p.action IN ('audit.retention', 'usage.retention') AND e.occurred_at > p.occurred_at`) != 0 {
-			t.Error("a tenant's retention row is later than a platform one: the tenant pass comes first")
+			WHERE e.action IN ('audit.retention', 'usage.retention') AND p.action IN ('audit.retention', 'usage.retention') AND p.occurred_at > e.occurred_at`) != 0 {
+			t.Error("a platform retention row is later than a tenant's: the platform pass comes first")
 		}
 		applied := logs.lines(t, "retention applied")
 		if len(applied) != 1 || applied[0]["level"] != "INFO" {
@@ -176,6 +177,39 @@ func TestRetentionJob(t *testing.T) {
 		}
 		if strings.Contains(logs.text(), w.a.String()) {
 			t.Error("a log line names the failing tenant")
+		}
+	})
+
+	t.Run("a failing platform pass leaves the tenants alone", func(t *testing.T) {
+		// A tenant's rollup of a month before the cut must outlive the ledger partition of that month:
+		// when the platform cannot drop the partition, the tenant pass does not run.
+		w := newRetentionWorld(t)
+		super := w.d.SharedSuper(t)
+		for _, q := range []string{
+			`CREATE FUNCTION public.probe_boom() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'probe: the platform fails'; END $$`,
+			`CREATE TRIGGER probe_boom BEFORE DELETE ON pandokos.platform_audit_event FOR EACH ROW EXECUTE FUNCTION public.probe_boom()`,
+		} {
+			if _, err := super.Exec(c, q); err != nil {
+				t.Fatal(err)
+			}
+		}
+		job := &reports.Retention{DB: w.d.Open(t, store.RoleWorker), UsageMonths: 2, AuditMonths: 1, Logger: jsonLogger(&logBuffer{})}
+		if err := job.Pass(c); err == nil {
+			t.Fatal("the pass did not fail although the platform's did")
+		}
+		if w.count(t, `SELECT count(*) FROM pg_class WHERE relname = $1`, w.oldPart) != 1 {
+			t.Error("the partition was dropped although the platform pass failed")
+		}
+		for _, tid := range []tenant.ID{w.a, w.b} {
+			if n := w.count(t, `SELECT count(*) FROM pandokos.usage_record WHERE tenant_id = $1::uuid`, tid.String()); n != 2 {
+				t.Errorf("tenant %s keeps %d ledger rows, want both: its pass must not run", tid, n)
+			}
+			if n := w.count(t, `SELECT count(*) FROM pandokos.audit_event WHERE tenant_id = $1::uuid AND action = 'old.row'`, tid.String()); n != 3 {
+				t.Errorf("tenant %s keeps %d old rows, want 3: its pass must not run", tid, n)
+			}
+		}
+		if st := job.Stats(); st.Failed != 1 {
+			t.Errorf("Stats %+v, want one failed run", st)
 		}
 	})
 

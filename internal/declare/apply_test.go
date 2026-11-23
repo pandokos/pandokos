@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pandokos/pandokos/internal/adminapi"
 	"github.com/pandokos/pandokos/internal/cli"
 	"github.com/pandokos/pandokos/internal/declare"
 	"github.com/pandokos/pandokos/test/testutil"
@@ -413,4 +414,83 @@ func TestApplyExitCodes(t *testing.T) {
 	if code, _, _ := runCLI(t, newFake(t, tenantState()), "apply", "--file", file); code != 2 {
 		t.Errorf("no target: exit %d, want 2", code)
 	}
+}
+
+// TestEmptyMetadataPolicy is part of T-966 and T-967: a tenant restricted to no key (accepts no
+// caller metadata) is not the same as a tenant with no restriction. The export says `metadata_keys: []`,
+// a document that says `[]` sets the empty policy, and a document that does not mention the member
+// leaves the policy alone.
+func TestEmptyMetadataPolicy(t *testing.T) {
+	tenant := declare.Target{Tenant: tidAcme}
+	// what the plan would write: what the state holds beyond the document is only reported.
+	writes := func(p declare.Plan) []string {
+		var out []string
+		for _, l := range actions(p) {
+			if !strings.HasPrefix(l, "not in document") {
+				out = append(out, l)
+			}
+		}
+		return out
+	}
+	emptyPolicy := func(t *testing.T) *fakeAPI {
+		st := tenantState()
+		st["/v1/tenants/"+tidAcme+"/metadata-keys"] = adminapi.MetadataKeys{Restricted: true, Keys: []string{}}
+		return newFake(t, st)
+	}
+	withSettings := func(t *testing.T, settings string) *declare.Document {
+		doc, err := declare.Parse([]byte("pandokos: " + declare.Version + "\nkind: tenant\n" + settings))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return doc
+	}
+
+	t.Run("a restriction to no key is exported", func(t *testing.T) {
+		doc, err := declare.Export(ctx(t), emptyPolicy(t).client(), tenant)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := string(marshal(t, doc)); !strings.Contains(got, "metadata_keys: []") {
+			t.Errorf("the export has no `metadata_keys: []`:\n%s", got)
+		}
+	})
+
+	t.Run("a document that says [] sets the empty policy", func(t *testing.T) {
+		f := newFake(t, tenantState()) // restricted to project and team
+		p, err := declare.Diff(ctx(t), f.client(), tenant, withSettings(t, "settings:\n  metadata_keys: []\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := writes(p); len(got) != 1 || !has(got, "setting metadata_keys") {
+			t.Fatalf("the plan: %v, want one setting of metadata_keys", got)
+		}
+		if _, err := p.Apply(ctx(t), f.client()); err != nil {
+			t.Fatal(err)
+		}
+		if w := f.writeCalls(); len(w) != 1 || w[0].Method != "PUT" || !strings.Contains(w[0].Path, "/metadata-keys") || strings.Contains(w[0].Body, "project") {
+			t.Errorf("writes: %+v, want one PUT of the empty list", w)
+		}
+	})
+
+	t.Run("[] against an empty policy changes nothing", func(t *testing.T) {
+		f := emptyPolicy(t)
+		p, err := declare.Diff(ctx(t), f.client(), tenant, withSettings(t, "settings:\n  metadata_keys: []\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := writes(p); len(got) != 0 {
+			t.Errorf("the plan: %v, want nothing", got)
+		}
+	})
+
+	t.Run("a member that is absent leaves the policy alone", func(t *testing.T) {
+		f := emptyPolicy(t)
+		p, err := declare.Diff(ctx(t), f.client(), tenant, withSettings(t, "settings:\n  time_zone: Europe/Rome\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := writes(p); len(got) != 0 {
+			t.Errorf("the plan: %v, want nothing", got)
+		}
+	})
 }

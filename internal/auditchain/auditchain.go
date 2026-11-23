@@ -60,6 +60,10 @@ type Head struct {
 	Hash       []byte
 	AnchorSeq  int64
 	AnchorHash []byte
+	// Start is the sequence number the first row read must have: the one the reader asked for
+	// (--from-seq). Zero means the anchor. A first row above it is a missing row (seq_gap); only a
+	// Start above the anchor whose row is present leaves its link to the earlier rows unverified.
+	Start int64
 }
 
 // Break is one place where a chain does not verify.

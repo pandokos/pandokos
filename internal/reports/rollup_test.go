@@ -108,6 +108,21 @@ func TestRollupAtomicAndConcurrent(t *testing.T) {
 		}
 	})
 
+	t.Run("the first watermark lies before a record that commits late", func(t *testing.T) {
+		// A record is recorded at the clock of its transaction and may commit after the first pass: a
+		// record of 50 seconds ago, seen only now, must be above the watermark the first pass makes.
+		a := d.SeedTenant(t, "rollup-late-first")
+		insertRecords(t, d, a, aged(3, now.Add(-time.Hour), time.Now().UTC().Add(-30*time.Second))...)
+		if err := roll.Pass(c); err != nil {
+			t.Fatal(err)
+		}
+		_, _, wm := rollupTotals(t, d, a)
+		late := time.Now().UTC().Add(-50 * time.Second)
+		if wm == nil || wm.After(late) {
+			t.Fatalf("the first watermark is %v, want it before %v (a minute before now at the latest)", wm, late)
+		}
+	})
+
 	t.Run("a pass that fails leaves everything as it was", func(t *testing.T) {
 		a := d.SeedTenant(t, "rollup-atomic")
 		insertRecords(t, d, a, aged(20, now.Add(-3*time.Hour), now.Add(-10*time.Minute))...)

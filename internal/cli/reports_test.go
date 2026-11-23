@@ -239,6 +239,25 @@ func TestReportAuditCommands(t *testing.T) {
 		}
 	})
 
+	t.Run("usage export keeps the fractions of a second at the split boundaries", func(t *testing.T) {
+		r := newRig(t)
+		r.f.streamState().streams["exportUsageRecords"] = "{\"id\":\"x\"}\n"
+		mustRun(t, r, "usage", "export", "--tenant", tid, "--from", "2026-09-01T00:00:00.5Z", "--to", "2026-11-10T00:00:00.25Z")
+		calls := r.f.calls("exportUsageRecords")
+		if len(calls) != 3 {
+			t.Fatalf("%d requests, want 3", len(calls))
+		}
+		var got [][2]string
+		for _, c := range calls {
+			in := c.(adminapi.ExportUsageRecordsInput)
+			got = append(got, [2]string{in.From, in.To})
+		}
+		want := [][2]string{{"2026-09-01T00:00:00.5Z", "2026-10-02T00:00:00.5Z"}, {"2026-10-02T00:00:00.5Z", "2026-11-02T00:00:00.5Z"}, {"2026-11-02T00:00:00.5Z", "2026-11-10T00:00:00.25Z"}}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("windows %v, want %v", got, want)
+		}
+	})
+
 	t.Run("usage export splits a long window and writes its file through a temporary name", func(t *testing.T) {
 		r := newRig(t)
 		r.f.streamState().streams["exportUsageRecords"] = "{\"id\":\"x\"}\n"
@@ -345,6 +364,64 @@ func TestReportAuditCommands(t *testing.T) {
 			if code != 1 || !strings.Contains(out+errs, "invalid export:") {
 				t.Errorf("%s: exit %d, stdout %q, stderr %q, want exit 1 and invalid export", name, code, out, errs)
 			}
+		}
+	})
+
+	t.Run("audit verify finds the first rows deleted", func(t *testing.T) {
+		scope := "tenant:" + tid
+		lines, head := chainExport(t, scope, 5)
+		run := func(rows []string, args ...string) (int, string) {
+			r := newRig(t)
+			r.f.out["getAuditHead"] = &head
+			r.f.streamState().streams["exportAuditEvents"] = strings.Join(rows, "\n") + "\n"
+			code, out, errs := r.run(t, append([]string{"audit", "verify", "--tenant", tid}, args...)...)
+			return code, out + errs
+		}
+		// The head anchors at 1; rows 1 and 2 were removed by hand.
+		if code, out := run(lines[2:]); code != 1 || !strings.Contains(out, "break at seq 3: seq_gap") {
+			t.Errorf("rows 1-2 deleted: exit %d, %q, want exit 1 and seq_gap at 3", code, out)
+		}
+		// An explicit start above the anchor: the link is reported, not a break.
+		if code, out := run(lines[2:], "--from-seq", "3"); code != 0 || !strings.Contains(out, "not verified") {
+			t.Errorf("--from-seq 3: exit %d, %q, want 0 and the note", code, out)
+		}
+		// The first row is not the one asked for.
+		if code, out := run(lines[3:], "--from-seq", "3"); code != 1 || !strings.Contains(out, "break at seq 4: seq_gap") {
+			t.Errorf("--from-seq 3, first row 4: exit %d, %q", code, out)
+		}
+	})
+
+	t.Run("an offline export cannot show a detail that is not the one hashed", func(t *testing.T) {
+		lines, _ := chainExport(t, "tenant:"+tid, 3)
+		file := filepath.Join(t.TempDir(), "export.ndjson")
+		const plain = `"detail":{"n":1.50},"detail_withheld":false,"detail_digest":""`
+		digest, _ := auditchain.DetailDigest([]byte(`{"n": 1.50}`))
+		right := hex.EncodeToString(digest[:])
+		for name, change := range map[string]string{
+			"withheld with a detail":     `"detail":{"forged":true},"detail_withheld":true,"detail_digest":"` + right + `"`,
+			"not withheld with a digest": `"detail":{"n":1.50},"detail_withheld":false,"detail_digest":"` + right + `"`,
+		} {
+			rows := append([]string(nil), lines...)
+			if !strings.Contains(rows[1], plain) {
+				t.Fatalf("%s: the line does not hold %s: %s", name, plain, rows[1])
+			}
+			rows[1] = strings.Replace(rows[1], plain, change, 1)
+			if err := os.WriteFile(file, []byte(strings.Join(rows, "\n")+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			code, out, errs := runWith(t, nil, "audit", "verify", "--tenant", tid, "--file", file)
+			if code != 1 || !strings.Contains(out+errs, "invalid export") {
+				t.Errorf("%s: exit %d, %q %q, want invalid export", name, code, out, errs)
+			}
+		}
+		// A withheld row done right still verifies: detail {} and the digest.
+		rows := append([]string(nil), lines...)
+		rows[1] = strings.Replace(rows[1], plain, `"detail":{},"detail_withheld":true,"detail_digest":"`+right+`"`, 1)
+		if err := os.WriteFile(file, []byte(strings.Join(rows, "\n")+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if code, out, errs := runWith(t, nil, "audit", "verify", "--tenant", tid, "--file", file); code != 0 {
+			t.Errorf("a withheld row: exit %d %q %q", code, out, errs)
 		}
 	})
 

@@ -292,6 +292,8 @@ func TestMetadataKeyPolicyTable(t *testing.T) {
 		{"a key with a space", []string{"two words"}},
 		{"a key with a dot", []string{"a.b"}},
 		{"a key starting with -", []string{"-a"}},
+		{"a key with a comma", []string{"a,b"}},
+		{"two keys one of which has a comma", []string{"a", "b,c"}},
 	} {
 		err := insert(c.keys...)
 		if sqlstate(err) != checkViolation {

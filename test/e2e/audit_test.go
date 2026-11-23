@@ -124,6 +124,8 @@ func TestAuditVerifyDetectsTampering(t *testing.T) {
 		{"the detail of row 10 is changed", `UPDATE pandokos.audit_event SET detail = '{"forged": true}'::jsonb WHERE tenant_id = '` + w.tenant + `' AND seq = 10`, "break at seq 10: hash_mismatch", false},
 		{"the actor name of row 3 is changed", `UPDATE pandokos.audit_event SET actor_name = 'someone else' WHERE tenant_id = '` + w.tenant + `' AND seq = 3`, "break at seq 3: hash_mismatch", false},
 		{"row 15 is deleted", `DELETE FROM pandokos.audit_event WHERE tenant_id = '` + w.tenant + `' AND seq = 15`, "break at seq 16: seq_gap", false},
+		{"the first row is deleted", `DELETE FROM pandokos.audit_event WHERE tenant_id = '` + w.tenant + `' AND seq = ` + fmt.Sprint(seqs[0]), fmt.Sprintf("break at seq %d: seq_gap", seqs[1]), false},
+		{"the first two rows are deleted", `DELETE FROM pandokos.audit_event WHERE tenant_id = '` + w.tenant + `' AND seq IN (` + fmt.Sprint(seqs[0], ",", seqs[1]) + `)`, fmt.Sprintf("break at seq %d: seq_gap", seqs[2]), false},
 		{"the last row is deleted", `DELETE FROM pandokos.audit_event WHERE tenant_id = '` + w.tenant + `' AND seq = ` + fmt.Sprint(last), "head_mismatch", false},
 		{"the seq of rows 5 and 6 is swapped", `DO $$ BEGIN
 			UPDATE pandokos.audit_event SET seq = 1000000 WHERE tenant_id = '` + w.tenant + `' AND seq = 5;
@@ -157,6 +159,7 @@ func TestAuditVerifyDetectsTampering(t *testing.T) {
 	platformCases := []struct{ name, sql, want string }{
 		{"the detail of the platform's row 2 is changed", `UPDATE pandokos.platform_audit_event SET detail = '{"forged": true}'::jsonb WHERE seq = 2`, "break at seq 2: hash_mismatch"},
 		{"the platform's row 3 is deleted", `DELETE FROM pandokos.platform_audit_event WHERE seq = 3`, "break at seq 4: seq_gap"},
+		{"the platform's first row is deleted", fmt.Sprintf(`DELETE FROM pandokos.platform_audit_event WHERE seq = %d`, pseqs[0]), fmt.Sprintf("break at seq %d: seq_gap", pseqs[1])},
 		{"the platform's last row is deleted", fmt.Sprintf(`DELETE FROM pandokos.platform_audit_event WHERE seq = %d`, pseqs[len(pseqs)-1]), "head_mismatch"},
 	}
 	for _, c := range platformCases {
@@ -166,6 +169,17 @@ func TestAuditVerifyDetectsTampering(t *testing.T) {
 		}
 		d.RestoreAudit(t, snap)
 	}
+
+	// An explicit --from-seq: the first row read must be that row; above the anchor its link to the
+	// rows before it is only reported as not verified.
+	if code, out, errs := p.cli(t, w.admin, "audit", "verify", "--tenant", w.tenant, "--from-seq", fmt.Sprint(seqs[5])); code != 0 || !strings.Contains(out+errs, "not verified") {
+		t.Errorf("--from-seq above the anchor: exit %d %s %s, want 0 and the note", code, out, errs)
+	}
+	d.Tamper(t, `DELETE FROM pandokos.audit_event WHERE tenant_id = '`+w.tenant+`' AND seq = `+fmt.Sprint(seqs[5]))
+	if code, out, errs := p.cli(t, w.admin, "audit", "verify", "--tenant", w.tenant, "--from-seq", fmt.Sprint(seqs[5])); code != 1 || !strings.Contains(out+errs, fmt.Sprintf("break at seq %d: seq_gap", seqs[6])) {
+		t.Errorf("--from-seq of a deleted row: exit %d %s %s, want exit 1 and seq_gap at %d", code, out, errs, seqs[6])
+	}
+	d.RestoreAudit(t, snap)
 
 	// A whole rewritten chain passes: the limit stated in the audit guide, and --expect-head catches it.
 	head := p.mustCLI(t, w.admin, "audit", "head", "--tenant", w.tenant, "-o", "json")

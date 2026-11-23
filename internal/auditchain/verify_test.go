@@ -219,12 +219,41 @@ func TestVerify(t *testing.T) {
 	t.Run("a chain that starts elsewhere has an unverified link", func(t *testing.T) {
 		all := buildChain(t, scope, 1, 12, zeroHash)
 		kept := all[8:] // rows 9..12 of a log that starts at 1
-		res := auditchain.Verify(seq(kept), headOf(all, 1, zeroHash), nil)
+		head := headOf(all, 1, zeroHash)
+		head.Start = 9 // an explicit --from-seq above the anchor
+		res := auditchain.Verify(seq(kept), head, nil)
 		if len(res.Breaks) != 0 {
 			t.Errorf("breaks %v", res.Breaks)
 		}
 		if !res.LinkUnverified || res.First != 9 {
 			t.Errorf("result %+v, want the link reported unverified", res)
+		}
+		// The same rows without a start: the log is read from its anchor, so the rows before 9 are missing.
+		res = auditchain.Verify(seq(kept), headOf(all, 1, zeroHash), nil)
+		if got := reasons(res); len(got) == 0 || res.Breaks[0].Seq != 9 || got[0] != auditchain.ReasonSeqGap || res.LinkUnverified {
+			t.Errorf("result %+v, want seq_gap at 9", res)
+		}
+	})
+
+	t.Run("the first rows are deleted", func(t *testing.T) {
+		all := buildChain(t, scope, 1, 5, zeroHash)
+		head := headOf(all, 1, zeroHash)
+		for _, from := range []int{1, 2} { // rows 1-2, rows 1-3 removed
+			res := auditchain.Verify(seq(all[from+1:]), head, nil)
+			if len(res.Breaks) == 0 || res.Breaks[0].Seq != all[from+1].Seq || res.LinkUnverified {
+				t.Errorf("rows 1..%d deleted: %+v, want a break at seq %d", from+1, res, all[from+1].Seq)
+			}
+		}
+		// Asking for a start that is not the first row read.
+		head.Start = 2
+		res := auditchain.Verify(seq(all[2:]), head, nil)
+		if len(res.Breaks) == 0 || res.Breaks[0].Seq != 3 || res.Breaks[0].Reason != auditchain.ReasonSeqGap {
+			t.Errorf("start 2, first row 3: %+v, want seq_gap at 3", res)
+		}
+		// A chain whose first rows were removed together with the anchor row's link: wrong anchor.
+		res = auditchain.Verify(seq(all[1:]), headOf(all, 2, zeroHash), nil)
+		if len(res.Breaks) == 0 || res.Breaks[0].Reason != auditchain.ReasonAnchorMismatch {
+			t.Errorf("a wrong anchor: %+v", res)
 		}
 	})
 
