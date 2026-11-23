@@ -444,12 +444,14 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	var wg sync.WaitGroup
 	defer func() { stopBackground(); wg.Wait() }()
 	rollup := &reports.Rollup{DB: workerDB, Interval: time.Duration(cfg.Reports.RollupInterval), Logger: logger}
-	wg.Add(7)
+	retention := &reports.Retention{DB: workerDB, UsageMonths: cfg.Retention.UsageMonths, AuditMonths: cfg.Retention.AuditMonths, Logger: logger}
+	wg.Add(8)
 	go func() { defer wg.Done(); people.runPurge(background, logger) }()
 	go func() { defer wg.Done(); listener.Run(background) }()
 	go func() { defer wg.Done(); warnBootstrap(background, logger, adminDB) }()
 	go func() { defer wg.Done(); partitioner.Run(background) }()
 	go func() { defer wg.Done(); rollup.Run(background) }()
+	go func() { defer wg.Done(); retention.Run(background) }()
 	go func() { defer wg.Done(); memory.Run(background) }()
 	go func() { defer wg.Done(); reconciler.Run(background) }()
 	// The writer is not stopped by the signal: it runs until Close has returned.
