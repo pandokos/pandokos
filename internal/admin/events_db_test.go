@@ -130,7 +130,10 @@ func TestEventExport(t *testing.T) {
 		var after int64
 		seen := map[string]int{}
 		deadline := time.Now().Add(3 * time.Second)
-		for time.Now().Before(deadline) {
+		hard := time.Now().Add(30 * time.Second)
+		// follow for at least three seconds and until the writers made enough
+		// events to be meaningful (a loaded machine commits fewer of them)
+		for time.Now().Before(deadline) || (len(seen) < 20 && time.Now().Before(hard)) {
 			r := x.owner.Do(t, "GET", fmt.Sprintf("/v1/tenants/%s/events/export?after=%d&limit=25", x.tid, after), nil, nil)
 			if r.Status != 200 {
 				t.Fatalf("export: %d %s", r.Status, r.Body)
