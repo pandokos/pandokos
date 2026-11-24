@@ -38,6 +38,23 @@ type edit struct {
 	ins        string
 }
 
+// memberCaseConflict reports whether a top-level member, or a member of stream_options when that is
+// an object, differs only in case from a name this family reads.
+func memberCaseConflict(body []byte, members []family.Member) bool {
+	if family.CaseConflict(members, ReadMembers...) {
+		return true
+	}
+	for _, m := range members {
+		if m.Key != memberStreamOptions {
+			continue
+		}
+		if inner, _, err := family.ScanObject(body[m.Start:m.End]); err == nil && family.CaseConflict(inner, ReadStreamOptions...) {
+			return true
+		}
+	}
+	return false
+}
+
 // usageEdit computes the splice that makes a stream report its usage (ADR 0024). stream says
 // whether the last "stream" member is the literal true; the edit is nil when none is needed.
 func usageEdit(body []byte, members []family.Member, closeIdx int) (e *edit, stream bool) {
@@ -112,6 +129,9 @@ func ParseOperation(operation string, body []byte) (*Request, error) {
 	members, closeIdx, err := family.ScanObject(body)
 	if err != nil {
 		return nil, family.Invalid("not_object")
+	}
+	if memberCaseConflict(body, members) {
+		return nil, family.Invalid("member_case")
 	}
 	model, mm, err := family.ParseModel(body, members)
 	if err != nil {

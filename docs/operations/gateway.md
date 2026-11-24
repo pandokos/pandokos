@@ -341,7 +341,7 @@ The `request` line of the [container guide](container.md) also has these fields:
 | `trace_id` | the request has a trace | 32 hexadecimal characters |
 | `limit_state` | always | whether the limits were evaluated, and their result |
 | `limits_unverified` | the request was admitted although its counters could not be verified (`limits.on_store_failure` `allow`) | `true` |
-| `invalid_reason` | the body was refused as invalid | the reason |
+| `invalid_reason` | the body was refused as invalid | the reason: `not_object`, `model_missing`, `model_duplicate`, `model_not_string`, `member_case` (a member that differs only in case from one the gateway reads), `background_not_supported` |
 | `upstream_error`, `egress_reason` | the provider could not be reached, or the egress guard refused it | the class of the failure |
 | `usage_reader` | the reader gave up | `failed` |
 | `ledger` | step 3a refused the request | `full` (written `ledger: full` in this guide) |

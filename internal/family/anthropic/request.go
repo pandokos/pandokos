@@ -33,6 +33,9 @@ func ParseOperation(operation string, body []byte) (*Request, error) {
 	if err != nil {
 		return nil, family.Invalid("not_object")
 	}
+	if family.CaseConflict(members, ReadMembers...) {
+		return nil, family.Invalid("member_case")
+	}
 	model, mm, err := family.ParseModel(body, members)
 	if err != nil {
 		return nil, err
