@@ -59,7 +59,9 @@ func Transit(tb testing.TB, s *transittest.Server, o TransitSetup) TransitFiles 
 		o.AppRoleMount = "approle"
 	}
 	sc := s.Namespace(o.Namespace)
-	sc.CreateKey(o.Mount, o.Key, o.KeyOptions)
+	if !sc.HasKey(o.Mount, o.Key) { // a second provider on the same key must not make a new one
+		sc.CreateKey(o.Mount, o.Key, o.KeyOptions)
+	}
 	f := TransitFiles{Namespace: o.Namespace, Mount: o.Mount, Key: o.Key, Method: o.Method, AppRoleMount: o.AppRoleMount}
 	dir := tb.TempDir()
 	write := func(name, content string) string {

@@ -108,6 +108,13 @@ func (c *Scope) CreateKey(mount, name string, o KeyOptions) {
 	c.createKey(mount, name, o)
 }
 
+// HasKey reports whether the key exists.
+func (c *Scope) HasKey(mount, name string) bool {
+	c.s.mu.Lock()
+	defer c.s.mu.Unlock()
+	return c.keys[mount+"/"+name] != nil
+}
+
 func (c *Scope) createKey(mount, name string, o KeyOptions) *key {
 	if o.Type == "" {
 		o.Type = "aes256-gcm96"

@@ -703,11 +703,13 @@ func TestTransitErrorClasses(t *testing.T) {
 		if errors.Is(err, vault.ErrUnwrap) || errors.Is(err, vault.ErrKeyVersionUnknown) {
 			t.Errorf("%s %d: it is also ErrUnwrap or ErrKeyVersionUnknown", op, want.status)
 		}
-		if !reTransitText.MatchString(err.Error()) {
+		// A key that is not found has the text of its own (§5.3, C2 item 8): it names the setting.
+		missingKey := op == "describe" && want.class == "not_found" && err.Error() == "vault: the transit key (vault.kek.transit.key_name) does not exist"
+		if !reTransitText.MatchString(err.Error()) && !missingKey {
 			t.Errorf("%s %d: the text %q is not the fixed one", op, want.status, err.Error())
 		}
 		for _, c := range canaries {
-			if strings.Contains(err.Error(), c) {
+			if c != "" && strings.Contains(err.Error(), c) {
 				t.Errorf("%s %d: the text holds %q", op, want.status, c)
 			}
 		}
