@@ -1,7 +1,7 @@
 ---
 id: EPIC-12
 title: Operability
-status: todo
+status: in-progress
 release: v0.3
 depends_on: [EPIC-6]
 ---
