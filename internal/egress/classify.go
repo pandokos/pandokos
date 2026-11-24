@@ -27,6 +27,13 @@ var (
 		"224.0.0.0/4", "ff00::/8",
 		"240.0.0.0/4",
 		"169.254.169.254/32", "169.254.170.2/32", "100.100.100.200/32", "fd00:ec2::254/128",
+		// Instance and pod credential services at their own address, as their vendors document
+		// them (ADR 0074): the Amazon EKS Pod Identity agent over IPv4 and over IPv6, the
+		// metadata server of Google Compute Engine over IPv6, and the metadata service of
+		// OpenStack over IPv6 (it leaves fe80::/10, which is private).
+		"169.254.170.23/32", "fd00:ec2::23/128",
+		"fd20:ce::254/128",
+		"fe80::a9fe:a9fe/128",
 	)
 	privatePrefixes = prefixes(
 		"127.0.0.0/8", "::1/128",
