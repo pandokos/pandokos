@@ -39,8 +39,9 @@ type UnwrapCache struct {
 	ttl time.Duration
 	now func() time.Time
 
-	mu      sync.Mutex
-	entries map[[sha256.Size]byte]*unwrapEntry
+	mu        sync.Mutex
+	entries   map[[sha256.Size]byte]*unwrapEntry
+	nextSweep time.Time // the expired entries are zeroed at the first insert after this
 }
 
 // NewUnwrapCache refuses a nil provider and a lifetime outside 1 s to 15 m.
@@ -102,6 +103,7 @@ func (c *UnwrapCache) Unwrap(ctx context.Context, version string, wrapped, aad [
 	out := bytes.Clone(key)
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.sweep()
 	if old, ok := c.entries[k]; ok { // a concurrent miss stored it first
 		clear(old.key)
 	} else if len(c.entries) >= maxUnwrapEntries {
@@ -112,6 +114,23 @@ func (c *UnwrapCache) Unwrap(ctx context.Context, version string, wrapped, aad [
 	}
 	c.entries[k] = &unwrapEntry{key: key, expires: c.now().Add(c.ttl)}
 	return out, nil
+}
+
+// sweep zeroes and drops the entries that have expired, so a key does not stay in memory because
+// nobody asked for it again. It runs at an insert, at most once in a quarter of the lifetime, which
+// bounds its cost (a scan of at most maxUnwrapEntries entries) per insert. The caller holds c.mu.
+func (c *UnwrapCache) sweep() {
+	now := c.now()
+	if now.Before(c.nextSweep) {
+		return
+	}
+	c.nextSweep = now.Add(c.ttl / 4)
+	for k, e := range c.entries {
+		if !now.Before(e.expires) {
+			clear(e.key)
+			delete(c.entries, k)
+		}
+	}
 }
 
 // Available passes the call to the provider.

@@ -124,6 +124,26 @@ func TestUnwrapCache(t *testing.T) {
 		}
 	})
 
+	t.Run("an expired entry is zeroed when another key is stored, without being looked up", func(t *testing.T) {
+		cache, p, c := newCache(t)
+		if _, err := cache.Unwrap(ctx(t), version, wrapped, aad); err != nil {
+			t.Fatal(err)
+		}
+		c.advance(6 * time.Minute)
+		other := append([]byte{0x7f}, bytes.Repeat([]byte{9}, 32)...)
+		if _, err := cache.Unwrap(ctx(t), version, other, aad); err != nil {
+			t.Fatal(err)
+		}
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if len(p.returns) != 2 || !bytes.Equal(p.returns[0], make([]byte, 32)) {
+			t.Errorf("the bytes of the expired entry were left in memory: %x", p.returns[0])
+		}
+		if bytes.Equal(p.returns[1], make([]byte, 32)) {
+			t.Errorf("the bytes of the live entry were zeroed")
+		}
+	})
+
 	t.Run("the cache is emptied at its bound", func(t *testing.T) {
 		cache, p, _ := newCache(t)
 		unwrap := func(i int) {

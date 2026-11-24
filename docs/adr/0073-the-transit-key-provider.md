@@ -105,7 +105,9 @@ accepted the field and ignored it would silently drop that property. It was veri
     unwrap per tenant and lifetime reaches the service. The worker gets `vault.UnwrapCache`, a provider that wraps
     another and keeps the result of an unwrap under a digest of the version, the wrapped key and the associated data,
     for `cache.data_key_ttl`, so that the event relay opens signing secrets (ADR 0071) with one request per destination
-    and lifetime. An entry is never used past its lifetime. The sealer and the re-wrap job use the provider directly.
+    and lifetime. An entry is never used past its lifetime, and its bytes are zeroed when it
+    expires: an expired entry is dropped when it is asked for again or at the next insert after a quarter of the lifetime
+    (a sweep of the whole cache, not a timer), or when the cache is emptied at its bound. The sealer and the re-wrap job use the provider directly.
 12. **Start waits; readiness does not depend on the service.** `serve` starts the provider and activates the version
     before it binds any listener. When the service is unavailable it logs, tries again after 1 s, 2 s, 4 s up to 15 s,
     and serves nothing meanwhile, until it answers, the process is told to stop, or `vault.kek.transit.start_timeout`
