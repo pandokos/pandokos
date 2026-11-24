@@ -68,8 +68,13 @@ func asDuration(v any) time.Duration {
 }
 
 func asInt(v any) int {
-	f, _ := v.(float64)
-	return int(f)
+	switch n := v.(type) {
+	case int:
+		return n
+	case float64:
+		return int(n)
+	}
+	return 0
 }
 
 func (d *doubleTarget) Admin(tb testing.TB, method, path string, body any) (int, map[string]any) {

@@ -382,7 +382,11 @@ func (p *TransitProvider) reauth(ctx context.Context, refused secret.Secret) boo
 	err := p.reauthOnce(context.WithoutCancel(ctx), refused)
 
 	p.authMu.Lock()
-	p.reauthAt = p.opts.Now()
+	if !errors.Is(err, errNotExtendable) {
+		// Reading a file that holds the refused token again made no request: nothing to limit
+		// (the limit of one per 5 s is for the requests to the key service, §5.5).
+		p.reauthAt = p.opts.Now()
+	}
 	p.reauthCh = nil
 	p.authMu.Unlock()
 	close(ch)

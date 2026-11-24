@@ -132,6 +132,43 @@ jobs:
         if: failure()
         run: docker compose -f test/db/compose.yaml logs --no-color --tail 200
 
+  transit:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        vendor: [openbao, vault]
+    name: transit (${{ matrix.vendor }})
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: .go-version
+      - name: Start PostgreSQL and PgBouncer
+        run: |
+          sh test/db/up.sh
+          echo "::add-mask::$(cat local/testdb/postgres_password)"
+          cat local/testdb/env >> "$GITHUB_ENV"
+      - name: Start the key service
+        run: |
+          make transit-up VENDOR=${{ matrix.vendor }}
+          echo "::add-mask::$(cat local/transit/root_token)"
+      - name: Key service tests
+        run: make test-transit
+      - name: Key service logs
+        if: failure()
+        run: |
+          PANDOKOS_TEST_TRANSIT_ROOT_TOKEN=unused PANDOKOS_TEST_TRANSIT_PORT=0 \
+            docker compose -f test/transit/compose.yaml -p pandokos-testtransit --profile ${{ matrix.vendor }} logs --no-color --tail 200
+      - name: Stop the key service
+        if: always()
+        run: make transit-down
+      - name: Database logs
+        if: failure()
+        run: docker compose -f test/db/compose.yaml logs --no-color --tail 200
+
   browser:
     runs-on: ubuntu-24.04
     steps:

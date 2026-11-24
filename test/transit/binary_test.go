@@ -358,7 +358,7 @@ func TestBinaryExit(t *testing.T) {
 		assertNoSecrets(t, in, secrets)
 	})
 
-	t.Run("a move from a key file to the service, then a start without a key file", func(t *testing.T) {
+	t.Run("a move from a key file to the service and then a start without a key file", func(t *testing.T) {
 		_, env, _, _ := newService()
 		d := dbtest.NewMigrated(t)
 		keys := vaulttest.Keys(t, 1)
@@ -401,7 +401,7 @@ func TestBinaryExit(t *testing.T) {
 		assertNoSecrets(t, in, secrets)
 	})
 
-	t.Run("an outage, a restart during it and the recovery", func(t *testing.T) {
+	t.Run("an outage and a restart during it and the recovery", func(t *testing.T) {
 		relay, env, _, _ := newService()
 		in := newInstallation(t, true)
 		s := in.serve(env("PANDOKOS_CACHE_CREDENTIAL_TTL=1s", "PANDOKOS_CACHE_DATA_KEY_TTL=2s")...)

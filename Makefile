@@ -1,5 +1,6 @@
 SHELL := /bin/sh
 RELEASE_GO := $(shell cat .go-version)
+VENDOR ?= openbao
 VERSION ?= dev
 COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 IMAGE ?= pandokos:dev
@@ -14,7 +15,7 @@ FUZZTIME ?= 30s
 # Loads local/testdb/env (written by make db-up) unless the variable is already set.
 DBENV = set -a; if [ -z "$$PANDOKOS_TEST_DATABASE_URL" ] && [ -f local/testdb/env ]; then . ./local/testdb/env; fi; set +a;
 
-.PHONY: help build test test-sdk test-sdk-python sdk-python-env test-sdk-ts test-compose test-container test-browser fuzz bench fmt fmt-check vet lint tidy vuln image check clean db-up db-down idp-up idp-down test-idp test-nodb migrations-sum generate generate-check secrets
+.PHONY: help build test test-sdk test-sdk-python sdk-python-env test-sdk-ts test-compose test-container test-browser fuzz bench fmt fmt-check vet lint tidy vuln image check clean db-up db-down idp-up idp-down test-idp transit-up transit-down test-transit test-nodb migrations-sum generate generate-check secrets
 
 help: ## Show the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -67,6 +68,15 @@ idp-down: ## Stop them and discard their data
 
 test-idp: ## Trusted issuer tests against Keycloak, Hydra and Authentik (needs make db-up and make idp-up)
 	@$(DBENV) set -a; . ./local/idp/env; set +a; GOTOOLCHAIN=go$(RELEASE_GO) go test -tags idp -count=1 ./test/idp/...
+
+transit-up: ## Start OpenBao or HashiCorp Vault for the key service tests (Docker; VENDOR=openbao|vault)
+	sh test/transit/up.sh $(VENDOR)
+
+transit-down: ## Stop it and discard its data
+	sh test/transit/down.sh
+
+test-transit: ## Key service conformance and exit tests against the running service (needs make db-up and make transit-up)
+	@$(DBENV) set -a; . ./local/transit/env; set +a; go test -tags transit -count=1 -timeout 20m ./test/transit/...
 
 migrations-sum: ## Rewrite the checksum file of the migrations
 	@cd internal/store/migrations/sql && for f in *.sql; do printf '%s %s\n' "$$f" "$$(sha256sum "$$f" | cut -d' ' -f1)"; done > ../migrations.sum
