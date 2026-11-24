@@ -1,6 +1,6 @@
 # 0072. Event types, the envelope, the external reference and the platform's events
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-23
 
 Refines [ADR 0014](0014-events-outbox.md) ("Format" and "Content of a usage event") and builds on
@@ -73,3 +73,4 @@ protections.
 ## History
 
 - 2026-11-23: proposed with sprint 6.4.
+- 2026-11-24: accepted by the maintainer after review.

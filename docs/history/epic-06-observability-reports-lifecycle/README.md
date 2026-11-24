@@ -89,7 +89,7 @@ apply), sprint 6.2; ADR 0067 (tenant deletion: stages, closed tenants and kept r
 tenant data export and its schema), sprint 6.3 — all accepted. ADR 0070 (the outbox as a log: relay
 by destination and retention, amending 0014), 0071 (webhook destinations: the signature, the signing
 secrets and egress) and 0072 (event types, the envelope, the external reference and the platform's
-events), sprint 6.4, are proposed for the maintainer's review. History lines were added to the ADRs
+events), sprint 6.4, were accepted by the maintainer on 2026-11-24. History lines were added to the ADRs
 each sprint touched, among them 0015, 0018, 0019, 0040, 0054, 0055 and 0060. See the
 [ADR index](../../adr/README.md).
 
@@ -156,7 +156,7 @@ each sprint touched, among them 0015, 0018, 0019, 0040, 0054, 0055 and 0060. See
   v0.2.0 and are applied with every instance stopped: stop, `pandokos migrate`, start the new binary.
   `0017_events` (6.4, v0.3.0) is applied by `pandokos migrate` before the new binary starts; events
   start with it and nothing is produced for the past. Sprint 6.1 has no migration.
-- Review ADR 0070, 0071 and 0072, proposed.
+- ADR 0070, 0071 and 0072: accepted on 2026-11-24.
 - Drills of sprint 6.4 not run in the sandbox of the implementation (plan F2 and F3): the manual
   `kill -9` of the binary in mid-delivery, the ten-minute receiver outage, and the upgrade drill from
   a v0.2.0 database.

@@ -1,6 +1,6 @@
 # 0071. Webhook destinations: the signature, the signing secrets and egress
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-23
 
 **Amends** [ADR 0033](0033-vault-formats-and-key-identifiers.md) (the vault seals a second kind of object) and
@@ -79,3 +79,4 @@ never do.
 ## History
 
 - 2026-11-23: proposed with sprint 6.4.
+- 2026-11-24: accepted by the maintainer after review.
