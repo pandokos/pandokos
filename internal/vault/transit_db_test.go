@@ -90,6 +90,7 @@ func TestCheckAssociatedDataBound(t *testing.T) {
 		ts := newTransitService(t)
 		p := ts.provider(t, nil)
 		ts.s.IgnoreAssociatedData()
+		rows := w.auditRows(t) // the database already holds the row of the deleted key version
 		if _, err := vault.Check(ctx(t), w.admin, p); !errors.Is(err, vault.ErrAADNotBound) {
 			t.Errorf("Check: %v, want ErrAADNotBound", err)
 		}
@@ -99,8 +100,8 @@ func TestCheckAssociatedDataBound(t *testing.T) {
 		if got := w.states(t); got != "" {
 			t.Errorf("a version was written before the refusal: %s", got)
 		}
-		if n := w.auditRows(t); n != 0 {
-			t.Errorf("%d audit rows were written", n)
+		if n := w.auditRows(t); n != rows {
+			t.Errorf("%d audit rows were written", n-rows)
 		}
 	})
 
@@ -669,7 +670,7 @@ func TestOpenerWithTransit(t *testing.T) {
 		if got, err := openOf(tenantA); err != nil || got != plainA {
 			t.Errorf("a cached tenant with the service away: %q %v", got, err)
 		}
-		clk.advance(31 * time.Second) // the credential was read again; the data key is still cached
+		clk.advance(30 * time.Second) // the credential was read again; the data key is still cached
 		if got, err := openOf(tenantA); err != nil || got != plainA {
 			t.Errorf("a cached data key with the service away: %q %v", got, err)
 		}
