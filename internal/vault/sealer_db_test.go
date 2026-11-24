@@ -397,7 +397,7 @@ func TestCheck(t *testing.T) {
 		}
 	})
 
-	t.Run("a registered version of another provider fails", func(t *testing.T) {
+	t.Run("a registered version of another provider fails unless the router owns it", func(t *testing.T) {
 		w := newVWorld(t)
 		version := activeVersion(t, w.prov)
 		if _, err := w.d.Super(t).Exec(ctx(t), `UPDATE pandokos.kek_version SET provider = 'vault-transit' WHERE id = $1`, version); err != nil {
@@ -406,6 +406,30 @@ func TestCheck(t *testing.T) {
 		_, err := vault.Check(ctx(t), w.admin, w.prov)
 		if err == nil || !strings.Contains(err.Error(), version) {
 			t.Errorf("a version registered by another provider: %v", err)
+		}
+		// A version of the provider "transit" is not served by a key file, and is served by a router
+		// that holds a provider of that name.
+		const other = "transit-0123456789abcdef-v1"
+		if _, err := w.d.Super(t).Exec(ctx(t), `UPDATE pandokos.kek_version SET provider = 'local' WHERE id = $1`, version); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.d.Super(t).Exec(ctx(t), `INSERT INTO pandokos.kek_version (id, provider) VALUES ($1, 'transit')`, other); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := vault.Check(ctx(t), w.admin, w.prov); err == nil || !strings.Contains(err.Error(), other) {
+			t.Errorf("a version of another provider with no router: %v", err)
+		}
+		owner := &fakeProvider{name: "transit", version: other}
+		if v, err := vault.Check(ctx(t), w.admin, router(t, w.prov, owner)); err != nil || v != version {
+			t.Errorf("a router that owns the version: %q, %v", v, err)
+		}
+	})
+
+	t.Run("the negative probe is part of the check", func(t *testing.T) {
+		w := newVWorld(t)
+		ignores := &fakeProvider{name: "local", version: activeVersion(t, w.prov)}
+		if _, err := vault.Check(ctx(t), w.admin, ignores); !errors.Is(err, vault.ErrAADNotBound) {
+			t.Errorf("a provider that unwraps under other associated data: %v, want ErrAADNotBound", err)
 		}
 	})
 

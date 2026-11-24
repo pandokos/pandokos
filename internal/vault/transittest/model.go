@@ -32,6 +32,7 @@ type KeyOptions struct {
 	PlaintextBackup bool
 	DeletionAllowed bool
 	AutoRotate      time.Duration
+	NoDecrypt       bool // the description says the key does not support decryption
 }
 
 type keyVer struct {
@@ -125,6 +126,18 @@ func (c *Scope) key(mount, name string) *key {
 		c.s.tb.Fatalf("transittest: no key %s/%s", mount, name)
 	}
 	return k
+}
+
+// Alias makes the key mount/name of c reachable as toMount/toName in the scope to, with the same
+// versions and the same key material: one key reached by another mount, name or namespace. It
+// exists for the test of the version identifier; tokens for the new path are made with Token.
+func (c *Scope) Alias(mount, name string, to *Scope, toMount, toName string) {
+	c.s.tb.Helper()
+	c.s.mu.Lock()
+	defer c.s.mu.Unlock()
+	k := c.key(mount, name)
+	to.mounts[strings.Trim(toMount, "/")] = true
+	to.keys[strings.Trim(toMount, "/")+"/"+toName] = k
 }
 
 // Rotate adds a version and makes it the latest.

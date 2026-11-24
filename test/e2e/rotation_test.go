@@ -38,7 +38,7 @@ func TestKEKRotationEndToEnd(t *testing.T) {
 	// The new key is the key file, the old one an unwrap key: calls keep succeeding while the job works.
 	p2 := restart(t, p, opts{level: "info", up: up, kekFiles: []vaulttest.Key{keys[1], keys[0]}})
 	ready := completeLines(p2.stdout, "vault ready")
-	if len(ready) != 1 || ready[0]["kek_version"] != keys[1].Version || ready[0]["kek_activation"] != "activated" || ready[0]["kek_unwrap_versions"] != float64(1) {
+	if len(ready) != 1 || ready[0]["kek_version"] != keys[1].Version || ready[0]["kek_activation"] != "activated" || ready[0]["kek_unwrap_versions"] != float64(1) || ready[0]["kek_unwrap_provider"] != "" {
 		t.Fatalf("vault ready after the rotation: %v", ready)
 	}
 	deadline := time.Now().Add(90 * time.Second)
@@ -71,7 +71,7 @@ func TestKEKRotationEndToEnd(t *testing.T) {
 
 	// The new key only: it starts, and every credential of both tenants works.
 	p3 := restart(t, p, opts{level: "info", up: up, kekFiles: keys[1:]})
-	if ready := completeLines(p3.stdout, "vault ready"); len(ready) != 1 || ready[0]["kek_version"] != keys[1].Version || ready[0]["kek_activation"] != "unchanged" {
+	if ready := completeLines(p3.stdout, "vault ready"); len(ready) != 1 || ready[0]["kek_version"] != keys[1].Version || ready[0]["kek_activation"] != "unchanged" || ready[0]["kek_unwrap_provider"] != "" {
 		t.Errorf("vault ready with the new key only: %v", ready)
 	}
 	for _, x := range []lifeTenant{a, b} {

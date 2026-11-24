@@ -75,6 +75,10 @@ var wantCatalogue = []want{
 	{"M56", "pandokos.events.destinations", "G", "{destination}", []string{"pandokos.destination.state"}, "pandokos_events_destinations"},
 	{"M57", "pandokos.events.lag", "G", "s", nil, "pandokos_events_lag_seconds"},
 	{"M58", "pandokos.events.relay.passes", "OC", "{pass}", []string{"pandokos.result"}, "pandokos_events_relay_passes_total"},
+	{"M59", "pandokos.vault.provider.requests", "OC", "{request}", []string{"pandokos.kek.operation", "pandokos.kek.outcome"}, "pandokos_vault_provider_requests_total"},
+	{"M60", "pandokos.vault.provider.request.duration", "H", "s", []string{"pandokos.kek.operation"}, "pandokos_vault_provider_request_duration_seconds"},
+	{"M61", "pandokos.vault.provider.up", "G", "{provider}", nil, "pandokos_vault_provider_up"},
+	{"M62", "pandokos.vault.provider.token.ttl", "G", "s", nil, "pandokos_vault_provider_token_ttl_seconds"},
 }
 
 // wantByName indexes wantCatalogue.
@@ -219,6 +223,13 @@ func fullSources() telemetry.Sources {
 				Destinations: map[string]int64{"enabled": 6, "failing": 2, "disabled": 3},
 				Lag:          90 * time.Second,
 				Passes:       map[string]int64{"ok": 300, "failed": 2},
+			}
+		},
+		KeyProvider: func() telemetry.KeyProviderStats {
+			return telemetry.KeyProviderStats{
+				Requests: map[[2]string]int64{{"wrap", "ok"}: 100, {"wrap", "unavailable"}: 5, {"wrap", "refused"}: 7, {"unwrap", "ok"}: 50,
+					{"unwrap", "rejected"}: 2, {"describe", "ok"}: 1, {"identify", "ok"}: 1, {"lookup", "ok"}: 1, {"renew", "ok"}: 3, {"login", "denied"}: 1},
+				Up: true, TokenExpires: true, TokenTTL: 90 * time.Second,
 			}
 		},
 	}

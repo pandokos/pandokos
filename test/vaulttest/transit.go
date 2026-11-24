@@ -83,10 +83,10 @@ func Transit(tb testing.TB, s *transittest.Server, o TransitSetup) TransitFiles 
 	return f
 }
 
-// TransitProvider returns a vault.TransitProvider on the files of Transit, started. It reaches
-// the double through the transport of an egress guard (the private class). The options of
-// vault.TransitOptions can be changed with adjust before it is built.
-func TransitProvider(tb testing.TB, s *transittest.Server, f TransitFiles, adjust ...func(*vault.TransitOptions)) *vault.TransitProvider {
+// TransitOptions returns the options of a vault.TransitProvider on the files of Transit, reaching
+// the double through the transport of an egress guard (the private class), and the guard. The
+// options can be changed with adjust. Nothing is built or started.
+func TransitOptions(tb testing.TB, s *transittest.Server, f TransitFiles, adjust ...func(*vault.TransitOptions)) (vault.TransitOptions, *egress.Guard) {
 	tb.Helper()
 	g, err := egress.New(egress.Options{ConnectTimeout: 2 * time.Second})
 	if err != nil {
@@ -115,6 +115,15 @@ func TransitProvider(tb testing.TB, s *transittest.Server, f TransitFiles, adjus
 	for _, a := range adjust {
 		a(&o)
 	}
+	return o, g
+}
+
+// TransitProvider returns a vault.TransitProvider on the files of Transit, started. It reaches
+// the double through the transport of an egress guard (the private class). The options of
+// vault.TransitOptions can be changed with adjust before it is built.
+func TransitProvider(tb testing.TB, s *transittest.Server, f TransitFiles, adjust ...func(*vault.TransitOptions)) *vault.TransitProvider {
+	tb.Helper()
+	o, g := TransitOptions(tb, s, f, adjust...)
 	p, err := vault.NewTransitProvider(o)
 	if err != nil {
 		tb.Fatal(err)

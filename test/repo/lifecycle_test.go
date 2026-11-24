@@ -119,7 +119,8 @@ func contains(list []string, s string) bool {
 }
 
 // TestKEKOneWriter is T-R78: only kek_activate and kek_retire write kek_version; only internal/vault
-// wraps and unwraps with a key provider; RegisterKEKVersion is gone.
+// wraps and unwraps with a key provider, with cmd/pandokos/kek.go (`kek generate` and `kek check`) as the one
+// exception; RegisterKEKVersion is gone.
 func TestKEKOneWriter(t *testing.T) {
 	writes := regexp.MustCompile(`(?i)(insert\s+into|update|delete\s+from)\s+pandokos\.kek_version\b`)
 	files, err := filepath.Glob(filepath.Join(root(t), "internal", "store", "queries", "sql", "*.sql"))
@@ -145,7 +146,8 @@ func TestKEKOneWriter(t *testing.T) {
 	for _, file := range goFiles(t, "cmd", "internal") {
 		rel := relPath(t, file)
 		// internal/vault is the one user; `kek generate` makes one test wrap on the *LocalProvider it has just
-		// built from a generated key, to learn its version (it holds no data and no interface value).
+		// built from a generated key, to learn its version (it holds no data and no interface value), and
+		// `kek check` (sprint 12.1) proves a provider's configuration with vault.Probe and the version it wraps under.
 		if strings.HasPrefix(rel, "internal/vault/") || rel == "cmd/pandokos/kek.go" {
 			continue
 		}
@@ -312,9 +314,26 @@ func TestLifecycleDocuments(t *testing.T) {
 			return out
 		}(), "\n"))
 		for _, subject := range []string{"postgresql", "key file", "identity provider", "collector", "provider", "price dataset", // the dependencies
-			"ledger writer", "partition", "rollup", "retention", "limit reconciler", "event writer", "deletion", "re-wrap", "price refresh"} { // the jobs
+			"ledger writer", "partition", "rollup", "retention", "limit reconciler", "event writer", "deletion", "re-wrap", "price refresh", // the jobs
+			"key service"} { // sprint 12.1: section 2a
 			if !strings.Contains(firstCells, subject) {
 				t.Errorf("the failure reference has no row for %q", subject)
+			}
+		}
+		// Sprint 12.1: one more section, and the re-wrap and relay rows name the key service.
+		if !regexp.MustCompile(`(?m)^## 2a\. The key service`).MatchString(doc) {
+			t.Error("the failure reference has no section \"2a. The key service\"")
+		}
+		for _, r := range rows {
+			switch strings.ToLower(r.cells[0]) {
+			case "re-wrap":
+				if line := strings.Join(r.cells, " | "); !strings.Contains(strings.ToLower(line), "key service") || !strings.Contains(line, "TestRewrapAcrossProviders") {
+					t.Errorf("the re-wrap row does not name the key service and cite TestRewrapAcrossProviders: %s", line)
+				}
+			case "event relay":
+				if line := strings.Join(r.cells, " | "); !strings.Contains(strings.ToLower(line), "key service") || !strings.Contains(line, "TestRelayUnwrapCache") {
+					t.Errorf("the event relay row does not name the key service and cite TestRelayUnwrapCache: %s", line)
+				}
 			}
 		}
 		// What a row cites exists.

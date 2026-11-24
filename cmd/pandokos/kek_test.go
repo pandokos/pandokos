@@ -2,15 +2,20 @@ package main
 
 import (
 	"encoding/base64"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/pandokos/pandokos/internal/secret"
 	"github.com/pandokos/pandokos/internal/vault"
+	"github.com/pandokos/pandokos/internal/vault/transittest"
 	"github.com/pandokos/pandokos/test/testutil"
+	"github.com/pandokos/pandokos/test/vaulttest"
 )
 
 var reKEKGenerated = regexp.MustCompile(`^key-encryption key written to (.+); version (local-[0-9a-f]{16})\n$`)
@@ -148,6 +153,163 @@ func TestKEKGenerate(t *testing.T) {
 		}
 		if _, err := os.Stat(filepath.Dir(path)); !os.IsNotExist(err) {
 			t.Error("the command created a directory")
+		}
+	})
+}
+
+// checkEnv is the environment of `pandokos kek check` against a double: the settings of serve with
+// provider transit, a database address that counts the connections made to it (the command must
+// make none) and no key file.
+type checkEnv struct {
+	env   []string
+	conns *atomic.Int64
+}
+
+func newCheckEnv(t *testing.T, s *transittest.Server, f vaulttest.TransitFiles, extra ...string) *checkEnv {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conns := &atomic.Int64{}
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			conns.Add(1)
+			_ = c.Close()
+		}
+	}()
+	t.Cleanup(func() { _ = l.Close() })
+	env := []string{
+		"PATH=x",
+		"PANDOKOS_DATABASE_ADDRESS=" + l.Addr().String(),
+		"PANDOKOS_DATABASE_TLS_MODE=disable",
+		"PANDOKOS_DATABASE_GATEWAY_PASSWORD_FILE=" + testutil.WriteSecret(t, "db_gateway", "synthetic-gateway-password"),
+		"PANDOKOS_DATABASE_ADMIN_PASSWORD_FILE=" + testutil.WriteSecret(t, "db_admin", "synthetic-admin-password"),
+		"PANDOKOS_DATABASE_WORKER_PASSWORD_FILE=" + testutil.WriteSecret(t, "db_worker", "synthetic-worker-password"),
+		"PANDOKOS_VAULT_KEK_PROVIDER=transit",
+		"PANDOKOS_VAULT_KEK_TRANSIT_ADDRESS=" + s.URL(),
+		"PANDOKOS_VAULT_KEK_TRANSIT_MOUNT=" + f.Mount,
+		"PANDOKOS_VAULT_KEK_TRANSIT_KEY_NAME=" + f.Key,
+		"PANDOKOS_VAULT_KEK_TRANSIT_AUTH_METHOD=" + f.Method,
+		"PANDOKOS_VAULT_KEK_TRANSIT_REQUEST_TIMEOUT=500ms",
+	}
+	if f.Namespace != "" {
+		env = append(env, "PANDOKOS_VAULT_KEK_TRANSIT_NAMESPACE="+f.Namespace)
+	}
+	switch f.Method {
+	case "token":
+		env = append(env, "PANDOKOS_VAULT_KEK_TRANSIT_AUTH_TOKEN_FILE="+f.TokenFile)
+	case "approle":
+		env = append(env, "PANDOKOS_VAULT_KEK_TRANSIT_AUTH_APPROLE_MOUNT="+f.AppRoleMount,
+			"PANDOKOS_VAULT_KEK_TRANSIT_AUTH_APPROLE_ROLE_ID_FILE="+f.RoleIDFile,
+			"PANDOKOS_VAULT_KEK_TRANSIT_AUTH_APPROLE_SECRET_ID_FILE="+f.SecretIDFile)
+	}
+	return &checkEnv{env: append(env, extra...), conns: conns}
+}
+
+// TestKEKCheck is T-1080: `pandokos kek check` against the double of the key service.
+func TestKEKCheck(t *testing.T) {
+	reVersion := regexp.MustCompile(`(?m)^version: (transit-[0-9a-f]{16}-v[0-9]+)$`)
+
+	t.Run("a sound key: the provider, the identifier, the range and the weak settings, and 0", func(t *testing.T) {
+		for _, method := range []string{"token", "approle"} {
+			s := transittest.New(t)
+			f := vaulttest.Transit(t, s, vaulttest.TransitSetup{Method: method, KeyOptions: transittest.KeyOptions{Exportable: true}})
+			s.Namespace("").Rotate(f.Mount, f.Key)
+			ce := newCheckEnv(t, s, f)
+			code, out, errs := runCmd(t, ce.env, "kek", "check")
+			if code != 0 {
+				t.Fatalf("%s: code %d, stdout %q, stderr %q", method, code, out, errs)
+			}
+			if !strings.Contains(out, "provider: transit\n") {
+				t.Errorf("%s: no line `provider: transit`: %q", method, out)
+			}
+			m := reVersion.FindStringSubmatch(out)
+			if m == nil || !strings.HasSuffix(m[1], "-v2") {
+				t.Errorf("%s: no line `version: transit-…-v2`: %q", method, out)
+			}
+			if !strings.Contains(out, "unwraps: v1 to v2\n") {
+				t.Errorf("%s: no line `unwraps: v1 to v2`: %q", method, out)
+			}
+			if !strings.Contains(out, "weak: ") || !strings.Contains(out, "exportable") {
+				t.Errorf("%s: the weak setting is not reported: %q", method, out)
+			}
+			if got := ce.conns.Load(); got != 0 {
+				t.Errorf("%s: the command opened %d database connections", method, got)
+			}
+			secrets := transittest.Secrets(s, f.Token, f.RoleID, f.SecretID)
+			testutil.AssertAbsent(t, "stdout", out, secrets...)
+			testutil.AssertAbsent(t, "stderr", errs, secrets...)
+			// It only probes: the double saw the requests of the check and nothing else.
+			for _, q := range s.Requests() {
+				if strings.Contains(q.Path, "/rotate") || strings.Contains(q.Path, "/config") || strings.Contains(q.Path, "/trim") {
+					t.Errorf("%s: the command sent %s", method, q.Path)
+				}
+			}
+		}
+	})
+
+	t.Run("no weak line for a sound key", func(t *testing.T) {
+		s := transittest.New(t)
+		f := vaulttest.Transit(t, s, vaulttest.TransitSetup{})
+		code, out, errs := runCmd(t, newCheckEnv(t, s, f).env, "kek", "check")
+		if code != 0 || strings.Contains(out, "weak: ") && !strings.Contains(out, "weak: none") {
+			t.Errorf("code %d, stdout %q, stderr %q", code, out, errs)
+		}
+	})
+
+	failures := []struct {
+		name  string
+		fault func(s *transittest.Server, f vaulttest.TransitFiles)
+		want  []string // any of these in the output
+	}{
+		{"a refused token", func(s *transittest.Server, f vaulttest.TransitFiles) { s.Namespace("").RevokeToken(f.Token) }, []string{"denied"}},
+		{"a missing key", func(s *transittest.Server, f vaulttest.TransitFiles) { s.Namespace("").DeleteKey(f.Mount, f.Key) }, []string{"does not exist", "not_found"}},
+		{"associated data not bound", func(s *transittest.Server, _ vaulttest.TransitFiles) { s.IgnoreAssociatedData() }, []string{"associated data", "aad_not_bound"}},
+		{"a service away", func(s *transittest.Server, _ vaulttest.TransitFiles) { s.Stop() }, []string{"unavailable"}},
+		{"a service that hangs", func(s *transittest.Server, _ vaulttest.TransitFiles) { s.Hang() }, []string{"unavailable"}},
+	}
+	for _, c := range failures {
+		t.Run(c.name+": the class and 1 within the request timeout", func(t *testing.T) {
+			s := transittest.New(t)
+			f := vaulttest.Transit(t, s, vaulttest.TransitSetup{})
+			ce := newCheckEnv(t, s, f)
+			c.fault(s, f)
+			s.EchoInErrors("synthetic-echoed-canary", f.Token)
+			start := time.Now()
+			code, out, errs := runCmd(t, ce.env, "kek", "check")
+			if d := time.Since(start); d > 3*time.Second {
+				t.Errorf("the command took %v with a request timeout of 500 ms", d)
+			}
+			if code != 1 {
+				t.Errorf("code %d, stdout %q, stderr %q, want 1", code, out, errs)
+			}
+			all := out + errs
+			found := false
+			for _, w := range c.want {
+				found = found || strings.Contains(all, w)
+			}
+			if !found {
+				t.Errorf("the output %q does not print the class (%v)", all, c.want)
+			}
+			if got := ce.conns.Load(); got != 0 {
+				t.Errorf("the command opened %d database connections", got)
+			}
+			testutil.AssertAbsent(t, "the output", all, append(transittest.Secrets(s, f.Token), "synthetic-echoed-canary")...)
+		})
+	}
+
+	t.Run("a configuration that is not valid is refused as for serve", func(t *testing.T) {
+		s := transittest.New(t)
+		f := vaulttest.Transit(t, s, vaulttest.TransitSetup{})
+		ce := newCheckEnv(t, s, f, "PANDOKOS_VAULT_KEK_TRANSIT_KEY_NAME=-bad")
+		code, out, errs := runCmd(t, ce.env, "kek", "check")
+		if code == 0 || ce.conns.Load() != 0 || len(s.Requests()) != 0 {
+			t.Errorf("code %d, stdout %q, stderr %q, %d requests", code, out, errs, len(s.Requests()))
 		}
 	})
 }

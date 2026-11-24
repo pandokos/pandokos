@@ -75,6 +75,17 @@ func TestStats(t *testing.T) {
 			t.Errorf("the snapshot has the key %q, which is not in BlockReasons", k)
 		}
 	}
+
+	// The third transport, the one of the key service, counts its refusals in the same snapshot.
+	ks := newGuard(t, egress.Options{})
+	for _, raw := range []string{"https://169.254.169.254:8200/v1/sys/health", "https://user:synthetic-pw@example.test/v1"} {
+		req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, raw, nil)
+		_, _ = ks.KeyService(nil).RoundTrip(req)
+	}
+	got := ks.Stats().Blocked
+	if got[egress.BlockForbiddenAddress] != 1 || got[egress.BlockUserInfo] != 1 || sumOf(got) != 2 {
+		t.Errorf("the refusals of the key service transport: %v, want one forbidden_address and one user_info", got)
+	}
 }
 
 func sumOf(m map[string]int64) (n int64) {

@@ -282,7 +282,7 @@ func (e *exchange) describe(name string, k *key) {
 		"min_decryption_version": k.minDec, "min_encryption_version": k.minEnc,
 		"exportable": k.opts.Exportable, "allow_plaintext_backup": k.opts.PlaintextBackup,
 		"deletion_allowed": k.opts.DeletionAllowed, "derived": k.opts.Derived,
-		"auto_rotate_period": secs(k.opts.AutoRotate), "supports_encryption": true, "supports_decryption": true,
+		"auto_rotate_period": secs(k.opts.AutoRotate), "supports_encryption": true, "supports_decryption": !k.opts.NoDecrypt,
 		"keys": keys,
 	}})
 }
