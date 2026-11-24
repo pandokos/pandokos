@@ -73,3 +73,4 @@ of one AEAD and one key hierarchy.
 
 - 2026-11: sprint 2.1 fixes formats, derived subkeys, key identifiers and cache numbers (ADR 0033) and the credential model (ADR 0034).
 - 2026-11-23: sprint 6.3 amends the erasure sentence: the data key is destroyed in the database at once, and backups taken before stop yielding the credentials once the key-encryption key version that wrapped it is retired and its file destroyed; rotation is by configuration, with versions that have a state ([ADR 0068](0068-key-encryption-key-versions-rotation-and-erasure-in-backups.md)).
+- 2026-11-24: sprint 12.1 builds the external provider for the transit API of OpenBao and HashiCorp Vault; the consequence softened by the data key cache is specified by points 10 to 12 of [ADR 0073](0073-the-transit-key-provider.md).

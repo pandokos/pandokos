@@ -144,6 +144,11 @@ release notes). The metrics of the `pandokos.` namespace are the product's own.
 | `telemetry.metrics.export_interval` | `60s` | time between two exports, 5 s to 10 min and at least `telemetry.otlp.timeout`; the exporter waits for the collector no longer than that timeout |
 | `telemetry.metrics.prometheus` | `false` | serve `GET /metrics` on the administration listener (section 10) |
 
+With a transit key provider four more instruments are read at collection, M59 to M62 (requests to the key
+service by operation and outcome, the duration of a request, whether requests are sent, and the token's
+remaining lifetime); none names a tenant, an address, a namespace, a key or a version, and an installation
+with a key file does not report them ([external key guide](external-key.md#9-when-the-service-is-slow-or-away)).
+
 The metrics use the resource of the traces (section 1) and the collector connection of section 2:
 the same endpoint, headers, certificates and timeout, to `/v1/metrics`, cumulative, without retry. With
 neither the OTLP export nor the scrape endpoint on, no measurement is made. A request pays for one
@@ -261,5 +266,7 @@ Signals worth an alert:
 | `pandokos_ledger_records_total{pandokos_result="lost"}` (M12) | above zero: usage records were lost |
 | `pandokos_ledger_admission_refused_total` (M13) | above zero: the ledger buffer was full and requests were refused |
 | `pandokos_egress_blocked_total` (M16) | it grows: a provider endpoint or issuer resolves to a refused address |
+| `pandokos_vault_provider_up` (M61) | it is 0: the key service is being refused after repeated failures; calls that need an unwrap and have nothing cached get `503` (absent without a transit provider) |
+| `pandokos_vault_provider_token_ttl_seconds` (M62) | it falls and is not renewed: the token of the key service is about to expire (absent for a token that never expires) |
 | `pandokos_telemetry_export_failures_total` (M40) | it grows: the collector is not reached |
 | `pandokos_log_redactions_total` (M41) | above zero: a secret reached the log by mistake, a bug to report |

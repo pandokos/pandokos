@@ -26,8 +26,9 @@ Through the pooler for every statement; one direct connection for change notific
 
 ## 2. The key file and its versions
 
-The key-encryption key is a file read at start ([vault guide](../operations/vault.md)); the provider
-`local` has no other state.
+This section covers the provider `local`: the key-encryption key is a file read at start ([vault
+guide](../operations/vault.md)) and the provider has no other state. The provider `transit`, a key service,
+is section 2a.
 
 | Part | The caller gets | Kept or lost | Log line | Instrument | Recovers | Test |
 |---|---|---|---|---|---|---|
@@ -36,6 +37,28 @@ The key-encryption key is a file read at start ([vault guide](../operations/vaul
 | Key file: sealing a credential | A write of a secret fails with `503 unavailable`; an instance whose key was replaced cannot create a data key (`cause: kek_replaced`) but still opens | Nothing is stored | `credential cannot be sealed` | none | Restart with the key of the active version | `TestFailSealLog`, `TestNoDataKeyForAClosedTenant` |
 | Key file: lost | Every credential sealed under the lost version is unreadable | Everything but the credentials | `credential cannot be opened` | `pandokos.vault.kek.versions` | `recover-lost-kek.sql`, a new key, tenants enter credentials again ([vault guide](../operations/vault.md#5-what-its-loss-means)) | `TestLostKeyRecovery` |
 | Key file: backup older than a rotation | A backup restored with only the current key refuses to start and opens no credential | The backup's credentials, once the old key is destroyed | `startup failed` | none | The old key as an unwrap key, or the recovery script ([backup guide](../operations/backup-and-restore.md)) | `TestBackupBeforeDeletionYieldsNothing` |
+
+## 2a. The key service
+
+With `vault.kek.provider: transit` the key-encryption key is in OpenBao or HashiCorp Vault and every unwrap
+that is not cached is a request to it ([guide](../operations/external-key.md)). One attempt is made per call,
+with a deadline of `vault.kek.transit.request_timeout` (2 s) and at most `vault.kek.transit.max_concurrent_requests`
+requests in flight; after five consecutive unavailable answers every call is refused at once for 5 s, then one
+request is let through. The key service is not part of readiness once `serve` has started
+(`/readyz` does not depend on it); it shows as `pandokos.vault.provider.up`. The first column says what
+happens to which part while the service is away or refuses.
+
+| Situation | The caller gets | Kept or lost | Log line | Instrument | Recovers | Test |
+|---|---|---|---|---|---|---|
+| Key service: inference, credential or data key cached | Nothing: calls continue until `cache.credential_ttl` and `cache.data_key_ttl` end; a cached key is never used past its lifetime | Nothing | none | `pandokos.vault.provider.requests` | The service answers again, or the caches run out | `TestTransitOutage` |
+| Key service: inference, nothing cached | `503 unavailable` with `Retry-After: 5`, after at most `vault.kek.transit.request_timeout` (at once while the refusal is in force); nothing is forwarded | Nothing; the credential is untouched | `credential cannot be opened` (cause `kek_provider_unavailable`), `key provider unavailable` | `pandokos.vault.provider.up`, `pandokos.vault.provider.requests` | The first request let through after the refusal that succeeds: `key provider recovered` | `TestTransitOutage`, `TestOpenerWithTransit` |
+| Key service: writing a credential or a signing secret | `503 unavailable`; creating a tenant's first secret needs the service too | Nothing is stored | `credential cannot be sealed`, `key provider unavailable` | `pandokos.vault.provider.requests` | The next write after the service answers | `TestTransitOutage` |
+| Key service: every other administration operation | Unaffected: most of the administration API needs no key | Nothing | none | none | Not needed | `TestTransitOutage` |
+| Key service: event relay | Nothing: a round whose secret cannot be opened fails without consuming an attempt, and events wait in order; the relay opens signing secrets through a cache of unwrapped keys | Nothing | `event relay failing`, `key provider unavailable` | `pandokos.events.relay.passes` | The next pass; `event relay recovered` | `TestRelayUnwrapCache` |
+| Key service: re-wrap | Nothing: every credential keeps opening and the old version stays `retiring` | No data key is half done; the next pass continues | `key rewrap failing` (cause `kek_provider_unavailable`) | `pandokos.vault.rewraps`, `pandokos.vault.kek.versions` | The next pass; `key rotation complete` when none is left | `TestRewrapAcrossProviders` |
+| Key service: a restart during the outage | `serve` waits and listens on no port, `/healthz` and `/readyz` included, until the service answers; it does not exit unless `vault.kek.transit.start_timeout` is set and has passed | Nothing | `key provider unavailable` (phase `start`, every 30 s at most), `key provider recovered`, `startup failed` when the timeout passes | `pandokos.vault.provider.requests` | The service answers: the start continues by itself and then logs `vault ready` | `TestTransitStartRefusals` |
+| Key service: the token expires and cannot be renewed | The requests that follow are refused by the service (class `denied`) and the callers without a cached key get `503 unavailable`; a refused first login stops the start | Nothing | `key provider token expiring`, `key provider authentication failing` | `pandokos.vault.provider.token.ttl`, `pandokos.vault.provider.requests` | New credentials in the files: a token file is read again at the next renewal point or after a refusal, an AppRole logs in again | `TestTransitTokenLifetime` |
+| Key service: a version no longer decryptable | `serve` does not start and names the version; while running, the tenants under it get `503 unavailable` | Trimmed: those data keys are lost and the tenants enter their credentials again; raised out of reach: nothing, until it is lowered | `startup failed`, `credential cannot be opened` | `pandokos.vault.kek.versions` | Lower `min_decryption_version` in the service before the version is trimmed; after a trim the lost-key procedure ([vault guide](../operations/vault.md#5-what-its-loss-means)) | `TestTransitStartRefusals` |
 
 ## 3. The identity provider
 
@@ -78,9 +101,9 @@ others; each is tried again at its next tick.
 | Retention | Nothing | Nothing is removed until the job succeeds; with both keys `0` nothing is ever removed | `retention failing` | `pandokos.retention.runs`, `pandokos.retention.removed` | The next run | `TestRetentionJob`, `TestRetentionEndToEnd` |
 | Limit reconciler | Counters keep counting in memory; a counter that cannot be rebuilt is refused or admitted by `limits.on_store_failure` | Reservations that expire are counted | `limit reconciliation failed`, `limit reservation expired` | `pandokos.limits.reconciliations`, `pandokos.limits.cut_lag` | The next tick | `TestReconciler` |
 | Event writer (limit events) | None | An event is dropped when its queue is full and counted; the limit itself is enforced | `limit event not recorded`, `limit events not recorded` | `pandokos.limits.events` | The next event | `TestEventWriter`, `TestEventWriterStats` |
-| Event relay | Nothing | Nothing: events are rows of the log, and a round that failed changed no cursor; a secret that cannot be opened (key file) consumes no attempt | `event relay ready`, `event relay failing`, `event relay recovered` | `pandokos.events.relay.passes` | The next pass | `TestRelayTwoWorkers`, `TestEventsAndDeletion` |
+| Event relay | Nothing | Nothing: events are rows of the log, and a round that failed changed no cursor; a secret that cannot be opened (key file or key service) consumes no attempt | `event relay ready`, `event relay failing`, `event relay recovered` | `pandokos.events.relay.passes` | The next pass | `TestRelayTwoWorkers`, `TestEventsAndDeletion`, `TestRelayUnwrapCache` |
 | Worker crash in a delivery | Nothing | The events of the round that the receiver may or may not have received; the lease expires (at least 60 s) and the next claim delivers them again, so the receiver sees a repeat with the same event ID (at least once) and misses none | none | `pandokos.events.deliveries` | The lease expiry; the receiver ignores the repeated ID | `TestRelayCrashMidDelivery`, `TestEventsExactlyOncePerCall` |
 | Event retention | Nothing | Nothing is removed until the pass succeeds; events past `events.retention` are removed, delivered or not | `event retention applied`, `event retention failing` | `pandokos.retention.removed`, `pandokos.events.expired` | The next hourly pass | `TestJanitor` |
 | Deletion | The tenant stays suspended or `deleting`; nothing is half done | The step that failed changed nothing; the row says where the deletion is | `tenant deletion failing` | `pandokos.tenant_deletion.steps`, `pandokos.tenant_deletion.open` | The step is tried again every `tenant_deletion.interval`; `tenant deletion recovered` | `TestDeleterDatabaseOutage`, `TestDeleterCrashResume` |
-| Re-wrap | Nothing: every credential keeps opening, the old version stays `retiring` and its key is still needed at start | A tenant whose data key does not unwrap keeps its old version; the others go on | `key rewrap failing` | `pandokos.vault.rewraps`, `pandokos.vault.kek.versions` | The next pass; `key rotation complete` when none is left | `TestRewrapFailureAndResume` |
+| Re-wrap | Nothing: every credential keeps opening, the old version stays `retiring` and its key (the key file, or the version in the key service) is still needed at start | A tenant whose data key does not unwrap keeps its old version; the others go on | `key rewrap failing` | `pandokos.vault.rewraps`, `pandokos.vault.kek.versions` | The next pass; `key rotation complete` when none is left | `TestRewrapFailureAndResume`, `TestRewrapAcrossProviders` |
 | Price refresh | Nothing (section 5) | The prices in force are kept | `price import failed`, `price import skipped` | none | The next interval | `TestPriceRefresh` |

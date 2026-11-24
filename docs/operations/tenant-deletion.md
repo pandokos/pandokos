@@ -168,7 +168,11 @@ What the product can promise ([ADR 0068](../adr/0068-key-encryption-key-versions
    cannot see it.
 4. **The rule:** after a deletion, **rotate the key** within the time you promise erasure in
    ([vault guide](vault.md#6a-rotating-the-key)), wait for `key rotation complete`, take a new backup, then
-   destroy the old key file and its copies. Or keep no backup longer than that time.
+   destroy the old key file and its copies. Or keep no backup longer than that time. With a key service
+   the old version is not a file: after the new backup you raise `min_decryption_version` above it and, when
+   you accept that nothing can open it again, set `min_encryption_version` and trim it in the service. That
+   is the operator's act too, Pandokos does not do it ([external key
+   guide](external-key.md#8-erasure-in-backups)).
 5. **The price:** a backup taken before the rotation opens no credential once the old key is destroyed.
    Everything else in it restores; the tenants' credentials are then revoked with `recover-lost-kek.sql` and
    entered again. An operator who keeps the old key to keep old backups whole keeps the deleted tenants'

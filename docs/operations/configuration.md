@@ -127,7 +127,7 @@ replaced by `_`.
 | `database.owner.user` | `PANDOKOS_DATABASE_OWNER_USER` | name | `pandokos_owner` | Database user of `pandokos migrate` |
 | `database.owner.password_file` | `PANDOKOS_DATABASE_OWNER_PASSWORD_FILE` | path | none, required by `migrate` | File with that user's password. Never read by `serve` |
 | `vault.kek.provider` | `PANDOKOS_VAULT_KEK_PROVIDER` | `local`, `transit` | `local` | Key-encryption key provider that wraps data keys: `local` (a key file) or `transit` (an OpenBao or HashiCorp Vault transit key) |
-| `vault.kek.local.key_file` | `PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE` | path | none, required by `serve` | File with the key-encryption key: 32 random bytes in standard base64. Create it with `pandokos kek generate` ([vault guide](vault.md)) |
+| `vault.kek.local.key_file` | `PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE` | path | none, required by `serve` with the provider `local` | File with the key-encryption key: 32 random bytes in standard base64. Create it with `pandokos kek generate` ([vault guide](vault.md)) |
 | `vault.kek.local.unwrap_key_files` | `PANDOKOS_VAULT_KEK_LOCAL_UNWRAP_KEY_FILES` | list of paths | empty | Up to 8 more key-encryption key files the instance can unwrap with: a version being retired, or a new version that other instances already use. Each file is read as `key_file`; separated by commas in the environment; a key equal to `key_file` or to another entry is refused at start, whatever its path. `serve` only ([vault guide](vault.md), "Rotating the key") |
 | `vault.kek.transit.address` | `PANDOKOS_VAULT_KEK_TRANSIT_ADDRESS` | URL | empty | Address of the key service: `https`, or `http` for a loopback host only; with provider `local` it makes the service an unwrap-only provider. `serve` only |
 | `vault.kek.transit.namespace` | `PANDOKOS_VAULT_KEK_TRANSIT_NAMESPACE` | string | empty | Namespace of the key service, sent as `X-Vault-Namespace`. `serve` only |
@@ -189,7 +189,8 @@ required and read:
 
 | | `serve`, `config check` (`--for serve`, the default) | `migrate`, `migrate status`, `config check --for migrate` | `init`, `config check --for init` |
 |---|---|---|---|
-| `vault.kek.local.key_file`, `vault.kek.local.unwrap_key_files` | required, read | not read | not read |
+| `vault.kek.local.key_file`, `vault.kek.local.unwrap_key_files` | read; `key_file` required with the provider `local`, and refused with `transit` | not read | not read |
+| `vault.kek.transit.*` (the token, the role ID and the secret ID files, the CA file) | read when set; required by the method chosen | not read | not read |
 | `database.gateway.password_file`, `database.worker.password_file` | required, read | not read | not read |
 | `database.admin.password_file` | required, read | not read | required, read |
 | `database.owner.password_file` | **not read**, set or not; the file may be absent | required, read | not read |
@@ -254,7 +255,13 @@ All problems are reported together, not only the first. Each is attached to a ke
 | `pricing.default_currency` | three capital letters (`must be three capital letters`) |
 | `pricing.refresh.interval` | 1h to 720h; checked for `serve` and `config check --for serve`, also while the refresh is disabled |
 | `pricing.refresh.url` | a valid `https` URL with a host and no user information; checked for `serve` as the interval is; no message quotes the URL |
-| `vault.kek.provider` | `local` |
+| `vault.kek.provider` | `local` or `transit` |
+| `vault.kek.transit.address` | required with `provider: transit`; `https`, or `http` for a loopback host only; a host and an optional port, no user information, path, query or fragment. Any other `vault.kek.transit.*` key set without an address, at a value that is not its default, is refused; `serve` and `kek check` only |
+| `vault.kek.transit.namespace`, `.mount`, `.key_name`, `.auth.approle.mount` | namespace and mounts: segments of letters, digits, `_` and `-` joined by `/` (255 and 128 characters at most); the key name `[A-Za-z0-9][A-Za-z0-9_.-]{0,127}`, required with an address |
+| `vault.kek.transit.auth.*` | `method` is `token` or `approle`, required with an address; `token_file` is required with `token` and refused with `approle`, and `role_id_file` and `secret_id_file` the other way round; each file is readable, non-empty and holds no control character; no message quotes a content |
+| `vault.kek.transit.tls.ca_file` | a readable PEM file with at least one certificate; the only authorities trusted for the key service; a failure says only that the file cannot be read |
+| `vault.kek.transit.request_timeout`, `.max_concurrent_requests`, `.start_timeout` | 100ms to 30s; 1 to 1024; 0 to 1h (0 waits without limit) |
+| `vault.kek.local.key_file` with `provider: transit` | must be empty; list the file in `vault.kek.local.unwrap_key_files` while data keys are re-wrapped |
 | `vault.kek.local.key_file` | set; a readable regular file holding 32 bytes in standard base64 (44 characters); no message quotes the content |
 | `vault.kek.local.unwrap_key_files` | at most 8 entries, each a file as `key_file`; no entry equals `key_file` or another entry in content or path; `serve` only; no message quotes a content |
 | `tenant_deletion.grace_period`, `tenant_deletion.interval` | `0` to `2160h`; `10s` to `1h` (`serve` only) |
@@ -304,6 +311,8 @@ they do not prevent start.
 | `database.tls.mode` | the mode is `disable` and the host of `database.address` is not a loopback address or `localhost` | the database connection is not encrypted |
 | `vault.kek.local.key_file` | the file grants any permission to other users (mode `& 0007`) | the file can be accessed by other users; restrict it to the service user (chmod 600) |
 | `vault.kek.local.unwrap_key_files` | an entry grants any permission to other users (mode `& 0007`) | the file can be accessed by other users; restrict it to the service user (chmod 600) |
+| `vault.kek.transit.address` | the address is `http` | the connection to the key service is not encrypted |
+| `vault.kek.transit.auth.token_file`, `.approle.role_id_file`, `.approle.secret_id_file` | the file grants any permission to other users (mode `& 0007`) | the file can be accessed by other users; restrict it to the service user (chmod 600) |
 | `support.enabled` | false | support actions are off: a tenant that loses its administrators cannot be recovered through the API |
 | `tokens.private_hosts` | the list is not empty (`serve` only) | issuer and key URLs of these hosts may resolve to private addresses: `<hosts>` |
 | `tokens.jwks.max_stale` | more than 24h | keys of an issuer are used for more than 24h after the last successful fetch: a key withdrawn by the issuer stays trusted that long while it is unreachable |

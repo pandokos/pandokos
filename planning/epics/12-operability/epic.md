@@ -37,6 +37,11 @@ Exit: with the transit provider, no key-encryption key exists on the Pandokos ho
 during an outage of the provider serves nothing and recovers alone; moving between providers
 needs no action by tenants.
 
+*Deferred from 12.1* (rows of its design, section 2, that name a later sprint): a fuzz target for the
+response parser of the key service client and the review of boundary 4 against the code (12.2); the
+restore drill with a key service, and the figures for it (12.3); Kubernetes authentication to the key
+service (8.2); failure injection as a suite and latency figures with a remote key service (10.1).
+
 ### 12.2 Threat model review and fuzzing
 
 - Review of the threat model against the code as built, trust boundary by trust boundary; fixes

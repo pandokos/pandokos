@@ -11,7 +11,7 @@ procedure; a restore that is rehearsed and tested is sprint 12.3. It follows fro
 | What | How | Where |
 |---|---|---|
 | **The database** | A physical base backup with WAL archiving (point-in-time recovery), or `pg_dump` of the Pandokos database made with a role that sees everything (a superuser, or the owner role, which row-level security still binds: use a superuser). Roles are created from `deploy/postgres/roles.sql`, which a dump does not carry | the backup store of the database |
-| **The key file of every version that is `active` or `retiring`** (`pandokos kek-version list`) | Copy the file (and every file of `vault.kek.local.unwrap_key_files`) | **separately from the database**, in a store that the database's administrators cannot read |
+| **The key file of every version that is `active` or `retiring`** (`pandokos kek-version list`) | Copy the file (and every file of `vault.kek.local.unwrap_key_files`). With a key service the key is in the service: back the service up by its own procedure and keep its credentials (token, or role ID and secret ID) with the configuration's secrets ([external key guide](external-key.md#10-backups)) | **separately from the database**, in a store that the database's administrators cannot read |
 | **The configuration** | The YAML file and the environment, without the secrets that live in files | with your deployment's configuration |
 | **Outside the database: the heads of the audit chains** | `pandokos audit head --tenant T -o json` for every tenant and `pandokos platform-audit head -o json`, appended to a store that only appends ([audit guide](audit.md#7-anchoring-the-head-elsewhere)) | a host that is not the installation |
 | **Outside the database: the list of completed deletions** | `pandokos tenant deletion list --state completed -o json`, kept with the date; or the platform's events: `pandokos platform-event export --type io.pandokos.tenant.deleted.v1` | the same store |
@@ -84,7 +84,12 @@ back up again if you promise that the tenant's credentials are gone from backups
 
 ## 6. The four cases of the key
 
-What the restore needs depends on which key file you still hold ([vault guide](vault.md)):
+What the restore needs depends on which key file you still hold ([vault guide](vault.md)). With a key
+service, read "key file" as "the key versions in the service": the first case needs the service with the
+versions the backup's data keys were wrapped by in range of `min_decryption_version`, and the same
+`vault.kek.transit.*` settings and credentials; the cases without the old key are those of a version
+trimmed or a key deleted in the service, which end in the same recovery script
+([external key guide](external-key.md#11-loss-and-compromise)):
 
 | You have | What happens |
 |---|---|
@@ -99,6 +104,6 @@ credentials of tenants deleted before the rotation recoverable. See
 
 ## 7. What sprint 12.3 adds
 
-The drill that follows this page, including the four cases of the key and a deletion replayed after a
-restore, with figures for the time it takes. Until then, rehearse it yourself on a spare instance before
+The drill that follows this page, including the four cases of the key with a key file and with a key
+service, and a deletion replayed after a restore, with figures for the time it takes. Until then, rehearse it yourself on a spare instance before
 you need it: restore the latest backup, start `serve` with the copy of the key, run the checks of step 6.

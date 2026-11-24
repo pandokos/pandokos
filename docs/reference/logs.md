@@ -27,7 +27,7 @@ This page is a contract checked by tests: a message or a field that is not liste
 | `auth_method` | string | How Pandokos authenticates to the key service: `token` or `approle`. |
 | `batch_size` | integer | Events read for one destination in one round. |
 | `cache` | string | The cache that was flushed. |
-| `cause` | string | The class of a failure of the vault, or the step of the event relay that failed. |
+| `cause` | string | The class of a failure of the vault (`kek_unavailable`, a key-encryption key version the configuration does not provide; `kek_provider_unavailable`, a key service that cannot answer now; `data_key_unwrap`; `kek_replaced`), or the step of the event relay that failed. |
 | `check` | string | The name of a readiness check. |
 | `class` | string | The class of a failed fetch. |
 | `commit` | string | The build commit. |
@@ -216,7 +216,7 @@ The failure of an authentication could not be written to the audit log; the requ
 Level: error
 Fields: `request_id`, `operation`, `cause`, `data_key_version`, `kek_version`
 
-The vault could not encrypt a provider credential that an administrator submitted, so the credential was not stored; `cause` says whether the key provider or the key was the problem. Check the vault and the key-encryption key.
+The vault could not encrypt a provider credential that an administrator submitted, so the credential was not stored; `cause` says whether the key provider or the key was the problem (`kek_provider_unavailable`: the key service could not be asked). Check the vault and the key-encryption key.
 
 ### `credential validation`
 
@@ -514,7 +514,7 @@ A price import did not run because the data was recent or unchanged; `reason` sa
 Level: error
 Fields: `request_id`, `data_key_version`, `kek_version`, `cause`
 
-A stored provider credential could not be decrypted for a request, so the request failed; `cause` and the versions say whether the key provider or the key is at fault. Check the vault.
+A stored provider credential could not be decrypted for a request, so the request failed; `cause` and the versions say whether the key provider or the key is at fault. With `cause` `kek_provider_unavailable` the key service did not answer in time or is being refused for a few seconds: the caller got `503` with `Retry-After: 5` and nothing was forwarded; see [the key service](failure-behaviour.md#2a-the-key-service). Check the vault.
 
 ### `key rewrap failing`
 

@@ -80,3 +80,4 @@ never do.
 
 - 2026-11-23: proposed with sprint 6.4.
 - 2026-11-24: accepted by the maintainer after review.
+- 2026-11-24: sprint 12.1 delivers the consequence about the data key cache: the event relay opens signing secrets through `vault.UnwrapCache` when a key service is configured ([ADR 0073](0073-the-transit-key-provider.md)).
