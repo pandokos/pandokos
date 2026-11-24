@@ -260,12 +260,14 @@ func peopleStatements(c context.Context, t *testing.T, admin *store.DB, tid tena
 	}))
 
 	// Sessions.
-	must("session statements", admin.Platform(c, func(c context.Context, tx store.Tx) error {
-		q := queries.New(tx)
-		mark("CreateSession")
-		var ids []string
-		for i, name := range []string{"one", "two", "three"} {
-			s, err := q.CreateSession(c, queries.CreateSessionParams{TokenHash: hash("tok-" + name), UserID: platformUser, Method: "local", ExpiresAt: expires})
+	mark("CreateSession")
+	// One transaction per session: created_at is the transaction's now(), and ids are version 7
+	// (millisecond timestamp, random remainder), so sessions of one transaction tie on created_at
+	// and their order by id is arbitrary. Separate transactions give an unambiguous newest-first order.
+	var ids []string
+	for i, name := range []string{"one", "two", "three"} {
+		must("CreateSession "+name, admin.Platform(c, func(c context.Context, tx store.Tx) error {
+			s, err := queries.New(tx).CreateSession(c, queries.CreateSessionParams{TokenHash: hash("tok-" + name), UserID: platformUser, Method: "local", ExpiresAt: expires})
 			if err != nil {
 				return err
 			}
@@ -273,7 +275,11 @@ func peopleStatements(c context.Context, t *testing.T, admin *store.DB, tid tena
 				t.Errorf("CreateSession: %+v", s)
 			}
 			ids = append(ids, s.ID)
-		}
+			return nil
+		}))
+	}
+	must("session statements", admin.Platform(c, func(c context.Context, tx store.Tx) error {
+		q := queries.New(tx)
 		mark("GetSessionPrincipal")
 		p, err := q.GetSessionPrincipal(c, hash("tok-one"))
 		if err != nil || p.SID != ids[0] || p.SUserID != platformUser || p.Username != username || !p.MustChange || p.ManagingTenantID != "" ||
