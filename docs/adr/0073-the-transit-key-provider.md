@@ -86,7 +86,7 @@ accepted the field and ignored it would silently drop that property. It was veri
    directly and builds neither the router nor the cache.
 9. **The connection.** The client is the fourth consumer of the egress guard, on a transport of its own:
    `https` and TLS 1.2 or later, the certificate always verified, `vault.kek.transit.tls.ca_file` the only set of
-   authorities when it is set, `http` only for a loopback host and with a warning, no proxy and no proxy variable, no
+   authorities when it is set, `http` only for a loopback host and with a warning (the connection is refused unless the address it reaches is loopback, whatever the name), no proxy and no proxy variable, no
    redirect. A forbidden address (instance metadata, multicast, unspecified) is refused; a private one is accepted,
    because the address is the operator's configuration. This **amends ADR 0038 point 7**: the key service is a fourth
    consumer of the guard's transports, a dedicated one.

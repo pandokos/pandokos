@@ -1,6 +1,7 @@
 package egress
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -164,10 +165,37 @@ func (g *Guard) KeyService(roots *x509.CertPool) http.RoundTripper {
 	t.Proxy = nil
 	t.MaxIdleConns = 32
 	t.MaxIdleConnsPerHost = 32
+	// http is for a loopback service only (§5.6): the name of the host is the operator's, what it
+	// resolves to is not checked by the configuration, so the connection of an http request is
+	// refused unless it goes to a loopback address.
+	open := &net.Dialer{Timeout: g.connect, KeepAlive: 30 * time.Second, Control: g.privateControl}
+	loop := &net.Dialer{Timeout: g.connect, KeepAlive: 30 * time.Second, Control: g.loopbackControl}
+	t.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		if ctx.Value(loopbackOnlyKey{}) != nil {
+			return loop.DialContext(ctx, network, address)
+		}
+		return open.DialContext(ctx, network, address)
+	}
 	g.mu.Lock()
 	g.keyTrans = append(g.keyTrans, t)
 	g.mu.Unlock()
-	return &guardedTransport{g: g, tr: t, private: true}
+	return &guardedTransport{g: g, tr: t, private: true, httpLoopback: true}
+}
+
+// loopbackOnlyKey marks, in the context of a request, a connection that may only go to loopback.
+type loopbackOnlyKey struct{}
+
+// loopbackControl is the control hook for the http connections of the key service: the address
+// must pass the private class and be a loopback address.
+func (g *Guard) loopbackControl(network, address string, c syscall.RawConn) error {
+	if err := g.privateControl(network, address, c); err != nil {
+		return err
+	}
+	ap, err := netip.ParseAddrPort(address)
+	if err != nil || !ap.Addr().Unmap().IsLoopback() {
+		return g.blocked(BlockPrivateAddress, ap.Addr().Unmap().WithZone(""))
+	}
+	return nil
 }
 
 // CloseIdleConnections closes the idle connections of both transports.
@@ -186,6 +214,8 @@ type guardedTransport struct {
 	g       *Guard
 	tr      *http.Transport
 	private bool
+
+	httpLoopback bool // an http request may only connect to a loopback address (the key service)
 }
 
 // RoundTrip refuses, before any connection attempt, a scheme the class does not allow, user
@@ -196,6 +226,9 @@ func (t *guardedTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 			_ = req.Body.Close()
 		}
 		return nil, err
+	}
+	if t.httpLoopback && req.URL.Scheme == "http" {
+		req = req.WithContext(context.WithValue(req.Context(), loopbackOnlyKey{}, true))
 	}
 	return t.tr.RoundTrip(req)
 }

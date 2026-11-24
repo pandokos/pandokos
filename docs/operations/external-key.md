@@ -53,7 +53,8 @@ the token's lookup, renewal and AppRole login) and never rotates, configures, tr
 - **The address of the active node** or of its load balancer. A standby node answers with a redirect;
   redirects are not followed and count as unavailable.
 - **`https`** with a certificate Pandokos can verify. `http` is accepted for a loopback host only (an agent
-  of the service on the same host) and logs a warning. Authorities for the service come from
+  of the service on the same host) and logs a warning; the connection itself is refused unless it goes to a
+  loopback address, whatever name the host has (`localhost` is fine while it resolves to loopback). Authorities for the service come from
   `vault.kek.transit.tls.ca_file` when set (they are then the only ones trusted for it), otherwise from the
   system roots and `upstream.tls.ca_file`. Proxy settings are not used for the key service, and the
   certificate is always verified.

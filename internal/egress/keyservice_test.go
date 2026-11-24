@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/pandokos/pandokos/internal/egress"
+	"github.com/pandokos/pandokos/test/testutil"
 )
 
 // TestKeyServiceTransport is T-1077: the transport of Guard.KeyService.
@@ -183,6 +185,35 @@ func TestKeyServiceTransport(t *testing.T) {
 		g := newGuard(t, egress.Options{})
 		if status, _, err := do(t, g.KeyService(nil), "GET", plain.URL+"/", nil); err != nil || status != 200 {
 			t.Errorf("http to loopback: %d %v", status, err)
+		}
+		// localhost resolves to loopback: accepted.
+		lh := strings.Replace(plain.URL, "127.0.0.1", "localhost", 1)
+		if status, _, err := do(t, g.KeyService(nil), "GET", lh+"/", nil); err != nil || status != 200 {
+			t.Errorf("http to localhost: %d %v", status, err)
+		}
+	})
+
+	t.Run("http connects to a loopback address only, whatever the name", func(t *testing.T) {
+		host := testutil.NonLoopbackHost()
+		if host == "" {
+			t.Skip("this machine has no address that is not loopback")
+		}
+		l, err := net.Listen("tcp", net.JoinHostPort(host, "0"))
+		if err != nil {
+			t.Skipf("cannot listen on %s: %v", host, err)
+		}
+		var reached atomic.Int64
+		srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { reached.Add(1) })}
+		go func() { _ = srv.Serve(l) }()
+		t.Cleanup(func() { _ = srv.Close() })
+		g := newGuard(t, egress.Options{})
+		_, _, err = do(t, g.KeyService(nil), "GET", "http://"+l.Addr().String()+"/", nil)
+		var be *egress.BlockedError
+		if !errors.As(err, &be) || be.Reason != egress.BlockPrivateAddress {
+			t.Errorf("http to %s: %v, want a refusal as a private address", host, err)
+		}
+		if n := reached.Load(); n != 0 {
+			t.Errorf("a plain connection to a non-loopback address reached the handler %d times", n)
 		}
 	})
 }
