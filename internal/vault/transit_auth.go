@@ -289,6 +289,7 @@ func (p *TransitProvider) Run(ctx context.Context) {
 	for {
 		now := p.opts.Now()
 		if !due.IsZero() && !now.Before(due) {
+			began := p.opts.Now() // the backoff counts from the start of the pass
 			err := p.refresh(ctx)
 			if ctx.Err() != nil {
 				return
@@ -297,10 +298,10 @@ func (p *TransitProvider) Run(ctx context.Context) {
 				failures = 0
 			} else {
 				failures++
-				retryAt = p.opts.Now().Add(min(transitBackoffMin<<min(failures-1, 6), transitBackoffMax))
+				retryAt = began.Add(min(transitBackoffMin<<min(failures-1, 6), transitBackoffMax))
 				p.noteFailure(err)
 			}
-			due, gen = p.schedule(failures, retryAt, p.opts.Now().Add(time.Second))
+			due, gen = p.schedule(failures, retryAt, began.Add(time.Second))
 			continue
 		}
 		var wait time.Duration
