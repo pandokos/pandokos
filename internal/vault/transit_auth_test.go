@@ -172,6 +172,57 @@ func TestTransitTokenAuth(t *testing.T) {
 		}
 	})
 
+	t.Run("a lookup without a usable ttl is rejected, not read as a token that does not expire", func(t *testing.T) {
+		for name, change := range map[string]func(map[string]any){
+			"missing":  func(d map[string]any) { delete(d, "ttl") },
+			"text":     func(d map[string]any) { d["ttl"] = "soon" },
+			"object":   func(d map[string]any) { d["ttl"] = map[string]any{} },
+			"negative": func(d map[string]any) { d["ttl"] = -5 },
+		} {
+			ic := newInterceptor(nil)
+			r := newTransitRig(t, vaulttest.TransitSetup{TTL: time.Minute, Renewable: true}, withTransport(func(rt http.RoundTripper) http.RoundTripper { ic.inner = rt; return ic }))
+			ic.rewrite(func(req *http.Request, resp *http.Response) *http.Response {
+				if !strings.Contains(req.URL.Path, "lookup-self") {
+					return resp
+				}
+				return rewriteJSON(resp, func(m map[string]any) {
+					if d, ok := m["data"].(map[string]any); ok {
+						change(d)
+					}
+				})
+			})
+			err := r.p.Start(ctx(t))
+			te, ok := transitErr(err)
+			if !ok || te.Class != "rejected" {
+				t.Errorf("%s ttl: Start = %v, want a rejected lookup", name, err)
+			}
+		}
+	})
+
+	t.Run("a renewal without a lease_duration is rejected and the lifetime stays", func(t *testing.T) {
+		c := newClock()
+		ic := newInterceptor(nil)
+		r := newTransitRig(t, vaulttest.TransitSetup{TTL: 30 * time.Second, Renewable: true}, withClock(c),
+			withTransport(func(rt http.RoundTripper) http.RoundTripper { ic.inner = rt; return ic }))
+		r.start(t, true)
+		ic.rewrite(func(req *http.Request, resp *http.Response) *http.Response {
+			if !strings.Contains(req.URL.Path, "renew-self") {
+				return resp
+			}
+			return rewriteJSON(resp, func(m map[string]any) { delete(m, "auth") })
+		})
+		r.advance(21 * time.Second)
+		testutil.Eventually(t, 2*time.Second, "the failing renewal", func() bool {
+			return len(r.logs.Find(t, "key provider authentication failing")) >= 1
+		})
+		if l := r.logs.Find(t, "key provider authentication failing")[0]; l["error_class"] != "rejected" {
+			t.Errorf("the line is %v, want error_class rejected", l)
+		}
+		if st := r.p.Stats(); !st.TokenExpires || st.TokenTTL > 10*time.Second {
+			t.Errorf("Stats: expires %v ttl %v, the refused renewal changed the lifetime", st.TokenExpires, st.TokenTTL)
+		}
+	})
+
 	t.Run("a refused lookup fails the start as denied", func(t *testing.T) {
 		r := newTransitRig(t, vaulttest.TransitSetup{})
 		noLookup := r.s.Namespace("").Token(transittest.TokenOptions{NoLookup: true, TTL: time.Hour})
@@ -379,6 +430,22 @@ func TestTransitAppRoleAuth(t *testing.T) {
 		logins := requestsOf(r.s, http.MethodPost, "/login")
 		if b := bodyOf(t, logins[len(logins)-1]); b["secret_id"] != newSecret {
 			t.Errorf("the last login did not use the secret ID read from the file again")
+		}
+	})
+
+	t.Run("a login without a lease_duration is rejected", func(t *testing.T) {
+		ic := newInterceptor(nil)
+		r := newTransitRig(t, vaulttest.TransitSetup{Method: "approle", TTL: time.Hour}, withTransport(func(rt http.RoundTripper) http.RoundTripper { ic.inner = rt; return ic }))
+		ic.rewrite(func(req *http.Request, resp *http.Response) *http.Response {
+			return rewriteJSON(resp, func(m map[string]any) {
+				if a, ok := m["auth"].(map[string]any); ok {
+					delete(a, "lease_duration")
+				}
+			})
+		})
+		err := r.p.Start(ctx(t))
+		if te, ok := transitErr(err); !ok || te.Class != "rejected" {
+			t.Errorf("Start = %v, want a rejected login", err)
 		}
 	})
 

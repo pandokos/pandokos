@@ -239,3 +239,20 @@ func (c *tClock) advance(d time.Duration) {
 	defer c.mu.Unlock()
 	c.t = c.t.Add(d)
 }
+
+// rewriteJSON changes the top level object of a JSON answer.
+func rewriteJSON(resp *http.Response, change func(map[string]any)) *http.Response {
+	b, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	var m map[string]any
+	if json.Unmarshal(b, &m) != nil {
+		resp.Body = io.NopCloser(bytes.NewReader(b))
+		return resp
+	}
+	change(m)
+	nb, _ := json.Marshal(m)
+	resp.Body = io.NopCloser(bytes.NewReader(nb))
+	resp.ContentLength = int64(len(nb))
+	resp.Header.Del("Content-Length")
+	return resp
+}

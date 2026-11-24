@@ -46,13 +46,18 @@ type grant struct {
 	renewable bool
 }
 
-// seconds converts a number of seconds of an answer to a duration; a bad number is no lifetime.
-func seconds(n json.Number) time.Duration {
+// seconds converts a number of seconds of an answer to a duration; ok is false for a field that is
+// missing or is not a sensible number: such an answer is rejected, never read as a token that does
+// not expire (0 is that, and only when the service says it).
+func seconds(n *json.Number) (d time.Duration, ok bool) {
+	if n == nil {
+		return 0, false
+	}
 	f, err := n.Float64()
 	if err != nil || f < 0 || f > 1e9 {
-		return 0
+		return 0, false
 	}
-	return time.Duration(f * float64(time.Second))
+	return time.Duration(f * float64(time.Second)), true
 }
 
 // adopt makes tok the token in use with the lifetime g says. fresh marks a token that is new (the
@@ -95,32 +100,40 @@ func (p *TransitProvider) authenticate(ctx context.Context) error {
 func (p *TransitProvider) lookup(ctx context.Context, tok secret.Secret) error {
 	var out struct {
 		Policies  []string    `json:"policies"`
-		TTL       json.Number `json:"ttl"`
+		TTL       *json.Number `json:"ttl"`
 		Renewable bool        `json:"renewable"`
 	}
 	lctx := context.WithValue(ctx, tokenKey{}, tok)
 	if err := p.do(lctx, "lookup", http.MethodGet, "auth/token/lookup-self", nil, &out); err != nil {
 		return err
 	}
+	life, ok := seconds(out.TTL)
+	if !ok {
+		return &TransitError{Operation: "lookup", Class: "rejected"}
+	}
 	pol := out.Policies
 	if pol == nil {
 		pol = []string{}
 	}
-	p.adopt(tok, grant{policies: pol, lifetime: seconds(out.TTL), renewable: out.Renewable}, true)
+	p.adopt(tok, grant{policies: pol, lifetime: life, renewable: out.Renewable}, true)
 	return nil
 }
 
 // renew extends the token in use.
 func (p *TransitProvider) renew(ctx context.Context) error {
 	var out struct {
-		Lease     json.Number `json:"lease_duration"`
+		Lease     *json.Number `json:"lease_duration"`
 		Renewable bool        `json:"renewable"`
 	}
 	tok := p.currentToken()
 	if err := p.do(context.WithValue(ctx, tokenKey{}, tok), "renew", http.MethodPost, "auth/token/renew-self", nil, &out); err != nil {
 		return err
 	}
-	p.adopt(tok, grant{lifetime: seconds(out.Lease), renewable: out.Renewable}, false)
+	life, ok := seconds(out.Lease)
+	if !ok {
+		return &TransitError{Operation: "renew", Class: "rejected"}
+	}
+	p.adopt(tok, grant{lifetime: life, renewable: out.Renewable}, false)
 	return nil
 }
 
@@ -141,7 +154,7 @@ func (p *TransitProvider) login(ctx context.Context) error {
 	var out struct {
 		Raw       rawToken    `json:"client_token"`
 		Policies  []string    `json:"policies"`
-		Lease     json.Number `json:"lease_duration"`
+		Lease     *json.Number `json:"lease_duration"`
 		Renewable bool        `json:"renewable"`
 	}
 	if err := p.do(ctx, "login", http.MethodPost, "auth/"+escapePath(p.opts.AppRoleMount)+"/login", in, &out); err != nil {
@@ -151,11 +164,15 @@ func (p *TransitProvider) login(ctx context.Context) error {
 	if len(out.Raw) == 0 {
 		return &TransitError{Operation: "login", Class: "rejected"}
 	}
+	life, ok := seconds(out.Lease)
+	if !ok {
+		return &TransitError{Operation: "login", Class: "rejected"}
+	}
 	pol := out.Policies
 	if pol == nil {
 		pol = []string{}
 	}
-	p.adopt(secret.New(string(out.Raw)), grant{policies: pol, lifetime: seconds(out.Lease), renewable: out.Renewable}, true)
+	p.adopt(secret.New(string(out.Raw)), grant{policies: pol, lifetime: life, renewable: out.Renewable}, true)
 	return nil
 }
 
