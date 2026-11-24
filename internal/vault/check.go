@@ -21,14 +21,15 @@ const (
 // checkAAD is the fixed associated data of the self-test of Check.
 var checkAAD = []byte("pandokos/check/v1")
 
-// Check runs at start. It calls Probe (a round trip and the negative probe on the associated
-// data), then requires every version the
+// Check runs at start. It calls ProbeAll (Probe of the provider that wraps and of every transit
+// provider that is configured besides it: a move to the service must fail before the restart that
+// makes it the active one), then requires every version the
 // database still needs (state active or retiring; a retired version wraps no data key) to name p
 // and to be Available. It returns the active key version for the log
 // line. A fresh database has no row and passes. It writes nothing. When the provider's own version
 // is retiring or retired, it answers ErrKeyReplaced, naming that version and the active one.
 func Check(ctx context.Context, db *store.DB, p KeyProvider) (version string, err error) {
-	version, err = Probe(ctx, p)
+	version, err = ProbeAll(ctx, p)
 	if err != nil {
 		return "", err
 	}
@@ -76,6 +77,29 @@ func checkVersions(ctx context.Context, db *store.DB, p KeyProvider, version str
 				return "", fmt.Errorf("vault: cannot tell whether key-encryption key version %s is available: %w", r.ID, err)
 			}
 			return "", fmt.Errorf("the database holds data keys wrapped by key-encryption key version %s which this configuration does not provide; see docs/operations/vault.md", r.ID)
+		}
+	}
+	return version, nil
+}
+
+// ProbeAll is Probe of p, and of every transit provider that p holds besides the one that wraps
+// (a router: the service configured for unwrapping only while the key file still wraps, §5.2,
+// §5.12). It returns the version the active provider wraps under.
+func ProbeAll(ctx context.Context, p KeyProvider) (version string, err error) {
+	version, err = Probe(ctx, p)
+	if err != nil {
+		return "", err
+	}
+	r, ok := p.(interface{ Others() []KeyProvider })
+	if !ok {
+		return version, nil
+	}
+	for _, o := range r.Others() {
+		if _, ok := o.(*TransitProvider); !ok {
+			continue
+		}
+		if _, err := Probe(ctx, o); err != nil {
+			return "", fmt.Errorf("the %s key provider, configured but not the one that wraps: %w", o.Name(), err)
 		}
 	}
 	return version, nil

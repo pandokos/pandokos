@@ -221,6 +221,28 @@ func TestCheckSeveralProviders(t *testing.T) {
 		})
 	}
 
+	t.Run("the service configured besides the active key file is probed", func(t *testing.T) {
+		w := newActivationWorld(t)
+		ts := newTransitService(t)
+		local := vaulttest.Provider(t, vaulttest.Keys(t, 1)[0])
+		both := router(t, local, ts.provider(t, nil))
+		if _, err := vault.Check(ctx(t), w.admin, both); err != nil {
+			t.Fatalf("Check with a sound service: %v", err)
+		}
+		if ts.s.Count(transittest.OpWrap) == 0 {
+			t.Errorf("the service configured for unwrapping only was never asked to wrap")
+		}
+		ts.s.IgnoreAssociatedData()
+		if _, err := vault.Check(ctx(t), w.admin, both); !errors.Is(err, vault.ErrAADNotBound) {
+			t.Errorf("Check with a service that ignores the associated data: %v, want ErrAADNotBound", err)
+		}
+		ts.s.Clear()
+		ts.s.Namespace("").RevokeToken(ts.f.Token)
+		if _, err := vault.Check(ctx(t), w.admin, both); err == nil {
+			t.Errorf("Check with a token the service refuses passed")
+		}
+	})
+
 	t.Run("a row whose provider is not the owner of its identifier fails", func(t *testing.T) {
 		s := build(t, false)
 		if _, err := s.w.d.Super(t).Exec(ctx(t), `UPDATE pandokos.kek_version SET provider = 'local' WHERE id = $1`, s.tv); err != nil {

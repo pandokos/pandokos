@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/pandokos/pandokos/internal/secret"
@@ -83,6 +84,22 @@ func (r *Router) Available(ctx context.Context, version string) error {
 		return ErrKeyVersionUnknown
 	}
 	return p.Available(ctx, version)
+}
+
+// Others returns the providers that are not the active one, in the order of their names.
+func (r *Router) Others() []KeyProvider {
+	names := make([]string, 0, len(r.byName))
+	for n := range r.byName {
+		if n != r.active.Name() {
+			names = append(names, n)
+		}
+	}
+	slices.Sort(names)
+	out := make([]KeyProvider, 0, len(names))
+	for _, n := range names {
+		out = append(out, r.byName[n])
+	}
+	return out
 }
 
 // ProviderOf returns the name of the provider that owns version, or "".

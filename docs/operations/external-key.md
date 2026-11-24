@@ -178,7 +178,10 @@ Any `vault.kek.transit.*` key set without an address is refused, as is a key fil
 quotes the content of a file. `pandokos config check` applies these rules without contacting the service.
 
 **`pandokos kek check`** loads the configuration as `serve` does, authenticates, describes the key,
-and runs the round trip and the negative probe of section 2. It writes nothing to the database or the
+and runs the round trip and the negative probe of section 2 on the provider that wraps and on the key
+service when it is configured but not the one that wraps (step 0 of a move to the service: the service is
+proved to encrypt, decrypt and bind the associated data before the restart that makes it the active one;
+`serve` does the same at its start). It writes nothing to the database or the
 service and ends with 0, or with 1 and the class of the failure. Run it before the first start with a new
 service, and after a change of its credentials:
 
@@ -209,7 +212,8 @@ so each unwrap goes to the one that owns the version.
 | 2 | calls continue; the worker re-wraps; `key rotation complete` names the old version; `pandokos kek-version list` shows it `retired` | the same, naming the transit version |
 | 3 | remove `unwrap_key_files` and restart (the line `key provider no longer needed`, provider `local`, has said so at every start since step 2). Destroy the key file and its copies, or keep it offline only as long as a backup older than step 2 must still open credentials ([vault guide](vault.md#6a-rotating-the-key)) | remove `vault.kek.transit.*` and restart; revoke the token or the AppRole in the service |
 
-Run `pandokos kek check` before step 1. A move is the rotation of the vault guide with the new key coming
+Run `pandokos kek check` at step 0 and before step 1: with the service still configured for unwrapping only it
+already proves the permission to encrypt and the binding of the associated data. A move is the rotation of the vault guide with the new key coming
 from another provider: tenants do nothing, credentials are not touched, and an instance that has not been
 restarted yet keeps opening credentials but answers `503` to a write (`credential cannot be sealed`, cause
 `kek_replaced`). Take a new backup of the database when the old version is `retired` (section 10).

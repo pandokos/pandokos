@@ -127,7 +127,7 @@ func runKEKCheck(ctx context.Context, args []string, stdout, stderr io.Writer, e
 			return 1
 		}
 	}
-	version, err := vault.Probe(cctx, providers.Provider)
+	version, err := vault.ProbeAll(cctx, providers.Provider)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1

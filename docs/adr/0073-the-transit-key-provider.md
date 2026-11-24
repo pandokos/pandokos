@@ -46,7 +46,9 @@ accepted the field and ignored it would silently drop that property. It was veri
    SHA-256 of a label, a zero byte and the vault's associated data, so no tenant identifier reaches the service or its
    audit log. The binding is **not assumed from a version**: `vault.Probe`, the part of `vault.Check` that needs no
    database, wraps and unwraps a random probe and then unwraps it with other associated data and requires `ErrUnwrap`;
-   a provider that returns the probe is refused (`ErrAADNotBound`) and `serve` does not start. `Check` runs it at every
+   a provider that returns the probe is refused (`ErrAADNotBound`) and `serve` does not start. The probe also runs, through
+   `vault.ProbeAll`, on a transit provider that is configured but is not the one that wraps (the service configured
+   for unwrapping only, step 0 of a move), so that a move fails before the restart that activates it. `Check` runs it at every
    start and `pandokos kek check` runs it on demand. The minimum versions of the facts above are an observation, not a
    check. The data key's own derivation (ADR 0033 point 2) binds the tenant even where the service's binding failed.
 3. **The key's requirements and warnings.** The key must exist, be of type `aes256-gcm96`, not derived, able to
@@ -120,7 +122,7 @@ accepted the field and ignored it would silently drop that property. It was veri
     `kek_unwrap_provider` on `vault ready` and the value `kek_provider_unavailable` of `cause`. None carries a tenant,
     an address, a namespace, a key name, a header or a version number of the service (ADR 0055).
 14. **`pandokos kek check`.** It loads the configuration as `serve` does, authenticates, describes the key and runs
-    `vault.Probe`, prints the provider, the version, the range of versions the service can unwrap and the weak
+    `vault.ProbeAll`, prints the provider, the version, the range of versions the service can unwrap and the weak
     settings, and writes nothing. It is the one place outside `internal/vault` that calls a provider's `Wrap` and
     `Unwrap`.
 15. **One test double, one suite, two services in CI.** `internal/vault/transittest` is an in-process double of the

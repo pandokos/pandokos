@@ -303,6 +303,36 @@ func TestKEKCheck(t *testing.T) {
 		})
 	}
 
+	t.Run("the service configured for unwrapping only is probed while the key file still wraps", func(t *testing.T) {
+		local := []string{"PANDOKOS_VAULT_KEK_PROVIDER=local", "PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE=" + testutil.WriteKEK(t)}
+		s := transittest.New(t)
+		f := vaulttest.Transit(t, s, vaulttest.TransitSetup{})
+		code, out, errs := runCmd(t, newCheckEnv(t, s, f, local...).env, "kek", "check")
+		if code != 0 || !strings.Contains(out, "provider: local\n") {
+			t.Fatalf("code %d, stdout %q, stderr %q", code, out, errs)
+		}
+		if n := s.Count(transittest.OpWrap); n == 0 {
+			t.Errorf("the service never saw an encrypt request: the step-0 configuration proved nothing")
+		}
+		// A service that does not bind the associated data, or a token that may not encrypt, fails
+		// the check before the restart that makes it the active provider.
+		s2 := transittest.New(t)
+		f2 := vaulttest.Transit(t, s2, vaulttest.TransitSetup{})
+		s2.IgnoreAssociatedData()
+		code, out, errs = runCmd(t, newCheckEnv(t, s2, f2, local...).env, "kek", "check")
+		if code != 1 || !strings.Contains(out+errs, "associated data") {
+			t.Errorf("a service that ignores the associated data: code %d, stdout %q, stderr %q", code, out, errs)
+		}
+		s3 := transittest.New(t)
+		f3 := vaulttest.Transit(t, s3, vaulttest.TransitSetup{})
+		ce := newCheckEnv(t, s3, f3, local...)
+		s3.Namespace("").RevokeToken(f3.Token)
+		code, out, errs = runCmd(t, ce.env, "kek", "check")
+		if code != 1 {
+			t.Errorf("a refused token: code %d, stdout %q, stderr %q", code, out, errs)
+		}
+	})
+
 	t.Run("a configuration that is not valid is refused as for serve", func(t *testing.T) {
 		s := transittest.New(t)
 		f := vaulttest.Transit(t, s, vaulttest.TransitSetup{})
