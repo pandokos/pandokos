@@ -203,7 +203,7 @@ func TestKeyServiceTransport(t *testing.T) {
 			t.Skipf("cannot listen on %s: %v", host, err)
 		}
 		var reached atomic.Int64
-		srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { reached.Add(1) })}
+		srv := &http.Server{Handler: http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) { reached.Add(1) })}
 		go func() { _ = srv.Serve(l) }()
 		t.Cleanup(func() { _ = srv.Close() })
 		g := newGuard(t, egress.Options{})

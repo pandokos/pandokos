@@ -457,7 +457,7 @@ func TestTransitAppRoleAuth(t *testing.T) {
 	t.Run("a login without a lease_duration is rejected", func(t *testing.T) {
 		ic := newInterceptor(nil)
 		r := newTransitRig(t, vaulttest.TransitSetup{Method: "approle", TTL: time.Hour}, withTransport(func(rt http.RoundTripper) http.RoundTripper { ic.inner = rt; return ic }))
-		ic.rewrite(func(req *http.Request, resp *http.Response) *http.Response {
+		ic.rewrite(func(_ *http.Request, resp *http.Response) *http.Response {
 			return rewriteJSON(resp, func(m map[string]any) {
 				if a, ok := m["auth"].(map[string]any); ok {
 					delete(a, "lease_duration")

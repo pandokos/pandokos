@@ -99,9 +99,9 @@ func (p *TransitProvider) authenticate(ctx context.Context) error {
 // lookup looks tok up with itself and adopts it as a new token.
 func (p *TransitProvider) lookup(ctx context.Context, tok secret.Secret) error {
 	var out struct {
-		Policies  []string    `json:"policies"`
+		Policies  []string     `json:"policies"`
 		TTL       *json.Number `json:"ttl"`
-		Renewable bool        `json:"renewable"`
+		Renewable bool         `json:"renewable"`
 	}
 	lctx := context.WithValue(ctx, tokenKey{}, tok)
 	if err := p.do(lctx, "lookup", http.MethodGet, "auth/token/lookup-self", nil, &out); err != nil {
@@ -123,7 +123,7 @@ func (p *TransitProvider) lookup(ctx context.Context, tok secret.Secret) error {
 func (p *TransitProvider) renew(ctx context.Context) error {
 	var out struct {
 		Lease     *json.Number `json:"lease_duration"`
-		Renewable bool        `json:"renewable"`
+		Renewable bool         `json:"renewable"`
 	}
 	tok := p.currentToken()
 	if err := p.do(context.WithValue(ctx, tokenKey{}, tok), "renew", http.MethodPost, "auth/token/renew-self", nil, &out); err != nil {
@@ -152,10 +152,10 @@ func (p *TransitProvider) login(ctx context.Context) error {
 		SecretID string `json:"secret_id"`
 	}{roleID.Reveal(), secretID.Reveal()}
 	var out struct {
-		Raw       rawToken    `json:"client_token"`
-		Policies  []string    `json:"policies"`
+		Raw       rawToken     `json:"client_token"`
+		Policies  []string     `json:"policies"`
 		Lease     *json.Number `json:"lease_duration"`
-		Renewable bool        `json:"renewable"`
+		Renewable bool         `json:"renewable"`
 	}
 	if err := p.do(ctx, "login", http.MethodPost, "auth/"+escapePath(p.opts.AppRoleMount)+"/login", in, &out); err != nil {
 		return err
