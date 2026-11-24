@@ -1,6 +1,6 @@
 # 0070. The outbox as a log: relay by destination, and retention
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-23
 
 Refines [ADR 0014](0014-events-outbox.md) ("Relay" and "Guarantee"); builds on
@@ -86,3 +86,4 @@ trigger is structural.
 ## History
 
 - 2026-11-23: proposed with sprint 6.4.
+- 2026-11-24: accepted by the maintainer after review.

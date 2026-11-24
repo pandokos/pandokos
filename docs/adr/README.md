@@ -75,9 +75,9 @@ A record is *proposed* until the maintainer accepts it, by merging its pull requ
 | [0067](0067-tenant-deletion-stages-closed-tenants-and-kept-records.md) | Tenant deletion: stages, closed tenants and the records that are kept | accepted |
 | [0068](0068-key-encryption-key-versions-rotation-and-erasure-in-backups.md) | Key-encryption key versions: activation, re-wrap, retirement, and erasure in backups | accepted |
 | [0069](0069-tenant-data-export.md) | The tenant data export and its schema | accepted |
-| [0070](0070-the-outbox-as-a-log-relay-by-destination-and-retention.md) | The outbox as a log: relay by destination, and retention | proposed |
-| [0071](0071-webhook-destinations-signature-secrets-and-egress.md) | Webhook destinations: the signature, the signing secrets and egress | proposed |
-| [0072](0072-event-types-the-envelope-the-external-reference-and-platform-events.md) | Event types, the envelope, the external reference and the platform's events | proposed |
+| [0070](0070-the-outbox-as-a-log-relay-by-destination-and-retention.md) | The outbox as a log: relay by destination, and retention | accepted |
+| [0071](0071-webhook-destinations-signature-secrets-and-egress.md) | Webhook destinations: the signature, the signing secrets and egress | accepted |
+| [0072](0072-event-types-the-envelope-the-external-reference-and-platform-events.md) | Event types, the envelope, the external reference and the platform's events | accepted |
 
 ## Questions from SOW 0.1 and where they were decided
 
