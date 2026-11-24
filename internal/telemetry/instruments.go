@@ -32,6 +32,7 @@ const (
 	nameRefusals      = "pandokos.limits.refusals"
 	nameEstimate      = "pandokos.limits.estimate_ratio"
 	nameEventDuration = "pandokos.events.delivery.duration"
+	nameKeyDuration   = "pandokos.vault.provider.request.duration"
 )
 
 // Attribute lists shared by several instruments.
@@ -119,6 +120,11 @@ var catalogue = []InstrumentSpec{
 	spec("pandokos.events.destinations", "G", "{destination}", "Event destinations by state: enabled, failing (a subset of enabled), disabled.", AttrDestinationState),
 	spec("pandokos.events.lag", "G", "s", "The age of the oldest event that an enabled destination has not settled; 0 when none."),
 	spec("pandokos.events.relay.passes", "OC", "{pass}", "Passes of the event relay, by result.", resultAttr...),
+
+	spec("pandokos.vault.provider.requests", "OC", "{request}", "Requests to the key service, by operation and outcome; refused ones were not sent.", AttrKEKOperation, AttrKEKOutcome),
+	spec(nameKeyDuration, "H", "s", "The time of one request that was sent to the key service, by operation.", AttrKEKOperation),
+	spec("pandokos.vault.provider.up", "G", "{provider}", "1 while requests are sent to the key service, 0 while the refusal is in force."),
+	spec("pandokos.vault.provider.token.ttl", "G", "s", "What is left of the lifetime of the key service token; absent for a token without a lifetime."),
 }
 
 // Catalogue returns the instrument catalogue: the table of the metrics reference.
@@ -205,5 +211,6 @@ func views() []sdkmetric.View {
 		hist(nameTokenUsage, tokenBounds),
 		hist(nameEstimate, ratioBounds),
 		hist(nameEventDuration, durationBounds),
+		hist(nameKeyDuration, durationBounds),
 	}
 }

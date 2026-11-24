@@ -361,6 +361,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.fail(st, family.CodeForbidden)
 		return
 	case err != nil:
+		// The key service may be away: tell the caller to come back.
+		if r.Context().Err() == nil {
+			st.sw.Header().Set("Retry-After", unavailableRetryAfter)
+		}
 		h.unavailable(st)
 		return
 	}

@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -106,8 +107,10 @@ func digest(t *testing.T, d *dbtest.Database, sql string, args ...any) string {
 }
 
 const (
-	credentialDigest  = `SELECT COALESCE(md5(string_agg(to_jsonb(c)::text, ',' ORDER BY c.id)), '') FROM pandokos.provider_credential c`
-	destinationDigest = `SELECT COALESCE(md5(string_agg(to_jsonb(e)::text, ',' ORDER BY e.id)), '') FROM pandokos.event_destination e`
+	credentialDigest = `SELECT COALESCE(md5(string_agg(to_jsonb(c)::text, ',' ORDER BY c.id)), '') FROM pandokos.provider_credential c`
+	// The sealed secrets and their key versions: the delivery state of a destination (failures, cursor,
+	// times) changes whenever the relay delivers, which is not what the test compares.
+	destinationDigest = `SELECT COALESCE(md5(string_agg(concat_ws('|', e.id, e.secret, e.secret_key_version, e.secret_created_at, e.previous_secret, e.previous_secret_key_version, e.previous_secret_expires_at), ',' ORDER BY e.id)), '') FROM pandokos.event_destination e`
 )
 
 // linesOf returns the complete log lines of a process with the message.
@@ -199,8 +202,18 @@ func TestTransitFreshInstall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), "io.pandokos.kek.version_activated.v1") || !strings.Contains(string(raw), `"provider":"transit"`) {
-		t.Errorf("the event kek.version_activated is not in the pull export: %s", raw)
+	activated := false
+	for _, line := range strings.Split(string(raw), "\n") {
+		var ev struct {
+			Type string         `json:"type"`
+			Data map[string]any `json:"data"`
+		}
+		if json.Unmarshal([]byte(line), &ev) == nil && ev.Type == "io.pandokos.kek.version_activated.v1" && ev.Data["provider"] == "transit" {
+			activated = true
+		}
+	}
+	if !activated {
+		t.Errorf("the event kek.version_activated with provider transit is not in the pull export: %s", raw)
 	}
 	if !a.ok(t, p) {
 		t.Errorf("a second call failed")
@@ -479,7 +492,15 @@ func TestTransitStartRefusals(t *testing.T) {
 	run := func(t *testing.T, d *dbtest.Database, extra ...string) (code int, out, errs string, took time.Duration) {
 		t.Helper()
 		start := time.Now()
-		code, out, errs = runBinary(t, serveEnv(t, d, extra...), "serve", "--config", writeConfig(t, "info"))
+		// The environment of the database holds a key file, which provider transit refuses
+		// (sprint 12.1, section 5.11): a host that wraps with the service holds none.
+		var env []string
+		for _, kv := range serveEnv(t, d) {
+			if !strings.HasPrefix(kv, "PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE=") {
+				env = append(env, kv)
+			}
+		}
+		code, out, errs = runBinary(t, append(env, extra...), "serve", "--config", writeConfig(t, "info"))
 		return code, out, errs, time.Since(start)
 	}
 	transitEnv := func(w *transitWorld) []string {
@@ -781,16 +802,15 @@ func TestTransitRotation(t *testing.T) {
 	if !callsWork(t, p1, a, b) {
 		t.Errorf("an instance that was not restarted stopped serving")
 	}
-	// And answers 503 with kek_replaced for a new tenant's first secret.
-	cid, cadmin := p2.newTenant(t, boot, "rotation-c")
-	code, out, errs := p1.cli(t, cadmin, "credential", "create", "--provider", "openai", "--secret-file", testutil.WriteSecret(t, "provider-secret", "synthetic-first-secret"), "first")
+	// And answers 503 with kek_replaced for a new tenant's first data key, which is made when the
+	// tenant is created (the key of the tenant made by the restarted instance is under the new version).
+	code, out, errs := p1.cli(t, boot, "tenant", "create", "--admin-key-out", filepath.Join(t.TempDir(), "rotation-c.key"), "rotation-c")
 	if code == 0 || !strings.Contains(out+errs, "unavailable") {
-		t.Errorf("a first secret through the instance that was not restarted: exit %d, stdout %q, stderr %q", code, out, errs)
+		t.Errorf("a new tenant through the instance that was not restarted: exit %d, stdout %q, stderr %q", code, out, errs)
 	}
 	if l := linesOf(p1, "credential cannot be sealed"); len(l) == 0 || l[len(l)-1]["cause"] != "kek_replaced" {
 		t.Errorf("credential cannot be sealed: %v, want cause kek_replaced", l)
 	}
-	_ = cid
 	if code := p1.stop(t); code != 0 {
 		t.Fatalf("exit code %d", code)
 	}
@@ -882,7 +902,12 @@ func TestTransitTelemetry(t *testing.T) {
 	testutil.Eventually(t, 10*time.Second, "M59 to agree with the requests the service counted", func() bool {
 		_, scrape := p.scrapeAs(t, "GET", adminKey)
 		for op, name := range ops {
+			// The double counts every request it received: the negative probe of the start (an unwrap
+			// under other associated data) is one of them and ends rejected.
 			got, ok := promValue(scrape, "pandokos_vault_provider_requests_total", `pandokos_kek_operation="`+op+`"`, `pandokos_kek_outcome="ok"`)
+			if rej, found := promValue(scrape, "pandokos_vault_provider_requests_total", `pandokos_kek_operation="`+op+`"`, `pandokos_kek_outcome="rejected"`); found {
+				got += rej
+			}
 			if !ok || int(got) != w.s.Count(name) {
 				return false
 			}
@@ -907,6 +932,9 @@ func TestTransitTelemetry(t *testing.T) {
 		v, ok := promValue(s, "pandokos_vault_provider_up")
 		return ok && v == 0
 	})
+	// The refusal lasts 5 s: a call now is refused without a request (the poll above may have ended
+	// on the request that began it).
+	callsWork(t, p, a, b)
 	_, scrape = p.scrapeAs(t, "GET", adminKey)
 	if v, ok := promValue(scrape, "pandokos_vault_provider_requests_total", `pandokos_kek_outcome="unavailable"`); !ok || v < 5 {
 		t.Errorf("unavailable outcomes: %v, %v, want at least 5", v, ok)

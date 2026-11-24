@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -21,7 +22,6 @@ import (
 	"github.com/pandokos/pandokos/internal/buildinfo"
 	"github.com/pandokos/pandokos/internal/catalog"
 	"github.com/pandokos/pandokos/internal/config"
-	"github.com/pandokos/pandokos/internal/egress"
 	"github.com/pandokos/pandokos/internal/jwks"
 	"github.com/pandokos/pandokos/internal/ledger"
 	"github.com/pandokos/pandokos/internal/lifecycle"
@@ -155,20 +155,52 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	}
 
 	gatewayDB, adminDB, workerDB := dbs[0], dbs[1], dbs[2]
-	kp, err := vault.NewLocalProvider(cfg.Vault.KEK.Local.Key, cfg.Vault.KEK.Local.UnwrapKeys...)
+	guard, err := newGuard(cfg)
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	vctx, vcancel := context.WithTimeout(ctx, 30*time.Second)
-	kekVersion, kekActivation, err := vault.Activate(vctx, adminDB, workerDB, kp)
-	vcancel()
+	defer guard.CloseIdleConnections()
+	var keyMetrics atomic.Pointer[telemetry.Metrics]
+	providers, err := buildKeyProviders(cfg, guard, logger, func(op string, d time.Duration) {
+		if m := keyMetrics.Load(); m != nil {
+			m.ObserveKeyProviderRequest(op, d)
+		}
+	})
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
 		return 1
+	}
+	kp, tp := providers.Provider, providers.Transit
+	// Nothing listens before the key service answers (sprint 12.1, section 5.10).
+	kekVersion, kekActivation, err := startVault(ctx, startVaultOptions{
+		Transit: tp, Provider: kp, Admin: adminDB, Worker: workerDB, Logger: logger,
+		StartTimeout: time.Duration(cfg.Vault.KEK.Transit.StartTimeout),
+	})
+	if err != nil {
+		logger.Error("startup failed", "error", err.Error())
+		return 1
+	}
+	unwrapVersions := 0
+	if providers.Local != nil {
+		unwrapVersions = len(providers.Local.Versions())
+		if cfg.Vault.KEK.Provider == "local" {
+			unwrapVersions--
+		}
+	}
+	if tp != nil && cfg.Vault.KEK.Provider == "local" {
+		unwrapVersions += tp.Info().Newest - tp.Info().Oldest + 1
 	}
 	logger.Info("vault ready", "kek_provider", kp.Name(), "kek_version", kekVersion, "kek_activation", kekActivation,
-		"kek_unwrap_versions", len(kp.Versions())-1)
+		"kek_unwrap_versions", unwrapVersions, "kek_unwrap_provider", providers.UnwrapOnly)
+	if providers.UnwrapOnly != "" {
+		pctx, pcancel := context.WithTimeout(ctx, 30*time.Second)
+		inUse, perr := vault.ProvidersInUse(pctx, adminDB)
+		pcancel()
+		if perr == nil && !inUse[providers.UnwrapOnly] {
+			logger.Info("key provider no longer needed", "kek_provider", providers.UnwrapOnly)
+		}
+	}
 	sealer, err := vault.NewSealer(kp)
 	if err != nil {
 		logger.Error("startup failed", "error", err.Error())
@@ -182,16 +214,6 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		logger.Error("startup failed", "error", err.Error())
 		return 1
 	}
-	guard, err := egress.New(egress.Options{
-		ConnectTimeout: time.Duration(cfg.Upstream.ConnectTimeout),
-		RootCAs:        cfg.Upstream.TLS.RootCAs,
-		Proxy:          cfg.Upstream.Proxy.ParsedURL,
-	})
-	if err != nil {
-		logger.Error("startup failed", "error", err.Error())
-		return 1
-	}
-	defer guard.CloseIdleConnections()
 	var keyCache *jwks.Cache
 	gatewayAuthOpts := authn.Options{DB: gatewayDB, Logger: logger, Kinds: []authn.Kind{authn.KindTenant}, CacheTTL: time.Duration(cfg.Cache.PrincipalTTL)}
 	if cfg.Tokens.Enabled {
@@ -373,8 +395,18 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	rewrapper := &vault.Rewrapper{DB: workerDB, Provider: kp, Logger: logger}
 	deleter := &lifecycle.Deleter{DB: workerDB, Interval: time.Duration(cfg.TenantDeletion.Interval), Logger: logger}
 	retention := &reports.Retention{DB: workerDB, UsageMonths: cfg.Retention.UsageMonths, AuditMonths: cfg.Retention.AuditMonths, Logger: logger}
+	relayProvider := kp
+	if tp != nil {
+		// The relay opens the same secrets again and again: through a cache of unwrapped keys.
+		cache, err := vault.NewUnwrapCache(kp, time.Duration(cfg.Cache.DataKeyTTL), nil)
+		if err != nil {
+			logger.Error("startup failed", "error", err.Error())
+			return 1
+		}
+		relayProvider = cache
+	}
 	eventRelay := &outbox.Relay{
-		DB: workerDB, Provider: kp, Source: cfg.Events.Source,
+		DB: workerDB, Provider: relayProvider, Source: cfg.Events.Source,
 		Deliverer: &outbox.Deliverer{
 			Transport: guard.Transport, PrivateHosts: cfg.Events.Webhook.PrivateHosts,
 			Timeout: time.Duration(cfg.Events.Delivery.Timeout), UserAgent: "pandokos/" + buildinfo.Version,
@@ -408,6 +440,9 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		Events:      eventsSource(eventRelay, eventJanitor),
 		Lifecycle:   lifecycleSource(deleter, rewrapper),
 	}
+	if tp != nil {
+		sources.KeyProvider = keyProviderSource(tp)
+	}
 	if keyCache != nil {
 		sources.JWKS = jwksSource(keyCache)
 	}
@@ -435,6 +470,7 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 		return 1
 	}
 	eventRelay.OnDelivery = metrics.ObserveEventDelivery
+	keyMetrics.Store(metrics)
 	srv, err := server.New(server.Options{
 		Config: cfg, Logger: logger, Authenticator: gatewayAuth, Admin: adminHandler,
 		Catalogue:   resolver.NewCatalogue(catalogCache, logger),
@@ -469,6 +505,10 @@ func runServe(ctx context.Context, args []string, stdout, stderr io.Writer, envi
 	var wg sync.WaitGroup
 	defer func() { stopBackground(); wg.Wait() }()
 	wg.Add(12)
+	if tp != nil {
+		wg.Add(1)
+		go func() { defer wg.Done(); tp.Run(background) }()
+	}
 	go func() { defer wg.Done(); people.runPurge(background, logger) }()
 	go func() { defer wg.Done(); listener.Run(background) }()
 	go func() { defer wg.Done(); warnBootstrap(background, logger, adminDB) }()

@@ -65,6 +65,8 @@ Commands:
   import-prices [--config FILE] (--file FILE | --embedded) [--dry-run]
                                    Import a price dataset from a file or the embedded snapshot, then exit
   kek generate --out FILE          Write a new key-encryption key to a new file (mode 0600)
+  kek check [--config FILE]        Check the key provider of the configuration: the provider that
+                                   wraps, its version, the versions the key service unwraps; writes nothing
   config check [--config FILE] [--for serve|migrate|init]
                                    Load and validate the configuration, then exit
   version                          Print the version

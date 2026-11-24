@@ -1,6 +1,20 @@
 package telemetry
 
-import "time"
+import (
+	"context"
+	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+)
+
+// The attribute keys of the key provider instruments (M59 and M60).
+const (
+	// AttrKEKOperation is the kind of request to the key service.
+	AttrKEKOperation = "pandokos.kek.operation"
+	// AttrKEKOutcome is how the request ended.
+	AttrKEKOutcome = "pandokos.kek.outcome"
+)
 
 // The values of the attributes of the key provider instruments (M59 and M60), in the order of the
 // metrics reference.
@@ -22,6 +36,9 @@ type KeyProviderStats struct {
 }
 
 // ObserveKeyProviderRequest records the time of one request that was sent to the key service (M60).
-//
-//nolint:revive // scaffolding: implemented in step C8
-func (m *Metrics) ObserveKeyProviderRequest(operation string, d time.Duration) {}
+func (m *Metrics) ObserveKeyProviderRequest(operation string, d time.Duration) {
+	if m == nil || m.inst == nil {
+		return
+	}
+	m.inst.keyDur.Record(context.Background(), d.Seconds(), metric.WithAttributes(attribute.String(AttrKEKOperation, operation)))
+}

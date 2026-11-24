@@ -706,3 +706,11 @@ func (g *gate) close(now time.Time) (bool, time.Duration) {
 	g.consecutive = 0
 	return true, outage
 }
+
+// LastErrorClass is the class of the log line of the last request that failed: timeout,
+// connection, tls, status or response; empty when none did. It names no address.
+func (p *TransitProvider) LastErrorClass() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.lastClass
+}

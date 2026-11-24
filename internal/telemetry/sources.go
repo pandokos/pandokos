@@ -268,6 +268,37 @@ func registerSources(k *maker, o MetricsOptions) {
 		}, deliveries, dead, expired, dests, lag, passes)
 	}
 
+	if s.KeyProvider != nil {
+		requests := k.int64ObservableCounter("pandokos.vault.provider.requests")
+		up := k.int64ObservableGauge("pandokos.vault.provider.up")
+		ttl := k.float64ObservableGauge("pandokos.vault.provider.token.ttl")
+		register(func(_ context.Context, ob metric.Observer) error {
+			p := s.KeyProvider()
+			keys := make([][2]string, 0, len(p.Requests))
+			for key := range p.Requests {
+				keys = append(keys, key)
+			}
+			sort.Slice(keys, func(i, j int) bool {
+				if keys[i][0] != keys[j][0] {
+					return keys[i][0] < keys[j][0]
+				}
+				return keys[i][1] < keys[j][1]
+			})
+			for _, key := range keys {
+				ob.ObserveInt64(requests, p.Requests[key], attr(AttrKEKOperation, key[0], AttrKEKOutcome, key[1]))
+			}
+			var u int64
+			if p.Up {
+				u = 1
+			}
+			ob.ObserveInt64(up, u)
+			if p.TokenExpires {
+				ob.ObserveFloat64(ttl, p.TokenTTL.Seconds())
+			}
+			return nil
+		}, requests, up, ttl)
+	}
+
 	if s.Resolver != nil {
 		unpriced := k.int64ObservableCounter("pandokos.limits.admitted_unpriced")
 		unlimited := k.int64ObservableCounter("pandokos.limits.unlimited_traffic")

@@ -24,6 +24,7 @@ This page is a contract checked by tests: a message or a field that is not liste
 | `audit_events` | integer | Audit events of the tenants removed by a retention run, in total over the installation. |
 | `audit_months` | integer | The configured retention of the audit logs, in months; 0 keeps them. |
 | `audited` | boolean | Whether the failure was recorded in the audit log. |
+| `auth_method` | string | How Pandokos authenticates to the key service: `token` or `approle`. |
 | `batch_size` | integer | Events read for one destination in one round. |
 | `cache` | string | The cache that was flushed. |
 | `cause` | string | The class of a failure of the vault, or the step of the event relay that failed. |
@@ -49,6 +50,7 @@ This page is a contract checked by tests: a message or a field that is not liste
 | `events` | integer | Events removed by a pass of the event janitor, in total over the installation. |
 | `expired` | integer | Events removed before an enabled destination passed them, in total over the installation. |
 | `expires_at` | string | A time in RFC 3339. |
+| `expires_in_seconds` | integer | The seconds left of the lifetime of the key service token. |
 | `failures` | integer | Failures counted since the last line. |
 | `forced` | boolean | Whether the shutdown had to cut open requests short. |
 | `go_version` | string | The Go version of the build. |
@@ -61,6 +63,7 @@ This page is a contract checked by tests: a message or a field that is not liste
 | `issuer` | string | The issuer URL of a token issuer, in the lines of the key fetch. |
 | `kek_activation` | string | What the start did to the key-encryption key versions: `activated` or `unchanged`. |
 | `kek_provider` | string | The key provider of the vault. |
+| `kek_unwrap_provider` | string | The key provider that only unwraps, `local` or `transit`; empty when there is none. |
 | `kek_unwrap_versions` | integer | The number of replaced key versions this process can still unwrap. |
 | `kek_version` | string | The version of a key-encryption key. |
 | `key` | string | The name of a configuration key. |
@@ -78,13 +81,17 @@ This page is a contract checked by tests: a message or a field that is not liste
 | `missing` | integer | The number of records missing at the end of the ledger. |
 | `msg` | string | The message. |
 | `name` | string | The name of an OpenTelemetry scope. |
+| `newest_version` | integer | The latest version of the transit key. |
+| `oldest_version` | integer | The oldest version of the transit key that still decrypts. |
 | `on_store_failure` | string | The setting limits.on_store_failure. |
 | `on_unknown_price` | string | The setting limits.on_unknown_price. |
 | `operation` | string | The operation of the administration API, or of the gateway route. |
+| `outage_seconds` | integer | The seconds the key service did not answer. |
 | `outcome` | string | How the request ended: ok, pandokos_error, client_error, client_cancelled, shutdown_aborted, timeout or upstream_aborted. |
 | `overridden` | integer | Rows overridden. |
 | `panic_type` | string | The Go type of a recovered panic, never its value. |
 | `partitions` | integer | Usage partitions dropped by a retention run, in total over the installation. |
+| `phase` | string | `start` while the process waits for the key service before it listens, `run` once it serves. |
 | `platform_audit_events` | integer | Rows of the platform audit log removed by a retention run. |
 | `principal_id` | string | The ID of a platform principal. Only on the lines marked as platform identities. |
 | `principal_type` | string | The kind of platform principal: platform or user. |
@@ -100,6 +107,7 @@ This page is a contract checked by tests: a message or a field that is not liste
 | `rule` | string | The text of a group rule that was skipped. |
 | `schemaURL` | string | The schema URL of an OpenTelemetry scope. |
 | `schema_version` | integer | The number of migrations applied. |
+| `setting` | string | A weak setting of the transit key: `exportable`, `plaintext_backup`, `deletion_allowed`, `auto_rotate` or `root_token`. |
 | `shape` | string | The shape of a claim. |
 | `skipped` | integer | Entries skipped. |
 | `source` | string | The source of a price import: embedded or remote. |
@@ -405,9 +413,60 @@ The server could not start; the text of the error holds nothing of a secret. The
 ### `vault ready`
 
 Level: info
-Fields: `kek_provider`, `kek_version`, `kek_activation`, `kek_unwrap_versions`
+Fields: `kek_provider`, `kek_version`, `kek_activation`, `kek_unwrap_versions`, `kek_unwrap_provider`
 
-The vault is ready with the key provider and the active version of the key-encryption key shown; `kek_activation` says whether the start activated that version or found it already active, and `kek_unwrap_versions` how many replaced versions this process can still unwrap.
+The vault is ready with the key provider and the active version of the key-encryption key shown; `kek_activation` says whether the start activated that version or found it already active, `kek_unwrap_versions` how many replaced versions this process can still unwrap and `kek_unwrap_provider` the provider that only unwraps, empty when there is none.
+
+## Key provider
+
+### `key provider ready`
+
+Level: info
+Fields: `kek_provider`, `kek_version`, `auth_method`, `oldest_version`, `newest_version`
+
+The transit key provider authenticated, described its key and identified the latest version, which is the one that wraps.
+
+### `key provider configuration weak`
+
+Level: warn
+Fields: `kek_provider`, `setting`
+
+A setting of the transit key weakens what the key protects, once per setting at start. Change it in the key service; the setting is named and nothing else.
+
+### `key provider unavailable`
+
+Level: warn
+Fields: `kek_provider`, `phase`, `operation`, `error_class`, `failures`
+
+The key service does not answer. At start the process waits and listens on no port, and the line is written at most every 30 s; running, it is written when requests begin to be refused and every 30 s while that lasts. `error_class` is `timeout`, `connection`, `tls`, `status` or `response`.
+
+### `key provider recovered`
+
+Level: info
+Fields: `kek_provider`, `phase`, `outage_seconds`
+
+The key service answered again after the line `key provider unavailable`.
+
+### `key provider token expiring`
+
+Level: warn
+Fields: `kek_provider`, `auth_method`, `expires_in_seconds`
+
+The token of the key service is near the end of its lifetime and could not be renewed or obtained again.
+
+### `key provider authentication failing`
+
+Level: error
+Fields: `kek_provider`, `auth_method`, `error_class`, `failures`
+
+A login, a renewal or the token in use was refused by the key service; written every 30 s at most. Check the token or the AppRole files and the policy.
+
+### `key provider no longer needed`
+
+Level: info
+Fields: `kek_provider`
+
+A provider configured for unwrapping only owns no active or retiring key version, so its settings may be removed.
 
 ## Store
 
@@ -483,7 +542,7 @@ The cache of opened credentials was emptied, on a change or because it was full;
 ### `egress blocked`
 
 Level: warn
-Fields: `request_id`, `provider`, `endpoint`, `reason`, `address`
+Fields: `request_id`, `provider`, `endpoint`, `reason`, `address`, `kek_provider`
 
 The egress guard refused a connection to the address of an endpoint, for the reason shown; the request was answered with an error. Check the endpoint of the provider.
 

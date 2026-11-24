@@ -85,3 +85,22 @@ func (e *replacedError) Error() string {
 }
 
 func (e *replacedError) Is(target error) bool { return target == ErrKeyReplaced }
+
+// ProvidersInUse returns the names of the providers that own an active or retiring key version:
+// the providers the database still needs to unwrap data keys.
+func ProvidersInUse(ctx context.Context, db *store.DB) (map[string]bool, error) {
+	out := map[string]bool{}
+	err := db.Platform(ctx, func(c context.Context, tx store.Tx) error {
+		rows, err := queries.New(tx).ListKEKVersions(c)
+		for _, r := range rows {
+			if r.State != stateRetired {
+				out[r.Provider] = true
+			}
+		}
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("vault: cannot read the key versions: %w", err)
+	}
+	return out, nil
+}
