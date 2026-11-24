@@ -113,6 +113,18 @@ func (p *Provider) Complete(ctx context.Context, seed secret.Secret, query url.V
 	return p.identity(ctx, md.JWKSURI, idToken, derive(key, "nonce"))
 }
 
+// parseTokenAnswer reads the body of the token endpoint's answer: the ID token, when the body is a
+// JSON object with a non-empty string id_token. The pure part of redeem.
+func parseTokenAnswer(body []byte) (idToken string, ok bool) {
+	var answer struct {
+		IDToken string `json:"id_token"`
+	}
+	if json.Unmarshal(body, &answer) != nil || answer.IDToken == "" {
+		return "", false
+	}
+	return answer.IDToken, true
+}
+
 // redeem sends the code to the token endpoint and returns the ID token of the answer. The access
 // token and any refresh token are never read.
 func (p *Provider) redeem(ctx context.Context, endpoint, code, verifier string) (string, error) {
@@ -155,11 +167,9 @@ func (p *Provider) redeem(ctx context.Context, endpoint, code, verifier string) 
 	if len(body) > maxTokenResponse {
 		return "", &Failure{Reason: "code_rejected"}
 	}
-	var answer struct {
-		IDToken string `json:"id_token"`
-	}
-	if json.Unmarshal(body, &answer) != nil || answer.IDToken == "" {
+	idToken, ok := parseTokenAnswer(body)
+	if !ok {
 		return "", &Failure{Reason: "code_rejected"}
 	}
-	return answer.IDToken, nil
+	return idToken, nil
 }

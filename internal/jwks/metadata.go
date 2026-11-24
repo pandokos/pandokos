@@ -134,6 +134,12 @@ func (c *Cache) fetchMetadata(ctx context.Context, issuer string) (Metadata, err
 	if err != nil {
 		return Metadata{}, err
 	}
+	return parseMetadata(body, issuer)
+}
+
+// parseMetadata reads the body of a discovery document asked for the issuer given: the pure part
+// of fetchMetadata.
+func parseMetadata(body []byte, issuer string) (Metadata, error) {
 	var doc struct {
 		Issuer                *string `json:"issuer"`
 		JWKSURI               *string `json:"jwks_uri"`

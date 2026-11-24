@@ -48,10 +48,13 @@ type TransitOptions struct {
 	SecretIDFile   string
 	RequestTimeout time.Duration // 100 ms to 30 s
 	MaxConcurrent  int           // 1 to 1024
-	UserAgent      string
-	Logger         *slog.Logger // required
-	Now            func() time.Time
-	OnRequest      func(operation string, d time.Duration) // M60; may be nil
+	// AllowExportable accepts a key of the key service that was created exportable (sprint 12.2,
+	// section 5.7); without it such a key is refused at start.
+	AllowExportable bool
+	UserAgent       string
+	Logger          *slog.Logger // required
+	Now             func() time.Time
+	OnRequest       func(operation string, d time.Duration) // M60; may be nil
 }
 
 // TransitProvider wraps data keys with a transit key of OpenBao or HashiCorp Vault. It holds the

@@ -62,6 +62,10 @@ func LastMember(ms []Member, key string) (Member, bool) {
 	return Member{}, false
 }
 
+// CaseConflict reports whether ms holds a member whose name equals one of read when case is
+// ignored and is not spelled exactly so.
+func CaseConflict(_ []Member, _ ...string) bool { return false } // filled in by C1
+
 // ParseModel applies the model rules of sprint 3.1 section 5.8 to the members of a request body:
 // exactly one top-level member "model", whose value is a non-empty JSON string. It returns the
 // decoded model and its member, or an Invalid error whose reason is model_missing,

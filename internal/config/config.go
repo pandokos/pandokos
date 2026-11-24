@@ -245,6 +245,7 @@ type VaultKEKTransit struct {
 	RequestTimeout        Duration            `yaml:"request_timeout"`
 	MaxConcurrentRequests int                 `yaml:"max_concurrent_requests"`
 	StartTimeout          Duration            `yaml:"start_timeout"`
+	AllowExportableKey    bool                `yaml:"-"` // C4 (sprint 12.2) gives it the tag allow_exportable_key and its key
 
 	URL *url.URL `yaml:"-"` // filled by Load
 }

@@ -4,6 +4,17 @@ import (
 	"github.com/pandokos/pandokos/internal/family"
 )
 
+// The names of the members of a request body that this package reads (sprint 12.2, section 5.5);
+// "model" is read by family.ParseModel, which takes the literal.
+const (
+	memberModel     = "model"
+	memberMaxTokens = "max_tokens"
+	memberStream    = "stream"
+)
+
+// ReadMembers is the set of top-level members of a request body that this family reads.
+var ReadMembers = []string{memberModel, memberMaxTokens, memberStream}
+
 // Request is a Messages API request body that was read.
 type Request struct {
 	body   []byte
@@ -31,10 +42,10 @@ func ParseOperation(operation string, body []byte) (*Request, error) {
 	if operation == OperationCountTokens {
 		bound.None = true
 	} else {
-		bound.Tokens, _ = family.PositiveInt(body, members, "max_tokens", 12)
+		bound.Tokens, _ = family.PositiveInt(body, members, memberMaxTokens, 12)
 	}
 	if operation == OperationMessages {
-		if sm, ok := family.LastMember(members, "stream"); ok {
+		if sm, ok := family.LastMember(members, memberStream); ok {
 			stream = family.IsLiteral(body, sm, "true")
 		}
 	}
