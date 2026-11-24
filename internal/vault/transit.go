@@ -36,7 +36,7 @@ const (
 )
 
 //nolint:unused // used from step C4
-var _ = [...]any{transitTrip, transitCooldown, transitWarnEvery}
+var _ = [...]any{transitTrip, transitCooldown}
 
 // TransitOptions configures a TransitProvider. Every formatting path prints the redaction marker.
 type TransitOptions struct {
@@ -63,10 +63,28 @@ type TransitProvider struct {
 	opts   TransitOptions
 	client *http.Client
 	sem    chan struct{}
+	polled bool // the clock is injected: the lifecycle polls it
 
-	tokMu    sync.RWMutex
-	token    secret.Secret
-	policies []string
+	tokMu     sync.RWMutex
+	token     secret.Secret
+	policies  []string
+	granted   time.Duration // the lifetime of the latest grant
+	first     time.Duration // the lifetime of the first grant of this token
+	obtained  time.Time
+	renewable bool
+	expires   bool
+	gen       uint64 // changes with every grant
+
+	wake chan struct{}
+
+	authMu   sync.Mutex // the new authentication after a 403
+	reauthCh chan struct{}
+	reauthAt time.Time
+
+	lmu          sync.Mutex // the rate limits of the log lines
+	lastExpiring time.Time
+	lastAuthLog  time.Time
+	authFails    int
 
 	mu         sync.Mutex
 	desc       transitDescription
@@ -134,6 +152,7 @@ func NewTransitProvider(o TransitOptions) (*TransitProvider, error) {
 	if o.UserAgent == "" {
 		o.UserAgent = "pandokos"
 	}
+	polled := o.Now != nil
 	if o.Now == nil {
 		o.Now = time.Now
 	}
@@ -146,6 +165,8 @@ func NewTransitProvider(o TransitOptions) (*TransitProvider, error) {
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 		sem:      make(chan struct{}, o.MaxConcurrent),
+		polled:   polled,
+		wake:     make(chan struct{}, 1),
 		verified: map[string]int{},
 		counts:   map[TransitCount]int64{},
 	}, nil
@@ -202,9 +223,6 @@ func (p *TransitProvider) Start(ctx context.Context) error {
 		"auth_method", p.opts.AuthMethod, "oldest_version", d.oldest, "newest_version", d.newest)
 	return nil
 }
-
-// Run keeps the token alive until ctx ends (§5.5).
-func (p *TransitProvider) Run(_ context.Context) {}
 
 // Name returns "transit".
 func (p *TransitProvider) Name() string { return transitName }
@@ -412,12 +430,14 @@ func (p *TransitProvider) Info() TransitInfo {
 // Stats returns a snapshot of the counters and of the token's lifetime.
 func (p *TransitProvider) Stats() TransitStats {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	m := make(map[TransitCount]int64, len(p.counts))
 	for k, v := range p.counts {
 		m[k] = v
 	}
-	return TransitStats{Requests: m, Up: true}
+	p.mu.Unlock()
+	st := TransitStats{Requests: m, Up: true}
+	st.TokenTTL, st.TokenExpires = p.tokenLeft()
+	return st
 }
 
 // TransitInfo describes the key and the authentication.

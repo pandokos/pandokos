@@ -19,6 +19,9 @@ import (
 	"github.com/pandokos/pandokos/test/vaulttest"
 )
 
+// rigStart is the time the clock of a rig starts at.
+var rigStart = time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)
+
 // transitRig is a double of the key service, its files and a provider on them, with a log at debug
 // level. The provider is built by newTransitRig and started by start.
 type transitRig struct {
@@ -54,7 +57,7 @@ func newTransitRig(t *testing.T, setup vaulttest.TransitSetup, adjust ...func(*v
 
 func newTransitRigOn(t *testing.T, s *transittest.Server, setup vaulttest.TransitSetup, adjust ...func(*vault.TransitOptions)) *transitRig {
 	t.Helper()
-	r := &transitRig{s: s, logs: &testutil.LogBuffer{}, clock: &tClock{t: time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)}}
+	r := &transitRig{s: s, logs: &testutil.LogBuffer{}, clock: &tClock{t: rigStart}}
 	r.f = vaulttest.Transit(t, s, setup)
 	r.build(t, adjust...)
 	return r
@@ -66,6 +69,11 @@ func (r *transitRig) build(t *testing.T, adjust ...func(*vault.TransitOptions)) 
 	all := append([]func(*vault.TransitOptions){func(o *vault.TransitOptions) { o.Logger = newLogger(r.logs) }}, adjust...)
 	o, g := vaulttest.TransitOptions(t, r.s, r.f, all...)
 	t.Cleanup(g.CloseIdleConnections)
+	if inner := o.Now; inner != nil {
+		// r.advance moves the clock the test gave the provider as well.
+		t0 := rigStart
+		o.Now = func() time.Time { return inner().Add(r.clock.now().Sub(t0)) }
+	}
 	r.o = o
 	p, err := vault.NewTransitProvider(o)
 	if err != nil {

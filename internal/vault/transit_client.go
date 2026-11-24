@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/pandokos/pandokos/internal/secret"
 )
 
 // statusErr is the failure of one request with the status that caused it (0: none was received).
@@ -68,6 +70,7 @@ func (p *TransitProvider) do(ctx context.Context, operation, method, path string
 // send is do that also tells the status of the answer (400 matters to its callers). A body given as
 // a []byte is sent as it is; any other is encoded as JSON. The buffer of the request is the
 // caller's to clear when it holds a data key; the buffer the answer is read into is cleared here.
+// The request is sent once; the one exception is the new authentication after a 403 (§5.5).
 func (p *TransitProvider) send(ctx context.Context, operation, method, path string, in, out any) (int, error) {
 	start := time.Now()
 	ctx, cancel := context.WithTimeout(ctx, p.opts.RequestTimeout)
@@ -81,15 +84,28 @@ func (p *TransitProvider) send(ctx context.Context, operation, method, path stri
 		return 0, &TransitError{Operation: operation, Class: "refused"}
 	}
 
-	status, class, errClass := p.exchange(ctx, operation, method, path, in, out)
-	p.record(operation, class, time.Since(start), true)
-	p.mu.Lock()
-	p.lastClass = errClass
-	p.mu.Unlock()
-	if class == "ok" {
-		return status, nil
+	for attempt := 0; ; attempt++ {
+		sent, overridden := ctx.Value(tokenKey{}).(secret.Secret)
+		xctx := ctx
+		if !overridden {
+			sent = p.currentToken()
+			xctx = context.WithValue(ctx, tokenKey{}, sent)
+		}
+		status, class, errClass := p.exchange(xctx, operation, method, path, in, out)
+		p.record(operation, class, time.Since(start), true)
+		p.mu.Lock()
+		p.lastClass = errClass
+		p.mu.Unlock()
+		if status == http.StatusForbidden && attempt == 0 && !overridden && operation != "login" && operation != "lookup" && operation != "renew" {
+			if p.reauth(ctx, sent) && ctx.Err() == nil {
+				continue
+			}
+		}
+		if class == "ok" {
+			return status, nil
+		}
+		return status, &TransitError{Operation: operation, Class: class}
 	}
-	return status, &TransitError{Operation: operation, Class: class}
 }
 
 // exchange makes the request and returns the status, the class of the outcome and, for a failure,
@@ -127,7 +143,9 @@ func (p *TransitProvider) exchange(ctx context.Context, operation, method, path 
 		req.Header.Set("X-Vault-Namespace", p.opts.Namespace)
 	}
 	if operation != "login" {
-		req.Header.Set("X-Vault-Token", p.tokenValue())
+		if tok, ok := ctx.Value(tokenKey{}).(secret.Secret); ok {
+			req.Header.Set("X-Vault-Token", tok.Reveal())
+		}
 	}
 
 	resp, err := p.client.Do(req)
@@ -162,7 +180,7 @@ func (p *TransitProvider) exchange(ctx context.Context, operation, method, path 
 // decodeEnvelope decodes {"data": {...}} (or {"auth": {...}} for a login) into out, ignoring
 // unknown fields. The fields of out that hold a secret are raw messages, which the caller clears.
 func decodeEnvelope(buf []byte, operation string, out any) error {
-	if operation == "login" {
+	if operation == "login" || operation == "renew" {
 		return json.Unmarshal(buf, &struct {
 			Auth any `json:"auth"`
 		}{Auth: out})
