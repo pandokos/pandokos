@@ -38,7 +38,7 @@ func TestVaultConfiguration(t *testing.T) {
 		want := map[string]struct{ env, typ, def string }{
 			"cache.credential_ttl":     {"PANDOKOS_CACHE_CREDENTIAL_TTL", "duration", "30s"},
 			"cache.data_key_ttl":       {"PANDOKOS_CACHE_DATA_KEY_TTL", "duration", "5m"},
-			"vault.kek.provider":       {"PANDOKOS_VAULT_KEK_PROVIDER", "local", "local"},
+			"vault.kek.provider":       {"PANDOKOS_VAULT_KEK_PROVIDER", "local, transit", "local"},
 			"vault.kek.local.key_file": {"PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE", "path", ""},
 		}
 		found := 0

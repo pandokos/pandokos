@@ -147,6 +147,13 @@ func (g *Guard) Transport(private bool) http.RoundTripper {
 	return g.publicRT
 }
 
+// KeyService returns a transport for the key service of the vault: its own connection pool,
+// the private class, no proxy, no redirect, TLS 1.2 or later. roots, when not nil, are the only
+// authorities trusted; nil means the roots of the guard.
+func (g *Guard) KeyService(_ *x509.CertPool) http.RoundTripper {
+	return g.privateRT // replaced in C1
+}
+
 // CloseIdleConnections closes the idle connections of both transports.
 func (g *Guard) CloseIdleConnections() {
 	g.public.CloseIdleConnections()

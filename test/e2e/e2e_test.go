@@ -94,6 +94,47 @@ type opts struct {
 
 	// Sprint 6.4: the event relay (events.relay.interval, events.delivery.*, events.webhook.private_hosts).
 	events eventOpts
+
+	// Sprint 12.1: the external key-encryption key.
+	kekProvider string       // vault.kek.provider: "local", "transit", or "" for the default; with transit no local key file is set
+	transit     *transitOpts // vault.kek.transit.*; nil sets none
+}
+
+// transitOpts are the settings vault.kek.transit.* of a process; an empty value keeps the default.
+type transitOpts struct {
+	address        string // vault.kek.transit.address
+	namespace      string
+	mount          string
+	key            string // vault.kek.transit.key_name
+	caFile         string // vault.kek.transit.tls.ca_file
+	authMethod     string // "token" or "approle"
+	tokenFile      string
+	appRoleMount   string
+	roleIDFile     string
+	secretIDFile   string
+	requestTimeout string // vault.kek.transit.request_timeout, for example "500ms"
+	maxConcurrent  string // vault.kek.transit.max_concurrent_requests
+	startTimeout   string // vault.kek.transit.start_timeout, for example "30s"
+}
+
+// env returns the environment variables of the options that are set.
+func (o *transitOpts) env() []string {
+	if o == nil {
+		return nil
+	}
+	var env []string
+	for _, kv := range [][2]string{
+		{"ADDRESS", o.address}, {"NAMESPACE", o.namespace}, {"MOUNT", o.mount}, {"KEY_NAME", o.key},
+		{"TLS_CA_FILE", o.caFile}, {"AUTH_METHOD", o.authMethod}, {"AUTH_TOKEN_FILE", o.tokenFile},
+		{"AUTH_APPROLE_MOUNT", o.appRoleMount}, {"AUTH_APPROLE_ROLE_ID_FILE", o.roleIDFile},
+		{"AUTH_APPROLE_SECRET_ID_FILE", o.secretIDFile}, {"REQUEST_TIMEOUT", o.requestTimeout},
+		{"MAX_CONCURRENT_REQUESTS", o.maxConcurrent}, {"START_TIMEOUT", o.startTimeout},
+	} {
+		if kv[1] != "" {
+			env = append(env, "PANDOKOS_VAULT_KEK_TRANSIT_"+kv[0]+"="+kv[1])
+		}
+	}
+	return env
 }
 
 // eventOpts are the settings of the event relay for a test; an empty value keeps the default.
@@ -324,6 +365,17 @@ func usageRows(t *testing.T, d *dbtest.Database, tenantID string) []map[string]a
 
 func startBinary(t *testing.T, o opts) *proc {
 	t.Helper()
+	p := startBinaryNoWait(t, o)
+	p.waitReady(t)
+	return p
+}
+
+// startBinaryNoWait starts the process and returns as soon as it runs, for the tests that start
+// during an outage of the key service: it neither waits for the listening lines nor for readiness.
+//
+//nolint:unused // scaffolding: used from step C8
+func startBinaryNoWait(t *testing.T, o opts) *proc {
+	t.Helper()
 	p := &proc{stdout: &testutil.LogBuffer{}, stderr: &testutil.LogBuffer{}, exited: make(chan struct{}), scheme: "http", client: http.DefaultClient}
 	if o.db == nil {
 		o.db = dbtest.New(t)
@@ -334,13 +386,27 @@ func startBinary(t *testing.T, o opts) *proc {
 	p.db = o.db
 	p.cfg = writeConfig(t, o.level)
 	extra := append(o.db.Env(t), o.sprint32Env(t)...)
+	if o.kekProvider == "transit" {
+		// The key is not a file: the database's key file is not given to the process.
+		kept := extra[:0]
+		for _, kv := range extra {
+			if !strings.HasPrefix(kv, "PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE=") {
+				kept = append(kept, kv)
+			}
+		}
+		extra = kept
+	}
+	if o.kekProvider != "" {
+		extra = append(extra, "PANDOKOS_VAULT_KEK_PROVIDER="+o.kekProvider)
+	}
+	extra = append(extra, o.transit.env()...)
 	for name, v := range map[string]string{"PANDOKOS_REPORTS_ROLLUP_INTERVAL": o.rollupInterval, "PANDOKOS_RETENTION_USAGE_MONTHS": o.retentionUsageMonths,
 		"PANDOKOS_RETENTION_AUDIT_MONTHS": o.retentionAuditMonths} {
 		if v != "" {
 			extra = append(extra, name+"="+v)
 		}
 	}
-	if len(o.kekFiles) > 0 {
+	if len(o.kekFiles) > 0 && o.kekProvider != "transit" {
 		extra = append(extra, "PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE="+o.kekFiles[0].File)
 		var unwrap []string
 		for _, k := range o.kekFiles[1:] {
@@ -404,6 +470,12 @@ func startBinary(t *testing.T, o opts) *proc {
 		}
 		checkLogReference(t, p)
 	})
+	return p
+}
+
+// waitReady waits for the listening log lines and for the readiness of both listeners.
+func (p *proc) waitReady(t *testing.T) {
+	t.Helper()
 	testutil.Eventually(t, 10*time.Second, "the listening log lines", func() bool {
 		for _, l := range completeLines(p.stdout, "listening") {
 			addr, _ := l["address"].(string)
@@ -426,7 +498,6 @@ func startBinary(t *testing.T, o opts) *proc {
 			return resp.StatusCode == 200
 		})
 	}
-	return p
 }
 
 // bootstrap runs "init --key-out" with the environment of the process and returns the key file.

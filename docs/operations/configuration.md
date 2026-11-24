@@ -126,9 +126,22 @@ replaced by `_`.
 | `database.worker.max_connections` | `PANDOKOS_DATABASE_WORKER_MAX_CONNECTIONS` | integer | `5` | Size limit of the worker pool |
 | `database.owner.user` | `PANDOKOS_DATABASE_OWNER_USER` | name | `pandokos_owner` | Database user of `pandokos migrate` |
 | `database.owner.password_file` | `PANDOKOS_DATABASE_OWNER_PASSWORD_FILE` | path | none, required by `migrate` | File with that user's password. Never read by `serve` |
-| `vault.kek.provider` | `PANDOKOS_VAULT_KEK_PROVIDER` | `local` | `local` | Key-encryption key provider; only `local` exists |
+| `vault.kek.provider` | `PANDOKOS_VAULT_KEK_PROVIDER` | `local`, `transit` | `local` | Key-encryption key provider that wraps data keys: `local` (a key file) or `transit` (an OpenBao or HashiCorp Vault transit key) |
 | `vault.kek.local.key_file` | `PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE` | path | none, required by `serve` | File with the key-encryption key: 32 random bytes in standard base64. Create it with `pandokos kek generate` ([vault guide](vault.md)) |
 | `vault.kek.local.unwrap_key_files` | `PANDOKOS_VAULT_KEK_LOCAL_UNWRAP_KEY_FILES` | list of paths | empty | Up to 8 more key-encryption key files the instance can unwrap with: a version being retired, or a new version that other instances already use. Each file is read as `key_file`; separated by commas in the environment; a key equal to `key_file` or to another entry is refused at start, whatever its path. `serve` only ([vault guide](vault.md), "Rotating the key") |
+| `vault.kek.transit.address` | `PANDOKOS_VAULT_KEK_TRANSIT_ADDRESS` | URL | empty | Address of the key service: `https`, or `http` for a loopback host only; with provider `local` it makes the service an unwrap-only provider. `serve` only |
+| `vault.kek.transit.namespace` | `PANDOKOS_VAULT_KEK_TRANSIT_NAMESPACE` | string | empty | Namespace of the key service, sent as `X-Vault-Namespace`. `serve` only |
+| `vault.kek.transit.mount` | `PANDOKOS_VAULT_KEK_TRANSIT_MOUNT` | string | `transit` | Mount path of the transit engine. `serve` only |
+| `vault.kek.transit.key_name` | `PANDOKOS_VAULT_KEK_TRANSIT_KEY_NAME` | string | empty | Name of the transit key, which must exist; required with an address. `serve` only |
+| `vault.kek.transit.tls.ca_file` | `PANDOKOS_VAULT_KEK_TRANSIT_TLS_CA_FILE` | path | empty | PEM file with the only certificate authorities trusted for the key service. `serve` only |
+| `vault.kek.transit.auth.method` | `PANDOKOS_VAULT_KEK_TRANSIT_AUTH_METHOD` | `token`, `approle` | empty | How Pandokos authenticates to the key service; required with an address. `serve` only |
+| `vault.kek.transit.auth.token_file` | `PANDOKOS_VAULT_KEK_TRANSIT_AUTH_TOKEN_FILE` | path | empty | File with the token; required with method `token`. `serve` only |
+| `vault.kek.transit.auth.approle.mount` | `PANDOKOS_VAULT_KEK_TRANSIT_AUTH_APPROLE_MOUNT` | string | `approle` | Mount path of the AppRole auth method. `serve` only |
+| `vault.kek.transit.auth.approle.role_id_file` | `PANDOKOS_VAULT_KEK_TRANSIT_AUTH_APPROLE_ROLE_ID_FILE` | path | empty | File with the AppRole role ID; required with method `approle`. `serve` only |
+| `vault.kek.transit.auth.approle.secret_id_file` | `PANDOKOS_VAULT_KEK_TRANSIT_AUTH_APPROLE_SECRET_ID_FILE` | path | empty | File with the AppRole secret ID; required with method `approle`. `serve` only |
+| `vault.kek.transit.request_timeout` | `PANDOKOS_VAULT_KEK_TRANSIT_REQUEST_TIMEOUT` | duration | `2s` | Time allowed to each request to the key service, `100ms` to `30s`. `serve` only |
+| `vault.kek.transit.max_concurrent_requests` | `PANDOKOS_VAULT_KEK_TRANSIT_MAX_CONCURRENT_REQUESTS` | integer | `32` | Requests in flight to the key service at most, 1 to 1024. `serve` only |
+| `vault.kek.transit.start_timeout` | `PANDOKOS_VAULT_KEK_TRANSIT_START_TIMEOUT` | duration | `0` | Time `serve` waits for the key service at start, up to `1h`; `0` waits without limit. `serve` only |
 | `tenant_deletion.grace_period` | `PANDOKOS_TENANT_DELETION_GRACE_PERIOD` | duration | `168h` | Time between the request of a tenant deletion and its start; the tenant is suspended meanwhile. `0` to `2160h` (90 days); `0` starts the deletion at the worker's next tick. Read when a deletion is requested, `serve` only ([deletion guide](tenant-deletion.md)) |
 | `tenant_deletion.interval` | `PANDOKOS_TENANT_DELETION_INTERVAL` | duration | `1m` | Time between two runs of the deletion job of the worker (`10s` to `1h`), `serve` only |
 | `events.source` | `PANDOKOS_EVENTS_SOURCE` | string | `urn:pandokos` | The CloudEvents `source` of every event of this installation; a URI reference of 1 to 255 printable characters; `serve` only ([events guide](events.md)) |

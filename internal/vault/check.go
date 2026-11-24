@@ -77,3 +77,9 @@ func Check(ctx context.Context, db *store.DB, p KeyProvider) (version string, er
 	}
 	return version, nil
 }
+
+// Probe is the part of Check that needs no database: the round trip of a random probe and the
+// negative probe on the associated data (§5.2). It returns the version p wraps under.
+func Probe(_ context.Context, _ KeyProvider) (version string, err error) {
+	return "", errors.New("not implemented")
+}
