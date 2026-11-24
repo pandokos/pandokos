@@ -221,7 +221,18 @@ func (p *TransitProvider) refresh(ctx context.Context) error {
 	renewable := p.renewable
 	p.tokMu.RUnlock()
 	if renewable {
-		return p.renew(ctx)
+		left, _ := p.tokenLeft()
+		if err := p.renew(ctx); err != nil {
+			return err
+		}
+		p.tokMu.RLock()
+		short := p.granted <= left+time.Second || p.granted*3 <= p.first
+		p.tokMu.RUnlock()
+		if short {
+			// A token at its maximum lifetime is renewed for what it had left: nothing extends it.
+			return errNotExtendable
+		}
+		return nil
 	}
 	return errNotExtendable
 }

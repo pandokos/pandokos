@@ -84,6 +84,27 @@ func TestTransitTokenAuth(t *testing.T) {
 		}
 	})
 
+	t.Run("a renewable token at its maximum lifetime logs that it is expiring", func(t *testing.T) {
+		c := newClock()
+		r := newTransitRig(t, vaulttest.TransitSetup{TTL: 30 * time.Second, MaxTTL: 36 * time.Second, Renewable: true}, withClock(c))
+		r.start(t, true)
+		r.advance(21 * time.Second)
+		testutil.Eventually(t, 2*time.Second, "the first renewal", func() bool { return r.s.Count(transittest.OpRenew) == 1 })
+		// 15 s are left of the 36 s the token may live: the renewal at two thirds of that grants no more.
+		r.advance(11 * time.Second)
+		testutil.Eventually(t, 2*time.Second, "the renewal that extends nothing", func() bool { return r.s.Count(transittest.OpRenew) >= 2 })
+		testutil.Eventually(t, 2*time.Second, "the line key provider token expiring", func() bool {
+			return len(r.logs.Find(t, "key provider token expiring")) >= 1
+		})
+		l := r.logs.Find(t, "key provider token expiring")[0]
+		if l["level"] != "WARN" || l["auth_method"] != "token" {
+			t.Errorf("the line is %v", l)
+		}
+		if n := len(r.logs.Find(t, "key provider authentication failing")); n != 0 {
+			t.Errorf("a token that cannot be extended logged an authentication failure")
+		}
+	})
+
 	t.Run("a token that does not expire is never renewed", func(t *testing.T) {
 		c := newClock()
 		r := newTransitRig(t, vaulttest.TransitSetup{Renewable: true}, withClock(c)) // TTL 0

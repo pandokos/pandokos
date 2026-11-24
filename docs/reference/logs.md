@@ -452,7 +452,8 @@ The key service answered again after the line `key provider unavailable`.
 Level: warn
 Fields: `kek_provider`, `auth_method`, `expires_in_seconds`
 
-The token of the key service is near the end of its lifetime and could not be renewed or obtained again.
+The token of the key service is near the end of its lifetime and could not be renewed or obtained again, or the renewal granted no more than the token had left (a token at its
+maximum lifetime).
 
 ### `key provider authentication failing`
 
