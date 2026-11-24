@@ -3,7 +3,7 @@ id: SPRINT-12.1
 title: External key-encryption key
 epic: EPIC-12
 release: v0.3
-status: in-progress
+status: done
 design: draft 2026-11-24
 ---
 
