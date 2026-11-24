@@ -147,6 +147,31 @@ func TestTransitTokenAuth(t *testing.T) {
 		}
 	})
 
+	t.Run("a 403 with a single slot re-reads the file and sends again", func(t *testing.T) {
+		r := newTransitRig(t, vaulttest.TransitSetup{TTL: time.Hour, Renewable: true}, func(o *vault.TransitOptions) { o.MaxConcurrent = 1 })
+		r.start(t, false)
+		sc := r.s.Namespace("")
+		sc.RevokeToken(r.f.Token)
+		second := sc.Token(transittest.TokenOptions{TTL: time.Hour, Renewable: true})
+		writeFile(t, r.f.TokenFile, second+"\n")
+		var wg sync.WaitGroup
+		errs := make([]error, 3)
+		begin := time.Now()
+		for i := range errs {
+			wg.Add(1)
+			go func() { defer wg.Done(); _, _, errs[i] = r.p.Wrap(ctx(t), dek, aad) }()
+		}
+		wg.Wait()
+		for i, err := range errs {
+			if err != nil {
+				t.Errorf("call %d: %v", i, err)
+			}
+		}
+		if d := time.Since(begin); d > time.Second {
+			t.Errorf("took %v, the lookup waited for a slot", d)
+		}
+	})
+
 	t.Run("a refused lookup fails the start as denied", func(t *testing.T) {
 		r := newTransitRig(t, vaulttest.TransitSetup{})
 		noLookup := r.s.Namespace("").Token(transittest.TokenOptions{NoLookup: true, TTL: time.Hour})
@@ -276,6 +301,37 @@ func TestTransitAppRoleAuth(t *testing.T) {
 		}
 		if ok < 20 {
 			t.Errorf("only %d requests were sent again with the new token", ok)
+		}
+	})
+
+	t.Run("a 403 with every slot taken by refused requests still makes its login and sends again", func(t *testing.T) {
+		for _, tc := range []struct{ max, calls int }{{1, 1}, {1, 3}, {4, 8}} {
+			r := newTransitRig(t, vaulttest.TransitSetup{Method: "approle", TTL: time.Hour}, func(o *vault.TransitOptions) { o.MaxConcurrent = tc.max })
+			r.start(t, false)
+			if _, _, err := r.p.Wrap(ctx(t), dek, aad); err != nil {
+				t.Fatal(err)
+			}
+			r.s.Namespace("").RevokeToken(lastWrapToken(r.s))
+			r.s.Reset()
+			var wg sync.WaitGroup
+			errs := make([]error, tc.calls)
+			begin := time.Now()
+			for i := range errs {
+				wg.Add(1)
+				go func() { defer wg.Done(); _, _, errs[i] = r.p.Wrap(ctx(t), dek, aad) }()
+			}
+			wg.Wait()
+			for i, err := range errs {
+				if err != nil {
+					t.Errorf("max %d, %d calls: call %d: %v", tc.max, tc.calls, i, err)
+				}
+			}
+			if n := r.s.Count(transittest.OpLogin); n != 1 {
+				t.Errorf("max %d, %d calls: %d logins, want 1", tc.max, tc.calls, n)
+			}
+			if d := time.Since(begin); d > time.Second {
+				t.Errorf("max %d, %d calls: took %v, the login waited for a slot", tc.max, tc.calls, d)
+			}
 		}
 	})
 

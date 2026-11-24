@@ -70,35 +70,37 @@ func (p *TransitProvider) do(ctx context.Context, operation, method, path string
 // send is do that also tells the status of the answer (400 matters to its callers). A body given as
 // a []byte is sent as it is; any other is encoded as JSON. The buffer of the request is the
 // caller's to clear when it holds a data key; the buffer the answer is read into is cleared here.
-// The request is sent once; the one exception is the new authentication after a 403 (§5.5).
+// The request is sent once; the one exception is the new authentication after a 403 (§5.5), after
+// which it is sent once more as a request of its own (a slot and a time of its own).
 func (p *TransitProvider) send(ctx context.Context, operation, method, path string, in, out any) (int, error) {
-	start := time.Now()
 	caller := ctx
-	ctx, cancel := context.WithTimeout(ctx, p.opts.RequestTimeout)
-	defer cancel()
-
 	probe, ok := p.gate.admit(p.opts.Now())
 	if !ok {
 		p.record(operation, "refused", 0, false)
 		return 0, &TransitError{Operation: operation, Class: "refused"}
 	}
-	if !p.acquire(ctx) {
-		if probe {
-			p.gate.release()
-		}
-		p.record(operation, "refused", 0, false)
-		return 0, &TransitError{Operation: operation, Class: "refused"}
-	}
-	defer func() { <-p.sem }()
-
 	for attempt := 0; ; attempt++ {
-		sent, overridden := ctx.Value(tokenKey{}).(secret.Secret)
-		xctx := ctx
+		// Each attempt is a request of its own: its own time and its own slot. The slot is not held
+		// while the new authentication runs, for that makes requests that need slots too (§5.5).
+		start := time.Now()
+		actx, cancel := context.WithTimeout(caller, p.opts.RequestTimeout)
+		if !p.acquire(actx) {
+			cancel()
+			if probe {
+				p.gate.release()
+			}
+			p.record(operation, "refused", 0, false)
+			return 0, &TransitError{Operation: operation, Class: "refused"}
+		}
+		sent, overridden := actx.Value(tokenKey{}).(secret.Secret)
+		xctx := actx
 		if !overridden {
 			sent = p.currentToken()
-			xctx = context.WithValue(ctx, tokenKey{}, sent)
+			xctx = context.WithValue(actx, tokenKey{}, sent)
 		}
 		status, class, errClass := p.exchange(xctx, operation, method, path, in, out)
+		<-p.sem
+		cancel()
 		p.record(operation, class, time.Since(start), true)
 		p.mu.Lock()
 		p.lastClass = errClass
@@ -106,7 +108,10 @@ func (p *TransitProvider) send(ctx context.Context, operation, method, path stri
 		p.settle(operation, class, errClass, probe, errors.Is(caller.Err(), context.Canceled))
 		probe = false
 		if status == http.StatusForbidden && attempt == 0 && !overridden && operation != "login" && operation != "lookup" && operation != "renew" {
-			if p.reauth(ctx, sent) && ctx.Err() == nil {
+			rctx, rcancel := context.WithTimeout(caller, p.opts.RequestTimeout)
+			again := p.reauth(rctx, sent)
+			rcancel()
+			if again && caller.Err() == nil {
 				continue
 			}
 		}

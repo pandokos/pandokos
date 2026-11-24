@@ -91,7 +91,8 @@ accepted the field and ignored it would silently drop that property. It was veri
    because the address is the operator's configuration. This **amends ADR 0038 point 7**: the key service is a fourth
    consumer of the guard's transports, a dedicated one.
 10. **One attempt, a deadline, a bound, a refusal.** `Wrap`, `Unwrap`, the description and the identification are sent
-    once; the one exception is the re-send after `403`. Each request has `vault.kek.transit.request_timeout` (2 s)
+    once; the one exception is the re-send after `403`, which is a request of its own: the slot is let go while the new
+    authentication runs (it needs slots too) and taken again for the re-send, with a time of its own. Each request has `vault.kek.transit.request_timeout` (2 s)
     from the wait for a slot to the last byte, at most `max_concurrent_requests` (32) are in flight, a slot that frees
     after nine tenths of the call's time counts as none, and identical concurrent unwraps share one request. After five
     consecutive unavailable answers every call is refused for 5 s without a request, then one is let through; a success
