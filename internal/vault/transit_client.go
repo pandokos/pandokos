@@ -73,16 +73,23 @@ func (p *TransitProvider) do(ctx context.Context, operation, method, path string
 // The request is sent once; the one exception is the new authentication after a 403 (§5.5).
 func (p *TransitProvider) send(ctx context.Context, operation, method, path string, in, out any) (int, error) {
 	start := time.Now()
+	caller := ctx
 	ctx, cancel := context.WithTimeout(ctx, p.opts.RequestTimeout)
 	defer cancel()
 
-	select {
-	case p.sem <- struct{}{}:
-		defer func() { <-p.sem }()
-	case <-ctx.Done():
+	probe, ok := p.gate.admit(p.opts.Now())
+	if !ok {
 		p.record(operation, "refused", 0, false)
 		return 0, &TransitError{Operation: operation, Class: "refused"}
 	}
+	if !p.acquire(ctx) {
+		if probe {
+			p.gate.release()
+		}
+		p.record(operation, "refused", 0, false)
+		return 0, &TransitError{Operation: operation, Class: "refused"}
+	}
+	defer func() { <-p.sem }()
 
 	for attempt := 0; ; attempt++ {
 		sent, overridden := ctx.Value(tokenKey{}).(secret.Secret)
@@ -96,6 +103,8 @@ func (p *TransitProvider) send(ctx context.Context, operation, method, path stri
 		p.mu.Lock()
 		p.lastClass = errClass
 		p.mu.Unlock()
+		p.settle(operation, class, errClass, probe, errors.Is(caller.Err(), context.Canceled))
+		probe = false
 		if status == http.StatusForbidden && attempt == 0 && !overridden && operation != "login" && operation != "lookup" && operation != "renew" {
 			if p.reauth(ctx, sent) && ctx.Err() == nil {
 				continue
@@ -105,6 +114,44 @@ func (p *TransitProvider) send(ctx context.Context, operation, method, path stri
 			return status, nil
 		}
 		return status, &TransitError{Operation: operation, Class: class}
+	}
+}
+
+// acquire waits for a slot. It fails at the deadline of ctx; a slot that frees after nine tenths of
+// the time of the call are gone is as good as none, for the request would have no time left.
+func (p *TransitProvider) acquire(ctx context.Context) bool {
+	start := time.Now()
+	select {
+	case p.sem <- struct{}{}:
+		return true
+	default:
+	}
+	select {
+	case p.sem <- struct{}{}:
+		if dl, ok := ctx.Deadline(); ok && time.Since(start) > 9*(time.Until(dl)+time.Since(start))/10 {
+			<-p.sem
+			return false
+		}
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// settle tells the refusal what a request that was sent came to (§5.8).
+func (p *TransitProvider) settle(operation, class, errClass string, probe, canceled bool) {
+	if canceled && class == "unavailable" {
+		// The caller gave up; that says nothing about the service.
+		class = "ignored"
+	}
+	ev := p.gate.outcome(p.opts.Now(), probe, class)
+	switch {
+	case ev.tripped:
+		p.opts.Logger.Warn("key provider unavailable", "kek_provider", transitName, "phase", "run",
+			"operation", operation, "error_class", errClass, "failures", ev.failures)
+	case ev.recovered:
+		p.opts.Logger.Info("key provider recovered", "kek_provider", transitName, "phase", "run",
+			"outage_seconds", int64(ev.outage/time.Second))
 	}
 }
 

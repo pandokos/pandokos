@@ -35,9 +35,6 @@ const (
 	transitDescribeMaxAge = 10 * time.Second
 )
 
-//nolint:unused // used from step C4
-var _ = [...]any{transitTrip, transitCooldown}
-
 // TransitOptions configures a TransitProvider. Every formatting path prints the redaction marker.
 type TransitOptions struct {
 	Transport      http.RoundTripper // egress.Guard.KeyService; required
@@ -63,6 +60,7 @@ type TransitProvider struct {
 	opts   TransitOptions
 	client *http.Client
 	sem    chan struct{}
+	gate   gate
 	polled bool // the clock is injected: the lifecycle polls it
 
 	tokMu     sync.RWMutex
@@ -85,6 +83,9 @@ type TransitProvider struct {
 	lastExpiring time.Time
 	lastAuthLog  time.Time
 	authFails    int
+
+	fmu     sync.Mutex // the unwraps in flight
+	flights map[[32]byte]*flight
 
 	mu         sync.Mutex
 	desc       transitDescription
@@ -167,6 +168,7 @@ func NewTransitProvider(o TransitOptions) (*TransitProvider, error) {
 		sem:      make(chan struct{}, o.MaxConcurrent),
 		polled:   polled,
 		wake:     make(chan struct{}, 1),
+		flights:  map[[32]byte]*flight{},
 		verified: map[string]int{},
 		counts:   map[TransitCount]int64{},
 	}, nil
@@ -196,6 +198,7 @@ func transitPathOK(s string) bool {
 // Start authenticates, describes the key and identifies its latest version. It may be called
 // again after a failure; it resets the refusal.
 func (p *TransitProvider) Start(ctx context.Context) error {
+	p.gate.reset()
 	if err := p.authenticate(ctx); err != nil {
 		return err
 	}
@@ -307,11 +310,94 @@ func transitDecode(b []byte) ([]byte, bool) {
 	return out[:n], true
 }
 
-// Unwrap decrypts a value made by Wrap under version.
+// Unwrap decrypts a value made by Wrap under version. Identical concurrent calls (the same
+// version, wrapped key and associated data) share one request and each gets its own copy.
 func (p *TransitProvider) Unwrap(ctx context.Context, version string, wrapped, aad []byte) ([]byte, error) {
 	if len(wrapped) < 29 || len(wrapped) > 1024 || wrapped[0] != transitWrapFormat {
 		return nil, ErrUnwrap
 	}
+	h := sha256.New()
+	// Every part is delimited by its length, so that no two requests hash the same bytes.
+	h.Write([]byte(strconv.Itoa(len(version)) + ":"))
+	h.Write([]byte(version))
+	h.Write([]byte{0})
+	h.Write([]byte(strconv.Itoa(len(wrapped)) + ":"))
+	h.Write(wrapped)
+	h.Write(aad)
+	var key [32]byte
+	h.Sum(key[:0])
+
+	p.fmu.Lock()
+	f := p.flights[key]
+	if f == nil {
+		fctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+		f = &flight{done: make(chan struct{}), cancel: cancel}
+		p.flights[key] = f
+		// The copies of the arguments belong to the flight: the caller that started it may leave.
+		version, wrapped, aad := version, bytes.Clone(wrapped), bytes.Clone(aad)
+		go func() {
+			defer cancel()
+			defer clear(wrapped)
+			dk, err := p.unwrapOnce(fctx, version, wrapped, aad)
+			p.fmu.Lock()
+			f.dk, f.err = dk, err
+			close(f.done)
+			if p.flights[key] == f {
+				delete(p.flights, key)
+			}
+			if f.refs == 0 {
+				clear(f.dk)
+			}
+			p.fmu.Unlock()
+		}()
+	}
+	f.refs++
+	p.fmu.Unlock()
+
+	select {
+	case <-f.done:
+		p.fmu.Lock()
+		defer p.fmu.Unlock()
+		f.refs--
+		var out []byte
+		if f.err == nil {
+			out = bytes.Clone(f.dk)
+		}
+		if f.refs == 0 {
+			clear(f.dk)
+		}
+		return out, f.err
+	case <-ctx.Done():
+		p.fmu.Lock()
+		defer p.fmu.Unlock()
+		f.refs--
+		if f.refs == 0 {
+			select {
+			case <-f.done:
+				clear(f.dk)
+			default:
+				// Nobody waits for it any more: no caller can join a flight that is being ended.
+				if p.flights[key] == f {
+					delete(p.flights, key)
+				}
+				f.cancel()
+			}
+		}
+		return nil, &TransitError{Operation: "unwrap", Class: "unavailable"}
+	}
+}
+
+// flight is an unwrap in progress and the callers that wait for its answer.
+type flight struct {
+	done   chan struct{}
+	cancel context.CancelFunc
+	refs   int // the callers that have not yet taken the answer; guarded by fmu
+	dk     []byte
+	err    error
+}
+
+// unwrapOnce makes the request of Unwrap.
+func (p *TransitProvider) unwrapOnce(ctx context.Context, version string, wrapped, aad []byte) ([]byte, error) {
 	n, err := p.resolve(ctx, version)
 	if err != nil {
 		return nil, err
@@ -435,7 +521,7 @@ func (p *TransitProvider) Stats() TransitStats {
 		m[k] = v
 	}
 	p.mu.Unlock()
-	st := TransitStats{Requests: m, Up: true}
+	st := TransitStats{Requests: m, Up: p.gate.up()}
 	st.TokenTTL, st.TokenExpires = p.tokenLeft()
 	return st
 }
@@ -519,3 +605,104 @@ func (TransitOptions) MarshalJSON() ([]byte, error) {
 
 // MarshalText returns the redaction marker.
 func (TransitOptions) MarshalText() ([]byte, error) { return []byte(secret.Redacted), nil }
+
+// gate is the refusal of §5.8: after transitTrip consecutive answers of class unavailable nothing is
+// sent for transitCooldown; then one request is let through, and its answer ends the refusal or
+// renews it.
+type gate struct {
+	mu          sync.Mutex
+	consecutive int
+	openUntil   time.Time // zero: requests are sent
+	probing     bool
+	since       time.Time
+	lastLog     time.Time
+}
+
+// gateEvent is what an outcome did to the gate, for the log.
+type gateEvent struct {
+	tripped, recovered bool
+	failures           int
+	outage             time.Duration
+}
+
+func (g *gate) reset() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.consecutive, g.openUntil, g.probing, g.since, g.lastLog = 0, time.Time{}, false, time.Time{}, time.Time{}
+}
+
+// up reports whether requests are sent.
+func (g *gate) up() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.openUntil.IsZero()
+}
+
+// admit decides whether a request may be sent; probe marks the one that is let through after the
+// refusal.
+func (g *gate) admit(now time.Time) (probe, ok bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	switch {
+	case g.openUntil.IsZero():
+		return false, true
+	case now.Before(g.openUntil) || g.probing:
+		return false, false
+	}
+	g.probing = true
+	return true, true
+}
+
+// release gives the probe back when it was not sent.
+func (g *gate) release() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.probing = false
+}
+
+// outcome records the class of the answer of a request that was sent. "ignored" is a request that
+// says nothing about the service (the caller gave up).
+func (g *gate) outcome(now time.Time, probe bool, class string) (ev gateEvent) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if probe {
+		g.probing = false
+	}
+	switch class {
+	case "ignored":
+	case "unavailable":
+		g.consecutive++
+		ev.failures = g.consecutive
+		switch {
+		case g.openUntil.IsZero() && g.consecutive >= transitTrip:
+			g.openUntil, g.since, g.lastLog = now.Add(transitCooldown), now, now
+			ev.tripped = true
+		case probe:
+			g.openUntil = now.Add(transitCooldown)
+			if now.Sub(g.lastLog) >= transitWarnEvery {
+				g.lastLog = now
+				ev.tripped = true
+			}
+		}
+	case "ok":
+		g.consecutive = 0
+		ev.recovered, ev.outage = g.close(now)
+	default:
+		// An answer about something else than availability: it does not count, but the one that
+		// was let through proves that the service answers.
+		if probe {
+			ev.recovered, ev.outage = g.close(now)
+		}
+	}
+	return ev
+}
+
+func (g *gate) close(now time.Time) (bool, time.Duration) {
+	if g.openUntil.IsZero() {
+		return false, 0
+	}
+	outage := now.Sub(g.since)
+	g.openUntil, g.since, g.probing = time.Time{}, time.Time{}, false
+	g.consecutive = 0
+	return true, outage
+}
