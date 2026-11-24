@@ -2,6 +2,7 @@ package outbox
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -124,15 +125,21 @@ func TestRelayUnwrapCache(t *testing.T) {
 		expireLease(t, d, dest)
 		r.drain()
 		got, _ := recv.ids("/t")
+		// recv.ids is sorted and the requests of a wave of the relay may arrive in any order, so
+		// the set of events is compared; the cursor, which moves in sequence order, is checked below.
 		want := eventIDs(t, d, tid)
+		sort.Strings(want)
 		if len(got) != len(want) {
 			t.Fatalf("%d events delivered, want %d", len(got), len(want))
 		}
 		for i := range want {
 			if got[i] != want[i] {
-				t.Errorf("event %d was delivered as %s, want %s: the order was not kept", i, got[i], want[i])
+				t.Errorf("event %d was delivered as %s, want %s", i, got[i], want[i])
 				break
 			}
+		}
+		if cur := readDest(t, d, dest).Cursor; cur != int64(len(want)) {
+			t.Errorf("the cursor is at %d, want %d", cur, len(want))
 		}
 	})
 }
