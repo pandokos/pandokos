@@ -90,3 +90,4 @@ disk.
 
 - 2026-11-23: proposed with sprint 6.3.
 - 2026-11-23: accepted by the maintainer after review.
+- 2026-11-24: sprint 12.1 answers the consequence about automation: a key service makes it possible and the product does not do it; for a key service "its file destroyed" reads "made undecryptable and trimmed in the service" ([ADR 0073](0073-the-transit-key-provider.md)).

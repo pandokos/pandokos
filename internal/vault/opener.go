@@ -291,6 +291,8 @@ func (o *Opener) dataKey(ctx context.Context, tid tenant.ID, version int32, epoc
 	switch {
 	case errors.Is(err, ErrUnwrap):
 		return nil, row.KekVersion, "data_key_unwrap", fmt.Errorf("%w: the data key does not unwrap", ErrUndecryptable)
+	case errors.Is(err, ErrProviderUnavailable): // a key service out of reach or refusing
+		return nil, row.KekVersion, "kek_provider_unavailable", fmt.Errorf("%w: the key provider is not available", ErrUnavailable)
 	case err != nil: // an unknown version or a provider out of reach; the cause text is not kept
 		return nil, row.KekVersion, "kek_unavailable", fmt.Errorf("%w: the key-encryption key is not available", ErrUnavailable)
 	}

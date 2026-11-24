@@ -271,6 +271,16 @@ func TestEventDocs(t *testing.T) {
 			t.Errorf("the failure reference has no row for %q", subject)
 		}
 	}
+	// Sprint 12.1: the event relay row cites the test of the key service's cache.
+	relay := false
+	for _, line := range strings.Split(doc, "\n") {
+		if strings.HasPrefix(line, "| Event relay") {
+			relay = strings.Contains(line, "`TestRelayUnwrapCache`") && strings.Contains(strings.ToLower(line), "key service")
+		}
+	}
+	if !relay {
+		t.Error("the event relay row does not name the key service and cite TestRelayUnwrapCache")
+	}
 	// The keys, the lines and the instruments of section 5.15.
 	cfg := read(t, "docs/operations/configuration.md")
 	n := 0

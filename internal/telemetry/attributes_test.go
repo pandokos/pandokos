@@ -132,6 +132,10 @@ func closedValue(instrument, key, value string, catalogue map[string]bool) bool 
 		return in(value, []string{"scheduled", "running"})
 	case "pandokos.kek.state":
 		return in(value, []string{"active", "retiring", "retired"})
+	case "pandokos.kek.operation":
+		return in(value, telemetry.KeyOperations)
+	case "pandokos.kek.outcome":
+		return in(value, telemetry.KeyOutcomes)
 	case "pandokos.telemetry.signal":
 		return in(value, []string{"traces", "metrics"})
 	case "pandokos.result":

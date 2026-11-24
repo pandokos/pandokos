@@ -170,7 +170,7 @@ SOW 0.1; *new* marks requirements added in this revision.
 | VLT-09 | Secrets are encrypted at rest with authenticated encryption under a per-tenant data key, itself wrapped by a key-encryption key that is never stored in the database | M | R1 | VAULT-14, VAULT-15, VAULT-16, VAULT-19 |
 | VLT-10 | The key-encryption key can be rotated by re-wrapping data keys, with no action by tenants. Key versions are recorded | M | R2 | VAULT-17, VAULT-18 |
 | VLT-11 | Deleting a tenant destroys its data key, so residual ciphertext can no longer be decrypted: in the database at once, and in backups once the key-encryption key version that wrapped the data key is retired | M | R2 | VAULT-09 |
-| VLT-12 | The key-encryption key comes from a pluggable provider: a local key file by default, an external KMS or transit service optionally | M (local) / S (external) | R1 / R3 | VAULT-20 |
+| VLT-12 | The key-encryption key comes from a pluggable provider: a local key file by default, an external KMS or transit service optionally (external: the transit engine of OpenBao and HashiCorp Vault, sprint 12.1; cloud key services remain issue #75) | M (local) / S (external) | R1 / R3 | VAULT-20 |
 | VLT-13 | Database backups contain only ciphertext and wrapped keys. The key-encryption key is backed up separately, and the procedure is documented | M | R1 | VAULT-21 |
 | VLT-14 | Secrets never appear in logs, traces, metrics, error messages, events or diagnostics. Automated tests plant canary secrets and search every output for them | M | R1 | VAULT-13, SEC-SC-07 |
 | VLT-15 | Each use of a credential is attributable to a request, tenant and caller | M | R1 | VAULT-12 |

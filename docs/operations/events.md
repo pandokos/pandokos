@@ -124,7 +124,7 @@ event `id` as its idempotency key. Events of a destination are sent in order in 
 sent in parallel and a replay is out of order.
 
 **A failure that is not the destination's** (the database, or a signing secret that cannot be opened because the
-key-encryption key is unavailable) consumes no attempt: the round is abandoned, the lease expires and the line
+key-encryption key is unavailable, the key file or the key service) consumes no attempt: the round is abandoned, the lease expires and the line
 `event relay failing` says so. Tenants that are `suspended` still have their pending events delivered; a tenant
 that is being deleted has them removed (section 8).
 
@@ -217,6 +217,10 @@ operator's other systems know the tenant by: the platform sets it with `tenant c
   and the platform learns of the deletion by `tenant.deleted`. A round in flight for a closed tenant settles
   nothing. See the [deletion guide](tenant-deletion.md).
 - Destroying the tenant's data key makes the signing secrets unreadable for good.
+- With a key service the relay opens signing secrets through a cache of unwrapped data keys: one request to
+  the service per destination and `cache.data_key_ttl` instead of one per round and secret. During an outage
+  of the service a round fails without consuming an attempt and events wait in order
+  ([external key guide](external-key.md#9-when-the-service-is-slow-or-away)).
 
 ## 9. Keys
 
@@ -245,7 +249,7 @@ The seven instruments of [metrics](../reference/metrics.md) carry no tenant, des
 | `pandokos.events.lag` | above your tolerance (minutes) for a sustained time | An enabled destination has not settled the oldest event: a receiver is down or slower than the traffic. The age of the oldest unsettled event, 0 when none |
 | `pandokos.events.dead_letters` | any increase | Events were parked: a receiver refused them ten times |
 | `pandokos.events.expired` | any increase | Events were removed before an enabled destination received them: raise `events.retention`, fix the receiver, or pull |
-| `pandokos.events.relay.passes` with `pandokos.result=failed` | a run of failures | The database, or the key file, is unavailable to the worker |
+| `pandokos.events.relay.passes` with `pandokos.result=failed` | a run of failures | The database, or the key file or key service, is unavailable to the worker |
 | `pandokos.events.destinations` with `pandokos.destination.state=failing` | not zero for long | Receivers that fail |
 
 `pandokos.events.deliveries` by outcome and `pandokos.events.delivery.duration` show what failures are made of.

@@ -78,7 +78,7 @@ func TestUpgradeWithRules(t *testing.T) {
 			}
 		}
 		ready := completeLines(p.stdout, "vault ready")
-		if len(ready) != 1 || ready[0]["kek_activation"] != "unchanged" || ready[0]["kek_version"] != d.KEKVersion(t) {
+		if len(ready) != 1 || ready[0]["kek_activation"] != "unchanged" || ready[0]["kek_version"] != d.KEKVersion(t) || ready[0]["kek_unwrap_provider"] != "" {
 			t.Errorf("%s: vault ready lines %v, want one with kek_activation unchanged and the version of the installation's key", label, ready)
 		}
 		if got := p.stop(t); got != 0 {

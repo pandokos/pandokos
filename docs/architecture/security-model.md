@@ -61,7 +61,12 @@ flowchart LR
 3. **Process to database.** Each role connects with its own least-privileged database role. The
    database enforces tenant isolation independently of the application.
 4. **Process to KEK provider.** Whoever holds the key-encryption key and the database can decrypt
-   every credential. The two are stored and backed up apart.
+   every credential. The two are stored and backed up apart. With a key service this boundary is a network
+   one: Pandokos holds a token or an AppRole in files, not the key, and sends the service 32-byte values to wrap
+   and unwrap with a digest of the associated data, over `https` with the certificate verified, through a
+   transport of its own and no proxy. Whoever holds the token and the database can unwrap every data key
+   **while the token lives**, and the service sees no tenant, credential or caller
+   ([external key guide](../operations/external-key.md), [ADR 0073](../adr/0073-the-transit-key-provider.md)).
 5. **Gateway to provider.** Outbound only, to hosts in the catalogue, with certificate
    verification.
 6. **Identity provider.** Trusted to assert identities, and, for platform-level issuers, tenants.
@@ -151,8 +156,13 @@ A tenant that needs separation from the operator's infrastructure needs its own 
 own key-encryption key held where it decides.
 
 Pandokos reduces this exposure by keeping plaintext in memory for a bounded time, by not storing
-the key-encryption key with the data, by supporting an external KMS so the key never reaches a
+the key-encryption key with the data, by supporting a transit key service (OpenBao or HashiCorp Vault) so the key never reaches a
 disk the operator's database administrators can read, and by auditing every administrative act.
+With a key service, an operator of the hosts and the database who does not hold the service's token (or its
+AppRole files) opens nothing: a copy of the disks, the backups and the database is ciphertext. The one who
+holds the token and the database can unwrap every data key for as long as the token lives, and the one who
+runs the service holds the key itself; a token that is short-lived and renewed, a policy that cannot export the
+key, and the service's own audit log are what narrows that.
 
 ## Threats and controls
 
@@ -181,6 +191,8 @@ disk the operator's database administrators can read, and by auditing every admi
 | A signed-in user reaches functions beyond their role | The API authorizes every call. What `/v1/me` reports comes from the same permissions and is tested against them (AZ-11) |
 | A session is used to call models | Sessions are accepted only on the administration listener; no code of the gateway reads a cookie and its database role has no privilege on any table of people or sessions, in any session (IAM-22) |
 | The database or a backup is copied | Credentials are ciphertext under per-tenant keys wrapped by a key that is not in the database (VLT-09, VLT-13). Virtual keys are stored as hashes |
+| The token of the key service leaks | With the database it unwraps every data key while it lives, and by itself it opens nothing. The policy grants encrypt, decrypt, the HMAC for identifiers, a description of the key and the token's own lookup and renewal, and nothing that rotates, exports, trims or deletes; an AppRole gives short tokens; secrets are files and are never logged or put in an error (canary tests search every output and the requests the service received). The response is to revoke it, give new credentials, rotate the key, let the worker re-wrap and trim the old versions ([external key guide](../operations/external-key.md#11-loss-and-compromise)) |
+| A key version is destroyed too early | Raising `min_decryption_version` or trimming a version the database still needs: `serve` refuses to start and names the version, and while running the tenants under it get `503`; raising is reversible until a trim. Pandokos never does either; the guide's order is rotate, restart, wait for `key rotation complete` and no pending erasure, back up, then raise and trim ([external key guide](../operations/external-key.md#8-erasure-in-backups)). A version trimmed too early is the lost-key case |
 | The key-encryption key leaks | Rotation by re-wrapping (VLT-10): a new key file becomes the active version at start, the worker re-wraps every data key and retires the old version, and the old file is destroyed ([vault guide](../operations/vault.md#6a-rotating-the-key)). The leak alone exposes nothing without the database; a backup taken before the rotation stays readable with the leaked key until the backups expire or are destroyed |
 | A tenant leaves | A staged deletion run by the worker: the tenant is suspended during a grace period, then closed to new rows, its access removed, its data key and credentials destroyed, its configuration removed, its ledger and audit log kept with every identifier of a person or workload replaced by a pseudonym, and a completion record written in the platform's log that `pandokos tenant deletion verify` checks. Nothing global and nothing of another tenant is touched, and the platform reads no usage ([deletion guide](../operations/tenant-deletion.md), [ADR 0067](../adr/0067-tenant-deletion-stages-closed-tenants-and-kept-records.md)) |
 | A ciphertext is copied onto another tenant's row | The tenant and credential IDs are bound into the ciphertext as associated data, so decryption fails (VLT-07) |
@@ -249,7 +261,7 @@ maintainer accepted it until then on 2026-11-23.
 
 ```mermaid
 flowchart TB
-    kek[Key-encryption key<br/>outside the database<br/>file or KMS] --> dek1[Tenant A data key<br/>wrapped, in the database]
+    kek[Key-encryption key<br/>outside the database<br/>file or transit key service] --> dek1[Tenant A data key<br/>wrapped, in the database]
     kek --> dek2[Tenant B data key<br/>wrapped, in the database]
     dek1 --> c1[Credential ciphertexts of A]
     dek2 --> c2[Credential ciphertexts of B]

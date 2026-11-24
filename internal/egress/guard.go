@@ -1,6 +1,7 @@
 package egress
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -35,6 +37,11 @@ type Guard struct {
 	privateRT http.RoundTripper
 
 	blockedCount [6]atomic.Int64 // by reason, in the order of BlockReasons
+
+	rootCAs  *x509.CertPool
+	connect  time.Duration
+	mu       sync.Mutex
+	keyTrans []*http.Transport // the transports handed out by KeyService
 }
 
 // blocked counts a refusal and returns it as an error.
@@ -74,7 +81,7 @@ func newGuard(o Options, classify func(netip.Addr) AddrClass) (*Guard, error) {
 			return nil, errors.New("egress: the proxy must be an http or https URL with a host")
 		}
 	}
-	g := &Guard{classify: classify}
+	g := &Guard{classify: classify, rootCAs: o.RootCAs, connect: o.ConnectTimeout}
 
 	// Without a proxy the public dialer reaches public addresses only. With one, the dialled
 	// address is the proxy's, which is the operator's and often internal.
@@ -147,10 +154,59 @@ func (g *Guard) Transport(private bool) http.RoundTripper {
 	return g.publicRT
 }
 
+// KeyService returns a transport for the key service of the vault: its own connection pool,
+// the private class, no proxy, no redirect, TLS 1.2 or later. roots, when not nil, are the only
+// authorities trusted; nil means the roots of the guard.
+func (g *Guard) KeyService(roots *x509.CertPool) http.RoundTripper {
+	if roots == nil {
+		roots = g.rootCAs
+	}
+	t := g.transport(Options{ConnectTimeout: g.connect, RootCAs: roots}, g.privateControl, false)
+	t.Proxy = nil
+	t.MaxIdleConns = 32
+	t.MaxIdleConnsPerHost = 32
+	// http is for a loopback service only (§5.6): the name of the host is the operator's, what it
+	// resolves to is not checked by the configuration, so the connection of an http request is
+	// refused unless it goes to a loopback address.
+	open := &net.Dialer{Timeout: g.connect, KeepAlive: 30 * time.Second, Control: g.privateControl}
+	loop := &net.Dialer{Timeout: g.connect, KeepAlive: 30 * time.Second, Control: g.loopbackControl}
+	t.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		if ctx.Value(loopbackOnlyKey{}) != nil {
+			return loop.DialContext(ctx, network, address)
+		}
+		return open.DialContext(ctx, network, address)
+	}
+	g.mu.Lock()
+	g.keyTrans = append(g.keyTrans, t)
+	g.mu.Unlock()
+	return &guardedTransport{g: g, tr: t, private: true, httpLoopback: true}
+}
+
+// loopbackOnlyKey marks, in the context of a request, a connection that may only go to loopback.
+type loopbackOnlyKey struct{}
+
+// loopbackControl is the control hook for the http connections of the key service: the address
+// must pass the private class and be a loopback address.
+func (g *Guard) loopbackControl(network, address string, c syscall.RawConn) error {
+	if err := g.privateControl(network, address, c); err != nil {
+		return err
+	}
+	ap, err := netip.ParseAddrPort(address)
+	if err != nil || !ap.Addr().Unmap().IsLoopback() {
+		return g.blocked(BlockPrivateAddress, ap.Addr().Unmap().WithZone(""))
+	}
+	return nil
+}
+
 // CloseIdleConnections closes the idle connections of both transports.
 func (g *Guard) CloseIdleConnections() {
 	g.public.CloseIdleConnections()
 	g.private.CloseIdleConnections()
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for _, t := range g.keyTrans {
+		t.CloseIdleConnections()
+	}
 }
 
 // guardedTransport runs the pre-flight checks before handing the request to the transport.
@@ -158,6 +214,8 @@ type guardedTransport struct {
 	g       *Guard
 	tr      *http.Transport
 	private bool
+
+	httpLoopback bool // an http request may only connect to a loopback address (the key service)
 }
 
 // RoundTrip refuses, before any connection attempt, a scheme the class does not allow, user
@@ -168,6 +226,9 @@ func (t *guardedTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 			_ = req.Body.Close()
 		}
 		return nil, err
+	}
+	if t.httpLoopback && req.URL.Scheme == "http" {
+		req = req.WithContext(context.WithValue(req.Context(), loopbackOnlyKey{}, true))
 	}
 	return t.tr.RoundTrip(req)
 }

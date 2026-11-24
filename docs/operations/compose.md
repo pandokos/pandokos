@@ -181,5 +181,10 @@ expected `configuration warning` about the permissions of `vault.kek.local.key_f
 - **Remove everything.** `docker compose down -v` removes the containers and the volumes: the
   database and the CLI keys are destroyed.
 
+- **A key service instead of the key file.** The Compose files run no key service: a development-mode
+  OpenBao or HashiCorp Vault loses its keys at a restart, which is the worst example to ship. To use one you
+  run, set the `vault.kek.transit.*` settings and mount the token files; the steps are in the [external key
+  guide](external-key.md).
+
 Compose, PostgreSQL and the images are pinned or updated by Dependabot; the Compose reference is
 exercised by CI (`go test -tags compose ./test/compose/`, which needs `PANDOKOS_TEST_IMAGE`).

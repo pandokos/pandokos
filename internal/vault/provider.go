@@ -21,6 +21,12 @@ var (
 	// ErrUnavailable means the key material needed is out of reach: the provider cannot serve
 	// a version, or a data key does not unwrap. The administration API answers `unavailable`.
 	ErrUnavailable = errors.New("vault: the key material is unavailable")
+	// ErrProviderUnavailable means the key provider could not be reached or refused to answer for
+	// a reason that may pass: the caller tries again later. It is also an ErrUnavailable.
+	ErrProviderUnavailable = errors.New("vault: the key provider cannot be reached")
+	// ErrAADNotBound means the provider unwrapped a key under other associated data than it was
+	// wrapped with.
+	ErrAADNotBound = errors.New("vault: the key provider does not bind associated data")
 )
 
 // KeyProvider wraps and unwraps data keys with a key-encryption key that it never reveals.

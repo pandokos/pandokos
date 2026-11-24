@@ -43,6 +43,7 @@ type srvOpts struct {
 	host    string // the address to listen on; default 127.0.0.1
 	handler http.HandlerFunc
 	tls     func(*tls.Config)
+	expired bool // a certificate that ended an hour ago
 }
 
 func startTLS(t *testing.T, o srvOpts) *srv {
@@ -60,7 +61,11 @@ func startTLS(t *testing.T, o srvOpts) *srv {
 	if o.dns == nil && o.ips == nil {
 		o.dns, o.ips = []string{"localhost"}, []net.IP{net.ParseIP("127.0.0.1")}
 	}
-	certPEM, keyPEM, err := o.ca.Issue(o.dns, o.ips, time.Now().Add(-time.Minute), time.Now().Add(time.Hour))
+	from, until := time.Now().Add(-time.Minute), time.Now().Add(time.Hour)
+	if o.expired {
+		from, until = time.Now().Add(-3*time.Hour), time.Now().Add(-time.Hour)
+	}
+	certPEM, keyPEM, err := o.ca.Issue(o.dns, o.ips, from, until)
 	if err != nil {
 		t.Fatal(err)
 	}

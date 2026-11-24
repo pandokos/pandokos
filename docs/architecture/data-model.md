@@ -471,6 +471,20 @@ only under `pandokos.erasure`; only functions of migrations 0015 and 0016 set th
 **Key versions.** `kek_version` has a `state` (`active`, `retiring`, `retired`), `activated_at` and
 `retired_at`; one row at most is active; a data key is created and re-wrapped under the active version
 only; versions are written by `kek_activate` and `kek_retire` only ([vault guide](../operations/vault.md)).
+No table or column was added for a key service.
+
+**Formats of `tenant_data_key.wrapped_key`.** The first byte names the format: `0x01` is the local provider's
+(`0x01 ‖ nonce(12) ‖ ciphertext ‖ tag(16)`, sealed by the process under a key file), `0x02` is the transit
+provider's (`0x02 ‖ payload`, where the payload is the base64-decoded third field of the service's ciphertext:
+60 bytes for a 32-byte data key; the check of the table allows 32 to 1024 bytes). The version of the service's
+key is not stored twice: it is in `kek_version`.
+
+**Identifier forms of `kek_version.id`.** `local-` and 16 hexadecimal characters of a SHA-256 of the key file's
+key, or `transit-`, 16 hexadecimal characters of an HMAC-SHA-256 that the key service computes under that key
+version, `-v` and the version's number (`transit-5b2fee9a2463f150-v1`). Both satisfy the same check and name
+their provider, which is how a version is routed to the provider that owns it
+([ADR 0033](../adr/0033-vault-formats-and-key-identifiers.md),
+[ADR 0073](../adr/0073-the-transit-key-provider.md)).
 
 ## Testing isolation
 

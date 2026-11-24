@@ -72,6 +72,10 @@ Kinds: `H` histogram, `C` counter, `G` gauge, `OC` counter read at collection. A
 | `pandokos.events.destinations` | M56 | G | `{destination}` | `pandokos.destination.state` | `pandokos_events_destinations` | Refreshed once a minute by the relay: destinations by state; failing is a subset of enabled. |
 | `pandokos.events.lag` | M57 | G | `s` | none | `pandokos_events_lag_seconds` | Refreshed once a minute by the relay: the age of the oldest event that an enabled destination has not settled; 0 when none. |
 | `pandokos.events.relay.passes` | M58 | OC | `{pass}` | `pandokos.result` | `pandokos_events_relay_passes_total` | Read at collection: passes of the event relay that succeeded or failed. |
+| `pandokos.vault.provider.requests` | M59 | OC | `{request}` | `pandokos.kek.operation`, `pandokos.kek.outcome` | `pandokos_vault_provider_requests_total` | Read at collection: requests to the key service by operation and outcome; `refused` ones were not sent. Present only with a transit key provider. |
+| `pandokos.vault.provider.request.duration` | M60 | H | `s` | `pandokos.kek.operation` | `pandokos_vault_provider_request_duration_seconds` | The time of one request that was sent to the key service. |
+| `pandokos.vault.provider.up` | M61 | G | `{provider}` | none | `pandokos_vault_provider_up` | Read at collection: 1 while requests are sent to the key service, 0 while the refusal is in force. |
+| `pandokos.vault.provider.token.ttl` | M62 | G | `s` | none | `pandokos_vault_provider_token_ttl_seconds` | Read at collection: what is left of the lifetime of the token of the key service; absent for a token without a lifetime. |
 
 `target_info` (the resource of the process as labels, value 1) is added by the scrape endpoint and by the OTLP receiver of Prometheus.
 
@@ -127,6 +131,8 @@ The duration of the HTTP server uses the boundaries of the GenAI durations, not 
 | `pandokos.deletion.step` | `begin`, `access`, `secrets`, `configuration`, `usage`, `audit`, `complete` |
 | `pandokos.deletion.state` | `scheduled`, `running` |
 | `pandokos.kek.state` | `active`, `retiring`, `retired` |
+| `pandokos.kek.operation` | `wrap`, `unwrap`, `describe`, `identify`, `lookup`, `renew`, `login` |
+| `pandokos.kek.outcome` | `ok`, `unavailable`, `denied`, `not_found`, `rejected`, `refused` |
 | `pandokos.result` | `written`, `rejected`, `lost` (ledger); `ok`, `blocked`, `timeout`, `status`, `too_large`, `invalid_document`, `issuer_mismatch`, `no_usable_key`, `network` (issuer fetches); `ok`, `failed`, `locked`, `disabled`, `unavailable`, `refused` (sign-in); `ok`, `failed` (reconciliations and rule loads); `recorded`, `dropped`, `failed` (limit events); `written`, `skipped`, `failed` (unlimited traffic); `ok`, `failed` (usage rollup passes, retention runs, deletion steps and re-wraps); `complete`, `aborted` (exports) |
 | `pandokos.ledger.state` | `in_use`, `queued` |
 | `pandokos.egress.reason` | `not_tcp`, `unparsable`, `forbidden_address`, `private_address`, `scheme`, `user_info` |

@@ -54,6 +54,12 @@ permission for other users makes `serve` log the warning `configuration warning`
 `vault.kek.local.key_file`; it still starts. The key is never in the image and never in a
 configuration file. Keep a copy of it separately from the database backups.
 
+To keep the key in OpenBao or HashiCorp Vault instead, set `PANDOKOS_VAULT_KEK_PROVIDER=transit` and the
+`PANDOKOS_VAULT_KEK_TRANSIT_*` variables, and mount the token (or the role ID and secret ID) as files; no key
+file is needed. The image does not change and no overlay is provided; the commands to prepare the service, the
+policy and the move are in the [external key guide](external-key.md). A container that waits for the service at
+start listens on nothing until it answers, so give its health check a start-up allowance.
+
 ## Prices at start
 
 At its first start against a database, and whenever the image carries a newer price list than the one

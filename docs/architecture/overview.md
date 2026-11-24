@@ -45,7 +45,7 @@ flowchart LR
     prov[Model providers]
     pg[(PostgreSQL)]
     vk[(Valkey<br/>optional)]
-    kms[KEK provider<br/>file or KMS]
+    kms[KEK provider<br/>file or transit key service]
     otel[OTLP collector]
     evt[Event receiver<br/>for example billing]
 
@@ -255,7 +255,7 @@ write happens after the response has been delivered.
 |---|---|---|---|
 | PostgreSQL 16+ | always | Everything durable: tenants, identities, roles, catalogue, encrypted credentials, limits, usage ledger, audit log, outbox | System of record. Row-level security on every tenant table ([ADR 0004](../adr/0004-postgresql-and-rls.md)) |
 | Valkey (Redis protocol) | with more than one gateway instance | Rate-limit windows, budget reservations (planned, epic 8: counters are in process today) | Never the source of truth: counters are rebuilt from the ledger ([ADR 0012](../adr/0012-limits-and-budget-reservation.md)) |
-| KEK provider | always | The key-encryption key | A local key file by default; KMS or transit service optionally |
+| KEK provider | always | The key-encryption key | A local key file by default; an OpenBao or HashiCorp Vault transit key optionally ([external key guide](../operations/external-key.md)); cloud key services: issue #75 |
 | Process memory | — | Caches of principals, catalogue, data keys, decrypted credentials | Bounded lifetime; see below |
 
 There is no message broker. Events for external systems leave through a transactional outbox in
@@ -332,7 +332,7 @@ test that hold each row.
 | PostgreSQL | Continues from caches until they expire, then refuses; the caches are not emptied when the notification connection is lost, so the bound is their lifetimes. Usage records wait in a bounded memory buffer whose slots are taken at admission: when it is full, `/readyz` fails and new authenticated requests are refused with 503, and those are the only ones without a record | Unavailable |
 | Valkey | Refuses by default. Configurable to continue with per-instance counters | Unaffected |
 | The usage ledger, when a counter of a day or month has to be loaded | Refuses with 503 by default, or admits without the limits that could not be verified (`limits.on_store_failure`); a counter already loaded keeps counting | Unaffected |
-| KEK provider | Continues while data keys are cached, then refuses | Credential writes fail |
+| KEK provider | Continues while data keys are cached, then refuses (`503` with `Retry-After: 5`). A key service is asked once per call with a deadline of 2 s, and after repeated failures is refused for 5 s at a time; a restart waits for it, listening on nothing, and readiness does not depend on it once started | Credential writes fail; the rest is unaffected |
 | Identity provider | Tokens verify while the keys are cached, up to 6 h after the last fetch; then a call with a token is answered 503, never 401. Virtual keys unaffected | Sign-in through the IdP is unavailable. Open sessions, local accounts and keys are unaffected |
 | OTLP collector | Unaffected; spans are dropped when the export queue is full | Unaffected |
 | Event destination | Unaffected; events wait in the log, in order, and are delivered when it answers again (a destination that fails ten times on one event parks it as a dead letter; beyond `events.retention` an undelivered event is removed and counted) | Unaffected |

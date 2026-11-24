@@ -62,7 +62,7 @@ func TestVault(t *testing.T) {
 
 	p := startBinary(t, opts{level: "info", up: up, db: d, env: []string{kekEnv + "=" + keyFile}})
 	ready := completeLines(p.stdout, "vault ready")
-	if len(ready) != 1 || ready[0]["kek_provider"] != "local" || ready[0]["kek_version"] != version || ready[0]["level"] != "INFO" {
+	if len(ready) != 1 || ready[0]["kek_provider"] != "local" || ready[0]["kek_version"] != version || ready[0]["level"] != "INFO" || ready[0]["kek_unwrap_provider"] != "" {
 		t.Fatalf("`vault ready` lines: %v, want one with the provider local and the version %s", ready, version)
 	}
 	platform := p.bootstrap(t)

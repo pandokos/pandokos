@@ -91,8 +91,11 @@ func validate(c *Config, purpose Purpose) []Problem {
 		ps = append(ps, validateTelemetry(c)...)
 		ps = append(ps, validateTokens(c)...)
 	}
-	if c.Vault.KEK.Provider != "local" {
-		add("vault.kek.provider", "must be local")
+	if p := c.Vault.KEK.Provider; p != "local" && p != "transit" {
+		add("vault.kek.provider", "must be local or transit")
+	}
+	if purpose == PurposeServe {
+		ps = append(ps, validateTransit(c)...)
 	}
 	if n := c.Limits.MaxRequestBodyBytes; n < 1 || n > 104857600 {
 		add("limits.max_request_body_bytes", "must be between 1 and 104857600")
@@ -453,14 +456,23 @@ func listenerAndURLWarnings(c *Config) []Warning {
 	if c.Database.TLS.Mode == "disable" && c.Database.Host != "" && !isLoopback(c.Database.Host) {
 		ws = append(ws, Warning{Key: "database.tls.mode", Message: "the database connection is not encrypted"})
 	}
-	return append(ws, keyFileWarning(c)...)
+	ws = append(ws, keyFileWarning(c)...)
+	return append(ws, transitWarnings(c)...)
 }
 
 // loadSecrets reads the key-encryption key and, for serve, the earlier keys that still unwrap.
 func loadSecrets(c *Config, purpose Purpose) []Problem {
-	ps := loadKEK(c)
+	var ps []Problem
+	if c.Vault.KEK.Provider == "transit" {
+		if c.Vault.KEK.Local.KeyFile != "" {
+			ps = append(ps, Problem{Key: "vault.kek.local.key_file", Message: "must be empty when vault.kek.provider is transit; list the file in vault.kek.local.unwrap_key_files while data keys are re-wrapped"})
+		}
+	} else {
+		ps = loadKEK(c)
+	}
 	if purpose == PurposeServe {
 		ps = append(ps, loadUnwrapKEKs(c)...)
+		ps = append(ps, loadTransitSecrets(c)...)
 	}
 	return ps
 }

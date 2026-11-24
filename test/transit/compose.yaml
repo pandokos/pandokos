@@ -1,0 +1,21 @@
+# OpenBao and HashiCorp Vault in development mode for the transit conformance suite (build tag
+# transit). Started by test/transit/up.sh. Not for any other use: a development-mode service
+# keeps its keys in memory.
+name: pandokos-testtransit
+services:
+  openbao:
+    profiles: [openbao]
+    image: openbao/openbao:2.7.3@sha256:ba4b133eb9586630024e71a617e66f37f29cc3534cdd46a6233e098ceded8dc9
+    command: ["server", "-dev", "-dev-listen-address=0.0.0.0:8200"]
+    environment:
+      BAO_DEV_ROOT_TOKEN_ID: ${PANDOKOS_TEST_TRANSIT_ROOT_TOKEN:?run test/transit/up.sh}
+    cap_add: [IPC_LOCK]
+    ports: ["127.0.0.1:${PANDOKOS_TEST_TRANSIT_PORT:?run test/transit/up.sh}:8200"]
+  vault:
+    profiles: [vault]
+    image: hashicorp/vault:2.2.2@sha256:dfa48c2fa2b0099ccb47681ec5c4804bf5aec9d6879ecfee07ad4b92a5427ad6
+    command: ["server", "-dev", "-dev-listen-address=0.0.0.0:8200"]
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${PANDOKOS_TEST_TRANSIT_ROOT_TOKEN:?run test/transit/up.sh}
+    cap_add: [IPC_LOCK]
+    ports: ["127.0.0.1:${PANDOKOS_TEST_TRANSIT_PORT}:8200"]

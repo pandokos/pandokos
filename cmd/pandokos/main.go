@@ -40,7 +40,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, environ [
 	case "user":
 		return runUser(ctx, args[1:], stdout, stderr, environ)
 	case "kek":
-		return runKEK(ctx, args[1:], stdout, stderr)
+		return runKEK(ctx, args[1:], stdout, stderr, environ)
 	case "config":
 		return runConfig(args[1:], stdout, stderr, environ)
 	case "version":

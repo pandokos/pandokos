@@ -193,4 +193,30 @@ func TestActivateAtStart(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("the refusal of a replaced version does not name the key file when the active one is not local", func(t *testing.T) {
+		w := newActivationWorld(t)
+		ts := newTransitService(t)
+		old := vaulttest.Provider(t, k[0])
+		if _, _, err := vault.Activate(ctx(t), w.admin, w.worker, old); err != nil {
+			t.Fatal(err)
+		}
+		w.dataKeyFor(t, old, "tenant-one")
+		tp := ts.provider(t, nil)
+		if _, _, err := vault.Activate(ctx(t), w.admin, w.worker, router(t, tp, old)); err != nil {
+			t.Fatal(err)
+		}
+		_, _, err := vault.Activate(ctx(t), w.admin, w.worker, old)
+		if !errors.Is(err, vault.ErrKeyReplaced) {
+			t.Fatalf("the old key file after the service: %v, want ErrKeyReplaced", err)
+		}
+		if strings.Contains(err.Error(), "vault.kek.local.key_file") {
+			t.Errorf("the refusal names vault.kek.local.key_file although the active version is the service's: %v", err)
+		}
+		for _, v := range []string{k[0].Version, tp.Info().Version} {
+			if !strings.Contains(err.Error(), v) {
+				t.Errorf("the refusal does not name %s: %v", v, err)
+			}
+		}
+	})
 }

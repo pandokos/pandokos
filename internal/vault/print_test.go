@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/hkdf"
 	"crypto/sha256"
+	"encoding"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -12,12 +13,14 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/secret"
 	"github.com/pandokos/pandokos/internal/vault"
 	"github.com/pandokos/pandokos/test/fixtures"
 	"github.com/pandokos/pandokos/test/testutil"
+	"github.com/pandokos/pandokos/test/vaulttest"
 )
 
 // byteForms returns what a leak of b would look like in an output: the bytes as they come out of
@@ -145,4 +148,74 @@ func decimalList(b []byte) string {
 		parts[i] = strconv.Itoa(int(c))
 	}
 	return "[" + strings.Join(parts, " ") + "]"
+}
+
+// TestTransitPrint is T-1067: the transit provider, its options, the router and the unwrap cache
+// print the redaction marker with every verb, as a log value, as JSON and as text.
+func TestTransitPrint(t *testing.T) {
+	r := newTransitRig(t, vaulttest.TransitSetup{Method: "approle"})
+	local := vaulttest.Provider(t, vaulttest.Keys(t, 1)[0])
+	router, err := vault.NewRouter(r.p, local)
+	if err != nil {
+		t.Fatalf("NewRouter: %v", err)
+	}
+	cache, err := vault.NewUnwrapCache(r.p, time.Minute, nil)
+	if err != nil {
+		t.Fatalf("NewUnwrapCache: %v", err)
+	}
+	forbidden := []string{r.f.RoleID, r.f.SecretID, r.f.RoleIDFile, r.f.SecretIDFile, strings.TrimPrefix(r.s.URL(), "http://"), "pandokos/test"}
+
+	values := []struct {
+		name string
+		v    any
+	}{
+		{"*TransitProvider", r.p},
+		{"TransitOptions", r.o},
+		{"*TransitOptions", &r.o},
+		{"*Router", router},
+		{"*UnwrapCache", cache},
+	}
+	for _, c := range values {
+		outputs := map[string]string{}
+		for _, verb := range []string{"%v", "%+v", "%#v", "%s", "%q", "%x", "%d"} {
+			outputs["fmt "+verb] = fmt.Sprintf(verb, c.v)
+			if got := outputs["fmt "+verb]; got != secret.Redacted {
+				t.Errorf("%s with %s prints %q, want %q", c.name, verb, got, secret.Redacted)
+			}
+		}
+		outputs["fmt.Sprint"] = fmt.Sprint(c.v)
+		outputs["wrapped in a struct, %+v"] = fmt.Sprintf("%+v", struct{ V any }{c.v})
+		outputs["wrapped in a map, %v"] = fmt.Sprintf("%v", map[string]any{"v": c.v})
+		var jsonLog, textLog bytes.Buffer
+		slog.New(slog.NewJSONHandler(&jsonLog, nil)).Info("value", "v", c.v)
+		slog.New(slog.NewTextHandler(&textLog, nil)).Info("value", "v", c.v)
+		outputs["slog JSON"], outputs["slog text"] = jsonLog.String(), textLog.String()
+		for _, l := range []string{jsonLog.String(), textLog.String()} {
+			if !strings.Contains(l, secret.Redacted) {
+				t.Errorf("%s as a log value prints %q, want the redaction marker", c.name, l)
+			}
+		}
+		j, err := json.Marshal(c.v)
+		if err != nil || string(j) != `"`+secret.Redacted+`"` {
+			t.Errorf("%s as JSON is %s, %v", c.name, j, err)
+		}
+		outputs["json.Marshal"] = string(j)
+		j, err = json.Marshal(map[string]any{"v": c.v})
+		if err != nil || !strings.Contains(string(j), secret.Redacted) {
+			t.Errorf("%s in a JSON object is %s, %v", c.name, j, err)
+		}
+		tm, ok := c.v.(encoding.TextMarshaler)
+		if !ok {
+			t.Errorf("%s has no MarshalText", c.name)
+		} else if b, err := tm.MarshalText(); err != nil || string(b) != secret.Redacted {
+			t.Errorf("%s as text is %q, %v", c.name, b, err)
+		}
+		for where, out := range outputs {
+			for _, f := range forbidden {
+				if f != "" && strings.Contains(out, f) {
+					t.Errorf("%s through %s prints %q", c.name, where, f)
+				}
+			}
+		}
+	}
 }

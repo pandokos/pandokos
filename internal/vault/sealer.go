@@ -95,7 +95,8 @@ func (s *Sealer) EnsureDataKey(ctx context.Context, tx store.Tx, id tenant.ID) (
 // provider error is kept for errors.Is, never for a log: it can carry paths.
 type SealError struct {
 	// Cause is "data_key_unwrap" (the stored data key does not unwrap), "kek_unavailable"
-	// (the key-encryption key version is unknown or the provider cannot answer) or "kek_replaced"
+	// (the key-encryption key version is unknown or the provider cannot answer), "kek_provider_unavailable"
+	// (a key provider is out of reach or refuses, for a reason that may pass) or "kek_replaced"
 	// (another instance activated another version, so this one creates no data key).
 	Cause string
 	// TenantID, CredentialID, KEKVersion and DataKeyVersion are empty or zero when not known.
@@ -121,6 +122,9 @@ func (e *SealError) Unwrap() []error {
 func sealCause(err error) string {
 	if errors.Is(err, ErrUnwrap) {
 		return "data_key_unwrap"
+	}
+	if errors.Is(err, ErrProviderUnavailable) {
+		return "kek_provider_unavailable"
 	}
 	return "kek_unavailable"
 }

@@ -228,9 +228,50 @@ type Vault struct {
 
 // VaultKEK configures the key-encryption key.
 type VaultKEK struct {
-	Provider string        `yaml:"provider"`
-	Local    VaultKEKLocal `yaml:"local"`
+	Provider string          `yaml:"provider"`
+	Local    VaultKEKLocal   `yaml:"local"`
+	Transit  VaultKEKTransit `yaml:"transit"`
 }
+
+// VaultKEKTransit configures the transit key provider: a transit key of OpenBao or HashiCorp
+// Vault. The secrets are files; serve and kek check only.
+type VaultKEKTransit struct {
+	Address               string              `yaml:"address"`
+	Namespace             string              `yaml:"namespace"`
+	Mount                 string              `yaml:"mount"`
+	KeyName               string              `yaml:"key_name"`
+	TLS                   VaultKEKTransitTLS  `yaml:"tls"`
+	Auth                  VaultKEKTransitAuth `yaml:"auth"`
+	RequestTimeout        Duration            `yaml:"request_timeout"`
+	MaxConcurrentRequests int                 `yaml:"max_concurrent_requests"`
+	StartTimeout          Duration            `yaml:"start_timeout"`
+
+	URL *url.URL `yaml:"-"` // filled by Load
+}
+
+// VaultKEKTransitTLS configures how the key service is trusted.
+type VaultKEKTransitTLS struct {
+	CAFile string `yaml:"ca_file"`
+
+	RootCAs *x509.CertPool `yaml:"-"` // filled by Load; nil means the guard's roots
+}
+
+// VaultKEKTransitAuth configures how Pandokos authenticates to the key service.
+type VaultKEKTransitAuth struct {
+	Method    string                 `yaml:"method"`
+	TokenFile string                 `yaml:"token_file"`
+	AppRole   VaultKEKTransitAppRole `yaml:"approle"`
+}
+
+// VaultKEKTransitAppRole configures the AppRole authentication.
+type VaultKEKTransitAppRole struct {
+	Mount        string `yaml:"mount"`
+	RoleIDFile   string `yaml:"role_id_file"`
+	SecretIDFile string `yaml:"secret_id_file"`
+}
+
+// Configured reports whether a key service address is set.
+func (t VaultKEKTransit) Configured() bool { return t.Address != "" }
 
 // VaultKEKLocal configures the local key provider: a key file.
 type VaultKEKLocal struct {
@@ -441,7 +482,12 @@ func Defaults() *Config {
 		Reports:        Reports{RollupInterval: Duration(time.Minute)},
 		TenantDeletion: TenantDeletion{GracePeriod: Duration(168 * time.Hour), Interval: Duration(time.Minute)},
 		Support:        Support{Enabled: true, MaxDuration: Duration(time.Hour)},
-		Vault:          Vault{KEK: VaultKEK{Provider: "local"}},
+		Vault: Vault{KEK: VaultKEK{Provider: "local", Transit: VaultKEKTransit{
+			Mount:                 "transit",
+			Auth:                  VaultKEKTransitAuth{AppRole: VaultKEKTransitAppRole{Mount: "approle"}},
+			RequestTimeout:        Duration(2 * time.Second),
+			MaxConcurrentRequests: 32,
+		}}},
 		Database: Database{
 			Name:           "pandokos",
 			TLS:            DatabaseTLS{Mode: "verify-full"},

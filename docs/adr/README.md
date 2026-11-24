@@ -78,6 +78,7 @@ A record is *proposed* until the maintainer accepts it, by merging its pull requ
 | [0070](0070-the-outbox-as-a-log-relay-by-destination-and-retention.md) | The outbox as a log: relay by destination, and retention | accepted |
 | [0071](0071-webhook-destinations-signature-secrets-and-egress.md) | Webhook destinations: the signature, the signing secrets and egress | accepted |
 | [0072](0072-event-types-the-envelope-the-external-reference-and-platform-events.md) | Event types, the envelope, the external reference and the platform's events | accepted |
+| [0073](0073-the-transit-key-provider.md) | The transit key provider: associated data, version identifiers, authentication, several providers and behaviour on failure | proposed |
 
 ## Questions from SOW 0.1 and where they were decided
 
@@ -86,7 +87,7 @@ A record is *proposed* until the maintainer accepts it, by merging its pull requ
 | 1. Language and framework | 0002 |
 | 2. Database and row-level security strategy | 0004 |
 | 3. Redis or another system for counters | 0012 |
-| 4. Vault architecture and key management | 0008 |
+| 4. Vault architecture and key management | 0008, 0073 |
 | 5. Separation of control and data plane | 0003 |
 | 6, 7. Service-account authentication, mTLS, JWT, SPIFFE, DPoP | 0005 |
 | 8. Federated identity, tenants and roles | 0006, 0022, 0056, 0057, 0058 |
@@ -100,5 +101,5 @@ A record is *proposed* until the maintainer accepts it, by merging its pull requ
 | 17, 18. Events for external systems | 0014, 0070, 0071, 0072 |
 | 19. Kubernetes topologies and silos | 0016 |
 | 20. Service-level objectives | Targets in requirement GW-17; validated in epic 10 |
-| 21. Backup, recovery, cryptographic erasure | 0008, data model; procedures in epics 6 and 10 |
+| 21. Backup, recovery, cryptographic erasure | 0008, 0073, data model; procedures in epics 6 and 10 |
 | 22. Trust boundaries and threats | [Security model](../architecture/security-model.md) |

@@ -49,12 +49,13 @@ type Sources struct {
 	Sessions    func() (open int64, ok bool)
 	Hashes      func() HashStats
 	Idempotency func() int64
-	Admin       func() AdminStats     // grants refused, support actions opened and ended by cause
-	Limits      func() LimitsStats    // memory, reconciler, events, rule cache
-	Resolver    func() ResolverStats  // admitted unpriced, unlimited traffic by result
-	Reports     func() ReportsStats   // the usage rollup, retention and exports (M42 to M46)
-	Lifecycle   func() LifecycleStats // tenant deletion and key rotation (M47 to M51)
-	Events      func() EventsStats    // the relay of events (M52, M54 to M58; M53 is recorded by ObserveEventDelivery)
+	Admin       func() AdminStats       // grants refused, support actions opened and ended by cause
+	Limits      func() LimitsStats      // memory, reconciler, events, rule cache
+	Resolver    func() ResolverStats    // admitted unpriced, unlimited traffic by result
+	Reports     func() ReportsStats     // the usage rollup, retention and exports (M42 to M46)
+	Lifecycle   func() LifecycleStats   // tenant deletion and key rotation (M47 to M51)
+	Events      func() EventsStats      // the relay of events (M52, M54 to M58; M53 is recorded by ObserveEventDelivery)
+	KeyProvider func() KeyProviderStats // the transit key provider (M59, M61, M62; M60 is recorded by ObserveKeyProviderRequest)
 }
 
 // InstrumentSpec describes one instrument of the catalogue (the table of the metrics reference).

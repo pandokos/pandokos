@@ -6,13 +6,14 @@ replaced, and what its loss means. Decisions: [ADR 0008](../adr/0008-vault-envel
 [ADR 0033](../adr/0033-vault-formats-and-key-identifiers.md),
 [ADR 0034](../adr/0034-credential-model-and-platform-oversight.md),
 [ADR 0068](../adr/0068-key-encryption-key-versions-rotation-and-erasure-in-backups.md) (versions, rotation
-and erasure in backups).
+and erasure in backups). With a key service (OpenBao or HashiCorp Vault) in place of the key file, read the
+[external key guide](external-key.md) together with this one.
 
 ## 1. What is stored where
 
 | Layer | What it is | Where it lives |
 |---|---|---|
-| Key-encryption key | 32 random bytes; wraps data keys | **A file** outside the database, read by `serve` at start (`vault.kek.local.key_file`); after a rotation also the files of the versions still being replaced (`vault.kek.local.unwrap_key_files`) |
+| Key-encryption key | 32 random bytes; wraps data keys | With the provider `local` (the default): **a file** outside the database, read by `serve` at start (`vault.kek.local.key_file`); after a rotation also the files of the versions still being replaced (`vault.kek.local.unwrap_key_files`). With the provider `transit`: **a key in the transit engine of OpenBao or HashiCorp Vault**, which never leaves the service; Pandokos holds a token or an AppRole in files, never the key ([external key guide](external-key.md)) |
 | Data key | one per tenant, created when the tenant registers its first credential | Wrapped, in the table `tenant_data_key`, with the version of the key that wrapped it; always the active version |
 | Secret | the provider API key | Sealed under the tenant's data key, in `provider_credential.secret` |
 
@@ -184,7 +185,11 @@ theirs again (`deploy/postgres/recover-lost-kek.sql`, section 5). Erasure in bac
 a tenant deletion) is the same act: rotate, wait, back up, destroy.
 
 **Rotation does not happen by itself**, after a deletion or on a schedule: a new key file is an operator's
-act. An external key service (sprint 12.1) can automate it.
+act. A key service makes automation possible (its scheduler can rotate the key and trim old versions with a
+token of its own) and Pandokos does not do it: a token able to destroy key versions would turn a bug or a
+theft into the loss of every credential. With a key service the rotation is a new version in the service and a
+restart, and erasure in backups is raising `min_decryption_version` and trimming ([external key
+guide](external-key.md#7-rotating), [section 8](external-key.md#8-erasure-in-backups)).
 
 ## 7. How fast a change takes effect
 
@@ -205,6 +210,11 @@ The database sends a notification (`vault:<tenant>`) that empties the cache of t
 Without the listener (behind a pooler in transaction mode without `database.direct_address`, see
 [keys](keys.md)) nothing else changes: the lifetime is the guarantee. A call that already holds the
 secret completes. Both caches hold at most 10 000 entries and are emptied when full.
+
+With a key service, the event relay of the worker opens signing secrets through its own cache of unwrapped
+data keys: one request to the service per destination and `cache.data_key_ttl`, not one per round and
+secret. It holds at most 10 000 entries, is emptied when full, and an entry is never used past its
+lifetime, the service away or not. An installation with a key file does not build it.
 
 ## 7a. Providers come from the catalogue
 
@@ -240,8 +250,12 @@ to every secret: for them `validate` proves that the endpoint is reachable, not 
   grants today and becomes a property of the deployment when the roles run apart.
 - Erasure and old backups: see section 4 and "Rotating the key". A deletion is complete in the
   database at once and in backups when the versions it recorded are retired and their files destroyed.
-- Rotation is manual (a new file and two restarts); there is no automatic rotation, and a data key is
-  never rotated by itself (nothing requires it).
+- Rotation is manual (a new file and two restarts, or a new version in the key service and a restart); there
+  is no automatic rotation, and a data key is never rotated by itself (nothing requires it).
+- A key service is a dependency of the data plane and of the start: an outage longer than the data key
+  lifetime stops the calls that need an unwrap, and a restart waits for it ([external key
+  guide](external-key.md#9-when-the-service-is-slow-or-away)). One key on one service at a time; no
+  Kubernetes authentication yet.
 - A lost key is not rotation: see section 5.
 - The pin rule holds in the request path: a key pinned to a credential of the provider being called
   uses that credential; otherwise the tenant's default for that provider is used; nothing else is tried
