@@ -264,19 +264,13 @@ func (p *TransitProvider) Wrap(ctx context.Context, plaintext, aad []byte) (stri
 	buf = append(buf, '}')
 	defer clear(buf)
 
-	var out struct {
-		Ciphertext json.RawMessage `json:"ciphertext"`
-		KeyVersion *int            `json:"key_version"`
-	}
+	var out encryptData
 	if _, err := p.send(ctx, "wrap", http.MethodPost, p.keyPath("encrypt"), buf, &out); err != nil {
 		return "", nil, err
 	}
-	if out.KeyVersion == nil || *out.KeyVersion != n {
-		return "", nil, &TransitError{Operation: "wrap", Class: "rejected"}
-	}
-	payload, ok := transitCiphertext(out.Ciphertext, n)
-	if !ok || len(payload) < 28 || len(payload) > 1023 {
-		return "", nil, &TransitError{Operation: "wrap", Class: "rejected"}
+	payload, err := wrapAnswer(out, n)
+	if err != nil {
+		return "", nil, err
 	}
 	return version, append([]byte{transitWrapFormat}, payload...), nil
 }
@@ -409,9 +403,7 @@ func (p *TransitProvider) unwrapOnce(ctx context.Context, version string, wrappe
 		Ciphertext string `json:"ciphertext"`
 		AAD        string `json:"associated_data"`
 	}{"vault:v" + strconv.Itoa(n) + ":" + base64.StdEncoding.EncodeToString(wrapped[1:]), aadField(aad)}
-	var out struct {
-		Plaintext json.RawMessage `json:"plaintext"`
-	}
+	var out decryptData
 	status, err := p.send(ctx, "unwrap", http.MethodPost, p.keyPath("decrypt"), in, &out)
 	defer func() { clear(out.Plaintext) }()
 	if err != nil {
@@ -420,16 +412,7 @@ func (p *TransitProvider) unwrapOnce(ctx context.Context, version string, wrappe
 		}
 		return nil, err
 	}
-	inner, ok := transitUnquote(out.Plaintext)
-	if !ok {
-		return nil, &TransitError{Operation: "unwrap", Class: "rejected"}
-	}
-	dk, ok := transitDecode(inner)
-	if !ok || len(dk) != dataKeyLen {
-		clear(dk)
-		return nil, &TransitError{Operation: "unwrap", Class: "rejected"}
-	}
-	return dk, nil
+	return unwrapAnswer(out)
 }
 
 // afterBadDecrypt answers a 400 to decrypt: a version that a fresh description puts out of range is

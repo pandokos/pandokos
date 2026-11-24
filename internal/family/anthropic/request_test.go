@@ -4,6 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -45,6 +50,14 @@ var parseCases = []parseCase{
 	{"a second object", `{"model":"m"}{"model":"n"}`, "not_object", "", false},
 	{"truncated", `{"model":"m"`, "not_object", "", false},
 	{"invalid JSON", `{model:"m"}`, "not_object", "", false},
+
+	{"model in another case", `{"Model":"m"}`, "member_case", "", false},
+	{"model in another case beside the exact name", `{"model":"m","MODEL":"n"}`, "member_case", "", false},
+	{"stream in another case", `{"model":"m","Stream":true}`, "member_case", "", false},
+	{"stream in another case beside the exact name", `{"model":"m","stream":false,"STREAM":true}`, "member_case", "", false},
+	{"the output limit in another case", `{"model":"m","Max_Tokens":1}`, "member_case", "", false},
+	{"a member in another case that is not read", `{"model":"m","Messages":[],"Temperature":1,"N":2}`, "", "m", false},
+	{"a nested member in another case", `{"model":"m","metadata":{"Stream":true},"messages":[{"Model":"x"}]}`, "", "m", false},
 
 	{"an empty object", `{}`, "model_missing", "", false},
 	{"other members only", `{"messages":[],"stream":true}`, "model_missing", "", false},
@@ -204,6 +217,11 @@ func FuzzAnthropicParseRequest(f *testing.F) {
 		f.Add([]byte(c.in), uint8(i))
 	}
 	f.Add([]byte(`{"model":"m","stream":true}`), uint8(1))
+	f.Add([]byte(`{"Model":"m"}`), uint8(0))
+	f.Add([]byte(`{"model":"m","MODEL":"n"}`), uint8(0))
+	f.Add([]byte(`{"model":"m","Stream":true}`), uint8(0))
+	f.Add([]byte(`{"model":"m","Max_Tokens":1,"max_tokens":2}`), uint8(1))
+	f.Add([]byte("{\"model\":\"m\",\"\u017ftream\":true}"), uint8(0))
 	f.Fuzz(func(t *testing.T, in []byte, which uint8) {
 		op := operations[int(which)%len(operations)]
 		orig := append([]byte(nil), in...)
@@ -249,5 +267,159 @@ func FuzzAnthropicParseRequest(f *testing.F) {
 		if len(got) != len(members) {
 			t.Fatalf("the output has %d members, the input %d", len(got), len(members))
 		}
+		checkMemberCase(t, in)
 	})
+}
+
+// TestParseMemberCase is T-1097: each member of ReadMembers in another case, alone and beside the
+// exact one, makes the request invalid with the reason member_case, for both operations; the read
+// set equals the names the parser passes to the family helpers.
+func TestParseMemberCase(t *testing.T) {
+	swapped := func(name string) string {
+		if u := strings.ToUpper(name); u != name {
+			return u
+		}
+		return strings.ToLower(name)
+	}
+	refused := func(t *testing.T, body string) {
+		t.Helper()
+		for _, op := range operations {
+			r, err := anthropic.ParseOperation(op, []byte(body))
+			if err == nil || r != nil {
+				t.Errorf("%s: %s accepted", op, body)
+				continue
+			}
+			if !errors.Is(err, family.ErrInvalidRequest) || family.InvalidReason(err) != "member_case" {
+				t.Errorf("%s: %s: reason %q (%v), want member_case", op, body, family.InvalidReason(err), err)
+			}
+			if strings.Contains(err.Error(), body) || strings.Contains(err.Error(), "MODEL") {
+				t.Errorf("the error quotes the body: %v", err)
+			}
+		}
+	}
+	for _, name := range anthropic.ReadMembers {
+		other := swapped(name)
+		t.Run(name, func(t *testing.T) {
+			if name == "model" {
+				refused(t, `{"`+other+`":"m"}`)
+				refused(t, `{"model":"m","`+other+`":"n"}`)
+				refused(t, `{"`+other+`":"n","model":"m"}`)
+				return
+			}
+			refused(t, `{"model":"m","`+other+`":1}`)
+			refused(t, `{"model":"m","`+name+`":1,"`+other+`":1}`)
+			refused(t, `{"`+other+`":1,"model":"m","`+name+`":1}`)
+			refused(t, `{"model":"m","`+other+`":{"nested":[1,2]}}`)
+		})
+	}
+	t.Run("the exact names are accepted", func(t *testing.T) {
+		for _, op := range operations {
+			if _, err := anthropic.ParseOperation(op, []byte(`{"model":"m","stream":true,"max_tokens":1}`)); err != nil {
+				t.Errorf("%s: %v", op, err)
+			}
+		}
+	})
+	t.Run("the check comes before the model check", func(t *testing.T) {
+		for _, body := range []string{`{"Model":1}`, `{"model":1,"MODEL":2}`, `{"model":"m","model":"n","MODEL":"o"}`} {
+			_, err := anthropic.ParseOperation(anthropic.OperationMessages, []byte(body))
+			if family.InvalidReason(err) != "member_case" {
+				t.Errorf("%s: reason %q", body, family.InvalidReason(err))
+			}
+		}
+	})
+	t.Run("the read set is the names the parser passes to the family helpers", func(t *testing.T) {
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, "request.go", nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		consts := map[string]string{}
+		ast.Inspect(f, func(n ast.Node) bool {
+			if vs, ok := n.(*ast.ValueSpec); ok {
+				for i, id := range vs.Names {
+					if i < len(vs.Values) {
+						if lit, ok := vs.Values[i].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+							consts[id.Name], _ = strconv.Unquote(lit.Value)
+						}
+					}
+				}
+			}
+			return true
+		})
+		seen := map[string]bool{}
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			if x, ok := sel.X.(*ast.Ident); !ok || x.Name != "family" {
+				return true
+			}
+			var key ast.Expr
+			switch sel.Sel.Name {
+			case "ParseModel":
+				seen["model"] = true
+				return true
+			case "LastMember":
+				key = call.Args[1]
+			case "PositiveInt":
+				key = call.Args[2]
+			default:
+				return true
+			}
+			switch v := key.(type) {
+			case *ast.BasicLit:
+				s, _ := strconv.Unquote(v.Value)
+				seen[s] = true
+			case *ast.Ident:
+				if s, ok := consts[v.Name]; ok {
+					seen[s] = true
+				} else {
+					t.Errorf("%s: the name %s is not a constant of the file", fset.Position(call.Pos()), v.Name)
+				}
+			default:
+				t.Errorf("%s: a name that is neither a literal nor a constant", fset.Position(call.Pos()))
+			}
+			return true
+		})
+		var want []string
+		for k := range seen {
+			want = append(want, k)
+		}
+		sort.Strings(want)
+		got := append([]string(nil), anthropic.ReadMembers...)
+		sort.Strings(got)
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("ReadMembers %v, the parser reads %v", got, want)
+		}
+	})
+}
+
+// checkMemberCase is the invariant of sprint 12.2 section 5.9: a body accepted has exactly one
+// member equal to model when case is ignored, and no member that differs only in case from a
+// member of the read set.
+func checkMemberCase(t *testing.T, in []byte) {
+	t.Helper()
+	ms, _, err := family.ScanObject(in)
+	if err != nil {
+		t.Fatalf("accepted a body ScanObject refuses: %v", err)
+	}
+	models := 0
+	for _, m := range ms {
+		if strings.EqualFold(m.Key, "model") {
+			models++
+		}
+		for _, name := range anthropic.ReadMembers {
+			if m.Key != name && strings.EqualFold(m.Key, name) {
+				t.Fatalf("accepted a member %q that differs only in case from %q", m.Key, name)
+			}
+		}
+	}
+	if models != 1 {
+		t.Fatalf("accepted a body with %d members equal to model when case is ignored", models)
+	}
 }

@@ -116,6 +116,13 @@ func TestTransitDocuments(t *testing.T) {
 		has(t, "external-key.md", doc, "request_timeout", "max_concurrent_requests", "start_timeout", "64 KiB", "five consecutive", "5 s", "2 s", "32", "30 s", "15 s",
 			"pandokos_vault_provider_up", "pandokos_vault_provider_token_ttl_seconds", "kek_provider_unavailable", "min_decryption_version", "trim", "auto_rotate_period",
 			"X-Vault-Namespace", "unwrap_key_files")
+		// Sprint 12.2: an exportable key is refused unless the option allows it, and the section on
+		// the key says so.
+		has(t, "external-key.md", doc, "vault.kek.transit.allow_exportable_key", "refus")
+		if i := regexp.MustCompile(`(?mi)^#+ .*creating the key`).FindStringIndex(doc); i == nil ||
+			!strings.Contains(doc[i[0]:min(len(doc), i[0]+4000)], "allow_exportable_key") {
+			t.Errorf("the section of external-key.md on creating the key does not name the refusal of an exportable key (vault.kek.transit.allow_exportable_key)")
+		}
 		if !strings.Contains(doc, policy) {
 			t.Errorf("the policy of the guide is not deploy/transit/pandokos-policy.hcl byte for byte")
 		}
@@ -208,8 +215,8 @@ func TestTransitDocuments(t *testing.T) {
 				}
 			}
 		}
-		if n != 13 {
-			t.Errorf("%d keys of the transit provider, want 13", n)
+		if n != 14 {
+			t.Errorf("%d keys of the transit provider, want 14", n)
 		}
 		logs := read(t, "docs/reference/logs.md")
 		for _, line := range []string{"key provider ready", "key provider configuration weak", "key provider unavailable", "key provider recovered", "key provider token expiring",

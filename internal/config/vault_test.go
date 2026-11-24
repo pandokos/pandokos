@@ -331,6 +331,85 @@ func transitSource(t *testing.T, method string) Source {
 	return Source{Environ: env}
 }
 
+// TestTransitAllowExportable is T-1101: the key vault.kek.transit.allow_exportable_key, its type,
+// default, environment name and place, its reading from the environment and the file, and its
+// place in the configuration reference; fourteen keys in the block.
+func TestTransitAllowExportable(t *testing.T) {
+	const name = "vault.kek.transit.allow_exportable_key"
+	const envName = "PANDOKOS_VAULT_KEK_TRANSIT_ALLOW_EXPORTABLE_KEY"
+
+	t.Run("the row of the table of keys", func(t *testing.T) {
+		keys := Keys()
+		found, block := -1, 0
+		for i, k := range keys {
+			if strings.HasPrefix(k.Name, "vault.kek.transit.") {
+				block++
+			}
+			if k.Name == name {
+				found = i
+			}
+		}
+		if found < 0 {
+			t.Fatalf("%s is not in Keys()", name)
+		}
+		k := keys[found]
+		if k.Env != envName || k.Type != "boolean" || k.Default != "false" || k.Description == "" {
+			t.Errorf("row %+v", k)
+		}
+		if !strings.Contains(strings.ToLower(k.Description), "exportable") {
+			t.Errorf("the description does not say what the key is for: %q", k.Description)
+		}
+		if block != 14 {
+			t.Errorf("%d keys in the block vault.kek.transit.*, want 14", block)
+		}
+		// It sits with the other keys of the block, not apart from them.
+		if found == 0 || !strings.HasPrefix(keys[found-1].Name, "vault.kek.transit.") {
+			t.Errorf("the key follows %q, which is not a key of the block", keys[found-1].Name)
+		}
+	})
+
+	t.Run("the default is false", func(t *testing.T) {
+		if Defaults().Vault.KEK.Transit.AllowExportableKey {
+			t.Error("the default accepts an exportable key")
+		}
+		c, _ := mustLoad(t, transitSource(t, "token"))
+		if c.Vault.KEK.Transit.AllowExportableKey {
+			t.Error("a configuration that does not set the key accepts an exportable key")
+		}
+	})
+
+	t.Run("from the environment and from the file", func(t *testing.T) {
+		for value, want := range map[string]bool{"true": true, "false": false} {
+			src := transitSource(t, "token")
+			src.Environ = append(src.Environ, envName+"="+value)
+			c, _ := mustLoad(t, src)
+			if got := c.Vault.KEK.Transit.AllowExportableKey; got != want {
+				t.Errorf("environment %s: %v", value, got)
+			}
+		}
+		src := transitSource(t, "token")
+		src.File = writeFile(t, "vault:\n  kek:\n    transit:\n      allow_exportable_key: true\n")
+		if c, _ := mustLoad(t, src); !c.Vault.KEK.Transit.AllowExportableKey {
+			t.Error("the key is not read from the configuration file")
+		}
+		src = transitSource(t, "token")
+		src.Environ = append(src.Environ, envName+"=yes")
+		if _, _, err := Load(src); !hasProblem(err, name) {
+			t.Errorf("a value that is not a boolean: %v", err)
+		}
+	})
+
+	t.Run("the configuration reference lists it", func(t *testing.T) {
+		doc, err := os.ReadFile(filepath.Join("..", "..", "docs", "operations", "configuration.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(doc), "| `"+name+"` | `"+envName+"` | boolean | `false` |") {
+			t.Errorf("docs/operations/configuration.md has no row for %s", name)
+		}
+	})
+}
+
 // TestTransitKeys is T-1078: the keys of the transit provider, with their defaults, environment
 // names, bounds, problems and warnings (sprint 12.1, section 5.11).
 func TestTransitKeys(t *testing.T) {
@@ -355,7 +434,7 @@ func TestTransitKeys(t *testing.T) {
 		return base
 	}
 
-	t.Run("Keys lists the thirteen keys with environment names that follow the rule", func(t *testing.T) {
+	t.Run("Keys lists the fourteen keys with environment names that follow the rule", func(t *testing.T) {
 		n := 0
 		for _, k := range Keys() {
 			if strings.HasPrefix(k.Name, prefix) {
@@ -368,8 +447,8 @@ func TestTransitKeys(t *testing.T) {
 				}
 			}
 		}
-		if n != 13 {
-			t.Errorf("%d keys under %s, want 13", n, prefix)
+		if n != 14 {
+			t.Errorf("%d keys under %s, want 14", n, prefix)
 		}
 	})
 

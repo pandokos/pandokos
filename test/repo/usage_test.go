@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -298,8 +299,9 @@ func TestUsageAndTelemetryGuides(t *testing.T) {
 	})
 }
 
-// TestFuzzTargetsAreRun is T-R30: every Fuzz function under internal/ is in the fuzz target of the
-// Makefile, with the directory of its package.
+// TestFuzzTargetsAreRun is T-R30: every Fuzz function of the root module (not only under internal/;
+// the nested modules, the worktrees of tools and testdata are not part of it) is in the fuzz target
+// of the Makefile, with the directory of its package.
 func TestFuzzTargetsAreRun(t *testing.T) {
 	makefile := read(t, "Makefile")
 	i := strings.Index(makefile, "\nfuzz:")
@@ -319,9 +321,24 @@ func TestFuzzTargetsAreRun(t *testing.T) {
 		t.Fatalf("read %d fuzz commands from the Makefile", len(runs))
 	}
 	found := map[string]bool{}
-	err := filepath.WalkDir(filepath.Join(root(t), "internal"), func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, "_test.go") {
+	err := filepath.WalkDir(root(t), func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
 			return err
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", ".claude", "node_modules", "testdata", "vendor":
+				return filepath.SkipDir
+			}
+			if path != root(t) { // a nested module is not part of the root module
+				if _, serr := os.Stat(filepath.Join(path, "go.mod")); serr == nil {
+					return filepath.SkipDir
+				}
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, "_test.go") {
+			return nil
 		}
 		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
 		if err != nil {
@@ -354,7 +371,7 @@ func TestFuzzTargetsAreRun(t *testing.T) {
 			ok = ok || strings.HasSuffix(k, " "+want)
 		}
 		if !ok {
-			t.Errorf("no Fuzz function named %s exists under internal/", want)
+			t.Errorf("no Fuzz function named %s exists in the root module", want)
 		}
 	}
 	for k := range runs {

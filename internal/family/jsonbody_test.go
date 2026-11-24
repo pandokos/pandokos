@@ -138,3 +138,51 @@ func TestIsLiteralSpliceEncodeString(t *testing.T) {
 		t.Errorf("EncodeString: %s", got)
 	}
 }
+
+// TestCaseConflict is T-1095: a member that equals a name of the read set when case is ignored and
+// is not spelled exactly so is a conflict; exact names, names outside the set and nested members
+// are not.
+func TestCaseConflict(t *testing.T) {
+	read := []string{"model", "stream", "max_tokens"}
+	for _, c := range []struct {
+		name, in string
+		want     bool
+	}{
+		{"the exact names", `{"model":"m","stream":true,"max_tokens":1}`, false},
+		{"an empty object", `{}`, false},
+		{"a capital first letter", `{"Model":"m"}`, true},
+		{"all capitals", `{"MODEL":"m"}`, true},
+		{"a letter in the middle", `{"sTream":true}`, true},
+		{"beside the exact name", `{"model":"m","Model":"n"}`, true},
+		{"before the exact name", `{"MODEL":"n","model":"m"}`, true},
+		{"a name with an underscore", `{"Max_Tokens":1}`, true},
+		{"a letter that folds to an ASCII one (long s)", "{\"ſtream\":true}", true},
+		{"the Kelvin sign inside a name of the set", "{\"max_toKens\":1}", true},
+		{"an escaped spelling of the exact name", `{"model":"m"}`, false},
+		{"an escaped spelling of another case", `{"Model":"m"}`, true},
+		{"a name outside the set", `{"Messages":[],"Temperature":1}`, false},
+		{"a name that only contains one of the set", `{"models":1,"model_x":2,"streams":3}`, false},
+		{"a nested member in another case", `{"model":"m","messages":[{"Model":"x","Stream":true}],"x":{"MODEL":1}}`, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			ms, _, err := ScanObject([]byte(c.in))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := CaseConflict(ms, read...); got != c.want {
+				t.Errorf("CaseConflict(%q) = %v, want %v", c.in, got, c.want)
+			}
+		})
+	}
+	t.Run("an empty read set", func(t *testing.T) {
+		ms, _, _ := ScanObject([]byte(`{"Model":"m"}`))
+		if CaseConflict(ms) {
+			t.Error("a conflict with nothing to read")
+		}
+	})
+	t.Run("no members", func(t *testing.T) {
+		if CaseConflict(nil, read...) {
+			t.Error("a conflict in no members")
+		}
+	})
+}

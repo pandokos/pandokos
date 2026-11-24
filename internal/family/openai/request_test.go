@@ -4,6 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -134,6 +139,15 @@ var parseCases = []parseCase{
 	{"truncated", `{"model":"m"`, "not_object", "", false},
 	{"invalid JSON", `{model:"m"}`, "not_object", "", false},
 	{"a key that is not a string", `{1:"m"}`, "not_object", "", false},
+
+	{"model in another case", `{"Model":"m"}`, "member_case", "", false},
+	{"model in another case beside the exact name", `{"model":"m","MODEL":"n"}`, "member_case", "", false},
+	{"stream in another case", `{"model":"m","Stream":true}`, "member_case", "", false},
+	{"stream options in another case", `{"model":"m","stream":true,"Stream_Options":{"include_usage":false}}`, "member_case", "", false},
+	{"include_usage in another case", `{"model":"m","stream":true,"stream_options":{"Include_Usage":false}}`, "member_case", "", false},
+	{"an output limit in another case", `{"model":"m","Max_Tokens":1}`, "member_case", "", false},
+	{"a member in another case that is not read", `{"model":"m","Messages":[],"Temperature":1}`, "", "m", false},
+	{"a nested member in another case", `{"model":"m","messages":[{"Model":"x"}],"stream_options":{"Other":1}}`, "", "m", false},
 
 	{"an empty object", `{}`, "model_missing", "", false},
 	{"other members only", `{"messages":[],"stream":true}`, "model_missing", "", false},
@@ -299,6 +313,13 @@ func FuzzParseRequest(f *testing.F) {
 	}
 	f.Add([]byte(`{"model":"m","background":true}`), uint8(1))
 	f.Add([]byte(`{"model":"m","stream":true}`), uint8(2))
+	f.Add([]byte(`{"Model":"m"}`), uint8(0))
+	f.Add([]byte(`{"model":"m","MODEL":"n"}`), uint8(0))
+	f.Add([]byte(`{"model":"m","Stream":true}`), uint8(0))
+	f.Add([]byte(`{"model":"m","stream":true,"Stream_Options":{"include_usage":false}}`), uint8(0))
+	f.Add([]byte(`{"model":"m","stream":true,"stream_options":{"INCLUDE_USAGE":false}}`), uint8(0))
+	f.Add([]byte(`{"model":"m","Max_Completion_Tokens":5,"N":2}`), uint8(0))
+	f.Add([]byte("{\"model\":\"m\",\"\u017ftream\":true}"), uint8(0))
 	f.Fuzz(func(t *testing.T, in []byte, which uint8) {
 		op := []string{OperationChatCompletions, OperationResponses, OperationEmbeddings}[int(which)%3]
 		orig := append([]byte(nil), in...)
@@ -341,7 +362,46 @@ func FuzzParseRequest(f *testing.F) {
 		if len(got) != len(members) && (len(got) != len(members)+1 || members["stream_options"] != nil) {
 			t.Fatalf("the output has %d members, the input %d", len(got), len(members))
 		}
+		checkMemberCase(t, in)
 	})
+}
+
+// checkMemberCase is the invariant of sprint 12.2 section 5.9: a body accepted has exactly one
+// member equal to model when case is ignored, and no member that differs only in case from a
+// member of the read set (and none in stream_options).
+func checkMemberCase(t *testing.T, in []byte) {
+	t.Helper()
+	ms, _, err := family.ScanObject(in)
+	if err != nil {
+		t.Fatalf("accepted a body ScanObject refuses: %v", err)
+	}
+	models := 0
+	for _, m := range ms {
+		if strings.EqualFold(m.Key, "model") {
+			models++
+		}
+		for _, name := range ReadMembers {
+			if m.Key != name && strings.EqualFold(m.Key, name) {
+				t.Fatalf("accepted a member %q that differs only in case from %q", m.Key, name)
+			}
+		}
+	}
+	if models != 1 {
+		t.Fatalf("accepted a body with %d members equal to model when case is ignored", models)
+	}
+	if so, ok := family.LastMember(ms, "stream_options"); ok {
+		inner, _, err := family.ScanObject(in[so.Start:so.End])
+		if err != nil {
+			return
+		}
+		for _, m := range inner {
+			for _, name := range ReadStreamOptions {
+				if m.Key != name && strings.EqualFold(m.Key, name) {
+					t.Fatalf("accepted a stream_options member %q that differs only in case from %q", m.Key, name)
+				}
+			}
+		}
+	}
 }
 
 // TestParseOperation is T-457: the request rules of the three operations and what Prepare does.
@@ -530,4 +590,183 @@ func TestPrepareStreamUsage(t *testing.T) {
 			}
 		}
 	})
+}
+
+// swapped returns name with its case changed in a way that keeps it a different string.
+func swapped(name string) string {
+	if u := strings.ToUpper(name); u != name {
+		return u
+	}
+	return strings.ToLower(name)
+}
+
+// TestParseMemberCase is T-1096: each member of ReadMembers and of ReadStreamOptions in another
+// case, alone and beside the exact one, makes the request invalid with the reason member_case; the
+// read sets equal the names the parser passes to the family helpers.
+func TestParseMemberCase(t *testing.T) {
+	ops := []string{OperationChatCompletions, OperationResponses, OperationEmbeddings}
+	refused := func(t *testing.T, body string) {
+		t.Helper()
+		for _, op := range ops {
+			r, err := ParseOperation(op, []byte(body))
+			if err == nil || r != nil {
+				t.Errorf("%s: %s accepted", op, body)
+				continue
+			}
+			if !errors.Is(err, family.ErrInvalidRequest) || family.InvalidReason(err) != "member_case" {
+				t.Errorf("%s: %s: reason %q (%v), want member_case", op, body, family.InvalidReason(err), err)
+			}
+			if strings.Contains(err.Error(), body) || strings.Contains(err.Error(), "MEMBER") {
+				t.Errorf("the error quotes the body: %v", err)
+			}
+		}
+	}
+	for _, name := range ReadMembers {
+		other := swapped(name)
+		t.Run("top level "+name, func(t *testing.T) {
+			if other == name {
+				t.Fatal("no other case")
+			}
+			if name == "model" {
+				refused(t, `{"`+other+`":"m"}`)
+				refused(t, `{"model":"m","`+other+`":"n"}`)
+				refused(t, `{"`+other+`":"n","model":"m"}`)
+				return
+			}
+			refused(t, `{"model":"m","`+other+`":1}`)
+			refused(t, `{"model":"m","`+name+`":1,"`+other+`":1}`)
+			refused(t, `{"`+other+`":1,"model":"m","`+name+`":1}`)
+			refused(t, `{"model":"m","`+other+`":{"nested":[1,2]}}`)
+		})
+	}
+	for _, name := range ReadStreamOptions {
+		other := swapped(name)
+		t.Run("stream_options "+name, func(t *testing.T) {
+			refused(t, `{"model":"m","stream":true,"stream_options":{"`+other+`":true}}`)
+			refused(t, `{"model":"m","stream":true,"stream_options":{"`+name+`":true,"`+other+`":false}}`)
+			refused(t, `{"model":"m","stream_options":{"`+other+`":true}}`)
+		})
+	}
+	t.Run("the exact names are accepted", func(t *testing.T) {
+		for _, op := range ops {
+			if _, err := ParseOperation(op, []byte(`{"model":"m","stream":true,"stream_options":{"include_usage":true},"max_tokens":1,"n":1}`)); err != nil {
+				t.Errorf("%s: %v", op, err)
+			}
+		}
+	})
+	t.Run("stream_options that is not an object is not looked into", func(t *testing.T) {
+		for _, body := range []string{`{"model":"m","stream_options":null}`, `{"model":"m","stream_options":"Include_Usage"}`, `{"model":"m","stream_options":[{"INCLUDE_USAGE":1}]}`} {
+			if _, err := Parse([]byte(body)); err != nil {
+				t.Errorf("%s: %v", body, err)
+			}
+		}
+	})
+	t.Run("the check comes before the model check", func(t *testing.T) {
+		for _, body := range []string{`{"Model":1}`, `{"model":1,"MODEL":2}`, `{"model":"m","model":"n","MODEL":"o"}`} {
+			if _, err := Parse([]byte(body)); family.InvalidReason(err) != "member_case" {
+				t.Errorf("%s: reason %q", body, family.InvalidReason(err))
+			}
+		}
+	})
+	t.Run("the read sets are the names the parser passes to the family helpers", func(t *testing.T) {
+		top, inner := readNamesOf(t, "request.go")
+		if got, want := sortedCopy(ReadMembers), sortedCopy(top); strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("ReadMembers %v, the parser reads %v", got, want)
+		}
+		if got, want := sortedCopy(ReadStreamOptions), sortedCopy(inner); strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("ReadStreamOptions %v, the parser reads %v", got, want)
+		}
+	})
+}
+
+func sortedCopy(in []string) []string {
+	out := append([]string(nil), in...)
+	sort.Strings(out)
+	return out
+}
+
+// readNamesOf reads a source file of the package and returns the member names it passes to
+// family.ParseModel (which reads "model"), family.LastMember and family.PositiveInt: those whose
+// first argument is a variable named inner are the names of stream_options, the others top-level
+// names. A name is a string literal or a constant of the file.
+func readNamesOf(t *testing.T, file string) (top, inner []string) {
+	t.Helper()
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, file, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	consts := map[string]string{}
+	ast.Inspect(f, func(n ast.Node) bool {
+		if vs, ok := n.(*ast.ValueSpec); ok {
+			for i, id := range vs.Names {
+				if i < len(vs.Values) {
+					if lit, ok := vs.Values[i].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+						consts[id.Name], _ = strconv.Unquote(lit.Value)
+					}
+				}
+			}
+		}
+		return true
+	})
+	value := func(e ast.Expr) (string, bool) {
+		switch v := e.(type) {
+		case *ast.BasicLit:
+			s, err := strconv.Unquote(v.Value)
+			return s, err == nil
+		case *ast.Ident:
+			s, ok := consts[v.Name]
+			return s, ok
+		}
+		return "", false
+	}
+	seenTop, seenInner := map[string]bool{}, map[string]bool{}
+	ast.Inspect(f, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		if x, ok := sel.X.(*ast.Ident); !ok || x.Name != "family" {
+			return true
+		}
+		var key ast.Expr
+		switch sel.Sel.Name {
+		case "ParseModel":
+			if !seenTop["model"] {
+				seenTop["model"] = true
+				top = append(top, "model")
+			}
+			return true
+		case "LastMember":
+			if len(call.Args) == 2 {
+				key = call.Args[1]
+			}
+		case "PositiveInt":
+			if len(call.Args) >= 3 {
+				key = call.Args[2]
+			}
+		default:
+			return true
+		}
+		name, ok := value(key)
+		if !ok {
+			t.Errorf("%s: a call of family.%s takes a name that is neither a literal nor a constant of the file", fset.Position(call.Pos()), sel.Sel.Name)
+			return true
+		}
+		if id, ok := call.Args[0].(*ast.Ident); ok && id.Name == "inner" {
+			if !seenInner[name] {
+				seenInner[name] = true
+				inner = append(inner, name)
+			}
+		} else if !seenTop[name] {
+			seenTop[name] = true
+			top = append(top, name)
+		}
+		return true
+	})
+	return top, inner
 }

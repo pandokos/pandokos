@@ -159,7 +159,7 @@ func TestTransportClass(t *testing.T) {
 
 	t.Run("a forbidden address is blocked even when its host is listed", func(t *testing.T) {
 		guard := testutil.TestGuard(t)
-		for _, host := range []string{"169.254.169.254", "100.100.100.200", "[fd00:ec2::254]"} {
+		for _, host := range []string{"169.254.169.254", "100.100.100.200", "[fd00:ec2::254]", "169.254.170.23", "[fd00:ec2::23]", "[fd20:ce::254]", "[fe80::a9fe:a9fe]"} {
 			r := newRig(t, guard.Transport, func(o *jwks.Options) { o.PrivateHosts = []string{strings.Trim(host, "[]")} })
 			src := jwks.Source{Issuer: "https://" + host + "/", JWKSURI: "https://" + host + "/jwks.json"}
 			if _, err := r.key(nil, src, "k", "ES256"); !isUnavailable(err) {

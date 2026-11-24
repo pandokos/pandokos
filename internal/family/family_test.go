@@ -2,6 +2,7 @@ package family
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/pandokos/pandokos/test/familycodes"
@@ -65,6 +66,9 @@ func TestInvalidReason(t *testing.T) {
 	err := Invalid("model_missing")
 	if !errors.Is(err, ErrInvalidRequest) || InvalidReason(err) != "model_missing" {
 		t.Errorf("Invalid: %v %q", err, InvalidReason(err))
+	}
+	if member := Invalid("member_case"); !errors.Is(member, ErrInvalidRequest) || InvalidReason(member) != "member_case" || strings.Contains(member.Error(), "member_case") {
+		t.Errorf("Invalid(member_case): %v %q", member, InvalidReason(member))
 	}
 	if InvalidReason(errors.New("other")) != "" || InvalidReason(nil) != "" {
 		t.Error("a reason for an error that is not a refusal")

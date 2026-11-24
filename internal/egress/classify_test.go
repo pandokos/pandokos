@@ -49,6 +49,10 @@ func TestClassify(t *testing.T) {
 		{"169.254.170.2/32", "169.254.170.2", egress.AddrForbidden},
 		{"100.100.100.200/32", "100.100.100.200", egress.AddrForbidden},
 		{"fd00:ec2::254/128", "fd00:ec2::254", egress.AddrForbidden},
+		{"169.254.170.23/32", "169.254.170.23", egress.AddrForbidden},
+		{"fd00:ec2::23/128", "fd00:ec2::23", egress.AddrForbidden},
+		{"fd20:ce::254/128", "fd20:ce::254", egress.AddrForbidden},
+		{"fe80::a9fe:a9fe/128", "fe80::a9fe:a9fe", egress.AddrForbidden},
 		// private
 		{"127.0.0.0/8", "127.1.2.3", egress.AddrPrivate},
 		{"::1/128", "::1", egress.AddrPrivate},
@@ -125,6 +129,11 @@ func TestClassify(t *testing.T) {
 		{"::1%lo", egress.AddrPrivate, "loopback with a zone"},
 		{"2001:4860:4860::8888%eth0", egress.AddrPublic, "public with a zone"},
 		{"fd00:ec2::254%eth0", egress.AddrForbidden, "metadata with a zone"},
+		{"fd00:ec2::23%eth0", egress.AddrForbidden, "the EKS Pod Identity agent with a zone"},
+		{"fe80::a9fe:a9fe%eth0", egress.AddrForbidden, "the OpenStack metadata address with a zone"},
+		{"::ffff:169.254.170.23", egress.AddrForbidden, "mapped EKS Pod Identity agent"},
+		{"64:ff9b::a9fe:aa17", egress.AddrForbidden, "NAT64 of the EKS Pod Identity agent"},
+		{"2002:a9fe:aa17::1", egress.AddrForbidden, "6to4 of the EKS Pod Identity agent"},
 		{"::", egress.AddrForbidden, "unspecified keeps its class"},
 		{"::1", egress.AddrPrivate, "loopback keeps its class"},
 		{"::2", egress.AddrForbidden, "IPv4-compatible, first after loopback"},
@@ -146,4 +155,71 @@ func TestClassify(t *testing.T) {
 	if got := egress.Classify(netip.Addr{}); got != egress.AddrForbidden {
 		t.Errorf("the zero Addr: %s, want forbidden", className(got))
 	}
+}
+
+// metadataAddresses are the instance-metadata addresses the forbidden table names, each with the
+// service that listens there and the vendor page that documents it (ADR 0074 keeps the sources).
+var metadataAddresses = []struct{ addr, service string }{
+	{"169.254.169.254", "the instance metadata service of AWS, Google Cloud, Azure, Oracle Cloud, OpenStack and others"},
+	{"169.254.170.2", "the task credentials endpoint of Amazon ECS"},
+	{"100.100.100.200", "the metadata service of Alibaba Cloud"},
+	{"fd00:ec2::254", "the instance metadata service of AWS over IPv6"},
+	{"169.254.170.23", "the Amazon EKS Pod Identity agent over IPv4"},
+	{"fd00:ec2::23", "the Amazon EKS Pod Identity agent over IPv6"},
+	{"fd20:ce::254", "the Google Cloud metadata server over IPv6"},
+	{"fe80::a9fe:a9fe", "the OpenStack metadata service over IPv6"},
+}
+
+// TestClassifyMetadata is T-1099: every instance-metadata address of the table, the ones added by
+// sprint 12.2 included, is forbidden in every form, and neither transport of the guard dials it.
+func TestClassifyMetadata(t *testing.T) {
+	g := newGuard(t, egress.Options{})
+	for _, m := range metadataAddresses {
+		a := netip.MustParseAddr(m.addr)
+		t.Run(m.addr, func(t *testing.T) {
+			if got := egress.Classify(a); got != egress.AddrForbidden {
+				t.Errorf("%s (%s): %s, want forbidden", m.addr, m.service, className(got))
+			}
+			forms := []netip.Addr{a, a.WithZone("eth0")}
+			if a.Is4() {
+				forms = append(forms, netip.AddrFrom16(a.As16())) // IPv4-mapped
+				b := a.As4()
+				forms = append(forms,
+					netip.AddrFrom16([16]byte{0x00, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0, b[0], b[1], b[2], b[3]}), // NAT64
+					netip.AddrFrom16([16]byte{0x20, 0x02, b[0], b[1], b[2], b[3], 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}),       // 6to4
+				)
+			}
+			for _, f := range forms {
+				if got := egress.Classify(f); got != egress.AddrForbidden {
+					t.Errorf("%s as %s: %s, want forbidden", m.addr, f, className(got))
+				}
+			}
+			network, host := "tcp4", m.addr
+			if a.Is6() {
+				network, host = "tcp6", "["+m.addr+"]"
+			}
+			for name, ctl := range map[string]egress.ControlFunc{"public": g.PublicControl(), "private": g.PrivateControl()} {
+				err := ctl(network, host+":80", nil)
+				if err == nil {
+					t.Errorf("the %s transport dials %s", name, m.addr)
+					continue
+				}
+				if be := blocked(t, err); be.Reason != "forbidden_address" {
+					t.Errorf("the %s transport: reason %q, want forbidden_address", name, be.Reason)
+				}
+			}
+		})
+	}
+	t.Run("the neighbours of the single addresses keep their class", func(t *testing.T) {
+		for addr, want := range map[string]egress.AddrClass{
+			"169.254.170.22": egress.AddrPrivate, "169.254.170.24": egress.AddrPrivate, "169.254.170.3": egress.AddrPrivate,
+			"fd00:ec2::22": egress.AddrPrivate, "fd00:ec2::24": egress.AddrPrivate,
+			"fd20:ce::253": egress.AddrPrivate, "fd20:ce::255": egress.AddrPrivate,
+			"fe80::a9fe:a9fd": egress.AddrPrivate, "fe80::a9fe:a9ff": egress.AddrPrivate, "fe80::1": egress.AddrPrivate,
+		} {
+			if got := egress.Classify(netip.MustParseAddr(addr)); got != want {
+				t.Errorf("%s: %s, want %s", addr, className(got), className(want))
+			}
+		}
+	})
 }
