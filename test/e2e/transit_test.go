@@ -267,6 +267,8 @@ func TestMoveBetweenProviders(t *testing.T) {
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
+	// The worker writes the line after the state is committed: wait for it, then count.
+	waitLine(t, p1, "key rotation complete", 10*time.Second)
 	if l := linesOf(p1, "key rotation complete"); len(l) != 1 || l[0]["kek_version"] != keys[0].Version {
 		t.Errorf("key rotation complete: %v, want one line naming %s", l, keys[0].Version)
 	}
@@ -317,6 +319,7 @@ func TestMoveBetweenProviders(t *testing.T) {
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
+	waitLine(t, p4, "key rotation complete", 10*time.Second)
 	if l := linesOf(p4, "key rotation complete"); len(l) != 1 || l[0]["kek_version"] != w.idOf(1) {
 		t.Errorf("key rotation complete: %v, want one line naming %s", l, w.idOf(1))
 	}
