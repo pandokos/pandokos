@@ -1,6 +1,7 @@
 package transittest
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/hex"
@@ -107,8 +108,9 @@ func (s *Server) listen() {
 	}
 	var ln net.Listener
 	var err error
+	var lc net.ListenConfig
 	for i := 0; i < 50; i++ {
-		if ln, err = net.Listen("tcp", addr); err == nil {
+		if ln, err = lc.Listen(context.Background(), "tcp", addr); err == nil {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)

@@ -298,6 +298,7 @@ func (c *Scope) NewSecretID(mount, roleID string) string {
 	r := c.s.roles[strings.Trim(mount, "/")+"/"+roleID]
 	if r == nil {
 		c.s.tb.Fatalf("transittest: no such role")
+		return ""
 	}
 	r.secretID = "secret-" + randomHex(8)
 	return r.secretID
