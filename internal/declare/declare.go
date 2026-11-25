@@ -270,7 +270,8 @@ type Change struct {
 	Resource string // the resource type and its natural key, as the output line writes it
 	Detail   string
 
-	run step // the call that carries a create or an update out; nil for the other actions
+	run   step // the call that carries a create or an update out; nil for the other actions
+	alone bool // a skipped line that counts as left alone (a destination that needs --secrets-out)
 }
 
 // Line is the line the command prints for the change.

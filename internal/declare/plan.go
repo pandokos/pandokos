@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/pandokos/pandokos/internal/adminapi"
@@ -80,7 +81,7 @@ func (r *Result) count(ch Change, done bool) {
 	switch {
 	case ch.Action == "conflict":
 		r.Conflicts++
-	case ch.Action == "not in document":
+	case ch.Action == "not in document", ch.alone:
 		r.LeftAlone++
 	case done:
 		r.Changes++
@@ -466,10 +467,27 @@ func (p *planner) platform(ctx context.Context, c *adminapi.Client, doc *Documen
 		}
 	}
 
+	// The external reference of existing tenants: apply never creates a tenant.
 	tenantByName := map[string]adminapi.Tenant{}
 	for _, t := range st.tenants {
 		if t.State != adminapi.TenantStateDeleted {
 			tenantByName[t.Name] = t
+		}
+	}
+	docTenants := slices.Clone(doc.Tenants)
+	slices.SortFunc(docTenants, func(a, b PlatformTenant) int { return cmp.Compare(a.Name, b.Name) })
+	for _, d := range docTenants {
+		res := "tenant " + d.Name
+		cur, ok := tenantByName[d.Name]
+		switch {
+		case !ok:
+			p.conflict(res, "the tenant does not exist; apply never creates a tenant")
+		case d.ExternalReference != "" && d.ExternalReference != cur.ExternalReference:
+			id, ref := cur.ID, d.ExternalReference
+			p.update(res, "external_reference", func(ctx context.Context, c *adminapi.Client) error {
+				_, err := c.UpdateTenant(ctx, adminapi.UpdateTenantInput{Tenant: id, Body: adminapi.TenantUpdate{ExternalReference: adminapi.Some(ref)}})
+				return err
+			})
 		}
 	}
 
@@ -945,6 +963,7 @@ func (p *planner) tenant(ctx context.Context, c *adminapi.Client, id string, doc
 		})
 	}
 
+	p.eventDestinations(st, id, doc)
 	return nil
 }
 
@@ -1118,6 +1137,105 @@ func (p *planner) subjectMappings(st *tenantState, id string, doc *Document, sas
 			p.notInDocument("subject_mapping " + k.Scope + " " + k.Issuer + " " + k.Subject)
 		}
 	}
+}
+
+// eventDestinations plans the destinations of a tenant. An absent one is created only when there is
+// a sink for its signing secret, which the answer carries once; without a sink it is skipped.
+func (p *planner) eventDestinations(st *tenantState, id string, doc *Document) {
+	have := map[string]adminapi.EventDestination{}
+	for _, e := range st.destinations {
+		have[e.Name] = e
+	}
+	docs := slices.Clone(doc.EventDestinations)
+	slices.SortFunc(docs, func(a, b EventDestination) int { return cmp.Compare(a.Name, b.Name) })
+	inDoc := map[string]bool{}
+	for _, d := range docs {
+		inDoc[d.Name] = true
+		res := "event_destination " + d.Name
+		cur, ok := have[d.Name]
+		if !ok {
+			sink := p.opts.SecretSink
+			if sink == nil {
+				p.changes = append(p.changes, Change{Action: "skipped", Resource: res, Detail: "needs --secrets-out", alone: true})
+				continue
+			}
+			p.create(res, func(ctx context.Context, c *adminapi.Client) error {
+				made, err := c.CreateEventDestination(ctx, adminapi.CreateEventDestinationInput{Tenant: id, Body: adminapi.EventDestinationCreate{Name: d.Name, Description: d.Description,
+					URL: d.URL, EventTypes: eventTypes(d.EventTypes), Enabled: d.Enabled}})
+				if err != nil {
+					return err
+				}
+				if made.Secret == "" {
+					return errors.New("the destination was created and the answer holds no signing secret: run event-destination rotate-secret to obtain one")
+				}
+				secret := []byte(made.Secret)
+				defer clear(secret)
+				if err := sink("event-destination-"+d.Name, secret); err != nil {
+					return fmt.Errorf("the destination was created and its signing secret could not be written (run event-destination rotate-secret to obtain one): %w", err)
+				}
+				return nil
+			})
+			continue
+		}
+		var body adminapi.EventDestinationUpdate
+		var changed []string
+		if d.Description != "" && d.Description != cur.Description {
+			body.Description = adminapi.Some(d.Description)
+			changed = append(changed, "description")
+		}
+		if d.URL != cur.URL {
+			body.URL = adminapi.Some(d.URL)
+			changed = append(changed, "url")
+		}
+		if !sameSet(d.EventTypes, eventTypeNames(cur.EventTypes)) {
+			body.EventTypes = adminapi.Some(eventTypes(d.EventTypes))
+			changed = append(changed, "event_types")
+		}
+		if d.Enabled != cur.Enabled {
+			body.Enabled = adminapi.Some(d.Enabled)
+			changed = append(changed, "enabled")
+		}
+		if len(changed) > 0 {
+			did := cur.ID
+			p.update(res, join(changed), func(ctx context.Context, c *adminapi.Client) error {
+				_, err := c.UpdateEventDestination(ctx, adminapi.UpdateEventDestinationInput{Tenant: id, Destination: did, Body: body})
+				return err
+			})
+		}
+	}
+	for _, n := range sortedKeys(have) {
+		if !inDoc[n] {
+			p.notInDocument("event_destination " + n)
+		}
+	}
+}
+
+func eventTypes(in []string) []adminapi.EventType {
+	out := make([]adminapi.EventType, len(in))
+	for i, t := range in {
+		out[i] = adminapi.EventType(t)
+	}
+	return out
+}
+
+func eventTypeNames(in []adminapi.EventType) []string {
+	out := make([]string, len(in))
+	for i, t := range in {
+		out[i] = string(t)
+	}
+	return out
+}
+
+// NewDestinations lists the names of the event destinations the plan creates, so that the caller
+// can see before any call that the files for their secrets are free.
+func (p Plan) NewDestinations() []string {
+	var out []string
+	for _, ch := range p.Changes {
+		if ch.Action == "create" && ch.run != nil && strings.HasPrefix(ch.Resource, "event_destination ") {
+			out = append(out, strings.TrimPrefix(ch.Resource, "event_destination "))
+		}
+	}
+	return out
 }
 
 func inSAs(sas []ServiceAccount, name string) bool {

@@ -133,6 +133,7 @@ type tenantState struct {
 	tokenIssuers    []adminapi.TokenIssuer
 	platformIssuers []adminapi.TenantPlatformIssuer // the platform-level issuers that list the tenant
 	mappings        []adminapi.SubjectMapping
+	destinations    []adminapi.EventDestination
 }
 
 func readTenant(ctx context.Context, c *adminapi.Client, id string) (*tenantState, error) {
@@ -194,6 +195,15 @@ func readTenant(ctx context.Context, c *adminapi.Client, id string) (*tenantStat
 	}
 	if s.mappings, err = drain(func(cur string) ([]adminapi.SubjectMapping, string, error) {
 		l, err := c.ListSubjectMappings(ctx, adminapi.ListSubjectMappingsInput{Tenant: id, Cursor: cur})
+		if err != nil {
+			return nil, "", err
+		}
+		return l.Items, l.NextCursor, nil
+	}); err != nil {
+		return nil, err
+	}
+	if s.destinations, err = drain(func(cur string) ([]adminapi.EventDestination, string, error) {
+		l, err := c.ListEventDestinations(ctx, adminapi.ListEventDestinationsInput{Tenant: id, Cursor: cur})
 		if err != nil {
 			return nil, "", err
 		}
@@ -391,6 +401,14 @@ func (s *tenantState) document() *Document {
 	slices.SortFunc(d.SubjectMappings, func(a, b SubjectMapping) int {
 		return cmp.Or(cmp.Compare(a.Issuer.Scope, b.Issuer.Scope), cmp.Compare(a.Issuer.Name, b.Issuer.Name), cmp.Compare(a.Subject, b.Subject))
 	})
+	for _, e := range s.destinations {
+		types := make([]string, len(e.EventTypes))
+		for i, t := range e.EventTypes {
+			types[i] = string(t)
+		}
+		d.EventDestinations = append(d.EventDestinations, EventDestination{Name: e.Name, Description: e.Description, URL: e.URL, EventTypes: nonEmptyStrings(sorted(types)), Enabled: e.Enabled})
+	}
+	slices.SortFunc(d.EventDestinations, func(a, b EventDestination) int { return cmp.Compare(a.Name, b.Name) })
 	slices.Sort(d.LeftOut)
 	return d
 }
@@ -597,6 +615,12 @@ func (s *platformState) document() *Document {
 			Currency: r.Currency, Enforce: r.Enforce, Thresholds: nonEmptyInts(r.Thresholds)})
 	}
 	sortLimits(d.PlatformLimits, func(l Limit) string { return limitKey(l.tenantRef(), l) })
+	for _, t := range s.tenants {
+		if t.ExternalReference != "" && t.State != adminapi.TenantStateDeleted {
+			d.Tenants = append(d.Tenants, PlatformTenant{Name: t.Name, ExternalReference: t.ExternalReference})
+		}
+	}
+	slices.SortFunc(d.Tenants, func(a, b PlatformTenant) int { return cmp.Compare(a.Name, b.Name) })
 	for _, i := range s.issuers {
 		pi := PlatformIssuer{Name: i.Name, Description: i.Description, Issuer: i.Issuer, Audience: i.Audience, JWKSURI: i.JwksUri, Algorithms: nonEmptyStrings(sorted(i.Algorithms)),
 			SubjectClaim: i.SubjectClaim, TenantClaim: i.TenantClaim, RequiredClaims: nonEmptyClaims(i.RequiredClaims), Enabled: i.Enabled}
