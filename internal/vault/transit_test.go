@@ -460,9 +460,14 @@ func TestTransitVersionIdentifier(t *testing.T) {
 			t.Fatal(err)
 		}
 		fp := strings.Split(v1, "-")[1]
+		// The fingerprint in upper case; one of only decimal digits has no case, so a letter is put first.
+		upper := strings.ToUpper(fp)
+		if upper == fp {
+			upper = "A" + fp[1:]
+		}
 		table := []string{
 			"", "transit", "transit-", "transit-v1", "transit-" + fp, "transit-" + fp + "-v", "transit-" + fp + "-v0",
-			"transit-" + fp + "-v-1", "transit-" + fp + "-v1x", "transit-" + fp + "-V1", "transit-" + strings.ToUpper(fp) + "-v1",
+			"transit-" + fp + "-v-1", "transit-" + fp + "-v1x", "transit-" + fp + "-V1", "transit-" + upper + "-v1",
 			"transit-" + fp[:15] + "-v1", "transit-" + fp + "0-v1", "transit-" + fp + "-v99999999999999999999",
 			"local-" + fp, "TRANSIT-" + fp + "-v1", " transit-" + fp + "-v1", "transit-" + fp + "-v1 ",
 			"transit-0000000000000000-v1", // a wrong fingerprint with a valid number
