@@ -69,5 +69,5 @@ jobs:
         run: |
           set -eu
           gh api "repos/$GITHUB_REPOSITORY/rulesets" --jq '.[] | "\(.target) \(.enforcement) \(.name)"' | tee rulesets.txt
-          grep -q '^branch active ' rulesets.txt
-          grep -q '^tag active ' rulesets.txt
+          grep -qxF 'branch active Protect main and release branches' rulesets.txt
+          grep -qxF 'tag active Protect version tags' rulesets.txt

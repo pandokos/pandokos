@@ -455,6 +455,20 @@ func TestScheduledChecks(t *testing.T) {
 	} else if !regexp.MustCompile(`(?is)release.{0,40}check.{0,400}ruleset`).MatchString(read(t, "CONTRIBUTING.md")) {
 		t.Error("scheduled.yml has no job settings and the release check list of CONTRIBUTING.md does not name the rulesets")
 	}
+	if hasJob(text, "settings") {
+		job := jobBlock(t, "scheduled.yml", text, "settings")
+		if !strings.Contains(job, "/rulesets") {
+			t.Error("the job settings does not read the rulesets")
+		}
+		for _, want := range []string{"Protect main and release branches", "Protect version tags"} {
+			if !strings.Contains(job, want) {
+				t.Errorf("the job settings does not name the ruleset %q", want)
+			}
+		}
+		if !strings.Contains(job, "active") {
+			t.Error("the job settings does not test that the rulesets are active")
+		}
+	}
 	for _, name := range jobs {
 		job := jobBlock(t, "scheduled.yml", text, name)
 		if !strings.Contains(job, "github.repository == 'pandokos/pandokos'") {
