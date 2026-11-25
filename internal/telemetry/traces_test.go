@@ -242,13 +242,22 @@ func TestCollectorNeverBlocks(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tr, logs := newTraces(t, setup(t), nil)
 			tracer := tr.Provider().Tracer(scopeName)
-			began := time.Now()
-			for i := 0; i < 10_000; i++ {
-				_, s := tracer.Start(context.Background(), "synthetic")
-				s.End()
+			// A round on a loaded machine can lose its time to the scheduler (580 ms against 120 ms
+			// idle, with the suites of other packages running alongside): up to three rounds are
+			// made and the best is kept. An ending that waits on the exporter waits in every round.
+			var best time.Duration
+			for round := 0; round < 3 && (round == 0 || best > 500*time.Millisecond); round++ {
+				began := time.Now()
+				for i := 0; i < 10_000; i++ {
+					_, s := tracer.Start(context.Background(), "synthetic")
+					s.End()
+				}
+				if took := time.Since(began); round == 0 || took < best {
+					best = took
+				}
 			}
-			if took := time.Since(began); took > 500*time.Millisecond {
-				t.Errorf("ending 10 000 spans took %s, the bound is 500 ms", took)
+			if best > 500*time.Millisecond {
+				t.Errorf("ending 10 000 spans took %s at best of three rounds, the bound is 500 ms", best)
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 			defer cancel()
