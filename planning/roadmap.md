@@ -17,7 +17,7 @@ A release is the tag `vMAJOR.MINOR.PATCH` on the commit of `main` that met its a
 |---|---|---|---|---|
 | **v0.1.0** | Core BYOK | 1, 2, 3 and sprint 4.1 | 9 | 9 done |
 | **v0.2.0** | Governance | 5, rest of 4, and 6 without sprint 6.4 | 9 | 9 done |
-| **v0.3.0** | Ready to operate | sprint 6.4, 12 | 4 | 1 done |
+| **v0.3.0** | Ready to operate | sprint 6.4, 12 | 4 | 4 done |
 | **v0.4.0** | Scale-out and providers | 8 without sprint 8.3, 9 | 4 | |
 | **v1.0.0** | Hardening | 10, sprint 8.3 | 4 | |
 
@@ -79,10 +79,10 @@ flowchart LR
 | 6.3 | Tenant deletion and key rotation | Staged deletion with cryptographic erasure; tenant export; rotation of the key-encryption key; backup and restore guide | done |
 | | **v0.3.0 — Ready to operate** | | |
 | 6.4 | Events for external systems | Usage events and limit notifications through the outbox to a signed webhook; retries, dead letters, replay; export | done |
-| **12** | **[Operability](epics/12-operability/epic.md)** | | |
-| 12.1 | External key-encryption key | The key-encryption key held by an external service over a transit API; none on the Pandokos hosts | |
-| 12.2 | Threat model review and fuzzing | The threat model checked against the code as built; fuzzing of the network parsers in CI | |
-| 12.3 | Restore drill and upgrade policy | A restore from backups, including loss of the key-encryption key; upgrade policy and tested upgrade; an instance defined by configuration alone; implemented, [record](../docs/operations/restore-drill-2026-11.md) | |
+| **12** | **[Operability](epics/12-operability/epic.md)** | | done |
+| 12.1 | External key-encryption key | The key-encryption key held by an external service over a transit API; none on the Pandokos hosts | done |
+| 12.2 | Threat model review and fuzzing | The threat model checked against the code as built; fuzzing of the network parsers in CI | done |
+| 12.3 | Restore drill and upgrade policy | A restore from backups, including loss of the key-encryption key; upgrade policy and tested upgrade; an instance defined by configuration alone; [drill record](../docs/operations/restore-drill-2026-11.md) | done |
 | | **v0.4.0 — Scale-out and providers** | | |
 | **8** | **[Scale-out and deployment](epics/08-scale-out/epic.md)** | | |
 | 8.1 | Shared counters | Valkey counter store; replicas behind a load balancer in Compose; consistency tests | |
