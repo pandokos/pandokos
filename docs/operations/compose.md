@@ -188,3 +188,7 @@ expected `configuration warning` about the permissions of `vault.kek.local.key_f
 
 Compose, PostgreSQL and the images are pinned or updated by Dependabot; the Compose reference is
 exercised by CI (`go test -tags compose ./test/compose/`, which needs `PANDOKOS_TEST_IMAGE`).
+
+## Upgrading
+
+An installation moves to a newer version by stop, migrate, start: back up, `docker compose stop`, run `migrate` of the new image once, `docker compose up -d`. The procedure, the supported upgrades, the measured interval and the way back are in the [upgrade guide](upgrade.md).

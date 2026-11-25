@@ -190,7 +190,7 @@ older than PostgreSQL 16, a privilege role is missing or privileged, or the user
 
 Rules to know:
 
-- Upgrades are **stop, migrate, start**. A binary refuses a schema that is older or newer than the
+- Upgrades are **stop, migrate, start** (the [upgrade guide](upgrade.md) has the procedure, the supported upgrades and the way back). A binary refuses a schema that is older or newer than the
   one it was built for, so there is no window in which two versions run together.
 - Migrations are forward-only. There are no down migrations: a mistake is corrected by a new
   release, or by a restore. A migration that has been released is never edited, and a ledger row

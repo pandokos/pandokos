@@ -1726,3 +1726,72 @@ func TestCurrencyAndUsageDetailKeys(t *testing.T) {
 		})
 	}
 }
+
+// TestKeyScope is T-1147: every configuration key has a scope, instance (two instances of one
+// installation may differ in it) or installation (they must not), and the keys that sprint 12.3
+// names in its design (5.10) have the scope stated there.
+func TestKeyScope(t *testing.T) {
+	t.Parallel()
+	scope := map[string]string{}
+	for _, k := range Keys() {
+		switch k.Scope {
+		case ScopeInstance, ScopeInstallation:
+		default:
+			t.Errorf("%s: the scope is %q, want %q or %q", k.Name, k.Scope, ScopeInstance, ScopeInstallation)
+		}
+		scope[k.Name] = k.Scope
+	}
+	if len(scope) != len(Keys()) {
+		t.Fatal("the key table repeats a name")
+	}
+	want := func(scopeWanted string, match func(name string) bool, atLeast int, what string) {
+		t.Helper()
+		n := 0
+		for name, got := range scope {
+			if !match(name) {
+				continue
+			}
+			n++
+			if got != scopeWanted {
+				t.Errorf("%s (%s): the scope is %q, want %q", name, what, got, scopeWanted)
+			}
+		}
+		if n < atLeast {
+			t.Errorf("%s: %d keys match, want at least %d: the design names keys that the table lacks", what, n, atLeast)
+		}
+	}
+	prefix := func(p string) func(string) bool { return func(n string) bool { return strings.HasPrefix(n, p) } }
+	named := func(names ...string) func(string) bool {
+		return func(n string) bool {
+			for _, x := range names {
+				if n == x {
+					return true
+				}
+			}
+			return false
+		}
+	}
+
+	// May differ between two instances of one installation.
+	want(ScopeInstance, prefix("listeners."), 15, "the listeners and their TLS files")
+	want(ScopeInstance, named("log.level"), 1, "the log level")
+	want(ScopeInstance, prefix("cache."), 5, "the cache lifetimes")
+	want(ScopeInstance, named("database.gateway.max_connections", "database.admin.max_connections", "database.worker.max_connections"), 3, "the pool sizes")
+	want(ScopeInstance, named("database.connect_timeout"), 1, "a timeout")
+	want(ScopeInstance, prefix("telemetry."), 10, "telemetry")
+	want(ScopeInstance, prefix("shutdown."), 1, "shutdown")
+
+	// Must be the same on every instance that shares a database.
+	want(ScopeInstallation, named("database.address", "database.name"), 2, "the database")
+	want(ScopeInstallation, prefix("vault.kek."), 15, "the key-encryption key")
+	want(ScopeInstallation, named("limits.time_zone"), 1, "the time zone")
+	want(ScopeInstallation, prefix("limits.on_"), 2, "what a limit does when it cannot decide")
+	want(ScopeInstallation, named("pricing.default_currency"), 1, "the default currency")
+	want(ScopeInstallation, prefix("retention."), 2, "retention")
+	want(ScopeInstallation, prefix("tenant_deletion."), 2, "tenant deletion")
+	want(ScopeInstallation, prefix("events."), 5, "events")
+	want(ScopeInstallation, prefix("tokens."), 5, "tokens")
+	want(ScopeInstallation, prefix("auth."), 20, "sign-in")
+	want(ScopeInstallation, prefix("support."), 2, "support")
+	want(ScopeInstallation, prefix("idempotency."), 1, "idempotency")
+}

@@ -58,7 +58,7 @@ may read which log, and how an operator's other systems recognise a tenant were 
   want to send there.
 - The external reference is set by the operator, not by the tenant, so the platform's events can be matched to the
   operator's systems.
-- Destinations and the external reference are not in `export` and `apply` (sprint 12.3).
+- Destinations and the external reference are in `export` and `apply` ([ADR 0077](0077-an-instance-defined-by-configuration-alone.md)); a destination is created by `apply` only with `--secrets-out`.
 
 ## Alternatives considered
 
@@ -74,3 +74,4 @@ protections.
 
 - 2026-11-23: proposed with sprint 6.4.
 - 2026-11-24: accepted by the maintainer after review.
+- 2026-11-25: sprint 12.3 puts destinations and the external reference in `export` and `apply`, and the recovery script disables a destination whose secret a lost key sealed ([ADR 0077](0077-an-instance-defined-by-configuration-alone.md), [ADR 0076](0076-the-restore-drill-its-record-and-recovery-after-a-lost-key.md)).

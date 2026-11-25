@@ -174,7 +174,7 @@ SOW 0.1; *new* marks requirements added in this revision.
 | VLT-13 | Database backups contain only ciphertext and wrapped keys. The key-encryption key is backed up separately, and the procedure is documented | M | R1 | VAULT-21 |
 | VLT-14 | Secrets never appear in logs, traces, metrics, error messages, events or diagnostics. Automated tests plant canary secrets and search every output for them | M | R1 | VAULT-13, SEC-SC-07 |
 | VLT-15 | Each use of a credential is attributable to a request, tenant and caller | M | R1 | VAULT-12 |
-| VLT-16 | The security limits of the vault and the recovery procedure for lost or compromised keys are documented, distinguishing recoverable secrets from those the owner must re-enter | M | R1 (draft), R3 (tested) | VAULT-22, VAULT-23 |
+| VLT-16 | The security limits of the vault and the recovery procedure for lost or compromised keys are documented, distinguishing recoverable secrets from those the owner must re-enter | M | R1 (draft), R3 (tested); tested (sprint 12.3) | VAULT-22, VAULT-23 |
 
 ### 5.5 Provider and model catalogue
 
@@ -335,10 +335,10 @@ by digest and the nightly scans of the same ADR.
 | OPS-07 | Moving a tenant between pool and silo is a documented operator procedure | C | R5 | §5.3 |
 | OPS-08 | Static settings come from a file and environment variables; secrets are referenced as files. Dynamic settings live in the database and are managed through the API | M | R1 | NFR-MAINT-02 |
 | OPS-09 | Schema migrations are versioned and run by an explicit command. An instance refuses to start against a schema it does not match | M | R1 | DB-03, NFR-MAINT-05 |
-| OPS-10 | Backup and restore, including keys, are documented, and a restore is tested | M | R2 (documented), R3 (tested) | NFR-AV-05 |
+| OPS-10 | Backup and restore, including keys, are documented, and a restore is tested | M | R2 (documented), R3 (tested); tested (sprint 12.3) | NFR-AV-05 |
 | OPS-11 | Behaviour on failure of each dependency is defined. If authorization or the credential cannot be verified the request is not forwarded | M | R2 | NFR-PERF-05, NFR-AV-01, NFR-AV-02 |
 | OPS-12 | On shutdown, in-flight streams are drained up to a configurable deadline | M | R1 | new |
-| OPS-13 | Releases follow semantic versioning with upgrade notes, and upgrading from the previous minor version is supported | S | R3 | NFR-MAINT-05 |
+| OPS-13 | Releases follow semantic versioning with upgrade notes, and upgrading from the previous minor version is supported (the policy: [upgrade guide](../operations/upgrade.md); the path is tested on every pull request) | S | R3 | NFR-MAINT-05 |
 | OPS-14 | Several instances scale horizontally with consistent authentication, limits, usage and revocation | M | R4 | NFR-PERF-04 |
 
 ### 5.15 Privacy

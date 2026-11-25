@@ -57,7 +57,7 @@ Commands:
                                    "pandokos <command> --help" lists the flags
   export (--platform | --tenant ID) [--out FILE]
                                    Write the configuration as a declarative document
-  apply --file FILE (--platform | --tenant ID) [--dry-run]
+  apply --file FILE (--platform | --tenant ID) [--dry-run] [--secrets-out DIR]
                                    Create and update what a document lists; never deletes
   tenant-export --tenant ID --out DIR [--usage-from T]
                                    Write the tenant's own data to a new directory, through the API

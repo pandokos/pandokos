@@ -174,7 +174,7 @@ as long as the zone makes it, 23 or 25 hours on the days when the clocks change 
 and starts at the first instant of the civil date even if local midnight does not exist or exists twice.
 A zone must have offsets that are whole minutes: `limits.time_zone` is refused at start-up with an error
 naming it, and a tenant's zone with a 400 on `time_zone`. All instances of one installation must use the
-same `limits.time_zone`. Changing `limits.time_zone` takes effect at the next restart, for the tenants
+same `limits.time_zone` (scope `installation`, [what makes an installation](configuration.md#what-makes-an-installation)). Changing `limits.time_zone` takes effect at the next restart, for the tenants
 that have no zone of their own; it is an operator's decision about every such tenant, and the periods
 of the new default count the whole usage of their range.
 

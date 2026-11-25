@@ -28,6 +28,8 @@ computed states). Rates and amounts are decimal strings and are never converted.
 | | `model_grants` | `provider`, `model`, `tenant` (the tenant's **name**) | none |
 | | `price_overrides` | `provider`, `model`, `valid_from` | `note`, `currency`, `rates` |
 | | `platform_limits` | `tenant` (a name, or `default`), `provider`, `model`, `metric`, `currency` | `limit` or `amount`, `enforce`, `thresholds` |
+| | `platform_issuers` | `name` | `description`, `issuer`, `audience`, `jwks_uri`, `algorithms`, `subject_claim`, `tenant_claim`, `required_claims`, `enabled`, `tenants` (each `tenant`, a name, and `claim_value`) |
+| | `tenants` | `name` | `external_reference`. This section **never creates a tenant**: a name that does not exist is a `conflict`, and the reference is the one member the platform sets |
 | `tenant` | `settings` | none | `time_zone`, `active_currency`, `metadata_keys` |
 | | `model_restriction` | none | `models` (`provider/model` references) |
 | | `roles` | `name` (custom roles only) | `description`, `permissions` |
@@ -35,16 +37,31 @@ computed states). Rates and amounts are decimal strings and are never converted.
 | | `limits` | `subject`, `provider`, `model`, `metric`, `currency` | `limit` or `amount`, `enforce`, `thresholds` |
 | | `price_lists` | `currency` | `versions` |
 | | `price_lists[].versions` | `provider`, `model`, `valid_from` | `note`, `rates` (`category`, `threshold`, `rate`) |
+| | `token_issuers` | `name` | `description`, `issuer`, `audience`, `jwks_uri`, `algorithms`, `subject_claim`, `required_claims`, `enabled` |
+| | `subject_mappings` | `issuer` (`scope`, `name`), `subject` | `service_account` (a name), `description` |
+| | `event_destinations` | `name` | `description`, `url`, `event_types`, `enabled` |
 
-In `limits` the `subject` is `tenant`, `service_account: <name>` or `key: <key ID>` (the public key ID).
+In `limits` the `subject` is `tenant`, `service_account: <name>`, `key: <key ID>` (the public key ID) or a
+subject mapping, `mapping: {scope: platform, issuer: <name>, subject: <subject>}`; a rule on a mapping is
+written after the others in the export, ordered by the text of its subject. A claim value that equals the
+tenant's ID is not exported, and a platform issuer's tenant with no `claim_value` means the ID of the target
+tenant, because IDs are not portable between installations.
 A document may hold only the sections it cares about; a section that is absent means "leave alone", not
 "remove".
 
 **What is never in a document, and never exported:** a secret, a key, a credential, a person (member,
-user, session), a usage figure, an ID that is not portable. A rule whose subject is a subject mapping is
-left out of the export and listed in a comment line at the end. Platform-level issuers, tenant token
-issuers and subject mappings are not in the document (sprint 12.3); members, credentials and keys never
-will be.
+user, session), a usage figure, an ID that is not portable. The signing secret of a destination is one of
+those: a document that holds a `secret` or a `signing_secret` is refused (exit 2). Platform-level issuers with
+their tenants, tenant token issuers, subject mappings, destinations and the external reference of a tenant are
+in the document; members, credentials and keys never will be. `apply` never creates a tenant, never deletes and
+never rotates a secret.
+
+**Destinations and `--secrets-out`.** A destination has a signing secret that is shown once, when it is created.
+`apply` therefore creates a destination only when it is given `--secrets-out DIR`: the secret is written to a
+file named `event-destination-<name>` in that directory (which must be private; each file is created exclusively
+with mode 0600) and is never printed. Without the flag `apply` skips the destination and says so, and a
+destination that exists is updated as any resource. Move the files to your secret store and delete them: nothing
+else holds the secret, and `pandokos event-destination rotate-secret` replaces it.
 
 **Settings the document cannot clear.** An absent or empty `time_zone` leaves the setting as it is,
 and so does an absent `metadata_keys`; a document cannot return a tenant to "every metadata key" or to
@@ -62,7 +79,7 @@ of what it reads; a missing one is the API's `403`.
 
 ## 3. `apply` and its rules
 
-`pandokos apply --file FILE (--platform | --tenant ID) [--dry-run]` reads the current state through the
+`pandokos apply --file FILE (--platform | --tenant ID) [--dry-run] [--secrets-out DIR]` reads the current state through the
 API, compares it with the document by natural key and plans:
 
 | Plan | When |
@@ -80,9 +97,16 @@ API, compares it with the document by natural key and plans:
   database refuses one and the history of what was charged cannot be rewritten.
 - **Settings that take effect later** (the time zone, the active currency) compare the value set,
   pending included, so a document just exported compares equal.
-- **Order.** Platform: providers, endpoints, models, grants, overrides, ceilings. Tenant: time zone and
-  metadata keys, custom roles, service accounts and their roles, model restriction, limits, price lists,
-  then the active currency (a budget may need its price list first).
+- **Order.** Platform: providers, endpoints, models, grants, overrides, ceilings, the external references of tenants,
+  then the platform issuers with their tenants. Tenant: time zone and metadata keys, custom roles, service accounts
+  and their roles, model restriction, token issuers, subject mappings, limits, price lists, the active currency
+  (a budget may need its price list first), and the destinations last.
+- **Updates.** An **absent** member leaves the stored value unchanged; an **explicitly empty** one clears it. This
+  holds for `enabled`, `jwks_uri`, `required_claims` (`required_claims: {}`) and `event_types` (`event_types: []`)
+  of an issuer or a destination, and an empty `description` leaves the stored one. `algorithms`, `subject_claim`
+  and `tenant_claim` are compared only when written. On a **create**, an absent `enabled` creates the item
+  **disabled** (the safe default) and absent `required_claims` and `event_types` create it empty; an export always
+  writes all of these members, so a document just exported changes nothing and is safe to edit.
 - **Idempotent.** The plan of a document just exported is empty: no write call, `0 changes`.
 
 **Output and exit codes.** One line per change, such as `create service_account billing`,
@@ -116,7 +140,7 @@ models:
     upstream_id: gpt-4o-2024-11-20
     status: active
     availability: selected
-    capabilities: [chat, vision]
+    capabilities: [text, vision, tools, streaming]
 model_grants:
   - provider: openai
     model: gpt-4o

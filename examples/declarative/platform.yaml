@@ -1,0 +1,34 @@
+# A platform document to start from (docs/operations/declarative.md).
+#
+#   pandokos apply --platform --file examples/declarative/platform.yaml --dry-run
+#   pandokos apply --platform --file examples/declarative/platform.yaml
+#
+# It holds no secret: a provider's credential is set per tenant, and a signing secret is shown once
+# when a destination is created (apply --secrets-out). Applying it twice changes nothing the second time.
+pandokos: v1
+kind: platform
+
+# A provider with an endpoint and a model every tenant may call.
+providers:
+  - name: openai
+    api_family: openai
+    display_name: OpenAI
+    endpoints:
+      - name: default
+        base_url: https://api.openai.com
+        is_default: true
+models:
+  - provider: openai
+    name: gpt-4o
+    upstream_id: gpt-4o-2024-11-20
+    status: active
+    availability: all
+    capabilities: [text, vision, tools, streaming]
+
+# The default ceiling: a tenant that has no rule of its own is limited to 256 requests in flight.
+# Pandokos does not create it by itself (an upgrade must not start refusing traffic): this line does.
+platform_limits:
+  - tenant: default
+    metric: concurrent_requests
+    limit: 256
+    enforce: true

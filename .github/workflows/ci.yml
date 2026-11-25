@@ -169,6 +169,52 @@ jobs:
         if: failure()
         run: docker compose -f test/db/compose.yaml logs --no-color --tail 200
 
+  upgrade:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: .go-version
+      - name: Start PostgreSQL and PgBouncer
+        run: |
+          sh test/db/up.sh
+          echo "::add-mask::$(cat local/testdb/postgres_password)"
+          cat local/testdb/env >> "$GITHUB_ENV"
+      - name: Build the previous release
+        run: make previous-binary
+      - name: Upgrade tests
+        run: make test-upgrade
+      - name: Database logs
+        if: failure()
+        run: docker compose -f test/db/compose.yaml logs --no-color --tail 200
+
+  drill:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: .go-version
+      - name: Pull the images of the drill
+        run: |
+          PANDOKOS_DRILL_BACKUP=/tmp PANDOKOS_DRILL_SECRETS=/tmp \
+            docker compose -f test/drill/compose.yaml --profile '*' pull --quiet
+      - name: Restore drill
+        run: make test-drill
+        env:
+          PANDOKOS_DRILL_REPORT: ${{ runner.temp }}/drill-report.json
+          PANDOKOS_DRILL_AUDIT_ROWS: "1000"
+      - name: Leftover containers
+        if: always()
+        run: docker ps -a --filter name=pandokos-drill --format '{{.Names}} {{.Status}}'
+
   browser:
     runs-on: ubuntu-24.04
     steps:

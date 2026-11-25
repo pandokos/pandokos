@@ -28,6 +28,10 @@ updates:
     directory: /test/transit
     schedule:
       interval: weekly
+  - package-ecosystem: docker-compose
+    directory: /test/drill
+    schedule:
+      interval: weekly
   - package-ecosystem: pip
     directory: /test/sdk/python
     schedule:

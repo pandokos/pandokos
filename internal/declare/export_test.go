@@ -96,7 +96,9 @@ func golden(t *testing.T, name string, want *declare.Document) string {
 
 // TestExportDocument is T-966: from fixed answers of the API the tenant and platform documents equal
 // the golden files, in the order of the natural keys whatever the order of the answers, with no ID
-// that is not portable and no secret, key, credential, person or usage figure.
+// that is not portable and no secret, key, credential, person or usage figure. Since sprint 12.3 (the
+// test is changed) the tenant has an issuer, a mapping and a rule on it, and nothing is left out: no
+// comment line for the rules on a subject mapping.
 func TestExportDocument(t *testing.T) {
 	for _, c := range []struct {
 		name    string
@@ -106,10 +108,11 @@ func TestExportDocument(t *testing.T) {
 		leftOut int
 		banned  []string
 	}{
-		{"tenant", declare.Target{Tenant: tidAcme}, tenantState, wantTenant(), 1,
-			[]string{tidAcme, tidGlobex, saBilling, saReports, roleID, modelGPT, mappingID, canarySecret, canaryMember, "424242", "gpt-4o-2024", "credential", "password", "secret"}},
-		{"platform", declare.Target{Platform: true}, platformState, wantPlatform(), 0,
-			[]string{tidAcme, tidGlobex, modelGPT, modelMini, "0192f0f0-aaaa", "0192f0f0-bbbb", "0192f0f0-cccc", "424242", "secret"}},
+		{"tenant", declare.Target{Tenant: tidAcme}, tenantStateFull, wantTenantFull(), 0,
+			[]string{tidAcme, tidGlobex, saBilling, saReports, roleID, modelGPT, mappingID, mappingTenantID, issuerTenantID, issuerPlatformID, destinationID, destination2ID,
+				canarySecret, canaryMember, canaryDelivery, "31337", "424242", "gpt-4o-2024", "credential", "password", "secret", "cursor"}},
+		{"platform", declare.Target{Platform: true}, platformStateFull, wantPlatformFull(), 0,
+			[]string{tidAcme, tidGlobex, modelGPT, modelMini, issuerPlatformID, "0192f0f0-aaaa", "0192f0f0-bbbb", "0192f0f0-cccc", "424242", "secret"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			wantYAML := golden(t, c.name, c.want)
@@ -126,9 +129,6 @@ func TestExportDocument(t *testing.T) {
 			}
 			if len(doc.LeftOut) != c.leftOut {
 				t.Errorf("left out: %v, want %d entries", doc.LeftOut, c.leftOut)
-			}
-			if c.leftOut == 1 && !strings.Contains(doc.LeftOut[0], "subject mapping") {
-				t.Errorf("the rule left out is not described as a subject mapping rule: %q", doc.LeftOut[0])
 			}
 			text := string(marshal(t, doc)) + strings.Join(doc.LeftOut, "\n")
 			for _, b := range c.banned {
@@ -162,5 +162,129 @@ func TestExportDocument(t *testing.T) {
 				t.Errorf("an export made %d write calls", n)
 			}
 		})
+	}
+}
+
+// TestExportIssuersAndMappings is T-1120: deterministic output; platform issuers with their tenants
+// by name, the claim value absent when it is the tenant's ID; token issuers; mappings by the scope
+// and name of their issuer and the name of their service account; rules on a mapping exported in the
+// mapping form, with no comment line left out.
+func TestExportIssuersAndMappings(t *testing.T) {
+	t.Run("platform issuers with their tenants by name", func(t *testing.T) {
+		f := newFake(t, platformStateFull())
+		doc, err := declare.Export(ctx(t), f.client(), declare.Target{Platform: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := wantPlatformFull()
+		if !reflect.DeepEqual(doc.PlatformIssuers, want.PlatformIssuers) {
+			t.Errorf("the platform issuers:\n%+v\nwant:\n%+v", doc.PlatformIssuers, want.PlatformIssuers)
+		}
+		text := string(marshal(t, doc))
+		for _, banned := range []string{tidAcme, tidGlobex, issuerPlatformID} {
+			if strings.Contains(text, banned) {
+				t.Errorf("the document holds the identifier %s:\n%s", banned, text)
+			}
+		}
+		if strings.Count(text, "claim_value:") != 1 || !strings.Contains(text, "claim_value: globex-co") {
+			t.Errorf("claim_value is exported only for the tenant whose value is not its ID:\n%s", text)
+		}
+		if n := len(f.writeCalls()); n != 0 {
+			t.Errorf("an export made %d write calls", n)
+		}
+	})
+
+	t.Run("token issuers and mappings of a tenant", func(t *testing.T) {
+		f := newFake(t, tenantStateFull())
+		doc, err := declare.Export(ctx(t), f.client(), declare.Target{Tenant: tidAcme})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := wantTenantFull()
+		if !reflect.DeepEqual(doc.TokenIssuers, want.TokenIssuers) {
+			t.Errorf("the token issuers:\n%+v\nwant:\n%+v", doc.TokenIssuers, want.TokenIssuers)
+		}
+		if !reflect.DeepEqual(doc.SubjectMappings, want.SubjectMappings) {
+			t.Errorf("the mappings:\n%+v\nwant:\n%+v", doc.SubjectMappings, want.SubjectMappings)
+		}
+		text := string(marshal(t, doc))
+		for _, banned := range []string{mappingID, mappingTenantID, issuerTenantID, issuerPlatformID, saBilling, saReports} {
+			if strings.Contains(text, banned) {
+				t.Errorf("the document holds the identifier %s:\n%s", banned, text)
+			}
+		}
+	})
+
+	t.Run("a rule on a mapping is exported, with no comment line", func(t *testing.T) {
+		f := newFake(t, tenantStateFull())
+		doc, err := declare.Export(ctx(t), f.client(), declare.Target{Tenant: tidAcme})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var found *declare.Limit
+		for i := range doc.Limits {
+			if doc.Limits[i].Mapping != nil {
+				found = &doc.Limits[i]
+			}
+		}
+		if found == nil || *found.Mapping != (declare.MappingSubject{Scope: "tenant", Issuer: "corp-idp", Subject: "ci-runner"}) || found.Subject != "" || found.Metric != "requests_per_day" || found.Limit != 5 {
+			t.Fatalf("the rule on the mapping is %+v in %+v", found, doc.Limits)
+		}
+		if len(doc.LeftOut) != 0 {
+			t.Errorf("left out: %v: a rule on a mapping is no longer left out", doc.LeftOut)
+		}
+		b, err := doc.YAML()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(string(b), "\n") {
+			if strings.HasPrefix(line, "#") {
+				t.Errorf("the export has a comment line: %q", line)
+			}
+		}
+		if !strings.Contains(string(b), "mapping:") {
+			t.Errorf("the export has no mapping subject:\n%s", b)
+		}
+	})
+
+	t.Run("the output is deterministic whatever the order of the answers", func(t *testing.T) {
+		for _, c := range []struct {
+			name   string
+			target declare.Target
+			state  func() map[string]any
+		}{{"tenant", declare.Target{Tenant: tidAcme}, tenantStateFull}, {"platform", declare.Target{Platform: true}, platformStateFull}} {
+			first, err := declare.Export(ctx(t), newFake(t, c.state()).client(), c.target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			shuffled := c.state()
+			for path, v := range shuffled {
+				if l, ok := v.([]any); ok {
+					shuffled[path] = reverse(l)
+				}
+			}
+			again, err := declare.Export(ctx(t), newFake(t, shuffled).client(), c.target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			a, _ := first.YAML()
+			b, _ := again.YAML()
+			if string(a) != string(b) {
+				t.Errorf("%s: the order of the answers changes the document:\n%s\n%s", c.name, a, b)
+			}
+		}
+	})
+}
+
+// TestExportExternalReference is part of T-1124: the export of the platform lists only the tenants
+// that have an external reference.
+func TestExportExternalReference(t *testing.T) {
+	f := newFake(t, platformStateFull())
+	doc, err := declare.Export(ctx(t), f.client(), declare.Target{Platform: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []declare.PlatformTenant{{Name: "acme", ExternalReference: "crm-4711"}}; !reflect.DeepEqual(doc.Tenants, want) {
+		t.Errorf("the tenants of the document are %+v, want %+v (globex has no reference and is not listed)", doc.Tenants, want)
 	}
 }

@@ -260,3 +260,182 @@ func TestImage(t *testing.T) {
 		t.Errorf("version output: %q", out)
 	}
 }
+
+// previousPin reads test/upgrade/PREVIOUS: the version, commit and image (by digest) of the release
+// before the one in development.
+func previousPin(t *testing.T) (version, commit, image string) {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(testutil.RepoRoot(t), "test", "upgrade", "PREVIOUS"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		k, v, _ := strings.Cut(line, "=")
+		switch k {
+		case "version":
+			version = v
+		case "commit":
+			commit = v
+		case "image":
+			image = v
+		}
+	}
+	if version == "" || commit == "" || !regexp.MustCompile(`^[^@]+@sha256:[0-9a-f]{64}$`).MatchString(image) {
+		t.Fatalf("test/upgrade/PREVIOUS is not version, commit and image by digest: %q", b)
+	}
+	return version, commit, image
+}
+
+// TestUpgradeFromPreviousImage is T-1134: the artefact that operators run. The previous release's
+// image, pulled by the digest of test/upgrade/PREVIOUS, creates the schema, serves a tenant with a
+// credential and a call; the image of this tree then migrates the same database (one migration) and
+// serves the same call with the same key; and the digest of the image that ran is the pinned one.
+func TestUpgradeFromPreviousImage(t *testing.T) {
+	image := os.Getenv("PANDOKOS_TEST_IMAGE")
+	if image == "" {
+		t.Skip("PANDOKOS_TEST_IMAGE is not set: build the image and set it to its name")
+	}
+	version, _, previous := previousPin(t)
+	docker(t, "pull", "--quiet", previous)
+	wantDigest := previous[strings.Index(previous, "@")+1:]
+	if got := docker(t, "image", "inspect", "-f", "{{json .RepoDigests}}", previous); !strings.Contains(got, wantDigest) {
+		t.Fatalf("the image pulled is %s, want the digest of test/upgrade/PREVIOUS (%s)", got, wantDigest)
+	}
+	if out := docker(t, "run", "--rm", previous, "version"); !strings.HasPrefix(out, "pandokos "+strings.TrimPrefix(version, "v")+" ") {
+		t.Fatalf("the previous image says %q, want it to be %s", out, version)
+	}
+
+	d := dbtest.New(t)
+	up := fakeprovider.New(t)
+	up.Accept(fixtures.CanaryCredential)
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, content string, mode os.FileMode) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content+"\n"), mode); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(filepath.Join(dir, name), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("provider_secret", fixtures.CanaryCredential, 0o644)
+	kek, err := os.ReadFile(testutil.WriteKEK(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write("pandokos_kek", strings.TrimSpace(string(kek)), 0o444)
+	dbEnv := []string{
+		"-e", "PANDOKOS_DATABASE_ADDRESS=" + net.JoinHostPort(d.Host, strconv.Itoa(d.Port)),
+		"-e", "PANDOKOS_DATABASE_NAME=" + d.Name,
+		"-e", "PANDOKOS_DATABASE_TLS_MODE=disable",
+		"-e", "PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE=/run/secrets/pandokos_kek",
+	}
+	for _, role := range []string{"owner", "gateway", "admin", "worker"} {
+		write("db_"+role, d.ConnOptions(role).Password.Reveal(), 0o644)
+		dbEnv = append(dbEnv, "-e", "PANDOKOS_DATABASE_"+strings.ToUpper(role)+"_USER="+d.User(role),
+			"-e", "PANDOKOS_DATABASE_"+strings.ToUpper(role)+"_PASSWORD_FILE=/run/secrets/db_"+role)
+	}
+	hardened := []string{"--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--network", "host", "-v", dir + ":/run/secrets:ro"}
+	run := func(img string, extra []string, args ...string) string {
+		t.Helper()
+		return docker(t, append(append(append(append([]string{"run"}, hardened...), dbEnv...), extra...), append([]string{img}, args...)...)...)
+	}
+	freeAddr := func() string {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer l.Close()
+		return l.Addr().String()
+	}
+
+	// The previous image: the schema, the bootstrap key, a server.
+	if out := run(previous, []string{"--rm"}, "migrate"); !strings.Contains(out, "schema is at version 16") {
+		t.Fatalf("the previous image's migrate: %q", out)
+	}
+	initOut := run(previous, []string{"--rm"}, "init")
+	m := regexp.MustCompile(`(?m)^key: +(pdk_p[a-z2-7]{16}_[a-z2-7]{59})$`).FindStringSubmatch(initOut)
+	if m == nil {
+		t.Fatalf("init output has no key line: %q", initOut)
+	}
+	write("platform.key", m[1], 0o644)
+	inference, admin := freeAddr(), freeAddr()
+	serve := func(img string) (id string) {
+		t.Helper()
+		id = run(img, []string{"-d", "-e", "PANDOKOS_LISTENERS_INFERENCE_ADDRESS=" + inference, "-e", "PANDOKOS_LISTENERS_ADMIN_ADDRESS=" + admin})
+		t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", id).Run() })
+		testutil.Eventually(t, 30*time.Second, "readiness of the container", func() bool {
+			resp, err := http.Get("http://" + inference + "/readyz")
+			if err != nil {
+				return false
+			}
+			resp.Body.Close()
+			return resp.StatusCode == 200
+		})
+		return id
+	}
+	id := serve(previous)
+	cli := func(keyFile string, args ...string) string {
+		return docker(t, append([]string{"exec", "-e", "PANDOKOS_CLI_SERVER=http://" + admin, "-e", "PANDOKOS_CLI_KEY_FILE=/run/secrets/" + keyFile, id, "/pandokos"}, args...)...)
+	}
+	reTenantKey := regexp.MustCompile(`(?m)^key: +(pdk_t[a-z2-7]{16}_[a-z2-7]{59})$`)
+	out := cli("platform.key", "tenant", "create", "acme")
+	tm, tid := reTenantKey.FindStringSubmatch(out), regexp.MustCompile(`(?m)^id: ([0-9a-f-]{36})$`).FindStringSubmatch(out)
+	if tm == nil || tid == nil {
+		t.Fatalf("tenant create output: %q", out)
+	}
+	write("admin.key", tm[1], 0o644)
+	cli("admin.key", "service-account", "create", "--tenant", tid[1], "--role", "inference", "caller")
+	km := reTenantKey.FindStringSubmatch(cli("admin.key", "key", "create", "--tenant", tid[1], "--service-account", "caller"))
+	if km == nil {
+		t.Fatal("key create printed no key")
+	}
+	cli("platform.key", "endpoint", "update", "--base-url", up.URL(), "--private", "openai", "default")
+	cli("platform.key", "model", "create", "--availability", "all", "openai/"+fakeprovider.ModelBasic)
+	cli("admin.key", "credential", "create", "--provider", "openai", "--secret-file", "/run/secrets/provider_secret", "container-credential")
+
+	call := func() int {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+inference+"/openai/v1/chat/completions",
+			strings.NewReader(`{"model":"fake-basic","messages":[{"role":"user","content":"upgrade"}]}`))
+		req.Header.Set("Authorization", "Bearer "+km[1])
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return 0
+		}
+		defer resp.Body.Close()
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return resp.StatusCode
+	}
+	testutil.Eventually(t, 30*time.Second, "the call on the previous image", func() bool { return call() == 200 })
+	docker(t, "stop", "-t", "20", id)
+	if code := docker(t, "inspect", "-f", "{{.State.ExitCode}}", id); code != "0" {
+		t.Errorf("the previous image exited %s on SIGTERM", code)
+	}
+
+	// The image of this tree: one migration, the same key and credential.
+	if out := run(image, []string{"--rm"}, "migrate"); !strings.Contains(out, "applied 0017_events") || !strings.Contains(out, "schema is at version 17") {
+		t.Fatalf("the migrate of this image on the database of the previous one: %q", out)
+	}
+	id = serve(image)
+	testutil.Eventually(t, 30*time.Second, "the same call on the image of this tree", func() bool { return call() == 200 })
+	reqs := up.Requests()
+	var last string
+	for _, r := range reqs {
+		if r.Method == http.MethodPost {
+			last = r.Header.Get("Authorization")
+		}
+	}
+	if last != "Bearer "+fixtures.CanaryCredential {
+		t.Errorf("the provider did not receive the tenant's credential after the upgrade")
+	}
+	logs := docker(t, "logs", id)
+	testutil.AssertAbsent(t, "container logs", logs, append(testutil.SecretForms(fixtures.CanaryCredential), testutil.KeyForms(km[1])...)...)
+	testutil.AssertNoCanary(t, "container logs", logs)
+	docker(t, "stop", "-t", "20", id)
+}

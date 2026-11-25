@@ -897,6 +897,21 @@ func TestVaultGuide(t *testing.T) {
 			t.Errorf("recover-lost-kek.sql lacks %q", w)
 		}
 	}
+	// Sprint 12.3 (F-1, the test is changed): the signing secrets of the event destinations are sealed
+	// under the same data keys, so the script disables a destination whose current secret was sealed
+	// under the lost version and drops a previous secret that was, before it removes the data keys, and
+	// ends with a report of the two counts.
+	for _, w := range []string{"pandokos.event_destination", "enabled = false", "secret_key_version", "previous_secret_key_version", "previous_secret_expires_at"} {
+		if !strings.Contains(script, w) {
+			t.Errorf("recover-lost-kek.sql lacks %q: the destinations whose signing secret the lost key sealed are not handled (F-1)", w)
+		}
+	}
+	if i, j := strings.Index(script, "pandokos.event_destination"), strings.Index(script, "DELETE FROM pandokos.tenant_data_key"); i < 0 || j < 0 || i > j {
+		t.Error("recover-lost-kek.sql does not touch the destinations before it deletes the data keys they are sealed under")
+	}
+	if last := script[strings.LastIndex(script, "COMMIT;"):]; !strings.Contains(last, "SELECT") {
+		t.Error("recover-lost-kek.sql does not end with a SELECT that reports the number of credentials revoked and of destinations disabled")
+	}
 	// The permissions, the commands and the codes of the reference pages.
 	perms := read(t, "docs/reference/permissions.md")
 	for _, p := range []string{"credential:read", "credential:write", "credential:rotate", "credential:delete", "credential:use", "tenant_credential:read", "tenant_credential:revoke"} {

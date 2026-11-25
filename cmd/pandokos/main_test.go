@@ -450,3 +450,11 @@ func TestEveryClientCommandIsRouted(t *testing.T) {
 		}
 	}
 }
+
+// TestUsageNamesSecretsOut is the change of sprint 12.3 to the tests that read the usage text: apply
+// has one flag more, --secrets-out, the only way it creates an event destination (T-1125).
+func TestUsageNamesSecretsOut(t *testing.T) {
+	if !strings.Contains(usage, "apply --file FILE (--platform | --tenant ID) [--dry-run] [--secrets-out DIR]") {
+		t.Errorf("the usage text does not give apply its flag --secrets-out:\n%s", usage)
+	}
+}

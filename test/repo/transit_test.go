@@ -131,6 +131,24 @@ func TestTransitDocuments(t *testing.T) {
 		}
 	})
 
+	t.Run("the backup section names the snapshot rule", func(t *testing.T) {
+		// Sprint 12.3 (the test is changed): a key service is backed up by its own snapshot, taken after every
+		// rotation and before Pandokos is restarted; a version a kept backup needs is never trimmed; the
+		// unseal shares and the means to authenticate are kept with the snapshot; and the transit engine's own
+		// backup endpoint is not the procedure, because it needs an exportable key.
+		doc := read(t, "docs/operations/external-key.md")
+		i := regexp.MustCompile(`(?mi)^#+ .*backups`).FindStringIndex(doc)
+		if i == nil {
+			t.Fatal("external-key.md has no section about backups")
+		}
+		section := doc[i[0]:min(len(doc), i[0]+6000)]
+		for _, want := range []string{"snapshot", "after every rotation", "before pandokos is restarted", "min_decryption_version", "unseal", "exportable"} {
+			if !strings.Contains(strings.ToLower(section), want) {
+				t.Errorf("the backup section of external-key.md does not mention %q", want)
+			}
+		}
+	})
+
 	t.Run("the failure reference", func(t *testing.T) {
 		doc := read(t, "docs/reference/failure-behaviour.md")
 		start := regexp.MustCompile(`(?m)^## 2a\. The key service`).FindStringIndex(doc)

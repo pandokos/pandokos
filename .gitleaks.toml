@@ -48,9 +48,21 @@ regexTarget = "line"
 regexes = ['''pandokos\.record_auth_failure\('tabcdefghijklmnop', 'bad_secret', '0123456789abcdef0123456789abcdef'\)''']
 
 # False positive: the generic rule reads the name of an encryption algorithm in the design of sprint 12.1
-# as a key (commit 736fa02, already in history). Only that file and that statement are allowed.
+# as a key (commit 736fa02, already in history). Only that file, its frozen copy in the history of epic 12,
+# and that statement are allowed.
 [[allowlists]]
 description = "Algorithm names in the design of the external key-encryption key"
-paths = ['''^planning/epics/12-operability/12\.1-external-key-encryption-key/sprint\.md$''']
+paths = [
+  '''^planning/epics/12-operability/12\.1-external-key-encryption-key/sprint\.md$''',
+  '''^docs/history/epic-12-operability/12\.1-external-key-encryption-key/sprint\.md$''',
+]
 regexTarget = "line"
 regexes = ['''`chacha20-poly1305` and for a derived key''']
+
+# False positive: a synthetic signing secret that the fake of the declarative tests returns once, so that a
+# test can prove it reaches the secret sink only (commit eae9526, already in history). Only that file and that constant.
+[[allowlists]]
+description = "Synthetic signing secret of the declarative fake"
+paths = ['''^internal/declare/fake_test\.go$''']
+regexTarget = "line"
+regexes = ['''^const canarySigningSecret = "whsec_c3ludGhldGljLWNhbmFyeS1zaWduaW5nLXNlY3JldC0wMDAx="$''']

@@ -31,6 +31,14 @@ limits:
     metric: requests_per_minute
     limit: 30
     enforce: true
+  - subject:
+      mapping:
+        scope: tenant
+        issuer: corp-idp
+        subject: ci-runner
+    metric: requests_per_day
+    limit: 5
+    enforce: true
   - subject: 'service_account: billing'
     metric: tokens_per_day
     limit: 50000
@@ -66,3 +74,40 @@ price_lists:
           - category: output
             threshold: 0
             rate: "11.00"
+token_issuers:
+  - name: corp-idp
+    description: The company's identity provider
+    issuer: https://idp.example.test
+    audience: pandokos-acme
+    jwks_uri: ""
+    algorithms:
+      - ES256
+      - RS256
+    subject_claim: sub
+    required_claims:
+      azp: pandokos
+      env: prod
+    enabled: true
+subject_mappings:
+  - issuer:
+      scope: platform
+      name: shared-idp
+    subject: svc-reports
+    service_account: reports
+  - issuer:
+      scope: tenant
+      name: corp-idp
+    subject: ci-runner
+    service_account: billing
+    description: The CI of the billing team
+event_destinations:
+  - name: audit-sink
+    url: https://sink.example.test/events
+    event_types: []
+    enabled: false
+  - name: hooks
+    description: Usage to the billing system
+    url: https://hooks.example.test/pandokos
+    event_types:
+      - io.pandokos.usage.recorded.v1
+    enabled: true

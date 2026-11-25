@@ -261,6 +261,11 @@ func TestLifecycleDocuments(t *testing.T) {
 		doc := read(t, "docs/operations/backup-and-restore.md")
 		has(t, "backup-and-restore.md", doc, "what to back up", "what is not backed up", "restore", "after a restore", "the four cases", "recover-lost-kek.sql",
 			"audit head", "tenant deletion list", "unwrap_key_files", "pg_dump")
+		// Sprint 12.3 (the test is changed): "Drills" replaces "What sprint 12.3 adds", and the steps carry identifiers.
+		has(t, "backup-and-restore.md", doc, "drills", `<a id="step-4-2"></a>`, `<a id="step-5-a"></a>`, `<a id="step-6-1s"></a>`)
+		if strings.Contains(doc, "What sprint 12.3 adds") {
+			t.Error(`backup-and-restore.md still has the section "What sprint 12.3 adds"`)
+		}
 	})
 	t.Run("the export guide", func(t *testing.T) {
 		doc := read(t, "docs/operations/tenant-export.md")

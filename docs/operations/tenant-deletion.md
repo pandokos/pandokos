@@ -216,5 +216,5 @@ completion waits two minutes after the start for exactly this case.
 - **Events of the platform only.** "Deletion requested", "deletion cancelled" and "tenant deleted" are events of the
   platform's log, pulled with `pandokos platform-event export`; there is no platform webhook
   ([events guide](events.md#7-the-platforms-events)).
-- **No automatic rotation after a deletion** (section 6) and no restore drill yet (sprint 12.3).
+- **No automatic rotation after a deletion** (section 6) and the restore of a deletion is drilled: after a restore the deletion is requested again ([record](restore-drill-2026-11.md)).
 - Nothing waits two minutes in tests: they move the clocks of the row; in production the settle time is real.

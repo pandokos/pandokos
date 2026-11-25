@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pandokos/pandokos/test/fakeidp"
 	"github.com/pandokos/pandokos/test/fakeprovider"
+	"github.com/pandokos/pandokos/test/testutil"
 )
 
 // stateOf returns what the API says about a tenant, as one text: the output of the commands that
@@ -20,7 +22,7 @@ func (p *proc) stateOf(t *testing.T, admin, tenantID string) string {
 	for _, args := range [][]string{
 		{"limit", "time-zone", "get", "--tenant", tenantID}, {"metadata-keys", "get", "--tenant", tenantID}, {"model-restriction", "get", "--tenant", tenantID},
 		{"role", "list", "--tenant", tenantID}, {"service-account", "list", "--tenant", tenantID}, {"limit", "list", "--tenant", tenantID},
-		{"price-list", "list", "--tenant", tenantID}, {"price-list", "currency", "get", "--tenant", tenantID},
+		{"price-list", "list", "--tenant", tenantID}, {"price-list", "currency", "get", "--tenant", tenantID}, {"subject-mapping", "list", "--tenant", tenantID},
 	} {
 		out := p.mustCLI(t, admin, append(args, "-o", "json")...)
 		sb.WriteString(strings.ReplaceAll(strings.Join(args, " "), tenantID, "TENANT") + "\n" + out + "\n")
@@ -35,7 +37,8 @@ func stateWithoutIDs(s string) string {
 	for _, l := range strings.Split(s, "\n") {
 		k := strings.TrimSpace(l)
 		if strings.HasPrefix(k, `"id"`) || strings.HasPrefix(k, `"tenant_id"`) || strings.HasPrefix(k, `"created_at"`) || strings.HasPrefix(k, `"updated_at"`) ||
-			strings.HasPrefix(k, `"subject_id"`) || strings.HasPrefix(k, `"model_id"`) || strings.HasPrefix(k, `"provider_id"`) || strings.HasPrefix(k, `"as_of"`) {
+			strings.HasPrefix(k, `"subject_id"`) || strings.HasPrefix(k, `"model_id"`) || strings.HasPrefix(k, `"provider_id"`) || strings.HasPrefix(k, `"as_of"`) ||
+			strings.HasPrefix(k, `"service_account_id"`) {
 			continue
 		}
 		out = append(out, l)
@@ -96,9 +99,17 @@ func TestExportApplyRoundTrip(t *testing.T) {
 	p.mustCLI(t, adminA, "role", "create", "--tenant", idA, "--permission", "usage:read", "--permission", "limit:read", "--description", "reads", "readers")
 	p.mustCLI(t, adminA, "service-account", "create", "--tenant", idA, "--role", "usage-viewer", "--role", "readers", "billing")
 	p.mustCLI(t, adminA, "service-account", "create", "--tenant", idA, "--role", "auditor", "reports")
-	// A rule on a key is not part of this scenario: the key ID is the key's own, and a second tenant cannot hold it.
-	// The rules are created in the order of the document's keys (a service account before the tenant), which is the
-	// order apply creates them in: the list of a tenant is in the order of creation.
+	// Sprint 12.3 (the test is changed): the tenant has a platform-level issuer that lists both tenants, a mapping on
+	// it, and a rule on the mapping. A rule on a key is not part of this scenario: the key ID is the key's own, and a
+	// second tenant cannot hold it. A token issuer of the tenant is not either: its issuer and audience are unique in
+	// the installation (T-1126 round-trips it between two installations).
+	shared := reID.FindStringSubmatch(p.mustCLI(t, ops, "platform-issuer", "create", "--name", "shared", "--issuer", "https://shared.example.test", "--audience", "pandokos-declared", "--tenant-claim", "org"))[1]
+	p.mustCLI(t, ops, "platform-issuer", "add-tenant", shared, idA)
+	p.mustCLI(t, ops, "platform-issuer", "add-tenant", shared, idB)
+	mapping := reID.FindStringSubmatch(p.mustCLI(t, adminA, "subject-mapping", "create", "--tenant", idA, "--issuer", shared, "--platform", "--subject", "ci", "--service-account", "billing"))[1]
+	// The rules are created in the order of the document's keys (a rule on a mapping, a service account, then the
+	// tenant), which is the order apply creates them in: the list of a tenant is in the order of creation.
+	p.mustCLI(t, adminA, "limit", "create", "--tenant", idA, "--subject", "key", "--key", mapping, "--metric", "requests_per_day", "--limit", "7")
 	p.mustCLI(t, adminA, "limit", "create", "--tenant", idA, "--subject", "service-account", "--service-account", "billing", "--metric", "tokens_per_day", "--limit", "50000", "--soft", "--threshold", "80")
 	p.mustCLI(t, adminA, "limit", "create", "--tenant", idA, "--metric", "requests_per_day", "--limit", "1000")
 	// Both versions start later: apply never adds a version in the past, so a version that started when it
@@ -172,4 +183,148 @@ func TestExportApplyRoundTrip(t *testing.T) {
 	}
 	_ = json.Valid
 	_ = fmt.Sprint
+}
+
+// TestExportApplyIssuersRoundTrip is T-1126: an installation that has what distinguishes it (a
+// tenant issuer, a platform-level issuer that lists the tenant, a mapping of each, a rule on a
+// mapping, an event destination, an external reference) is exported to documents and the documents
+// are applied to a fresh installation that has the tenant under the same name. The exports of the two
+// are equal; a token of the fake identity provider authenticates on the second as the mapped
+// account; the destination on the second delivers an event that verifies with the secret that
+// apply wrote to its file; a second apply plans nothing; and that secret is in no output or log.
+func TestExportApplyIssuersRoundTrip(t *testing.T) {
+	t.Parallel()
+	idp := fakeidp.Start(t, fakeidp.Options{})
+	up := fakeprovider.New(t)
+	recv := newFaultReceiver(t, "/hook")
+	o := opts{level: "info", up: up, events: fastEvents}
+	one := startTokenProc(t, idp, o)
+	two := startTokenProc(t, idp, o)
+
+	// The first installation.
+	a := one.tenant(t, "roundtrip")
+	one.run(t, one.boot, "tenant", "update", "--external-reference", "crm-4711", a.id)
+	tenantIssuer := one.registration(t, a, "corp", "pandokos-roundtrip")
+	platformIssuer := one.platformRegistration(t, "shared", "pandokos-roundtrip-shared", "org")
+	one.run(t, one.boot, "platform-issuer", "add-tenant", "--claim-value", "org-roundtrip", platformIssuer, a.id)
+	mapCI := one.mapping(t, a, tenantIssuer, "ci", false)
+	one.mapping(t, a, platformIssuer, "svc", true)
+	one.run(t, a.admin, "limit", "create", "--tenant", a.id, "--subject", "key", "--key", mapCI, "--metric", "requests_per_day", "--limit", "100")
+	newDestination(t, one.proc, a.admin, a.id, "hooks", recv.url("/hook"))
+
+	dir := t.TempDir()
+	platformDoc, tenantDoc := filepath.Join(dir, "platform.yaml"), filepath.Join(dir, "tenant.yaml")
+	one.run(t, one.boot, "export", "--platform", "--out", platformDoc)
+	one.run(t, a.admin, "export", "--tenant", a.id, "--out", tenantDoc)
+	for _, want := range []string{"platform_issuers:", "name: shared", "claim_value: org-roundtrip", "tenants:", "external_reference: crm-4711"} {
+		if b, _ := os.ReadFile(platformDoc); !strings.Contains(string(b), want) {
+			t.Errorf("the platform document lacks %q:\n%s", want, b)
+		}
+	}
+	for _, want := range []string{"token_issuers:", "name: corp", "subject_mappings:", "subject: ci", "event_destinations:", "name: hooks", "mapping:"} {
+		if b, _ := os.ReadFile(tenantDoc); !strings.Contains(string(b), want) {
+			t.Errorf("the tenant document lacks %q:\n%s", want, b)
+		}
+	}
+
+	// The second installation: the tenant of the same name, then the documents.
+	b := two.tenant(t, "roundtrip")
+	secrets := filepath.Join(t.TempDir(), "secrets")
+	if err := os.Mkdir(secrets, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	out := two.run(t, two.boot, "apply", "--platform", "--file", platformDoc)
+	out += two.run(t, b.admin, "apply", "--tenant", b.id, "--file", tenantDoc, "--secrets-out", secrets)
+	if strings.Contains(out, "0 changes") && !strings.Contains(out, "create ") {
+		t.Errorf("the documents changed nothing on the second installation:\n%s", out)
+	}
+
+	// The exports are equal.
+	for name, doc := range map[string]string{"platform": platformDoc, "tenant": tenantDoc} {
+		second := filepath.Join(dir, "second-"+name+".yaml")
+		if name == "platform" {
+			two.run(t, two.boot, "export", "--platform", "--out", second)
+		} else {
+			two.run(t, b.admin, "export", "--tenant", b.id, "--out", second)
+		}
+		first, _ := os.ReadFile(doc)
+		got, _ := os.ReadFile(second)
+		if string(first) != string(got) {
+			t.Errorf("the %s export of the second installation differs from the first's:\n%s\n---\n%s", name, got, first)
+		}
+	}
+
+	// A token of the fake identity provider authenticates as the mapped account, by both registrations.
+	tenantToken := two.sign("ES256", "ci", "pandokos-roundtrip")
+	platformToken := two.sign("ES256", "svc", "pandokos-roundtrip-shared", func(cl fakeidp.Claims) fakeidp.Claims { return cl.With("org", "org-roundtrip") })
+	for name, token := range map[string]string{"the tenant's registration": tenantToken, "the platform-level one": platformToken} {
+		if status, text := two.openai(t, token, false); status != 200 {
+			t.Errorf("a token of %s on the second installation: %d\n%s", name, status, text)
+		}
+	}
+	for _, row := range waitRows(t, two.db, b.id, 2) {
+		if row["principal_kind"] != "token" || row["principal_id"] != b.sa {
+			t.Errorf("usage row of the second installation: %v", row)
+		}
+	}
+
+	// The destination delivers, and the event verifies with the secret that apply wrote to the file.
+	file := filepath.Join(secrets, "event-destination-hooks")
+	secretBytes, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("apply wrote no secret file: %v", err)
+	}
+	secret := strings.TrimSpace(string(secretBytes))
+	recv.setSecret(secret)
+	testutil.Eventually(t, 60*time.Second, "an event to arrive and verify with the secret of the file", func() bool { return recv.store.size() > 0 })
+
+	// A second apply plans nothing, and the secret is in no output or log.
+	for _, args := range [][]string{{"apply", "--platform", "--file", platformDoc}, {"apply", "--tenant", b.id, "--file", tenantDoc, "--secrets-out", secrets}} {
+		key := two.boot
+		if args[1] == "--tenant" {
+			key = b.admin
+		}
+		if again := two.run(t, key, args...); !strings.Contains(again, "0 changes") {
+			t.Errorf("a second apply:\n%s\nwant 0 changes", again)
+		}
+	}
+	for _, p := range []*tokenProc{one, two} {
+		_ = p.stop(t)
+	}
+	for _, text := range append(append([]string{}, one.cliOut...), two.cliOut...) {
+		testutil.AssertAbsent(t, "an output of the command line", text, secret)
+	}
+	for name, text := range map[string]string{"log of the first installation": one.stdout.String() + one.stderr.String(), "log of the second": two.stdout.String() + two.stderr.String()} {
+		testutil.AssertAbsent(t, name, text, secret)
+	}
+}
+
+// TestExamplePlatformDocument is T-1128: examples/declarative/platform.yaml applies to a fresh
+// installation; a tenant with no rule of its own is then limited to the default ceiling it
+// carries; a second apply plans nothing.
+func TestExamplePlatformDocument(t *testing.T) {
+	t.Parallel()
+	p := startBinary(t, opts{level: "info"})
+	boot := p.bootstrap(t)
+	example := filepath.Join(testutil.RepoRoot(t), "examples", "declarative", "platform.yaml")
+
+	out := p.mustCLI(t, boot, "apply", "--platform", "--file", example)
+	if !strings.Contains(out, "create ") {
+		t.Fatalf("the example document created nothing on a fresh installation:\n%s", out)
+	}
+	id, admin := p.newTenant(t, boot, "ceiling")
+	list := cliJSON(t, p, admin, "limit", "platform", "--tenant", id)
+	var found bool
+	for _, it := range list["items"].([]any) {
+		m, _ := it.(map[string]any)
+		if m["metric"] == "concurrent_requests" && m["limit"] == float64(256) && m["enforce"] == true {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("a tenant with no rule of its own does not see the default ceiling of 256 concurrent requests: %v", list)
+	}
+	if again := p.mustCLI(t, boot, "apply", "--platform", "--file", example); !strings.Contains(again, "0 changes") {
+		t.Errorf("a second apply of the example:\n%s\nwant 0 changes", again)
+	}
 }

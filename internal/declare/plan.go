@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/pandokos/pandokos/internal/adminapi"
@@ -19,12 +20,16 @@ type refs struct {
 	serviceAccount map[string]string // by name
 	model          map[string]string // by reference provider/name
 	tenant         map[string]string // by name (platform)
+	platformIssuer map[string]string // by name (platform); the issuers that exist and the ones a create made
+	tokenIssuer    map[string]string // by name (tenant)
+	mapping        map[string]string // by subjectText of the mapping (tenant)
 }
 
 type planner struct {
 	now     time.Time
 	refs    *refs
 	changes []Change
+	opts    Options
 }
 
 func (p *planner) add(action, resource, detail string, run step) {
@@ -42,11 +47,15 @@ func (p *planner) notInDocument(resource string)    { p.add("not in document", r
 // absent is created, a mutable field that differs is updated, an immutable one is a conflict,
 // price versions are only added, and what exists but is not in the document is reported. It makes
 // no call that changes anything.
-func Diff(ctx context.Context, c *adminapi.Client, target Target, doc *Document) (Plan, error) {
+func Diff(ctx context.Context, c *adminapi.Client, target Target, doc *Document, opts ...Options) (Plan, error) {
 	if err := doc.Validate(target); err != nil {
 		return Plan{}, err
 	}
-	p := &planner{now: time.Now().UTC(), refs: &refs{serviceAccount: map[string]string{}, model: map[string]string{}, tenant: map[string]string{}}}
+	p := &planner{now: time.Now().UTC(), refs: &refs{serviceAccount: map[string]string{}, model: map[string]string{}, tenant: map[string]string{},
+		platformIssuer: map[string]string{}, tokenIssuer: map[string]string{}, mapping: map[string]string{}}}
+	if len(opts) > 0 {
+		p.opts = opts[0]
+	}
 	var err error
 	if target.Platform {
 		err = p.platform(ctx, c, doc)
@@ -56,7 +65,7 @@ func Diff(ctx context.Context, c *adminapi.Client, target Target, doc *Document)
 	if err != nil {
 		return Plan{}, err
 	}
-	return Plan{Target: target, Changes: p.changes, refs: p.refs}, nil
+	return Plan{Target: target, Changes: p.changes, refs: p.refs, opts: p.opts}, nil
 }
 
 // Preview is the result of the plan as it stands, with no call made: what a dry run prints.
@@ -72,7 +81,7 @@ func (r *Result) count(ch Change, done bool) {
 	switch {
 	case ch.Action == "conflict":
 		r.Conflicts++
-	case ch.Action == "not in document":
+	case ch.Action == "not in document", ch.alone:
 		r.LeftAlone++
 	case done:
 		r.Changes++
@@ -457,7 +466,172 @@ func (p *planner) platform(ctx context.Context, c *adminapi.Client, doc *Documen
 			p.notInDocument("platform_limit " + limitResource(name, Limit{Provider: r.Provider, Model: r.Model, Metric: string(r.Metric), Currency: r.Currency}))
 		}
 	}
+
+	// The external reference of existing tenants: apply never creates a tenant.
+	tenantByName := map[string]adminapi.Tenant{}
+	for _, t := range st.tenants {
+		if t.State != adminapi.TenantStateDeleted {
+			tenantByName[t.Name] = t
+		}
+	}
+	docTenants := slices.Clone(doc.Tenants)
+	slices.SortFunc(docTenants, func(a, b PlatformTenant) int { return cmp.Compare(a.Name, b.Name) })
+	for _, d := range docTenants {
+		res := "tenant " + d.Name
+		cur, ok := tenantByName[d.Name]
+		switch {
+		case !ok:
+			p.conflict(res, "the tenant does not exist; apply never creates a tenant")
+		case d.ExternalReference != "" && d.ExternalReference != cur.ExternalReference:
+			id, ref := cur.ID, d.ExternalReference
+			p.update(res, "external_reference", func(ctx context.Context, c *adminapi.Client) error {
+				_, err := c.UpdateTenant(ctx, adminapi.UpdateTenantInput{Tenant: id, Body: adminapi.TenantUpdate{ExternalReference: adminapi.Some(ref)}})
+				return err
+			})
+		}
+	}
+
+	p.platformIssuers(st, doc, tenantByName)
 	return nil
+}
+
+// platformIssuers plans the platform-level issuers and the tenants they list. Nothing is deleted:
+// an issuer or a listed tenant that the document leaves out is reported.
+func (p *planner) platformIssuers(st *platformState, doc *Document, tenantByName map[string]adminapi.Tenant) {
+	have := map[string]adminapi.PlatformIssuer{}
+	for _, i := range st.issuers {
+		have[i.Name] = i
+		p.refs.platformIssuer[i.Name] = i.ID
+	}
+	docIssuers := slices.Clone(doc.PlatformIssuers)
+	slices.SortFunc(docIssuers, func(a, b PlatformIssuer) int { return cmp.Compare(a.Name, b.Name) })
+	inDoc := map[string]bool{}
+	for _, d := range docIssuers {
+		inDoc[d.Name] = true
+		res := "platform_issuer " + d.Name
+		cur, ok := have[d.Name]
+		name := d.Name
+		var listed map[string]adminapi.PlatformIssuerTenant
+		if !ok {
+			p.create(res, func(ctx context.Context, c *adminapi.Client) error {
+				made, err := c.CreatePlatformIssuer(ctx, adminapi.CreatePlatformIssuerInput{Body: adminapi.PlatformIssuerCreate{Name: d.Name, Description: d.Description, Issuer: d.Issuer,
+					Audience: d.Audience, JwksUri: deref(d.JWKSURI), Algorithms: d.Algorithms, SubjectClaim: d.SubjectClaim, TenantClaim: d.TenantClaim, RequiredClaims: deref(d.RequiredClaims), Enabled: deref(d.Enabled)}})
+				if err != nil {
+					return err
+				}
+				p.refs.platformIssuer[name] = made.ID
+				return nil
+			})
+		} else {
+			var body adminapi.PlatformIssuerUpdate
+			var changed []string
+			if d.Description != "" && d.Description != cur.Description {
+				body.Description = adminapi.Some(d.Description)
+				changed = append(changed, "description")
+			}
+			if d.Issuer != cur.Issuer {
+				body.Issuer = adminapi.Some(d.Issuer)
+				changed = append(changed, "issuer")
+			}
+			if d.Audience != cur.Audience {
+				body.Audience = adminapi.Some(d.Audience)
+				changed = append(changed, "audience")
+			}
+			if d.JWKSURI != nil && *d.JWKSURI != cur.JwksUri {
+				body.JwksUri = adminapi.Some(*d.JWKSURI)
+				changed = append(changed, "jwks_uri")
+			}
+			if len(d.Algorithms) > 0 && !sameSet(d.Algorithms, cur.Algorithms) {
+				body.Algorithms = adminapi.Some(d.Algorithms)
+				changed = append(changed, "algorithms")
+			}
+			if d.SubjectClaim != "" && d.SubjectClaim != cur.SubjectClaim {
+				body.SubjectClaim = adminapi.Some(d.SubjectClaim)
+				changed = append(changed, "subject_claim")
+			}
+			if d.TenantClaim != "" && d.TenantClaim != cur.TenantClaim {
+				body.TenantClaim = adminapi.Some(d.TenantClaim)
+				changed = append(changed, "tenant_claim")
+			}
+			if d.RequiredClaims != nil && !sameClaims(*d.RequiredClaims, cur.RequiredClaims) {
+				body.RequiredClaims = adminapi.Some(nonNilClaims(*d.RequiredClaims))
+				changed = append(changed, "required_claims")
+			}
+			if d.Enabled != nil && *d.Enabled != cur.Enabled {
+				body.Enabled = adminapi.Some(*d.Enabled)
+				changed = append(changed, "enabled")
+			}
+			if len(changed) > 0 {
+				id := cur.ID
+				p.update(res, join(changed), func(ctx context.Context, c *adminapi.Client) error {
+					_, err := c.UpdatePlatformIssuer(ctx, adminapi.UpdatePlatformIssuerInput{Issuer: id, Body: body})
+					return err
+				})
+			}
+			listed = map[string]adminapi.PlatformIssuerTenant{}
+			for _, t := range st.listed[cur.ID] {
+				listed[t.TenantName] = t
+			}
+		}
+
+		// The tenants it lists: by the tenant's name, the claim value defaulting to the tenant's ID.
+		tenants := slices.Clone(d.Tenants)
+		slices.SortFunc(tenants, func(a, b IssuerTenant) int { return cmp.Compare(a.Tenant, b.Tenant) })
+		seen := map[string]bool{}
+		for _, t := range tenants {
+			seen[t.Tenant] = true
+			tres := "platform_issuer_tenant " + d.Name + " " + t.Tenant
+			tenant, exists := tenantByName[t.Tenant]
+			if !exists {
+				p.conflict(tres, "the tenant does not exist")
+				continue
+			}
+			want := cmp.Or(t.ClaimValue, tenant.ID)
+			put := func(ctx context.Context, c *adminapi.Client) error {
+				id := p.refs.platformIssuer[name]
+				if id == "" {
+					return errors.New("the issuer has no ID")
+				}
+				_, err := c.PutPlatformIssuerTenant(ctx, adminapi.PutPlatformIssuerTenantInput{Issuer: id, Tenant: tenant.ID, Body: adminapi.PlatformIssuerTenantPut{ClaimValue: t.ClaimValue}})
+				return err
+			}
+			switch cur, listedAlready := listed[t.Tenant]; {
+			case !listedAlready:
+				p.create(tres, put)
+			case cur.ClaimValue != want:
+				p.update(tres, "claim_value", put)
+			}
+		}
+		for _, n := range sortedKeys(listed) {
+			if !seen[n] {
+				p.notInDocument("platform_issuer_tenant " + d.Name + " " + n)
+			}
+		}
+	}
+	for _, n := range sortedKeys(have) {
+		if !inDoc[n] {
+			p.notInDocument("platform_issuer " + n)
+		}
+	}
+}
+
+func sameClaims(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if w, ok := b[k]; !ok || w != v {
+			return false
+		}
+	}
+	return true
+}
+
+func nonNilClaims(in map[string]string) map[string]string {
+	if in == nil {
+		return map[string]string{}
+	}
+	return in
 }
 
 func limitResource(subject string, l Limit) string {
@@ -648,17 +822,20 @@ func (p *planner) tenant(ctx context.Context, c *adminapi.Client, id string, doc
 		}
 	}
 
+	p.tokenIssuers(st, id, doc)
+	p.subjectMappings(st, id, doc, sas)
+
 	// Limits.
 	haveLimit := map[string]adminapi.LimitRule{}
 	subjectOfKey := map[string]string{}
 	for _, r := range st.limits {
-		subject, ok := st.limitSubject(r)
+		subject, mapping, ok := st.limitSubject(r)
 		if !ok {
 			continue
 		}
-		l := limitOf(r, subject)
+		l := limitOf(r, subject, mapping)
 		haveLimit[subjectKey(l)] = r
-		subjectOfKey[subjectKey(l)] = subject
+		subjectOfKey[subjectKey(l)] = l.subjectText()
 	}
 	limits := slices.Clone(doc.Limits)
 	slices.SortFunc(limits, func(a, b Limit) int { return cmp.Compare(subjectKey(a), subjectKey(b)) })
@@ -666,11 +843,18 @@ func (p *planner) tenant(ctx context.Context, c *adminapi.Client, id string, doc
 	for _, l := range limits {
 		key := subjectKey(l)
 		seen[key] = true
-		res := "limit " + limitResource(l.Subject, l)
+		res := "limit " + limitResource(l.subjectText(), l)
 		cur, ok := haveLimit[key]
 		if !ok {
 			kind, ref, _ := subjectOf(l.Subject)
-			if kind == "service_account" {
+			switch {
+			case l.Mapping != nil:
+				kind = "key"
+				if _, known := p.refs.mapping[l.subjectText()]; !known {
+					p.conflict(res, "the subject mapping does not exist")
+					continue
+				}
+			case kind == "service_account":
 				if _, known := p.refs.serviceAccount[ref]; !known && !inSAs(sas, ref) {
 					p.conflict(res, "the service account does not exist")
 					continue
@@ -679,13 +863,18 @@ func (p *planner) tenant(ctx context.Context, c *adminapi.Client, id string, doc
 			p.create(res, func(ctx context.Context, c *adminapi.Client) error {
 				body := adminapi.LimitRuleCreate{SubjectKind: adminapi.LimitSubjectKind(kind), Provider: l.Provider, Model: l.Model, Metric: adminapi.LimitMetric(l.Metric),
 					Limit: l.Limit, Amount: l.Amount, Currency: l.Currency, Enforce: l.Enforce, Thresholds: l.Thresholds}
-				switch kind {
-				case "service_account":
+				switch {
+				case l.Mapping != nil:
+					body.SubjectID = p.refs.mapping[l.subjectText()]
+					if body.SubjectID == "" {
+						return errors.New("the subject mapping has no ID")
+					}
+				case kind == "service_account":
 					body.SubjectID = p.refs.serviceAccount[ref]
 					if body.SubjectID == "" {
 						return errors.New("the service account has no ID")
 					}
-				case "key":
+				case kind == "key":
 					body.SubjectID = ref
 				}
 				_, err := c.CreateLimit(ctx, adminapi.CreateLimitInput{Tenant: id, Body: body})
@@ -773,7 +962,280 @@ func (p *planner) tenant(ctx context.Context, c *adminapi.Client, id string, doc
 			return err
 		})
 	}
+
+	p.eventDestinations(st, id, doc)
 	return nil
+}
+
+// tokenIssuers plans the token issuers of a tenant: created, updated member by member, never deleted.
+func (p *planner) tokenIssuers(st *tenantState, id string, doc *Document) {
+	have := map[string]adminapi.TokenIssuer{}
+	for _, i := range st.tokenIssuers {
+		have[i.Name] = i
+		p.refs.tokenIssuer[i.Name] = i.ID
+	}
+	docIssuers := slices.Clone(doc.TokenIssuers)
+	slices.SortFunc(docIssuers, func(a, b TokenIssuer) int { return cmp.Compare(a.Name, b.Name) })
+	inDoc := map[string]bool{}
+	for _, d := range docIssuers {
+		inDoc[d.Name] = true
+		res := "token_issuer " + d.Name
+		cur, ok := have[d.Name]
+		name := d.Name
+		if !ok {
+			p.create(res, func(ctx context.Context, c *adminapi.Client) error {
+				made, err := c.CreateTokenIssuer(ctx, adminapi.CreateTokenIssuerInput{Tenant: id, Body: adminapi.TokenIssuerCreate{Name: d.Name, Description: d.Description, Issuer: d.Issuer,
+					Audience: d.Audience, JwksUri: deref(d.JWKSURI), Algorithms: d.Algorithms, SubjectClaim: d.SubjectClaim, RequiredClaims: deref(d.RequiredClaims), Enabled: deref(d.Enabled)}})
+				if err != nil {
+					return err
+				}
+				p.refs.tokenIssuer[name] = made.ID
+				return nil
+			})
+			continue
+		}
+		var body adminapi.TokenIssuerUpdate
+		var changed []string
+		if d.Description != "" && d.Description != cur.Description {
+			body.Description = adminapi.Some(d.Description)
+			changed = append(changed, "description")
+		}
+		if d.Issuer != cur.Issuer {
+			body.Issuer = adminapi.Some(d.Issuer)
+			changed = append(changed, "issuer")
+		}
+		if d.Audience != cur.Audience {
+			body.Audience = adminapi.Some(d.Audience)
+			changed = append(changed, "audience")
+		}
+		if d.JWKSURI != nil && *d.JWKSURI != cur.JwksUri {
+			body.JwksUri = adminapi.Some(*d.JWKSURI)
+			changed = append(changed, "jwks_uri")
+		}
+		if len(d.Algorithms) > 0 && !sameSet(d.Algorithms, cur.Algorithms) {
+			body.Algorithms = adminapi.Some(d.Algorithms)
+			changed = append(changed, "algorithms")
+		}
+		if d.SubjectClaim != "" && d.SubjectClaim != cur.SubjectClaim {
+			body.SubjectClaim = adminapi.Some(d.SubjectClaim)
+			changed = append(changed, "subject_claim")
+		}
+		if d.RequiredClaims != nil && !sameClaims(*d.RequiredClaims, cur.RequiredClaims) {
+			body.RequiredClaims = adminapi.Some(nonNilClaims(*d.RequiredClaims))
+			changed = append(changed, "required_claims")
+		}
+		if d.Enabled != nil && *d.Enabled != cur.Enabled {
+			body.Enabled = adminapi.Some(*d.Enabled)
+			changed = append(changed, "enabled")
+		}
+		if len(changed) > 0 {
+			iid := cur.ID
+			p.update(res, join(changed), func(ctx context.Context, c *adminapi.Client) error {
+				_, err := c.UpdateTokenIssuer(ctx, adminapi.UpdateTokenIssuerInput{Tenant: id, Issuer: iid, Body: body})
+				return err
+			})
+		}
+	}
+	for _, n := range sortedKeys(have) {
+		if !inDoc[n] {
+			p.notInDocument("token_issuer " + n)
+		}
+	}
+}
+
+// subjectMappings plans the subject mappings of a tenant. A mapping has no update: a different
+// service account or description is a conflict, and so is an issuer or a service account that does
+// not exist. The IDs of the mappings that exist are recorded for the limits that name them.
+func (p *planner) subjectMappings(st *tenantState, id string, doc *Document, sas []ServiceAccount) {
+	type held struct {
+		m   adminapi.SubjectMapping
+		sa  string
+		key MappingSubject
+	}
+	have := map[string]held{}
+	for _, m := range st.mappings {
+		key, ok := st.mappingKey(m)
+		if !ok {
+			continue
+		}
+		sa, _ := st.serviceAccountName(m)
+		text := Limit{Mapping: &key}.subjectText()
+		have[text] = held{m, sa, key}
+		p.refs.mapping[text] = m.ID
+	}
+	issuerID := func(scope, name string) (string, bool) {
+		switch scope {
+		case IssuerScopeTenant:
+			id, ok := p.refs.tokenIssuer[name]
+			if !ok {
+				// A token issuer the plan creates has no ID yet; it is known by its name in the document.
+				for _, d := range doc.TokenIssuers {
+					if d.Name == name {
+						return "", true
+					}
+				}
+			}
+			return id, ok
+		default:
+			for _, i := range st.platformIssuers {
+				if i.Name == name {
+					return i.ID, true
+				}
+			}
+			return "", false
+		}
+	}
+	docMappings := slices.Clone(doc.SubjectMappings)
+	slices.SortFunc(docMappings, func(a, b SubjectMapping) int {
+		return cmp.Or(cmp.Compare(a.Issuer.Scope, b.Issuer.Scope), cmp.Compare(a.Issuer.Name, b.Issuer.Name), cmp.Compare(a.Subject, b.Subject))
+	})
+	inDoc := map[string]bool{}
+	for _, d := range docMappings {
+		key := MappingSubject{Scope: d.Issuer.Scope, Issuer: d.Issuer.Name, Subject: d.Subject}
+		text := Limit{Mapping: &key}.subjectText()
+		inDoc[text] = true
+		res := "subject_mapping " + d.Issuer.Scope + " " + d.Issuer.Name + " " + d.Subject
+		if cur, ok := have[text]; ok {
+			if d.ServiceAccount != cur.sa || (d.Description != "" && d.Description != cur.m.Description) {
+				p.conflict(res, "a mapping cannot be changed: its service account and description are fixed when it is created")
+			}
+			continue
+		}
+		if _, known := issuerID(d.Issuer.Scope, d.Issuer.Name); !known {
+			p.conflict(res, "the issuer does not exist")
+			continue
+		}
+		if _, known := p.refs.serviceAccount[d.ServiceAccount]; !known && !inSAs(sas, d.ServiceAccount) {
+			p.conflict(res, "the service account does not exist")
+			continue
+		}
+		p.refs.mapping[text] = "" // the plan creates it: a rule may name it
+		p.create(res, func(ctx context.Context, c *adminapi.Client) error {
+			iid, _ := issuerID(d.Issuer.Scope, d.Issuer.Name)
+			if d.Issuer.Scope == IssuerScopeTenant {
+				iid = p.refs.tokenIssuer[d.Issuer.Name]
+			}
+			if iid == "" {
+				return errors.New("the issuer has no ID")
+			}
+			said := p.refs.serviceAccount[d.ServiceAccount]
+			if said == "" {
+				return errors.New("the service account has no ID")
+			}
+			made, err := c.CreateSubjectMapping(ctx, adminapi.CreateSubjectMappingInput{Tenant: id, Body: adminapi.SubjectMappingCreate{
+				Issuer: adminapi.IssuerRef{Scope: adminapi.IssuerScope(d.Issuer.Scope), ID: iid}, Subject: d.Subject, ServiceAccountID: said, Description: d.Description}})
+			if err != nil {
+				return err
+			}
+			p.refs.mapping[text] = made.ID
+			return nil
+		})
+	}
+	for _, t := range sortedKeys(have) {
+		if !inDoc[t] {
+			k := have[t].key
+			p.notInDocument("subject_mapping " + k.Scope + " " + k.Issuer + " " + k.Subject)
+		}
+	}
+}
+
+// eventDestinations plans the destinations of a tenant. An absent one is created only when there is
+// a sink for its signing secret, which the answer carries once; without a sink it is skipped.
+func (p *planner) eventDestinations(st *tenantState, id string, doc *Document) {
+	have := map[string]adminapi.EventDestination{}
+	for _, e := range st.destinations {
+		have[e.Name] = e
+	}
+	docs := slices.Clone(doc.EventDestinations)
+	slices.SortFunc(docs, func(a, b EventDestination) int { return cmp.Compare(a.Name, b.Name) })
+	inDoc := map[string]bool{}
+	for _, d := range docs {
+		inDoc[d.Name] = true
+		res := "event_destination " + d.Name
+		cur, ok := have[d.Name]
+		if !ok {
+			sink := p.opts.SecretSink
+			if sink == nil {
+				p.changes = append(p.changes, Change{Action: "skipped", Resource: res, Detail: "needs --secrets-out", alone: true})
+				continue
+			}
+			p.create(res, func(ctx context.Context, c *adminapi.Client) error {
+				made, err := c.CreateEventDestination(ctx, adminapi.CreateEventDestinationInput{Tenant: id, Body: adminapi.EventDestinationCreate{Name: d.Name, Description: d.Description,
+					URL: d.URL, EventTypes: eventTypes(deref(d.EventTypes)), Enabled: deref(d.Enabled)}})
+				if err != nil {
+					return err
+				}
+				if made.Secret == "" {
+					return errors.New("the destination was created and the answer holds no signing secret: run event-destination rotate-secret to obtain one")
+				}
+				secret := []byte(made.Secret)
+				defer clear(secret)
+				if err := sink("event-destination-"+d.Name, secret); err != nil {
+					return fmt.Errorf("the destination was created and its signing secret could not be written (run event-destination rotate-secret to obtain one): %w", err)
+				}
+				return nil
+			})
+			continue
+		}
+		var body adminapi.EventDestinationUpdate
+		var changed []string
+		if d.Description != "" && d.Description != cur.Description {
+			body.Description = adminapi.Some(d.Description)
+			changed = append(changed, "description")
+		}
+		if d.URL != cur.URL {
+			body.URL = adminapi.Some(d.URL)
+			changed = append(changed, "url")
+		}
+		if d.EventTypes != nil && !sameSet(*d.EventTypes, eventTypeNames(cur.EventTypes)) {
+			body.EventTypes = adminapi.Some(eventTypes(*d.EventTypes))
+			changed = append(changed, "event_types")
+		}
+		if d.Enabled != nil && *d.Enabled != cur.Enabled {
+			body.Enabled = adminapi.Some(*d.Enabled)
+			changed = append(changed, "enabled")
+		}
+		if len(changed) > 0 {
+			did := cur.ID
+			p.update(res, join(changed), func(ctx context.Context, c *adminapi.Client) error {
+				_, err := c.UpdateEventDestination(ctx, adminapi.UpdateEventDestinationInput{Tenant: id, Destination: did, Body: body})
+				return err
+			})
+		}
+	}
+	for _, n := range sortedKeys(have) {
+		if !inDoc[n] {
+			p.notInDocument("event_destination " + n)
+		}
+	}
+}
+
+func eventTypes(in []string) []adminapi.EventType {
+	out := make([]adminapi.EventType, len(in))
+	for i, t := range in {
+		out[i] = adminapi.EventType(t)
+	}
+	return out
+}
+
+func eventTypeNames(in []adminapi.EventType) []string {
+	out := make([]string, len(in))
+	for i, t := range in {
+		out[i] = string(t)
+	}
+	return out
+}
+
+// NewDestinations lists the names of the event destinations the plan creates, so that the caller
+// can see before any call that the files for their secrets are free.
+func (p Plan) NewDestinations() []string {
+	var out []string
+	for _, ch := range p.Changes {
+		if ch.Action == "create" && ch.run != nil && strings.HasPrefix(ch.Resource, "event_destination ") {
+			out = append(out, strings.TrimPrefix(ch.Resource, "event_destination "))
+		}
+	}
+	return out
 }
 
 func inSAs(sas []ServiceAccount, name string) bool {
@@ -804,3 +1266,14 @@ func sortedKeys[V any](m map[string]V) []string {
 	slices.Sort(out)
 	return out
 }
+
+// deref is the value a member points to, the zero value when it is absent: what a create sends.
+func deref[T any](p *T) T {
+	var zero T
+	if p == nil {
+		return zero
+	}
+	return *p
+}
+
+func ptr[T any](v T) *T { return &v }

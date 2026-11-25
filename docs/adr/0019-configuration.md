@@ -58,3 +58,4 @@ protect the database itself.
 - 2026-11-23: sprint 6.2: `pandokos export` and `pandokos apply` ([ADR 0066](0066-declarative-export-and-apply.md)); keys `reports.rollup_interval`, `retention.usage_months`, `retention.audit_months`
 - 2026-11-24: sprint 12.1: thirteen keys `vault.kek.transit.*`; the secrets of the key service (token, role ID, secret ID) are paths to files ([ADR 0073](0073-the-transit-key-provider.md)).
 - 2026-11-25: sprint 12.2: the fourteenth key of the block, `vault.kek.transit.allow_exportable_key` (default `false`); an exportable key of the key service is refused unless it is set ([ADR 0074](0074-threat-model-review-and-continuous-fuzzing.md)).
+- 2026-11-25: sprint 12.3: every key has a scope, `instance` or `installation` ([ADR 0077](0077-an-instance-defined-by-configuration-alone.md)).

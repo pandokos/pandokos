@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-// Key describes one configuration key.
-type Key struct{ Name, Env, Type, Default, Description string }
+// Key describes one configuration key. Scope is ScopeInstance or ScopeInstallation (scope.go).
+type Key struct{ Name, Env, Type, Default, Description, Scope string }
 
 type keyDef struct {
 	Key
@@ -358,6 +358,7 @@ func Keys() []Key {
 	out := make([]Key, len(keyTable))
 	for i, k := range keyTable {
 		out[i] = k.Key
+		out[i].Scope = scopeOf(k.Name)
 	}
 	return out
 }
