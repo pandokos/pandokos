@@ -3,7 +3,7 @@ module github.com/pandokos/pandokos/test/sdk
 go 1.26.0
 
 require (
-	github.com/openai/openai-go/v3 v3.104.0
+	github.com/openai/openai-go/v3 v3.105.0
 	github.com/pandokos/pandokos v0.0.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/standard-webhooks/standard-webhooks/libraries v1.3.0
