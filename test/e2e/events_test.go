@@ -204,6 +204,11 @@ func TestEventsReceiverDown(t *testing.T) {
 	a := newLifeTenant(t, p, boot, "events-down", "workload")
 	recv := newFaultReceiver(t, "/hook")
 	recv.setMode("stall")
+	// A destination starts at the head of the tenant's stream: the event of the call that prepared
+	// the tenant is delivered only if its record is flushed after the destination was made. The
+	// ledger writer flushes by interval, so that record is awaited before the destination is made,
+	// and every event the receiver must get is one of a record that is not in "before".
+	testutil.Eventually(t, 30*time.Second, "the record of the call that prepared the tenant", func() bool { return len(ledgerOf(t, p, a.id)) >= 1 })
 	destID, secretText := newDestination(t, p, a.adminFile, a.id, "billing", recv.url("/hook"))
 	recv.setSecret(secretText)
 	before := ledgerOf(t, p, a.id)
@@ -251,11 +256,10 @@ func TestEventsReceiverDown(t *testing.T) {
 		d := destinationDelivery(t, p, a.adminFile, a.id, destID)
 		return d.State == "failing" && d.Failures > 0
 	})
-	// One event per record of the ledger: the record of the call that prepared the tenant may be
-	// flushed after the snapshot "before" was taken, so the ledger is read again.
+	// One event per record of the ledger.
 	expected := len(ledgerOf(t, p, a.id))
-	if n := p.db.Count(t, `SELECT count(*)::int FROM pandokos.outbox_event WHERE tenant_id = $1::uuid`, a.id); n != expected || expected < len(before)+200 {
-		t.Errorf("the outbox holds %d events and the ledger %d records, want equal and at least %d", n, expected, len(before)+200)
+	if n := p.db.Count(t, `SELECT count(*)::int FROM pandokos.outbox_event WHERE tenant_id = $1::uuid`, a.id); n != expected || expected != len(before)+200 {
+		t.Errorf("the outbox holds %d events and the ledger %d records, want both %d", n, expected, len(before)+200)
 	}
 	testutil.Eventually(t, 120*time.Second, "the lag of the relay to show in the scrape", func() bool {
 		_, scrape := p.scrapeAs(t, "GET", key)
@@ -275,7 +279,7 @@ func TestEventsReceiverDown(t *testing.T) {
 	recv.setMode("ok")
 	testutil.Eventually(t, 3*time.Minute, "all 200 events to arrive", func() bool {
 		expireLeases(t, p)
-		return recv.store.size() >= expected
+		return recv.store.size() >= expected-len(before)
 	})
 	got, _ := recv.store.snapshot()
 	records := ledgerOf(t, p, a.id)
