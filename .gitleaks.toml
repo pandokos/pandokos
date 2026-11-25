@@ -1,6 +1,6 @@
 # Secret scanning of the repository and of its history: `make secrets`, run in CI.
-# The default rules of gitleaks cover provider keys and other common secrets; the rule below adds
-# the keys Pandokos issues (docs/operations/keys.md). Never allowlist a real key: revoke it.
+# The default rules of gitleaks cover provider keys and other common secrets; the rules below add
+# the keys, session tokens and signing secrets Pandokos issues (docs/operations/keys.md). Never allowlist a real key: revoke it.
 title = "pandokos"
 
 [extend]
@@ -11,6 +11,18 @@ id = "pandokos-key"
 description = "Pandokos platform or virtual key"
 regex = '''pdk_[tp][a-z2-7]{16}_[a-z2-7]{59}'''
 keywords = ["pdk_"]
+
+[[rules]]
+id = "pandokos-session"
+description = "Pandokos session token"
+regex = '''pds_[A-Za-z0-9_-]{43}'''
+keywords = ["pds_"]
+
+[[rules]]
+id = "pandokos-signing-secret"
+description = "Pandokos webhook signing secret"
+regex = '''whsec_[A-Za-z0-9+/]{43}='''
+keywords = ["whsec_"]
 
 # Test values are synthetic and named so (`synthetic-…`, docs/operations/vault.md, plan rule 3);
 # the generic rule of gitleaks flags them in test request bodies. Only that prefix is allowed.

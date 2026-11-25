@@ -578,6 +578,7 @@ func TestTransitKeyRequirements(t *testing.T) {
 		{"rsa-2048", transittest.KeyOptions{Type: "rsa-2048"}},
 		{"a derived key", transittest.KeyOptions{Derived: true}},
 		{"a key that does not support decryption", transittest.KeyOptions{NoDecrypt: true}},
+		{"an exportable key", transittest.KeyOptions{Exportable: true}}, // sprint 12.2: refused unless allowed
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -615,7 +616,11 @@ func TestTransitKeyRequirements(t *testing.T) {
 		}
 		for _, w := range weak {
 			t.Run(w.setting, func(t *testing.T) {
-				r := newTransitRig(t, vaulttest.TransitSetup{KeyOptions: w.opts})
+				var adjust []func(*vault.TransitOptions)
+				if w.setting == "exportable" { // refused unless allowed (sprint 12.2, T-1100)
+					adjust = append(adjust, func(o *vault.TransitOptions) { o.AllowExportable = true })
+				}
+				r := newTransitRig(t, vaulttest.TransitSetup{KeyOptions: w.opts}, adjust...)
 				if w.root {
 					root := r.s.Namespace("").Token(transittest.TokenOptions{Root: true})
 					writeFile(t, r.f.TokenFile, root+"\n")
@@ -632,7 +637,8 @@ func TestTransitKeyRequirements(t *testing.T) {
 		}
 		t.Run("all of them at once, and none for a sound key", func(t *testing.T) {
 			r := newTransitRig(t, vaulttest.TransitSetup{KeyOptions: transittest.KeyOptions{
-				Exportable: true, PlaintextBackup: true, DeletionAllowed: true, AutoRotate: time.Hour}})
+				Exportable: true, PlaintextBackup: true, DeletionAllowed: true, AutoRotate: time.Hour}},
+				func(o *vault.TransitOptions) { o.AllowExportable = true })
 			root := r.s.Namespace("").Token(transittest.TokenOptions{Root: true})
 			writeFile(t, r.f.TokenFile, root+"\n")
 			r.start(t, false)
@@ -652,6 +658,92 @@ func TestTransitKeyRequirements(t *testing.T) {
 				t.Errorf("no line key provider ready")
 			}
 		})
+	})
+}
+
+// TestTransitExportable is T-1100: a key created exportable is refused at start with a fixed text
+// that names the setting and the key that allows it, as a cause only a person can repair, before
+// any data key is wrapped; with the option it starts and reports exportable among the weak
+// settings; the four other weak settings still start without the option.
+func TestTransitExportable(t *testing.T) {
+	const keyName = "very-secret-key-name"
+	exportable := vaulttest.TransitSetup{Key: keyName, KeyOptions: transittest.KeyOptions{Exportable: true}}
+
+	t.Run("refused without the option", func(t *testing.T) {
+		r := newTransitRig(t, exportable)
+		err := r.p.Start(ctx(t))
+		if err == nil {
+			t.Fatal("Start succeeded with an exportable key")
+		}
+		for _, want := range []string{"exportable", "vault.kek.transit.allow_exportable_key"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the error does not name %q: %v", want, err)
+			}
+		}
+		for _, leak := range []string{keyName, "127.0.0.1", r.f.Token} {
+			if strings.Contains(err.Error(), leak) {
+				t.Errorf("the error holds %q: %v", leak, err)
+			}
+		}
+		if errors.Is(err, vault.ErrProviderUnavailable) {
+			t.Errorf("a cause only a person can repair is reported as unavailable: %v", err)
+		}
+		var te *vault.TransitError
+		if errors.As(err, &te) {
+			t.Errorf("the refusal is a failure of an operation of the service: %v", te)
+		}
+		if n := r.s.Count(transittest.OpWrap) + r.s.Count(transittest.OpUnwrap); n != 0 {
+			t.Errorf("%d wrap or unwrap requests were sent before the refusal", n)
+		}
+		if got := r.p.Info().Weak; len(got) != 0 {
+			t.Errorf("a refused key is reported weak: %v", got)
+		}
+		if n := len(r.logs.Find(t, "key provider ready")); n != 0 {
+			t.Errorf("%d lines key provider ready for a refused key", n)
+		}
+		testutil.AssertAbsent(t, "the logs", r.logs.String(), keyName)
+	})
+
+	t.Run("accepted with the option, and reported", func(t *testing.T) {
+		r := newTransitRig(t, exportable, func(o *vault.TransitOptions) { o.AllowExportable = true })
+		r.start(t, false)
+		if got := r.p.Info().Weak; len(got) != 1 || got[0] != "exportable" {
+			t.Errorf("Info().Weak = %v, want [exportable]", got)
+		}
+		lines := r.logs.Find(t, "key provider configuration weak")
+		if len(lines) != 1 || lines[0]["setting"] != "exportable" || lines[0]["level"] != "WARN" {
+			t.Errorf("the log lines are %v, want one warning with setting exportable", lines)
+		}
+		// The key works: a data key wraps and unwraps.
+		aad := vault.DataAAD(testTenant(3), 1)
+		id, wrapped, err := r.p.Wrap(ctx(t), dataKeyBytes(1), aad)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := r.p.Unwrap(ctx(t), id, wrapped, aad); err != nil || !bytes.Equal(got, dataKeyBytes(1)) {
+			t.Errorf("Unwrap: %v", err)
+		}
+	})
+
+	t.Run("the other weak settings still start without the option", func(t *testing.T) {
+		for name, opts := range map[string]transittest.KeyOptions{
+			"plaintext_backup": {PlaintextBackup: true},
+			"deletion_allowed": {DeletionAllowed: true},
+			"auto_rotate":      {AutoRotate: 24 * time.Hour},
+		} {
+			r := newTransitRig(t, vaulttest.TransitSetup{KeyOptions: opts})
+			r.start(t, false)
+			if got := r.p.Info().Weak; len(got) != 1 || got[0] != name {
+				t.Errorf("%s: Info().Weak = %v", name, got)
+			}
+		}
+		r := newTransitRig(t, vaulttest.TransitSetup{})
+		root := r.s.Namespace("").Token(transittest.TokenOptions{Root: true})
+		writeFile(t, r.f.TokenFile, root+"\n")
+		r.start(t, false)
+		if got := r.p.Info().Weak; len(got) != 1 || got[0] != "root_token" {
+			t.Errorf("root_token: Info().Weak = %v", got)
+		}
 	})
 }
 

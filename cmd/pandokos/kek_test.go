@@ -220,7 +220,8 @@ func TestKEKCheck(t *testing.T) {
 			s := transittest.New(t)
 			f := vaulttest.Transit(t, s, vaulttest.TransitSetup{Method: method, KeyOptions: transittest.KeyOptions{Exportable: true}})
 			s.Namespace("").Rotate(f.Mount, f.Key)
-			ce := newCheckEnv(t, s, f)
+			// An exportable key is refused unless the setting allows it (sprint 12.2, T-1100).
+			ce := newCheckEnv(t, s, f, "PANDOKOS_VAULT_KEK_TRANSIT_ALLOW_EXPORTABLE_KEY=true")
 			code, out, errs := runCmd(t, ce.env, "kek", "check")
 			if code != 0 {
 				t.Fatalf("%s: code %d, stdout %q, stderr %q", method, code, out, errs)
@@ -250,6 +251,36 @@ func TestKEKCheck(t *testing.T) {
 					t.Errorf("%s: the command sent %s", method, q.Path)
 				}
 			}
+		}
+	})
+
+	t.Run("an exportable key: refused with the class and 1, accepted with the option", func(t *testing.T) {
+		s := transittest.New(t)
+		const keyName = "synthetic-exportable-key-name"
+		f := vaulttest.Transit(t, s, vaulttest.TransitSetup{Key: keyName, KeyOptions: transittest.KeyOptions{Exportable: true}})
+		ce := newCheckEnv(t, s, f)
+		code, out, errs := runCmd(t, ce.env, "kek", "check")
+		all := out + errs
+		if code != 1 {
+			t.Errorf("code %d, stdout %q, stderr %q, want 1", code, out, errs)
+		}
+		for _, want := range []string{"exportable", "vault.kek.transit.allow_exportable_key"} {
+			if !strings.Contains(all, want) {
+				t.Errorf("the output does not name %q: %q", want, all)
+			}
+		}
+		if strings.Contains(out, "provider: transit") || strings.Contains(out, "version: ") {
+			t.Errorf("a refused key is described as usable: %q", out)
+		}
+		if got := ce.conns.Load(); got != 0 {
+			t.Errorf("the command opened %d database connections", got)
+		}
+		testutil.AssertAbsent(t, "the output", all, append(transittest.Secrets(s, f.Token), keyName)...)
+
+		ce = newCheckEnv(t, s, f, "PANDOKOS_VAULT_KEK_TRANSIT_ALLOW_EXPORTABLE_KEY=true")
+		code, out, errs = runCmd(t, ce.env, "kek", "check")
+		if code != 0 || !strings.Contains(out, "weak: ") || !strings.Contains(out, "exportable") {
+			t.Errorf("with the option: code %d, stdout %q, stderr %q", code, out, errs)
 		}
 	})
 

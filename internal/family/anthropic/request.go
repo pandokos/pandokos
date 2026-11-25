@@ -4,6 +4,17 @@ import (
 	"github.com/pandokos/pandokos/internal/family"
 )
 
+// The names of the members of a request body that this package reads (sprint 12.2, section 5.5);
+// "model" is read by family.ParseModel, which takes the literal.
+const (
+	memberModel     = "model"
+	memberMaxTokens = "max_tokens"
+	memberStream    = "stream"
+)
+
+// ReadMembers is the set of top-level members of a request body that this family reads.
+var ReadMembers = []string{memberModel, memberMaxTokens, memberStream}
+
 // Request is a Messages API request body that was read.
 type Request struct {
 	body   []byte
@@ -14,13 +25,16 @@ type Request struct {
 }
 
 // ParseOperation reads the request body of an operation of the family. Every error wraps
-// family.ErrInvalidRequest and carries a reason (family.InvalidReason): not_object,
+// family.ErrInvalidRequest and carries a reason (family.InvalidReason): not_object, member_case,
 // model_missing, model_duplicate or model_not_string. The body is not modified and is kept by the
 // Request. Token counting never streams.
 func ParseOperation(operation string, body []byte) (*Request, error) {
 	members, _, err := family.ScanObject(body)
 	if err != nil {
 		return nil, family.Invalid("not_object")
+	}
+	if family.CaseConflict(members, ReadMembers...) {
+		return nil, family.Invalid("member_case")
 	}
 	model, mm, err := family.ParseModel(body, members)
 	if err != nil {
@@ -31,10 +45,10 @@ func ParseOperation(operation string, body []byte) (*Request, error) {
 	if operation == OperationCountTokens {
 		bound.None = true
 	} else {
-		bound.Tokens, _ = family.PositiveInt(body, members, "max_tokens", 12)
+		bound.Tokens, _ = family.PositiveInt(body, members, memberMaxTokens, 12)
 	}
 	if operation == OperationMessages {
-		if sm, ok := family.LastMember(members, "stream"); ok {
+		if sm, ok := family.LastMember(members, memberStream); ok {
 			stream = family.IsLiteral(body, sm, "true")
 		}
 	}

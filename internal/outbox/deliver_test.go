@@ -322,29 +322,42 @@ func TestValidateURL(t *testing.T) {
 	}
 	for what, bad := range map[string]string{
 		"an http URL for a host that is not listed": "http://hooks.example.test/in",
-		"ftp":                       "ftp://hooks.example.test/in",
-		"no scheme":                 "hooks.example.test/in",
-		"no host":                   "https:///in",
-		"user information":          "https://user@hooks.example.test/in",
-		"user and password":         "https://user:pass@hooks.example.test/in",
-		"a fragment":                "https://hooks.example.test/in#frag",
-		"an empty string":           "",
-		"a space":                   "https://hooks.example.test/a b",
-		"a newline":                 "https://hooks.example.test/a\nb",
-		"2049 bytes":                "https://hooks.example.test/" + strings.Repeat("a", 2049-len("https://hooks.example.test/")),
-		"the metadata address":      "https://169.254.169.254/latest",
-		"a loopback literal":        "https://127.0.0.1/in",
-		"a private literal":         "https://10.1.2.3/in",
-		"an http literal":           "http://127.0.0.1/in",
-		"an IPv6 loopback":          "https://[::1]/in",
-		"an IPv4-mapped loopback":   "https://[::ffff:127.0.0.1]/in",
-		"an opaque URL":             "mailto:someone@example.test",
-		"a scheme in capitals only": "HTTPS://",
+		"ftp":                                    "ftp://hooks.example.test/in",
+		"no scheme":                              "hooks.example.test/in",
+		"no host":                                "https:///in",
+		"user information":                       "https://user@hooks.example.test/in",
+		"user and password":                      "https://user:pass@hooks.example.test/in",
+		"a fragment":                             "https://hooks.example.test/in#frag",
+		"an empty string":                        "",
+		"a space":                                "https://hooks.example.test/a b",
+		"a newline":                              "https://hooks.example.test/a\nb",
+		"2049 bytes":                             "https://hooks.example.test/" + strings.Repeat("a", 2049-len("https://hooks.example.test/")),
+		"the metadata address":                   "https://169.254.169.254/latest",
+		"the EKS Pod Identity agent":             "https://169.254.170.23/v1/credentials",
+		"the EKS Pod Identity agent over IPv6":   "https://[fd00:ec2::23]/v1/credentials",
+		"the Google Cloud metadata server, IPv6": "https://[fd20:ce::254]/computeMetadata/v1/",
+		"the OpenStack metadata address, IPv6":   "https://[fe80::a9fe:a9fe]/openstack/latest",
+		"a metadata address, mapped":             "https://[::ffff:169.254.170.23]/in",
+		"a loopback literal":                     "https://127.0.0.1/in",
+		"a private literal":                      "https://10.1.2.3/in",
+		"an http literal":                        "http://127.0.0.1/in",
+		"an IPv6 loopback":                       "https://[::1]/in",
+		"an IPv4-mapped loopback":                "https://[::ffff:127.0.0.1]/in",
+		"an opaque URL":                          "mailto:someone@example.test",
+		"a scheme in capitals only":              "HTTPS://",
 	} {
 		if err := ValidateURL(bad, private); err == nil {
 			t.Errorf("%s (%s): accepted", what, bad)
 		} else if bad != "" && strings.Contains(err.Error(), "pass") {
 			t.Errorf("%s: the error quotes the URL: %v", what, err)
+		}
+	}
+	// A host listed as private does not make a metadata address valid (T-1099, T-1115).
+	for _, host := range []string{"169.254.169.254", "169.254.170.2", "100.100.100.200", "[fd00:ec2::254]", "169.254.170.23", "[fd00:ec2::23]", "[fd20:ce::254]", "[fe80::a9fe:a9fe]"} {
+		for _, scheme := range []string{"https", "http"} {
+			if err := ValidateURL(scheme+"://"+host+"/in", []string{strings.Trim(host, "[]")}); err == nil {
+				t.Errorf("%s://%s accepted although its host is listed as private", scheme, host)
+			}
 		}
 	}
 	// The exact 2048-byte URL is valid.

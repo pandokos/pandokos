@@ -48,10 +48,13 @@ type TransitOptions struct {
 	SecretIDFile   string
 	RequestTimeout time.Duration // 100 ms to 30 s
 	MaxConcurrent  int           // 1 to 1024
-	UserAgent      string
-	Logger         *slog.Logger // required
-	Now            func() time.Time
-	OnRequest      func(operation string, d time.Duration) // M60; may be nil
+	// AllowExportable accepts a key of the key service that was created exportable (sprint 12.2,
+	// section 5.7); without it such a key is refused at start.
+	AllowExportable bool
+	UserAgent       string
+	Logger          *slog.Logger // required
+	Now             func() time.Time
+	OnRequest       func(operation string, d time.Duration) // M60; may be nil
 }
 
 // TransitProvider wraps data keys with a transit key of OpenBao or HashiCorp Vault. It holds the
@@ -103,11 +106,12 @@ var reTransitID = regexp.MustCompile(`^transit-([0-9a-f]{16})-v([1-9][0-9]{0,8})
 
 // Fixed texts of the requirements on the key; they name a setting and never the key.
 var (
-	errTransitType      = errors.New("vault: the transit key (vault.kek.transit.key_name) must be of type aes256-gcm96")
-	errTransitDerived   = errors.New("vault: the transit key (vault.kek.transit.key_name) must not be derived")
-	errTransitMissing   = errors.New("vault: the transit key (vault.kek.transit.key_name) does not exist")
-	errTransitOperation = errors.New("vault: the transit key (vault.kek.transit.key_name) does not support encryption and decryption")
-	errTransitNotReady  = errors.New("vault: the transit key provider has not started")
+	errTransitType       = errors.New("vault: the transit key (vault.kek.transit.key_name) must be of type aes256-gcm96")
+	errTransitDerived    = errors.New("vault: the transit key (vault.kek.transit.key_name) must not be derived")
+	errTransitExportable = errors.New("vault: the transit key (vault.kek.transit.key_name) is exportable; create it with exportable false, or accept it with vault.kek.transit.allow_exportable_key")
+	errTransitMissing    = errors.New("vault: the transit key (vault.kek.transit.key_name) does not exist")
+	errTransitOperation  = errors.New("vault: the transit key (vault.kek.transit.key_name) does not support encryption and decryption")
+	errTransitNotReady   = errors.New("vault: the transit key provider has not started")
 )
 
 // NewTransitProvider checks the options and contacts nothing.
@@ -261,19 +265,13 @@ func (p *TransitProvider) Wrap(ctx context.Context, plaintext, aad []byte) (stri
 	buf = append(buf, '}')
 	defer clear(buf)
 
-	var out struct {
-		Ciphertext json.RawMessage `json:"ciphertext"`
-		KeyVersion *int            `json:"key_version"`
-	}
+	var out encryptData
 	if _, err := p.send(ctx, "wrap", http.MethodPost, p.keyPath("encrypt"), buf, &out); err != nil {
 		return "", nil, err
 	}
-	if out.KeyVersion == nil || *out.KeyVersion != n {
-		return "", nil, &TransitError{Operation: "wrap", Class: "rejected"}
-	}
-	payload, ok := transitCiphertext(out.Ciphertext, n)
-	if !ok || len(payload) < 28 || len(payload) > 1023 {
-		return "", nil, &TransitError{Operation: "wrap", Class: "rejected"}
+	payload, err := wrapAnswer(out, n)
+	if err != nil {
+		return "", nil, err
 	}
 	return version, append([]byte{transitWrapFormat}, payload...), nil
 }
@@ -406,9 +404,7 @@ func (p *TransitProvider) unwrapOnce(ctx context.Context, version string, wrappe
 		Ciphertext string `json:"ciphertext"`
 		AAD        string `json:"associated_data"`
 	}{"vault:v" + strconv.Itoa(n) + ":" + base64.StdEncoding.EncodeToString(wrapped[1:]), aadField(aad)}
-	var out struct {
-		Plaintext json.RawMessage `json:"plaintext"`
-	}
+	var out decryptData
 	status, err := p.send(ctx, "unwrap", http.MethodPost, p.keyPath("decrypt"), in, &out)
 	defer func() { clear(out.Plaintext) }()
 	if err != nil {
@@ -417,16 +413,7 @@ func (p *TransitProvider) unwrapOnce(ctx context.Context, version string, wrappe
 		}
 		return nil, err
 	}
-	inner, ok := transitUnquote(out.Plaintext)
-	if !ok {
-		return nil, &TransitError{Operation: "unwrap", Class: "rejected"}
-	}
-	dk, ok := transitDecode(inner)
-	if !ok || len(dk) != dataKeyLen {
-		clear(dk)
-		return nil, &TransitError{Operation: "unwrap", Class: "rejected"}
-	}
-	return dk, nil
+	return unwrapAnswer(out)
 }
 
 // afterBadDecrypt answers a 400 to decrypt: a version that a fresh description puts out of range is

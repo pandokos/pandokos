@@ -1,8 +1,13 @@
 # Running the container image
 
-This is a pre-release: one static access token, plain HTTP, one endpoint, no tenants in the
-product yet. It is not for production. It needs a PostgreSQL 16 database, and nothing else: see the
-[database guide](database.md) to prepare it.
+This page runs the Pandokos image. One container serves the inference listener, the administration
+API and the command line of `pandokos`, for several tenants: callers present virtual keys or signed
+tokens, people and automation use the administration API, and each tenant's provider credentials are
+stored sealed in the database under a key-encryption key ([gateway guide](gateway.md),
+[vault guide](vault.md)). Both listeners can serve TLS ([TLS guide](tls.md)). The image needs a
+PostgreSQL 16 database, and nothing else: see the [database guide](database.md) to prepare it. What
+is not built yet is in [Limits of this pre-release](#limits-of-this-pre-release); the
+[Compose reference](compose.md) is the quickest first trial.
 
 ## The image
 
@@ -17,8 +22,7 @@ product yet. It is not for production. It needs a PostgreSQL 16 database, and no
 
 ## Starting it
 
-Put the secrets in files: the access token (at least 32 bytes, different from the provider key),
-the provider key, and the passwords of the database users. Starting takes two commands, because
+Put the secrets in files: the key-encryption key and the passwords of the database users. Starting takes two commands, because
 the schema is created by `migrate` and `serve` refuses to start against a schema it does not
 match:
 
@@ -107,13 +111,14 @@ The secret files must be readable by user 65532. All settings are described in t
 
 The path after the first segment is the provider's own, for any provider of the catalogue (`/<provider>/v1/...`).
 
-Any other path or method gets 404 `endpoint_not_supported`. A caller presents the static access
-token as `Authorization: Bearer <token>`. An SDK needs only a different base URL and key:
+Any other path or method gets 404 `endpoint_not_supported`. A caller presents a virtual key (or a
+signed token, see the [tokens guide](tokens.md)) in the header its SDK uses for the provider's own
+key ([gateway guide](gateway.md), section 1). An SDK needs only a different base URL and key:
 
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8080/openai/v1", api_key="<access token>")
+client = OpenAI(base_url="http://localhost:8080/openai/v1", api_key="<virtual key>")
 ```
 
 ## What Pandokos changes
@@ -122,8 +127,11 @@ Provider responses pass through unchanged: status, body and an allow-list of hea
 (`openai`: `Content-Type`, `Content-Length`, `Retry-After`, `X-Request-Id`, `X-Ratelimit-*`, `Openai-*`;
 `anthropic`: `Content-Type`, `Content-Length`, `Retry-After`, `Request-Id`, `X-Should-Retry`, `Anthropic-*`),
 for every status including errors ([ADR 0009](../adr/0009-native-passthrough-by-api-family.md)).
-Towards the provider only `Accept`, `Content-Type` and `User-Agent` are forwarded, with the
-provider key in `Authorization`; the query string is not forwarded and redirects are not followed.
+Towards the provider only the headers on the allow-list of the family are forwarded (`openai`: `Accept`,
+`Content-Type`, `User-Agent`, `OpenAI-Organization`, `OpenAI-Project`, `OpenAI-Beta`; `anthropic`: `Accept`,
+`Content-Type`, `User-Agent`, `Anthropic-Version`, `Anthropic-Beta`; the lists are `RequestHeaders` in the
+`route.go` of each family), with the tenant's provider credential in the header the provider reads; the query string is not forwarded and redirects are not
+followed.
 
 For a streamed request that does not ask for usage, Pandokos adds `stream_options.include_usage`
 by splicing bytes into the body (it is never re-serialized) and removes the usage-only event from
@@ -141,7 +149,7 @@ header `X-Pandokos-Error` ([ADR 0020](../adr/0020-error-contract.md)).
 | Condition | Status | `X-Pandokos-Error` |
 |---|---|---|
 | Path or method not supported | 404 | `endpoint_not_supported` |
-| Missing, malformed or wrong access token | 401 | `unauthenticated` |
+| Missing, malformed or wrong credential | 401 | `unauthenticated` |
 | Body over `limits.max_request_body_bytes` | 413 | `request_too_large` |
 | Provider not reachable | 502 | `upstream_unreachable` |
 | `limits.max_request_duration` elapsed before the provider answered | 504 | `upstream_timeout` |
@@ -208,27 +216,66 @@ the drain ends the process at once and loses them too.
 
 ## Verifying a release
 
-Releases are built only by the release workflow. Each image is signed with cosign (keyless) and
-carries an SPDX SBOM and a SLSA provenance attestation.
+Releases are built only by the release workflow, from an annotated tag on `main` or a release
+branch (the maintainer signs the tag; the workflow checks that it is annotated and that its commit is on one of those branches). Each release publishes one image index and its digest. The artefacts are the image, its
+SPDX SBOM and the API description; no binary is released. The image is signed with cosign
+(keyless), and carries an SPDX SBOM and a SLSA provenance attestation. All of them are made on the
+digest, not on a tag: a tag can be moved after the release, a digest cannot.
+
+**Take the digest from the release page.** The page of each release on GitHub states
+`Image: ghcr.io/pandokos/pandokos@sha256:<digest>`. Use that value. If you start from a tag, resolve it
+and compare the result with the release page before you trust it:
 
 ```
-cosign verify ghcr.io/pandokos/pandokos:<version> \
+docker buildx imagetools inspect ghcr.io/pandokos/pandokos:<version> --format '{{.Manifest.Digest}}'
+```
+
+Then verify the signature, the SBOM attestation and the build provenance of that digest:
+
+```
+cosign verify ghcr.io/pandokos/pandokos@sha256:<digest> \
   --certificate-identity "https://github.com/pandokos/pandokos/.github/workflows/release.yml@refs/tags/v<version>" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
-cosign verify-attestation ghcr.io/pandokos/pandokos:<version> --type spdxjson \
+cosign verify-attestation ghcr.io/pandokos/pandokos@sha256:<digest> --type spdxjson \
   --certificate-identity "https://github.com/pandokos/pandokos/.github/workflows/release.yml@refs/tags/v<version>" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
-gh attestation verify oci://ghcr.io/pandokos/pandokos:<version> --repo pandokos/pandokos
+gh attestation verify oci://ghcr.io/pandokos/pandokos@sha256:<digest> --repo pandokos/pandokos
+```
+
+**Run by digest in production.** Name the image `ghcr.io/pandokos/pandokos@sha256:<digest>` in the
+container command, the Compose file or the manifest, so that what runs is what you verified. The
+tags (`0.2.0`, `0.2`, `latest`) are for a first trial: `0.2` moves at each patch release, which is
+what the [Compose reference](compose.md) follows on purpose.
+
+**The attested SBOM is the authoritative one.** The SBOM file on the release page is an unsigned copy
+of it. To print the signed one, take the payload of the verified attestation (the second command above,
+with its output piped to `jq`):
+
+```
+cosign verify-attestation ghcr.io/pandokos/pandokos@sha256:<digest> --type spdxjson \
+  --certificate-identity "https://github.com/pandokos/pandokos/.github/workflows/release.yml@refs/tags/v<version>" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com | jq -r '.payload | @base64d | fromjson | .predicate'
 ```
 
 The SBOM is generated from the amd64 variant and attested against the image index digest; the Go
 dependencies are the same on both platforms.
 
+**What the pipeline verified before it published.** The workflow refuses a tag that is not an
+annotated tag, runs the whole test suite, builds the image, and then checks the pushed digest: the
+signature, the SBOM attestation, the provenance, both platforms, the version the binary reports, and a
+scan of that digest (a fixed vulnerability of severity high or above fails the release). The release
+page is created only after all of them passed. The same scan runs again every night
+against the image that `latest` names, together with a check of the Go vulnerability database over the
+repository, so that a vulnerability published after a release is seen without a new push.
+
 ## Limits of this pre-release
 
 The inference listener forwards chat completions, responses and embeddings of the `openai` family and messages of the `anthropic` family with the tenant's stored
-credential; see the [gateway guide](gateway.md) for what a call needs and what reaches the provider. It
-speaks plain HTTP, so terminate TLS in front of it. It writes a usage record for every authenticated request ([usage guide](usage.md)) and exports traces when a collector is configured ([telemetry guide](telemetry.md)). It has no retries. The [Compose reference](compose.md) runs one instance with PostgreSQL and TLS for a first trial. Do not
-expose it to the internet and do not use it for production.
+credential; see the [gateway guide](gateway.md) for what a call needs and what reaches the provider. Both
+listeners serve TLS when a certificate is configured ([TLS guide](tls.md)) and plain HTTP otherwise, and
+then TLS has to end in front of them. It writes a usage record for every authenticated request ([usage guide](usage.md)) and exports traces when a collector is configured ([telemetry guide](telemetry.md)). It has no retries towards the provider, and the limits of a tenant are
+counted per instance until the shared store of a later release exists ([limits guide](limits.md)). There is no
+chart for Kubernetes yet. The [Compose reference](compose.md) runs one instance with PostgreSQL and TLS for a first trial. The administration API is not meant for the public internet; read
+the [security model](../architecture/security-model.md) before you expose either listener.

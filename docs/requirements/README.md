@@ -315,6 +315,13 @@ export remain the record. The requirement keeps its text.
 | SEC-08 | High-impact administrative operations require a reason | S | R2 | SEC-CP-02 |
 | SEC-09 | An independent security review takes place before 1.0 | S | R5 | §22 |
 
+**Delivered (sprint 12.2).** SEC-05 is met as "reviewed" for R3: the [security model](../architecture/security-model.md)
+names code and proof for every boundary, statement and threat, a repository test holds it, and the first
+[review record](../architecture/threat-model-review-2026-11.md) states what the review found and what it did not
+cover ([ADR 0074](../adr/0074-threat-model-review-and-continuous-fuzzing.md)). The record was written by the
+authors of the code: SEC-09 (the independent review) stays with R5. SEC-06 gains the checks of the release
+by digest and the nightly scans of the same ADR.
+
 ### 5.14 Deployment and operations
 
 | ID | Requirement | Pri | Rel | Source |

@@ -54,6 +54,12 @@ Requirements: SEC-05 (reviewed).
 Exit: every threat in the model names the control that answers it and the test that proves the
 control; the fuzz targets run in CI.
 
+*Deferred from 12.2:* the scraper's `platform-auditor` credential that reads more than metrics (F-20, open point
+O-5) and the decision on forbidding every link-local address for every class (O-3) go to sprint 10.2; the
+signature of the release tag verified by the workflow (O-2, it needs the maintainer's public key in the repository)
+and a fuzzing service that reports privately (O-4) stay open. The review record is
+[docs/architecture/threat-model-review-2026-11.md](../../../docs/architecture/threat-model-review-2026-11.md).
+
 ### 12.3 Restore drill and upgrade policy
 
 - Restore drill from backups, including loss of the key-encryption key.

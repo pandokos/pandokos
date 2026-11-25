@@ -140,7 +140,7 @@ func buildKeyProviders(cfg *config.Config, guard *egress.Guard, logger *slog.Log
 			Transport: guard.KeyService(t.TLS.RootCAs), Address: t.URL, Namespace: t.Namespace,
 			Mount: t.Mount, KeyName: t.KeyName, AuthMethod: t.Auth.Method, TokenFile: t.Auth.TokenFile,
 			AppRoleMount: t.Auth.AppRole.Mount, RoleIDFile: t.Auth.AppRole.RoleIDFile, SecretIDFile: t.Auth.AppRole.SecretIDFile,
-			RequestTimeout: time.Duration(t.RequestTimeout), MaxConcurrent: t.MaxConcurrentRequests,
+			RequestTimeout: time.Duration(t.RequestTimeout), MaxConcurrent: t.MaxConcurrentRequests, AllowExportable: t.AllowExportableKey,
 			UserAgent: "pandokos/" + buildinfo.Version, Logger: logger, OnRequest: onRequest,
 		})
 		if err != nil {

@@ -98,42 +98,31 @@ func (p *TransitProvider) authenticate(ctx context.Context) error {
 
 // lookup looks tok up with itself and adopts it as a new token.
 func (p *TransitProvider) lookup(ctx context.Context, tok secret.Secret) error {
-	var out struct {
-		Policies  []string     `json:"policies"`
-		TTL       *json.Number `json:"ttl"`
-		Renewable bool         `json:"renewable"`
-	}
+	var out lookupData
 	lctx := context.WithValue(ctx, tokenKey{}, tok)
 	if err := p.do(lctx, "lookup", http.MethodGet, "auth/token/lookup-self", nil, &out); err != nil {
 		return err
 	}
-	life, ok := seconds(out.TTL)
-	if !ok {
-		return &TransitError{Operation: "lookup", Class: "rejected"}
+	g, err := lookupGrant(out)
+	if err != nil {
+		return err
 	}
-	pol := out.Policies
-	if pol == nil {
-		pol = []string{}
-	}
-	p.adopt(tok, grant{policies: pol, lifetime: life, renewable: out.Renewable}, true)
+	p.adopt(tok, g, true)
 	return nil
 }
 
 // renew extends the token in use.
 func (p *TransitProvider) renew(ctx context.Context) error {
-	var out struct {
-		Lease     *json.Number `json:"lease_duration"`
-		Renewable bool         `json:"renewable"`
-	}
+	var out renewData
 	tok := p.currentToken()
 	if err := p.do(context.WithValue(ctx, tokenKey{}, tok), "renew", http.MethodPost, "auth/token/renew-self", nil, &out); err != nil {
 		return err
 	}
-	life, ok := seconds(out.Lease)
-	if !ok {
-		return &TransitError{Operation: "renew", Class: "rejected"}
+	g, err := renewGrant(out)
+	if err != nil {
+		return err
 	}
-	p.adopt(tok, grant{lifetime: life, renewable: out.Renewable}, false)
+	p.adopt(tok, g, false)
 	return nil
 }
 
@@ -151,28 +140,16 @@ func (p *TransitProvider) login(ctx context.Context) error {
 		RoleID   string `json:"role_id"`
 		SecretID string `json:"secret_id"`
 	}{roleID.Reveal(), secretID.Reveal()}
-	var out struct {
-		Raw       rawToken     `json:"client_token"`
-		Policies  []string     `json:"policies"`
-		Lease     *json.Number `json:"lease_duration"`
-		Renewable bool         `json:"renewable"`
-	}
+	var out loginData
 	if err := p.do(ctx, "login", http.MethodPost, "auth/"+escapePath(p.opts.AppRoleMount)+"/login", in, &out); err != nil {
 		return err
 	}
 	defer clear(out.Raw)
-	if len(out.Raw) == 0 {
-		return &TransitError{Operation: "login", Class: "rejected"}
+	g, err := loginGrant(out)
+	if err != nil {
+		return err
 	}
-	life, ok := seconds(out.Lease)
-	if !ok {
-		return &TransitError{Operation: "login", Class: "rejected"}
-	}
-	pol := out.Policies
-	if pol == nil {
-		pol = []string{}
-	}
-	p.adopt(secret.New(string(out.Raw)), grant{policies: pol, lifetime: life, renewable: out.Renewable}, true)
+	p.adopt(secret.New(string(out.Raw)), g, true)
 	return nil
 }
 

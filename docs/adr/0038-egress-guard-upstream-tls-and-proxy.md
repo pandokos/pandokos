@@ -55,9 +55,21 @@ context (a pooled connection made under the private rule could serve a public en
 same host); honouring `HTTPS_PROXY` and `NO_PROXY` (ambient settings would move credentials
 without a validated key); a per-endpoint CA (a schema change nobody asked for).
 
+## Amendment (sprint 12.2)
+
+[ADR 0074](0074-threat-model-review-and-continuous-fuzzing.md) completes the forbidden class of point 2: the
+instance-metadata addresses are a list, and the list was short. Added, each as a single address, after the
+vendor's documentation was read: `169.254.170.23` and `fd00:ec2::23` (the Amazon EKS Pod Identity agent),
+`fd20:ce::254` (the Google Compute Engine metadata server over IPv6) and `fe80::a9fe:a9fe` (the OpenStack metadata
+service over IPv6, which leaves the private range `fe80::/10`). They are refused for every class, so a private
+endpoint, a private webhook host and a private token source cannot be put on one. Addresses that were not
+confirmed in this review are not added (the Azure WireServer address, an Oracle Cloud address, DigitalOcean,
+Hetzner). Forbidding all link-local addresses is left to a later decision.
+
 ## History
 
 - 2026-11: sprint 4.1 amends rule 7: credential validation, the price download and the retrieval of the keys of trusted issuers use the same transports ([ADR 0046](0046-issuer-key-retrieval-and-caching.md)); the public transport is used unless the operator lists the host in `tokens.private_hosts`.
 - 2026-11-18: accepted by the maintainer after review.
 - 2026-11-23: sprint 6.4 adds a fourth caller of the egress guard, the delivery of events to webhook destinations: the public transport, no redirect, the private transport only for hosts of `events.webhook.private_hosts` ([ADR 0071](0071-webhook-destinations-signature-secrets-and-egress.md)).
 - 2026-11-24: sprint 12.1 amends point 7: the key service is a fourth consumer of the guard, on a dedicated transport (`https` only, certificate always verified, no proxy, no redirect, private addresses accepted because the address is the operator's) ([ADR 0073](0073-the-transit-key-provider.md)).
+- 2026-11-25: amended by sprint 12.2: four instance and pod credential addresses join the forbidden class ([ADR 0074](0074-threat-model-review-and-continuous-fuzzing.md)).

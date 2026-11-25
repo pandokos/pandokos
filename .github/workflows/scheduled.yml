@@ -1,0 +1,73 @@
+name: scheduled
+
+on:
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled
+  cancel-in-progress: false
+
+jobs:
+  fuzz:
+    if: github.repository == 'pandokos/pandokos'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: .go-version
+      - run: make fuzz FUZZTIME=3m
+
+  vuln:
+    if: github.repository == 'pandokos/pandokos'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: .go-version
+      - run: make vuln
+
+  image:
+    if: github.repository == 'pandokos/pandokos'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Resolve the released image
+        id: img
+        run: |
+          set -eu
+          docker pull ghcr.io/pandokos/pandokos:latest
+          ref=$(docker image inspect --format '{{index .RepoDigests 0}}' ghcr.io/pandokos/pandokos:latest)
+          echo "$ref"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+      - name: Scan the released image
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: ${{ steps.img.outputs.ref }}
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: true
+          output-format: table
+
+  settings:
+    if: github.repository == 'pandokos/pandokos'
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Rulesets are active
+        run: |
+          set -eu
+          gh api "repos/$GITHUB_REPOSITORY/rulesets" --jq '.[] | "\(.target) \(.enforcement) \(.name)"' | tee rulesets.txt
+          grep -qxF 'branch active Protect main and release branches' rulesets.txt
+          grep -qxF 'tag active Protect version tags' rulesets.txt

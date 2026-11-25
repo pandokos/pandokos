@@ -52,13 +52,17 @@ minor release (from `main`) and a patch release (from the maintenance branch, af
    next release is in development, never behind it). Open the same change against `main`, so that it does not
    lose the page.
 4. **Merge, then tag immediately.** Check that the CI and the code scanning of the branch are green,
+   that the last run of the `scheduled` workflow is green (fuzzing, the vulnerability checks of the
+   repository and of the released image, the repository's rulesets) and that a review record of the
+   threat model exists for the release (`docs/architecture/threat-model-review-YYYY-MM.md`, a short one
+   when nothing changed; see [Reviews](docs/architecture/security-model.md#reviews) in the security model),
    then, on the commit that holds the page: `git tag -s -a vX.Y.Z -m "vX.Y.Z"` and
    `git push origin vX.Y.Z`. Between the merge and the push the quick start names a tag that does not
    exist yet, so the two are done together.
 5. **The release workflow does the rest** (`release.yml`): it checks the tag and runs the CI, then
    builds and signs the image, attaches the SBOM and the provenance, verifies them, and creates the
-   GitHub release with the SBOM and the administration API description. Verify the image with the
-   commands of [docs/operations/container.md](docs/operations/container.md#verifying-a-release) and
+   GitHub release with the SBOM and the administration API description. Verify the image by its digest
+   with the commands of [docs/operations/container.md](docs/operations/container.md#verifying-a-release) and
    paste or link the release page as the release text.
 6. **A release that fails is not retried with the same tag**: fix forward with the next patch
    (`v0.1.2`), or the next candidate (`v0.2.0-rc.2`).

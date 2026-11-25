@@ -245,6 +245,7 @@ type VaultKEKTransit struct {
 	RequestTimeout        Duration            `yaml:"request_timeout"`
 	MaxConcurrentRequests int                 `yaml:"max_concurrent_requests"`
 	StartTimeout          Duration            `yaml:"start_timeout"`
+	AllowExportableKey    bool                `yaml:"allow_exportable_key"`
 
 	URL *url.URL `yaml:"-"` // filled by Load
 }

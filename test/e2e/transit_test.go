@@ -556,6 +556,10 @@ func TestTransitStartRefusals(t *testing.T) {
 		w.s.IgnoreAssociatedData()
 		refused(t, "a service that ignores associated data", d, w, transitEnv(w))
 	})
+	t.Run("an exportable key", func(t *testing.T) { // sprint 12.2: one more refusal
+		d, w := plain(t, vaulttest.TransitSetup{KeyOptions: transittest.KeyOptions{Exportable: true}})
+		refused(t, "an exportable key", d, w, transitEnv(w), "exportable", "vault.kek.transit.allow_exportable_key")
+	})
 
 	// An installation that started on the service, with a tenant, and stopped.
 	started := func(t *testing.T) (*dbtest.Database, *transitWorld, string) {
@@ -601,6 +605,93 @@ func TestTransitStartRefusals(t *testing.T) {
 		keys := vaulttest.Keys(t, 1)
 		refused(t, "a transit version without the provider", d, w, []string{kekEnv + "=" + keys[0].File, "PANDOKOS_VAULT_KEK_PROVIDER=local",
 			"PANDOKOS_LISTENERS_INFERENCE_ADDRESS=127.0.0.1:0", "PANDOKOS_LISTENERS_ADMIN_ADDRESS=127.0.0.1:0"}, version)
+	})
+}
+
+// TestTransitExportableRefused is T-1102: the binary on a key created exportable ends with 1 within
+// 10 s and a constant message, listening on nothing; with vault.kek.transit.allow_exportable_key it
+// serves and logs the warning; kek check prints the class and ends with 1, then 0 with the option.
+func TestTransitExportableRefused(t *testing.T) {
+	up := fakeprovider.New(t)
+	const keyName = "synthetic-exportable-key-name"
+	setup := vaulttest.TransitSetup{Key: keyName, KeyOptions: transittest.KeyOptions{Exportable: true}}
+	const allow = "PANDOKOS_VAULT_KEK_TRANSIT_ALLOW_EXPORTABLE_KEY=true"
+
+	// envOn is the environment of a process of this host, which holds no key file, on the service.
+	envOn := func(t *testing.T, d *dbtest.Database, w *transitWorld) []string {
+		t.Helper()
+		var env []string
+		for _, kv := range serveEnv(t, d) {
+			if !strings.HasPrefix(kv, "PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE=") {
+				env = append(env, kv)
+			}
+		}
+		env = append(env, w.conf().env()...)
+		return append(env, "PANDOKOS_VAULT_KEK_PROVIDER=transit", "PANDOKOS_LISTENERS_INFERENCE_ADDRESS=127.0.0.1:0", "PANDOKOS_LISTENERS_ADMIN_ADDRESS=127.0.0.1:0")
+	}
+
+	t.Run("serve refuses and listens on nothing", func(t *testing.T) {
+		d, w := freshDB(t), newTransitWorld(t, setup)
+		env := envOn(t, d, w)
+		start := time.Now()
+		code, out, errs := runBinary(t, env, "serve", "--config", writeConfig(t, "info"))
+		if took := time.Since(start); took > 10*time.Second {
+			t.Errorf("it took %v", took)
+		}
+		failed := logLines(t, out, "startup failed")
+		if code != 1 || len(failed) != 1 {
+			t.Fatalf("exit %d, stdout %s, stderr %s; want 1 and one line startup failed", code, out, errs)
+		}
+		if len(logLines(t, out, "listening")) != 0 {
+			t.Error("the process listened")
+		}
+		for _, want := range []string{"exportable", "vault.kek.transit.allow_exportable_key"} {
+			if !strings.Contains(out+errs, want) {
+				t.Errorf("the refusal does not name %q: %s", want, out+errs)
+			}
+		}
+		if n := w.s.Count(transittest.OpWrap); n != 0 {
+			t.Errorf("%d wrap requests before the refusal", n)
+		}
+		testutil.AssertAbsent(t, "the output", out+errs, append(transittest.Secrets(w.s, w.f.Token), keyName)...)
+		if rows := d.Count(t, `SELECT count(*)::int FROM pandokos.kek_version`); rows != 0 {
+			t.Errorf("%d key versions were written by a start that failed", rows)
+		}
+	})
+
+	t.Run("serve with the option runs and warns", func(t *testing.T) {
+		d, w := freshDB(t), newTransitWorld(t, setup)
+		p := startBinary(t, transitOptions(d, up, w, withEnv(allow)))
+		weak := linesOf(p, "key provider configuration weak")
+		if len(weak) != 1 || weak[0]["setting"] != "exportable" || weak[0]["level"] != "WARN" {
+			t.Errorf("the warnings: %v", weak)
+		}
+		if len(linesOf(p, "key provider ready")) != 1 {
+			t.Errorf("no line key provider ready")
+		}
+		testutil.AssertAbsent(t, "the output", p.stdout.String()+p.stderr.String(), keyName)
+		if code := p.stop(t); code != 0 {
+			t.Fatalf("exit code %d", code)
+		}
+	})
+
+	t.Run("kek check prints the class and ends with 1, then 0 with the option", func(t *testing.T) {
+		d, w := freshDB(t), newTransitWorld(t, setup)
+		env := envOn(t, d, w)
+		code, out, errs := runBinary(t, env, "kek", "check")
+		if code != 1 {
+			t.Errorf("code %d, stdout %q, stderr %q, want 1", code, out, errs)
+		}
+		for _, want := range []string{"exportable", "vault.kek.transit.allow_exportable_key"} {
+			if !strings.Contains(out+errs, want) {
+				t.Errorf("the output does not name %q: %q", want, out+errs)
+			}
+		}
+		testutil.AssertAbsent(t, "the output", out+errs, append(transittest.Secrets(w.s, w.f.Token), keyName)...)
+		code, out, errs = runBinary(t, append(env, allow), "kek", "check")
+		if code != 0 || !strings.Contains(out, "exportable") {
+			t.Errorf("with the option: code %d, stdout %q, stderr %q", code, out, errs)
+		}
 	})
 }
 
@@ -681,7 +772,7 @@ func TestTransitCanary(t *testing.T) {
 	add("the log of the key file run", p0.stdout.String()+p0.stderr.String())
 
 	// The move to the service, an outage, an expired token and a refused login.
-	p := startBinary(t, transitOptions(d, up, w, withTelemetry, withEnv("PANDOKOS_VAULT_KEK_LOCAL_UNWRAP_KEY_FILES="+keys[0].File,
+	p := startBinary(t, transitOptions(d, up, w, withTelemetry, withEnv("PANDOKOS_VAULT_KEK_TRANSIT_ALLOW_EXPORTABLE_KEY=true", "PANDOKOS_VAULT_KEK_LOCAL_UNWRAP_KEY_FILES="+keys[0].File,
 		"PANDOKOS_CACHE_CREDENTIAL_TTL=1s", "PANDOKOS_CACHE_DATA_KEY_TTL=2s")))
 	carry(p, p0)
 	var responses []string
@@ -891,7 +982,7 @@ func TestTransitTelemetry(t *testing.T) {
 	// A token that cannot be renewed, a weak key, traffic and an outage.
 	d := freshDB(t)
 	w := newTransitWorld(t, vaulttest.TransitSetup{Method: "token", TTL: 30 * time.Second, KeyOptions: transittest.KeyOptions{Exportable: true}})
-	p := startBinary(t, transitOptions(d, up, w, short, withEnv("PANDOKOS_LOG_LEVEL=debug"), func(o *opts) { o.level = "debug" }))
+	p := startBinary(t, transitOptions(d, up, w, short, withEnv("PANDOKOS_LOG_LEVEL=debug", "PANDOKOS_VAULT_KEK_TRANSIT_ALLOW_EXPORTABLE_KEY=true"), func(o *opts) { o.level = "debug" }))
 	boot := p.bootstrap(t)
 	a := newLifeTenant(t, p, boot, "telemetry-a", "workload-a")
 	b := newLifeTenant(t, p, boot, "telemetry-b", "workload-b")

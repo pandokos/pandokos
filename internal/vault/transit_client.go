@@ -345,10 +345,10 @@ func (p *TransitProvider) describe(ctx context.Context) (transitDescription, err
 		}
 		return transitDescription{}, err
 	}
-	if k.Type == nil || k.LatestVersion == nil || k.MinDecryptionVersion == nil || k.SupportsEncryption == nil || k.SupportsDecryption == nil {
-		return transitDescription{}, &TransitError{Operation: "describe", Class: "rejected"}
+	d, err := describeAnswer(k)
+	if err != nil {
+		return transitDescription{}, err
 	}
-	d := transitDescription{oldest: max(*k.MinDecryptionVersion, 1), newest: *k.LatestVersion, raw: k}
 	p.mu.Lock()
 	p.desc, p.descAt = d, p.opts.Now()
 	p.mu.Unlock()
@@ -376,6 +376,8 @@ func (p *TransitProvider) checkKey(d transitDescription) error {
 		return errTransitDerived
 	case !*k.SupportsEncryption || !*k.SupportsDecryption:
 		return errTransitOperation
+	case k.Exportable && !p.opts.AllowExportable:
+		return errTransitExportable
 	}
 	return nil
 }
@@ -419,15 +421,89 @@ func (p *TransitProvider) identifyStatus(ctx context.Context, n int) (string, *s
 		Input      string `json:"input"`
 		KeyVersion int    `json:"key_version"`
 	}{base64.StdEncoding.EncodeToString([]byte(transitIDLabel)), n}
-	var out struct {
-		HMAC *string `json:"hmac"`
-	}
+	var out hmacData
 	path := escapePath(p.opts.Mount) + "/hmac/" + url.PathEscape(p.opts.KeyName) + "/sha2-256"
 	status, err := p.send(ctx, "identify", http.MethodPost, path, in, &out)
 	if err != nil {
 		return "", &statusErr{status, err}
 	}
-	rejected := &statusErr{status, &TransitError{Operation: "identify", Class: "rejected"}}
+	id, err := identifyAnswer(out, n)
+	if err != nil {
+		return "", &statusErr{status, err}
+	}
+	return id, nil
+}
+
+// The data of the answers of the key service that the client reads. The fields that hold a secret
+// are raw messages, which the caller clears.
+type (
+	encryptData struct {
+		Ciphertext json.RawMessage `json:"ciphertext"`
+		KeyVersion *int            `json:"key_version"`
+	}
+	decryptData struct {
+		Plaintext json.RawMessage `json:"plaintext"`
+	}
+	hmacData struct {
+		HMAC *string `json:"hmac"`
+	}
+	lookupData struct {
+		Policies  []string     `json:"policies"`
+		TTL       *json.Number `json:"ttl"`
+		Renewable bool         `json:"renewable"`
+	}
+	renewData struct {
+		Lease     *json.Number `json:"lease_duration"`
+		Renewable bool         `json:"renewable"`
+	}
+	loginData struct {
+		Raw       rawToken     `json:"client_token"`
+		Policies  []string     `json:"policies"`
+		Lease     *json.Number `json:"lease_duration"`
+		Renewable bool         `json:"renewable"`
+	}
+)
+
+// wrapAnswer checks the answer to an encrypt request for key version n and returns the payload of
+// the ciphertext. It is the part of Wrap that reads the answer.
+func wrapAnswer(out encryptData, n int) ([]byte, error) {
+	if out.KeyVersion == nil || *out.KeyVersion != n {
+		return nil, &TransitError{Operation: "wrap", Class: "rejected"}
+	}
+	payload, ok := transitCiphertext(out.Ciphertext, n)
+	if !ok || len(payload) < 28 || len(payload) > 1023 {
+		return nil, &TransitError{Operation: "wrap", Class: "rejected"}
+	}
+	return payload, nil
+}
+
+// unwrapAnswer returns the data key of the answer to a decrypt request. It is the part of unwrapOnce
+// that reads the answer.
+func unwrapAnswer(out decryptData) ([]byte, error) {
+	inner, ok := transitUnquote(out.Plaintext)
+	if !ok {
+		return nil, &TransitError{Operation: "unwrap", Class: "rejected"}
+	}
+	dk, ok := transitDecode(inner)
+	if !ok || len(dk) != dataKeyLen {
+		clear(dk)
+		return nil, &TransitError{Operation: "unwrap", Class: "rejected"}
+	}
+	return dk, nil
+}
+
+// describeAnswer reads the description of the key. It is the part of describe that reads the answer.
+func describeAnswer(k transitKeyInfo) (transitDescription, error) {
+	if k.Type == nil || k.LatestVersion == nil || k.MinDecryptionVersion == nil || k.SupportsEncryption == nil || k.SupportsDecryption == nil {
+		return transitDescription{}, &TransitError{Operation: "describe", Class: "rejected"}
+	}
+	return transitDescription{oldest: max(*k.MinDecryptionVersion, 1), newest: *k.LatestVersion, raw: k}, nil
+}
+
+// identifyAnswer returns the identifier of key version n from the answer to an HMAC request. It is
+// the part of identifyStatus that reads the answer.
+func identifyAnswer(out hmacData, n int) (string, error) {
+	rejected := &TransitError{Operation: "identify", Class: "rejected"}
 	if out.HMAC == nil {
 		return "", rejected
 	}
@@ -440,4 +516,44 @@ func (p *TransitProvider) identifyStatus(ctx context.Context, n int) (string, *s
 		return "", rejected
 	}
 	return "transit-" + hex.EncodeToString(mac[:8]) + "-v" + strconv.Itoa(n), nil
+}
+
+// lookupGrant reads the answer to a lookup of the token in use. It is the part of lookup that reads
+// the answer.
+func lookupGrant(out lookupData) (grant, error) {
+	life, ok := seconds(out.TTL)
+	if !ok {
+		return grant{}, &TransitError{Operation: "lookup", Class: "rejected"}
+	}
+	pol := out.Policies
+	if pol == nil {
+		pol = []string{}
+	}
+	return grant{policies: pol, lifetime: life, renewable: out.Renewable}, nil
+}
+
+// renewGrant reads the answer to a renewal. It is the part of renew that reads the answer.
+func renewGrant(out renewData) (grant, error) {
+	life, ok := seconds(out.Lease)
+	if !ok {
+		return grant{}, &TransitError{Operation: "renew", Class: "rejected"}
+	}
+	return grant{lifetime: life, renewable: out.Renewable}, nil
+}
+
+// loginGrant reads the answer to an AppRole login; the token itself is out.Raw, which the caller
+// clears. It is the part of login that reads the answer.
+func loginGrant(out loginData) (grant, error) {
+	if len(out.Raw) == 0 {
+		return grant{}, &TransitError{Operation: "login", Class: "rejected"}
+	}
+	life, ok := seconds(out.Lease)
+	if !ok {
+		return grant{}, &TransitError{Operation: "login", Class: "rejected"}
+	}
+	pol := out.Policies
+	if pol == nil {
+		pol = []string{}
+	}
+	return grant{policies: pol, lifetime: life, renewable: out.Renewable}, nil
 }

@@ -8,20 +8,61 @@ import (
 
 const includeUsage = `"include_usage":true`
 
+// The names of the members of a request body that this package reads (sprint 12.2, section 5.5).
+// Each is used both in ReadMembers and at the call site that reads it, so the two cannot drift;
+// "model" is read by family.ParseModel, which takes the literal.
+const (
+	memberModel               = "model"
+	memberStream              = "stream"
+	memberStreamOptions       = "stream_options"
+	memberBackground          = "background"
+	memberMaxOutputTokens     = "max_output_tokens"
+	memberMaxCompletionTokens = "max_completion_tokens"
+	memberMaxTokens           = "max_tokens"
+	memberN                   = "n"
+	memberIncludeUsage        = "include_usage"
+)
+
+// ReadMembers is the set of top-level members of a request body that this family reads.
+var ReadMembers = []string{
+	memberModel, memberStream, memberStreamOptions, memberBackground,
+	memberMaxOutputTokens, memberMaxCompletionTokens, memberMaxTokens, memberN,
+}
+
+// ReadStreamOptions is the set of members of the object stream_options that this family reads.
+var ReadStreamOptions = []string{memberIncludeUsage}
+
 // edit replaces body[start:end] by ins.
 type edit struct {
 	start, end int
 	ins        string
 }
 
+// memberCaseConflict reports whether a top-level member, or a member of stream_options when that is
+// an object, differs only in case from a name this family reads.
+func memberCaseConflict(body []byte, members []family.Member) bool {
+	if family.CaseConflict(members, ReadMembers...) {
+		return true
+	}
+	for _, m := range members {
+		if m.Key != memberStreamOptions {
+			continue
+		}
+		if inner, _, err := family.ScanObject(body[m.Start:m.End]); err == nil && family.CaseConflict(inner, ReadStreamOptions...) {
+			return true
+		}
+	}
+	return false
+}
+
 // usageEdit computes the splice that makes a stream report its usage (ADR 0024). stream says
 // whether the last "stream" member is the literal true; the edit is nil when none is needed.
 func usageEdit(body []byte, members []family.Member, closeIdx int) (e *edit, stream bool) {
-	sm, ok := family.LastMember(members, "stream")
+	sm, ok := family.LastMember(members, memberStream)
 	if !ok || !bytes.Equal(body[sm.Start:sm.End], []byte("true")) {
 		return nil, false
 	}
-	so, ok := family.LastMember(members, "stream_options")
+	so, ok := family.LastMember(members, memberStreamOptions)
 	if !ok {
 		return &edit{closeIdx, closeIdx, `,"stream_options":{` + includeUsage + `}`}, true
 	}
@@ -33,7 +74,7 @@ func usageEdit(body []byte, members []family.Member, closeIdx int) (e *edit, str
 	if err != nil {
 		return nil, true
 	}
-	iu, ok := family.LastMember(inner, "include_usage")
+	iu, ok := family.LastMember(inner, memberIncludeUsage)
 	if !ok {
 		ins := includeUsage
 		if len(inner) > 0 {
@@ -76,8 +117,8 @@ type Request struct {
 }
 
 // Parse reads a chat completions request body. Every error wraps family.ErrInvalidRequest and
-// carries a reason (family.InvalidReason): not_object, model_missing, model_duplicate or
-// model_not_string. The body is not modified and is kept by the Request.
+// carries a reason (family.InvalidReason): not_object, member_case, model_missing,
+// model_duplicate or model_not_string. The body is not modified and is kept by the Request.
 func Parse(body []byte) (*Request, error) { return ParseOperation(OperationChatCompletions, body) }
 
 // ParseOperation reads the request body of an operation of the family. Every error wraps
@@ -89,6 +130,9 @@ func ParseOperation(operation string, body []byte) (*Request, error) {
 	if err != nil {
 		return nil, family.Invalid("not_object")
 	}
+	if memberCaseConflict(body, members) {
+		return nil, family.Invalid("member_case")
+	}
 	model, mm, err := family.ParseModel(body, members)
 	if err != nil {
 		return nil, err
@@ -99,7 +143,7 @@ func ParseOperation(operation string, body []byte) (*Request, error) {
 	case OperationChatCompletions:
 		e, stream = usageEdit(body, members, closeIdx)
 	case OperationResponses:
-		if bm, ok := family.LastMember(members, "background"); ok && bytes.Equal(body[bm.Start:bm.End], []byte("true")) {
+		if bm, ok := family.LastMember(members, memberBackground); ok && bytes.Equal(body[bm.Start:bm.End], []byte("true")) {
 			return nil, family.Invalid("background_not_supported")
 		}
 		_, stream = usageEdit(body, members, closeIdx)
@@ -121,14 +165,14 @@ func outputBoundOf(operation string, body []byte, members []family.Member) famil
 	case OperationEmbeddings:
 		b.None = true
 	case OperationResponses:
-		b.Tokens, _ = family.PositiveInt(body, members, "max_output_tokens", maxBoundDigits)
+		b.Tokens, _ = family.PositiveInt(body, members, memberMaxOutputTokens, maxBoundDigits)
 	default: // chat completions
-		if n, ok := family.PositiveInt(body, members, "max_completion_tokens", maxBoundDigits); ok {
+		if n, ok := family.PositiveInt(body, members, memberMaxCompletionTokens, maxBoundDigits); ok {
 			b.Tokens = n
 		} else {
-			b.Tokens, _ = family.PositiveInt(body, members, "max_tokens", maxBoundDigits)
+			b.Tokens, _ = family.PositiveInt(body, members, memberMaxTokens, maxBoundDigits)
 		}
-		if n, ok := family.PositiveInt(body, members, "n", 3); ok && n <= maxChoices {
+		if n, ok := family.PositiveInt(body, members, memberN, 3); ok && n <= maxChoices {
 			b.Choices = n
 		}
 	}

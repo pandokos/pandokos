@@ -33,7 +33,7 @@ needs rules of its own (SEC-06).
 **Release.**
 
 - Releases are built only by the CI pipeline from a tagged commit.
-- Each release publishes an SBOM, signs images and binaries with keyless signatures, and attaches
+- Each release publishes an SBOM, signs the image with keyless signatures, and attaches
   build provenance. Verification instructions are part of the installation guide.
 - GitHub Actions are pinned to commit hashes, and workflow permissions are minimal.
 
@@ -56,6 +56,27 @@ can be offered without changing the default.
 **Vendoring dependencies.** Checksums and the module proxy give the same integrity guarantee with
 less noise in reviews.
 
+## Amendment (sprint 12.2)
+
+[ADR 0074](0074-threat-model-review-and-continuous-fuzzing.md) states what a release is and how it is checked,
+after the review of the supply chain:
+
+- **No binary is released.** The artefacts of a release are the container image, its SBOM and the API description.
+  The statement above that binaries are signed is corrected to the image.
+- **Verification is by digest.** The release page prints the digest of the image; the signature, the SBOM
+  attestation and the provenance are made on it and verified on it, by the pipeline and by the operator
+  ([container guide](../operations/container.md#verifying-a-release)). A tag can be moved after a release.
+  The attested SBOM is the authoritative one; the file on the release page is an unsigned copy.
+- **The published digest is scanned.** The `verify` job scans the pushed digest, with the thresholds of the scan
+  of `ci.yml`, before `publish`.
+- **The tag must be an annotated tag object.** Verifying its signature in the workflow waits for the
+  maintainer's public key in the repository.
+- **Nightly checks.** `govulncheck`, a scan of the newest released image and a reading of the repository's
+  rulesets run every night in `scheduled.yml`. "Protected main branch" is made of two rulesets that this
+  workflow reads.
+- **Fuzzing in CI.** Every parser of network input has a fuzz target, run for 10 seconds on every pull request and for
+  3 minutes every night; no fuzzing service is added.
+
 ## History
 
 - 2026-11: sprint 3.2 adds the OpenTelemetry SDK, the OTLP/HTTP exporter and logr as direct dependencies ([ADR 0040](0040-traces.md)).
@@ -63,3 +84,4 @@ less noise in reviews.
 - 2026-11: sprint 4.1 adds `github.com/go-jose/go-jose/v4` as the one new direct dependency, for compact JWS and JWK, imported by `internal/authn`, `internal/jwks` and `test/fakeidp` only and only its root package ([ADR 0046](0046-issuer-key-retrieval-and-caching.md)); the identity-provider images of the tests are pinned by digest ([ADR 0047](0047-identity-providers-in-the-test-suite.md)).
 - 2026-11-22: sprint 4.2 adds `golang.org/x/crypto` as the one new direct dependency, for `argon2`, imported by `internal/password` only; no OpenID Connect or OAuth library is added ([ADR 0057](0057-local-accounts-and-sessions-formats-and-numbers.md), [ADR 0058](0058-openid-connect-relying-party.md)).
 - 2026-11-22: sprint 6.1 adds `go.opentelemetry.io/otel/sdk/metric` and `go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp` (v1.47.0) as direct dependencies, and writes the Prometheus format instead of adding a Prometheus client ([ADR 0062](0062-metrics-instruments-attributes-cardinality-and-scrape.md)).
+- 2026-11-25: amended by sprint 12.2: no binary is released, verification by digest, the published digest is scanned, the nightly checks and fuzzing in CI ([ADR 0074](0074-threat-model-review-and-continuous-fuzzing.md)).

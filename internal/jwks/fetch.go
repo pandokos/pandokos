@@ -124,6 +124,12 @@ func (c *Cache) discover(ctx context.Context, src Source) (*url.URL, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseDiscovery(body, src.Issuer)
+}
+
+// parseDiscovery reads the body of a discovery document asked for the issuer given and returns
+// the address of its key set: the pure part of discover.
+func parseDiscovery(body []byte, issuer string) (*url.URL, error) {
 	var doc struct {
 		Issuer  *string `json:"issuer"`
 		JWKSURI *string `json:"jwks_uri"`
@@ -131,7 +137,7 @@ func (c *Cache) discover(ctx context.Context, src Source) (*url.URL, error) {
 	if err := json.Unmarshal(body, &doc); err != nil || doc.Issuer == nil || doc.JWKSURI == nil {
 		return nil, &fetchError{class: classInvalidDocument}
 	}
-	if *doc.Issuer != src.Issuer {
+	if *doc.Issuer != issuer {
 		return nil, &fetchError{class: classIssuerMismatch}
 	}
 	u, ok := parseHTTPS(*doc.JWKSURI)

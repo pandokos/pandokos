@@ -62,6 +62,27 @@ func LastMember(ms []Member, key string) (Member, bool) {
 	return Member{}, false
 }
 
+// CaseConflict reports whether ms holds a member whose name is not spelled exactly as a name of
+// read but would be taken for it by a reader that ignores case. The names are compared three ways,
+// because readers differ: by Unicode simple folding (strings.EqualFold, as Go does), by upper
+// casing and by lower casing both (as Java equalsIgnoreCase or Python str.upper do). The three
+// differ on U+0131 (dotless i), U+0130 (dotted I), U+017F (long s) and U+212A (Kelvin sign), so a
+// name that any of them equates with a name of read is a conflict.
+func CaseConflict(ms []Member, read ...string) bool {
+	for _, m := range ms {
+		for _, name := range read {
+			if m.Key != name && sameIgnoringCase(m.Key, name) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func sameIgnoringCase(a, b string) bool {
+	return strings.EqualFold(a, b) || strings.ToUpper(a) == strings.ToUpper(b) || strings.ToLower(a) == strings.ToLower(b) //nolint:staticcheck // SA6005: the explicit upper and lower comparisons are the point, they differ from simple folding
+}
+
 // ParseModel applies the model rules of sprint 3.1 section 5.8 to the members of a request body:
 // exactly one top-level member "model", whose value is a non-empty JSON string. It returns the
 // decoded model and its member, or an Invalid error whose reason is model_missing,

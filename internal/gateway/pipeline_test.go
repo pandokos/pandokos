@@ -14,6 +14,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -22,6 +23,7 @@ import (
 	"github.com/pandokos/pandokos/internal/authz"
 	"github.com/pandokos/pandokos/internal/family"
 	"github.com/pandokos/pandokos/internal/gateway"
+	"github.com/pandokos/pandokos/internal/usage"
 	"github.com/pandokos/pandokos/test/fakeprovider"
 	"github.com/pandokos/pandokos/test/familycodes"
 	"github.com/pandokos/pandokos/test/fixtures"
@@ -477,6 +479,9 @@ func TestInvalidRequest(t *testing.T) {
 		{"a number", `{"model":7,` + msg + `}`, "model_not_string"},
 		{"an empty name", `{"model":"",` + msg + `}`, "model_not_string"},
 		{"null", `{"model":null,` + msg + `}`, "model_not_string"},
+		{"model in another case", `{"Model":"fake-basic",` + msg + `}`, "member_case"},
+		{"model in another case beside the exact name", `{"model":"fake-basic","MODEL":"fake-basic",` + msg + `}`, "member_case"},
+		{"stream in another case", `{"model":"fake-basic","Stream":true,` + msg + `}`, "member_case"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -503,6 +508,90 @@ func TestInvalidRequest(t *testing.T) {
 			testutil.AssertNoCanary(t, "the logs", h.logs.String())
 			testutil.AssertAbsent(t, "the logs", h.logs.String(), testutil.KeyForms(testKey)...)
 		})
+	}
+}
+
+// TestMemberCaseRefused is T-1098: a member that differs only in case from one Pandokos reads is
+// refused through the handler, on both families, before the model is resolved and before any
+// credential is opened; nothing reaches the provider; one record of the kind an invalid request
+// writes today; the request line holds the reason and no member name or value.
+func TestMemberCaseRefused(t *testing.T) {
+	const other = "synthetic-other-model-name"
+	msg := `"messages":[{"role":"user","content":"` + fixtures.CanaryPrompt + `"}]`
+	type target struct {
+		name   string
+		bodies []string
+		send   func(t *testing.T, h *harness, body []byte) captured
+		assert func(t *testing.T, name string, c captured)
+	}
+	targets := []target{
+		{
+			"openai",
+			[]string{
+				`{"model":"fake-basic","MODEL":"` + other + `",` + msg + `}`,
+				`{"MODEL":"` + other + `",` + msg + `}`,
+				`{"model":"fake-basic","STREAM":true,` + msg + `}`,
+				`{"model":"fake-basic","stream":true,"Stream_Options":{"include_usage":false},` + msg + `}`,
+				`{"model":"fake-basic","stream":true,"stream_options":{"INCLUDE_USAGE":false},` + msg + `}`,
+				`{"model":"fake-basic","MAX_TOKENS":9999999,` + msg + `}`,
+			},
+			func(t *testing.T, h *harness, body []byte) captured { return h.sendAuthed(t, route, body) },
+			func(t *testing.T, name string, c captured) { assertContract(t, name, c, family.CodeInvalidRequest) },
+		},
+		{
+			"anthropic",
+			[]string{
+				`{"model":"fake-basic","MODEL":"` + other + `",` + msg + `}`,
+				`{"Model":"` + other + `",` + msg + `}`,
+				`{"model":"fake-basic","Stream":true,` + msg + `}`,
+				`{"model":"fake-basic","MAX_TOKENS":9999999,` + msg + `}`,
+			},
+			func(t *testing.T, h *harness, body []byte) captured {
+				return h.sendA(t, anthropicRoute, body, anthropicHdr())
+			},
+			func(t *testing.T, name string, c captured) {
+				assertAnthropicContract(t, name, c, family.CodeInvalidRequest)
+			},
+		},
+	}
+	for _, tg := range targets {
+		for i, body := range tg.bodies {
+			t.Run(tg.name+"/"+strconv.Itoa(i), func(t *testing.T) {
+				h := newFamilies(t, nil)
+				r := tg.send(t, h, []byte(body))
+				tg.assert(t, body, r)
+				line := h.awaitOutcome(t, "pandokos_error")
+				if line["invalid_reason"] != "member_case" || line["error_code"] != "invalid_request" || line["status"] != float64(400) {
+					t.Errorf("line: %v", line)
+				}
+				if _, ok := line["model"]; ok {
+					t.Errorf("a model is logged for a refused body: %v", line["model"])
+				}
+				for k, v := range line {
+					text := fmt.Sprint(k, "=", v)
+					for _, leak := range []string{"MODEL", "STREAM", "Stream", "Model", "MAX_TOKENS", "INCLUDE_USAGE", other} {
+						if strings.Contains(text, leak) {
+							t.Errorf("the request line holds %q: %s", leak, text)
+						}
+					}
+				}
+				if n := len(h.up.Requests()); n != 0 {
+					t.Errorf("the provider received %d requests", n)
+				}
+				if n := len(h.creds.Calls()); n != 0 {
+					t.Errorf("%d credentials were opened for a refused body", n)
+				}
+				if n := h.cat.Resolves.Load(); n != 0 {
+					t.Errorf("the model was resolved for a refused body")
+				}
+				rec := h.oneRecord(t)
+				if rec.Outcome != usage.OutcomeRejectedPolicy || rec.ErrorCode != "invalid_request" || rec.Model != "" || rec.CredentialID != "" {
+					t.Errorf("record: %+v", rec)
+				}
+				testutil.AssertNoCanary(t, "the response", r.dump())
+				testutil.AssertNoCanary(t, "the logs", h.logs.String())
+			})
+		}
 	}
 }
 
