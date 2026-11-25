@@ -42,7 +42,7 @@ services:
     secrets:
       - postgres_password
     tmpfs:
-      - /var/lib/postgresql/data
+      - /var/lib/postgresql
     ports:
       - "127.0.0.1:55432:5432"
     healthcheck:
