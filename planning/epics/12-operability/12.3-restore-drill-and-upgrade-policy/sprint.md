@@ -869,7 +869,7 @@ from where the design was written); how v0.2.0's listeners answer on a schema mi
 | O-4 | Confirmed: the previous release as a binary built from its commit (traffic test) and as its image by digest (one container test) |
 | O-5 | Confirmed: an upgrade is supported through each minor in turn only |
 | O-6 | Confirmed: `drill` and `upgrade` run on every pull request while each stays under 15 minutes; otherwise `drill` moves to the nightly run and stays in the release run |
-| O-7 | Pending the maintainer: one manual walk of the corrected guide on the Compose reference before v0.3.0, otherwise in epic 10 |
+| O-7 | Decided by the maintainer on 2026-11-25: after the close of epic 12 and before the tag of v0.3.0, the maintainer runs a full walk in a lab, backup and restore included, following the corrected guide; its outcome is recorded with the release (the drill record names it as the manual walk) |
 | O-8 | Confirmed: the recovery script disables the affected destinations, it does not delete them |
 | O-9 | Accepted: HashiCorp Vault is not drilled; the record says so |
 | O-10 | Confirmed: the default ceiling of 256 concurrent requests ships as an example line only |
