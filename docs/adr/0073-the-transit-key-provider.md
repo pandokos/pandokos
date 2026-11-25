@@ -66,7 +66,10 @@ accepted the field and ignored it would silently drop that property. It was veri
 5. **The wrapped format `0x02`, the pinned version, rotation by restart.** A wrapped key is `0x02` and the decoded
    payload of the service's ciphertext; the number of the version is not stored twice. `Wrap` sends the version found at
    start and refuses an answer for another one. A rotation in the service therefore takes effect when an instance
-   restarts, as ADR 0068 point 7 says for key files: the database accepts a data key under the active version only. The
+   restarts, as ADR 0068 point 7 says for key files: the database accepts a data key under the active version only. An
+   instance not yet restarted still unwraps what the worker of a restarted one re-wrapped under the new version: an
+   identifier above the latest version described makes it read the description again, at most once a second and once for
+   callers that come together, and the fingerprint is verified as for any version; its own wraps stay pinned. The
    unwrap accepts only a plaintext of 32 bytes; any other length is a rejected answer.
 6. **Pandokos never rotates, configures, trims or deletes the key.** The policy forbids it, and the conformance suite
    proves the refusals. Erasure in backups, which ADR 0068 point 6 ties to retiring a version and destroying its key,
@@ -194,3 +197,4 @@ without a key service.
 
 - 2026-11-24: proposed with sprint 12.1.
 - 2026-11-25: amended by sprint 12.2: an exportable key is refused unless `vault.kek.transit.allow_exportable_key` is set ([ADR 0074](0074-threat-model-review-and-continuous-fuzzing.md)).
+- 2026-11-25: point 5 states that an instance not restarted reads the description again for a version above the latest it described, so it opens the data keys another instance re-wrapped after a rotation (`TestTransitVersionAfterAnotherRestart`).
