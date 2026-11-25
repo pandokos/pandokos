@@ -221,10 +221,12 @@ func TestRecoveryAndDestinations(t *testing.T) {
 		r.EnterCredential(name)
 		secret := r.RotateDestinationSecret(name)
 		w.Receiver.SetSecrets(secret)
+		// The count is taken before the destination is enabled: the relay passes every 100 ms and may deliver
+		// the events kept before the command has returned.
+		got := len(w.Receiver.IDs())
 		if code, text, errs := r.CLI(name, "event-destination", "update", "--tenant", tn.ID, "--enabled", tn.Destination); code != 0 {
 			t.Fatalf("enabling the destination: exit %d\n%s%s", code, text, errs)
 		}
-		got := len(w.Receiver.IDs())
 		deadline := time.Now().Add(90 * time.Second)
 		for len(w.Receiver.IDs()) == got && time.Now().Before(deadline) {
 			time.Sleep(200 * time.Millisecond)
