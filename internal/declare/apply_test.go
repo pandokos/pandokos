@@ -567,7 +567,7 @@ func TestPlanIssuers(t *testing.T) {
 	t.Run("a platform issuer is created with its tenants", func(t *testing.T) {
 		f := newFake(t, platformStateFull())
 		doc := wantPlatformFull()
-		doc.PlatformIssuers = append(doc.PlatformIssuers, declare.PlatformIssuer{Name: "new-idp", Issuer: "https://new.example.test", Audience: "pandokos", TenantClaim: "org", Enabled: true,
+		doc.PlatformIssuers = append(doc.PlatformIssuers, declare.PlatformIssuer{Name: "new-idp", Issuer: "https://new.example.test", Audience: "pandokos", TenantClaim: "org", Enabled: ptr(true),
 			Tenants: []declare.IssuerTenant{{Tenant: "acme"}, {Tenant: "globex", ClaimValue: "gx"}}})
 		p := diff(t, f, platform, doc)
 		if got := actions(p); len(got) < 1 || !has(got, "create platform_issuer new-idp") {
@@ -603,12 +603,12 @@ func TestPlanIssuers(t *testing.T) {
 		{"description", func(i *declare.PlatformIssuer) { i.Description = "changed" }},
 		{"issuer", func(i *declare.PlatformIssuer) { i.Issuer = "https://other.example.test" }},
 		{"audience", func(i *declare.PlatformIssuer) { i.Audience = "other" }},
-		{"jwks_uri", func(i *declare.PlatformIssuer) { i.JWKSURI = "https://shared.example.test/other-keys" }},
+		{"jwks_uri", func(i *declare.PlatformIssuer) { i.JWKSURI = ptr("https://shared.example.test/other-keys") }},
 		{"algorithms", func(i *declare.PlatformIssuer) { i.Algorithms = []string{"ES256"} }},
 		{"subject_claim", func(i *declare.PlatformIssuer) { i.SubjectClaim = "email" }},
 		{"tenant_claim", func(i *declare.PlatformIssuer) { i.TenantClaim = "tid" }},
-		{"required_claims", func(i *declare.PlatformIssuer) { i.RequiredClaims = map[string]string{"azp": "other"} }},
-		{"enabled", func(i *declare.PlatformIssuer) { i.Enabled = false }},
+		{"required_claims", func(i *declare.PlatformIssuer) { i.RequiredClaims = ptr(map[string]string{"azp": "other"}) }},
+		{"enabled", func(i *declare.PlatformIssuer) { i.Enabled = ptr(false) }},
 	} {
 		t.Run("a platform issuer is updated: "+c.member, func(t *testing.T) {
 			f := newFake(t, platformStateFull())
@@ -632,7 +632,7 @@ func TestPlanIssuers(t *testing.T) {
 		f := newFake(t, tenantStateFull())
 		doc := wantTenantFull()
 		doc.TokenIssuers[0].Audience = "pandokos-acme-2"
-		doc.TokenIssuers = append(doc.TokenIssuers, declare.TokenIssuer{Name: "new-idp", Issuer: "https://new.example.test", Audience: "x", Enabled: true})
+		doc.TokenIssuers = append(doc.TokenIssuers, declare.TokenIssuer{Name: "new-idp", Issuer: "https://new.example.test", Audience: "x", Enabled: ptr(true)})
 		p := diff(t, f, tenant, doc)
 		got := actions(p)
 		if len(got) != 2 || !has(got, "create token_issuer new-idp") || !has(got, "update token_issuer corp-idp") {
@@ -876,7 +876,7 @@ func TestPlanDestinations(t *testing.T) {
 	tenant := declare.Target{Tenant: tidAcme}
 	withNew := func() *declare.Document {
 		doc := wantTenantFull()
-		doc.EventDestinations = append(doc.EventDestinations, declare.EventDestination{Name: "new-hook", URL: "https://new.example.test/events", EventTypes: []string{"io.pandokos.usage.recorded.v1"}, Enabled: true})
+		doc.EventDestinations = append(doc.EventDestinations, declare.EventDestination{Name: "new-hook", URL: "https://new.example.test/events", EventTypes: ptr([]string{"io.pandokos.usage.recorded.v1"}), Enabled: ptr(true)})
 		return doc
 	}
 
@@ -963,8 +963,8 @@ func TestPlanDestinations(t *testing.T) {
 	}{
 		{"description", func(d *declare.EventDestination) { d.Description = "changed" }},
 		{"url", func(d *declare.EventDestination) { d.URL = "https://moved.example.test/pandokos" }},
-		{"event_types", func(d *declare.EventDestination) { d.EventTypes = nil }},
-		{"enabled", func(d *declare.EventDestination) { d.Enabled = false }},
+		{"event_types", func(d *declare.EventDestination) { d.EventTypes = ptr([]string{}) }},
+		{"enabled", func(d *declare.EventDestination) { d.Enabled = ptr(false) }},
 	} {
 		t.Run("a destination is updated: "+c.member, func(t *testing.T) {
 			f := newFake(t, tenantStateFull())
@@ -988,7 +988,7 @@ func TestPlanDestinations(t *testing.T) {
 		f := newFake(t, tenantStateFull())
 		doc := withNew()
 		doc.EventDestinations = doc.EventDestinations[1:] // audit-sink is not in the document
-		doc.EventDestinations[0].Enabled = false
+		doc.EventDestinations[0].Enabled = ptr(false)
 		p := diff(t, f, tenant, doc, declare.Options{SecretSink: func(string, []byte) error { return nil }})
 		if _, err := p.Apply(ctx(t), f.client()); err != nil {
 			t.Fatal(err)
@@ -1083,6 +1083,83 @@ func TestPlanExternalReference(t *testing.T) {
 		}
 		if _, err := p.Apply(ctx(t), f.client()); err != nil || len(f.writeCalls()) != 0 {
 			t.Errorf("Apply: %v with %d writes", err, len(f.writeCalls()))
+		}
+	})
+}
+
+// TestAbsentMembersOfIssuersAndDestinations holds the rule of the members that a plain value could not leave
+// alone: on an update an absent enabled, required_claims, event_types or jwks_uri changes nothing; an explicit
+// empty value clears; on a create an absent enabled makes the item disabled and the others empty.
+func TestAbsentMembersOfIssuersAndDestinations(t *testing.T) {
+	platform, tenant := declare.Target{Platform: true}, declare.Target{Tenant: tidAcme}
+
+	t.Run("omitted on update means no change", func(t *testing.T) {
+		pdoc := wantPlatformFull()
+		pdoc.PlatformIssuers[0].Enabled, pdoc.PlatformIssuers[0].RequiredClaims, pdoc.PlatformIssuers[0].JWKSURI = nil, nil, nil
+		if got := actions(diff(t, newFake(t, platformStateFull()), platform, pdoc)); len(got) != 0 {
+			t.Errorf("a platform issuer without enabled, required_claims and jwks_uri: the plan is %v, want empty", got)
+		}
+		tdoc := wantTenantFull()
+		tdoc.TokenIssuers[0].Enabled, tdoc.TokenIssuers[0].RequiredClaims, tdoc.TokenIssuers[0].JWKSURI = nil, nil, nil
+		for i := range tdoc.EventDestinations {
+			tdoc.EventDestinations[i].Enabled, tdoc.EventDestinations[i].EventTypes = nil, nil
+		}
+		if got := actions(diff(t, newFake(t, tenantStateFull()), tenant, tdoc)); len(got) != 0 {
+			t.Errorf("a token issuer and destinations without those members: the plan is %v, want empty", got)
+		}
+	})
+
+	t.Run("an explicit empty value on update clears", func(t *testing.T) {
+		f := newFake(t, tenantStateFull())
+		doc := wantTenantFull()
+		doc.TokenIssuers[0].RequiredClaims = ptr(map[string]string{})
+		doc.TokenIssuers[0].JWKSURI = ptr("")
+		doc.EventDestinations[1].EventTypes = ptr([]string{})
+		p := diff(t, f, tenant, doc)
+		if got := actions(p); len(got) != 2 || !has(got, "update token_issuer corp-idp") || !has(got, "update event_destination hooks") {
+			t.Fatalf("the plan: %v, want an update of the token issuer's required_claims and of the destination's event_types", got)
+		}
+		if _, err := p.Apply(ctx(t), f.client()); err != nil {
+			t.Fatal(err)
+		}
+		for _, w := range f.writeCalls() {
+			if strings.Contains(w.Path, "token-issuers") && !reflect.DeepEqual(bodyKeys(t, w), []string{"required_claims"}) {
+				t.Errorf("the token issuer was patched with %v, want required_claims only (jwks_uri is already empty)", bodyKeys(t, w))
+			}
+			if strings.Contains(w.Path, "event-destinations") && !reflect.DeepEqual(bodyKeys(t, w), []string{"event_types"}) {
+				t.Errorf("the destination was patched with %v, want event_types only", bodyKeys(t, w))
+			}
+		}
+	})
+
+	t.Run("omitted on create means disabled and empty", func(t *testing.T) {
+		f := newFake(t, tenantStateFull())
+		doc := wantTenantFull()
+		doc.TokenIssuers = append(doc.TokenIssuers, declare.TokenIssuer{Name: "bare-idp", Issuer: "https://bare.example.test", Audience: "x"})
+		doc.EventDestinations = append(doc.EventDestinations, declare.EventDestination{Name: "bare-hook", URL: "https://bare.example.test/events"})
+		sink := func(string, []byte) error { return nil }
+		p := diff(t, f, tenant, doc, declare.Options{SecretSink: sink})
+		if _, err := p.Apply(ctx(t), f.client()); err != nil {
+			t.Fatal(err)
+		}
+		var seen int
+		for _, w := range f.writeCalls() {
+			if w.Method != "POST" {
+				continue
+			}
+			var body struct {
+				Enabled bool `json:"enabled"`
+			}
+			if err := json.Unmarshal([]byte(w.Body), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Enabled {
+				t.Errorf("%s created an item enabled although the document did not say so: %s", w.Path, w.Body)
+			}
+			seen++
+		}
+		if seen != 2 {
+			t.Errorf("%d creates, want 2: %v", seen, writePaths(f))
 		}
 	})
 }

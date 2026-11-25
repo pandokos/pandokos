@@ -97,12 +97,16 @@ API, compares it with the document by natural key and plans:
   database refuses one and the history of what was charged cannot be rewritten.
 - **Settings that take effect later** (the time zone, the active currency) compare the value set,
   pending included, so a document just exported compares equal.
-- **Order.** Platform: providers, endpoints, models, grants, overrides, ceilings, platform issuers with their
-  tenants, then the external references. Tenant: time zone and metadata keys, custom roles, service accounts
-  and their roles, token issuers, subject mappings, model restriction, limits, destinations, price lists, then
-  the active currency (a budget may need its price list first).
-- **Updates.** An empty description leaves the stored one; a document that omits `enabled` on an issuer or a
-  destination sets it to `false`, because `enabled` is a plain boolean (exports always write it): write it.
+- **Order.** Platform: providers, endpoints, models, grants, overrides, ceilings, the external references of tenants,
+  then the platform issuers with their tenants. Tenant: time zone and metadata keys, custom roles, service accounts
+  and their roles, model restriction, token issuers, subject mappings, limits, price lists, the active currency
+  (a budget may need its price list first), and the destinations last.
+- **Updates.** An **absent** member leaves the stored value unchanged; an **explicitly empty** one clears it. This
+  holds for `enabled`, `jwks_uri`, `required_claims` (`required_claims: {}`) and `event_types` (`event_types: []`)
+  of an issuer or a destination, and an empty `description` leaves the stored one. `algorithms`, `subject_claim`
+  and `tenant_claim` are compared only when written. On a **create**, an absent `enabled` creates the item
+  **disabled** (the safe default) and absent `required_claims` and `event_types` create it empty; an export always
+  writes all of these members, so a document just exported changes nothing and is safe to edit.
 - **Idempotent.** The plan of a document just exported is empty: no write call, `0 changes`.
 
 **Output and exit codes.** One line per change, such as `create service_account billing`,

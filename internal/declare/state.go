@@ -385,8 +385,8 @@ func (s *tenantState) document() *Document {
 	}
 	slices.SortFunc(d.PriceLists, func(a, b PriceList) int { return cmp.Compare(a.Currency, b.Currency) })
 	for _, i := range s.tokenIssuers {
-		d.TokenIssuers = append(d.TokenIssuers, TokenIssuer{Name: i.Name, Description: i.Description, Issuer: i.Issuer, Audience: i.Audience, JWKSURI: i.JwksUri,
-			Algorithms: nonEmptyStrings(sorted(i.Algorithms)), SubjectClaim: i.SubjectClaim, RequiredClaims: nonEmptyClaims(i.RequiredClaims), Enabled: i.Enabled})
+		d.TokenIssuers = append(d.TokenIssuers, TokenIssuer{Name: i.Name, Description: i.Description, Issuer: i.Issuer, Audience: i.Audience, JWKSURI: ptr(i.JwksUri),
+			Algorithms: nonEmptyStrings(sorted(i.Algorithms)), SubjectClaim: i.SubjectClaim, RequiredClaims: ptr(nonNilClaims(i.RequiredClaims)), Enabled: ptr(i.Enabled)})
 	}
 	slices.SortFunc(d.TokenIssuers, func(a, b TokenIssuer) int { return cmp.Compare(a.Name, b.Name) })
 	for _, m := range s.mappings {
@@ -406,18 +406,11 @@ func (s *tenantState) document() *Document {
 		for i, t := range e.EventTypes {
 			types[i] = string(t)
 		}
-		d.EventDestinations = append(d.EventDestinations, EventDestination{Name: e.Name, Description: e.Description, URL: e.URL, EventTypes: nonEmptyStrings(sorted(types)), Enabled: e.Enabled})
+		d.EventDestinations = append(d.EventDestinations, EventDestination{Name: e.Name, Description: e.Description, URL: e.URL, EventTypes: ptr(nonNilStrings(sorted(types))), Enabled: ptr(e.Enabled)})
 	}
 	slices.SortFunc(d.EventDestinations, func(a, b EventDestination) int { return cmp.Compare(a.Name, b.Name) })
 	slices.Sort(d.LeftOut)
 	return d
-}
-
-func nonEmptyClaims(in map[string]string) map[string]string {
-	if len(in) == 0 {
-		return nil
-	}
-	return in
 }
 
 func nonNilStrings(in []string) []string {
@@ -622,8 +615,8 @@ func (s *platformState) document() *Document {
 	}
 	slices.SortFunc(d.Tenants, func(a, b PlatformTenant) int { return cmp.Compare(a.Name, b.Name) })
 	for _, i := range s.issuers {
-		pi := PlatformIssuer{Name: i.Name, Description: i.Description, Issuer: i.Issuer, Audience: i.Audience, JWKSURI: i.JwksUri, Algorithms: nonEmptyStrings(sorted(i.Algorithms)),
-			SubjectClaim: i.SubjectClaim, TenantClaim: i.TenantClaim, RequiredClaims: nonEmptyClaims(i.RequiredClaims), Enabled: i.Enabled}
+		pi := PlatformIssuer{Name: i.Name, Description: i.Description, Issuer: i.Issuer, Audience: i.Audience, JWKSURI: ptr(i.JwksUri), Algorithms: nonEmptyStrings(sorted(i.Algorithms)),
+			SubjectClaim: i.SubjectClaim, TenantClaim: i.TenantClaim, RequiredClaims: ptr(nonNilClaims(i.RequiredClaims)), Enabled: ptr(i.Enabled)}
 		for _, t := range s.listed[i.ID] {
 			it := IssuerTenant{Tenant: t.TenantName}
 			if t.ClaimValue != t.TenantID {

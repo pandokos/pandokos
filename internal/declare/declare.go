@@ -159,19 +159,23 @@ type PlatformTenant struct {
 	ExternalReference string `yaml:"external_reference,omitempty"`
 }
 
+// For the members that are pointers (jwks_uri, required_claims, enabled, event_types), absent means "leave
+// the stored value alone" on an update and the safe default on a create (disabled, empty), and an explicit empty
+// value (required_claims: {}, event_types: []) clears. An export always writes them.
+
 // PlatformIssuer is a platform-level token issuer with the tenants it lists. Natural key: name.
 type PlatformIssuer struct {
-	Name           string            `yaml:"name"`
-	Description    string            `yaml:"description,omitempty"`
-	Issuer         string            `yaml:"issuer"`
-	Audience       string            `yaml:"audience"`
-	JWKSURI        string            `yaml:"jwks_uri,omitempty"`
-	Algorithms     []string          `yaml:"algorithms,omitempty"`
-	SubjectClaim   string            `yaml:"subject_claim,omitempty"`
-	TenantClaim    string            `yaml:"tenant_claim"`
-	RequiredClaims map[string]string `yaml:"required_claims,omitempty"`
-	Enabled        bool              `yaml:"enabled"`
-	Tenants        []IssuerTenant    `yaml:"tenants,omitempty"`
+	Name           string             `yaml:"name"`
+	Description    string             `yaml:"description,omitempty"`
+	Issuer         string             `yaml:"issuer"`
+	Audience       string             `yaml:"audience"`
+	JWKSURI        *string            `yaml:"jwks_uri,omitempty"`
+	Algorithms     []string           `yaml:"algorithms,omitempty"`
+	SubjectClaim   string             `yaml:"subject_claim,omitempty"`
+	TenantClaim    string             `yaml:"tenant_claim"`
+	RequiredClaims *map[string]string `yaml:"required_claims,omitempty"`
+	Enabled        *bool              `yaml:"enabled,omitempty"`
+	Tenants        []IssuerTenant     `yaml:"tenants,omitempty"`
 }
 
 // IssuerTenant lists a tenant, by name, on a platform-level issuer. Natural key: tenant.
@@ -183,15 +187,15 @@ type IssuerTenant struct {
 
 // TokenIssuer is a token issuer of a tenant. Natural key: name.
 type TokenIssuer struct {
-	Name           string            `yaml:"name"`
-	Description    string            `yaml:"description,omitempty"`
-	Issuer         string            `yaml:"issuer"`
-	Audience       string            `yaml:"audience"`
-	JWKSURI        string            `yaml:"jwks_uri,omitempty"`
-	Algorithms     []string          `yaml:"algorithms,omitempty"`
-	SubjectClaim   string            `yaml:"subject_claim,omitempty"`
-	RequiredClaims map[string]string `yaml:"required_claims,omitempty"`
-	Enabled        bool              `yaml:"enabled"`
+	Name           string             `yaml:"name"`
+	Description    string             `yaml:"description,omitempty"`
+	Issuer         string             `yaml:"issuer"`
+	Audience       string             `yaml:"audience"`
+	JWKSURI        *string            `yaml:"jwks_uri,omitempty"`
+	Algorithms     []string           `yaml:"algorithms,omitempty"`
+	SubjectClaim   string             `yaml:"subject_claim,omitempty"`
+	RequiredClaims *map[string]string `yaml:"required_claims,omitempty"`
+	Enabled        *bool              `yaml:"enabled,omitempty"`
 }
 
 // SubjectMapping maps the subject of a token of an issuer to a service account of the tenant.
@@ -212,11 +216,11 @@ type MappingIssuer struct {
 // EventDestination is an event destination of a tenant, without its signing secret, cursor or
 // delivery state. Natural key: name.
 type EventDestination struct {
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description,omitempty"`
-	URL         string   `yaml:"url"`
-	EventTypes  []string `yaml:"event_types,omitempty"`
-	Enabled     bool     `yaml:"enabled"`
+	Name        string    `yaml:"name"`
+	Description string    `yaml:"description,omitempty"`
+	URL         string    `yaml:"url"`
+	EventTypes  *[]string `yaml:"event_types,omitempty"`
+	Enabled     *bool     `yaml:"enabled,omitempty"`
 }
 
 // Options are what the caller gives Diff and Apply beyond the document.

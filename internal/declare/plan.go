@@ -515,7 +515,7 @@ func (p *planner) platformIssuers(st *platformState, doc *Document, tenantByName
 		if !ok {
 			p.create(res, func(ctx context.Context, c *adminapi.Client) error {
 				made, err := c.CreatePlatformIssuer(ctx, adminapi.CreatePlatformIssuerInput{Body: adminapi.PlatformIssuerCreate{Name: d.Name, Description: d.Description, Issuer: d.Issuer,
-					Audience: d.Audience, JwksUri: d.JWKSURI, Algorithms: d.Algorithms, SubjectClaim: d.SubjectClaim, TenantClaim: d.TenantClaim, RequiredClaims: d.RequiredClaims, Enabled: d.Enabled}})
+					Audience: d.Audience, JwksUri: deref(d.JWKSURI), Algorithms: d.Algorithms, SubjectClaim: d.SubjectClaim, TenantClaim: d.TenantClaim, RequiredClaims: deref(d.RequiredClaims), Enabled: deref(d.Enabled)}})
 				if err != nil {
 					return err
 				}
@@ -537,8 +537,8 @@ func (p *planner) platformIssuers(st *platformState, doc *Document, tenantByName
 				body.Audience = adminapi.Some(d.Audience)
 				changed = append(changed, "audience")
 			}
-			if d.JWKSURI != cur.JwksUri {
-				body.JwksUri = adminapi.Some(d.JWKSURI)
+			if d.JWKSURI != nil && *d.JWKSURI != cur.JwksUri {
+				body.JwksUri = adminapi.Some(*d.JWKSURI)
 				changed = append(changed, "jwks_uri")
 			}
 			if len(d.Algorithms) > 0 && !sameSet(d.Algorithms, cur.Algorithms) {
@@ -553,12 +553,12 @@ func (p *planner) platformIssuers(st *platformState, doc *Document, tenantByName
 				body.TenantClaim = adminapi.Some(d.TenantClaim)
 				changed = append(changed, "tenant_claim")
 			}
-			if !sameClaims(d.RequiredClaims, cur.RequiredClaims) {
-				body.RequiredClaims = adminapi.Some(nonNilClaims(d.RequiredClaims))
+			if d.RequiredClaims != nil && !sameClaims(*d.RequiredClaims, cur.RequiredClaims) {
+				body.RequiredClaims = adminapi.Some(nonNilClaims(*d.RequiredClaims))
 				changed = append(changed, "required_claims")
 			}
-			if d.Enabled != cur.Enabled {
-				body.Enabled = adminapi.Some(d.Enabled)
+			if d.Enabled != nil && *d.Enabled != cur.Enabled {
+				body.Enabled = adminapi.Some(*d.Enabled)
 				changed = append(changed, "enabled")
 			}
 			if len(changed) > 0 {
@@ -985,7 +985,7 @@ func (p *planner) tokenIssuers(st *tenantState, id string, doc *Document) {
 		if !ok {
 			p.create(res, func(ctx context.Context, c *adminapi.Client) error {
 				made, err := c.CreateTokenIssuer(ctx, adminapi.CreateTokenIssuerInput{Tenant: id, Body: adminapi.TokenIssuerCreate{Name: d.Name, Description: d.Description, Issuer: d.Issuer,
-					Audience: d.Audience, JwksUri: d.JWKSURI, Algorithms: d.Algorithms, SubjectClaim: d.SubjectClaim, RequiredClaims: d.RequiredClaims, Enabled: d.Enabled}})
+					Audience: d.Audience, JwksUri: deref(d.JWKSURI), Algorithms: d.Algorithms, SubjectClaim: d.SubjectClaim, RequiredClaims: deref(d.RequiredClaims), Enabled: deref(d.Enabled)}})
 				if err != nil {
 					return err
 				}
@@ -1008,8 +1008,8 @@ func (p *planner) tokenIssuers(st *tenantState, id string, doc *Document) {
 			body.Audience = adminapi.Some(d.Audience)
 			changed = append(changed, "audience")
 		}
-		if d.JWKSURI != cur.JwksUri {
-			body.JwksUri = adminapi.Some(d.JWKSURI)
+		if d.JWKSURI != nil && *d.JWKSURI != cur.JwksUri {
+			body.JwksUri = adminapi.Some(*d.JWKSURI)
 			changed = append(changed, "jwks_uri")
 		}
 		if len(d.Algorithms) > 0 && !sameSet(d.Algorithms, cur.Algorithms) {
@@ -1020,12 +1020,12 @@ func (p *planner) tokenIssuers(st *tenantState, id string, doc *Document) {
 			body.SubjectClaim = adminapi.Some(d.SubjectClaim)
 			changed = append(changed, "subject_claim")
 		}
-		if !sameClaims(d.RequiredClaims, cur.RequiredClaims) {
-			body.RequiredClaims = adminapi.Some(nonNilClaims(d.RequiredClaims))
+		if d.RequiredClaims != nil && !sameClaims(*d.RequiredClaims, cur.RequiredClaims) {
+			body.RequiredClaims = adminapi.Some(nonNilClaims(*d.RequiredClaims))
 			changed = append(changed, "required_claims")
 		}
-		if d.Enabled != cur.Enabled {
-			body.Enabled = adminapi.Some(d.Enabled)
+		if d.Enabled != nil && *d.Enabled != cur.Enabled {
+			body.Enabled = adminapi.Some(*d.Enabled)
 			changed = append(changed, "enabled")
 		}
 		if len(changed) > 0 {
@@ -1161,7 +1161,7 @@ func (p *planner) eventDestinations(st *tenantState, id string, doc *Document) {
 			}
 			p.create(res, func(ctx context.Context, c *adminapi.Client) error {
 				made, err := c.CreateEventDestination(ctx, adminapi.CreateEventDestinationInput{Tenant: id, Body: adminapi.EventDestinationCreate{Name: d.Name, Description: d.Description,
-					URL: d.URL, EventTypes: eventTypes(d.EventTypes), Enabled: d.Enabled}})
+					URL: d.URL, EventTypes: eventTypes(deref(d.EventTypes)), Enabled: deref(d.Enabled)}})
 				if err != nil {
 					return err
 				}
@@ -1187,12 +1187,12 @@ func (p *planner) eventDestinations(st *tenantState, id string, doc *Document) {
 			body.URL = adminapi.Some(d.URL)
 			changed = append(changed, "url")
 		}
-		if !sameSet(d.EventTypes, eventTypeNames(cur.EventTypes)) {
-			body.EventTypes = adminapi.Some(eventTypes(d.EventTypes))
+		if d.EventTypes != nil && !sameSet(*d.EventTypes, eventTypeNames(cur.EventTypes)) {
+			body.EventTypes = adminapi.Some(eventTypes(*d.EventTypes))
 			changed = append(changed, "event_types")
 		}
-		if d.Enabled != cur.Enabled {
-			body.Enabled = adminapi.Some(d.Enabled)
+		if d.Enabled != nil && *d.Enabled != cur.Enabled {
+			body.Enabled = adminapi.Some(*d.Enabled)
 			changed = append(changed, "enabled")
 		}
 		if len(changed) > 0 {
@@ -1266,3 +1266,14 @@ func sortedKeys[V any](m map[string]V) []string {
 	slices.Sort(out)
 	return out
 }
+
+// deref is the value a member points to, the zero value when it is absent: what a create sends.
+func deref[T any](p *T) T {
+	var zero T
+	if p == nil {
+		return zero
+	}
+	return *p
+}
+
+func ptr[T any](v T) *T { return &v }

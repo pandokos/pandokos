@@ -323,14 +323,14 @@ func tenantStateFull() map[string]any {
 func wantTenantFull() *declare.Document {
 	d := wantTenant()
 	d.TokenIssuers = []declare.TokenIssuer{{Name: "corp-idp", Description: "The company's identity provider", Issuer: "https://idp.example.test", Audience: "pandokos-acme",
-		Algorithms: []string{"ES256", "RS256"}, SubjectClaim: "sub", RequiredClaims: map[string]string{"azp": "pandokos", "env": "prod"}, Enabled: true}}
+		Algorithms: []string{"ES256", "RS256"}, SubjectClaim: "sub", RequiredClaims: ptr(map[string]string{"azp": "pandokos", "env": "prod"}), JWKSURI: ptr(""), Enabled: ptr(true)}}
 	d.SubjectMappings = []declare.SubjectMapping{
 		{Issuer: declare.MappingIssuer{Scope: "platform", Name: "shared-idp"}, Subject: "svc-reports", ServiceAccount: "reports"},
 		{Issuer: declare.MappingIssuer{Scope: "tenant", Name: "corp-idp"}, Subject: "ci-runner", ServiceAccount: "billing", Description: "The CI of the billing team"},
 	}
 	d.EventDestinations = []declare.EventDestination{
-		{Name: "audit-sink", URL: "https://sink.example.test/events"},
-		{Name: "hooks", Description: "Usage to the billing system", URL: "https://hooks.example.test/pandokos", EventTypes: []string{"io.pandokos.usage.recorded.v1"}, Enabled: true},
+		{Name: "audit-sink", URL: "https://sink.example.test/events", EventTypes: ptr([]string{}), Enabled: ptr(false)},
+		{Name: "hooks", Description: "Usage to the billing system", URL: "https://hooks.example.test/pandokos", EventTypes: ptr([]string{"io.pandokos.usage.recorded.v1"}), Enabled: ptr(true)},
 	}
 	d.Limits = []declare.Limit{d.Limits[0],
 		{Mapping: &declare.MappingSubject{Scope: "tenant", Issuer: "corp-idp", Subject: "ci-runner"}, Metric: "requests_per_day", Limit: 5, Enforce: true},
@@ -359,7 +359,9 @@ func wantPlatformFull() *declare.Document {
 	d := wantPlatform()
 	d.Tenants = []declare.PlatformTenant{{Name: "acme", ExternalReference: "crm-4711"}}
 	d.PlatformIssuers = []declare.PlatformIssuer{{Name: "shared-idp", Description: "One IdP for the platform", Issuer: "https://shared.example.test", Audience: "pandokos",
-		JWKSURI: "https://shared.example.test/keys", Algorithms: []string{"RS256"}, SubjectClaim: "sub", TenantClaim: "org", RequiredClaims: map[string]string{"azp": "pandokos"}, Enabled: true,
+		JWKSURI: ptr("https://shared.example.test/keys"), Algorithms: []string{"RS256"}, SubjectClaim: "sub", TenantClaim: "org", RequiredClaims: ptr(map[string]string{"azp": "pandokos"}), Enabled: ptr(true),
 		Tenants: []declare.IssuerTenant{{Tenant: "acme"}, {Tenant: "globex", ClaimValue: "globex-co"}}}}
 	return d
 }
+
+func ptr[T any](v T) *T { return &v }

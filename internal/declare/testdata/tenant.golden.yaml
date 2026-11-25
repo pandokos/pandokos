@@ -79,6 +79,7 @@ token_issuers:
     description: The company's identity provider
     issuer: https://idp.example.test
     audience: pandokos-acme
+    jwks_uri: ""
     algorithms:
       - ES256
       - RS256
@@ -102,6 +103,7 @@ subject_mappings:
 event_destinations:
   - name: audit-sink
     url: https://sink.example.test/events
+    event_types: []
     enabled: false
   - name: hooks
     description: Usage to the billing system
