@@ -39,8 +39,8 @@ func assertRestored(t *testing.T, r *Restored, b *Backup, wantActivation string,
 
 	// 1.
 	version, activation := r.VaultReady()
-	if version != b.KEKVersion || (wantActivation != "" && activation != wantActivation) {
-		t.Errorf("vault ready says kek_version %q and kek_activation %q, want %q and %q (empty: any)", version, activation, b.KEKVersion, wantActivation)
+	if want := r.ExpectedVersion(b); version != want || (wantActivation != "" && activation != wantActivation) {
+		t.Errorf("vault ready says kek_version %q and kek_activation %q, want %q and %q (empty: any)", version, activation, want, wantActivation)
 	}
 
 	// 2. The right form of step 4.6, for the platform's chain and every tenant's.
@@ -52,11 +52,18 @@ func assertRestored(t *testing.T, r *Restored, b *Backup, wantActivation string,
 			t.Errorf("the chain of tenant %s against the head kept at %s: exit %d\n%s", name, b.Point, code, out)
 		}
 	}
-	// G-1: serve wrote rows at its first start after the restore, so the form the guide gave before
-	// (the whole log against a head kept earlier) reports a mismatch where the right form verifies.
-	if code, _ := r.AuditVerifyWhole("", b.Heads.Platform); code == 0 {
-		t.Error("the platform's whole log verifies against the head kept at the backup although serve wrote rows after it (G-1): the wrong form is not wrong")
+	// G-1, as the drill observed it: the form the guide gave before (the whole log against a head kept
+	// earlier) reports a mismatch exactly when rows follow the kept head in the restored log, and the
+	// right form (above) verifies in both cases. serve itself writes no platform audit row when it
+	// starts on a restored database and the activation is unchanged, so what the assertion holds is
+	// the log, and what it records is whether serve moved the head here.
+	head := r.W.readHead(r.Proc, w.platform, "platform-audit", "head")
+	whole, _ := r.AuditVerifyWhole("", b.Heads.Platform)
+	rowsFollow := head.Seq > b.Heads.Platform.Seq
+	if rowsFollow != (whole != 0) {
+		t.Errorf("the whole log against the head kept at %s: exit %d, and the restored platform log is at seq %d, the kept head at %d (G-1): the wrong form must fail exactly when rows follow the kept head", b.Point, whole, head.Seq, b.Heads.Platform.Seq)
 	}
+	t.Logf("G-1: after the start with kek_activation %q the platform log is at seq %d and the head kept at %s at %d; the whole-log form exits %d", activation, head.Seq, b.Point, b.Heads.Platform.Seq, whole)
 
 	// 3., 5. and 6.
 	w.Receiver.SetSecrets(secretsOf(w, working)...)

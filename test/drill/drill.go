@@ -74,20 +74,22 @@ const (
 	Cmd1a = `pg_dump -U postgres -d <database> -Fc -f /backup/pandokos.dump`
 	Cmd1b = `pg_basebackup -U postgres -D /backup/base -Ft -z -X none --checkpoint=fast`
 
-	Cmd41 = `psql -U postgres -v ON_ERROR_STOP=1 -f roles.sql`
-	Cmd42 = "createdb -U postgres -O pandokos_owner <database>\n" +
+	Cmd41 = `psql -U postgres -v ON_ERROR_STOP=1 -f deploy/postgres/roles.sql`
+	Cmd42 = `psql -U postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE <database> OWNER pandokos_owner" -c "REVOKE ALL ON DATABASE <database> FROM PUBLIC" -c "GRANT CONNECT ON DATABASE <database> TO pandokos_gateway, pandokos_admin, pandokos_worker"` + "\n" +
 		`pg_restore -U postgres -d <database> --exit-on-error /backup/pandokos.dump`
 	Cmd43 = `pandokos migrate status`
 	Cmd45 = `pandokos serve`
-	Cmd46 = "pandokos audit export --tenant <tenant> --to-seq <seq kept with the head> --out head.ndjson\n" +
-		`pandokos audit verify --tenant <tenant> --file head.ndjson --expect-head <hash kept outside>`
+	Cmd46 = "pandokos audit export --tenant <tenant ID> --to-seq <seq kept with the head> --out tenant.ndjson\n" +
+		"pandokos audit verify --tenant <tenant ID> --file tenant.ndjson --expect-head <hash kept outside>\n" +
+		"pandokos platform-audit export --to-seq <seq kept with the head> --out platform.ndjson\n" +
+		`pandokos platform-audit verify --file platform.ndjson --expect-head <hash kept outside>`
 
 	Cmd5a = `pandokos tenant deletion list --state completed -o json`
 	Cmd5b = `pandokos platform-event export --type io.pandokos.tenant.deleted.v1`
 
 	Cmd63  = `psql -U postgres -d <database> -v kek_version=<version> -f deploy/postgres/recover-lost-kek.sql`
 	Cmd63s = `psql -U postgres -d <database> -v kek_version=<transit-version> -f deploy/postgres/recover-lost-kek.sql`
-	Cmd64  = `pandokos kek generate`
+	Cmd64  = `pandokos kek generate --out <new key file>`
 )
 
 // Services of compose.yaml, one profile each.
@@ -115,7 +117,7 @@ type Project struct {
 // volumes. It starts no service.
 func NewProject(tb testing.TB) *Project {
 	tb.Helper()
-	root := tb.TempDir()
+	root := tempDir(tb)
 	p := &Project{Name: "pandokos-drill-" + randomHex(tb, 4), Backup: filepath.Join(root, "backup"), Secrets: filepath.Join(root, "secrets")}
 	// The servers run as their own users: the backup directory must accept them. It lives in the
 	// case's temporary directory and holds nothing but what the case makes.
@@ -135,9 +137,22 @@ func NewProject(tb testing.TB) *Project {
 	tb.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
+		p.shareBackup(ctx) // the tools wrote as other users: the directory must be removable by the one who runs the tests
 		_, _ = p.compose(ctx, "--profile", "*", "down", "-v", "--remove-orphans", "--timeout", "5")
 	})
 	return p
+}
+
+// tempDir is a directory of the case, removed when it ends. It is not tb.TempDir: that one carries the
+// name of the test, which can hold a comma, and a list of files in the configuration is split at commas.
+func tempDir(tb testing.TB) string {
+	tb.Helper()
+	dir, err := os.MkdirTemp("", "pandokos-drill-")
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tb.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }
 
 // SuperuserPassword is the password of the postgres role of this project's servers.
