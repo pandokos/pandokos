@@ -2,7 +2,7 @@
 
 - Date: 2026-11-25
 - Reviewed commit: `96cb793c0359b339c4c98785c29a0776e2dada0f`
-- Closing commit: `f4414d9f0388a51d01d97cac60864d1ecf9231ba`
+- Closing commit: `946af1216fa390c92a9a2cf0f3372b08454e6d3d`
 - Reviewed by: the maintainers who wrote the code, by reading each control and opening each test named as its proof, in sprint 12.2; no independent reviewer. The independent assessment is sprint 10.2 and takes this record as its map.
 - Risk: high. A flaw in a control that keeps a tenant from reading or using what is not theirs, or a caller from reaching what is not served, is found by an attacker and not by a test that nobody wrote; and the reviewers share the blind spots of the authors.
 
