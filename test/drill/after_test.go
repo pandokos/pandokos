@@ -56,7 +56,7 @@ func TestAfterRestore(t *testing.T) {
 	t.Run("5.c: the usage and the audit rows after the backup are missing", func(t *testing.T) {
 		w.Step(Step5c, func() {
 			for _, name := range worldTenants {
-				if got, want := r.LedgerRows(name), b2.Ledger[name]; name != TenantC && got < want {
+				if got, want := r.LedgerRows(name), b2.Ledger[name]; name != TenantC && got != want {
 					t.Errorf("tenant %s: the restored ledger has %d rows, the backup %d", name, got, want)
 				}
 			}
