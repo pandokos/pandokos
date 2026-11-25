@@ -6,7 +6,7 @@
 services:
   source:
     profiles: [source]
-    image: postgres:16-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139
+    image: postgres:16-alpine@sha256:f2f98726820d0342055351c6e9d36e705f5bfffb3dd53ff556325114b08afb6d
     command:
       - postgres
       - -c
@@ -34,7 +34,7 @@ services:
 
   target:
     profiles: [target]
-    image: postgres:16-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139
+    image: postgres:16-alpine@sha256:f2f98726820d0342055351c6e9d36e705f5bfffb3dd53ff556325114b08afb6d
     # With PANDOKOS_DRILL_HOLD_TARGET set the server does not start until the suite has written
     # /backup/target.go: the physical case unpacks a base backup into the data directory first.
     entrypoint:
