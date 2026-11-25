@@ -54,7 +54,7 @@ test-container: ## Tests against a built image: make image and make db-up first
 test-browser: ## Browser tests with headless Chrome against the binary: make build and make db-up first (fails without Chrome)
 	@$(DBENV) go test -tags browser -count=1 ./test/browser/...
 
-db-up: ## Start the test PostgreSQL and PgBouncer (Docker)
+db-up: ## Start the test PostgreSQL and PgBouncer (Docker; PANDOKOS_TEST_PG=18 for PostgreSQL 18)
 	sh test/db/up.sh
 
 db-down: ## Stop them and discard the data

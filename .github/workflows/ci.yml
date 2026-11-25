@@ -59,6 +59,11 @@ jobs:
           - name: release
             go-version: ""
             go-version-file: .go-version
+          # The release toolchain on PostgreSQL 18, the later major of the restore drill; the others run the floor, 16.
+          - name: pg18
+            go-version: ""
+            go-version-file: .go-version
+            postgres: "18"
     name: test (${{ matrix.name }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -69,6 +74,8 @@ jobs:
           go-version: ${{ matrix.go-version }}
           go-version-file: ${{ matrix.go-version-file }}
       - name: Start PostgreSQL and PgBouncer
+        env:
+          PANDOKOS_TEST_PG: ${{ matrix.postgres }}
         run: |
           sh test/db/up.sh
           echo "::add-mask::$(cat local/testdb/postgres_password)"

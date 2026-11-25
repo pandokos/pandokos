@@ -739,3 +739,87 @@ func TestDrillComposePins(t *testing.T) {
 		t.Error("dependabot.yml has no entry for /test/drill")
 	}
 }
+
+// TestTestDatabaseLaterMajor is the test of the job "test (pg18)": the later major of the test database
+// is a pinned image that is the restore drill's, it keeps its data off the disk where the 18 image wants
+// it, up.sh reads PANDOKOS_TEST_PG, and CI runs the release toolchain against it besides the floor.
+func TestTestDatabaseLaterMajor(t *testing.T) {
+	var next struct {
+		Services map[string]struct {
+			Image string   `yaml:"image"`
+			Tmpfs []string `yaml:"tmpfs"`
+		} `yaml:"services"`
+	}
+	if err := yaml.Unmarshal([]byte(read(t, "test/db/pg18.yaml")), &next); err != nil {
+		t.Fatal(err)
+	}
+	var drill struct {
+		Services map[string]struct {
+			Image string `yaml:"image"`
+		} `yaml:"services"`
+	}
+	if err := yaml.Unmarshal([]byte(read(t, "test/drill/compose.yaml")), &drill); err != nil {
+		t.Fatal(err)
+	}
+	got := next.Services["postgres"].Image
+	if !regexp.MustCompile(`^postgres:18[\w.-]*@sha256:[0-9a-f]{64}$`).MatchString(got) {
+		t.Errorf("test/db/pg18.yaml image %q: want postgres 18 pinned by digest", got)
+	}
+	if want := drill.Services["target-next"].Image; got != want {
+		t.Errorf("test/db/pg18.yaml image %q differs from the later major of the drill %q: move both together", got, want)
+	}
+	if tmpfs := next.Services["postgres"].Tmpfs; len(tmpfs) != 1 || tmpfs[0] != "/var/lib/postgresql" {
+		t.Errorf("tmpfs %v: the 18 image keeps its data under /var/lib/postgresql", tmpfs)
+	}
+	up := read(t, "test/db/up.sh")
+	if !strings.Contains(up, "PANDOKOS_TEST_PG") || !strings.Contains(up, "test/db/pg18.yaml") {
+		t.Error("test/db/up.sh does not start the later major for PANDOKOS_TEST_PG=18")
+	}
+	var ci struct {
+		Jobs map[string]struct {
+			Name     string `yaml:"name"`
+			Strategy struct {
+				Matrix struct {
+					Include []map[string]string `yaml:"include"`
+				} `yaml:"matrix"`
+			} `yaml:"strategy"`
+			Steps []struct {
+				Run string            `yaml:"run"`
+				Env map[string]string `yaml:"env"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal([]byte(read(t, ".github/workflows/ci.yml")), &ci); err != nil {
+		t.Fatal(err)
+	}
+	job := ci.Jobs["test"]
+	var floor, release, pg18 map[string]string
+	for _, m := range job.Strategy.Matrix.Include {
+		switch m["name"] {
+		case "floor":
+			floor = m
+		case "release":
+			release = m
+		case "pg18":
+			pg18 = m
+		}
+	}
+	if floor == nil || release == nil || pg18 == nil {
+		t.Fatal("the job test has no entries floor, release and pg18")
+	}
+	if pg18["postgres"] != "18" || floor["postgres"] != "" || release["postgres"] != "" {
+		t.Error("only the entry pg18 of the job test runs PostgreSQL 18; floor and release run the floor")
+	}
+	if pg18["go-version-file"] != release["go-version-file"] || pg18["go-version"] != release["go-version"] {
+		t.Error("the entry pg18 must use the release toolchain, like release")
+	}
+	started := false
+	for _, s := range job.Steps {
+		if strings.Contains(s.Run, "test/db/up.sh") && s.Env["PANDOKOS_TEST_PG"] == "${{ matrix.postgres }}" {
+			started = true
+		}
+	}
+	if !started {
+		t.Error("the step of the job test that starts the database does not pass matrix.postgres as PANDOKOS_TEST_PG")
+	}
+}

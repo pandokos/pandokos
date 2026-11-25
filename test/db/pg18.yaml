@@ -1,0 +1,10 @@
+# Moves the test database to PostgreSQL 18: make db-up PANDOKOS_TEST_PG=18 (job "test (pg18)" of CI).
+# Used with test/db/compose.yaml by test/db/up.sh. The image is the later major of the restore drill
+# (test/drill/compose.yaml) and test/repo keeps the two digests equal. The name does not match what
+# Dependabot reads in this directory on purpose: its digest is moved by hand, with the drill's.
+services:
+  postgres:
+    image: postgres:18-alpine@sha256:0115267ab5a509022df9319c77be365cef335adb71556c75f60f5360ee247e71
+    # The 18 image keeps its data in a versioned directory under /var/lib/postgresql.
+    tmpfs: !override
+      - /var/lib/postgresql
