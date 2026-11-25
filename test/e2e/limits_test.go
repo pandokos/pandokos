@@ -473,9 +473,18 @@ func TestQuotaCanary(t *testing.T) {
 	record("a quota refusal, anthropic", status, text, 429)
 	assertAnthropicPandokosError(t, "the anthropic refusal", status, text, 429, "quota_exceeded", "rate_limit_error")
 	// An unpriced model under an enforced budget: no_price (a soft budget never refuses).
-	p.mustCLI(t, boot, "model", "create", "--availability", "all", "openai/fake-unpriced")
 	// The budget is on the provider, whose other models have a price (a budget on a scope without any is refused).
 	p.mustCLI(t, tn.admin, "limit", "create", "--tenant", tn.idStr, "--metric", "cost_per_day", "--amount", "100", "--currency", "USD", "--provider", "openai")
+	p.mustCLI(t, boot, "model", "create", "--availability", "all", "openai/fake-unpriced")
+	// The caches learn of both changes by notification, after the commands return. Another tenant, with
+	// no budget, calls the model until the gateway knows it: the tenant under test makes exactly the
+	// calls its usage rows are counted for. Notifications are applied in the order of their commits, so
+	// once the model is known the budget, created before it, is known too.
+	probe := p.newLimitsTenant(t, boot, "quota-canary-probe")
+	testutil.Eventually(t, 10*time.Second, "the gateway to know the new model", func() bool {
+		status, _ := p.chatCall(t, probe.key, "fake-unpriced", false)
+		return status != 403
+	})
 	status, text = p.chatCall(t, tn.key, "fake-unpriced", false)
 	record("no_price", status, text, 409)
 	assertPandokosError(t, "no_price", status, text, 409, "no_price")
@@ -522,6 +531,7 @@ func TestQuotaCanary(t *testing.T) {
 	secrets := testutil.KeyForms(tn.key)
 	secrets = append(secrets, testutil.KeyForms(revokedKey)...)
 	secrets = append(secrets, testutil.KeyForms(free.key)...)
+	secrets = append(secrets, testutil.KeyForms(probe.key)...)
 	secrets = append(secrets, testutil.SecretForms(fixtures.CanaryCredential)...)
 	secrets = append(secrets, testutil.SecretForms(anthropicLimitsSecret)...)
 	secrets = append(secrets, testutil.SecretForms(fixtures.CanaryProviderKey)...)
