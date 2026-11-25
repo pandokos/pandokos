@@ -16,7 +16,7 @@ import (
 var reFixedTransit = regexp.MustCompile(`^vault: key service: (wrap|unwrap|describe|identify|lookup|renew|login): (unavailable|denied|not_found|rejected|refused)$`)
 
 // fixedTransitErrors are the other texts a check of a key description may give.
-var fixedTransitErrors = []error{errTransitMissing, errTransitType, errTransitDerived, errTransitOperation}
+var fixedTransitErrors = []error{errTransitMissing, errTransitType, errTransitDerived, errTransitOperation, errTransitExportable}
 
 // noInputEcho fails when text holds a substring of input longer than 8 bytes that is not part of
 // the fixed words: an error never repeats what the other side said. Inputs of 8 bytes or fewer
@@ -44,6 +44,7 @@ var transitFixedWords = []string{
 	"unavailable", "denied", "not_found", "rejected", "refused",
 	"the transit key (vault.kek.transit.key_name) ", "must be of type aes256-gcm96", "must not be derived",
 	"does not exist", "does not support encryption and decryption",
+	"is exportable; create it with exportable false, or accept it with vault.kek.transit.allow_exportable_key", "exportable",
 }
 
 // seedTransitAnswers returns well-formed answers of the key service, one list per operation, with

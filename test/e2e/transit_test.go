@@ -772,7 +772,7 @@ func TestTransitCanary(t *testing.T) {
 	add("the log of the key file run", p0.stdout.String()+p0.stderr.String())
 
 	// The move to the service, an outage, an expired token and a refused login.
-	p := startBinary(t, transitOptions(d, up, w, withTelemetry, withEnv("PANDOKOS_VAULT_KEK_LOCAL_UNWRAP_KEY_FILES="+keys[0].File,
+	p := startBinary(t, transitOptions(d, up, w, withTelemetry, withEnv("PANDOKOS_VAULT_KEK_TRANSIT_ALLOW_EXPORTABLE_KEY=true", "PANDOKOS_VAULT_KEK_LOCAL_UNWRAP_KEY_FILES="+keys[0].File,
 		"PANDOKOS_CACHE_CREDENTIAL_TTL=1s", "PANDOKOS_CACHE_DATA_KEY_TTL=2s")))
 	carry(p, p0)
 	var responses []string
@@ -982,7 +982,7 @@ func TestTransitTelemetry(t *testing.T) {
 	// A token that cannot be renewed, a weak key, traffic and an outage.
 	d := freshDB(t)
 	w := newTransitWorld(t, vaulttest.TransitSetup{Method: "token", TTL: 30 * time.Second, KeyOptions: transittest.KeyOptions{Exportable: true}})
-	p := startBinary(t, transitOptions(d, up, w, short, withEnv("PANDOKOS_LOG_LEVEL=debug"), func(o *opts) { o.level = "debug" }))
+	p := startBinary(t, transitOptions(d, up, w, short, withEnv("PANDOKOS_LOG_LEVEL=debug", "PANDOKOS_VAULT_KEK_TRANSIT_ALLOW_EXPORTABLE_KEY=true"), func(o *opts) { o.level = "debug" }))
 	boot := p.bootstrap(t)
 	a := newLifeTenant(t, p, boot, "telemetry-a", "workload-a")
 	b := newLifeTenant(t, p, boot, "telemetry-b", "workload-b")

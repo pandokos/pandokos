@@ -279,6 +279,8 @@ var keyTable = []keyDef{
 		setInt(func(c *Config) *int { return &c.Vault.KEK.Transit.MaxConcurrentRequests })),
 	serveDef("vault.kek.transit.start_timeout", "duration", "0", "Time serve waits for the key service at start, up to 1h; 0 waits without limit",
 		setDuration(func(c *Config) *Duration { return &c.Vault.KEK.Transit.StartTimeout })),
+	serveDef("vault.kek.transit.allow_exportable_key", "boolean", "false", "Accept a key of the key service that was created exportable; without it such a key is refused at start",
+		setBool(func(c *Config) *bool { return &c.Vault.KEK.Transit.AllowExportableKey })),
 	def("pricing.import_at_start", "boolean", "true", "Import the embedded price snapshot when serve starts, unless a newer or identical import exists",
 		setBool(func(c *Config) *bool { return &c.Pricing.ImportAtStart })),
 	serveDef("pricing.default_currency", "ISO 4217 code", "USD", "The currency in which the costs of the tenants that have not chosen an active currency are computed, and in which their cost budgets apply; three capital letters",

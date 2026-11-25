@@ -106,11 +106,12 @@ var reTransitID = regexp.MustCompile(`^transit-([0-9a-f]{16})-v([1-9][0-9]{0,8})
 
 // Fixed texts of the requirements on the key; they name a setting and never the key.
 var (
-	errTransitType      = errors.New("vault: the transit key (vault.kek.transit.key_name) must be of type aes256-gcm96")
-	errTransitDerived   = errors.New("vault: the transit key (vault.kek.transit.key_name) must not be derived")
-	errTransitMissing   = errors.New("vault: the transit key (vault.kek.transit.key_name) does not exist")
-	errTransitOperation = errors.New("vault: the transit key (vault.kek.transit.key_name) does not support encryption and decryption")
-	errTransitNotReady  = errors.New("vault: the transit key provider has not started")
+	errTransitType       = errors.New("vault: the transit key (vault.kek.transit.key_name) must be of type aes256-gcm96")
+	errTransitDerived    = errors.New("vault: the transit key (vault.kek.transit.key_name) must not be derived")
+	errTransitExportable = errors.New("vault: the transit key (vault.kek.transit.key_name) is exportable; create it with exportable false, or accept it with vault.kek.transit.allow_exportable_key")
+	errTransitMissing    = errors.New("vault: the transit key (vault.kek.transit.key_name) does not exist")
+	errTransitOperation  = errors.New("vault: the transit key (vault.kek.transit.key_name) does not support encryption and decryption")
+	errTransitNotReady   = errors.New("vault: the transit key provider has not started")
 )
 
 // NewTransitProvider checks the options and contacts nothing.

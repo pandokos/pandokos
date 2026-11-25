@@ -376,6 +376,8 @@ func (p *TransitProvider) checkKey(d transitDescription) error {
 		return errTransitDerived
 	case !*k.SupportsEncryption || !*k.SupportsDecryption:
 		return errTransitOperation
+	case k.Exportable && !p.opts.AllowExportable:
+		return errTransitExportable
 	}
 	return nil
 }
