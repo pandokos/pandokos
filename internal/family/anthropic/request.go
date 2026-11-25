@@ -25,7 +25,7 @@ type Request struct {
 }
 
 // ParseOperation reads the request body of an operation of the family. Every error wraps
-// family.ErrInvalidRequest and carries a reason (family.InvalidReason): not_object,
+// family.ErrInvalidRequest and carries a reason (family.InvalidReason): not_object, member_case,
 // model_missing, model_duplicate or model_not_string. The body is not modified and is kept by the
 // Request. Token counting never streams.
 func ParseOperation(operation string, body []byte) (*Request, error) {

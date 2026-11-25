@@ -80,7 +80,7 @@ func CaseConflict(ms []Member, read ...string) bool {
 }
 
 func sameIgnoringCase(a, b string) bool {
-	return strings.EqualFold(a, b) || strings.ToUpper(a) == strings.ToUpper(b) || strings.ToLower(a) == strings.ToLower(b)
+	return strings.EqualFold(a, b) || strings.ToUpper(a) == strings.ToUpper(b) || strings.ToLower(a) == strings.ToLower(b) //nolint:staticcheck // SA6005: the explicit upper and lower comparisons are the point, they differ from simple folding
 }
 
 // ParseModel applies the model rules of sprint 3.1 section 5.8 to the members of a request body:

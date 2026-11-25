@@ -119,11 +119,17 @@ func FuzzTransitAnswer(f *testing.F) {
 			noInputEcho(t, err.Error(), data, transitFixedWords...)
 		}
 		decode := func(out any) bool {
-			if err := decodeEnvelope(data, operation, out); err != nil {
-				fixedFailure(&TransitError{Operation: operation, Class: "rejected"})
-				return false
+			err := decodeEnvelope(data, operation, out)
+			if err == nil {
+				return true
 			}
-			return true
+			// This branch is vacuous: the target checks an error it builds itself, because in
+			// production exchange discards the decoding error and returns the fixed "rejected"
+			// one, so nothing of the decoder reaches a caller. What can be said is that the
+			// function returned an error value, which is what brought us here, and that no data
+			// is taken from a body that did not decode: the caller returns at once.
+			fixedFailure(&TransitError{Operation: operation, Class: "rejected"})
+			return false
 		}
 
 		switch operation {

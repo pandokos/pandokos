@@ -408,7 +408,7 @@ func TestParseMemberCase(t *testing.T) {
 // sameIgnoringCase is the comparison of the invariant: simple folding, upper casing or lower
 // casing equates the two names, as a reader of another language might.
 func sameIgnoringCase(a, b string) bool {
-	return strings.EqualFold(a, b) || strings.ToUpper(a) == strings.ToUpper(b) || strings.ToLower(a) == strings.ToLower(b)
+	return strings.EqualFold(a, b) || strings.ToUpper(a) == strings.ToUpper(b) || strings.ToLower(a) == strings.ToLower(b) //nolint:staticcheck // SA6005: the explicit upper and lower comparisons are the point, they differ from simple folding
 }
 
 // checkMemberCase is the invariant of sprint 12.2 section 5.9: a body accepted has exactly one

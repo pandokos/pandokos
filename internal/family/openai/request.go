@@ -117,8 +117,8 @@ type Request struct {
 }
 
 // Parse reads a chat completions request body. Every error wraps family.ErrInvalidRequest and
-// carries a reason (family.InvalidReason): not_object, model_missing, model_duplicate or
-// model_not_string. The body is not modified and is kept by the Request.
+// carries a reason (family.InvalidReason): not_object, member_case, model_missing,
+// model_duplicate or model_not_string. The body is not modified and is kept by the Request.
 func Parse(body []byte) (*Request, error) { return ParseOperation(OperationChatCompletions, body) }
 
 // ParseOperation reads the request body of an operation of the family. Every error wraps
