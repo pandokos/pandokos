@@ -19,6 +19,7 @@ import (
 // count rules, not a default replaced by the tenant's ceiling; the audit row; the unchanged value writes
 // nothing.
 func TestActiveCurrency(t *testing.T) {
+	t.Parallel()
 	w := newPW(t)
 	api := w.api
 	prov, all := w.cat.Provider.Name, w.cat.All

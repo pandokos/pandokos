@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/pandokos/pandokos/examples/webhook-receiver/receiver"
 	"github.com/pandokos/pandokos/test/fixtures"
 )
@@ -69,6 +71,7 @@ type faultReceiver struct {
 	handler  *receiver.Handler
 	stop     chan struct{}
 	requests atomic.Int64
+	late     atomic.Int64 // requests answered late whose event was then stored
 	lateWait time.Duration
 }
 
@@ -150,6 +153,7 @@ func (f *faultReceiver) serve(w http.ResponseWriter, r *http.Request) {
 		req := r.Clone(context.Background())
 		req.Body = io.NopCloser(bytes.NewReader(body))
 		f.handler.ServeHTTP(httptest.NewRecorder(), req)
+		f.late.Add(1)
 	default:
 		f.handler.ServeHTTP(w, r)
 	}
@@ -234,19 +238,21 @@ func quietCall(client *http.Client, url, key, model string) int {
 // ledgerOf returns the usage records of the tenant: record ID to request ID.
 func ledgerOf(t *testing.T, p *proc, tenantID string) map[string]string {
 	t.Helper()
-	rows, err := p.db.Super(t).Query(context.Background(), `SELECT id::text, request_id FROM pandokos.usage_record WHERE tenant_id = $1::uuid`, tenantID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
 	out := map[string]string{}
-	for rows.Next() {
-		var id, req string
-		if err := rows.Scan(&id, &req); err != nil {
+	p.db.WithSuper(t, func(ctx context.Context, c *pgx.Conn) { // tests poll this: no connection is kept
+		rows, err := c.Query(ctx, `SELECT id::text, request_id FROM pandokos.usage_record WHERE tenant_id = $1::uuid`, tenantID)
+		if err != nil {
 			t.Fatal(err)
 		}
-		out[id] = req
-	}
+		defer rows.Close()
+		for rows.Next() {
+			var id, req string
+			if err := rows.Scan(&id, &req); err != nil {
+				t.Fatal(err)
+			}
+			out[id] = req
+		}
+	})
 	return out
 }
 

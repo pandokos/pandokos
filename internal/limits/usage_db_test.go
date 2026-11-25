@@ -57,6 +57,7 @@ func groupsByKey(t *testing.T, gs []limits.UsageGroup) map[groupKey]limits.Usage
 
 // TestLedgerUsage is T-658.
 func TestLedgerUsage(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
@@ -177,6 +178,7 @@ func TestLedgerUsage(t *testing.T) {
 // TestLedgerUsageByIdentifier is T-704: the aggregate as the worker role groups by the ID of the
 // model and by the ID of the provider that has the row's name now.
 func TestLedgerUsageByIdentifier(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()

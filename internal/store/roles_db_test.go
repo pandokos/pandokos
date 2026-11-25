@@ -40,6 +40,7 @@ const (
 
 // TestRolesSchema is T-852: the constraints of migration 0014.
 func TestRolesSchema(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	tid := d.SeedTenant(t, "roles-schema")
 	other := d.SeedTenant(t, "roles-schema-other")
@@ -325,6 +326,7 @@ func TestRolesSchema(t *testing.T) {
 
 // TestActInTenant is T-856.
 func TestActInTenant(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		a, b := seed(t, d)
 		admin := d.Open(t, store.RoleAdmin)
@@ -441,6 +443,7 @@ func TestActInTenant(t *testing.T) {
 // TestInTenant: a transaction in platform scope reads a tenant's rows on its own connection, and
 // has no tenant again afterwards.
 func TestInTenant(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		a, b := seed(t, d)
 		admin := d.OpenSized(t, store.RoleAdmin, 1)

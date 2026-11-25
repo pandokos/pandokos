@@ -22,6 +22,7 @@ import (
 // TestFamilies is T-529: Families holds both adapters and returns a new map each time; Routes
 // lists five routes with both permissions; server.New serves the Anthropic route.
 func TestFamilies(t *testing.T) {
+	t.Parallel()
 	t.Run("both adapters", func(t *testing.T) {
 		fams := gateway.Families()
 		var names []string

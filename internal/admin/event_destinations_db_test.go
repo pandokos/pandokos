@@ -19,6 +19,7 @@ const hookURL = "https://hooks.example.test/in"
 // secret once and absent on an idempotent replay; delivery as section 5.8; the six audit actions
 // with the host only and no secret.
 func TestEventDestinationAPI(t *testing.T) {
+	t.Parallel()
 	w := newEW(t)
 	tid := parseTenant(t, w.tid)
 
@@ -271,6 +272,7 @@ func TestEventDestinationAPI(t *testing.T) {
 
 // TestEventDestinationOperations is T-1041: rotation, the test request, rewind, dead letters.
 func TestEventDestinationOperations(t *testing.T) {
+	t.Parallel()
 	w := newEW(t)
 	tid := parseTenant(t, w.tid)
 
@@ -494,6 +496,7 @@ func TestEventDestinationOperations(t *testing.T) {
 // response, audit row, log line or error; the stored column is not the secret and the admin pool
 // cannot select it.
 func TestEventSecretCanary(t *testing.T) {
+	t.Parallel()
 	w := newEW(t)
 	created := w.create(t, "canary", hookURL)
 	id := created.Destination.ID

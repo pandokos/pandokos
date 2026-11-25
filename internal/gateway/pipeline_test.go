@@ -123,6 +123,7 @@ func providersFor(cat map[string]string, targets map[string]gateway.Target, secr
 
 // TestRouteByProvider is T-425: the first path segment names a catalogue provider.
 func TestRouteByProvider(t *testing.T) {
+	t.Parallel()
 	up1, up2 := fakeprovider.New(t), fakeprovider.New(t)
 	prefixed := testutil.TargetFor(up2, "compat", "fake-basic")
 	prefixed.BaseURL, _ = url.Parse(up2.URL() + "/api/prefix")
@@ -282,6 +283,7 @@ func (a *orderAuth) Authenticate(ctx context.Context, presented string) (authz.P
 
 // TestPipelineOrder is T-426: a refusal at a step stops every later step.
 func TestPipelineOrder(t *testing.T) {
+	t.Parallel()
 	active := testutil.InferencePrincipal()
 	with := func(mutate func(*authz.Principal)) authz.Principal {
 		p := active
@@ -418,6 +420,7 @@ func TestPipelineOrder(t *testing.T) {
 
 // TestModelCheck is T-427.
 func TestModelCheck(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	var first string
 	for _, model := range []string{"nope", "other-provider-model", "upstream-id-1", "fake-basic-but-not-granted"} {
@@ -466,6 +469,7 @@ func TestModelCheck(t *testing.T) {
 
 // TestInvalidRequest is T-428.
 func TestInvalidRequest(t *testing.T) {
+	t.Parallel()
 	canary := fixtures.CanaryPrompt
 	msg := `"messages":[{"role":"user","content":"` + canary + `"}]`
 	cases := []struct{ name, body, reason string }{
@@ -516,6 +520,7 @@ func TestInvalidRequest(t *testing.T) {
 // credential is opened; nothing reaches the provider; one record of the kind an invalid request
 // writes today; the request line holds the reason and no member name or value.
 func TestMemberCaseRefused(t *testing.T) {
+	t.Parallel()
 	const other = "synthetic-other-model-name"
 	msg := `"messages":[{"role":"user","content":"` + fixtures.CanaryPrompt + `"}]`
 	type target struct {
@@ -597,6 +602,7 @@ func TestMemberCaseRefused(t *testing.T) {
 
 // TestCredentialResolution is T-429.
 func TestCredentialResolution(t *testing.T) {
+	t.Parallel()
 	t.Run("the provider receives the secret of Credentials and never the caller's key", func(t *testing.T) {
 		creds := testutil.StaticCredentials(map[string]string{"openai": fixtures.CanaryCredential})
 		creds.Pinned = true
@@ -662,6 +668,7 @@ func TestCredentialResolution(t *testing.T) {
 
 // TestUpstreamModel is T-430: the public name is replaced by the upstream identifier.
 func TestUpstreamModel(t *testing.T) {
+	t.Parallel()
 	setup := func(t *testing.T) *harness {
 		h := newHarness(t, nil)
 		tgt := h.targets["openai/fake-basic"]
@@ -825,6 +832,7 @@ func scenarios() []scenario {
 // headers, the family's body and the constant message. The sweep fails on a code this table of
 // scenarios does not know.
 func TestErrorContract(t *testing.T) {
+	t.Parallel()
 	seen := map[string]bool{}
 	for _, s := range scenarios() {
 		seen[string(s.code)] = true
@@ -861,6 +869,7 @@ func TestErrorContract(t *testing.T) {
 
 // TestCredentialNeverReachesCaller is T-432.
 func TestCredentialNeverReachesCaller(t *testing.T) {
+	t.Parallel()
 	secrets := testutil.SecretForms(fixtures.CanaryProviderKey)
 	t.Run("echoed headers do not reach the caller", func(t *testing.T) {
 		h := newHarness(t, nil)
@@ -927,6 +936,7 @@ func TestCredentialNeverReachesCaller(t *testing.T) {
 
 // TestRedirectNotFollowed is T-433.
 func TestRedirectNotFollowed(t *testing.T) {
+	t.Parallel()
 	var other atomic.Int64
 	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		other.Add(1)
@@ -974,6 +984,7 @@ func TestRedirectNotFollowed(t *testing.T) {
 
 // TestEgressClassFollowsEndpoint is T-434: a real guard decides by the endpoint's class.
 func TestEgressClassFollowsEndpoint(t *testing.T) {
+	t.Parallel()
 	check := func(t *testing.T, h *harness, up *fakeprovider.Server, reason string) {
 		t.Helper()
 		c := h.sendAuthed(t, route, chat("fake-basic", false))
@@ -1048,6 +1059,7 @@ func TestEgressClassFollowsEndpoint(t *testing.T) {
 
 // TestNoRetry is T-435: one attempt, never a replay.
 func TestNoRetry(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	if c := h.sendAuthed(t, route, chat("fake-basic", false)); c.status != 200 {
 		t.Fatalf("the warm-up: %d", c.status)
@@ -1093,6 +1105,7 @@ func readResponse(t *testing.T, conn net.Conn) *http.Response {
 
 // TestRequestTimeout is T-436: a stalled body gets 408, a vanished caller gets nothing.
 func TestRequestTimeout(t *testing.T) {
+	t.Parallel()
 	t.Run("headers and half a body, then silence", func(t *testing.T) {
 		h := newHarness(t, func(o *gateway.Options) { o.RequestBodyReadTimeout = 200 * time.Millisecond })
 		conn, err := net.Dial("tcp", h.srv.Listener.Addr().String())
@@ -1149,6 +1162,7 @@ func TestRequestTimeout(t *testing.T) {
 
 // TestAuthFailureRecorded is T-437.
 func TestAuthFailureRecorded(t *testing.T) {
+	t.Parallel()
 	const keyID, tenantID = "tabcdefghijklmnop", "0192f0f0-0000-7000-8000-000000000001"
 	type tc struct {
 		name     string
@@ -1249,6 +1263,7 @@ func union(sets ...map[string]bool) map[string]bool {
 
 // TestRequestLogFields is T-438: the field set of the request line, as ADR 0055 restricts it.
 func TestRequestLogFields(t *testing.T) {
+	t.Parallel()
 	base := setOf("time", "level", "msg", "request_id", "method", "route", "status", "outcome", "duration_ms", "limit_state")
 	op := setOf("provider")
 	resolved := setOf("endpoint")
@@ -1366,6 +1381,7 @@ func TestRequestLogFields(t *testing.T) {
 
 // TestRequestLogIsNotLeaky checks that nothing of the caller's content is in the log of a good call.
 func TestRequestLogIsNotLeaky(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	h.sendAuthed(t, route+"?q=query-value", chat("fake-basic", true))
 	testutil.AssertNoCanary(t, "the logs", h.logs.String())
@@ -1376,6 +1392,7 @@ func TestRequestLogIsNotLeaky(t *testing.T) {
 // down) before the forward is not forwarded and gets no answer: the handler aborts the
 // connection instead of letting net/http send an empty 200.
 func TestCancelledBeforeForwarding(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct {
 		block   bool
 		cause   error

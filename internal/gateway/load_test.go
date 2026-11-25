@@ -70,6 +70,7 @@ func postChat(h *harness, c *http.Client, body []byte) int {
 // TestConcurrencyLimit is T-638: with the real store and a limit of 3, three held streams fill
 // it, the fourth is refused, and the next is admitted when one ends, however it ends.
 func TestConcurrencyLimit(t *testing.T) {
+	t.Parallel()
 	rule := limits.Rule{SubjectKind: limits.SubjectTenant, Metric: limits.ConcurrentRequests, Value: 3}
 
 	// hold starts n gated streams and waits until each has delivered its first event.
@@ -160,6 +161,7 @@ func TestConcurrencyLimit(t *testing.T) {
 
 // TestParallelLoad is T-640: the exit condition of the sprint, with the real store and 64 workers.
 func TestParallelLoad(t *testing.T) {
+	// Serial on purpose: it measures a load or a short real-time window, which parallel tests disturb.
 	start := time.Now()
 	defer func() {
 		if d := time.Since(start); d > 10*time.Second {
@@ -359,6 +361,7 @@ func (r trackedRecorder) Record(rec usage.Record) {
 // TestParallelBudget is T-671: the bound of the budget with 64 workers, a concurrency limit k and a
 // provider that reports d above every reservation, with and without a fold running every 50 ms.
 func TestParallelBudget(t *testing.T) {
+	t.Parallel()
 	const workers, k, outputs = 64, 5, 100
 	body := chat("fake-basic", false)
 	reservedTokens := ceil4(len(body)) + outputs

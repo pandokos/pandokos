@@ -8,6 +8,7 @@ import (
 
 // TestNames is T-378: provider names, endpoint URLs, model names and references.
 func TestNames(t *testing.T) {
+	t.Parallel()
 	t.Run("provider names", func(t *testing.T) {
 		for _, ok := range []string{"openai", "a", "my-provider-1", "o3", "x" + strings.Repeat("y", 62), "v2", "vv", "healthz1", "azure-openai"} {
 			if err := ValidateProviderName(ok); err != nil {

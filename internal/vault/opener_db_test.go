@@ -27,6 +27,7 @@ func notUsable(t *testing.T, err error, state string) {
 
 // TestOpenerDB is T-325.
 func TestOpenerDB(t *testing.T) {
+	t.Parallel()
 	w := newVWorld(t)
 	super := w.d.Super(t)
 	logs := &testutil.LogBuffer{}
@@ -352,6 +353,7 @@ func (a apiTenant) call(t *testing.T, method, path string, body any) {
 // TestRevocationWithNotifications is T-326: with a lifetime of 60 s and a real listener on a
 // direct connection, the change made through the API reaches Open within 2 s.
 func TestRevocationWithNotifications(t *testing.T) {
+	t.Parallel()
 	api := apitest.New(t)
 	gw := api.DB.Open(t, store.RoleGateway)
 	logs := &testutil.LogBuffer{}
@@ -443,6 +445,7 @@ func TestRevocationWithNotifications(t *testing.T) {
 // TestRevocationBound is T-327: with no listener, or with one that cannot hear (through the
 // pooler), Open serves the cached result until the injected clock passes the lifetime.
 func TestRevocationBound(t *testing.T) {
+	t.Parallel()
 	run := func(t *testing.T, api *apitest.API, listener func(t *testing.T, o *vault.Opener)) {
 		t.Helper()
 		gw := api.DB.Open(t, store.RoleGateway)
@@ -518,9 +521,8 @@ func TestRevocationBound(t *testing.T) {
 	})
 
 	t.Run("through the pooler, where the listener cannot hear", func(t *testing.T) {
-		d := dbtest.New(t)
+		d := dbtest.NewMigrated(t)
 		p := d.Pooled(t)
-		d.Migrate(t)
 		api := apitest.NewOn(t, p)
 		run(t, api, func(t *testing.T, o *vault.Opener) {
 			listening(t, p.ConnOptions("gateway"), o, func() {}, func(l *testutil.LogBuffer) bool {

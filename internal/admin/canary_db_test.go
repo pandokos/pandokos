@@ -14,6 +14,7 @@ import (
 // anywhere are planted in sign-ins of both methods, accepted and refused, with the log at debug, and
 // every output is searched for them.
 func TestPeopleCanary(t *testing.T) {
+	t.Parallel()
 	api, o := apitest.NewPeopleOIDC(t, apitest.PeopleConfig{}, apitest.OIDCConfig{
 		Users: idpPeople, Mappings: []string{"platform:platform-admin=admins"}, AutoProvision: true,
 	})

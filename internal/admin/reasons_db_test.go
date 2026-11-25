@@ -114,6 +114,7 @@ func allAuditRows(w *sw, t *testing.T) []dbtest.AuditRow {
 
 // TestReasonRequired is T-877.
 func TestReasonRequired(t *testing.T) {
+	t.Parallel()
 	w := newSW(t)
 	nine := []string{"activateRole", "cancelTenantDeletion", "deactivateRole", "disableTenantCredential", "openSupportAction", "reactivateTenant",
 		"requestTenantDeletion", "resetMemberPassword", "resetUserPassword", "revokeTenantCredential", "suspendTenant"}
@@ -244,6 +245,7 @@ func TestReasonRequired(t *testing.T) {
 // TestInTenantRule is T-878: every operation that is not a GET and whose permission has InTenant
 // requires a reason, and writes its audit row to the tenant's log.
 func TestInTenantRule(t *testing.T) {
+	t.Parallel()
 	w := newSW(t)
 	exempt := map[string]string{
 		// section 5.8: closing is tidying; its reason stays optional so that an action can be closed in a hurry.
@@ -297,6 +299,7 @@ func TestInTenantRule(t *testing.T) {
 
 // TestSettingSplit is T-879: the time zone and the active currency are the tenant's settings.
 func TestSettingSplit(t *testing.T) {
+	t.Parallel()
 	w := newRW(t)
 	zone := func(who apitest.Doer, method string) *apitest.Response {
 		if method == "GET" {
@@ -370,6 +373,7 @@ func TestSettingSplit(t *testing.T) {
 
 // TestPlatformAuditor is T-880.
 func TestPlatformAuditor(t *testing.T) {
+	t.Parallel()
 	api := apitest.NewPeople(t, apitest.PeopleConfig{})
 	acme, _ := api.Tenant(t, "auditor-tenant")
 	key, user := api.PlatformAs(t, authz.RolePlatformAuditor)

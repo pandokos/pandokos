@@ -102,6 +102,7 @@ func (f failing) RoundTrip(*http.Request) (*http.Response, error) { return nil, 
 
 // TestValidator is T-444: one validator for every family, against a target given per call.
 func TestValidator(t *testing.T) {
+	t.Parallel()
 	key := secret.New(fixtures.CanaryCredential)
 	echo := `{"error":{"message":"Incorrect API key provided: ` + fixtures.CanaryCredential + `.","type":"invalid_request_error"}}`
 	families := []string{"openai", "anthropic"}

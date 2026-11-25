@@ -28,6 +28,7 @@ func messageOf(t *testing.T, body []byte) string {
 // the family that recognizes its path or its Anthropic-Version header, else openai; status, code
 // and message do not depend on the shape.
 func TestUnroutedErrorShape(t *testing.T) {
+	t.Parallel()
 	version := http.Header{"Anthropic-Version": {anthropicVersion}}
 	merge := func(base, extra http.Header) http.Header {
 		out := base.Clone()

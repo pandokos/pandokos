@@ -100,6 +100,7 @@ func sorted(in []string) []string {
 
 // TestRoles is T-859.
 func TestRoles(t *testing.T) {
+	t.Parallel()
 	w := newRW(t)
 
 	t.Run("the two catalogue operations", func(t *testing.T) {
@@ -339,6 +340,7 @@ func repeat(s string, n int) []string {
 
 // TestRoleDeactivation is T-860.
 func TestRoleDeactivation(t *testing.T) {
+	t.Parallel()
 	w := newRW(t)
 	w.role(t, "viewer-x", "member:read", "role:read")
 	memberID, member := w.member(t, "viewer-x")
@@ -422,6 +424,7 @@ func TestRoleDeactivation(t *testing.T) {
 
 // TestRoleDeletionGuard is T-861.
 func TestRoleDeletionGuard(t *testing.T) {
+	t.Parallel()
 	w := newRW(t)
 	t.Run("a role held by a member or by a service account is not deleted", func(t *testing.T) {
 		w.role(t, "held-twice", "member:read")
@@ -500,6 +503,7 @@ func TestRoleDeletionGuard(t *testing.T) {
 
 // TestAssignableRoles is T-866.
 func TestAssignableRoles(t *testing.T) {
+	t.Parallel()
 	w := newRW(t)
 	t.Run("a member cannot hold inference", func(t *testing.T) {
 		invalidOn(t, "createMember", w.owner.Do(t, "POST", w.tp("/members"), map[string]any{"account": "new", "username": "inference.person", "roles": []string{"inference"}}, nil), "roles")
@@ -551,6 +555,7 @@ func TestAssignableRoles(t *testing.T) {
 
 // TestProvisioningOwner is T-881.
 func TestProvisioningOwner(t *testing.T) {
+	t.Parallel()
 	api := apitest.NewPeople(t, apitest.PeopleConfig{})
 	out := decode[adminapi.TenantCreated](t, api.Do(t, "POST", "/v1/tenants", api.PlatformKey(), map[string]any{"name": "first-owner"}, nil), 201)
 	if !reflect.DeepEqual(out.AdminServiceAccount.Roles, []string{"owner"}) {
@@ -598,6 +603,7 @@ func problemCode(r *apitest.Response) string { return r.Problem() }
 
 // TestRolesIdempotency is T-894.
 func TestRolesIdempotency(t *testing.T) {
+	t.Parallel()
 	w := newRW(t)
 	plat := &apitest.Caller{API: w.api, Key: w.api.PlatformKey(), Name: "platform"}
 	t.Run("createRole", func(t *testing.T) {
@@ -663,6 +669,7 @@ func TestRolesIdempotency(t *testing.T) {
 // TestRoleChangeBound is T-896: a change of what a role gives holds at the next request, for a
 // member and for a service account's key on the administration listener.
 func TestRoleChangeBound(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		change func(t *testing.T, w *rw, memberID, saID string)

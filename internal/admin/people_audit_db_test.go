@@ -24,6 +24,7 @@ type auditStep struct {
 
 // TestPeopleAudit is T-803: each action of section 5.14 writes its rows in the right log.
 func TestPeopleAudit(t *testing.T) {
+	t.Parallel()
 	p := newPeople(t, apitest.PeopleConfig{})
 	d := p.d
 	var secrets []string // what no row may hold
@@ -220,6 +221,7 @@ next:
 // TestPeopleAuditIsAtomic is the part of T-803 that says that the row is in the transaction of the
 // change: when the audit log refuses the row, the user is not created.
 func TestPeopleAuditIsAtomic(t *testing.T) {
+	t.Parallel()
 	p := newPeople(t, apitest.PeopleConfig{})
 	super := p.api.Super(t)
 	for _, q := range []string{
@@ -250,6 +252,7 @@ func TestPeopleAuditIsAtomic(t *testing.T) {
 
 // TestSignInAudit is T-804.
 func TestSignInAudit(t *testing.T) {
+	t.Parallel()
 	p := newPeople(t, apitest.PeopleConfig{})
 	d := p.d
 	user := d.PlatformUser(t, "audited.person", nil)

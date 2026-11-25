@@ -15,6 +15,7 @@ import (
 // TestPriceAtDB is T-395 (exit condition 2): a cost computed for a past instant uses the version
 // valid then, on the database and in the gateway cache's snapshot.
 func TestPriceAtDB(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t, "synthetic-timed")
 	var modelID string
 	if err := e.scan(`SELECT id::text FROM pandokos.model WHERE name = 'synthetic-timed'`)(&modelID); err != nil {

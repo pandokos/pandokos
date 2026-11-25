@@ -12,6 +12,7 @@ import (
 // TestTenantExternalReference is T-1044: create, update, read, the validation, the audit detail and
 // the copy that TenantDeletion shows.
 func TestTenantExternalReference(t *testing.T) {
+	t.Parallel()
 	api := apitest.New(t)
 	plat := api.PlatformCaller()
 

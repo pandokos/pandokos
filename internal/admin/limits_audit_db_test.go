@@ -13,6 +13,7 @@ import (
 // transaction of the change, with the actor, the resource and the detail of section 5.12; a change
 // that is refused writes none, and one whose audit row cannot be written changes nothing.
 func TestLimitAudit(t *testing.T) {
+	t.Parallel()
 	w := newLW(t)
 	api := w.api
 	platID := api.PlatformKey()[4:21]
@@ -225,6 +226,7 @@ func TestLimitAudit(t *testing.T) {
 // the role inference, to a key scoped without it, to a platform key on a tenant route and to a tenant
 // key on a platform route.
 func TestLimitPermissions(t *testing.T) {
+	t.Parallel()
 	w := newLW(t)
 	rule := w.create(t, map[string]any{"metric": "requests_per_day", "limit": 5})
 	pl := decodeInto[adminapi.PlatformLimitRule](t, w.do(t, w.plat, "POST", "/v1/platform-limits", map[string]any{"tenant": w.a.ID, "metric": "requests_per_day", "limit": 5}), 201)

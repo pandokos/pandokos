@@ -133,6 +133,7 @@ func (f *reconcilerFixture) limit(tn tenant.ID, m limits.Metric, kind limits.Per
 
 // TestReconciler is T-659.
 func TestReconciler(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()

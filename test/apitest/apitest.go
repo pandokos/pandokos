@@ -93,6 +93,16 @@ func NewWithServer(tb testing.TB, d *dbtest.Database, configure func(*http.Serve
 	a := &API{DB: d, Logs: &testutil.LogBuffer{}, root: tb}
 	a.Admin = d.Open(tb, store.RoleAdmin)
 	logger := telemetry.NewLogger(a.Logs, "debug")
+	tb.Cleanup(func() { // what the handler logged as wrong, for a test that failed
+		if !tb.Failed() {
+			return
+		}
+		for _, line := range strings.Split(a.Logs.String(), "\n") {
+			if strings.Contains(line, `"level":"ERROR"`) || strings.Contains(line, `"level":"WARN"`) {
+				tb.Logf("handler log: %s", line)
+			}
+		}
+	})
 	auth, err := authn.New(authn.Options{
 		DB: a.Admin, Logger: logger, Kinds: []authn.Kind{authn.KindTenant, authn.KindPlatform},
 	})

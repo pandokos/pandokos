@@ -117,6 +117,7 @@ func failure(t *testing.T, err error) *authn.Failure {
 
 // TestAuthenticate is T-260.
 func TestAuthenticate(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		f := newFixture(t, d, "acme")
 		gw, admin := d.Open(t, store.RoleGateway), d.Open(t, store.RoleAdmin)
@@ -305,6 +306,7 @@ func TestAuthenticate(t *testing.T) {
 
 // TestTenantComesFromTheKey is T-261.
 func TestTenantComesFromTheKey(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a, b := newFixture(t, d, "tenant-a"), newFixture(t, d, "tenant-b")
 	keyA, idA := a.key(t, nil, nil, "")
@@ -372,6 +374,7 @@ func newKey(t *testing.T, api *apitest.API, name string, roles ...string) create
 // TestRevocationBoundWithoutNotifications is T-262: with a lifetime of 2 s and no listener, a
 // change reaches the cache within the lifetime and no later.
 func TestRevocationBoundWithoutNotifications(t *testing.T) {
+	t.Parallel()
 	api := apitest.New(t)
 	auth, _ := newAuth(t, api.DB.Open(t, store.RoleGateway), 2*time.Second, authn.KindTenant)
 
@@ -434,6 +437,7 @@ func TestRevocationBoundWithoutNotifications(t *testing.T) {
 // TestRevocationByNotification is T-263: with a lifetime of 60 s and a listener on the direct
 // connection, a change reaches the cache within 2 s.
 func TestRevocationByNotification(t *testing.T) {
+	t.Parallel()
 	api := apitest.New(t)
 	logs := &testutil.LogBuffer{}
 	auth, err := authn.New(authn.Options{DB: api.DB.Open(t, store.RoleGateway), Logger: telemetry.NewLogger(logs, "debug"), Kinds: []authn.Kind{authn.KindTenant}, CacheTTL: time.Minute})
@@ -493,6 +497,7 @@ func TestRevocationByNotification(t *testing.T) {
 // reaches the principal; a key without a pin has none; the pin is part of what the principal
 // cache holds and goes away with the credential.
 func TestPrincipalCarriesThePin(t *testing.T) {
+	t.Parallel()
 	api := apitest.New(t)
 	auth, _ := newAuth(t, api.DB.Open(t, store.RoleGateway), 0, authn.KindTenant)
 	c := newKey(t, api, "pinned", authz.RoleInference)
@@ -527,6 +532,7 @@ func TestPrincipalCarriesThePin(t *testing.T) {
 // key, set when the key is created, reaches the principal; no list is nil, an empty list cannot be
 // made, and the order is the one given. A platform principal has none.
 func TestPrincipalCarriesTheModels(t *testing.T) {
+	t.Parallel()
 	api := apitest.New(t)
 	auth, _ := newAuth(t, api.DB.Open(t, store.RoleAdmin), 0, authn.KindTenant, authn.KindPlatform)
 	c := newKey(t, api, "listed", authz.RoleInference)

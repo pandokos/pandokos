@@ -150,6 +150,7 @@ func carry(n, p *proc) {
 // TestTransitFreshInstall is T-1082, an exit test of the sprint (no key on the hosts): the binary
 // with provider transit, AppRole and no key of its own, from the first start to a credential used.
 func TestTransitFreshInstall(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	d := freshDB(t)
 	w := newTransitWorld(t, vaulttest.TransitSetup{Method: "approle"})
@@ -227,6 +228,7 @@ func TestTransitFreshInstall(t *testing.T) {
 // key file to the service and back, with calls succeeding throughout and every sealed row
 // untouched.
 func TestMoveBetweenProviders(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	d := dbtest.NewMigrated(t)
 	keys := vaulttest.Keys(t, 2)
@@ -356,6 +358,7 @@ func TestMoveBetweenProviders(t *testing.T) {
 // TestTransitOutage is T-1084, an exit test of the sprint (serves nothing, recovers alone): the
 // service away while running, a restart during the outage and its recovery.
 func TestTransitOutage(t *testing.T) {
+	// Serial on purpose: a tenant is served from a cache of 1 s after the service stops, and a refusal must come within 3 s, a wall-clock window that a loaded machine misses.
 	up := fakeprovider.New(t)
 	d := freshDB(t)
 	w := newTransitWorld(t, vaulttest.TransitSetup{})
@@ -394,6 +397,8 @@ func TestTransitOutage(t *testing.T) {
 	if d := time.Since(start); d > 3*time.Second {
 		t.Errorf("the refusal took %v with a request timeout of 500 ms", d)
 	}
+	// Each line is written after the answer: wait for it, then look.
+	waitLine(t, p, "credential cannot be opened", 10*time.Second)
 	if lines := linesOf(p, "credential cannot be opened"); len(lines) == 0 || lines[len(lines)-1]["cause"] != "kek_provider_unavailable" {
 		t.Errorf("credential cannot be opened: %v, want cause kek_provider_unavailable", lines)
 	}
@@ -405,6 +410,7 @@ func TestTransitOutage(t *testing.T) {
 	if got := d.Count(t, `SELECT count(*)::int FROM pandokos.provider_credential`); got != creds {
 		t.Errorf("the credential count went from %d to %d: a write during the outage stored something", creds, got)
 	}
+	waitLine(t, p, "credential cannot be sealed", 10*time.Second)
 	if l := linesOf(p, "credential cannot be sealed"); len(l) == 0 {
 		t.Errorf("no line credential cannot be sealed")
 	}
@@ -491,6 +497,7 @@ func TestTransitOutage(t *testing.T) {
 
 // TestTransitStartRefusals is T-1085: the causes that only a person can repair end the start at once.
 func TestTransitStartRefusals(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	run := func(t *testing.T, d *dbtest.Database, extra ...string) (code int, out, errs string, took time.Duration) {
 		t.Helper()
@@ -612,6 +619,7 @@ func TestTransitStartRefusals(t *testing.T) {
 // 10 s and a constant message, listening on nothing; with vault.kek.transit.allow_exportable_key it
 // serves and logs the warning; kek check prints the class and ends with 1, then 0 with the option.
 func TestTransitExportableRefused(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	const keyName = "synthetic-exportable-key-name"
 	setup := vaulttest.TransitSetup{Key: keyName, KeyOptions: transittest.KeyOptions{Exportable: true}}
@@ -745,6 +753,7 @@ func tokensSeen(s *transittest.Server) []string {
 // expired token and a refused login; then every output is searched for the secrets of the service
 // and the requests the service received for anything of the tenants.
 func TestTransitCanary(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	d := dbtest.NewMigrated(t)
 	keys := vaulttest.Keys(t, 1)
@@ -864,6 +873,7 @@ func digestAll(t *testing.T, d *dbtest.Database, sql string) string { return dig
 // TestTransitRotation is T-1087: a rotation in the service is the operator's act and takes effect
 // at a restart.
 func TestTransitRotation(t *testing.T) {
+	// Serial on purpose: it asserts the effect of a change within a short window, which a loaded machine misses.
 	up := fakeprovider.New(t)
 	d := freshDB(t)
 	w := newTransitWorld(t, vaulttest.TransitSetup{})
@@ -892,7 +902,10 @@ func TestTransitRotation(t *testing.T) {
 	if ready := linesOf(p2, "key provider ready"); len(ready) != 1 || ready[0]["oldest_version"] != float64(1) || ready[0]["newest_version"] != float64(2) {
 		t.Errorf("key provider ready: %v", ready)
 	}
-	// The instance that was not restarted still opens credentials.
+	// The instance that was not restarted still opens credentials, those whose data keys the worker
+	// of the restarted instance re-wrapped under the new version included (§5.4): wait for the
+	// re-wrap, so that the call does not depend on which of the two is faster.
+	testutil.Eventually(t, 90*time.Second, "the data keys to be re-wrapped", func() bool { return kekRows(t, d)[v2+"/0x2"] == 2 })
 	if !callsWork(t, p1, a, b) {
 		t.Errorf("an instance that was not restarted stopped serving")
 	}
@@ -902,6 +915,8 @@ func TestTransitRotation(t *testing.T) {
 	if code == 0 || !strings.Contains(out+errs, "unavailable") {
 		t.Errorf("a new tenant through the instance that was not restarted: exit %d, stdout %q, stderr %q", code, out, errs)
 	}
+	// The process writes the line after it has answered the command: wait for it, then look.
+	waitLine(t, p1, "credential cannot be sealed", 10*time.Second)
 	if l := linesOf(p1, "credential cannot be sealed"); len(l) == 0 || l[len(l)-1]["cause"] != "kek_replaced" {
 		t.Errorf("credential cannot be sealed: %v, want cause kek_replaced", l)
 	}
@@ -910,6 +925,8 @@ func TestTransitRotation(t *testing.T) {
 	}
 	// The worker of the restarted instance re-wraps and retires the old version.
 	testutil.Eventually(t, 90*time.Second, "the old version to be retired", func() bool { return kekStates(t, p2, boot)[v1] == "retired" })
+	// The worker writes the line after the retirement is committed: wait for it, then count.
+	waitLine(t, p2, "key rotation complete", 10*time.Second)
 	if l := linesOf(p2, "key rotation complete"); len(l) != 1 || l[0]["kek_version"] != v1 {
 		t.Errorf("key rotation complete: %v", l)
 	}
@@ -937,6 +954,7 @@ func TestTransitRotation(t *testing.T) {
 
 // TestTransitTokenLifetime is T-1088: tokens that live a few seconds never fail a call.
 func TestTransitTokenLifetime(t *testing.T) {
+	t.Parallel()
 	for name, setup := range map[string]vaulttest.TransitSetup{
 		"AppRole tokens of 3 s":  {Method: "approle", TTL: 3 * time.Second},
 		"a renewable token file": {Method: "token", TTL: 3 * time.Second, Renewable: true},
@@ -976,6 +994,7 @@ func TestTransitTokenLifetime(t *testing.T) {
 
 // TestTransitTelemetry is T-1089: M59 to M62 and the seven lines of the key service.
 func TestTransitTelemetry(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	short := withEnv("PANDOKOS_CACHE_CREDENTIAL_TTL=1s", "PANDOKOS_CACHE_DATA_KEY_TTL=1s")
 

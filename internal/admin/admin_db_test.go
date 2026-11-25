@@ -182,6 +182,7 @@ func (w *world) call(t testing.TB, op adminapi.Operation, key string) *apitest.R
 
 // TestEveryOperationNeedsACredential is T-232.
 func TestEveryOperationNeedsACredential(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t, "credentials")
 	d := w.api.DB
 	super := d.Super(t)
@@ -324,6 +325,7 @@ func nonAudit(snapshot string) []string {
 
 // TestPagination is T-233.
 func TestPagination(t *testing.T) {
+	t.Parallel()
 	api := apitest.New(t)
 	for i := 0; i < 25; i++ {
 		api.Tenant(t, fmt.Sprintf("page-%02d", i))
@@ -433,6 +435,7 @@ func TestPagination(t *testing.T) {
 
 // TestFilters is T-234.
 func TestFilters(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t, "filters")
 	plat := w.api.Client(w.platform)
 	adm := w.api.Client(w.adminKey)
@@ -548,6 +551,7 @@ func TestFilters(t *testing.T) {
 
 // TestProblems is T-235.
 func TestProblems(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t, "problems")
 	d := w.api.DB
 	type row struct {

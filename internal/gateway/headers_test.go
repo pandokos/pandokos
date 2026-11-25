@@ -15,6 +15,7 @@ import (
 // TestRequestHeaders is T-431: the outbound header is built from an empty one (section 5.3). The
 // lists range over the adapter's own, and a header the test does not know about fails it.
 func TestRequestHeaders(t *testing.T) {
+	t.Parallel()
 	adapter := openai.Adapter()
 	allowed := map[string][]string{}
 	for _, n := range adapter.RequestHeaders() {

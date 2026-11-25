@@ -12,6 +12,7 @@ import (
 // rules as for a tenant-bound registration plus the tenant claim, the list with default and explicit
 // claim values, the conflicts, delete with its cascades, and the tenant's view of what lists it.
 func TestPlatformIssuers(t *testing.T) {
+	t.Parallel()
 	w := newIW(t)
 	const base = "/v1/platform-issuers"
 	create := func(extra map[string]any) adminapi.PlatformIssuer {

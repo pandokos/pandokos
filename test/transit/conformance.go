@@ -329,7 +329,7 @@ func RunConformance(t *testing.T, target Target) {
 	})
 
 	t.Run("the version stays pinned after a rotation", func(t *testing.T) {
-		p, mount, key, _ := newProvider(t)
+		p, mount, key, token := newProvider(t)
 		before := p.Info().Version
 		admin(t, target, http.MethodPost, mount+"/keys/"+key+"/rotate", nil)
 		version, wrapped, err := p.Wrap(ctx(t), dataKey(3), aad)
@@ -338,6 +338,19 @@ func RunConformance(t *testing.T, target Target) {
 		}
 		if _, err := p.Unwrap(ctx(t), version, wrapped, aad); err != nil {
 			t.Errorf("Unwrap: %v", err)
+		}
+		// An instance started after the rotation wraps under the new version; this one, not
+		// restarted, opens what it wrapped (§5.4) and still wraps under its own.
+		next := Started(t, target, &Options{Mount: mount, Key: key, Token: token})
+		newer, rewrapped, err := next.Wrap(ctx(t), dataKey(3), aad)
+		if err != nil || newer == before {
+			t.Fatalf("Wrap by an instance started after the rotation: %q, %v", newer, err)
+		}
+		if back, err := p.Unwrap(ctx(t), newer, rewrapped, aad); err != nil || !bytes.Equal(back, dataKey(3)) {
+			t.Errorf("Unwrap of the newer version by the instance not restarted: %v", err)
+		}
+		if version, _, err := p.Wrap(ctx(t), dataKey(3), aad); err != nil || version != before {
+			t.Errorf("Wrap after the newer version was read: %q, %v; want %q", version, err, before)
 		}
 	})
 

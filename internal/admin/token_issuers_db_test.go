@@ -23,6 +23,7 @@ var defaultAlgorithms = []string{"RS256", "ES256"}
 // TestTokenIssuers is T-589 (the tenant-bound registrations): creation with defaults, each rule of
 // section 5.3 with its field, pagination and sorting, the filters, the conflicts, update and delete.
 func TestTokenIssuers(t *testing.T) {
+	t.Parallel()
 	w := newIW(t)
 	base := "/v1/tenants/" + w.a.ID + "/token-issuers"
 

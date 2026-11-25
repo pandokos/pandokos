@@ -58,6 +58,7 @@ func credentialFor(t testing.TB, c *cat, provider, label string) adminapi.Creden
 
 // TestCapability is T-543: each row of the table of section 5.6.
 func TestCapability(t *testing.T) {
+	t.Parallel()
 	fake := fakeprovider.New(t)
 	fake.Accept(fixtures.CanaryCredential)
 	c := newCat(t, withValidator(t, time.Second))
@@ -330,6 +331,7 @@ func TestCapability(t *testing.T) {
 
 // TestCapabilityIsolation is T-544: the tenant boundary and the permission of the operation.
 func TestCapabilityIsolation(t *testing.T) {
+	t.Parallel()
 	c := newCat(t)
 	p := c.createProvider(t, nil)
 	c.createEndpoint(t, p.Name, nil)
@@ -375,6 +377,7 @@ func TestCapabilityIsolation(t *testing.T) {
 
 // TestCapabilityBudget is T-681: the four values of checks.budget (sprint 5.2, section 5.13).
 func TestCapabilityBudget(t *testing.T) {
+	t.Parallel()
 	c := newCat(t)
 	tn, err := tenant.ParseID(c.a.ID)
 	if err != nil {
@@ -568,6 +571,7 @@ func TestCapabilityBudget(t *testing.T) {
 // periods of the tenant's zone and matches the rules by identifier: a daily quota exhausted in the
 // tenant's day, a rule of a model, and a change that is pending.
 func TestCapabilityTenantZone(t *testing.T) {
+	t.Parallel()
 	// The clock of the check: 22:00 UTC on November 17th, which is 12:00 of the 18th on Kiritimati and 11:00 of the 17th in Pago Pago.
 	now := time.Date(2026, 11, 17, 22, 0, 0, 0, time.UTC)
 	c := newCat(t, func(o *admin.Options) { o.Now = func() time.Time { return now } })
@@ -649,6 +653,7 @@ func TestCapabilityTenantZone(t *testing.T) {
 // model priced in neither list; exhausted from the ledger in the active currency only; another tenant
 // unaffected.
 func TestCapabilityActiveCurrency(t *testing.T) {
+	t.Parallel()
 	c := newCat(t)
 	tn, err := tenant.ParseID(c.a.ID)
 	if err != nil {

@@ -13,6 +13,7 @@ import (
 
 // TestMembersAPI is T-826: the member operations across tenants and across the managing rule.
 func TestMembersAPI(t *testing.T) {
+	t.Parallel()
 	api := apitest.NewPeople(t, apitest.PeopleConfig{})
 	d := api.DB
 	ta, keyA := api.Tenant(t, "tenant-a")

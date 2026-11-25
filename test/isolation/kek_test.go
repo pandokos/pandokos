@@ -13,6 +13,7 @@ import (
 // TestKEKVersionLifecycle is T-985: the states of the versions of the key-encryption key, their
 // activation and retirement, and who may do what to them.
 func TestKEKVersionLifecycle(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	// An installation that never started: no version at all (dbtest activated its own at migration).
 	if _, err := d.Super(t).Exec(ctx(t), `DELETE FROM pandokos.kek_version`); err != nil {

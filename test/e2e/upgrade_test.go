@@ -13,6 +13,7 @@ import (
 // TestUpgradeWithRules is T-725: `pandokos migrate` on a database at 0010 that enforces a quota.
 // After the upgrade, and after a restart, the quota still refuses, with the count of the ledger.
 func TestUpgradeWithRules(t *testing.T) {
+	t.Parallel()
 	d := dbtest.New(t)
 	d.MigrateTo(t, 10)
 

@@ -33,6 +33,7 @@ func logsOf(t *testing.T, logs *testutil.LogBuffer, msg string) []map[string]any
 // TestDeleterLoop is T-993: what the job reads and calls, where its loop stops, that one tenant's
 // failure does not stop another's, and what it counts and says.
 func TestDeleterLoop(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	proxy := newRecordingProxy(t, fmt.Sprintf("%s:%d", d.Host, d.Port))
 	db := workerVia(t, d, proxy.addr)
@@ -182,6 +183,7 @@ func withoutGlobal(m map[string]string) map[string]string {
 
 // TestDeleterBudget is the other half of T-993: the loop for one tenant stops at the budget of 30 s.
 func TestDeleterBudget(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	proxy := newRecordingProxy(t, fmt.Sprintf("%s:%d", d.Host, d.Port))
 	db := workerVia(t, d, proxy.addr)
@@ -211,6 +213,7 @@ func TestDeleterBudget(t *testing.T) {
 // TestDeleterCrashResume is T-994: a job that stops after each step, in the middle of the ledger
 // batches, and starts again, ends where an uninterrupted job on an identical tenant ends.
 func TestDeleterCrashResume(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	worker := d.Open(t, store.RoleWorker)
 	logs := &testutil.LogBuffer{}
@@ -302,6 +305,7 @@ func TestDeleterCrashResume(t *testing.T) {
 // and as an unavailable database, leaves the deletion where it was; the next tick tries the step
 // again, the log says it failed and then that it recovered.
 func TestDeleterDatabaseOutage(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	worker := d.Open(t, store.RoleWorker)
 	logs := &testutil.LogBuffer{}

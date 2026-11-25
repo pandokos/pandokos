@@ -11,6 +11,7 @@ import (
 // runs of the Reconciler with the duration and the cut of the last pass, and the loads of the
 // RuleCache are counted where they happen and read through Stats().
 func TestStats(t *testing.T) {
+	t.Parallel()
 	bg := context.Background()
 	a := tid(1)
 

@@ -16,6 +16,7 @@ import (
 // tenant leaves out the models it cannot be given; a scope without a priced model has its own message;
 // count metrics are not checked.
 func TestBudgetCurrency(t *testing.T) {
+	t.Parallel()
 	w := newLWWith(t, false)
 	newModel := func(t *testing.T, provider, availability string) adminapi.Model {
 		t.Helper()
@@ -199,6 +200,7 @@ func TestBudgetCurrency(t *testing.T) {
 // tenant's check is unchanged; a ceiling for a tenant is accepted in its active and its pending currency
 // and refused in a currency in which the tenant only has an unused list; a default ceiling is as in 5.3.
 func TestBudgetCurrencyLists(t *testing.T) {
+	t.Parallel()
 	w := newPW(t)
 	prov := w.cat.Provider.Name
 	model := w.cat.All

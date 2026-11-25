@@ -32,6 +32,7 @@ func request(remote string, headers ...string) *http.Request {
 
 // TestSourceAddress is T-785.
 func TestSourceAddress(t *testing.T) {
+	t.Parallel()
 	trusted := OriginOptions{TrustedProxies: prefixes(t, "10.0.0.0/8", "2001:db8:ffff::/48")}
 	none := OriginOptions{}
 	cases := []struct {
@@ -73,6 +74,7 @@ func TestSourceAddress(t *testing.T) {
 
 // TestExpectedOrigin is T-799: the table of section 5.7.
 func TestExpectedOrigin(t *testing.T) {
+	t.Parallel()
 	req := func(host string, secure bool) *http.Request {
 		r := httptest.NewRequest(http.MethodPost, "/v1/auth/sign-in", nil)
 		r.Host = host

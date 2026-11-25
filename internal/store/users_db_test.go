@@ -30,6 +30,7 @@ func wantOK(t *testing.T, what string, err error) {
 
 // TestUserSchema is T-773: the constraints of migration 0013.
 func TestUserSchema(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	c := d.Super(t)
 	exec := func(q string, args ...any) error {
@@ -225,6 +226,7 @@ func TestUserSchema(t *testing.T) {
 
 // TestManagingRule is T-774: the rule of D-1.
 func TestManagingRule(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	c := d.Super(t)
 	exec := func(q string, args ...any) error {
@@ -266,6 +268,7 @@ func TestManagingRule(t *testing.T) {
 // TestPersonalDataIsMinimal is T-776: the six tables about people hold the columns of the data model
 // and nothing that identifies a place, a device or a token.
 func TestPersonalDataIsMinimal(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	want := map[string]string{
 		"app_user":        "created_at,display_name,email,id,sign_in,state,state_changed_at,tenant_id,updated_at",

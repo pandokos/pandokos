@@ -70,6 +70,7 @@ func principalOf(models []string) authz.Principal {
 
 // TestResolve is T-379: the rule of section 5.3, in its order.
 func TestResolve(t *testing.T) {
+	t.Parallel()
 	s := synthetic()
 	grant := func(ids ...string) TenantAccess {
 		g := map[string]bool{}
@@ -236,6 +237,7 @@ func TestResolve(t *testing.T) {
 // TestSnapshotVersions covers Snapshot.Versions: ordered by ValidFrom, a copy, empty for an
 // unknown model; the order VersionAt relies on.
 func TestSnapshotVersions(t *testing.T) {
+	t.Parallel()
 	t0 := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	mk := func(id string, d time.Duration) pricing.Version {
 		return pricing.Version{ID: id, ModelID: "m-all", ValidFrom: t0.Add(d), Currency: "USD", Source: "import",
@@ -274,6 +276,7 @@ func mustDecimal(t testing.TB, s string) pricing.Decimal {
 // TestSnapshotAccessors is T-446 (the accessors): the provider and the default endpoint that the
 // gateway's resolver and the credential validation of the administration plane read.
 func TestSnapshotAccessors(t *testing.T) {
+	t.Parallel()
 	s := synthetic()
 
 	t.Run("Provider", func(t *testing.T) {

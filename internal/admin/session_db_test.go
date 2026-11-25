@@ -21,6 +21,7 @@ var reGenerated = regexp.MustCompile(`^[a-z2-7]{24}$`)
 
 // TestMustChangeGate is T-788: a session that must change its password may call three operations.
 func TestMustChangeGate(t *testing.T) {
+	t.Parallel()
 	w := &world{api: apitest.NewPeople(t, apitest.PeopleConfig{})}
 	w.fill(t, "gate")
 	tid, _ := tenant.ParseID(w.tenant.ID)
@@ -71,6 +72,7 @@ func TestMustChangeGate(t *testing.T) {
 
 // TestResetPassword is T-789.
 func TestResetPassword(t *testing.T) {
+	t.Parallel()
 	p := newPeople(t, apitest.PeopleConfig{})
 	d := p.d
 	// A person the platform manages, a member the tenant manages, a federated user.
@@ -175,6 +177,7 @@ func TestResetPassword(t *testing.T) {
 
 // TestSignInEndpoint is T-790.
 func TestSignInEndpoint(t *testing.T) {
+	t.Parallel()
 	p := newPeople(t, apitest.PeopleConfig{})
 	d := p.d
 	good := d.PlatformUser(t, "good.person", []string{"platform-admin"}, dbtest.Display("Good Person", "good@example.test"))
@@ -331,6 +334,7 @@ func TestSignInEndpoint(t *testing.T) {
 
 // TestSessionPrincipal is T-791: the table of section 5.3.
 func TestSessionPrincipal(t *testing.T) {
+	t.Parallel()
 	p := newPeople(t, apitest.PeopleConfig{})
 	d := p.d
 	suspended, _ := p.api.Tenant(t, "frozen")
@@ -420,6 +424,7 @@ func TestSessionPrincipal(t *testing.T) {
 
 // TestCredentialPrecedence is T-792.
 func TestCredentialPrecedence(t *testing.T) {
+	t.Parallel()
 	p := newPeople(t, apitest.PeopleConfig{})
 	user := p.d.PlatformUser(t, "cookie.person", nil)
 	b := p.sessionOf(t, user.ID)
@@ -468,6 +473,7 @@ func TestCredentialPrecedence(t *testing.T) {
 
 // TestSessionLifetimes is T-793. Rows are aged rather than the clock moved: SQL stamps them with now().
 func TestSessionLifetimes(t *testing.T) {
+	t.Parallel()
 	p := newPeople(t, apitest.PeopleConfig{})
 	d := p.d
 	u := d.PlatformUser(t, "life.person", nil)
@@ -540,6 +546,7 @@ func TestSessionLifetimes(t *testing.T) {
 
 // TestSignOutAndOwnSessions is T-794.
 func TestSignOutAndOwnSessions(t *testing.T) {
+	t.Parallel()
 	p := newPeople(t, apitest.PeopleConfig{})
 	d := p.d
 	u := d.PlatformUser(t, "own.person", nil)
@@ -602,6 +609,7 @@ func TestSignOutAndOwnSessions(t *testing.T) {
 
 // TestDisableEndsSessions is T-795.
 func TestDisableEndsSessions(t *testing.T) {
+	t.Parallel()
 	p := newPeople(t, apitest.PeopleConfig{})
 	d := p.d
 	twice := func(who dbtest.Person) (*apitest.Browser, *apitest.Browser) {
@@ -660,6 +668,7 @@ func TestDisableEndsSessions(t *testing.T) {
 
 // TestRevokeSessions is T-796.
 func TestRevokeSessions(t *testing.T) {
+	t.Parallel()
 	p := newPeople(t, apitest.PeopleConfig{})
 	d := p.d
 	u := d.PlatformUser(t, "revoke.user", nil)

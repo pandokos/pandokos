@@ -12,6 +12,7 @@ import (
 // TestModelVisibility is T-401, exit condition 1 through the API: a model is visible to one
 // tenant and not to another.
 func TestModelVisibility(t *testing.T) {
+	t.Parallel()
 	c := newCat(t)
 	p := c.createProvider(t, nil)
 	c.createEndpoint(t, p.Name, nil)
@@ -198,6 +199,7 @@ func TestModelVisibility(t *testing.T) {
 // key, for that key; a reference to a model the tenant may not use is the same 400 whether the
 // model is unknown or granted only to another tenant.
 func TestModelRestrictions(t *testing.T) {
+	t.Parallel()
 	c := newCat(t)
 	p := c.createProvider(t, nil)
 	c.createEndpoint(t, p.Name, nil)
@@ -407,6 +409,7 @@ func manyRefs(n int, ref string) []string {
 // catalogue in the active currency, the tenant's list, a catalogue price in another currency (empty
 // source), neither, an end, and a list in an inactive currency (not shown).
 func TestTenantModelsPrice(t *testing.T) {
+	t.Parallel()
 	w := newPW(t)
 	prov := w.cat.Provider.Name
 	mk := func() adminapi.Model {

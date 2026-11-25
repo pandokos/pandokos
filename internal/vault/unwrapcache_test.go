@@ -12,6 +12,7 @@ import (
 
 // TestUnwrapCache is T-1070.
 func TestUnwrapCache(t *testing.T) {
+	t.Parallel()
 	aad := []byte("aad")
 	version := "transit-0123456789abcdef-v1"
 	newCache := func(t *testing.T) (*vault.UnwrapCache, *fakeProvider, *tClock) {

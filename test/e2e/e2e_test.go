@@ -377,10 +377,12 @@ func startBinary(t *testing.T, o opts) *proc {
 func startBinaryNoWait(t *testing.T, o opts) *proc {
 	t.Helper()
 	p := &proc{stdout: &testutil.LogBuffer{}, stderr: &testutil.LogBuffer{}, exited: make(chan struct{}), scheme: "http", client: http.DefaultClient}
-	if o.db == nil {
+	switch {
+	case o.db == nil && o.noMigrate:
 		o.db = dbtest.New(t)
-	}
-	if !o.noMigrate {
+	case o.db == nil:
+		o.db = dbtest.NewMigrated(t) // a copy of the migrated template, already migrated
+	case !o.noMigrate:
 		o.db.Migrate(t)
 	}
 	p.db = o.db
@@ -724,6 +726,7 @@ func authHeader(key string) http.Header {
 }
 
 func TestServeStreamAndSigterm(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	p := startBinary(t, opts{level: "info", up: up})
 	key := p.inferenceKey(t)
@@ -755,6 +758,7 @@ func TestServeStreamAndSigterm(t *testing.T) {
 }
 
 func TestCanaries(t *testing.T) {
+	t.Parallel()
 	for _, level := range []string{"info", "debug"} {
 		t.Run(level, func(t *testing.T) {
 			up := fakeprovider.New(t)
@@ -823,6 +827,7 @@ func TestCanaries(t *testing.T) {
 }
 
 func TestMigrateCommand(t *testing.T) { // T-160
+	t.Parallel()
 	d := dbtest.New(t)
 	// The default listener address warns that it serves plain HTTP; this test wants an empty stderr.
 	env := append(d.Env(t), "PANDOKOS_LISTENERS_INFERENCE_ADDRESS=127.0.0.1:0")
@@ -851,6 +856,7 @@ func TestMigrateCommand(t *testing.T) { // T-160
 }
 
 func TestServeRefusesUnmigratedDatabase(t *testing.T) { // T-161
+	t.Parallel()
 	d := dbtest.New(t)
 	start := time.Now()
 	code, out, errs := runBinary(t, serveEnv(t, d), "serve", "--config", writeConfig(t, "info"))
@@ -880,6 +886,7 @@ func TestServeRefusesUnmigratedDatabase(t *testing.T) { // T-161
 }
 
 func TestServeReadinessFollowsDatabase(t *testing.T) { // T-162
+	t.Parallel()
 	d := dbtest.New(t)
 	up := fakeprovider.New(t)
 	p := startBinary(t, opts{level: "info", up: up, db: d})
@@ -919,6 +926,7 @@ func TestServeReadinessFollowsDatabase(t *testing.T) { // T-162
 }
 
 func TestServeBehindPooler(t *testing.T) { // T-163
+	t.Parallel()
 	d := dbtest.New(t)
 	pooled := d.Pooled(t)
 	code, out, errs := runBinary(t, pooled.Env(t), "migrate")
@@ -933,6 +941,7 @@ func TestServeBehindPooler(t *testing.T) { // T-163
 }
 
 func TestServeRefusesPrivilegedUser(t *testing.T) { // T-164
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	su := d.CreateLogin(t, "su", "SUPERUSER")
 	env := serveEnv(t, d,
@@ -951,6 +960,7 @@ func TestServeRefusesPrivilegedUser(t *testing.T) { // T-164
 }
 
 func TestDatabaseCanaries(t *testing.T) { // T-165
+	t.Parallel()
 	d := dbtest.New(t)
 	wrong := fmt.Sprintf("wrong-%d", time.Now().UnixNano()) // a string that is not a real password
 	secrets := append(d.Passwords(), wrong)
@@ -1024,6 +1034,7 @@ func tableCount(t *testing.T, d *dbtest.Database, table string) int {
 
 // TestServeWithTLS is T-244.
 func TestServeWithTLS(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	p := startBinary(t, opts{level: "debug", up: up, tls: true})
 	platform := p.bootstrap(t)
@@ -1057,6 +1068,7 @@ func TestServeWithTLS(t *testing.T) {
 
 // TestDatabaseTLS is T-245.
 func TestDatabaseTLS(t *testing.T) {
+	t.Parallel()
 	ca := dbtest.CAFile(t)
 	d := dbtest.New(t)
 	if d.Host != "127.0.0.1" || d.Port != 55432 {
@@ -1095,6 +1107,7 @@ func TestDatabaseTLS(t *testing.T) {
 
 // TestNoDefaultCredentials is T-250.
 func TestNoDefaultCredentials(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	p := startBinary(t, opts{level: "info", up: up})
 	for _, table := range []string{"virtual_key", "platform_key", "virtual_key_directory"} {
@@ -1135,6 +1148,7 @@ func TestNoDefaultCredentials(t *testing.T) {
 
 // TestInit is T-251.
 func TestInit(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	env := baseEnv(t, d.Env(t))
 	code, out, errs := runBinary(t, env, "init")
@@ -1225,6 +1239,7 @@ func TestInit(t *testing.T) {
 
 // TestBootstrapWarnings is T-252.
 func TestBootstrapWarnings(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	up := fakeprovider.New(t)
 	env := baseEnv(t, d.Env(t))
@@ -1298,6 +1313,7 @@ func auditActions(t *testing.T, d *dbtest.Database, query string, args ...any) [
 
 // TestExitScenario is T-290.
 func TestExitScenario(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	p := startBinary(t, opts{level: "info", up: up})
 	boot := p.bootstrap(t)
@@ -1342,6 +1358,7 @@ func TestExitScenario(t *testing.T) {
 
 // TestRevocationAndSuspensionEndToEnd is T-291.
 func TestRevocationAndSuspensionEndToEnd(t *testing.T) {
+	// Serial on purpose: each change must take effect within its bound plus 500 ms, a wall-clock window that a loaded machine misses.
 	cases := []struct {
 		name     string
 		setup    func(t *testing.T) (*dbtest.Database, []string)
@@ -1351,15 +1368,13 @@ func TestRevocationAndSuspensionEndToEnd(t *testing.T) {
 	}{
 		{"direct", func(t *testing.T) (*dbtest.Database, []string) { return dbtest.NewMigrated(t), nil }, "60s", 2 * time.Second, false},
 		{"pooler with direct address", func(t *testing.T) (*dbtest.Database, []string) {
-			d := dbtest.New(t)
+			d := dbtest.NewMigrated(t)
 			pooled := d.Pooled(t)
-			d.Migrate(t)
 			return pooled, []string{"PANDOKOS_DATABASE_DIRECT_ADDRESS=" + net.JoinHostPort(d.Host, fmt.Sprint(d.Port))}
 		}, "60s", 2 * time.Second, false},
 		{"pooler without direct address", func(t *testing.T) (*dbtest.Database, []string) {
-			d := dbtest.New(t)
+			d := dbtest.NewMigrated(t)
 			pooled := d.Pooled(t)
-			d.Migrate(t)
 			return pooled, nil
 		}, "2s", 2500 * time.Millisecond, true},
 	}
@@ -1403,6 +1418,7 @@ func TestRevocationAndSuspensionEndToEnd(t *testing.T) {
 
 // TestKeyCanaries is T-292.
 func TestKeyCanaries(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	p := startBinary(t, opts{level: "debug", up: up})
 	var keys []string

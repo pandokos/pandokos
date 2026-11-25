@@ -259,7 +259,10 @@ section 8.
 while Pandokos runs changes nothing until the instance restarts: the database accepts data keys under the
 active version only, and an instance that wrapped under the newest version by itself would be refused for
 every new tenant. An instance not yet restarted keeps opening credentials and creates no data key (`503`,
-cause `kek_replaced`), as with key files. Several instances: restart them all.
+cause `kek_replaced`), as with key files. It also opens the data keys that the worker of an instance already
+restarted re-wraps under the new version: an identifier above the latest version it described makes it read
+the key's description again (at most once a second), and the service's fingerprint is checked as for any
+version. No step 0 is needed, since the service holds every version. Several instances: restart them all.
 
 **Take care with `auto_rotate_period`.** A key that rotates by itself puts a new version in the service
 that nobody asked for. Nothing breaks, since wrapping is pinned and every version stays decryptable, but the

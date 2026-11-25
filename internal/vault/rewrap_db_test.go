@@ -146,6 +146,7 @@ func (w *rotWorld) closeToDeletion(t *testing.T, tid tenant.ID) {
 // TestRewrap is T-989, the exit criterion in process: a rotation re-wraps every data key of every
 // tenant, active, suspended or being deleted, retires the old version, and no credential changes.
 func TestRewrap(t *testing.T) {
+	t.Parallel()
 	w := newRotWorld(t, 40)
 	for _, tid := range w.tenants[36:39] {
 		if _, err := w.d.Super(t).Exec(ctx(t), `UPDATE pandokos.tenant SET state = 'suspended' WHERE id = $1::uuid`, tid.String()); err != nil {
@@ -237,6 +238,7 @@ func TestRewrap(t *testing.T) {
 // the version stays retiring; the rest go on; a pass that is cut short changes nothing; two jobs
 // never wrap a key twice; and the database out of reach is retried.
 func TestRewrapFailureAndResume(t *testing.T) {
+	t.Parallel()
 	t.Run("a failing tenant", func(t *testing.T) {
 		w := newRotWorld(t, 6)
 		w.d.ActivateKEK(t, w.k[1].Version)
@@ -372,6 +374,7 @@ func TestRewrapFailureAndResume(t *testing.T) {
 // moment; and the data key a gateway has cached for a tenant is dropped by the notification of
 // that tenant.
 func TestOpenDuringRewrap(t *testing.T) {
+	t.Parallel()
 	w := newRotWorld(t, 20)
 	gwProvider := newFaultProvider(vaulttest.Provider(t, w.k[1], w.k[0]), w.k[1].Version)
 	logs := &testutil.LogBuffer{}

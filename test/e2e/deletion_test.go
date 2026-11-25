@@ -20,6 +20,7 @@ import (
 // period, and the worker removes it; its keys stop working, the record verifies, a tampered kept log
 // does not, another tenant is untouched throughout, and the name can be used again.
 func TestDeletionEndToEnd(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	p := startBinary(t, opts{level: "info", up: up, gracePeriod: "0s", deletionInterval: "10s"})
 	boot := p.bootstrap(t)
@@ -123,6 +124,7 @@ func TestDeletionEndToEnd(t *testing.T) {
 // are meant to say it, none of the canaries; and the kept log, exported, holds none of the tenant's
 // original identifiers.
 func TestLifecycleOutputsHoldNoTenantData(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	d := dbtest.NewMigrated(t)
 	keys := vaulttest.Keys(t, 2)

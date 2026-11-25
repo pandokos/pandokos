@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/vault"
 	"github.com/pandokos/pandokos/test/dbtest"
@@ -28,9 +30,11 @@ var fastEvents = eventOpts{interval: "100ms", timeout: "1s", attempts: "3", back
 // was killed held its lease for a minute.
 func expireLeases(t *testing.T, p *proc) {
 	t.Helper()
-	if _, err := p.db.Super(t).Exec(context.Background(), `UPDATE pandokos.event_destination SET lease_until = now() - interval '1 second' WHERE lease_token IS NOT NULL`); err != nil {
-		t.Fatal(err)
-	}
+	p.db.WithSuper(t, func(ctx context.Context, c *pgx.Conn) { // tests poll this: no connection is kept
+		if _, err := c.Exec(ctx, `UPDATE pandokos.event_destination SET lease_until = now() - interval '1 second' WHERE lease_token IS NOT NULL`); err != nil {
+			t.Fatal(err)
+		}
+	})
 }
 
 // TestEventsExactlyOncePerCall is T-1052, an exit test of the sprint: 300 calls through the gateway
@@ -39,6 +43,7 @@ func expireLeases(t *testing.T, p *proc) {
 // at the end the receiver's store has exactly one entry per call, each with the request ID of a call,
 // duplicates were seen and absorbed, and no dead letter remains after a replay.
 func TestEventsExactlyOncePerCall(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	o := opts{level: "info", up: up, events: fastEvents}
 	p := startBinary(t, o)
@@ -58,8 +63,9 @@ func TestEventsExactlyOncePerCall(t *testing.T) {
 	var next, done atomic.Int64
 	var gate sync.RWMutex
 	var wg sync.WaitGroup
-	stopScript := make(chan struct{})
+	stopScript, scriptDone := make(chan struct{}), make(chan struct{})
 	go func() {
+		defer close(scriptDone)
 		modes := []string{"refuse", "500", "stall", "late", "ok"}
 		for i := 0; ; i++ {
 			select {
@@ -119,11 +125,14 @@ func TestEventsExactlyOncePerCall(t *testing.T) {
 	// The calls can end before the script has gone through every fault (they are quick, and a
 	// failing destination waits for its next attempt): the script stops, and the receiver answers
 	// "late" until the relay has sent one request; the event is stored after the relay gave up, so
-	// that the next attempt delivers it twice.
+	// that the next attempt delivers it twice. The wait is for a request the receiver did answer late:
+	// a count of the requests received would also count one that arrived just before the mode changed
+	// and was answered in the mode before.
 	close(stopScript)
-	sent := recv.requests.Load()
+	<-scriptDone // the script sets no mode after the ones below
+	late := recv.late.Load()
 	recv.setMode("late")
-	testutil.Eventually(t, time.Minute, "a request sent while the receiver answers late", func() bool { return recv.requests.Load() > sent })
+	testutil.Eventually(t, time.Minute, "a request answered late and stored", func() bool { return recv.late.Load() > late })
 	recv.setMode("ok")
 	// The ledger writer flushes by interval: the last calls are recorded a moment after they were answered.
 	testutil.Eventually(t, 30*time.Second, "the ledger to hold the records of every call", func() bool {
@@ -190,6 +199,7 @@ func TestEventsExactlyOncePerCall(t *testing.T) {
 // ready, the lag grows and the destination is failing; the outbox holds the 200 events; when the
 // receiver answers, all 200 arrive.
 func TestEventsReceiverDown(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	e := fastEvents
 	e.attempts = "100"
@@ -198,6 +208,11 @@ func TestEventsReceiverDown(t *testing.T) {
 	a := newLifeTenant(t, p, boot, "events-down", "workload")
 	recv := newFaultReceiver(t, "/hook")
 	recv.setMode("stall")
+	// A destination starts at the head of the tenant's stream: the event of the call that prepared
+	// the tenant is delivered only if its record is flushed after the destination was made. The
+	// ledger writer flushes by interval, so that record is awaited before the destination is made,
+	// and every event the receiver must get is one of a record that is not in "before".
+	testutil.Eventually(t, 30*time.Second, "the record of the call that prepared the tenant", func() bool { return len(ledgerOf(t, p, a.id)) >= 1 })
 	destID, secretText := newDestination(t, p, a.adminFile, a.id, "billing", recv.url("/hook"))
 	recv.setSecret(secretText)
 	before := ledgerOf(t, p, a.id)
@@ -245,11 +260,10 @@ func TestEventsReceiverDown(t *testing.T) {
 		d := destinationDelivery(t, p, a.adminFile, a.id, destID)
 		return d.State == "failing" && d.Failures > 0
 	})
-	// One event per record of the ledger: the record of the call that prepared the tenant may be
-	// flushed after the snapshot "before" was taken, so the ledger is read again.
+	// One event per record of the ledger.
 	expected := len(ledgerOf(t, p, a.id))
-	if n := p.db.Count(t, `SELECT count(*)::int FROM pandokos.outbox_event WHERE tenant_id = $1::uuid`, a.id); n != expected || expected < len(before)+200 {
-		t.Errorf("the outbox holds %d events and the ledger %d records, want equal and at least %d", n, expected, len(before)+200)
+	if n := p.db.Count(t, `SELECT count(*)::int FROM pandokos.outbox_event WHERE tenant_id = $1::uuid`, a.id); n != expected || expected != len(before)+200 {
+		t.Errorf("the outbox holds %d events and the ledger %d records, want both %d", n, expected, len(before)+200)
 	}
 	testutil.Eventually(t, 120*time.Second, "the lag of the relay to show in the scrape", func() bool {
 		_, scrape := p.scrapeAs(t, "GET", key)
@@ -269,7 +283,7 @@ func TestEventsReceiverDown(t *testing.T) {
 	recv.setMode("ok")
 	testutil.Eventually(t, 3*time.Minute, "all 200 events to arrive", func() bool {
 		expireLeases(t, p)
-		return recv.store.size() >= expected
+		return recv.store.size() >= expected-len(before)
 	})
 	got, _ := recv.store.snapshot()
 	records := ledgerOf(t, p, a.id)
@@ -289,6 +303,7 @@ func TestEventsReceiverDown(t *testing.T) {
 // TestEventsPull is T-1054: a consumer that pulls by sequence across two restarts of the binary reads
 // each event once, and `pandokos event export` gives the same lines.
 func TestEventsPull(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	o := opts{level: "info", up: up}
 	p := startBinary(t, o)
@@ -373,6 +388,7 @@ func TestEventsPull(t *testing.T) {
 // deletion no destination, event or secret of the tenant remains; `platform-event export` shows
 // requested and deleted with the external reference; the sealed secret cannot be opened any more.
 func TestEventsAndDeletion(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	d := dbtest.NewMigrated(t)
 	e := fastEvents
@@ -470,6 +486,7 @@ func TestEventsAndDeletion(t *testing.T) {
 // destination ID, no URL, no host and no secret; every line is in the log reference (the check runs
 // when the process ends, for every process of every test).
 func TestEventsTelemetryCanary(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	name := fixtures.CanaryLabel("tenant")
 	p := startBinary(t, opts{level: "debug", up: up, events: fastEvents, gracePeriod: "0s", deletionInterval: "10s", metricsPrometheus: true})
@@ -489,9 +506,11 @@ func TestEventsTelemetryCanary(t *testing.T) {
 	testutil.Eventually(t, 90*time.Second, "a dead letter", func() bool {
 		due := destinationDelivery(t, p, a.adminFile, a.id, destID)
 		if due.DeadLetters == 0 {
-			if _, err := p.db.Super(t).Exec(context.Background(), `UPDATE pandokos.event_destination SET next_attempt_at = now() - interval '1 second'`); err != nil {
-				t.Fatal(err)
-			}
+			p.db.WithSuper(t, func(ctx context.Context, c *pgx.Conn) {
+				if _, err := c.Exec(ctx, `UPDATE pandokos.event_destination SET next_attempt_at = now() - interval '1 second'`); err != nil {
+					t.Fatal(err)
+				}
+			})
 		}
 		return due.DeadLetters > 0
 	})

@@ -75,6 +75,7 @@ func newOutboxWorld(t *testing.T) *outboxWorld {
 // the directory and the platform's stream give no privilege; the platform's log is read by the admin
 // role in the platform scope only.
 func TestOutboxTables(t *testing.T) {
+	t.Parallel()
 	w := newOutboxWorld(t)
 	d, a, b := w.d, w.a, w.b
 	sessA := sessions(a)[0]
@@ -365,6 +366,7 @@ func insertRecords(t *testing.T, d *dbtest.Database, id tenant.ID, records strin
 
 // TestUsageRecordOutbox is T-1014: one event per record inserted, in the same transaction.
 func TestUsageRecordOutbox(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a, b := d.SeedTenant(t, "uro-a"), d.SeedTenant(t, "uro-b")
 
@@ -554,6 +556,7 @@ func TestUsageRecordOutbox(t *testing.T) {
 // TestLimitEventOutbox is T-1015: a limit event is also an event, of the type of its kind, with
 // the ID of the row.
 func TestLimitEventOutbox(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a := d.SeedTenant(t, "leo-a")
 	rule := "00000000-0000-4000-8000-0000000000a1"
@@ -641,6 +644,7 @@ func TestLimitEventOutbox(t *testing.T) {
 // for "seq > cursor" misses nothing; a second writer of a tenant waits for the first to end and the
 // writers of two tenants do not wait for each other.
 func TestOutboxSequenceOrder(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 
 	t.Run("eight writers, one reader", func(t *testing.T) {
@@ -846,6 +850,7 @@ func TestOutboxSequenceOrder(t *testing.T) {
 
 // TestEventDestinationGuards is T-1017.
 func TestEventDestinationGuards(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a := d.SeedTenant(t, "edg-a")
 	sessA := sessions(a)[0]
@@ -1116,6 +1121,7 @@ func destinationsOf(pairs [][2]string) []string {
 
 // TestOutboxRelayClaim is T-1018.
 func TestOutboxRelayClaim(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	wk := d.Connect(t, "worker")
 	const token = "0192f0f0-0000-7000-8000-0000000000e1"
@@ -1328,6 +1334,7 @@ func TestOutboxRelayClaim(t *testing.T) {
 
 // TestTenantOutboxRetention is T-1019.
 func TestTenantOutboxRetention(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	wk := d.Connect(t, "worker")
 	retain := func(id tenant.ID, hours, months, batch any) (events, expired, limits int64, err error) {
@@ -1512,6 +1519,7 @@ func TestTenantOutboxRetention(t *testing.T) {
 
 // TestOutboxRelayState is T-1022: the four counts and the age over three tenants.
 func TestOutboxRelayState(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	wk := d.Connect(t, "worker")
 	state := func(s session, role string) (map[string]float64, error) {
@@ -1639,6 +1647,7 @@ func platformEvents(t *testing.T, d *dbtest.Database) []platformEvent {
 // TestPlatformOutbox is T-1020: the five types of the platform's log, each written by its trigger in
 // the transaction of its cause.
 func TestPlatformOutbox(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	before := len(platformEvents(t, d)) // the activation of the key of the test database
 
@@ -1877,6 +1886,7 @@ func TestPlatformOutbox(t *testing.T) {
 
 // TestExternalReference is T-1023.
 func TestExternalReference(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	ad := d.Connect(t, "admin")
 	t.Run("set at insert and update in the platform scope", func(t *testing.T) {
@@ -1966,6 +1976,7 @@ func TestExternalReference(t *testing.T) {
 // L-21 and L-22 among them), and L-23 sees a missing, disabled or mistyped trigger of the facts
 // that are events.
 func TestSchemaLintOutbox(t *testing.T) {
+	t.Parallel()
 	lint := func(d *dbtest.Database) []Finding {
 		t.Helper()
 		findings, err := Lint(ctx(t), d.Super(t), DefaultSpec())

@@ -117,6 +117,7 @@ func tenantScope(id tenant.ID) string { return "tenant:" + id.String() }
 // TestAuditChainSeal is T-933: every writer of each log gives a row that the chain numbers and
 // seals; a runtime role cannot write the chain columns or touch a head.
 func TestAuditChainSeal(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a, b := d.SeedTenant(t, "seal-a"), d.SeedTenant(t, "seal-b")
 	super := d.Super(t)
@@ -257,6 +258,7 @@ func TestAuditChainSeal(t *testing.T) {
 // TestAuditChainConcurrent is T-934: many writers on one chain commit without a gap or a duplicate,
 // with interventions (the tenant's row, then the platform's) and platform rows interleaved.
 func TestAuditChainConcurrent(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a := d.SeedTenant(t, "concurrent")
 	super := d.Super(t)
@@ -324,6 +326,7 @@ func TestAuditChainConcurrent(t *testing.T) {
 
 // TestAuditChainNotInserted is T-935: a row that is not inserted leaves its head where it was.
 func TestAuditChainNotInserted(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a, b := d.SeedTenant(t, "not-a"), d.SeedTenant(t, "not-b")
 	super := d.Super(t)
@@ -442,6 +445,7 @@ func TestAuditChainNotInserted(t *testing.T) {
 
 // TestAuditReadIsolation is T-942: who reads the logs and the heads, in which session.
 func TestAuditReadIsolation(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a, b := d.SeedTenant(t, "read-a"), d.SeedTenant(t, "read-b")
 	for _, tid := range []tenant.ID{a, a, b} {
@@ -520,6 +524,7 @@ func count2(t *testing.T, conn *pgx.Conn, s session, sql string) (int, error) {
 // TestAppendOnlyUnderRetention is T-961: the setting that lets the retention functions delete gives
 // a runtime role nothing, and the owner is refused without it.
 func TestAppendOnlyUnderRetention(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a := d.SeedTenant(t, "append-only")
 	super := d.Super(t)
@@ -596,6 +601,7 @@ func TestAppendOnlyUnderRetention(t *testing.T) {
 // TestAuditRetention is T-962: tenant_retention and platform_retention remove the prefix of a chain
 // before the cut, move the anchor, say so in the log, and leave a chain that verifies.
 func TestAuditRetention(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a, b := d.SeedTenant(t, "retain-a"), d.SeedTenant(t, "retain-b")
 	super := d.Super(t)

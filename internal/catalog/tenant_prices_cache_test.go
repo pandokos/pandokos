@@ -70,6 +70,7 @@ func tenantVersion(id, currency string, from time.Time) pricing.Version {
 // catalog:<tenant> drops that entry and no other; the lifetime; a failed load is not cached; ResolveIn
 // returns the access it resolved with.
 func TestTenantPricesCache(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a, b := tid(1), tid(2)
 	start := time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC)

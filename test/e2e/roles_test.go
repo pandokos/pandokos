@@ -34,6 +34,7 @@ func (p *proc) signedIn(t *testing.T, username, password string) *apitest.Browse
 
 // TestRolesExit is T-890, the exit of the sprint for roles: the binary and PostgreSQL only.
 func TestRolesExit(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	env := baseEnv(t, d.Env(t))
 	password := initAdmin(t, env, "roles.admin")
@@ -132,6 +133,7 @@ func sortedStrings(in []string) []string {
 // a key for the tenant under the action and closes; the owner sees the action; with support.enabled
 // false the opening is refused and an open action stops working; all of it also through PgBouncer.
 func TestSupportExit(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		env := baseEnv(t, d.Env(t))
 		password := initAdmin(t, env, "support.admin")
@@ -221,6 +223,7 @@ func TestSupportExit(t *testing.T) {
 // before, the first service account is an owner, and a key scoped to limit:write no longer sets the
 // time zone.
 func TestUpgradeWithRoles(t *testing.T) {
+	t.Parallel()
 	d := dbtest.New(t)
 	d.MigrateTo(t, 13)
 	tn := d.SeedTenant(t, "upgrade-roles")

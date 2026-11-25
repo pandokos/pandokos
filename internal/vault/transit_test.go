@@ -74,6 +74,7 @@ func requestsOf(s *transittest.Server, method, pathSub string) []transittest.Req
 // the ones of the design and no other, the key version is pinned, the format and the answers are
 // checked.
 func TestTransitWrapUnwrap(t *testing.T) {
+	t.Parallel()
 	tid := testTenant(1)
 	aad := vault.DataAAD(tid, 1)
 	dek := dataKeyBytes(3)
@@ -270,6 +271,7 @@ func TestTransitWrapUnwrap(t *testing.T) {
 // TestTransitAssociatedData is T-1058: the associated data are bound through a digest and the raw
 // value reaches nobody.
 func TestTransitAssociatedData(t *testing.T) {
+	t.Parallel()
 	tid := testTenant(9)
 	aad := vault.DataAAD(tid, 1)
 	dek := dataKeyBytes(11)
@@ -377,6 +379,7 @@ func idFor(s *transittest.Server, mount, key string, version int) string {
 
 // TestTransitVersionIdentifier is T-1059.
 func TestTransitVersionIdentifier(t *testing.T) {
+	t.Parallel()
 	aad := vault.DataAAD(testTenant(2), 1)
 	dek := dataKeyBytes(5)
 
@@ -554,8 +557,135 @@ func TestTransitVersionIdentifier(t *testing.T) {
 	})
 }
 
+// TestTransitVersionAfterAnotherRestart extends T-1059 for several instances (§5.4): another instance
+// restarted after a rotation in the service activates the new version and its worker re-wraps under
+// it. An instance not restarted, whose description is younger than 10 s and names an older latest
+// version, keeps opening those data keys: it reads the description again (at most once a second for
+// this purpose, and once for callers that come together) and still verifies the fingerprint; its
+// own wraps stay pinned to the version of its start.
+func TestTransitVersionAfterAnotherRestart(t *testing.T) {
+	t.Parallel()
+	dek := dataKeyBytes(7)
+	// first is the instance that is not restarted; second starts after the rotation and wraps under v2.
+	setup := func(t *testing.T) (first *transitRig, c *tClock, v1, v2 string, wrapped2 [][]byte, aads [][]byte) {
+		t.Helper()
+		c = &tClock{t: rigStart}
+		first = newTransitRig(t, vaulttest.TransitSetup{}, withClock(c))
+		first.start(t, false)
+		v1 = first.p.Info().Version
+		first.s.Namespace("").Rotate("transit", "pandokos")
+		second := newTransitRigOn(t, first.s, vaulttest.TransitSetup{})
+		second.start(t, false)
+		for i := range 8 {
+			aad := vault.DataAAD(testTenant(byte(10+i)), 1)
+			version, w, err := second.p.Wrap(ctx(t), dek, aad)
+			if err != nil {
+				t.Fatal(err)
+			}
+			v2 = version
+			wrapped2, aads = append(wrapped2, w), append(aads, aad)
+		}
+		if !strings.HasSuffix(v2, "-v2") {
+			t.Fatalf("the restarted instance wraps under %s, want version 2", v2)
+		}
+		c.advance(2 * time.Second) // the first instance's description is 2 s old: not expired
+		first.s.Reset()
+		return first, c, v1, v2, wrapped2, aads
+	}
+
+	t.Run("a data key re-wrapped by another instance opens", func(t *testing.T) {
+		first, _, v1, v2, wrapped2, aads := setup(t)
+		if err := first.p.Available(ctx(t), v2); err != nil {
+			t.Fatalf("Available of the version another instance activated: %v", err)
+		}
+		got, err := first.p.Unwrap(ctx(t), v2, wrapped2[0], aads[0])
+		if err != nil {
+			t.Fatalf("Unwrap of a data key re-wrapped under the version another instance activated: %v", err)
+		}
+		if !bytes.Equal(got, dek) {
+			t.Errorf("the data key unwrapped to other bytes")
+		}
+		if n := first.s.Count(transittest.OpDescribe); n != 1 {
+			t.Errorf("%d descriptions read for the newer version, want 1", n)
+		}
+		if n := first.s.Count(transittest.OpIdentify); n != 1 {
+			t.Errorf("%d identify requests for the newer version, want 1 (its fingerprint is verified)", n)
+		}
+		// The wraps stay pinned to the version of the start (D-5).
+		version, _, err := first.p.Wrap(ctx(t), dek, aads[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if version != v1 || first.p.Info().Version != v1 {
+			t.Errorf("after the newer version was read the instance wraps under %s (Info %s), want %s", version, first.p.Info().Version, v1)
+		}
+	})
+
+	t.Run("callers that come together read one description", func(t *testing.T) {
+		first, _, _, v2, wrapped2, aads := setup(t)
+		var wg sync.WaitGroup
+		errs := make([]error, len(wrapped2))
+		for i := range wrapped2 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, errs[i] = first.p.Unwrap(ctx(t), v2, wrapped2[i], aads[i])
+			}()
+		}
+		wg.Wait()
+		for i, err := range errs {
+			if err != nil {
+				t.Errorf("Unwrap %d: %v", i, err)
+			}
+		}
+		if n := first.s.Count(transittest.OpDescribe); n != 1 {
+			t.Errorf("%d descriptions read for %d callers that came together, want 1", n, len(wrapped2))
+		}
+	})
+
+	t.Run("a description that fails for an outage is the answer within the second", func(t *testing.T) {
+		first, _, _, v2, wrapped2, aads := setup(t)
+		first.s.Stop()
+		t.Cleanup(first.s.Start)
+		for i := range 2 {
+			if _, err := first.p.Unwrap(ctx(t), v2, wrapped2[i], aads[i]); !errors.Is(err, vault.ErrProviderUnavailable) || errors.Is(err, vault.ErrKeyVersionUnknown) {
+				t.Errorf("Unwrap %d of the newer version with the service away: %v, want ErrProviderUnavailable", i, err)
+			}
+		}
+		if err := first.p.Available(ctx(t), v2); !errors.Is(err, vault.ErrProviderUnavailable) {
+			t.Errorf("Available of the newer version with the service away: %v, want ErrProviderUnavailable", err)
+		}
+	})
+
+	t.Run("a version the service does not hold stays unknown, bounded", func(t *testing.T) {
+		first, c, _, v2, wrapped2, aads := setup(t)
+		fp := strings.Split(v2, "-")[1]
+		for range 5 {
+			for _, id := range []string{"transit-" + fp + "-v3", "transit-0000000000000000-v2"} {
+				if _, err := first.p.Unwrap(ctx(t), id, wrapped2[0], aads[0]); !errors.Is(err, vault.ErrKeyVersionUnknown) {
+					t.Errorf("Unwrap(%q) = %v, want ErrKeyVersionUnknown", id, err)
+				}
+			}
+		}
+		if n := first.s.Count(transittest.OpUnwrap); n != 0 {
+			t.Errorf("%d decrypt requests for versions the service does not hold", n)
+		}
+		if n := first.s.Count(transittest.OpDescribe); n != 1 {
+			t.Errorf("%d descriptions read in one second for versions above the latest, want 1", n)
+		}
+		c.advance(time.Second)
+		if _, err := first.p.Unwrap(ctx(t), "transit-"+fp+"-v3", wrapped2[0], aads[0]); !errors.Is(err, vault.ErrKeyVersionUnknown) {
+			t.Errorf("Unwrap of version 3 a second later: %v", err)
+		}
+		if n := first.s.Count(transittest.OpDescribe); n != 2 {
+			t.Errorf("%d descriptions read after a second, want 2", n)
+		}
+	})
+}
+
 // TestTransitKeyRequirements is T-1060.
 func TestTransitKeyRequirements(t *testing.T) {
+	t.Parallel()
 	const keyName = "very-secret-key-name"
 	fail := func(t *testing.T, r *transitRig) {
 		t.Helper()
@@ -666,6 +796,7 @@ func TestTransitKeyRequirements(t *testing.T) {
 // any data key is wrapped; with the option it starts and reports exportable among the weak
 // settings; the four other weak settings still start without the option.
 func TestTransitExportable(t *testing.T) {
+	t.Parallel()
 	const keyName = "very-secret-key-name"
 	exportable := vaulttest.TransitSetup{Key: keyName, KeyOptions: transittest.KeyOptions{Exportable: true}}
 
@@ -761,6 +892,7 @@ func fixedText(err error) bool {
 
 // TestTransitErrorClasses is T-1061: the table of the design, per operation.
 func TestTransitErrorClasses(t *testing.T) {
+	t.Parallel()
 	aad := vault.DataAAD(testTenant(3), 1)
 	dek := dataKeyBytes(9)
 
@@ -994,6 +1126,7 @@ func (b *bufferSpy) RoundTrip(req *http.Request) (*http.Response, error) {
 
 // TestTransitOneAttempt is T-1062.
 func TestTransitOneAttempt(t *testing.T) {
+	t.Parallel()
 	aad := vault.DataAAD(testTenant(4), 1)
 	dek := dataKeyBytes(13)
 
@@ -1095,6 +1228,7 @@ func (r readerOf) Read(p []byte) (int, error) { return r.rc.Read(p) }
 
 // TestTransitRefusal is T-1063.
 func TestTransitRefusal(t *testing.T) {
+	t.Parallel()
 	aad := vault.DataAAD(testTenant(5), 1)
 	dek := dataKeyBytes(17)
 	start := time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)
@@ -1272,6 +1406,7 @@ func TestTransitRefusal(t *testing.T) {
 
 // TestTransitNamespace is T-1066.
 func TestTransitNamespace(t *testing.T) {
+	t.Parallel()
 	aad := vault.DataAAD(testTenant(6), 1)
 	dek := dataKeyBytes(19)
 	nsOf := func(s *transittest.Server) (with, without int) {
@@ -1340,6 +1475,7 @@ func TestTransitNamespace(t *testing.T) {
 // TestTransitCanary is T-1068: nothing secret reaches a log line, an error or the statistics, and
 // nothing about a tenant reaches the service.
 func TestTransitCanary(t *testing.T) {
+	t.Parallel()
 	tid := testTenant(7)
 	aad := vault.DataAAD(tid, 1)
 	dek := dataKeyBytes(23)

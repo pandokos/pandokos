@@ -12,6 +12,7 @@ import (
 
 // TestKeyTables is T-286.
 func TestKeyTables(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		a, b := d.SeedTenant(t, "tenant-a"), d.SeedTenant(t, "tenant-b")
 		super := d.Super(t)

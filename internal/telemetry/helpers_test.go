@@ -218,8 +218,14 @@ func (r *rig) collect() *snapshot { r.t.Helper(); return r.collectT(r.t) }
 // collectT is collect for the test t, which is the one that fails: a subtest passes its own.
 func (r *rig) collectT(t testing.TB) *snapshot {
 	t.Helper()
+	return r.collectWithin(t, 5*time.Second)
+}
+
+// collectWithin is collectT with a wait of d for the two exports.
+func (r *rig) collectWithin(t testing.TB, d time.Duration) *snapshot {
+	t.Helper()
 	n := len(r.c.Metrics())
-	testutil.Eventually(t, 5*time.Second, "two metric exports after the recording", func() bool { return len(r.c.Metrics()) >= n+2 })
+	testutil.Eventually(t, d, "two metric exports after the recording", func() bool { return len(r.c.Metrics()) >= n+2 })
 	ms := r.c.Metrics()
 	return parse(ms[len(ms)-1])
 }

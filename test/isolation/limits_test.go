@@ -23,6 +23,7 @@ import (
 // writes, the checks and the columns that can change. limit_rule itself is covered by the
 // generic negative tests through its fixture.
 func TestLimitRulePolicies(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		super := d.Super(t)
 		a, b := d.SeedTenant(t, "limits-a"), d.SeedTenant(t, "limits-b")
@@ -312,6 +313,7 @@ func TestLimitRulePolicies(t *testing.T) {
 // worker has nothing; nobody updates, deletes or truncates, the owner included; every check
 // constraint and the unique key.
 func TestLimitEventPolicies(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		super := d.Super(t)
 		a, b := d.SeedTenant(t, "events-a"), d.SeedTenant(t, "events-b")
@@ -479,6 +481,7 @@ func TestLimitEventPolicies(t *testing.T) {
 // event of A is not found under B. The routes are those of the generated route table that name a
 // limit, so that a route added later without a test fails this one.
 func TestLimitAPI(t *testing.T) {
+	t.Parallel()
 	w := newAPIWorld(t)
 	var ops []adminapi.Operation
 	for _, op := range apiOperations() {
@@ -578,6 +581,7 @@ func TestLimitAPI(t *testing.T) {
 // scope is a provider ID and a model ID with foreign keys: the cases of the format of a name moved
 // to T-694 (TestLimitRuleIntegrity), where the names are not in the table any more.
 func TestLimitRuleChecks(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		a := d.SeedTenant(t, "checks-a")
 		sessA := sessions(a)[0]
@@ -661,6 +665,7 @@ func TestLimitRuleChecks(t *testing.T) {
 // uuid column of the two rule tables other than id is the referencing column of a foreign key, the
 // subject and scope keys are ON DELETE RESTRICT, and the subject keys are composite with tenant_id.
 func TestRuleForeignKeys(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	super := d.Super(t)
 
@@ -749,6 +754,7 @@ func TestRuleForeignKeys(t *testing.T) {
 // TestLimitRuleIntegrity is T-694: what the constraints, the foreign keys and the two key guards
 // of migration 0011 refuse, as each role that can write or read a rule.
 func TestLimitRuleIntegrity(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		a, b := d.SeedTenant(t, "integrity-a"), d.SeedTenant(t, "integrity-b")
 		super := d.Super(t)
@@ -1065,6 +1071,7 @@ func errOf(_ int64, err error) error { return err }
 // still refused. The scope of a rule (a provider, a model) is part of the key as before: the same
 // metric in another scope is another rule.
 func TestRuleKeysByCurrency(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		super := d.Super(t)
 		a := d.SeedTenant(t, "keys-a")

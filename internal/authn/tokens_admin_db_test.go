@@ -18,6 +18,7 @@ import (
 // the pool of the admin role (tokens.admin_listener), the pool of the worker role is still refused,
 // and a token yields the same service account principal as on the gateway.
 func TestTokenOnAdminPool(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	idp := fakeidp.Start(t, fakeidp.Options{})
 	clk := newStepClock()

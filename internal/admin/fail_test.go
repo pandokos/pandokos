@@ -15,6 +15,7 @@ import (
 // TestFailSealLog checks the log line of a write that cannot be sealed (design 5.4, 5.10): the
 // class of the cause, the identifiers known at write time, and nothing of the provider error.
 func TestFailSealLog(t *testing.T) {
+	t.Parallel()
 	const canary = "synthetic-canary-/etc/pandokos/kek-0001.key"
 	for _, tc := range []struct {
 		name  string

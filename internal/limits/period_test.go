@@ -44,6 +44,7 @@ func monthLabel(t time.Time, loc *time.Location) int { return dayLabel(t, loc) /
 
 // TestCalendar is T-647.
 func TestCalendar(t *testing.T) {
+	t.Parallel()
 	seed := seedOf(t)
 	for _, name := range testZones {
 		t.Run(name, func(t *testing.T) {

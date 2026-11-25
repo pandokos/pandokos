@@ -94,6 +94,7 @@ func startOIDC(t *testing.T, d *dbtest.Database, idp *fakeidp.Server, o opts, en
 
 // TestLocalAccountExit is T-831, the exit of the sprint: the binary and PostgreSQL only.
 func TestLocalAccountExit(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	env := baseEnv(t, d.Env(t))
 	password := initAdmin(t, env, "root.admin")
@@ -163,6 +164,7 @@ func TestLocalAccountExit(t *testing.T) {
 
 // TestLockExit is T-832: ten wrong passwords lock the account, whatever the eleventh says.
 func TestLockExit(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	env := baseEnv(t, d.Env(t))
 	password := initAdmin(t, env, "lock.admin")
@@ -208,6 +210,7 @@ func TestLockExit(t *testing.T) {
 
 // TestSessionNotOnInference is T-833: a session is not a credential of the inference listener.
 func TestSessionNotOnInference(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	d := dbtest.NewMigrated(t)
 	env := baseEnv(t, d.Env(t))
@@ -268,6 +271,7 @@ func TestSessionNotOnInference(t *testing.T) {
 // TestDisableExit is T-834: a user that is disabled is out at its next request, also through PgBouncer
 // in transaction mode.
 func TestDisableExit(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		env := baseEnv(t, d.Env(t))
 		password := initAdmin(t, env, "disable.admin")
@@ -296,6 +300,7 @@ func TestDisableExit(t *testing.T) {
 
 // TestLocalDisabled is T-835: with auth.local.enabled false and the identity provider, only the provider signs in.
 func TestLocalDisabled(t *testing.T) {
+	t.Parallel()
 	idp := fakeidp.Start(t, fakeidp.Options{Users: map[string]fakeidp.Claims{"ada": {"name": "Ada", "email": "ada@example.test"}}})
 	idp.SignInAs("ada")
 	d := dbtest.NewMigrated(t)
@@ -328,6 +333,7 @@ func TestLocalDisabled(t *testing.T) {
 
 // TestOidcExit is T-836: the binary and the fake issuer; group rules; the provider stopped.
 func TestOidcExit(t *testing.T) {
+	t.Parallel()
 	idp := fakeidp.Start(t, fakeidp.Options{Users: map[string]fakeidp.Claims{
 		"ada":   {"name": "Ada", "email": "ada@example.test", "groups": []string{"eng"}},
 		"grace": {"name": "Grace", "email": "grace@example.test", "groups": []string{"unmapped"}},
@@ -396,6 +402,7 @@ func last(h []apitest.Hop) apitest.Hop { return h[len(h)-1] }
 // TestPeopleCanary is T-837 for the binary: planted values in accepted and refused sign-ins of both
 // methods at log level debug appear in no output of the process.
 func TestPeopleCanary(t *testing.T) {
+	t.Parallel()
 	idp := fakeidp.Start(t, fakeidp.Options{Users: map[string]fakeidp.Claims{"ada": {"name": "Ada", "email": "ada@example.test", "groups": []string{"admins"}}}})
 	idp.SignInAs("ada")
 	col := otlptest.New(t)
@@ -495,6 +502,7 @@ func TestPeopleCanary(t *testing.T) {
 // TestTokenAdministers is T-838: with tokens.admin_listener a token of the fake issuer creates a virtual
 // key through the administration API, with an idempotency key, twice, and one key exists.
 func TestTokenAdministers(t *testing.T) {
+	t.Parallel()
 	idp := fakeidp.Start(t, fakeidp.Options{})
 	w := startTokenProc(t, idp, opts{level: "info", env: []string{"PANDOKOS_TOKENS_ADMIN_LISTENER=true"}})
 	a := w.tenant(t, "token-admin")
@@ -538,6 +546,7 @@ func TestTokenAdministers(t *testing.T) {
 // TestUpgradeWithPeople is T-839: a database of the previous release, migrated: keys and tokens work as
 // before and init adds the first user.
 func TestUpgradeWithPeople(t *testing.T) {
+	t.Parallel()
 	idp := fakeidp.Start(t, fakeidp.Options{})
 	d := dbtest.New(t)
 	d.MigrateTo(t, 12)

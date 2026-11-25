@@ -35,6 +35,7 @@ func exhaust(t *testing.T, m *Memory, l Limit) {
 
 // TestReserveAtomic is T-611.
 func TestReserveAtomic(t *testing.T) {
+	t.Parallel()
 	a := tid(1)
 	t.Run("any one of nine limits without room changes nothing and is named first in order", func(t *testing.T) {
 		for i := 0; i < 9; i++ {
@@ -151,6 +152,7 @@ func TestReserveAtomic(t *testing.T) {
 
 // TestSettle is T-612.
 func TestSettle(t *testing.T) {
+	t.Parallel()
 	a := tid(1)
 	conc := lim(a, SubjectTenant, "", ConcurrentRequests, 5)
 	reqs := lim(a, SubjectTenant, "", RequestsPerMinute, 10)
@@ -227,6 +229,7 @@ func TestSettle(t *testing.T) {
 
 // TestRelease is T-613.
 func TestRelease(t *testing.T) {
+	t.Parallel()
 	a := tid(1)
 	all := nineLimits(a, 5, 10, 1000)
 
@@ -279,6 +282,7 @@ func TestRelease(t *testing.T) {
 
 // TestExpiry is T-614.
 func TestExpiry(t *testing.T) {
+	t.Parallel()
 	a := tid(1)
 	all := nineLimits(a, 5, 10, 1000)
 	const ttl = 10 * time.Second
@@ -380,6 +384,7 @@ func TestExpiry(t *testing.T) {
 
 // TestRetryAfter is T-615.
 func TestRetryAfter(t *testing.T) {
+	t.Parallel()
 	a := tid(1)
 	reqs := lim(a, SubjectTenant, "", RequestsPerMinute, 1)
 	toks := lim(a, SubjectTenant, "", TokensPerMinute, 100)
@@ -496,6 +501,7 @@ func TestRetryAfter(t *testing.T) {
 
 // TestTenantSeparation is T-621.
 func TestTenantSeparation(t *testing.T) {
+	t.Parallel()
 	clk := newClock()
 	m, _ := newMemory(t, clk)
 	a, b := tid(1), tid(2)
@@ -527,6 +533,7 @@ func TestTenantSeparation(t *testing.T) {
 // into, under the shard lock. When the wall clock steps back, Reserve attributes the amount to
 // the newest second of the window and settle and release take it from that same second.
 func TestAttributedSecond(t *testing.T) {
+	t.Parallel()
 	a := tid(1)
 	for _, tc := range []struct {
 		name   string
@@ -579,6 +586,7 @@ func TestAttributedSecond(t *testing.T) {
 // TestDuplicateCounterKeys: two limits of one request with the same counter key are a caller
 // error; they would otherwise create the counter twice and lose an increment.
 func TestDuplicateCounterKeys(t *testing.T) {
+	t.Parallel()
 	a := tid(1)
 	for _, metric := range []Metric{ConcurrentRequests, RequestsPerMinute, TokensPerMinute} {
 		t.Run(string(metric), func(t *testing.T) {
@@ -602,6 +610,7 @@ func TestDuplicateCounterKeys(t *testing.T) {
 // cut is folded forward, counters are rebased and loaded, and the store is swept. Nothing races
 // and nothing is lost or counted twice: at the end every counter holds exactly what was settled.
 func TestMemoryRacePeriods(t *testing.T) {
+	t.Parallel()
 	clk := newClock()
 	clk.t = at(2026, 11, 17, 23, 55, 0)
 	m, _ := newMemory(t, clk)
@@ -792,6 +801,7 @@ func minTime(a, b time.Time) time.Time {
 // TestReserveManyLimits is part of T-620 (sprint 5.2): a request has up to 81 limits (three subjects,
 // three scopes, nine metrics) and the check for a repeated counter scales to them.
 func TestReserveManyLimits(t *testing.T) {
+	t.Parallel()
 	e := newPeriodsEnv(t)
 	var ls []Limit
 	for _, k := range SubjectKinds() {

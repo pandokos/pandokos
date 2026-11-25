@@ -32,6 +32,7 @@ func find(ls []Limit, kind SubjectKind, id string, m Metric) (Limit, bool) {
 var rateMetrics = []Metric{ConcurrentRequests, RequestsPerMinute, TokensPerMinute}
 
 func TestResolve(t *testing.T) {
+	t.Parallel()
 	a := tid(1)
 
 	t.Run("table", func(t *testing.T) {
@@ -345,6 +346,7 @@ func mustOne(t *testing.T, ls []Limit) Limit {
 
 // TestResolveScopes is T-654.
 func TestResolveScopes(t *testing.T) {
+	t.Parallel()
 	a := tid(1)
 	q := Query{ServiceAccountID: "sa-1", KeyID: "key-1", ProviderID: "openai", ModelID: "gpt-4", Start: at(2026, 11, 17, 12, 0, 0)}
 
@@ -620,6 +622,7 @@ func TestResolveScopes(t *testing.T) {
 // model and by the key ID or mapping ID of its subject; names are for events and headers and never
 // decide.
 func TestResolveByIdentifier(t *testing.T) {
+	t.Parallel()
 	a := tid(1)
 	cal := mustCalendar(t, "UTC")
 	start := at(2026, 11, 17, 12, 0, 0)
@@ -759,6 +762,7 @@ func currencyRule(id string, kind SubjectKind, sid, prov, model string, m Metric
 // TestActiveCurrencyRules is T-728: For leaves out the cost limits outside the currency in force at
 // the start of the request, at every level and subject.
 func TestActiveCurrencyRules(t *testing.T) {
+	t.Parallel()
 	a := tid(1)
 	start := at(2026, 11, 17, 12, 0, 0)
 	q := Query{ServiceAccountID: "sa-1", KeyID: "key-1", ProviderID: "openai", ModelID: "gpt-4", Start: start}

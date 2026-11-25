@@ -473,6 +473,7 @@ func (p *prop) run(ops int) {
 
 // TestPropertyPeriods is T-650.
 func TestPropertyPeriods(t *testing.T) {
+	t.Parallel()
 	seed := seedOf(t)
 	total := 0
 	var last *prop
@@ -515,6 +516,7 @@ func TestPropertyPeriods(t *testing.T) {
 
 // TestPropertyReconcile is T-652.
 func TestPropertyReconcile(t *testing.T) {
+	t.Parallel()
 	seed := seedOf(t)
 	totalCompared := 0
 	var last *prop

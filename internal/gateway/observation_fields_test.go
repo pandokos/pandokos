@@ -51,6 +51,7 @@ func stringFields(v reflect.Value, path string, out map[string]string) {
 // identifiers, with canary metadata, yields an observation in which no string field holds any of
 // them, except CredentialID on a provider 429.
 func TestObservationHasNoTenant(t *testing.T) {
+	t.Parallel()
 	want := []string{
 		"Method", "Scheme", "Route", "Status", "Outcome", "ErrorCode", "LimitState", "Provider", "Family", "Operation", "Model", "Duration",
 		"Forwarded", "Call", "FirstChunk", "Stream", "CallError", "UpstreamStatus", "CredentialID",

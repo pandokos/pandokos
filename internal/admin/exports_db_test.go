@@ -109,6 +109,7 @@ func bulkAudit(t *testing.T, api *apitest.API, tenantID string, n int) {
 // and to_seq, from the anchor to the head read at the start, and a failure after the first byte ends
 // the transfer without its terminator and says so in the log; before the first byte it is a problem.
 func TestAuditExport(t *testing.T) {
+	t.Parallel()
 	w, _ := auditWorld(t)
 	failAt, _ := poison(t, w.api, "audit_event", "seq")
 	bulkAudit(t, w.api, w.a.ID, 2300)
@@ -281,6 +282,7 @@ func bulkUsage(t *testing.T, api *apitest.API, tenantID string, start time.Time,
 // character quoted in CSV and untouched in NDJSON, the window of 31 days, a short write timeout and
 // a slow page, a failure after the first byte, the content disposition.
 func TestUsageExport(t *testing.T) {
+	t.Parallel()
 	d := newPW(t)
 	api := apitest.NewWithServer(t, d.api.DB, func(s *http.Server) { s.WriteTimeout = time.Second })
 	_ = api

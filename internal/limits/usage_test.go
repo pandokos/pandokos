@@ -8,6 +8,7 @@ import (
 
 // TestUsageSum is T-657.
 func TestUsageSum(t *testing.T) {
+	t.Parallel()
 	groups := []UsageGroup{
 		{PrincipalID: "sa1", KeyID: "k1", ProviderID: "openai", ModelID: "gpt", Currency: "EUR", Requests: 2, Tokens: 100, Cost: dec(t, "1.5")},
 		{PrincipalID: "sa1", KeyID: "k2", ProviderID: "openai", ModelID: "gpt-mini", Currency: "EUR", Requests: 1, Tokens: 50, Cost: dec(t, "0.25")},
@@ -84,6 +85,7 @@ func TestUsageSum(t *testing.T) {
 // groups with those of the limit, for each kind of subject; a group without a model ID counts for
 // the wider scopes only.
 func TestUsageSumByIdentifier(t *testing.T) {
+	t.Parallel()
 	groups := []UsageGroup{
 		{PrincipalID: "sa1", KeyID: "k1", ProviderID: "p1", ModelID: "m1", Currency: "EUR", Requests: 2, Tokens: 100, Cost: dec(t, "1.5")},
 		{PrincipalID: "sa1", KeyID: "k2", ProviderID: "p1", ModelID: "m2", Currency: "EUR", Requests: 1, Tokens: 50, Cost: dec(t, "0.25")},

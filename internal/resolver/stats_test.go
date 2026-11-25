@@ -19,6 +19,7 @@ import (
 // on_unknown_price is allow and the estimate cannot be measured against a budget; a refusal, an
 // estimate with a price in the budget's currency and a request with no budget are not.
 func TestLimitsStats(t *testing.T) {
+	t.Parallel()
 	a := limitTenantID(7)
 	start := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
 	p := limitPrincipal(a, "sa-1", "key-1", "")
@@ -76,6 +77,7 @@ func TestLimitsStats(t *testing.T) {
 // TestUnlimitedStats is T-922 (unlimited traffic): rows written, skipped (the database already had
 // the day's row) and failed (the write did not happen).
 func TestUnlimitedStats(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	clk := &stepClock{t: time.Now().UTC().Truncate(time.Second)}
 	today := clk.now().Format("2006-01-02")

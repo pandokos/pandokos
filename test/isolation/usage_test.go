@@ -35,6 +35,7 @@ func countUsage(t *testing.T, super *pgx.Conn, where string, args ...any) int {
 
 // TestUsageRecord is T-480: the grants and the policy of usage_record, for every runtime role.
 func TestUsageRecord(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a, b := d.SeedTenant(t, "usage-a"), d.SeedTenant(t, "usage-b")
 	super := d.Super(t)
@@ -202,6 +203,7 @@ const insertAt = `INSERT INTO pandokos.usage_record (tenant_id, id, started_at, 
 // TestUsagePartitions is T-481: the function that creates partitions, the protection of a
 // partition and rule L-20.
 func TestUsagePartitions(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	tid := d.SeedTenant(t, "partitions")
 	super := d.Super(t)
@@ -350,6 +352,7 @@ func TestUsagePartitions(t *testing.T) {
 // TestUsagePartitionLint is T-481 for rule L-20: a partition made by hand without protection
 // gives one finding per sub-rule.
 func TestUsagePartitionLint(t *testing.T) {
+	t.Parallel()
 	const name = "usage_record_y2099m01"
 	const create = `CREATE TABLE pandokos.` + name + ` PARTITION OF pandokos.usage_record FOR VALUES FROM ('2099-01-01 00:00:00+00') TO ('2099-02-01 00:00:00+00');`
 	cases := []struct {
@@ -431,6 +434,7 @@ func TestUsagePartitionLint(t *testing.T) {
 // TestUsageAppendOnly is T-482: the owner cannot update or delete a row through the parent or a
 // partition, nor truncate either; rule L-17 passes.
 func TestUsageAppendOnly(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	tid := d.SeedTenant(t, "append-only")
 	super := d.Super(t)
@@ -483,6 +487,7 @@ func TestUsageAppendOnly(t *testing.T) {
 // NULL; any other value is refused in an existing partition and in a partition created later; the
 // row is still append-only.
 func TestUsageLimitState(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a := d.SeedTenant(t, "state-a")
 	super := d.Super(t)
@@ -563,6 +568,7 @@ func TestUsageLimitState(t *testing.T) {
 // version) and NULL; a source without a version and another value are refused, in an existing partition
 // and in a partition created later; the row is still append-only.
 func TestUsagePriceSource(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a := d.SeedTenant(t, "source-a")
 	super := d.Super(t)

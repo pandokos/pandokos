@@ -36,6 +36,7 @@ func (s *priceStack) becomes(t *testing.T, limit time.Duration, what, source, cu
 // instant with no notification; an end gives the catalogue price back; with the notifications cut, a
 // change reaches the gateway within the cache lifetimes.
 func TestTenantPriceTakesEffect(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	w := newPriceWorld(t, d)
 

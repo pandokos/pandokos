@@ -150,6 +150,7 @@ func checkLogReference(t *testing.T, p *proc) {
 // TestLogReferenceParses checks the parser of the reference against the page committed with the
 // tests (it fails with an empty or absent page).
 func TestLogReferenceParses(t *testing.T) {
+	t.Parallel()
 	rows, glossary := loadLogReference(t)
 	if len(rows) < 50 || len(glossary) < 30 {
 		t.Fatalf("docs/reference/logs.md holds %d messages and %d fields", len(rows), len(glossary))

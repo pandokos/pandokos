@@ -20,6 +20,7 @@ func ctx(t *testing.T) context.Context {
 // TestSchemaLint is T-140: the real migrations produce a schema with zero findings. This test
 // is the build gate of exit criterion 1: a table without a policy fails the build.
 func TestSchemaLint(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	findings, err := Lint(ctx(t), d.Super(t), DefaultSpec())
 	if err != nil {
@@ -34,6 +35,7 @@ func TestSchemaLint(t *testing.T) {
 // sections 5.10 and 6.1, with the vault tables, the metadata view and the pin of sprint 2.1,
 // sections 5.3 and 6.
 func TestDefaultSpecMatchesDesign(t *testing.T) {
+	t.Parallel()
 	want := Spec{
 		Global: map[string]GlobalTable{
 			"schema_migration":            {Reason: "describes the installation, holds no tenant information"},
@@ -529,6 +531,7 @@ const (
 // TestSchemaLintDetects is T-141: for each rule L-01 to L-19 a deliberately defective object makes
 // it fire.
 func TestSchemaLintDetects(t *testing.T) {
+	t.Parallel()
 	type row struct {
 		name string
 		ddl  string // run as pandokos_owner

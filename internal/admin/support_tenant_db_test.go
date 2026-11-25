@@ -15,6 +15,7 @@ import (
 // TestSupportGrants is T-875: under an action the platform grants with the tenant's authority, and a
 // user cannot make itself a member.
 func TestSupportGrants(t *testing.T) {
+	t.Parallel()
 	w := newSW(t)
 	person := w.d.PlatformUser(t, apitest.UniqueName("recovered"), nil)
 	w.open(t, w.key, apitest.Reason("grants"), []string{authz.MemberWrite, authz.MemberRead}, nil)
@@ -64,6 +65,7 @@ func TestSupportGrants(t *testing.T) {
 
 // TestTenantSeesAndEndsSupport is T-876.
 func TestTenantSeesAndEndsSupport(t *testing.T) {
+	t.Parallel()
 	w := newSW(t)
 	other, _ := w.api.Tenant(t, "support-seen-other")
 	action := w.open(t, w.key, apitest.Reason("seen"), []string{authz.MemberRead, authz.RoleRead}, nil)
@@ -165,6 +167,7 @@ func TestTenantSeesAndEndsSupport(t *testing.T) {
 // action ID, and the line of a support principal says support: true. The administration plane
 // records no span.
 func TestRolesTelemetry(t *testing.T) {
+	t.Parallel()
 	w := newSW(t)
 	var reasons, actions, roleNames []string
 	custom := w.role(t, apitest.UniqueName("telemetry-role"), authz.MemberRead, authz.RoleRead, authz.TenantSettingWrite)

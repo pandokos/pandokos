@@ -71,6 +71,7 @@ func panicUsageAdapter() map[string]family.Adapter {
 // TestObservation is T-910: one Observe per request, with the fields of section 5.2.1, for each way
 // a request can end.
 func TestObservation(t *testing.T) {
+	t.Parallel()
 	const wantRoute = "/{provider}/v1/chat/completions"
 	type observation = gateway.RequestObservation
 

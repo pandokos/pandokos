@@ -35,6 +35,7 @@ func failed(t *testing.T, what string, err error, reason string) *authn.Failure 
 // principal of the service account its subject is mapped to, with the tenant's state; every other
 // case is a refusal that names the registration and, from the mapping on, the subject.
 func TestTokenPrincipalTenantBound(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		r := newTokenRig(t, d, 0)
 		f := newFixture(t, d, "bound") // a service account "bot" with the roles tenant-admin and inference
@@ -215,6 +216,7 @@ func TestTokenPrincipalTenantBound(t *testing.T) {
 // TestTokenPrincipalPlatform is T-581: a platform-level registration finds the tenant of a token in
 // the claim it names, through the list of the registration and by the listed value only.
 func TestTokenPrincipalPlatform(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		r := newTokenRig(t, d, 0)
 		a, b, c := newFixture(t, d, "plat-a"), newFixture(t, d, "plat-b"), newFixture(t, d, "plat-outside")
@@ -341,6 +343,7 @@ func TestTokenPrincipalPlatform(t *testing.T) {
 // TestIssuerSelection is T-582: the pair of issuer and audience selects the registration, and so
 // the tenant; a token that matches two is refused; an unknown pair is remembered for five seconds.
 func TestIssuerSelection(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		r := newTokenRig(t, d, 30*time.Second)
 		a, b := newFixture(t, d, "sel-a"), newFixture(t, d, "sel-b")
@@ -423,6 +426,7 @@ func TestIssuerSelection(t *testing.T) {
 // reaches the next call after the notification that its trigger sends, the right entries are
 // dropped, and without a notification the lifetime bounds it.
 func TestTokenCacheInvalidation(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	logs := &testutil.LogBuffer{}
 	r := newTokenRig(t, d, time.Minute)

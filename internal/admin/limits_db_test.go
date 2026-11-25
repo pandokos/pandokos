@@ -515,6 +515,7 @@ func TestLimits(t *testing.T) {
 
 // TestPlatformLimits is T-676: the five platform operations and the view of a tenant.
 func TestPlatformLimits(t *testing.T) {
+	t.Parallel()
 	w := newLW(t)
 	base := "/v1/platform-limits"
 	create := func(body map[string]any) adminapi.PlatformLimitRule {
@@ -693,6 +694,7 @@ func TestPlatformLimits(t *testing.T) {
 
 // TestLimitEvents is T-680: the events a tenant's rules recorded, newest first.
 func TestLimitEvents(t *testing.T) {
+	t.Parallel()
 	w := newLW(t)
 	base := "/v1/tenants/" + w.a.ID + "/limit-events"
 	super := w.api.Super(t)
@@ -807,6 +809,7 @@ func ruleRows(t *testing.T, w *lw, id string) ruleRow {
 // resolve to identifiers and a model of another provider is refused; the resource shows the names
 // and the identifiers; the list filters by subject, provider and model.
 func TestLimitSubjectsTyped(t *testing.T) {
+	t.Parallel()
 	w := newLW(t)
 	super := w.api.Super(t)
 	scalar := func(sql string, args ...any) string {
@@ -939,6 +942,7 @@ func TestLimitSubjectsTyped(t *testing.T) {
 // scope, for a tenant and for the platform; the same currency twice is 409 conflict; `active` on each rule
 // before and after a switch; listTenantPlatformLimits sets it; the audit details name the currency.
 func TestLimitRulesByCurrency(t *testing.T) {
+	t.Parallel()
 	w := newPW(t)
 	prov, model := w.cat.Provider.Name, w.cat.All
 	w.api.DB.SeedPrice(t, prov, model.Name, "USD", time.Time{})

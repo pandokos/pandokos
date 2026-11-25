@@ -53,10 +53,10 @@ var reCredentialID = regexp.MustCompile(`(?m)^id: ([0-9a-f-]{36})$`)
 
 // TestVault is T-360: the key-encryption key from "kek generate" to a restart, a wrong key and no key.
 func TestVault(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
-	d := dbtest.New(t)
+	d := dbtest.NewMigrated(t)
 	keyFile, version := generateKEK(t)
-	d.Migrate(t)
 	d.UseKEK(t, version) // as if the installation had started with this key
 	secretFile := testutil.WriteSecret(t, "provider-secret", fixtures.CanaryCredential)
 
@@ -184,11 +184,11 @@ func forms(raw []byte) []string {
 // shown, every credential operation and every failure through the CLI and the API leaves no
 // canary and no key-encryption key in any output, and none in any column of any table.
 func TestVaultCanaries(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	up.Accept(fixtures.CanaryCredential)
-	d := dbtest.New(t)
+	d := dbtest.NewMigrated(t)
 	keyFile, kekVersion := generateKEK(t)
-	d.Migrate(t)
 	d.UseKEK(t, kekVersion) // as if the installation had started with this key
 	kekText, err := os.ReadFile(keyFile)
 	if err != nil {

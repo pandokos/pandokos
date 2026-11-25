@@ -63,6 +63,7 @@ func (w *activationWorld) dataKeyFor(t *testing.T, p vault.KeyProvider, name str
 // TestActivateAtStart is T-988: the start-up of a process with one key, with a new key and the old
 // as an unwrap key, with an old key, and with a key that a version in use needs.
 func TestActivateAtStart(t *testing.T) {
+	t.Parallel()
 	k := vaulttest.Keys(t, 3)
 
 	t.Run("an empty database, the same key again, a new key with the old one to unwrap", func(t *testing.T) {

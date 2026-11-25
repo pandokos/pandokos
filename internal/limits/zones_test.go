@@ -24,6 +24,7 @@ func civilDate(tb testing.TB, zone string, t time.Time) string {
 // TestTenantCalendar is T-699: At, Of and Day of the calendar of a tenant, the instant of a change,
 // and the zones an installation shares.
 func TestTenantCalendar(t *testing.T) {
+	t.Parallel()
 	rome, ny := mustCalendar(t, "Europe/Rome"), mustCalendar(t, "America/New_York")
 
 	t.Run("a tenant that never changed its zone has one calendar", func(t *testing.T) {
@@ -183,6 +184,7 @@ func mustLocation(tb testing.TB, name string) *time.Location {
 // periods of the new one and never a truncated one, and the instant is the end of the old zone's
 // month that contains the change.
 func TestTenantCalendarProperty(t *testing.T) {
+	t.Parallel()
 	seed := seedOf(t)
 	cals := map[string]*Calendar{}
 	for _, z := range zoneNames {

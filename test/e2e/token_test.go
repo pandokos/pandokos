@@ -130,6 +130,7 @@ func (w *tokenProc) anthropic(t *testing.T, token string, bearer bool) (int, str
 // platform-level calls, streaming and not, through both families; the usage row is in the right
 // tenant and the usage list of the API shows it.
 func TestTokenCall(t *testing.T) {
+	t.Parallel()
 	idp := fakeidp.Start(t, fakeidp.Options{})
 	w := startTokenProc(t, idp, opts{level: "debug"})
 	w.useAnthropic(t)
@@ -256,6 +257,7 @@ func TestTokenCall(t *testing.T) {
 // nothing of the key set of the issuer is in the output of the process, a response, an audit row, a
 // usage row, an exported span, the forwarded request or the output of the CLI.
 func TestTokenCanary(t *testing.T) {
+	t.Parallel()
 	idp := fakeidp.Start(t, fakeidp.Options{})
 	col := otlptest.New(t)
 	w := startTokenProc(t, idp, opts{level: "debug", collector: col, otlpEndpoint: col.URL().String(), propagate: true})
@@ -359,6 +361,7 @@ func TestTokenCanary(t *testing.T) {
 // a new process without keys answers 503, never 401, and never forwards; when the issuer returns, calls
 // succeed again within the refetch interval.
 func TestTokenIssuerOutage(t *testing.T) {
+	t.Parallel()
 	idp := fakeidp.Start(t, fakeidp.Options{})
 	env := []string{"PANDOKOS_TOKENS_JWKS_MIN_REFETCH_INTERVAL=1s"}
 	w := startTokenProc(t, idp, opts{level: "info", env: env})
@@ -417,6 +420,7 @@ func TestTokenIssuerOutage(t *testing.T) {
 // from the list each refuse the next call within the bounds of section 5.6: with notifications, and through
 // PgBouncer in transaction mode without the direct address, within cache.principal_ttl.
 func TestTokenRevocation(t *testing.T) {
+	// Serial on purpose: each change must refuse the next call within 2 s, or 2.5 s through the pooler, plus 500 ms, a wall-clock window that a loaded machine misses.
 	cases := []struct {
 		name     string
 		setup    func(t *testing.T) (*dbtest.Database, []string)
@@ -425,9 +429,8 @@ func TestTokenRevocation(t *testing.T) {
 	}{
 		{"direct, with notifications", func(t *testing.T) (*dbtest.Database, []string) { return dbtest.NewMigrated(t), nil }, "60s", 2 * time.Second},
 		{"through the pooler without the direct address", func(t *testing.T) (*dbtest.Database, []string) {
-			d := dbtest.New(t)
+			d := dbtest.NewMigrated(t)
 			pooled := d.Pooled(t)
-			d.Migrate(t)
 			return pooled, nil
 		}, "2s", 2500 * time.Millisecond},
 	}
@@ -491,6 +494,7 @@ func TestTokenRevocation(t *testing.T) {
 // metadata address is a 503 with the class blocked in the log, and the target received no request; listing
 // the host admits the private ones only.
 func TestTokenSSRF(t *testing.T) {
+	t.Parallel()
 	idp := fakeidp.Start(t, fakeidp.Options{}) // the loopback target: it is also a valid issuer, which makes the test sharp
 	d := dbtest.NewMigrated(t)
 	up := fakeprovider.New(t)

@@ -239,6 +239,7 @@ func (s *sched) live() []*pevent {
 
 // TestPropertyRequests is T-616.
 func TestPropertyRequests(t *testing.T) {
+	t.Parallel()
 	seed := seedOf(t)
 	for n := 0; n < schedules(); n++ {
 		s := newSched(t, seed, n, schedCfg{ttl: 24 * time.Hour, allowAbove: true, model: true, ops: 200})
@@ -265,6 +266,7 @@ func TestPropertyRequests(t *testing.T) {
 
 // TestPropertyTokens is T-617.
 func TestPropertyTokens(t *testing.T) {
+	t.Parallel()
 	seed := seedOf(t)
 	for _, strict := range []bool{false, true} {
 		for n := 0; n < schedules(); n++ {
@@ -306,6 +308,7 @@ func TestPropertyTokens(t *testing.T) {
 
 // TestPropertyConservation is T-618.
 func TestPropertyConservation(t *testing.T) {
+	t.Parallel()
 	seed := seedOf(t)
 	for n := 0; n < schedules(); n++ {
 		ttl := time.Duration(1+rngOf(seed, n+1<<20).IntN(120)) * time.Second
@@ -335,6 +338,7 @@ func TestPropertyConservation(t *testing.T) {
 
 // TestMemoryRace is T-620: run with -race.
 func TestMemoryRace(t *testing.T) {
+	t.Parallel()
 	clk := newClock()
 	m, _ := newMemory(t, clk)
 	const tenants, workers, perWorker = 8, 64, 300

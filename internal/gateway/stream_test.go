@@ -57,6 +57,7 @@ func eventStrings(b []byte) []string {
 // TestStreamNoAddedBuffering is T-489: the provider does not send event n+1 before the test has
 // read event n from the caller's side.
 func TestStreamNoAddedBuffering(t *testing.T) {
+	t.Parallel()
 	chatUsage := fixtures.Read("chat_stream_usage.sse")
 	for _, c := range []struct {
 		name     string
@@ -197,6 +198,7 @@ func (r *brokenReader) Deltas() int64 { return r.real.Deltas() }
 
 // TestReaderFailsSoft is T-490.
 func TestReaderFailsSoft(t *testing.T) {
+	t.Parallel()
 	provider := fixtures.Read("chat_stream_usage.sse")
 	var br *brokenReader
 	build := func(t *testing.T, newReader func(strip bool) *brokenReader, readUsage func(family.Operation, []byte) (family.Usage, bool, error)) *harness {
@@ -301,6 +303,7 @@ var edgeBehaviours = []string{
 
 // TestStreamEdgeCasesThroughTheGateway is T-491.
 func TestStreamEdgeCasesThroughTheGateway(t *testing.T) {
+	t.Parallel()
 	observe := func(o opSpec, model string) []byte {
 		if o.name == opChat.name {
 			return []byte(`{"model":"` + model + `","stream":true,"stream_options":{"include_usage":true},"messages":[]}`)
@@ -441,6 +444,7 @@ func TestCancellation(t *testing.T) {
 
 // TestFirstByteTime is T-493: the time to the first body byte, not to the headers.
 func TestFirstByteTime(t *testing.T) {
+	t.Parallel()
 	t.Run("headers at once, the first byte 200 ms later", func(t *testing.T) {
 		h := newRaw(t, func(w http.ResponseWriter, r *http.Request) {
 			_, _ = io.Copy(io.Discard, r.Body)

@@ -33,6 +33,9 @@ const (
 	transitCooldown       = 5 * time.Second // length of the refusal
 	transitWarnEvery      = 30 * time.Second
 	transitDescribeMaxAge = 10 * time.Second
+	// transitDescribeNewer is the least time between two descriptions read for a version above the
+	// latest one described (§5.4).
+	transitDescribeNewer = time.Second
 )
 
 // TransitOptions configures a TransitProvider. Every formatting path prints the redaction marker.
@@ -87,6 +90,8 @@ type TransitProvider struct {
 	lastAuthLog  time.Time
 	authFails    int
 
+	newer chan struct{} // one description at a time for a version above the latest (describeNewer)
+
 	fmu     sync.Mutex // the unwraps in flight
 	flights map[[32]byte]*flight
 
@@ -94,6 +99,8 @@ type TransitProvider struct {
 	desc       transitDescription
 	descAt     time.Time
 	descOnFail time.Time // the last description read because of a 400 to decrypt
+	descNewer  time.Time // the last description read for a version above the latest (describeNewer)
+	newerErr   error     // its failure, unless the key was not found; nil when it succeeded
 	version    string
 	pinned     int
 	weak       []string
@@ -172,6 +179,7 @@ func NewTransitProvider(o TransitOptions) (*TransitProvider, error) {
 		sem:      make(chan struct{}, o.MaxConcurrent),
 		polled:   polled,
 		wake:     make(chan struct{}, 1),
+		newer:    make(chan struct{}, 1),
 		flights:  map[[32]byte]*flight{},
 		verified: map[string]int{},
 		counts:   map[TransitCount]int64{},
@@ -465,6 +473,15 @@ func (p *TransitProvider) resolve(ctx context.Context, version string) (int, err
 		}
 		return 0, err
 	}
+	if n > d.newest {
+		if d, err = p.describeNewer(ctx, n); err != nil {
+			var te *TransitError
+			if errors.As(err, &te) && te.Class == "not_found" {
+				return 0, ErrKeyVersionUnknown
+			}
+			return 0, err
+		}
+	}
 	if n < d.oldest || n > d.newest {
 		return 0, ErrKeyVersionUnknown
 	}
@@ -488,6 +505,46 @@ func (p *TransitProvider) resolve(ctx context.Context, version string) (int, err
 	p.verified[version] = n
 	p.mu.Unlock()
 	return n, nil
+}
+
+// describeNewer reads the description again for a version n above the latest one it names, at most
+// once per transitDescribeNewer. Another instance restarted after a rotation in the
+// service has activated a newer version and its worker re-wraps data keys under it: an instance
+// not restarted keeps opening them (§5.4), while its own wraps stay pinned. One description is read
+// at a time; the callers that come meanwhile wait for it and use it. A version the service does not
+// hold therefore costs at most one description a second. A description that failed for another
+// reason than a missing key is the answer of every caller within that second, so that an outage is
+// not taken for an unknown version.
+func (p *TransitProvider) describeNewer(ctx context.Context, n int) (transitDescription, error) {
+	select {
+	case p.newer <- struct{}{}:
+	case <-ctx.Done():
+		return transitDescription{}, &TransitError{Operation: "describe", Class: "unavailable"}
+	}
+	defer func() { <-p.newer }()
+	p.mu.Lock()
+	d, now := p.desc, p.opts.Now()
+	if n <= d.newest {
+		p.mu.Unlock()
+		return d, nil
+	}
+	if !p.descNewer.IsZero() && now.Sub(p.descNewer) < transitDescribeNewer {
+		err := p.newerErr
+		p.mu.Unlock()
+		return d, err
+	}
+	p.descNewer = now
+	p.mu.Unlock()
+	d, err := p.describe(ctx)
+	var te *TransitError
+	kept := err
+	if errors.As(err, &te) && te.Class == "not_found" {
+		kept = nil
+	}
+	p.mu.Lock()
+	p.newerErr = kept
+	p.mu.Unlock()
+	return d, err
 }
 
 // Info returns what Start found.

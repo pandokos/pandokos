@@ -40,6 +40,7 @@ func unknownFields(line map[string]any, allowed []string) []string {
 // request, of a 429 and of a 409 no_price holds only the fields of requestLineFields, and neither
 // the tenant ID nor the key ID nor the principal ID appears in it.
 func TestRequestLineIsOperational(t *testing.T) {
+	t.Parallel()
 	budget := func(rule limits.Rule) limitstest.Options { return budgetRules(rule) }
 	cases := []struct {
 		name   string
@@ -74,6 +75,7 @@ func TestRequestLineIsOperational(t *testing.T) {
 // the reconciler or the ledger writer holds the tenant ID, a key ID or the canary token counts and
 // amount of the fixture.
 func TestLogsHoldNoTenantData(t *testing.T) {
+	t.Parallel()
 	// A canary of 7,654,321 tokens, output 7,654,320, and an amount: at 3 and 6 per million, 1 input token
 	// cost 0.000003 and the output 45.92592 (7654320 x 6 / 1e6): 45.925923.
 	canaries := []string{"7654321", "7654320", "45.925923"}

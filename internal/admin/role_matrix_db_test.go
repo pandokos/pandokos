@@ -56,6 +56,7 @@ func probeOps() []adminapi.Operation {
 // with a session (a member, a platform user) for the roles a person can hold, the answer is 403
 // forbidden exactly when the role's line of the golden file lacks the permission of the operation.
 func TestRoleMatrix(t *testing.T) {
+	t.Parallel()
 	api := apitest.NewPeople(t, apitest.PeopleConfig{})
 	acme, _ := api.Tenant(t, "matrix-tenant")
 	other, _ := api.Tenant(t, "matrix-platform-probes") // the platform roles probe another tenant: a platform administrator suspends the one it probes
@@ -130,6 +131,7 @@ func TestRoleMatrix(t *testing.T) {
 // TestMeMatrix is T-868, the exit condition: for each role getMe reports exactly the line of the
 // golden file, at the top level for keys and platform users, in memberships for members.
 func TestMeMatrix(t *testing.T) {
+	t.Parallel()
 	api := apitest.NewPeople(t, apitest.PeopleConfig{})
 	acme, _ := api.Tenant(t, "me-matrix")
 	golden := apitest.GoldenRoles(t)
@@ -238,6 +240,7 @@ func TestMeMatrix(t *testing.T) {
 // permissions getMe reports for the tenant are exactly the permissions of the operations that the
 // member is not refused: one function builds both, so they cannot differ.
 func TestMeMatchesTheHook(t *testing.T) {
+	t.Parallel()
 	api := apitest.NewPeople(t, apitest.PeopleConfig{})
 	acme, _ := api.Tenant(t, "me-hook")
 	owner := api.Owner(t, acme.ID)

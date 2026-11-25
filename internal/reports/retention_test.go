@@ -55,6 +55,7 @@ func (w *retentionWorld) count(t *testing.T, sql string, args ...any) int {
 // the tenant pass and then the platform pass run; a failing tenant does not stop the others; the
 // log lines retention ready, retention applied and retention failing; the counters M44 and M45.
 func TestRetentionJob(t *testing.T) {
+	t.Parallel()
 	c := ctx(t)
 
 	t.Run("both keys 0 remove nothing", func(t *testing.T) {

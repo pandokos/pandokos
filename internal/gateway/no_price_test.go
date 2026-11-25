@@ -13,6 +13,7 @@ import (
 // 5.2; its request line names the error and neither the currency of the budget nor that of the price,
 // which are the tenant's.
 func TestNoPriceLogFields(t *testing.T) {
+	t.Parallel()
 	for _, f := range limFamilies() {
 		t.Run(f.name+"/a price in another currency", func(t *testing.T) {
 			real := limitstest.NewWith(t, budgetRules(costRule("r-budget", limits.CostPerDay, "EUR", 100_000_000)))

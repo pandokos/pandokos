@@ -15,6 +15,7 @@ import (
 // TestEventWriterStats is T-922 (events): events recorded, dropped (a full queue refuses the offer;
 // the events Close could not write are added) and failed (the database refused the insert).
 func TestEventWriterStats(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a := d.SeedTenant(t, "event-stats")
 	nov := utc(2026, 11, 1, 0, 0, 0)

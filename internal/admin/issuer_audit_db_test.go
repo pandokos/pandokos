@@ -43,6 +43,7 @@ func containsValue(detail map[string]any, want string) bool {
 // transaction of the change, with the actor, the resource and the detail of section 5.12; a change
 // that fails writes none, and one whose audit row cannot be written changes nothing.
 func TestIssuerAudit(t *testing.T) {
+	t.Parallel()
 	w := newIW(t)
 	api := w.api
 	platID := api.PlatformKey()[4:21]

@@ -56,6 +56,7 @@ func fetchClass(t *testing.T, err error) string {
 
 // TestFetch is T-386: the bounded download of the price dataset.
 func TestFetch(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	body := []byte(`[{"id":"synthetic","models":[]}]`)
 

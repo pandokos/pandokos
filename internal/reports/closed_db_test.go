@@ -15,6 +15,7 @@ import (
 // pass of retention calls deleted_tenant_retention for deleted tenants only, in their session, and counts
 // what it removes with the two new kinds of M44.
 func TestJobsSkipClosedTenants(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	now := time.Now().UTC()
 	old := now.AddDate(0, -30, 0)

@@ -54,6 +54,7 @@ func spansOfTrace(t *testing.T, c *otlptest.Collector, trace string) (server, cl
 
 // TestTraces is T-511.
 func TestTraces(t *testing.T) {
+	// Serial on purpose: it compares the time of 20 calls measured before and after the collector goes away, a wall-clock window that a loaded machine misses.
 	t.Run("a call carrying traceparent yields a server and a client span of that trace", func(t *testing.T) {
 		up := fakeprovider.New(t)
 		col := otlptest.New(t)
@@ -151,6 +152,7 @@ func TestTraces(t *testing.T) {
 
 // TestNoContentAnywhere is T-512.
 func TestNoContentAnywhere(t *testing.T) {
+	t.Parallel()
 	for _, level := range []string{"info", "debug"} {
 		t.Run(level, func(t *testing.T) {
 			up := fakeprovider.New(t)

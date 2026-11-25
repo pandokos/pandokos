@@ -92,6 +92,7 @@ func (e *env) lookup(t testing.TB, token secret.Secret) error {
 
 // TestSignIn is T-781.
 func TestSignIn(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	u := e.d.PlatformUser(t, "ada.lovelace", []string{"platform-admin"}, dbtest.Display("Ada", "ada@example.test"))
 
@@ -199,6 +200,7 @@ func TestSignIn(t *testing.T) {
 // TestSignInTenantUser checks the user a tenant manages: the sign-in is the same and the result names
 // the managing tenant.
 func TestSignInTenantUser(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	tid := e.d.SeedTenant(t, "acme")
 	u := e.d.TenantUser(t, tid, "tenant.person", []string{"tenant-admin"})
@@ -213,6 +215,7 @@ func TestSignInTenantUser(t *testing.T) {
 
 // TestSignInUniform is T-782.
 func TestSignInUniform(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	good := e.d.PlatformUser(t, "good.user", nil)
 	disabled := e.d.PlatformUser(t, "disabled.user", nil, dbtest.Disabled())
@@ -271,6 +274,7 @@ func delay(n int) time.Duration {
 
 // TestThrottle is T-783.
 func TestThrottle(t *testing.T) {
+	t.Parallel()
 	for _, known := range []bool{true, false} {
 		name := "unknown username"
 		if known {
@@ -352,6 +356,7 @@ func TestThrottle(t *testing.T) {
 
 // TestSourceThrottle is T-784.
 func TestSourceThrottle(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t, func(o *account.Options) { o.SourceMaxFailures = 50 })
 	u := e.d.PlatformUser(t, "innocent.user", nil)
 	attacker := netip.MustParseAddr("203.0.113.9")
@@ -422,6 +427,7 @@ func TestSourceThrottle(t *testing.T) {
 
 // TestGeneratedPasswordExpiry is T-786.
 func TestGeneratedPasswordExpiry(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	live := e.d.PlatformUser(t, "live.generated", nil, dbtest.MustChange(time.Now().Add(time.Hour)))
 	old := e.d.PlatformUser(t, "old.generated", nil, dbtest.MustChange(time.Now().Add(-time.Minute)))
@@ -447,6 +453,7 @@ func TestGeneratedPasswordExpiry(t *testing.T) {
 
 // TestChangePassword is T-787.
 func TestChangePassword(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	u := e.d.PlatformUser(t, "change.user.name", nil, dbtest.MustChange(time.Now().Add(time.Hour)))
 	first, err := e.signIn(t, "change.user.name", u.Password, src1, "")

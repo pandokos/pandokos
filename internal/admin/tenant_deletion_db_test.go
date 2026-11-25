@@ -18,6 +18,7 @@ import (
 // TestTenantDeletionRequest is T-996: the request, its refusals, the repeat, the hold on
 // reactivation, the cancellation and the two reads.
 func TestTenantDeletionRequest(t *testing.T) {
+	t.Parallel()
 	api := apitest.New(t)
 	plat := api.PlatformCaller()
 	reason := apitest.Reason("close")
@@ -383,6 +384,7 @@ func TestTenantDeletionRequest(t *testing.T) {
 // TestLifecycleRoutes is T-997: who may call the seven operations of sprint 6.3, and what every
 // tenant role gets.
 func TestLifecycleRoutes(t *testing.T) {
+	t.Parallel()
 	api := apitest.NewPeople(t, apitest.PeopleConfig{}) // platform users and tenant members sign in
 	a, _ := api.Tenant(t, apitest.UniqueName("route-a"))
 	b, _ := api.Tenant(t, apitest.UniqueName("route-b"))
@@ -493,6 +495,7 @@ func sameWithoutRequestID(a, b string) bool {
 // TestDeletedTenantAudit is T-998: the log kept for a deleted tenant is read through two platform
 // operations, for a deleted tenant only, and verifies as an ordinary chain.
 func TestDeletedTenantAudit(t *testing.T) {
+	t.Parallel()
 	api := apitest.New(t)
 	plat := api.PlatformCaller()
 	head := func(id string) *apitest.Response {

@@ -129,6 +129,7 @@ func anthropicKeyHeader(cred string) http.Header {
 // refusal is the answer to an unknown key; keys that cannot be obtained are a 503; the inbound
 // credential is never forwarded.
 func TestTokenAuthentication(t *testing.T) {
+	t.Parallel()
 	s := newTokenSetup(t)
 	h := s.gateway(t, nil)
 	tok := s.token("ES256", workload)
@@ -336,6 +337,7 @@ func TestTokenAuthentication(t *testing.T) {
 // TestTokenUsageRecord is T-595: the record of a call authenticated by a token says so, and the
 // spans and the request line agree with it; a call made with a key still says service_account.
 func TestTokenUsageRecord(t *testing.T) {
+	t.Parallel()
 	mapping, issuer := "0192f0f0-0000-7000-8000-0000000000c1", "0192f0f0-0000-7000-8000-0000000000a1"
 	viaToken := testutil.InferencePrincipal()
 	viaToken.KeyID, viaToken.IssuerID, viaToken.Subject = mapping, issuer, "spiffe://acme/ns/ci"
@@ -420,6 +422,7 @@ func TestTokenUsageRecord(t *testing.T) {
 // TestTokenFailureAudit is T-594 (the gateway half): which refusals of a token write a row in the
 // audit log, with what, and how often.
 func TestTokenFailureAudit(t *testing.T) {
+	t.Parallel()
 	s := newTokenSetup(t)
 	gw := s.d.Open(t, store.RoleGateway)
 	auditor := resolver.NewFailureAuditor(gw, telemetry.NewLogger(s.logs, "debug"), nil)
@@ -652,6 +655,7 @@ func TestTokenFailureAudit(t *testing.T) {
 // debug, no segment of a presented token and nothing of the key set of the issuer appears in what the
 // process writes or sends: the log, a response, an audit row, a usage record, a span, the forwarded request.
 func TestTokenCanary(t *testing.T) {
+	t.Parallel()
 	s := newTokenSetup(t)
 	up := fakeprovider.New(t)
 	logs := s.logs

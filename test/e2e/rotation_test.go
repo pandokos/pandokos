@@ -20,6 +20,7 @@ import (
 // TestKEKRotationEndToEnd is T-1007, an exit test of the sprint: a rotation by configuration and a
 // restart, with calls that keep succeeding while the job re-wraps, and the refusal of the old key as the key file.
 func TestKEKRotationEndToEnd(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	d := dbtest.NewMigrated(t)
 	keys := vaulttest.Keys(t, 2)
@@ -116,6 +117,7 @@ func TestKEKRotationEndToEnd(t *testing.T) {
 // rotation with the old key destroyed, a backup taken before the deletion no longer yields the tenant's
 // credential. The control, with the old key, shows why the file has to be destroyed.
 func TestBackupBeforeDeletionYieldsNothing(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	d := dbtest.NewMigrated(t)
 	keys := vaulttest.Keys(t, 2)

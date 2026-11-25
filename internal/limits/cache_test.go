@@ -82,6 +82,7 @@ func version(t *testing.T, s RuleSet) int64 {
 
 // TestRuleCache is T-623.
 func TestRuleCache(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a, b := tid(1), tid(2)
 
@@ -298,6 +299,7 @@ func TestRuleCache(t *testing.T) {
 // TestSkippedRulesLogged: the number of rules a load skipped is logged once, at debug level,
 // through the cache's own logger.
 func TestSkippedRulesLogged(t *testing.T) {
+	t.Parallel()
 	l, buf := newLogger()
 	a := tid(1)
 	skipped := 2
