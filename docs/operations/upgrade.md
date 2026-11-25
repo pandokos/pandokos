@@ -93,9 +93,11 @@ and the administration API (`/v1`). A document written by the previous minor is 
 
 ## 8. PostgreSQL
 
-The minimum is PostgreSQL 16. A move to a later major is the database's own procedure; the audit chains stay
-verifiable across it (the drill restored a dump into PostgreSQL 18 and verified both), and the [drill
-record](restore-drill-2026-11.md) names the majors it ran on.
+The minimum is PostgreSQL 16, and CI runs the whole suite on 16 and on 18. A move to a later major is the
+database's own procedure; the audit chains stay verifiable across it (the drill restored a dump into PostgreSQL 18
+and verified both), and the [drill record](restore-drill-2026-11.md) names the majors it ran on. The Compose
+reference deployment runs PostgreSQL 18 from v0.3.0; an installation made before moves its database with the
+[procedure of the Compose guide](compose.md#moving-an-installation-from-postgresql-16-to-18).
 
 ## 9. What is checked at every release
 

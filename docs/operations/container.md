@@ -5,7 +5,7 @@ API and the command line of `pandokos`, for several tenants: callers present vir
 tokens, people and automation use the administration API, and each tenant's provider credentials are
 stored sealed in the database under a key-encryption key ([gateway guide](gateway.md),
 [vault guide](vault.md)). Both listeners can serve TLS ([TLS guide](tls.md)). The image needs a
-PostgreSQL 16 database, and nothing else: see the [database guide](database.md) to prepare it. What
+PostgreSQL 16 or later database, and nothing else: see the [database guide](database.md) to prepare it. What
 is not built yet is in [Limits of this pre-release](#limits-of-this-pre-release); the
 [Compose reference](compose.md) is the quickest first trial.
 

@@ -43,8 +43,8 @@ func TestComposeReference(t *testing.T) {
 		}
 	}
 
-	t.Run("the PostgreSQL image has a digest", func(t *testing.T) {
-		if !regexp.MustCompile(`^postgres:16[\w.-]*@sha256:[0-9a-f]{64}$`).MatchString(doc.Services["postgres"].Image) {
+	t.Run("the PostgreSQL image is 18 and has a digest", func(t *testing.T) {
+		if !regexp.MustCompile(`^postgres:18[\w.-]*@sha256:[0-9a-f]{64}$`).MatchString(doc.Services["postgres"].Image) {
 			t.Errorf("image %q", doc.Services["postgres"].Image)
 		}
 	})
