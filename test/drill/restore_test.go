@@ -61,6 +61,7 @@ func TestRestorePhysical(t *testing.T) {
 	w.Disaster()
 
 	t.Run("P1: to the end of the archive", func(t *testing.T) {
+		defer w.Use(t)()
 		r := w.Restore(RestoreSpec{Backup: b2, Physical: true, Keys: K1})
 		// The archive holds DEL: tenant c is deleted and tenant d's key revoked.
 		assertRestored(t, r, b2, "unchanged", TenantA, TenantB)
@@ -78,12 +79,14 @@ func TestRestorePhysical(t *testing.T) {
 	})
 
 	t.Run("P2: to the restore point of B1", func(t *testing.T) {
+		defer w.Use(t)()
 		r := w.Restore(RestoreSpec{Backup: b1, Physical: true, Until: b1.RestorePoint, Keys: K2, Reading: "current"})
 		assertRestored(t, r, b1, "activated", worldTenants...) // the current key wraps: serve activates it
 		w.Finish("P2")
 	})
 
 	t.Run("a server of another major refuses", func(t *testing.T) {
+		defer w.Use(t)()
 		_, said, err := w.TryRestore(RestoreSpec{Backup: b2, Physical: true, On: TargetNext, Keys: K1})
 		if err == nil {
 			t.Fatal("a base backup of major 16 was accepted by a server of the later major")

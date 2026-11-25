@@ -17,6 +17,7 @@ func TestAfterRestore(t *testing.T) {
 	c, d := w.Tenants[TenantC], w.Tenants[TenantD]
 
 	t.Run("5.a: request again the deletions completed after the backup", func(t *testing.T) {
+		defer w.Use(t)()
 		w.Step(Step5a, func() {
 			// The restored backup brings tenant c back, and its credential opens.
 			if status, seen := r.Call(TenantC); status != 200 || seen != Fingerprint(c.Credential) {
@@ -42,6 +43,7 @@ func TestAfterRestore(t *testing.T) {
 	})
 
 	t.Run("5.b: the platform's events list the deletions too", func(t *testing.T) {
+		defer w.Use(t)()
 		w.Step(Step5b, func() {
 			pulled := w.Out.PulledDeletions
 			if !slices.Equal(pulled, w.Out.CompletedDeletion) {
@@ -54,6 +56,7 @@ func TestAfterRestore(t *testing.T) {
 	})
 
 	t.Run("5.c: the usage and the audit rows after the backup are missing", func(t *testing.T) {
+		defer w.Use(t)()
 		w.Step(Step5c, func() {
 			for _, name := range worldTenants {
 				if got, want := r.LedgerRows(name), b2.Ledger[name]; name != TenantC && got != want {
@@ -77,6 +80,7 @@ func TestAfterRestore(t *testing.T) {
 	})
 
 	t.Run("5.d: the keys revoked since the backup are valid again", func(t *testing.T) {
+		defer w.Use(t)()
 		w.Step(Step5d, func() {
 			if status, seen := r.Call(TenantD); status != 200 || seen != Fingerprint(d.Credential) {
 				t.Errorf("tenant d's key, revoked at DEL, answers %d (credential %q) after the restore, want 200: the record lists it under what the operator must redo", status, seen)

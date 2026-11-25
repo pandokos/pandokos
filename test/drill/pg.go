@@ -19,8 +19,14 @@ import (
 // sh runs a shell script in a service, in the directory /work where the repository's deploy
 // directory is mounted (the paths of the guide are relative to the repository), as root, and
 // returns what it printed. Every output goes through the canaries and is shown redacted.
-func (w *World) sh(ctx context.Context, service, stdin, script string) (string, error) {
-	out, err := w.P.Exec(ctx, service, "", stdin, "sh", "-c", "set -e\ncd /work\n"+script)
+func (w *World) sh(ctx context.Context, service, script string) (string, error) {
+	return w.shAs(ctx, service, "", "", script)
+}
+
+// shAs is sh as a user of the container ("" for the container's own, root): the user is named, never
+// the uid of whoever runs the tests on the host.
+func (w *World) shAs(ctx context.Context, service, user, stdin, script string) (string, error) {
+	out, err := w.P.Exec(ctx, service, user, stdin, "sh", "-c", "set -e\ncd /work\n"+script)
 	w.Canaries.Scan(w.T, "output of "+service+": "+firstLine(script), []byte(out))
 	return out, err
 }
@@ -30,7 +36,7 @@ func (w *World) run(service, script string) string {
 	w.T.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	out, err := w.sh(ctx, service, "", script)
+	out, err := w.sh(ctx, service, script)
 	if err != nil {
 		w.T.Fatalf("%s: %v\n%s", firstLine(script), err, w.redact(tail(out)))
 	}

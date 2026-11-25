@@ -170,6 +170,14 @@ type World struct {
 	finalScans     int
 }
 
+// Use makes t the test that the world's failures end, for a subtest that runs on a world made by its parent:
+// a subtest must not end its parent's test. It returns the function that gives the world back.
+func (w *World) Use(t *testing.T) func() {
+	prev := w.T
+	w.T = t
+	return func() { w.T = prev }
+}
+
 // Step runs fn as a step of the guide and records its duration for the report.
 func (w *World) Step(s Step, fn func()) { w.Timer.Time(s, fn) }
 

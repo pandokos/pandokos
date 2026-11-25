@@ -105,8 +105,8 @@ psql -U postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE <database> OWNER pandoko
 pg_restore -U postgres -d <database> --exit-on-error /backup/pandokos.dump
 ```
 
-For a **base backup**: unpack it into the empty data directory before the server starts, give recovery its
-settings and the signal file, then start the server:
+For a **base backup**: as the user the server runs as (`postgres`), unpack it into the empty data directory before
+the server starts, give recovery its settings and the signal file, then start the server:
 
 ```sh
 tar -xzf /backup/base/base.tar.gz -C "$PGDATA"

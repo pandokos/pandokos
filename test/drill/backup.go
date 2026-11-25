@@ -314,7 +314,7 @@ func (w *World) DumpAs(role string) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	out, err := w.sh(ctx, Source, "", fmt.Sprintf("pg_dump -U %s -d %s -Fc -f /dev/null", user, w.db))
+	out, err := w.sh(ctx, Source, fmt.Sprintf("pg_dump -U %s -d %s -Fc -f /dev/null", user, w.db))
 	return out, err
 }
 

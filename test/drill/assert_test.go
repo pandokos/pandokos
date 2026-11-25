@@ -185,7 +185,7 @@ func scanBackups(t *testing.T, w *World) (files int, bytesRead int64) {
 	}
 	for _, d := range dumps {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		text, err := w.sh(ctx, Source, "", "pg_restore -f - /backup/"+filepath.ToSlash(d))
+		text, err := w.sh(ctx, Source, "pg_restore -f - /backup/"+filepath.ToSlash(d))
 		cancel()
 		if err != nil {
 			t.Fatalf("pg_restore of %s to plain text: %v", d, err)

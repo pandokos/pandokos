@@ -167,9 +167,13 @@ func (w *World) recoverPhysical(service string, s RestoreSpec) (string, error) {
 	w.Step(Step42, func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
-		script := "mkdir -p \"$PGDATA\"\n" + PhysicalUnpack + "\ncat >> \"$PGDATA/postgresql.auto.conf\"\n" + PhysicalSignal +
-			"\nchown -R postgres:postgres \"$PGDATA\"\nchmod 0700 \"$PGDATA\"\ntouch /backup/target.go\n"
-		said, failed = w.sh(ctx, service, conf, script)
+		// The data directory is filled by the user the server runs as, so that every file is its own and
+		// nothing depends on who owns what on the host; the directory itself (a mount point) is then given to it.
+		script := "mkdir -p \"$PGDATA\"\n" + PhysicalUnpack + "\ncat >> \"$PGDATA/postgresql.auto.conf\"\n" + PhysicalSignal + "\n"
+		if said, failed = w.shAs(ctx, service, "postgres", conf, script); failed != nil {
+			return
+		}
+		said, failed = w.shAs(ctx, service, "0", "", "chown postgres:postgres \"$PGDATA\"\nchmod 0700 \"$PGDATA\"\ntouch /backup/target.go\n")
 	})
 	if failed != nil {
 		return said, failed
@@ -194,7 +198,7 @@ func (w *World) recoverPhysical(service string, s RestoreSpec) (string, error) {
 		return "", err
 	}
 	// The marker is for the next physical restore on a fresh server.
-	_, _ = w.sh(context.Background(), service, "", "rm -f /backup/target.go")
+	_, _ = w.sh(context.Background(), service, "rm -f /backup/target.go")
 	return "", nil
 }
 
