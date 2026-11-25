@@ -40,8 +40,10 @@ and a pipeline that did not check the thing it published.
    or an issue for each `deferred`, the maintainer's acceptance and its date for each `accepted`. The model is
    reviewed at every release, by a new record (a short one when nothing changed), and independently before 1.0.
 2. **A member in another case is refused (D-2).** A request body is refused with `invalid_request` when it holds,
-   in an object the gateway scans, a member whose name equals a name the gateway reads in that object when case is
-   ignored and is not spelled exactly so. The names are the read set of each family (`ReadMembers`, and
+   in an object the gateway scans, a member whose name is not spelled exactly as a name the gateway reads in that object
+   but equals it when case is ignored by any of three comparisons: Unicode simple folding, upper casing or lower
+   casing (they differ on the dotless i U+0131, the dotted capital I U+0130, the long s U+017F and the Kelvin sign
+   U+212A, and the providers' readers differ among them). The names are the read set of each family (`ReadMembers`, and
    `ReadStreamOptions` for `stream_options`). The reason in the operator's log is `member_case`; the answer is
    the one of every invalid request (ADR 0020), so no SDK test and no client changes. The body is never
    re-serialized: refusing is the one answer that cannot change a byte of what is forwarded. **Amends ADR 0037

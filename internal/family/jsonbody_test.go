@@ -143,7 +143,7 @@ func TestIsLiteralSpliceEncodeString(t *testing.T) {
 // is not spelled exactly so is a conflict; exact names, names outside the set and nested members
 // are not.
 func TestCaseConflict(t *testing.T) {
-	read := []string{"model", "stream", "max_tokens"}
+	read := []string{"model", "stream", "max_tokens", "max_completion_tokens", "stream_options"}
 	for _, c := range []struct {
 		name, in string
 		want     bool
@@ -158,6 +158,10 @@ func TestCaseConflict(t *testing.T) {
 		{"a name with an underscore", `{"Max_Tokens":1}`, true},
 		{"a letter that folds to an ASCII one (long s)", "{\"ſtream\":true}", true},
 		{"the Kelvin sign inside a name of the set", "{\"max_toKens\":1}", true},
+		{"a dotless i that upper-cases to I", "{\"max_completıon_tokens\":1}", true},
+		{"a dotted capital I that lower-cases to i", "{\"max_complet\u0130on_tokens\":1}", true},
+		{"an escaped dotless i", `{"max_complet\u0131on_tokens":1}`, true},
+		{"an escaped Kelvin sign", `{"max_to\u212Aens":1}`, true},
 		{"an escaped spelling of the exact name", `{"model":"m"}`, false},
 		{"an escaped spelling of another case", `{"Model":"m"}`, true},
 		{"a name outside the set", `{"Messages":[],"Temperature":1}`, false},

@@ -366,6 +366,12 @@ func FuzzParseRequest(f *testing.F) {
 	})
 }
 
+// sameIgnoringCase is the comparison of the invariant: simple folding, upper casing or lower
+// casing equates the two names, as a reader of another language might.
+func sameIgnoringCase(a, b string) bool {
+	return strings.EqualFold(a, b) || strings.ToUpper(a) == strings.ToUpper(b) || strings.ToLower(a) == strings.ToLower(b)
+}
+
 // checkMemberCase is the invariant of sprint 12.2 section 5.9: a body accepted has exactly one
 // member equal to model when case is ignored, and no member that differs only in case from a
 // member of the read set (and none in stream_options).
@@ -377,11 +383,11 @@ func checkMemberCase(t *testing.T, in []byte) {
 	}
 	models := 0
 	for _, m := range ms {
-		if strings.EqualFold(m.Key, "model") {
+		if sameIgnoringCase(m.Key, "model") {
 			models++
 		}
 		for _, name := range ReadMembers {
-			if m.Key != name && strings.EqualFold(m.Key, name) {
+			if m.Key != name && sameIgnoringCase(m.Key, name) {
 				t.Fatalf("accepted a member %q that differs only in case from %q", m.Key, name)
 			}
 		}
@@ -396,7 +402,7 @@ func checkMemberCase(t *testing.T, in []byte) {
 		}
 		for _, m := range inner {
 			for _, name := range ReadStreamOptions {
-				if m.Key != name && strings.EqualFold(m.Key, name) {
+				if m.Key != name && sameIgnoringCase(m.Key, name) {
 					t.Fatalf("accepted a stream_options member %q that differs only in case from %q", m.Key, name)
 				}
 			}
@@ -647,6 +653,15 @@ func TestParseMemberCase(t *testing.T) {
 			refused(t, `{"model":"m","stream_options":{"`+other+`":true}}`)
 		})
 	}
+	t.Run("letters that fold to an ASCII one", func(t *testing.T) {
+		refused(t, "{\"model\":\"m\",\"max_completıon_tokens\":999999,\"max_completion_tokens\":1}")
+		refused(t, "{\"model\":\"m\",\"max_completıon_tokens\":999999}")
+		refused(t, "{\"model\":\"m\",\"stream\":true,\"stream_options\":{\"ınclude_usage\":false}}")
+		refused(t, "{\"model\":\"m\",\"stream\":true,\"stream_options\":{\"\u0130nclude_usage\":false}}")
+		refused(t, "{\"model\":\"m\",\"ſtream\":true}")
+		refused(t, "{\"model\":\"m\",\"max_to\u212Aens\":1}")
+		refused(t, "{\"model\":\"m\",\"stream_optıons\":{}}")
+	})
 	t.Run("the exact names are accepted", func(t *testing.T) {
 		for _, op := range ops {
 			if _, err := ParseOperation(op, []byte(`{"model":"m","stream":true,"stream_options":{"include_usage":true},"max_tokens":1,"n":1}`)); err != nil {

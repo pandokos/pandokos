@@ -109,7 +109,9 @@ The body must be one JSON object with exactly one top-level string member `model
 refused (`invalid_request`), because parsers disagree on which occurrence counts. So are members that
 differ only in case from a member the gateway reads (`Model` beside `model`, `Stream`, `STREAM_OPTIONS`
 and the others it reads, in the object where it reads them): a provider that matches names without regard
-to case would read the member the gateway did not look at. The refusal is the same `invalid_request`; the
+to case would read the member the gateway did not look at. Case is ignored in three ways at once
+(Unicode simple folding, upper casing and lower casing), so letters such as the dotless `ı`, the
+dotted `İ`, the long `ſ` and the Kelvin sign `K` count as the ASCII letter they stand for. The refusal is the same `invalid_request`; the
 operator's log has `invalid_reason: member_case` and never the name or the value (section 10). The body
 is not rewritten to repair it: the caller removes the extra member. Members the gateway does not read are
 not looked at.
