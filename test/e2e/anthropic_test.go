@@ -92,6 +92,7 @@ func (p *proc) usageList(t *testing.T, adminFile, tenantID string, extra ...stri
 
 // TestAnthropicEndToEnd is T-552: the binary, the database and the fake as the Anthropic provider.
 func TestAnthropicEndToEnd(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	p := startBinary(t, opts{level: "info", up: up})
 	boot := p.bootstrap(t)
@@ -218,6 +219,7 @@ func TestAnthropicEndToEnd(t *testing.T) {
 // TestUnsupportedAnthropicPaths is T-554: the paths of the Messages API that are not served are
 // 404 endpoint_not_supported in the Anthropic shape, and an unauthenticated caller leaves no record.
 func TestUnsupportedAnthropicPaths(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	p := startBinary(t, opts{level: "info", up: up})
 	boot := p.bootstrap(t)

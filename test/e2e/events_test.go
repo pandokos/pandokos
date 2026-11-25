@@ -39,6 +39,7 @@ func expireLeases(t *testing.T, p *proc) {
 // at the end the receiver's store has exactly one entry per call, each with the request ID of a call,
 // duplicates were seen and absorbed, and no dead letter remains after a replay.
 func TestEventsExactlyOncePerCall(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	o := opts{level: "info", up: up, events: fastEvents}
 	p := startBinary(t, o)
@@ -190,6 +191,7 @@ func TestEventsExactlyOncePerCall(t *testing.T) {
 // ready, the lag grows and the destination is failing; the outbox holds the 200 events; when the
 // receiver answers, all 200 arrive.
 func TestEventsReceiverDown(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	e := fastEvents
 	e.attempts = "100"
@@ -289,6 +291,7 @@ func TestEventsReceiverDown(t *testing.T) {
 // TestEventsPull is T-1054: a consumer that pulls by sequence across two restarts of the binary reads
 // each event once, and `pandokos event export` gives the same lines.
 func TestEventsPull(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	o := opts{level: "info", up: up}
 	p := startBinary(t, o)
@@ -373,6 +376,7 @@ func TestEventsPull(t *testing.T) {
 // deletion no destination, event or secret of the tenant remains; `platform-event export` shows
 // requested and deleted with the external reference; the sealed secret cannot be opened any more.
 func TestEventsAndDeletion(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	d := dbtest.NewMigrated(t)
 	e := fastEvents
@@ -470,6 +474,7 @@ func TestEventsAndDeletion(t *testing.T) {
 // destination ID, no URL, no host and no secret; every line is in the log reference (the check runs
 // when the process ends, for every process of every test).
 func TestEventsTelemetryCanary(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	name := fixtures.CanaryLabel("tenant")
 	p := startBinary(t, opts{level: "debug", up: up, events: fastEvents, gracePeriod: "0s", deletionInterval: "10s", metricsPrometheus: true})

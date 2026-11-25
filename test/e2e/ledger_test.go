@@ -68,6 +68,7 @@ func num(v any) float64 {
 
 // TestLedgerExitScenario is T-508: the built binary, PostgreSQL and a fake provider.
 func TestLedgerExitScenario(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	p := startBinary(t, opts{level: "info", up: up})
 	boot := p.bootstrap(t)
@@ -254,6 +255,7 @@ func (p *proc) newCaller2(t *testing.T, boot, name, credential string, keyFlags 
 // readiness log names the check ledger; when the database returns every admitted request has one
 // row and /readyz is 200 again.
 func TestLedgerDatabaseDown(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	p := startBinary(t, opts{level: "info", up: up, ledgerBuffer: 100})
 	key := p.inferenceKey(t)
@@ -330,6 +332,7 @@ func tenantOfKey(t *testing.T, p *proc) string {
 
 // TestLedgerAtShutdown is T-510.
 func TestLedgerAtShutdown(t *testing.T) {
+	t.Parallel()
 	t.Run("streams in flight at SIGTERM leave a row each", func(t *testing.T) {
 		up := fakeprovider.New(t)
 		p := startBinary(t, opts{level: "info", up: up})

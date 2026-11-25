@@ -21,6 +21,7 @@ func micros(n int64) string { return fmt.Sprintf("%d.%06d", n/1_000_000, n%1_000
 // usage records and limit events; `usage list` shows both sources; the default log has no cost, and has it
 // with the key on, with the warning at start.
 func TestTenantPriceLists(t *testing.T) {
+	t.Parallel()
 	p, _, boot := limitsProc(t, "info")
 	p.priceFake(t, boot, "openai") // the catalogue price in USD, 3 and 6 per million
 	a, b := p.newLimitsTenant(t, boot, "prices-a"), p.newLimitsTenant(t, boot, "prices-b")

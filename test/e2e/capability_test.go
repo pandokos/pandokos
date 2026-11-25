@@ -19,6 +19,7 @@ import (
 // can answer; the catalogue and credential caches are invalidated by notification, and the test
 // waits for the gateway with testutil.Eventually until it agrees or the bound passes.
 func TestCapabilityAgreesWithGateway(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	p := startBinary(t, opts{level: "info", up: up, env: []string{"PANDOKOS_CACHE_CATALOG_TTL=1s", "PANDOKOS_CACHE_CREDENTIAL_TTL=1s"}})
 	boot := p.bootstrap(t)
