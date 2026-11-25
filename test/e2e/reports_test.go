@@ -137,9 +137,29 @@ func TestReportLastMonthByModel(t *testing.T) {
 	wantA := map[string]string{m1 + "/EUR": "3.75", m2 + "/USD": "4", m2 + "/EUR": "0.5"}
 	before := p.mustCLI(t, viewerA, "usage", "report", "--tenant", idA, "--month", month, "--group-by", "model", "-o", "json")
 	sameCosts(t, "A before the rollup", costs(t, before), wantA)
-	for _, foreign := range []string{idB, "100", "200", "reports-b"} {
+	// Tenant B's identifiers are unique strings, so a text search is exact for them. B's figures
+	// (100 and 200) are short digit runs that a random UUID in A's report can contain, so they are
+	// looked for in the numeric fields of the rows, not in the text.
+	for _, foreign := range []string{idB, "reports-b"} {
 		if strings.Contains(before, foreign) {
 			t.Errorf("A's report holds %q, which is tenant B's", foreign)
+		}
+	}
+	var reportA reportOut
+	if err := json.Unmarshal([]byte(before), &reportA); err != nil {
+		t.Fatalf("%v\n%s", err, before)
+	}
+	if len(reportA.Rows) == 0 {
+		t.Fatalf("A's report has no rows: the test proves nothing\n%s", before)
+	}
+	for _, r := range reportA.Rows {
+		if r.Cost != nil {
+			if c, ok := new(big.Rat).SetString(*r.Cost); ok && (c.Cmp(big.NewRat(100, 1)) == 0 || c.Cmp(big.NewRat(200, 1)) == 0) {
+				t.Errorf("A's report has a row of cost %s, which is tenant B's figure: %+v", *r.Cost, r)
+			}
+		}
+		if r.Requests == 100 || r.Requests == 200 {
+			t.Errorf("A's report has a row of %d requests, which is tenant B's figure: %+v", r.Requests, r)
 		}
 	}
 	sameCosts(t, "B", costs(t, p.mustCLI(t, viewerB, "usage", "report", "--tenant", idB, "--month", month, "--group-by", "model", "-o", "json")), map[string]string{m1 + "/EUR": "100", m2 + "/USD": "200"})
