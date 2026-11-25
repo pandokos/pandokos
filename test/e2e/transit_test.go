@@ -397,6 +397,8 @@ func TestTransitOutage(t *testing.T) {
 	if d := time.Since(start); d > 3*time.Second {
 		t.Errorf("the refusal took %v with a request timeout of 500 ms", d)
 	}
+	// Each line is written after the answer: wait for it, then look.
+	waitLine(t, p, "credential cannot be opened", 10*time.Second)
 	if lines := linesOf(p, "credential cannot be opened"); len(lines) == 0 || lines[len(lines)-1]["cause"] != "kek_provider_unavailable" {
 		t.Errorf("credential cannot be opened: %v, want cause kek_provider_unavailable", lines)
 	}
@@ -408,6 +410,7 @@ func TestTransitOutage(t *testing.T) {
 	if got := d.Count(t, `SELECT count(*)::int FROM pandokos.provider_credential`); got != creds {
 		t.Errorf("the credential count went from %d to %d: a write during the outage stored something", creds, got)
 	}
+	waitLine(t, p, "credential cannot be sealed", 10*time.Second)
 	if l := linesOf(p, "credential cannot be sealed"); len(l) == 0 {
 		t.Errorf("no line credential cannot be sealed")
 	}
@@ -909,6 +912,8 @@ func TestTransitRotation(t *testing.T) {
 	if code == 0 || !strings.Contains(out+errs, "unavailable") {
 		t.Errorf("a new tenant through the instance that was not restarted: exit %d, stdout %q, stderr %q", code, out, errs)
 	}
+	// The process writes the line after it has answered the command: wait for it, then look.
+	waitLine(t, p1, "credential cannot be sealed", 10*time.Second)
 	if l := linesOf(p1, "credential cannot be sealed"); len(l) == 0 || l[len(l)-1]["cause"] != "kek_replaced" {
 		t.Errorf("credential cannot be sealed: %v, want cause kek_replaced", l)
 	}
@@ -917,6 +922,8 @@ func TestTransitRotation(t *testing.T) {
 	}
 	// The worker of the restarted instance re-wraps and retires the old version.
 	testutil.Eventually(t, 90*time.Second, "the old version to be retired", func() bool { return kekStates(t, p2, boot)[v1] == "retired" })
+	// The worker writes the line after the retirement is committed: wait for it, then count.
+	waitLine(t, p2, "key rotation complete", 10*time.Second)
 	if l := linesOf(p2, "key rotation complete"); len(l) != 1 || l[0]["kek_version"] != v1 {
 		t.Errorf("key rotation complete: %v", l)
 	}
