@@ -100,6 +100,7 @@ type TransitProvider struct {
 	descAt     time.Time
 	descOnFail time.Time // the last description read because of a 400 to decrypt
 	descNewer  time.Time // the last description read for a version above the latest (describeNewer)
+	newerErr   error     // its failure, unless the key was not found; nil when it succeeded
 	version    string
 	pinned     int
 	weak       []string
@@ -511,7 +512,9 @@ func (p *TransitProvider) resolve(ctx context.Context, version string) (int, err
 // service has activated a newer version and its worker re-wraps data keys under it: an instance
 // not restarted keeps opening them (§5.4), while its own wraps stay pinned. One description is read
 // at a time; the callers that come meanwhile wait for it and use it. A version the service does not
-// hold therefore costs at most one description a second.
+// hold therefore costs at most one description a second. A description that failed for another
+// reason than a missing key is the answer of every caller within that second, so that an outage is
+// not taken for an unknown version.
 func (p *TransitProvider) describeNewer(ctx context.Context, n int) (transitDescription, error) {
 	select {
 	case p.newer <- struct{}{}:
@@ -521,15 +524,27 @@ func (p *TransitProvider) describeNewer(ctx context.Context, n int) (transitDesc
 	defer func() { <-p.newer }()
 	p.mu.Lock()
 	d, now := p.desc, p.opts.Now()
-	again := n > d.newest && (p.descNewer.IsZero() || now.Sub(p.descNewer) >= transitDescribeNewer)
-	if again {
-		p.descNewer = now
-	}
-	p.mu.Unlock()
-	if !again {
+	if n <= d.newest {
+		p.mu.Unlock()
 		return d, nil
 	}
-	return p.describe(ctx)
+	if !p.descNewer.IsZero() && now.Sub(p.descNewer) < transitDescribeNewer {
+		err := p.newerErr
+		p.mu.Unlock()
+		return d, err
+	}
+	p.descNewer = now
+	p.mu.Unlock()
+	d, err := p.describe(ctx)
+	var te *TransitError
+	kept := err
+	if errors.As(err, &te) && te.Class == "not_found" {
+		kept = nil
+	}
+	p.mu.Lock()
+	p.newerErr = kept
+	p.mu.Unlock()
+	return d, err
 }
 
 // Info returns what Start found.

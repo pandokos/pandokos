@@ -643,6 +643,20 @@ func TestTransitVersionAfterAnotherRestart(t *testing.T) {
 		}
 	})
 
+	t.Run("a description that fails for an outage is the answer within the second", func(t *testing.T) {
+		first, _, _, v2, wrapped2, aads := setup(t)
+		first.s.Stop()
+		t.Cleanup(first.s.Start)
+		for i := range 2 {
+			if _, err := first.p.Unwrap(ctx(t), v2, wrapped2[i], aads[i]); !errors.Is(err, vault.ErrProviderUnavailable) || errors.Is(err, vault.ErrKeyVersionUnknown) {
+				t.Errorf("Unwrap %d of the newer version with the service away: %v, want ErrProviderUnavailable", i, err)
+			}
+		}
+		if err := first.p.Available(ctx(t), v2); !errors.Is(err, vault.ErrProviderUnavailable) {
+			t.Errorf("Available of the newer version with the service away: %v, want ErrProviderUnavailable", err)
+		}
+	})
+
 	t.Run("a version the service does not hold stays unknown, bounded", func(t *testing.T) {
 		first, c, _, v2, wrapped2, aads := setup(t)
 		fp := strings.Split(v2, "-")[1]
