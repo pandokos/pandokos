@@ -45,7 +45,7 @@ took. Decisions: [ADR 0076](../adr/0076-the-restore-drill-its-record-and-recover
 | After a restore | TestAfterRestore | Steps 5.a to 5.e: a deleted tenant is back and its credential opens; the deletion requested again completes; the platform's events name the same tenants; the head kept after the backup does not verify, the head kept at the backup does; a revoked key answers 200 again; a deletion that was running completes without a new request |
 | Events after a restore | TestEventsAfterRestore | Step 5.f (finding G-7) |
 | Recovery and destinations | TestRecoveryAndDestinations | Finding F-1 |
-| Dumps | TestDump | A dump by a role that row-level security binds fails; the dump, the base backup and the WAL archive hold no canary and no byte of a key file |
+| Dumps | TestDump | A dump by a role that row-level security binds fails; the plain text of each dump (`pg_restore -f -`: the custom format compresses its data), the members of the base backup and the files of the WAL archive hold no canary, no signing secret and no byte of a key file, and the same search finds a tenant's name (a value that is no secret) in each kind of artefact, so it is known to read the data |
 | Canaries | TestDrillCanary | No secret in any output, log or the report |
 | Figures and report | TestFiguresAndReport | The figure case and the report |
 

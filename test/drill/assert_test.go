@@ -6,6 +6,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -110,9 +111,13 @@ func secretsOf(w *World, tenants []string) []string {
 	return out
 }
 
-// scanBackups searches every file under the backup directory for every secret of the world and
-// every byte sequence of a key file, in the files themselves and, for the base backup, inside its
-// compressed archive. It returns the number of files and bytes looked at.
+// scanBackups searches every artefact under the backup directory for every secret of the world and
+// every byte sequence of a key file, in the form in which a secret could be read: the plain text of each
+// dump (a custom-format dump compresses its table data, so its bytes prove nothing: pg_restore writes it
+// out), the members of the base backup, and the files of the WAL archive. The same search must find a
+// value that is not a secret, the name of a tenant, in every kind of artefact: a search that finds that
+// in none of the data would prove nothing about the secrets. It returns the number of artefacts searched
+// and the bytes looked at.
 func scanBackups(t *testing.T, w *World) (files int, bytesRead int64) {
 	t.Helper()
 	needles := append([]string(nil), w.KeyMaterial()...)
@@ -120,7 +125,9 @@ func scanBackups(t *testing.T, w *World) (files int, bytesRead int64) {
 		needles = append(needles, testutil.SecretForms(s)...)
 	}
 	needles = append(needles, w.P.SuperuserPassword(t))
-	search := func(name string, data []byte) {
+	control := w.Tenants[TenantA].Name
+	found := map[string]bool{}
+	search := func(kind, name string, data []byte) {
 		files++
 		bytesRead += int64(len(data))
 		for i, n := range needles {
@@ -128,7 +135,12 @@ func scanBackups(t *testing.T, w *World) (files int, bytesRead int64) {
 				t.Errorf("secret %d is in %s", i, name)
 			}
 		}
+		if bytes.Contains(data, []byte(control)) {
+			found[kind] = true
+			found[name] = true
+		}
 	}
+	var dumps []string
 	err := filepath.Walk(w.P.Backup, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return err
@@ -138,8 +150,12 @@ func scanBackups(t *testing.T, w *World) (files int, bytesRead int64) {
 		if err != nil {
 			return err
 		}
-		search(rel, data)
-		if strings.HasSuffix(path, ".gz") {
+		switch {
+		case strings.HasPrefix(rel, "dumps"+string(filepath.Separator)):
+			dumps = append(dumps, rel)
+			search("dump bytes", rel, data)
+		case strings.HasSuffix(path, ".gz"):
+			search("base", rel, data)
 			zr, err := gzip.NewReader(bytes.NewReader(data))
 			if err != nil {
 				t.Logf("%s: not a gzip archive (%v): searched as it is", rel, err)
@@ -155,13 +171,37 @@ func scanBackups(t *testing.T, w *World) (files int, bytesRead int64) {
 					break
 				}
 				member, _ := io.ReadAll(tr)
-				search(rel+":"+h.Name, member)
+				search("base", rel+":"+h.Name, member)
 			}
+		case strings.HasPrefix(rel, "wal"+string(filepath.Separator)):
+			search("wal", rel, data)
+		default:
+			search("other", rel, data)
 		}
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, d := range dumps {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		text, err := w.sh(ctx, Source, "", "pg_restore -f - /backup/"+filepath.ToSlash(d))
+		cancel()
+		if err != nil {
+			t.Fatalf("pg_restore of %s to plain text: %v", d, err)
+		}
+		search("dump", d+" as plain text", []byte(text))
+		if !found[d+" as plain text"] {
+			t.Errorf("the search finds the name of a tenant (a value that is no secret) in no part of %s as plain text: it would prove nothing about the secrets", d)
+		}
+	}
+	for _, kind := range []string{"base", "wal"} {
+		if !found[kind] {
+			t.Errorf("the search finds the name of a tenant (a value that is no secret) in no member of the %s artefacts: it would prove nothing about the secrets", kind)
+		}
+	}
+	if len(dumps) == 0 {
+		t.Error("no dump was found under the backup directory")
 	}
 	return files, bytesRead
 }
