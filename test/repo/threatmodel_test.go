@@ -426,7 +426,7 @@ var (
 // TestThreatModelReview is T-R90 (sprint 12.2, section 5.4): the dated record has its header
 // fields; one status row per identifier of the model and none more, from the closed set; one row
 // per finding with a decision from the closed set, a test that exists for every `fixed` and `test
-// added`, a sprint or an issue for every `deferred` and an acceptance with a date for every
+// added` (every test named in "Shown by" must exist, once), a sprint or an issue for every `deferred` and an acceptance with a date for every
 // `accepted`. The placeholder `pending (plan F5)` counts as empty, so the test is red until the
 // maintainer has decided.
 func TestThreatModelReview(t *testing.T) {
@@ -544,14 +544,18 @@ func TestThreatModelReview(t *testing.T) {
 			}
 			switch decision {
 			case "fixed", "test added":
-				found := false
+				named := 0
 				for _, b := range backticked(shown) {
-					if proofRE.MatchString(b) && len(tests[b]) == 1 {
-						found = true
+					if !proofRE.MatchString(b) {
+						continue
+					}
+					named++
+					if len(tests[b]) != 1 {
+						t.Errorf("%s: %q names %s, which resolves to %d test functions, not exactly one", id, decision, b, len(tests[b]))
 					}
 				}
-				if !found {
-					t.Errorf("%s: %q is shown by no test that exists (package.TestName in back quotes)", id, decision)
+				if named == 0 {
+					t.Errorf("%s: %q is shown by no test (package.TestName in back quotes)", id, decision)
 				}
 			case "deferred":
 				if to := cell(r, "Deferred to"); !regexp.MustCompile(`sprint \d+\.\d+|#\d+`).MatchString(to) {
