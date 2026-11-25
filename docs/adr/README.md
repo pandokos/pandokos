@@ -79,6 +79,7 @@ A record is *proposed* until the maintainer accepts it, by merging its pull requ
 | [0071](0071-webhook-destinations-signature-secrets-and-egress.md) | Webhook destinations: the signature, the signing secrets and egress | accepted |
 | [0072](0072-event-types-the-envelope-the-external-reference-and-platform-events.md) | Event types, the envelope, the external reference and the platform's events | accepted |
 | [0073](0073-the-transit-key-provider.md) | The transit key provider: associated data, version identifiers, authentication, several providers and behaviour on failure | proposed |
+| [0074](0074-threat-model-review-and-continuous-fuzzing.md) | Threat model review and continuous fuzzing | proposed |
 
 ## Questions from SOW 0.1 and where they were decided
 
@@ -102,4 +103,4 @@ A record is *proposed* until the maintainer accepts it, by merging its pull requ
 | 19. Kubernetes topologies and silos | 0016 |
 | 20. Service-level objectives | Targets in requirement GW-17; validated in epic 10 |
 | 21. Backup, recovery, cryptographic erasure | 0008, 0073, data model; procedures in epics 6 and 10 |
-| 22. Trust boundaries and threats | [Security model](../architecture/security-model.md) |
+| 22. Trust boundaries and threats | [Security model](../architecture/security-model.md), [review record](../architecture/threat-model-review-2026-11.md), 0074 |

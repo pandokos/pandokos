@@ -59,9 +59,21 @@ Authenticating before routing (needs every family's header tried in turn); check
 the model in responses (a JSON rewrite of every response and stream event); passing redirects
 through; a pinned key limited to its credential's provider.
 
+## Amendment (sprint 12.2)
+
+[ADR 0074](0074-threat-model-review-and-continuous-fuzzing.md) completes point 5. The model that is
+authorized must be the one the provider sees, and a provider whose JSON decoder matches member names without
+regard to case reads a member the gateway did not look at. A body is therefore also refused with `invalid_request`
+when, in an object the gateway scans, a member differs only in case from a member the gateway reads in that
+object (`Model` beside `model`, and likewise `stream`, `stream_options`, `include_usage`, `background`, the
+output-limit members and `n` of the `openai` family, and the members the `anthropic` family reads). The message
+is unchanged; the reason `member_case` is in the operator's log. The body is never re-serialized, so the refusal is
+the only answer that cannot alter a forwarded byte. Members the gateway does not read are not looked at.
+
 ## History
 
 - 2026-11: sprint 3.2 adds admission and attribution after authentication, and the usage record and spans at the end of every admitted request ([ADR 0039](0039-usage-record-admission-and-ledger-writer.md), [ADR 0040](0040-traces.md)).
 - 2026-11: sprint 3.3: the shape of an unrouted request comes from the family that recognizes it; the upstream request ID comes from the adapter ([ADR 0041](0041-anthropic-api-family.md)).
 - 2026-11: sprint 5.1 adds the reservation between the model check and the credential and the settlement in the handler's finish ([ADR 0048](0048-reserve-and-settle.md)).
 - 2026-11-18: accepted by the maintainer after review.
+- 2026-11-25: amended by sprint 12.2: a member that differs only in case from a member the gateway reads is refused ([ADR 0074](0074-threat-model-review-and-continuous-fuzzing.md)).

@@ -77,9 +77,16 @@ bao write -f transit/keys/pandokos type=aes256-gcm96
 ```
 
 Leave `exportable`, `allow_plaintext_backup`, `deletion_allowed` and `auto_rotate_period` at their
-defaults (false, false, false and 0). Pandokos starts with them set but warns (`key provider configuration
-weak`, once per setting): a key that can be exported or deleted weakens what the service is for, and an
-`auto_rotate_period` rotates the key in a way Pandokos takes up only at its next restart (section 7).
+defaults (false, false, false and 0). **Pandokos refuses to start with a key that was created
+`exportable`**, unless `vault.kek.transit.allow_exportable_key` is `true`: the setting cannot be undone in
+the service, and any token whose policy allows export would read the key in clear, which is the exposure
+this boundary exists to avoid. The message names the key's setting and `vault.kek.transit.allow_exportable_key`,
+and `serve` ends with 1 before it listens on anything; the cause is one only a person can repair (create
+a key that is not exportable and move to it, or accept the key knowingly with the option). With the option
+the key starts and the warning below names `exportable`. The four other settings start with a warning (`key provider configuration
+weak`, once per setting): a key that can be deleted weakens what the service is for, a
+`plaintext_backup` puts the key in a backup in clear, and an `auto_rotate_period` rotates the key in a way
+Pandokos takes up only at its next restart (section 7).
 
 **The policy.** The file [`deploy/transit/pandokos-policy.hcl`](../../deploy/transit/pandokos-policy.hcl)
 is the least privilege Pandokos needs for a mount `transit` and a key `pandokos`; change the two names if
@@ -153,6 +160,7 @@ none of them. The full table, with the rules and warnings, is in the
 | `vault.kek.transit.request_timeout` | `PANDOKOS_VAULT_KEK_TRANSIT_REQUEST_TIMEOUT` | `2s` | Time allowed to each request, 100 ms to 30 s |
 | `vault.kek.transit.max_concurrent_requests` | `PANDOKOS_VAULT_KEK_TRANSIT_MAX_CONCURRENT_REQUESTS` | `32` | Requests in flight at most, 1 to 1024 |
 | `vault.kek.transit.start_timeout` | `PANDOKOS_VAULT_KEK_TRANSIT_START_TIMEOUT` | `0` | How long `serve` waits for the service at start; `0` without limit, up to 1 h |
+| `vault.kek.transit.allow_exportable_key` | `PANDOKOS_VAULT_KEK_TRANSIT_ALLOW_EXPORTABLE_KEY` | `false` | Accept a key that was created `exportable`; without it such a key is refused at start (section 3) |
 
 A minimal configuration with an AppRole:
 
@@ -182,7 +190,9 @@ and runs the round trip and the negative probe of section 2 on the provider that
 service when it is configured but not the one that wraps (step 0 of a move to the service: the service is
 proved to encrypt, decrypt and bind the associated data before the restart that makes it the active one;
 `serve` does the same at its start). It writes nothing to the database or the
-service and ends with 0, or with 1 and the class of the failure. Run it before the first start with a new
+service and ends with 0, or with 1 and the class of the failure. For a key that was created `exportable` it
+ends with 1 and names the setting and `vault.kek.transit.allow_exportable_key`; with the option set it ends
+with 0 and prints `weak: exportable`. Run it before the first start with a new
 service, and after a change of its credentials:
 
 ```
@@ -194,8 +204,8 @@ weak: auto_rotate
 ```
 
 `version` is the identifier the key's latest version has (section 7); `unwraps` the range of versions the
-service can still decrypt; `weak` appears only when a setting of section 3 is not at its default or the
-token's policies include `root`. The check does not wait for a service that does not answer: that is its
+service can still decrypt; `weak` appears only when a setting of section 3 is not at its default (an `exportable` key, accepted with
+`vault.kek.transit.allow_exportable_key`, included) or the token's policies include `root`. The check does not wait for a service that does not answer: that is its
 answer.
 
 ## 5. Moving to the key service
@@ -217,6 +227,11 @@ already proves the permission to encrypt and the binding of the associated data.
 from another provider: tenants do nothing, credentials are not touched, and an instance that has not been
 restarted yet keeps opening credentials but answers `503` to a write (`credential cannot be sealed`, cause
 `kek_replaced`). Take a new backup of the database when the old version is `retired` (section 10).
+
+If the key of the service you move to, or the one you are leaving, was created `exportable`, set
+`vault.kek.transit.allow_exportable_key` for the whole move, on every instance: a service that is
+configured, even for unwrapping only, is started under the same rule. Remove the option together with the
+`transit` keys at the last step, or earlier when the exportable key is no longer configured.
 
 Moving to the service on one instance is steps 1 to 3. With several instances do step 0 first and every
 instance together. A move from one transit service to another is not possible directly: one provider of each

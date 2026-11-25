@@ -14,6 +14,8 @@ Use GitHub's private vulnerability reporting instead:
 
 You will receive an acknowledgement as described in the [response process](#response-process). Please give us reasonable time to fix the problem before disclosing it publicly.
 
+A crash that the project's own fuzzing finds, on a pull request or in the nightly run, and that a caller, an identity provider, a provider or the key service can cause, is handled as a report under this process: it is fixed with a test that holds the input, and an advisory is published when its severity calls for one. The job prints Go's own report (the function and its stack) and never the input. If you see such a failure before it is fixed, report it privately as above instead of opening an issue.
+
 ## Response process
 
 What happens after a report:

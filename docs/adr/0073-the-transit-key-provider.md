@@ -178,6 +178,19 @@ key (the same number in another key, two versions rotated within a second, a key
 **Exit instead of waiting at start:** a supervisor restarts in a loop; waiting recovers alone, and
 `start_timeout` gives the exit to operators who prefer it.
 
+## Amendment (sprint 12.2)
+
+[ADR 0074](0074-threat-model-review-and-continuous-fuzzing.md) changes the list of the key's requirements and
+warnings of point 3. A key created `exportable` is now a requirement that is not met: `serve` and
+`pandokos kek check` refuse it, with a fixed text that names the setting and `vault.kek.transit.allow_exportable_key`,
+as a cause only a person can repair, unless that key (boolean, default `false`) is `true`. With it the key
+is accepted and `exportable` is reported among the weak settings as before. The setting cannot be undone in the
+service and lets any token whose policy allows export read the key in clear. **Four** settings are now accepted with
+a warning, once per start: `plaintext_backup`, `deletion_allowed`, `auto_rotate` and a token with the `root` policy.
+The key has no effect on the other requirements, on the provider's behaviour while running or on an installation
+without a key service.
+
 ## History
 
 - 2026-11-24: proposed with sprint 12.1.
+- 2026-11-25: amended by sprint 12.2: an exportable key is refused unless `vault.kek.transit.allow_exportable_key` is set ([ADR 0074](0074-threat-model-review-and-continuous-fuzzing.md)).

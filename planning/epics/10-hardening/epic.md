@@ -27,7 +27,16 @@ Requirements: GW-17, OPS-11 (tested).
 
 ### 10.2 Independent security assessment
 
-- Independent security assessment, on top of the review of sprint 12.2; fixes for its findings.
+- Independent security assessment, on top of the review of sprint 12.2; fixes for its findings. The input
+  is the review record, [docs/architecture/threat-model-review-2026-11.md](../../../docs/architecture/threat-model-review-2026-11.md):
+  identifiers, code and proof of every row, the residual exposures with their dates and the list of what the
+  review did not verify. It is a new record when the assessment is done.
+- Carried forward from sprint 12.2 (F-20, O-3 and O-2): the scraper's `platform-auditor` key reads tenants,
+  users, keys, issuers and support actions, not only metrics (a role that holds `metrics:read` alone is the
+  smaller change; at the latest before sprint 8.2 ships a `ServiceMonitor`); whether every link-local address is
+  forbidden for every class of endpoint, instead of listing metadata addresses one by one; the signature of the
+  release tag, if the workflow does not verify it by then; and, with the pending-password gap below, the open
+  items of the record.
 - Optional check of authentication-strength claims on sensitive operations.
 - Carried forward from sprint 4.3: a membership or role gained while a platform-issued password
   (`resetUserPassword` or `createUser`) is still pending, until changed or expired, is not checked.
