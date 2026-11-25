@@ -313,8 +313,9 @@ func TestReleaseVerifiesWhatItPublishes(t *testing.T) {
 
 	t.Run("the tag is annotated", func(t *testing.T) {
 		job := jobBlock(t, "release.yml", release, "check-tag")
-		if !regexp.MustCompile(`cat-file -t|%\(objecttype\)`).MatchString(job) {
-			t.Error("check-tag does not test the object type of the tag (git cat-file -t)")
+		// The API is used: the checkout of a tag push can leave a lightweight ref locally.
+		if !regexp.MustCompile(`cat-file -t|%\(objecttype\)|git/ref/tags/\S*\s+--jq \.object\.type`).MatchString(job) {
+			t.Error("check-tag does not test the object type of the tag (gh api .../git/ref/tags/$TAG --jq .object.type)")
 		}
 	})
 
@@ -336,7 +337,7 @@ func TestReleaseVerifiesWhatItPublishes(t *testing.T) {
 		if scan == "" {
 			t.Fatal("the job verify has no scan step (anchore/scan-action)")
 		}
-		if !regexp.MustCompile(`image:\s*\S*IMAGE\S*@\S*DIGEST`).MatchString(scan) {
+		if !regexp.MustCompile(`image:[^\n]*IMAGE[^\n]*@[^\n]*DIGEST`).MatchString(scan) {
 			t.Errorf("the scan of verify is not of ${IMAGE}@${DIGEST}:\n%s", scan)
 		}
 		ciScan := regexp.MustCompile(`(?s)uses: anchore/scan-action@[0-9a-f]{40}.*?(?:\n      - |\z)`).FindString(ci)
@@ -484,7 +485,8 @@ func TestScheduledChecks(t *testing.T) {
 		t.Fatal("the Makefile has no GOVULNCHECK := module@version")
 	}
 	got := regexp.MustCompile(`govulncheck@(v[0-9][^\s]*)`).FindAllStringSubmatch(text, -1)
-	if len(got) == 0 {
+	// make vuln takes the version of the Makefile itself.
+	if len(got) == 0 && !regexp.MustCompile(`(?m)run: make vuln\s*$`).MatchString(text) {
 		t.Error("scheduled.yml does not run govulncheck by version")
 	}
 	for _, g := range got {
