@@ -1133,33 +1133,41 @@ func TestAbsentMembersOfIssuersAndDestinations(t *testing.T) {
 	})
 
 	t.Run("omitted on create means disabled and empty", func(t *testing.T) {
-		f := newFake(t, tenantStateFull())
-		doc := wantTenantFull()
-		doc.TokenIssuers = append(doc.TokenIssuers, declare.TokenIssuer{Name: "bare-idp", Issuer: "https://bare.example.test", Audience: "x"})
-		doc.EventDestinations = append(doc.EventDestinations, declare.EventDestination{Name: "bare-hook", URL: "https://bare.example.test/events"})
+		f := newFake(t, platformStateFull())
+		doc := wantPlatformFull()
+		doc.PlatformIssuers = append(doc.PlatformIssuers, declare.PlatformIssuer{Name: "bare-platform-idp", Issuer: "https://bare-p.example.test", Audience: "x", TenantClaim: "org"})
+		if _, err := diff(t, f, platform, doc).Apply(ctx(t), f.client()); err != nil {
+			t.Fatal(err)
+		}
+		g := newFake(t, tenantStateFull())
+		tdoc := wantTenantFull()
+		tdoc.TokenIssuers = append(tdoc.TokenIssuers, declare.TokenIssuer{Name: "bare-idp", Issuer: "https://bare.example.test", Audience: "x"})
+		tdoc.EventDestinations = append(tdoc.EventDestinations, declare.EventDestination{Name: "bare-hook", URL: "https://bare.example.test/events"})
 		sink := func(string, []byte) error { return nil }
-		p := diff(t, f, tenant, doc, declare.Options{SecretSink: sink})
-		if _, err := p.Apply(ctx(t), f.client()); err != nil {
+		if _, err := diff(t, g, tenant, tdoc, declare.Options{SecretSink: sink}).Apply(ctx(t), g.client()); err != nil {
 			t.Fatal(err)
 		}
 		var seen int
-		for _, w := range f.writeCalls() {
+		for _, w := range append(f.writeCalls(), g.writeCalls()...) {
 			if w.Method != "POST" {
 				continue
 			}
-			var body struct {
-				Enabled bool `json:"enabled"`
-			}
+			var body map[string]json.RawMessage
 			if err := json.Unmarshal([]byte(w.Body), &body); err != nil {
 				t.Fatal(err)
 			}
-			if body.Enabled {
-				t.Errorf("%s created an item enabled although the document did not say so: %s", w.Path, w.Body)
+			if string(body["enabled"]) != "false" {
+				t.Errorf("%s: the create body has enabled = %q, want an explicit false: %s", w.Path, body["enabled"], w.Body)
+			}
+			for _, k := range []string{"required_claims", "event_types"} {
+				if v, ok := body[k]; ok && string(v) != "{}" && string(v) != "[]" && string(v) != "null" {
+					t.Errorf("%s: %s = %s, want absent or empty", w.Path, k, v)
+				}
 			}
 			seen++
 		}
-		if seen != 2 {
-			t.Errorf("%d creates, want 2: %v", seen, writePaths(f))
+		if seen != 3 {
+			t.Errorf("%d creates, want 3: %v %v", seen, writePaths(f), writePaths(g))
 		}
 	})
 }
