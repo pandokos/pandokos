@@ -64,6 +64,13 @@ func TestRestorePhysical(t *testing.T) {
 		r := w.Restore(RestoreSpec{Backup: b2, Physical: true, Keys: K1})
 		// The archive holds DEL: tenant c is deleted and tenant d's key revoked.
 		assertRestored(t, r, b2, "unchanged", TenantA, TenantB)
+		// The archive holds DEL: the deletion of c is complete and the key of d is revoked.
+		if !r.DeletionCompleted(TenantC) {
+			t.Error("tenant c is not deleted after a recovery to the end of the archive, which holds its deletion")
+		}
+		if status, _ := r.Call(TenantD); status != 401 {
+			t.Errorf("tenant d's key answers %d after a recovery to the end of the archive, which holds its revocation: want 401", status)
+		}
 		if got := r.Roles(); !containsAll(got, "pandokos_owner", "pandokos_gateway", "pandokos_admin", "pandokos_worker") {
 			t.Errorf("the roles of the physical restore are %v: a base backup carries the roles and the passwords of the login users (G-3)", got)
 		}
@@ -72,7 +79,7 @@ func TestRestorePhysical(t *testing.T) {
 
 	t.Run("P2: to the restore point of B1", func(t *testing.T) {
 		r := w.Restore(RestoreSpec{Backup: b1, Physical: true, Until: b1.RestorePoint, Keys: K2, Reading: "current"})
-		assertRestored(t, r, b1, "", worldTenants...)
+		assertRestored(t, r, b1, "activated", worldTenants...) // the current key wraps: serve activates it
 		w.Finish("P2")
 	})
 

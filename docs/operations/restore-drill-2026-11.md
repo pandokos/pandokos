@@ -76,7 +76,9 @@ Each finding says what was observed; the guide carries the corrected procedure a
   keeps its cursor, drops an affected previous secret, and prints three counts; the owner rotates the secret
   (this works for a tenant that has no data key yet: it creates one), gives the receiver the new secret and
   enables the destination, and the events the log still holds arrive signed with it. Tests: TestLostKeyRecovery,
-  TestRecoveryAndDestinations.
+  TestRecoveryAndDestinations. That a tenant or a destination under a version that is kept is not touched, and that a
+  second run or an unknown version changes nothing, is proved by `TestLostKeyRecovery` (`internal/vault/sealer_db_test.go`):
+  a backup older than a rotation holds no data key under a version the case keeps, so the drill's world has none.
 - **G-5: a backup older than a rotation.** The two sentences of the guide could be read as opposites. Observed:
   `serve` activates the version of the key that wraps. With the current key as `key_file` and the old one in
   `unwrap_key_files` it starts with `kek_activation: activated`, names the current version, and the worker

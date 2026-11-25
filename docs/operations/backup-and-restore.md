@@ -275,7 +275,7 @@ log still holds are delivered once the destination is enabled again), drops a pr
 and removes those data keys and the version. It prints the number of credentials revoked, of destinations
 disabled and of previous secrets dropped; run again, or for a version that does not exist, it changes nothing.
 It writes no audit row: it is an act of the database administrator outside the product, so record it in your own
-log. Then start with a new key (step 6.4). Tenants whose data keys were under another version are not touched.
+log. Then start with a new key (step 6.4). Tenants whose data keys were under another version are not touched (proved by `TestLostKeyRecovery`, `internal/vault/sealer_db_test.go`; every tenant of a drill world is under the lost version).
 The tenant **enters its credentials again**; the owner of each destination runs `pandokos event-destination
 rotate-secret`, gives the receiver the new secret and enables the destination. Everything else restores.
 

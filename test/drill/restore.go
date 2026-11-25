@@ -211,7 +211,8 @@ func (w *World) restoreConf(r *Restored, s RestoreSpec) keyConf {
 		return keyConf{files: []string{needed.File}}
 	case K2:
 		if s.Reading == "stale" {
-			// Observation of G-5 (not a case of the suite): the first, oldest key as key_file whatever the backup.
+			// The first, oldest key as key_file whatever the backup: with a backup newer than the rotation serve
+			// refuses, naming both versions (asserted by K2).
 			return keyConf{files: []string{w.keys[0].File, latest.File}}
 		}
 		if s.Reading == "old" {

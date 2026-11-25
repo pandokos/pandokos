@@ -59,11 +59,6 @@ type Tenant struct {
 	Quota        int    // requests per day of its quota
 	Destination  string // the destination's ID (the command line takes a destination by its ID)
 	Secret       string // the destination's signing secret, a canary
-	// AfterRotation: the provider credential of this tenant is written after ROT, so that its data key
-	// is wrapped by the new version of the key and no case of the key that loses the old one touches it.
-	// No tenant of the drill is: a tenant written after ROT is not in a backup of before it, and the
-	// cases of the key that lose the old version all restore such a backup.
-	AfterRotation bool
 
 	serviceAccount string // the ID of the inference service account
 }

@@ -8,34 +8,17 @@ import (
 	"time"
 )
 
-// affectedBy returns the tenants whose provider credential is sealed under data keys of the version
-// that a case of the key loses (those written before the rotation), and the others.
-func affectedBy(w *World) (affected, others []string) {
-	for _, name := range worldTenants {
-		if w.Tenants[name].AfterRotation {
-			others = append(others, name)
-		} else {
-			affected = append(affected, name)
-		}
-	}
-	return
-}
-
 // recoverAndServe is steps 6.3 and 6.4 for the tenants the loss touched: the recovery script for the
 // version, a new key, every touched tenant's credentials revoked with the script's reason; each tenant
-// enters a credential again and is served; the other tenants never stopped.
-func recoverAndServe(t *testing.T, r *Restored, lost []string, affected, others []string) {
+// enters a credential again and is served. Every tenant of a world is touched: a backup older than the
+// rotation holds no data key under a version that the case keeps. That the tenants whose data keys are
+// under a version that is kept are not touched is proved by TestLostKeyRecovery (internal/vault).
+func recoverAndServe(t *testing.T, r *Restored, lost []string, affected []string) {
 	t.Helper()
-	w := r.W
 	for _, version := range lost {
 		out := r.RecoverLostKey(version)
 		if !strings.Contains(out, "revoked") {
 			t.Errorf("the recovery script for %s printed no count of the credentials it revoked:\n%s", version, out)
-		}
-	}
-	for _, name := range others {
-		if status, seen := r.Call(name); status != 200 || seen != Fingerprint(w.Tenants[name].Credential) {
-			t.Errorf("tenant %s, which the loss did not touch, answers %d (credential %q): it must never have stopped", name, status, seen)
 		}
 	}
 	for _, name := range affected {
@@ -73,23 +56,23 @@ func TestKeyCasesFile(t *testing.T) {
 
 	t.Run("K2: a backup older than a rotation, the old key kept", func(t *testing.T) {
 		t.Parallel()
-		w, b1, _ := setup(t)
+		w, b1, b2 := setup(t)
 		w.Step(Step62, func() {
 			// The reading in which the current key is key_file and the old one is in unwrap_key_files:
-			// serve activates what the database says, the worker re-wraps again, every credential opens.
+			// serve activates the version of the key that wraps (the current one), the worker re-wraps
+			// again, every credential opens (G-5).
 			current := w.Restore(RestoreSpec{Backup: b1, Keys: K2, Reading: "current"})
-			assertRestored(t, current, b1, "", worldTenants...)
-			// The other reading (G-5): the old key as key_file. What happens is recorded, and the guide
-			// keeps the one sentence that is true: either serve refuses naming both versions, or it serves.
+			assertRestored(t, current, b1, "activated", worldTenants...)
+			// The other reading: the old key as key_file with the backup it belongs to starts as it was.
 			old := w.Restore(RestoreSpec{Backup: b1, Keys: K2, Reading: "old"})
-			if old.Proc == nil {
-				if !strings.Contains(old.ServeLog, b1.KEKVersion) {
-					t.Errorf("serve refused with the old key as key_file without naming the versions:\n%s", old.ServeLog)
-				}
-				t.Logf("G-5: serve with the old key as key_file refuses (exit %d), naming both versions", old.ServeCode)
-			} else {
-				assertRestored(t, old, b1, "", worldTenants...)
-				t.Log("G-5: serve with the old key as key_file starts and every credential opens")
+			assertRestored(t, old, b1, "unchanged", worldTenants...)
+			// The refusal the guide quotes: the old key as key_file with a backup newer than the rotation
+			// names both versions.
+			stale := w.Restore(RestoreSpec{Backup: b2, Keys: K2, Reading: "stale"})
+			if stale.Proc != nil {
+				t.Error("serve started with the old key as key_file on a backup that is newer than the rotation")
+			} else if !strings.Contains(stale.ServeLog, b1.KEKVersion) || !strings.Contains(stale.ServeLog, b2.KEKVersion) || !strings.Contains(stale.ServeLog, "was replaced by") {
+				t.Errorf("serve refused the old key as key_file without the message of the guide (the version %s was replaced by %s):\n%s", b1.KEKVersion, b2.KEKVersion, stale.ServeLog)
 			}
 		})
 		w.Finish("K2")
@@ -98,9 +81,9 @@ func TestKeyCasesFile(t *testing.T) {
 	t.Run("K3: the same backup, without the old key", func(t *testing.T) {
 		t.Parallel()
 		w, b1, _ := setup(t)
-		affected, others := affectedBy(w)
+		affected := worldTenants
 		r := w.Restore(RestoreSpec{Backup: b1, Keys: K3})
-		w.Step(Step63, func() { recoverAndServe(t, r, []string{b1.KEKVersion}, affected, others) })
+		w.Step(Step63, func() { recoverAndServe(t, r, []string{b1.KEKVersion}, affected) })
 		w.Finish("K3")
 	})
 
@@ -111,7 +94,7 @@ func TestKeyCasesFile(t *testing.T) {
 		w.Step(Step64, func() {
 			// The same for every version: the recovery for each, a new key, every tenant enters its
 			// credentials again; nothing else is lost.
-			recoverAndServe(t, r, []string{b1.KEKVersion, b2.KEKVersion}, worldTenants, nil)
+			recoverAndServe(t, r, []string{b1.KEKVersion, b2.KEKVersion}, worldTenants)
 		})
 		w.Finish("K4")
 	})
@@ -156,7 +139,7 @@ func TestKeyCasesService(t *testing.T) {
 		t.Parallel()
 		w, b1, _ := setup(t)
 		r := w.Restore(RestoreSpec{Backup: b1, Keys: S2})
-		w.Step(Step62s, func() { assertRestored(t, r, b1, "", worldTenants...) })
+		w.Step(Step62s, func() { assertRestored(t, r, b1, "activated", worldTenants...) })
 		w.Finish("S2")
 	})
 
@@ -167,14 +150,14 @@ func TestKeyCasesService(t *testing.T) {
 			t.Errorf("the policy of Pandokos trims a version: %d, want 403 (it cannot)", status)
 		}
 		w.ServiceTrim(2)
-		affected, others := affectedBy(w)
+		affected := worldTenants
 		r := w.Restore(RestoreSpec{Backup: b1, Keys: S3})
 		w.Step(Step63s, func() {
 			lost := b1.KEKVersion
 			if !strings.HasPrefix(lost, "transit-") {
 				t.Errorf("the identifier of a key service's version is %q, want transit-…", lost)
 			}
-			recoverAndServe(t, r, []string{lost}, affected, others)
+			recoverAndServe(t, r, []string{lost}, affected)
 		})
 		notWeak(t, r)
 		w.Finish("S3")
@@ -196,7 +179,7 @@ func TestKeyCasesService(t *testing.T) {
 				w, b1, b2 := setup(t)
 				form.do(w)
 				r := w.Restore(RestoreSpec{Backup: b2, Keys: form.keys})
-				w.Step(Step64s, func() { recoverAndServe(t, r, []string{b1.KEKVersion, b2.KEKVersion}, worldTenants, nil) })
+				w.Step(Step64s, func() { recoverAndServe(t, r, []string{b1.KEKVersion, b2.KEKVersion}, worldTenants) })
 				w.Finish("S4" + form.id)
 			})
 		}
@@ -205,25 +188,20 @@ func TestKeyCasesService(t *testing.T) {
 
 // TestRecoveryAndDestinations is T-1142, F-1, written to observe first: without the change, what the
 // relay does with a destination after the recovery script is recorded; with it, the destination whose
-// signing secret was sealed under the lost version is disabled with its cursor kept, an unaffected
-// destination is untouched, and after rotate-secret and enabling it the events kept by the retention
+// signing secret was sealed under the lost version is disabled with its cursor kept (a destination under a
+// version that is kept is untouched: TestLostKeyRecovery of internal/vault proves that, no destination of a
+// drill world has one), and after rotate-secret and enabling it the events kept by the retention
 // arrive signed with the new secret; the script run twice changes nothing more; a version that does
 // not exist changes nothing.
 func TestRecoveryAndDestinations(t *testing.T) {
 	t.Parallel()
 	w, b1, _ := logicalWorld(t, Options{})
-	affected, others := affectedBy(w)
+	affected := worldTenants
 	r := w.Restore(RestoreSpec{Backup: b1, Keys: K3})
 
 	out := r.RecoverLostKey(b1.KEKVersion)
 	if !strings.Contains(out, "destinations") {
 		t.Errorf("the script prints no count of the destinations it disabled (F-1):\n%s", out)
-	}
-	// An unaffected destination is untouched: its tenant's secret was sealed under another version.
-	for _, name := range others {
-		if code, text, _ := r.CLI(name, "event-destination", "get", "--tenant", w.Tenants[name].ID, w.Tenants[name].Destination, "-o", "json"); code != 0 || !strings.Contains(text, `"enabled": true`) {
-			t.Errorf("the destination of tenant %s, which the loss did not touch, is not enabled:\n%s", name, text)
-		}
 	}
 	for _, name := range affected {
 		tn := w.Tenants[name]
