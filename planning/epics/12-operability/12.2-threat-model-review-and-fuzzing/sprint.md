@@ -822,4 +822,4 @@ dependencies' own code; timing side channels; the browser client, which does not
 | O-6 | Confirmed: `fuzz` becomes a required check after a week of green runs (maintainer action) |
 | O-7 | Confirmed: the `invalid_request` message is unchanged; the reason `member_case` is in the operator's log |
 | O-8 | Confirmed: the residual exposures are accepted as restated; none is new |
-| O-9 | Confirmed: both rulesets and Dependabot security updates are to be enabled by the maintainer before the close of this sprint (repository settings; maintainer action) |
+| O-9 | Done by the maintainer on 2026-11-24 (both rulesets and Dependabot security updates enabled; repository settings) and confirmed by a read-only check on 2026-11-25 |

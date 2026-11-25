@@ -56,4 +56,5 @@ protect the database itself.
 - 2026-11: sprint 3.2: OTEL_* variables are not configuration; the SDK still reads OTEL_RESOURCE_ATTRIBUTES, which is warned about.
 - 2026-11-22: sprint 6.1: `telemetry.metrics.otlp`, `telemetry.metrics.export_interval`, `telemetry.metrics.prometheus` ([ADR 0062](0062-metrics-instruments-attributes-cardinality-and-scrape.md)).
 - 2026-11-23: sprint 6.2: `pandokos export` and `pandokos apply` ([ADR 0066](0066-declarative-export-and-apply.md)); keys `reports.rollup_interval`, `retention.usage_months`, `retention.audit_months`
-- 2026-11-24: sprint 12.1: fourteen keys `vault.kek.transit.*`; the secrets of the key service (token, role ID, secret ID) are paths to files ([ADR 0073](0073-the-transit-key-provider.md)).
+- 2026-11-24: sprint 12.1: thirteen keys `vault.kek.transit.*`; the secrets of the key service (token, role ID, secret ID) are paths to files ([ADR 0073](0073-the-transit-key-provider.md)).
+- 2026-11-25: sprint 12.2: the fourteenth key of the block, `vault.kek.transit.allow_exportable_key` (default `false`); an exportable key of the key service is refused unless it is set ([ADR 0074](0074-threat-model-review-and-continuous-fuzzing.md)).
