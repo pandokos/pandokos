@@ -670,6 +670,7 @@ func TestTransitKeyRequirements(t *testing.T) {
 // any data key is wrapped; with the option it starts and reports exportable among the weak
 // settings; the four other weak settings still start without the option.
 func TestTransitExportable(t *testing.T) {
+	t.Parallel()
 	const keyName = "very-secret-key-name"
 	exportable := vaulttest.TransitSetup{Key: keyName, KeyOptions: transittest.KeyOptions{Exportable: true}}
 

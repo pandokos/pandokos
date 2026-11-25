@@ -616,6 +616,7 @@ func TestTransitStartRefusals(t *testing.T) {
 // 10 s and a constant message, listening on nothing; with vault.kek.transit.allow_exportable_key it
 // serves and logs the warning; kek check prints the class and ends with 1, then 0 with the option.
 func TestTransitExportableRefused(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	const keyName = "synthetic-exportable-key-name"
 	setup := vaulttest.TransitSetup{Key: keyName, KeyOptions: transittest.KeyOptions{Exportable: true}}

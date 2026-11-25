@@ -520,6 +520,7 @@ func TestInvalidRequest(t *testing.T) {
 // credential is opened; nothing reaches the provider; one record of the kind an invalid request
 // writes today; the request line holds the reason and no member name or value.
 func TestMemberCaseRefused(t *testing.T) {
+	t.Parallel()
 	const other = "synthetic-other-model-name"
 	msg := `"messages":[{"role":"user","content":"` + fixtures.CanaryPrompt + `"}]`
 	type target struct {
