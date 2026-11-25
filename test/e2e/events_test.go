@@ -63,8 +63,9 @@ func TestEventsExactlyOncePerCall(t *testing.T) {
 	var next, done atomic.Int64
 	var gate sync.RWMutex
 	var wg sync.WaitGroup
-	stopScript := make(chan struct{})
+	stopScript, scriptDone := make(chan struct{}), make(chan struct{})
 	go func() {
+		defer close(scriptDone)
 		modes := []string{"refuse", "500", "stall", "late", "ok"}
 		for i := 0; ; i++ {
 			select {
@@ -124,11 +125,14 @@ func TestEventsExactlyOncePerCall(t *testing.T) {
 	// The calls can end before the script has gone through every fault (they are quick, and a
 	// failing destination waits for its next attempt): the script stops, and the receiver answers
 	// "late" until the relay has sent one request; the event is stored after the relay gave up, so
-	// that the next attempt delivers it twice.
+	// that the next attempt delivers it twice. The wait is for a request the receiver did answer late:
+	// a count of the requests received would also count one that arrived just before the mode changed
+	// and was answered in the mode before.
 	close(stopScript)
-	sent := recv.requests.Load()
+	<-scriptDone // the script sets no mode after the ones below
+	late := recv.late.Load()
 	recv.setMode("late")
-	testutil.Eventually(t, time.Minute, "a request sent while the receiver answers late", func() bool { return recv.requests.Load() > sent })
+	testutil.Eventually(t, time.Minute, "a request answered late and stored", func() bool { return recv.late.Load() > late })
 	recv.setMode("ok")
 	// The ledger writer flushes by interval: the last calls are recorded a moment after they were answered.
 	testutil.Eventually(t, 30*time.Second, "the ledger to hold the records of every call", func() bool {

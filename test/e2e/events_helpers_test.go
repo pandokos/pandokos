@@ -71,6 +71,7 @@ type faultReceiver struct {
 	handler  *receiver.Handler
 	stop     chan struct{}
 	requests atomic.Int64
+	late     atomic.Int64 // requests answered late whose event was then stored
 	lateWait time.Duration
 }
 
@@ -152,6 +153,7 @@ func (f *faultReceiver) serve(w http.ResponseWriter, r *http.Request) {
 		req := r.Clone(context.Background())
 		req.Body = io.NopCloser(bytes.NewReader(body))
 		f.handler.ServeHTTP(httptest.NewRecorder(), req)
+		f.late.Add(1)
 	default:
 		f.handler.ServeHTTP(w, r)
 	}
