@@ -3,6 +3,7 @@ package telemetry_test
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/pandokos/pandokos/internal/telemetry"
 )
@@ -14,13 +15,16 @@ import (
 func TestCardinality(t *testing.T) {
 	t.Setenv("OTEL_METRICS_EXEMPLAR_FILTER", "always_on")
 	t.Setenv("OTEL_GO_X_CARDINALITY_LIMIT", "5")
-	r := newRig(t, nil)
+	// An export of 2000 attribute sets takes 0.5 s to 0.9 s under the race detector on an idle
+	// machine: the 1 s that the rig gives a collection and its export is missed under load, and no
+	// export then reaches the collector. The time of the export is not what this test is about.
+	r := newRig(t, func(o *telemetry.MetricsOptions) { o.Timeout = 30 * time.Second })
 
 	const models = 2500
 	for i := 0; i < models; i++ {
 		r.m.ObserveRequest(chatRequest(fmt.Sprintf("model-%04d", i)))
 	}
-	snap := r.collect()
+	snap := r.collectWithin(t, time.Minute)
 
 	var overflow, regular, counted int
 	for _, p := range snap.points(t, "gen_ai.client.operation.duration") {
