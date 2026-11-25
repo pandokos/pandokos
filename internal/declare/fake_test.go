@@ -19,15 +19,16 @@ import (
 
 // Identifiers of the fixture. A document holds none of them but the public key ID.
 const (
-	tidAcme   = "0192f0f0-1111-7000-8000-0000000000a1"
-	tidGlobex = "0192f0f0-1111-7000-8000-0000000000a2"
-	saBilling = "0192f0f0-3333-7000-8000-0000000000b1"
-	saReports = "0192f0f0-3333-7000-8000-0000000000b2"
-	roleID    = "0192f0f0-4444-7000-8000-0000000000c1"
-	modelGPT  = "0192f0f0-5555-7000-8000-0000000000d1"
-	modelMini = "0192f0f0-5555-7000-8000-0000000000d2"
-	mappingID = "0192f0f0-6666-7000-8000-0000000000e1"
-	keyID     = "tkeyaaaaaaaaaaaaa"
+	tidAcme    = "0192f0f0-1111-7000-8000-0000000000a1"
+	tidGlobex  = "0192f0f0-1111-7000-8000-0000000000a2"
+	tidInitech = "0192f0f0-1111-7000-8000-0000000000a3"
+	saBilling  = "0192f0f0-3333-7000-8000-0000000000b1"
+	saReports  = "0192f0f0-3333-7000-8000-0000000000b2"
+	roleID     = "0192f0f0-4444-7000-8000-0000000000c1"
+	modelGPT   = "0192f0f0-5555-7000-8000-0000000000d1"
+	modelMini  = "0192f0f0-5555-7000-8000-0000000000d2"
+	mappingID  = "0192f0f0-6666-7000-8000-0000000000e1"
+	keyID      = "tkeyaaaaaaaaaaaaa"
 )
 
 // Canaries: values that live in the fake's state and never in a document.
@@ -42,6 +43,7 @@ var t0 = time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 type call struct {
 	Method, Path string
 	Body         string
+	Resp         string // what the fake answered, for the tests that follow an ID it made
 }
 
 // fakeAPI is an HTTP server over a map of state: the operations of the administration API read
@@ -60,7 +62,14 @@ type fakeAPI struct {
 	// readCount counts the requests of each method.
 	readCount int
 	created   int
+	// noSecret makes the answer of createEventDestination hold no signing secret, as the answer of an
+	// idempotent replay does.
+	noSecret bool
 }
+
+// canarySigningSecret is the signing secret the fake returns once for a destination it creates: a
+// value that lives in the fake and must reach the secret sink only.
+const canarySigningSecret = "whsec_c3ludGhldGljLWNhbmFyeS1zaWduaW5nLXNlY3JldC0wMDAx="
 
 type route struct {
 	re *regexp.Regexp
@@ -115,17 +124,36 @@ func newFake(t *testing.T, reads map[string]any) *fakeAPI {
 			return
 		}
 		b, _ := io.ReadAll(r.Body)
-		f.writes = append(f.writes, call{Method: r.Method, Path: r.URL.Path, Body: string(bytes.TrimSpace(b))})
-		if f.failWrite > 0 && len(f.writes) == f.failWrite {
+		rec := call{Method: r.Method, Path: r.URL.Path, Body: string(bytes.TrimSpace(b))}
+		if f.failWrite > 0 && len(f.writes)+1 == f.failWrite {
+			f.writes = append(f.writes, rec)
 			problem(500, "internal")
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(matched.Status)
+		var resp string
 		if matched.Status != http.StatusNoContent {
 			// A created resource carries the ID the server gave it.
 			f.created++
-			_, _ = io.WriteString(w, fmt.Sprintf(`{"id":"0192f0f0-ffff-7000-8000-%012d"}`, f.created))
+			id := fmt.Sprintf("0192f0f0-ffff-7000-8000-%012d", f.created)
+			resp = fmt.Sprintf(`{"id":%q}`, id)
+			if matched.ID == "createEventDestination" {
+				var in struct {
+					Name string `json:"name"`
+				}
+				_ = json.Unmarshal(b, &in)
+				resp = fmt.Sprintf(`{"destination":{"id":%q,"name":%q}`, id, in.Name)
+				if !f.noSecret {
+					resp += fmt.Sprintf(`,"secret":%q`, canarySigningSecret)
+				}
+				resp += "}"
+			}
+		}
+		rec.Resp = resp
+		f.writes = append(f.writes, rec)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(matched.Status)
+		if resp != "" {
+			_, _ = io.WriteString(w, resp)
 		}
 	}))
 	t.Cleanup(f.srv.Close)
@@ -179,8 +207,9 @@ func rates(kv ...string) []adminapi.PriceRate {
 }
 
 // tenantState is what tenant acme holds: the settings, a restriction, a custom role, two service
-// accounts, three rules (one on a subject mapping), a price list of two versions; and what a
-// document must never hold: a credential, a member, a virtual key, a person, a usage figure.
+// accounts, three rules, a price list of two versions; and what a document must never hold: a
+// credential, a member, a virtual key, a person, a usage figure. The sections of sprint 12.3 are in
+// tenantStateFull.
 func tenantState() map[string]any {
 	base := "/v1/tenants/" + tidAcme
 	return map[string]any{
@@ -202,18 +231,16 @@ func tenantState() map[string]any {
 		base + "/limits": items(
 			adminapi.LimitRule{ID: "0192f0f0-7777-7000-8000-0000000000f1", SubjectKind: adminapi.LimitSubjectKindTenant, Metric: adminapi.LimitMetricRequestsPerDay, Limit: 1000, Enforce: true, Thresholds: []int{80, 100}},
 			adminapi.LimitRule{ID: "0192f0f0-7777-7000-8000-0000000000f2", SubjectKind: adminapi.LimitSubjectKind("service_account"), SubjectID: saBilling, Metric: adminapi.LimitMetricTokensPerDay, Limit: 50000, Thresholds: []int{}},
-			adminapi.LimitRule{ID: "0192f0f0-7777-7000-8000-0000000000f3", SubjectKind: adminapi.LimitSubjectKindKey, SubjectID: keyID, Provider: "openai", Model: "gpt-4o", Metric: adminapi.LimitMetricRequestsPerMinute, Limit: 30, Enforce: true, Thresholds: []int{}},
-			adminapi.LimitRule{ID: "0192f0f0-7777-7000-8000-0000000000f4", SubjectKind: adminapi.LimitSubjectKindKey, SubjectID: mappingID, Metric: adminapi.LimitMetricRequestsPerDay, Limit: 5, Enforce: true, Thresholds: []int{}}),
+			adminapi.LimitRule{ID: "0192f0f0-7777-7000-8000-0000000000f3", SubjectKind: adminapi.LimitSubjectKindKey, SubjectID: keyID, Provider: "openai", Model: "gpt-4o", Metric: adminapi.LimitMetricRequestsPerMinute, Limit: 30, Enforce: true, Thresholds: []int{}}),
 		base + "/prices": items(
 			adminapi.TenantPriceVersion{ID: "0192f0f0-8888-7000-8000-0000000000a1", ModelID: modelGPT, Provider: "openai", Model: "gpt-4o", Kind: "price", ValidFrom: at("2026-06-01T00:00:00Z"), Currency: "EUR", Rates: rates("input", "0", "2.80", "output", "0", "11.00"), CreatedAt: t0},
 			adminapi.TenantPriceVersion{ID: "0192f0f0-8888-7000-8000-0000000000a2", ModelID: modelGPT, Provider: "openai", Model: "gpt-4o", Kind: "price", ValidFrom: at("2026-01-01T00:00:00Z"), Currency: "EUR", Rates: rates("input", "0", "2.50", "output", "0", "10.00"), Note: "list price 2026", CreatedAt: t0}),
 		// What a document must never hold.
-		base + "/credentials":      items(adminapi.Credential{ID: "0192f0f0-9999-7000-8000-0000000000a1", TenantID: tidAcme, Provider: "openai", Label: canarySecret, Fingerprint: canarySecret, Hint: canarySecret}),
-		base + "/members":          items(map[string]any{"id": "0192f0f0-9999-7000-8000-0000000000a2", "username": canaryMember, "email": canaryMember + "@example.test"}),
-		base + "/virtual-keys":     items(adminapi.VirtualKey{ID: keyID, TenantID: tidAcme, ServiceAccountID: saBilling, Description: canarySecret, State: adminapi.KeyStateActive, CreatedAt: t0}),
-		base + "/usage-records":    items(map[string]any{"id": "0192f0f0-9999-7000-8000-0000000000a3", "input_tokens": 424242}),
-		"/v1/users":                items(map[string]any{"id": "0192f0f0-9999-7000-8000-0000000000a4", "username": canaryMember}),
-		base + "/subject-mappings": items(map[string]any{"id": mappingID, "subject": canarySecret}),
+		base + "/credentials":   items(adminapi.Credential{ID: "0192f0f0-9999-7000-8000-0000000000a1", TenantID: tidAcme, Provider: "openai", Label: canarySecret, Fingerprint: canarySecret, Hint: canarySecret}),
+		base + "/members":       items(map[string]any{"id": "0192f0f0-9999-7000-8000-0000000000a2", "username": canaryMember, "email": canaryMember + "@example.test"}),
+		base + "/virtual-keys":  items(adminapi.VirtualKey{ID: keyID, TenantID: tidAcme, ServiceAccountID: saBilling, Description: canarySecret, State: adminapi.KeyStateActive, CreatedAt: t0}),
+		base + "/usage-records": items(map[string]any{"id": "0192f0f0-9999-7000-8000-0000000000a3", "input_tokens": 424242}),
+		"/v1/users":             items(map[string]any{"id": "0192f0f0-9999-7000-8000-0000000000a4", "username": canaryMember}),
 	}
 }
 
@@ -251,3 +278,88 @@ func platformState() map[string]any {
 }
 
 var _ = declare.Version
+
+// More identifiers of the fixture of sprint 12.3.
+const (
+	issuerTenantID   = "0192f0f0-2222-7000-8000-0000000000e1" // a token issuer of tenant acme
+	issuerPlatformID = "0192f0f0-2222-7000-8000-0000000000e2" // a platform-level issuer that lists acme and globex
+	mappingTenantID  = "0192f0f0-6666-7000-8000-0000000000e2" // a mapping of the tenant issuer
+	destinationID    = "0192f0f0-dddd-7000-8000-0000000000a1"
+	destination2ID   = "0192f0f0-dddd-7000-8000-0000000000a2"
+)
+
+// canaryDelivery is delivery state that lives in the fake and that no document may hold.
+const canaryDelivery = "synthetic-canary-delivery-7a41"
+
+// tenantStateFull is tenantState and the sections of sprint 12.3: a token issuer, a platform-level
+// issuer that lists the tenant, two subject mappings (one of each scope), a rule on a subject
+// mapping, two event destinations with delivery state (a cursor), and a tenant that has an external
+// reference. A mapping has no portable identifier: the document names its issuer and its subject.
+func tenantStateFull() map[string]any {
+	st := tenantState()
+	base := "/v1/tenants/" + tidAcme
+	st[base+"/limits"] = append(st[base+"/limits"].([]any),
+		adminapi.LimitRule{ID: "0192f0f0-7777-7000-8000-0000000000f4", SubjectKind: adminapi.LimitSubjectKindKey, SubjectID: mappingTenantID, Metric: adminapi.LimitMetricRequestsPerDay, Limit: 5, Enforce: true, Thresholds: []int{}})
+	st[base+"/token-issuers"] = items(adminapi.TokenIssuer{ID: issuerTenantID, TenantID: tidAcme, Name: "corp-idp", Description: "The company's identity provider", Issuer: "https://idp.example.test",
+		Audience: "pandokos-acme", Algorithms: []string{"RS256", "ES256"}, SubjectClaim: "sub", RequiredClaims: map[string]string{"azp": "pandokos", "env": "prod"}, Enabled: true, CreatedAt: t0, UpdatedAt: t0})
+	st[base+"/platform-issuers"] = items(adminapi.TenantPlatformIssuer{ID: issuerPlatformID, Name: "shared-idp", Issuer: "https://shared.example.test", Audience: "pandokos",
+		SubjectClaim: "sub", TenantClaim: "org", ClaimValue: tidAcme, Enabled: true})
+	st[base+"/subject-mappings"] = items(
+		adminapi.SubjectMapping{ID: mappingTenantID, TenantID: tidAcme, Issuer: adminapi.IssuerRef{Scope: adminapi.IssuerScopeTenant, ID: issuerTenantID, Name: "corp-idp"}, Subject: "ci-runner",
+			ServiceAccountID: saBilling, ServiceAccountName: "billing", Description: "The CI of the billing team", CreatedAt: t0},
+		adminapi.SubjectMapping{ID: mappingID, TenantID: tidAcme, Issuer: adminapi.IssuerRef{Scope: adminapi.IssuerScopePlatform, ID: issuerPlatformID, Name: "shared-idp"}, Subject: "svc-reports",
+			ServiceAccountID: saReports, ServiceAccountName: "reports", CreatedAt: t0})
+	st[base+"/event-destinations"] = items(
+		adminapi.EventDestination{ID: destination2ID, TenantID: tidAcme, Name: "audit-sink", URL: "https://sink.example.test/events", Enabled: false, SecretCreatedAt: t0, CreatedAt: t0, UpdatedAt: t0,
+			Delivery: adminapi.EventDelivery{State: canaryDelivery, Cursor: 31337, Head: 31340}},
+		adminapi.EventDestination{ID: destinationID, TenantID: tidAcme, Name: "hooks", Description: "Usage to the billing system", URL: "https://hooks.example.test/pandokos",
+			EventTypes: []adminapi.EventType{"io.pandokos.usage.recorded.v1"}, Enabled: true, SecretCreatedAt: t0, CreatedAt: t0, UpdatedAt: t0,
+			Delivery: adminapi.EventDelivery{State: canaryDelivery, Cursor: 31337, Head: 31340}})
+	return st
+}
+
+// wantTenantFull is the document that tenantStateFull must export to. Rules are in the order of the
+// text of their subject: "key: …", "mapping: …", "service_account: …", "tenant".
+func wantTenantFull() *declare.Document {
+	d := wantTenant()
+	d.TokenIssuers = []declare.TokenIssuer{{Name: "corp-idp", Description: "The company's identity provider", Issuer: "https://idp.example.test", Audience: "pandokos-acme",
+		Algorithms: []string{"ES256", "RS256"}, SubjectClaim: "sub", RequiredClaims: map[string]string{"azp": "pandokos", "env": "prod"}, Enabled: true}}
+	d.SubjectMappings = []declare.SubjectMapping{
+		{Issuer: declare.MappingIssuer{Scope: "platform", Name: "shared-idp"}, Subject: "svc-reports", ServiceAccount: "reports"},
+		{Issuer: declare.MappingIssuer{Scope: "tenant", Name: "corp-idp"}, Subject: "ci-runner", ServiceAccount: "billing", Description: "The CI of the billing team"},
+	}
+	d.EventDestinations = []declare.EventDestination{
+		{Name: "audit-sink", URL: "https://sink.example.test/events"},
+		{Name: "hooks", Description: "Usage to the billing system", URL: "https://hooks.example.test/pandokos", EventTypes: []string{"io.pandokos.usage.recorded.v1"}, Enabled: true},
+	}
+	d.Limits = []declare.Limit{d.Limits[0],
+		{Mapping: &declare.MappingSubject{Scope: "tenant", Issuer: "corp-idp", Subject: "ci-runner"}, Metric: "requests_per_day", Limit: 5, Enforce: true},
+		d.Limits[1], d.Limits[2]}
+	return d
+}
+
+// platformStateFull is platformState and the sections of sprint 12.3: a platform-level issuer that
+// lists two tenants (one with the claim value that is the tenant's ID, one with another), and
+// tenants with an external reference.
+func platformStateFull() map[string]any {
+	st := platformState()
+	st["/v1/tenants"] = items(
+		adminapi.Tenant{ID: tidAcme, Name: "acme", ExternalReference: "crm-4711", State: adminapi.TenantStateActive, CreatedAt: t0, UpdatedAt: t0, StateChangedAt: t0},
+		adminapi.Tenant{ID: tidGlobex, Name: "globex", State: adminapi.TenantStateActive, CreatedAt: t0, UpdatedAt: t0, StateChangedAt: t0})
+	st["/v1/platform-issuers"] = items(adminapi.PlatformIssuer{ID: issuerPlatformID, Name: "shared-idp", Description: "One IdP for the platform", Issuer: "https://shared.example.test", Audience: "pandokos",
+		JwksUri: "https://shared.example.test/keys", Algorithms: []string{"RS256"}, SubjectClaim: "sub", TenantClaim: "org", RequiredClaims: map[string]string{"azp": "pandokos"}, TenantCount: 2, Enabled: true, CreatedAt: t0, UpdatedAt: t0})
+	st["/v1/platform-issuers/"+issuerPlatformID+"/tenants"] = items(
+		adminapi.PlatformIssuerTenant{IssuerID: issuerPlatformID, TenantID: tidGlobex, TenantName: "globex", ClaimValue: "globex-co", CreatedAt: t0},
+		adminapi.PlatformIssuerTenant{IssuerID: issuerPlatformID, TenantID: tidAcme, TenantName: "acme", ClaimValue: tidAcme, CreatedAt: t0})
+	return st
+}
+
+// wantPlatformFull is the document that platformStateFull must export to.
+func wantPlatformFull() *declare.Document {
+	d := wantPlatform()
+	d.Tenants = []declare.PlatformTenant{{Name: "acme", ExternalReference: "crm-4711"}}
+	d.PlatformIssuers = []declare.PlatformIssuer{{Name: "shared-idp", Description: "One IdP for the platform", Issuer: "https://shared.example.test", Audience: "pandokos",
+		JWKSURI: "https://shared.example.test/keys", Algorithms: []string{"RS256"}, SubjectClaim: "sub", TenantClaim: "org", RequiredClaims: map[string]string{"azp": "pandokos"}, Enabled: true,
+		Tenants: []declare.IssuerTenant{{Tenant: "acme"}, {Tenant: "globex", ClaimValue: "globex-co"}}}}
+	return d
+}

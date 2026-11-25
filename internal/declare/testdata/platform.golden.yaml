@@ -58,3 +58,23 @@ platform_limits:
     metric: requests_per_minute
     limit: 600
     enforce: true
+tenants:
+  - name: acme
+    external_reference: crm-4711
+platform_issuers:
+  - name: shared-idp
+    description: One IdP for the platform
+    issuer: https://shared.example.test
+    audience: pandokos
+    jwks_uri: https://shared.example.test/keys
+    algorithms:
+      - RS256
+    subject_claim: sub
+    tenant_claim: org
+    required_claims:
+      azp: pandokos
+    enabled: true
+    tenants:
+      - tenant: acme
+      - tenant: globex
+        claim_value: globex-co

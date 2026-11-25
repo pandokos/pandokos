@@ -3,10 +3,17 @@
 package drill
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/pandokos/pandokos/examples/webhook-receiver/receiver"
 	"github.com/pandokos/pandokos/test/fakeprovider"
@@ -53,6 +60,9 @@ type Tenant struct {
 	Quota        int    // requests per day of its quota
 	Destination  string // the destination's name
 	Secret       string // the destination's signing secret, a canary
+	// AfterRotation: the provider credential of this tenant is written after ROT, so that its data key
+	// is wrapped by the new version of the key and no case of the key that loses the old one touches it.
+	AfterRotation bool
 }
 
 // HeadRef is the head of an audit chain as it is kept outside the database: the hash and the seq.
@@ -76,8 +86,12 @@ type Outside struct {
 	CompletedDeletion []string // the tenants whose deletion completed, as kept at X
 	PulledDeletions   []string // the tenant IDs of the tenant.deleted events pulled before X
 	KeyFiles          map[string]string
-	KEKVersions       []string // the identifiers `kek-version list` printed, in order
+	KEKVersions       []string         // the identifiers `kek-version list` printed, in order
+	EventHeads        map[string]int64 // the newest sequence number of each tenant's log, by tenant name, as kept at X
 }
+
+// EventHead is the newest sequence number of a tenant's log as kept outside at X.
+func (o *Outside) EventHead(tenant string) int64 { return o.EventHeads[tenant] }
 
 // Backup is a backup of the source server at a time point.
 type Backup struct {
@@ -89,6 +103,7 @@ type Backup struct {
 	Schema       string // the schema-only dump of the source at this point
 	Heads        Heads
 	KEKVersion   string
+	Ledger       map[string]int64 // rows of the ledger by tenant at this point
 }
 
 // KeyCase is what the operator still holds of the key when the restore starts (sprint.md 5.5).
@@ -197,7 +212,14 @@ func (r *Receiver) Duplicates() int {
 // scaffolding compiles and the tests of part B fail here, loudly, never skip.
 func (w *World) notImplemented(what, part string, _ ...any) {
 	w.T.Helper()
-	w.T.Fatalf("drill: %s is not implemented yet (sprint 12.3 part %s)", what, part)
+	fail(w.T, fmt.Sprintf("drill: %s is not implemented yet (sprint 12.3 part %s)", what, part))
+}
+
+// fail ends the test. It is a variable so that the stubs above do not look, to a static analysis, as
+// if they never returned: the code of the tests that follows them is the code that part C runs.
+var fail = func(t testing.TB, msg string) {
+	t.Helper()
+	t.Fatal(msg)
 }
 
 // NewWorld starts the source server (and the key service when asked), installs Pandokos on it as
@@ -261,6 +283,7 @@ type Restored struct {
 	Proc      *instance.Process
 	ServeCode int    // non-zero when serve refused to start
 	ServeLog  string // what serve printed when it refused
+	NotRun    string // why the binary was not run on this server (a later major), empty otherwise
 }
 
 // VaultReady returns the kek_version and kek_activation of the "vault ready" line of serve.
@@ -347,5 +370,158 @@ func (r *Restored) RecoverLostKey(version string) string {
 	return ""
 }
 
-// Finish records the case in the report of the run: outcome, steps, versions, sizes.
-func (w *World) Finish() { w.notImplemented("Finish", "C7") }
+// Fingerprint is the identifier of a credential that the test compares with what the provider saw:
+// the first 8 bytes of its SHA-256 in hexadecimal. The provider's record and the test's expectations
+// use it, never the value.
+func Fingerprint(credential string) string {
+	sum := sha256.Sum256([]byte(credential))
+	return hex.EncodeToString(sum[:8])
+}
+
+// KeyMaterial returns the content of every key file the world kept outside (each line, and the raw
+// bytes that its base64 stands for), for the search of a backup for what must not be in it.
+func (w *World) KeyMaterial() []string {
+	var out []string
+	for _, path := range w.Out.KeyFiles {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		line := strings.TrimSpace(string(b))
+		out = append(out, line)
+		if raw, err := base64.StdEncoding.DecodeString(line); err == nil {
+			out = append(out, string(raw))
+		}
+	}
+	return out
+}
+
+// DumpAs takes the dump of the database as a role (a login of the database): the output of pg_dump and
+// its error. A role bound by row-level security must be refused.
+func (w *World) DumpAs(role string) (string, error) {
+	w.notImplemented("DumpAs", "C5", role)
+	return "", nil
+}
+
+// TryRestore is Restore for a restore that may be refused (a base backup on another major): it
+// returns what the server said and the error instead of ending the test.
+func (w *World) TryRestore(s RestoreSpec) (*Restored, string, error) {
+	w.notImplemented("TryRestore", "C5", s)
+	return nil, "", nil
+}
+
+// Digests are, for each audit table, a digest over seq and the text of every jsonb column of its
+// rows: what the canonical encoding of the chain depends on (sprint.md 5.3, a later major).
+func (w *World) Digests() map[string]string {
+	w.notImplemented("Digests", "C5")
+	return nil
+}
+
+// RequestDeletion requests the deletion of a tenant and returns without waiting for it (the grace
+// period of the world applies).
+func (w *World) RequestDeletion(name string) { w.notImplemented("RequestDeletion", "C5", name) }
+
+// ServiceSnapshot takes the snapshot of the key service (GET sys/storage/raft/snapshot) and returns
+// the file; the unseal share and a token are kept with it.
+func (w *World) ServiceSnapshot(label string) string {
+	w.notImplemented("ServiceSnapshot", "C6", label)
+	return ""
+}
+
+// ServiceRotate rotates the key in the service (a new version).
+func (w *World) ServiceRotate() { w.notImplemented("ServiceRotate", "C6") }
+
+// ServiceTrim raises min_decryption_version and trims, with the root token.
+func (w *World) ServiceTrim(minVersion int) { w.notImplemented("ServiceTrim", "C6", minVersion) }
+
+// ServiceTrimAsPandokos tries the same with the token of Pandokos's policy and returns the status:
+// the policy cannot.
+func (w *World) ServiceTrimAsPandokos(minVersion int) int {
+	w.notImplemented("ServiceTrimAsPandokos", "C6", minVersion)
+	return 0
+}
+
+// ServiceDeleteKey deletes the key in the service.
+func (w *World) ServiceDeleteKey() { w.notImplemented("ServiceDeleteKey", "C6") }
+
+// ServiceLose removes the service and its volumes, with no snapshot taken.
+func (w *World) ServiceLose() { w.notImplemented("ServiceLose", "C6") }
+
+// MigrateStatus runs "pandokos migrate status" on the restored database (step 4.3).
+func (r *Restored) MigrateStatus() (int, string) {
+	r.W.notImplemented("Restored.MigrateStatus", "C5")
+	return 0, ""
+}
+
+// Roles lists the login roles of the restored server.
+func (r *Restored) Roles() []string {
+	r.W.notImplemented("Restored.Roles", "C5")
+	return nil
+}
+
+// Digests is World.Digests on the restored database.
+func (r *Restored) Digests() map[string]string {
+	r.W.notImplemented("Restored.Digests", "C5")
+	return nil
+}
+
+// DataKeyRows is the number of data key rows of a tenant in the restored database.
+func (r *Restored) DataKeyRows(tenant string) int {
+	r.W.notImplemented("Restored.DataKeyRows", "C5", tenant)
+	return 0
+}
+
+// DeletionCompleted says whether a completion record of the tenant's deletion exists.
+func (r *Restored) DeletionCompleted(tenant string) bool {
+	r.W.notImplemented("Restored.DeletionCompleted", "C5", tenant)
+	return false
+}
+
+// WaitDeleted waits for the deletion of a tenant to complete and reports whether it did.
+func (r *Restored) WaitDeleted(tenant string, within time.Duration) bool {
+	r.W.notImplemented("Restored.WaitDeleted", "C5", tenant, within)
+	return false
+}
+
+// EventExport is "pandokos event export" of a tenant from a sequence (a cursor): the status of the
+// answer and its body.
+func (r *Restored) EventExport(tenant string, from int64) (int, string) {
+	r.W.notImplemented("Restored.EventExport", "C5", tenant, from)
+	return 0, ""
+}
+
+// EventHead is the newest sequence number of a tenant's log in the restored database.
+func (r *Restored) EventHead(tenant string) int64 {
+	r.W.notImplemented("Restored.EventHead", "C5", tenant)
+	return 0
+}
+
+// CredentialState is the state of a tenant's provider credential ("active", "revoked").
+func (r *Restored) CredentialState(tenant string) string {
+	r.W.notImplemented("Restored.CredentialState", "C6", tenant)
+	return ""
+}
+
+// EnterCredential makes the tenant enter a provider credential again (a new canary, accepted by the
+// provider) and returns its value.
+func (r *Restored) EnterCredential(tenant string) string {
+	r.W.notImplemented("Restored.EnterCredential", "C6", tenant)
+	return ""
+}
+
+// RotateDestinationSecret runs event-destination rotate-secret for the tenant's destination and
+// returns the new secret.
+func (r *Restored) RotateDestinationSecret(tenant string) string {
+	r.W.notImplemented("Restored.RotateDestinationSecret", "C6", tenant)
+	return ""
+}
+
+// KekCheck is "pandokos kek check": its exit code and output.
+func (r *Restored) KekCheck() (int, string) {
+	r.W.notImplemented("Restored.KekCheck", "C6")
+	return 0, ""
+}
+
+// Finish records the case id in the report of the run: outcome, the steps since the last case of this
+// world, versions, sizes. A world that holds several cases (the two physical ones) finishes each.
+func (w *World) Finish(id string) { w.notImplemented("Finish", "C7", id) }

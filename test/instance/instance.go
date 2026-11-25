@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -308,4 +309,24 @@ func (in *Installation) Init(tb testing.TB) string {
 func (in *Installation) Serve(tb testing.TB, extra ...string) *Process {
 	tb.Helper()
 	return in.Bin.Serve(tb, append(append([]string(nil), in.Env...), extra...))
+}
+
+// Call sends one chat completion with the key to the inference listener of the process and returns
+// the status and the body. The scheme and client are the process's.
+func (p *Process) Call(tb testing.TB, key, model string) (int, string) {
+	tb.Helper()
+	body := `{"model":"` + model + `","messages":[{"role":"user","content":"call"}]}`
+	req, err := http.NewRequest(http.MethodPost, p.Scheme+"://"+p.Inference+"/openai/v1/chat/completions", strings.NewReader(body))
+	if err != nil {
+		tb.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := p.Client.Do(req)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(b)
 }

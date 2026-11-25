@@ -28,8 +28,9 @@ import (
 // "4.2"): section, then the number or the letter; an s marks the column of a key service.
 type Step string
 
-// The steps of the backup guide. 1.a and 1.b are the two backups of section 1 (the guide's own
-// section 1 carries no anchor: T-R100 compares sections 4, 5 and 6); the rest are the guide's.
+// The steps of the backup guide, each carried by the guide as an anchor <a id="step-4-2"></a>
+// (T-R100 holds the two sets equal). 1.a and 1.b are the two backups of section 1; the rest are the
+// steps of sections 4, 5 and 6.
 const (
 	Step1a Step = "1.a" // the logical backup: pg_dump
 	Step1b Step = "1.b" // the physical backup: pg_basebackup with WAL archiving

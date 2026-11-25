@@ -18,6 +18,7 @@ import (
 	"github.com/pandokos/pandokos/internal/store/queries"
 	"github.com/pandokos/pandokos/internal/tenant"
 	"github.com/pandokos/pandokos/internal/vault"
+	"github.com/pandokos/pandokos/test/dbtest"
 	"github.com/pandokos/pandokos/test/fixtures"
 	"github.com/pandokos/pandokos/test/testutil"
 	"github.com/pandokos/pandokos/test/vaulttest"
@@ -476,6 +477,50 @@ func TestLostKeyRecovery(t *testing.T) {
 		t.Fatalf("%d versions registered before the recovery, want 2", n)
 	}
 
+	// Sprint 12.3 (F-1, the test is changed): the signing secret of an event destination is sealed under
+	// the same data keys. A destination of a tenant sealed under the lost version, with a previous secret
+	// still in force, and one of the tenant sealed under the kept version.
+	seedDestination := func(sealer *vault.Sealer, id tenant.ID, name string) string {
+		t.Helper()
+		destID := testutil.RandomUUID()
+		err := w.admin.WithTenant(ctx(t), id, func(c context.Context, tx store.Tx) error {
+			sealed, err := sealer.SealNamed(c, tx, id, vault.KindWebhookSecret, destID, secret.New(dbtest.NewWebhookSecret(t)))
+			if err != nil {
+				return err
+			}
+			_, err = queries.New(tx).CreateEventDestination(c, queries.CreateEventDestinationParams{ID: destID, Name: name, Url: "https://hooks.example.test/" + name,
+				EventTypes: []string{}, Enabled: true, Secret: sealed.Secret, SecretKeyVersion: sealed.KeyVersion})
+			return err
+		})
+		if err != nil {
+			t.Fatalf("seed a destination: %v", err)
+		}
+		return destID
+	}
+	dLost, dKept := seedDestination(w.sealer, lost1, "hook-lost"), seedDestination(keptSealer, ok1, "hook-kept")
+	for _, id := range []string{dLost, dKept} {
+		if _, err := w.d.Super(t).Exec(ctx(t), `UPDATE pandokos.event_destination SET cursor_seq = 7,
+			previous_secret = secret, previous_secret_key_version = secret_key_version, previous_secret_expires_at = now() + interval '1 hour' WHERE id = $1::uuid`, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	type destRow struct {
+		enabled        bool
+		cursor         int64
+		previous       bool
+		keyVersion     int32
+		previousExpiry bool
+	}
+	destState := func(id string) destRow {
+		var r destRow
+		if err := w.d.Super(t).QueryRow(ctx(t), `SELECT enabled, cursor_seq, previous_secret IS NOT NULL, secret_key_version, previous_secret_expires_at IS NOT NULL
+			FROM pandokos.event_destination WHERE id = $1::uuid`, id).Scan(&r.enabled, &r.cursor, &r.previous, &r.keyVersion, &r.previousExpiry); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	keptBefore := destState(dKept)
+
 	// The script, with its one variable replaced by a quoted literal.
 	script, err := os.ReadFile(filepath.Join(testutil.RepoRoot(t), "deploy", "postgres", "recover-lost-kek.sql"))
 	if err != nil {
@@ -488,8 +533,35 @@ func TestLostKeyRecovery(t *testing.T) {
 	for _, m := range rePsqlVar.FindAllStringSubmatch(strings.ReplaceAll(src, ":'kek_version'", "''"), -1) {
 		t.Errorf("the script uses a psql variable besides kek_version: %q", m[0])
 	}
+	// A version that does not exist changes nothing.
+	lostBefore := destState(dLost)
+	if _, err := w.d.Super(t).Exec(ctx(t), strings.ReplaceAll(src, ":'kek_version'", "'local-ffffffffffffffff'")); err != nil {
+		t.Fatalf("the script for an unknown version failed: %v", err)
+	}
+	if got := destState(dLost); got != lostBefore || destState(dKept) != keptBefore {
+		t.Errorf("a run for a version that does not exist changed a destination: %+v then %+v", lostBefore, got)
+	}
 	if _, err := w.d.Super(t).Exec(ctx(t), strings.ReplaceAll(src, ":'kek_version'", "'"+lostVersion+"'")); err != nil {
 		t.Fatalf("the script failed: %v", err)
+	}
+	// F-1: the destination whose secret the lost key sealed is disabled, its cursor and configuration
+	// kept, its previous secret dropped; the other destination is untouched.
+	if got := destState(dLost); got.enabled || got.cursor != 7 || got.previous || got.previousExpiry {
+		t.Errorf("the destination sealed under the lost version after the script: %+v, want disabled, cursor 7 kept and no previous secret", got)
+	}
+	if got := destState(dKept); got != keptBefore {
+		t.Errorf("the destination of the other version was touched: %+v then %+v", keptBefore, got)
+	}
+	if n := count(t, w, `SELECT count(*) FROM pandokos.event_destination WHERE id = $1::uuid`, dLost); n != 1 {
+		t.Error("the destination was deleted: its URL, types and cursor are configuration the owner keeps")
+	}
+	// The script run twice changes nothing more.
+	afterOnce := destState(dLost)
+	if _, err := w.d.Super(t).Exec(ctx(t), strings.ReplaceAll(src, ":'kek_version'", "'"+lostVersion+"'")); err != nil {
+		t.Fatalf("the second run of the script failed: %v", err)
+	}
+	if destState(dLost) != afterOnce || destState(dKept) != keptBefore {
+		t.Error("a second run of the script changed a destination")
 	}
 
 	type credRow struct {

@@ -116,6 +116,8 @@ type Client struct {
 	Model   string // for plain calls
 	Slow    string // the model of the streaming calls (a model that the test gates), "" for Model
 	Clients int    // closed-loop clients, default 1
+	// Think is the pause after each call, so that a quota is reached after seconds and not at once.
+	Think time.Duration
 }
 
 // Traffic is a closed-loop generator: every client of every tenant sends a call, waits for its
@@ -162,8 +164,16 @@ func (tr *Traffic) Start(clients ...Client) {
 					tr.mu.Lock()
 					tr.outcomes = append(tr.outcomes, o)
 					tr.mu.Unlock()
+					pause := c.Think
 					if o.Class == NoAnswer || o.Class == Draining {
-						time.Sleep(20 * time.Millisecond) // do not spin on a listener that is not there
+						pause = max(pause, 20*time.Millisecond) // do not spin on a listener that is not there
+					}
+					if pause > 0 {
+						select {
+						case <-tr.stop:
+							return
+						case <-time.After(pause):
+						}
 					}
 				}
 			}()
@@ -203,7 +213,7 @@ func (tr *Traffic) call(c Client, kind Kind) Outcome {
 		body += `,"stream":true`
 	}
 	body += "}"
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, tr.BaseURL()+"/v1/chat/completions", strings.NewReader(body))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, tr.BaseURL()+"/openai/v1/chat/completions", strings.NewReader(body))
 	if err != nil {
 		o.Class, o.Error, o.Ended = Other, "request", time.Now()
 		return o
@@ -428,3 +438,25 @@ func (p *Procedure) Start(tb testing.TB) *instance.Process {
 
 // Gap is the interval without service: from the signal to the old process to the readiness of the new.
 func (p *Procedure) Gap() time.Duration { return p.NewReady.Sub(p.StopSent) }
+
+// Restore restores a custom-format dump into an empty database with pg_restore as a superuser, run in
+// the test PostgreSQL container over its local socket: one pg_restore of the whole archive, stopping
+// at the first error. The dump is read from the file and goes to the tool's standard input.
+func Restore(tb testing.TB, dump string, db *dbtest.Database) {
+	tb.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	f, err := os.Open(dump) //nolint:gosec // a file the test wrote
+	if err != nil {
+		tb.Fatal(err)
+	}
+	defer f.Close()
+	cmd := exec.CommandContext(ctx, "docker", "compose", "-f", filepath.Join(testutil.RepoRoot(tb), "test", "db", "compose.yaml"),
+		"exec", "-T", "postgres", "pg_restore", "-U", "postgres", "-d", db.Name, "--exit-on-error")
+	cmd.Stdin = f
+	var out bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	if err := cmd.Run(); err != nil {
+		tb.Fatalf("pg_restore: %v\n%s", err, out.String())
+	}
+}
