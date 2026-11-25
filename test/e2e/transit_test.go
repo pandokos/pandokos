@@ -902,7 +902,10 @@ func TestTransitRotation(t *testing.T) {
 	if ready := linesOf(p2, "key provider ready"); len(ready) != 1 || ready[0]["oldest_version"] != float64(1) || ready[0]["newest_version"] != float64(2) {
 		t.Errorf("key provider ready: %v", ready)
 	}
-	// The instance that was not restarted still opens credentials.
+	// The instance that was not restarted still opens credentials, those whose data keys the worker
+	// of the restarted instance re-wrapped under the new version included (§5.4): wait for the
+	// re-wrap, so that the call does not depend on which of the two is faster.
+	testutil.Eventually(t, 90*time.Second, "the data keys to be re-wrapped", func() bool { return kekRows(t, d)[v2+"/0x2"] == 2 })
 	if !callsWork(t, p1, a, b) {
 		t.Errorf("an instance that was not restarted stopped serving")
 	}
