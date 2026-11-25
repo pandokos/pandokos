@@ -82,8 +82,27 @@ func TestCompatibleProviderByConfiguration(t *testing.T) {
 	})
 
 	t.Run("the calls are recorded with the provider's name and family", func(t *testing.T) {
-		rows := waitRowsAtLeast(t, id, p, 4)
+		// The calls whose rows are counted below are answered before the ledger writer flushes their
+		// records, by interval, and the wait for the option made as many calls as it needed: the rows
+		// are read until those of the last calls are there.
+		var rows []map[string]any
 		var refused, omitted, lastChunk int
+		testutil.Eventually(t, 15*time.Second, "the rows of each kind of call", func() bool {
+			rows = usageRows(t, p.db, id)
+			refused, omitted, lastChunk = 0, 0, 0
+			for _, r := range rows {
+				switch {
+				case r["model"] == fakeprovider.ModelCompatRefusesOption && r["outcome"] == "upstream_error":
+					refused++
+				case r["model"] == fakeprovider.ModelCompatRefusesOption && r["outcome"] == "ok":
+					omitted++
+				case r["model"] == fakeprovider.ModelCompatUsageLastChunk && r["outcome"] == "ok":
+					lastChunk++
+				}
+			}
+			return len(rows) >= 4 && refused >= 1 && omitted >= 1 && lastChunk >= 1
+		})
+		refused, omitted, lastChunk = 0, 0, 0
 		for _, r := range rows {
 			if r["provider"] != "compat" || r["api_family"] != "openai" || r["operation"] != "chat.completions" {
 				t.Errorf("row %v", r)
@@ -117,15 +136,4 @@ func TestCompatibleProviderByConfiguration(t *testing.T) {
 	}
 	testutil.AssertNoCanary(t, "stdout", p.stdout.String())
 	testutil.AssertAbsent(t, "stdout", p.stdout.String(), append(testutil.KeyForms(key), testutil.SecretForms(secret)...)...)
-}
-
-// waitRowsAtLeast waits for n rows of the tenant and returns every row.
-func waitRowsAtLeast(t *testing.T, tenantID string, p *proc, n int) []map[string]any {
-	t.Helper()
-	var rows []map[string]any
-	testutil.Eventually(t, 15*time.Second, "the usage rows of the tenant", func() bool {
-		rows = usageRows(t, p.db, tenantID)
-		return len(rows) >= n
-	})
-	return rows
 }
