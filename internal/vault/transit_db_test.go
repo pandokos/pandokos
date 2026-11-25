@@ -608,7 +608,7 @@ func TestRewrapAcrossProviders(t *testing.T) {
 
 // TestOpenerWithTransit is T-1075: the gateway's caches in front of the service.
 func TestOpenerWithTransit(t *testing.T) {
-	t.Parallel()
+	// Serial on purpose: it counts the unwraps of 50 concurrent calls, which depends on their timing.
 	d := dbtest.NewMigrated(t)
 	if _, err := d.Super(t).Exec(ctx(t), `DELETE FROM pandokos.kek_version`); err != nil {
 		t.Fatal(err)

@@ -161,7 +161,7 @@ func TestConcurrencyLimit(t *testing.T) {
 
 // TestParallelLoad is T-640: the exit condition of the sprint, with the real store and 64 workers.
 func TestParallelLoad(t *testing.T) {
-	t.Parallel()
+	// Serial on purpose: it measures a load or a short real-time window, which parallel tests disturb.
 	start := time.Now()
 	defer func() {
 		if d := time.Since(start); d > 10*time.Second {

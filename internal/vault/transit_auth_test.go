@@ -297,7 +297,7 @@ func lastLookupFile(t *testing.T, r *transitRig) string {
 
 // TestTransitAppRoleAuth is T-1065.
 func TestTransitAppRoleAuth(t *testing.T) {
-	t.Parallel()
+	// Serial on purpose: it measures a load or a short real-time window, which parallel tests disturb.
 	aad := vault.DataAAD(testTenant(11), 1)
 	dek := dataKeyBytes(31)
 
