@@ -125,7 +125,7 @@ and a pipeline that did not check the thing it published.
 - A request body with a member in another case is refused (a body without one is forwarded byte for byte as
   before), an exportable key of the key service is refused unless allowed, and a release is verified by digest.
   The notes of v0.3.0 say so.
-- The restore drill and the upgrade policy of sprint 12.3 use a key that is not exportable, or set the option
+- The restore drill and the upgrade policy (ADR 0075 and 0076) use a key that is not exportable, or set the option
   and say why; the policy states that the threat model is reviewed at every release. The assessment of
   sprint 10.2 takes the record as its map: identifiers, code, proofs, residual exposures with their dates, and the
   list of what this review did not verify.
@@ -162,3 +162,4 @@ holds the model itself.
   follow-up), O-3 (the list extended now), O-4 (F-21 accepted for now), O-5 to O-8, and O-9 (both rulesets and
   Dependabot security updates enabled by the maintainer the same day).
 - 2026-11-25: proposed with sprint 12.2.
+- 2026-11-25: sprint 12.3: the threat model is reviewed at every release as part of the upgrade policy ([ADR 0075](0075-upgrade-policy-and-the-tested-upgrade.md)).

@@ -82,7 +82,7 @@ flowchart LR
 | **12** | **[Operability](epics/12-operability/epic.md)** | | |
 | 12.1 | External key-encryption key | The key-encryption key held by an external service over a transit API; none on the Pandokos hosts | |
 | 12.2 | Threat model review and fuzzing | The threat model checked against the code as built; fuzzing of the network parsers in CI | |
-| 12.3 | Restore drill and upgrade policy | A restore from backups, including loss of the key-encryption key; upgrade policy and tested upgrade; an instance defined by configuration alone | |
+| 12.3 | Restore drill and upgrade policy | A restore from backups, including loss of the key-encryption key; upgrade policy and tested upgrade; an instance defined by configuration alone; implemented, [record](../docs/operations/restore-drill-2026-11.md) | |
 | | **v0.4.0 — Scale-out and providers** | | |
 | **8** | **[Scale-out and deployment](epics/08-scale-out/epic.md)** | | |
 | 8.1 | Shared counters | Valkey counter store; replicas behind a load balancer in Compose; consistency tests | |

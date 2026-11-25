@@ -278,6 +278,11 @@ namespace, the mount or the key name, so moving or renaming them changes nothing
 
 ## 8. Erasure in backups
 
+Trimming a version is how a backup stops being readable, so it is tied to the rules for keeping backups (section 10):
+the service is backed up by its own snapshot, taken after every rotation and before Pandokos is restarted; a version
+that a database backup you keep needs is never trimmed; the unseal shares are kept with the snapshot; and the
+transit engine's backup endpoint, which needs an exportable key, is not used.
+
 Deleting a tenant removes its data key from the database at once. A backup taken before still holds the
 wrapped key, and whoever has the backup **and** the key version that wrapped it can open it
 ([deletion guide](tenant-deletion.md#6-erasure-and-backups-the-operators-rule)). With the service the key
@@ -369,12 +374,29 @@ administration API, most of which needs no key. The outage shows as the line `ke
 
 ## 10. Backups
 
-The service has its own backup procedure; it is yours and Pandokos cannot see it. What matters here:
+The key service is backed up by its own **storage snapshot**, not by the transit engine's key-backup endpoint (that
+one needs an exportable key, which Pandokos refuses); the procedure is the service's and Pandokos cannot see it. For OpenBao with integrated storage it is `GET sys/storage/raft/snapshot` (`bao operator raft snapshot
+save`), restored into an empty, initialised server with `POST sys/storage/raft/snapshot-force`, then unsealed
+with the **original** unseal share: the original root token and the token or AppRole of Pandokos work again, and
+the tokens of the new server do not. The restore is drilled with OpenBao ([record](restore-drill-2026-11.md));
+HashiCorp Vault's snapshot is its own documented procedure and is not drilled. What matters here:
 
 - **A database backup needs the key versions that wrapped its data keys.** A backup taken before a rotation
   opens credentials only while that version still decrypts in the service. Restoring it into an installation
   with the service needs the same key, with the version in range, and the credentials of the AppRole or a
   token.
+- **Three rules** keep every backup you hold recoverable:
+  1. Snapshot the service **after every rotation of the key in it and before Pandokos is restarted** to use the
+     new version. A database backup taken after the re-wrap needs the new version; a snapshot older than the
+     rotation does not hold it, and that backup is then unrecoverable (case 4s, third form of the loss below).
+  2. Do not trim a version, and do not raise `min_decryption_version` past it, while a database backup you keep
+     was taken before the re-wrap away from it completed. `pandokos kek-version list` and the date of the backup
+     tell which. Trimming is how the credentials of deleted tenants leave old backups, and also how everyone's
+     leave them (section 8).
+  3. Keep, with each snapshot, the **unseal shares** it needs and the means to authenticate: the policy, a way
+     to issue a token, and a token that can administer the service (an AppRole comes back with the snapshot).
+- **The transit engine's own key-backup endpoint is not the procedure.** It needs a key created with
+  `allow_plaintext_backup` and exportable, which Pandokos refuses (section 3); the snapshot needs neither.
 - A key service restored from its own backup must contain the versions the database needs. Pandokos finds a
   missing one at start (`startup failed`, naming the version).
 - Back the key service up as you would the key file: **apart from the database**, by someone the database's
@@ -388,6 +410,14 @@ the [vault guide](vault.md#5-what-its-loss-means): every credential wrapped unde
 opened. Run `deploy/postgres/recover-lost-kek.sql` with the lost version, activate a new key (a new version
 in the service, or `pandokos kek generate`), and every tenant enters its credentials again. Nothing else is
 lost. The key is protected in the service by `deletion_allowed: false`; keep it that way.
+
+There are three forms of the loss, and the recovery is the same for each: the key **deleted** in the service (create
+it again; Pandokos's policy cannot), the service **lost with no snapshot** (install it again with a new key, the policy
+and a token), and **a snapshot older than a rotation** restored while the database backup was taken after the re-wrap
+(the service holds only the older version and `serve` refuses with `the configured key-encryption key version … was
+replaced by …`). Run the script for every version the database names, start Pandokos on the service, and every
+tenant enters its credentials again and rotates its destinations' signing secrets (step 6.3s of the [backup
+guide](backup-and-restore.md)).
 
 **The token or the secret ID leaked.** With the database, it unwraps every data key while it lives.
 

@@ -22,7 +22,7 @@ resources absent from the document alone and reporting them.
    never created. A document cannot clear what the API can clear: an empty `metadata_keys` or
    `time_zone` leaves the setting alone. A rule on a subject mapping is left out of the export and
    reported. The plan of a document just exported is empty.
-3. Platform-level and tenant token issuers and subject mappings join in sprint 12.3.
+3. Platform-level and tenant token issuers and subject mappings, and the destinations and the external reference, are in `export` and `apply` since [ADR 0077](0077-an-instance-defined-by-configuration-alone.md).
 
 ## Consequences
 
@@ -41,3 +41,4 @@ authorization.
 - 2026-11-23: proposed with sprint 6.2.
 - 2026-11-23: accepted by the maintainer after review.
 - 2026-11-23: sprint 6.4 keeps event destinations and the external reference out of `export` and `apply`; they join in sprint 12.3 ([ADR 0072](0072-event-types-the-envelope-the-external-reference-and-platform-events.md)).
+- 2026-11-25: sprint 12.3 delivers point 3 and adds destinations and the external reference ([ADR 0077](0077-an-instance-defined-by-configuration-alone.md)).

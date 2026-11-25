@@ -27,152 +27,152 @@ in the same file is an error. Error messages name the line and the key, never th
 The environment variable of a key is `PANDOKOS_` followed by the key in upper case with every `.`
 replaced by `_`.
 
-| Key | Environment variable | Type | Default | Meaning |
-|---|---|---|---|---|
-| `log.level` | `PANDOKOS_LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` | Minimum level written |
-| `listeners.inference.address` | `PANDOKOS_LISTENERS_INFERENCE_ADDRESS` | `host:port` | `0.0.0.0:8080` | Listen address of the inference API |
-| `listeners.inference.read_header_timeout` | `PANDOKOS_LISTENERS_INFERENCE_READ_HEADER_TIMEOUT` | duration | `10s` | Time allowed to read request headers |
-| `listeners.inference.idle_timeout` | `PANDOKOS_LISTENERS_INFERENCE_IDLE_TIMEOUT` | duration | `120s` | Keep-alive idle time |
-| `listeners.inference.max_header_bytes` | `PANDOKOS_LISTENERS_INFERENCE_MAX_HEADER_BYTES` | integer | `65536` | Maximum size of request headers |
-| `listeners.inference.tls.cert_file` | `PANDOKOS_LISTENERS_INFERENCE_TLS_CERT_FILE` | path | none | PEM file with the server certificate and any intermediate certificates. With `key_file`, turns TLS on for the listener |
-| `listeners.inference.tls.key_file` | `PANDOKOS_LISTENERS_INFERENCE_TLS_KEY_FILE` | path | none | PEM file with the private key of the certificate |
-| `listeners.inference.tls.min_version` | `PANDOKOS_LISTENERS_INFERENCE_TLS_MIN_VERSION` | `TLS1.2`, `TLS1.3` | `TLS1.2` | Lowest protocol version accepted |
-| `listeners.admin.address` | `PANDOKOS_LISTENERS_ADMIN_ADDRESS` | `host:port` | `127.0.0.1:8081` | Listen address of the administration API |
-| `listeners.admin.read_header_timeout` | `PANDOKOS_LISTENERS_ADMIN_READ_HEADER_TIMEOUT` | duration | `10s` | Time allowed to read request headers |
-| `listeners.admin.idle_timeout` | `PANDOKOS_LISTENERS_ADMIN_IDLE_TIMEOUT` | duration | `120s` | Keep-alive idle time |
-| `listeners.admin.max_header_bytes` | `PANDOKOS_LISTENERS_ADMIN_MAX_HEADER_BYTES` | integer | `65536` | Maximum size of request headers |
-| `listeners.admin.tls.cert_file` | `PANDOKOS_LISTENERS_ADMIN_TLS_CERT_FILE` | path | none | PEM file with the server certificate and any intermediate certificates. With `key_file`, turns TLS on for the listener |
-| `listeners.admin.tls.key_file` | `PANDOKOS_LISTENERS_ADMIN_TLS_KEY_FILE` | path | none | PEM file with the private key of the certificate |
-| `listeners.admin.tls.min_version` | `PANDOKOS_LISTENERS_ADMIN_TLS_MIN_VERSION` | `TLS1.2`, `TLS1.3` | `TLS1.2` | Lowest protocol version accepted |
-| `listeners.admin.allow_plaintext` | `PANDOKOS_LISTENERS_ADMIN_ALLOW_PLAINTEXT` | boolean | `false` | Acknowledges that the administration API is served without TLS on an address that is not loopback, because TLS ends in front of it |
-| `listeners.admin.trusted_proxies` | `PANDOKOS_LISTENERS_ADMIN_TRUSTED_PROXIES` | list | none | CIDR prefixes, separated by commas in the environment, of the proxies in front of the administration listener whose X-Forwarded-For is believed |
-| `limits.max_request_body_bytes` | `PANDOKOS_LIMITS_MAX_REQUEST_BODY_BYTES` | integer | `10485760` | Larger bodies get 413 `request_too_large` |
-| `limits.request_body_read_timeout` | `PANDOKOS_LIMITS_REQUEST_BODY_READ_TIMEOUT` | duration | `30s` | Time allowed to read the request body |
-| `limits.max_request_duration` | `PANDOKOS_LIMITS_MAX_REQUEST_DURATION` | duration | `10m` | Total time for one proxied request, stream included, measured from the end of the body read |
-| `limits.default_output_tokens` | `PANDOKOS_LIMITS_DEFAULT_OUTPUT_TOKENS` | integer | `4096` | Output tokens reserved per choice for a request that sets no output limit; capped by the model's `max_output_tokens` when the catalogue has it (1 to 1000000) |
-| `limits.time_zone` | `PANDOKOS_LIMITS_TIME_ZONE` | IANA zone name | `UTC` | The zone in which the days and months of quotas and budgets start for the tenants that have no time zone of their own (a tenant's zone is set through the administration API); a name known to the embedded time zone database whose offsets are whole minutes |
-| `limits.on_unknown_price` | `PANDOKOS_LIMITS_ON_UNKNOWN_PRICE` | `refuse`, `allow` | `refuse` | What happens to a request that a budget applies to and cannot measure because the model has no price in the budget's currency: refused with 409 `no_price`, or admitted |
-| `limits.on_store_failure` | `PANDOKOS_LIMITS_ON_STORE_FAILURE` | `refuse`, `allow` | `refuse` | What happens to a request whose quota and budget counters cannot be verified: refused with 503 `unavailable`, or admitted; `allow` is a start-up warning |
-| `limits.reconcile_interval` | `PANDOKOS_LIMITS_RECONCILE_INTERVAL` | duration | `5m` | How often the period counters of quotas and budgets are folded into the usage ledger (10s to 1h) |
-| `upstream.connect_timeout` | `PANDOKOS_UPSTREAM_CONNECT_TIMEOUT` | duration | `10s` | TCP connect timeout, and separately TLS handshake timeout, towards the provider |
-| `upstream.tls.ca_file` | `PANDOKOS_UPSTREAM_TLS_CA_FILE` | path | none | PEM file whose certificates are added to the system roots for every outbound TLS connection of the server (providers, validation, price download, an `https` proxy); read by `serve` only |
-| `upstream.proxy.url` | `PANDOKOS_UPSTREAM_PROXY_URL` | URL | none | Proxy for provider calls to public endpoints, credential validation and the price download; private endpoints go direct; `HTTPS_PROXY` and similar variables are never read; read by `serve` only |
-| `shutdown.drain_timeout` | `PANDOKOS_SHUTDOWN_DRAIN_TIMEOUT` | duration | `30s` | Time in-flight requests get to finish after a termination signal |
-| `cache.principal_ttl` | `PANDOKOS_CACHE_PRINCIPAL_TTL` | duration | `30s` | Lifetime of a cached principal in the gateway: the upper bound on the time a revocation or a suspension takes to reach the inference listener (1s to 60s) |
-| `cache.credential_ttl` | `PANDOKOS_CACHE_CREDENTIAL_TTL` | duration | `30s` | Lifetime of a cached provider credential in the gateway: the upper bound on the time a disable, revocation or replacement takes to reach the inference listener when notifications are not delivered (1s to 60s) |
-| `cache.data_key_ttl` | `PANDOKOS_CACHE_DATA_KEY_TTL` | duration | `5m` | Lifetime of an unwrapped data key in the gateway (1s to 15m) |
-| `cache.catalog_ttl` | `PANDOKOS_CACHE_CATALOG_TTL` | duration | `30s` | Lifetime of the cached catalogue and of a tenant's model access, active currency and price lists in the gateway: the upper bound on the time a catalogue, price, model-access, tenant price or active-currency change takes to reach the inference listener when notifications are not delivered (1s to 5m); see the [catalogue guide](catalogue.md) |
-| `cache.limits_ttl` | `PANDOKOS_CACHE_LIMITS_TTL` | duration | `30s` | Lifetime of a tenant's cached limit rules in the gateway: the upper bound on the time a changed rule or a changed active currency takes to apply when no notification arrives (1s to 5m) |
-| `tokens.enabled` | `PANDOKOS_TOKENS_ENABLED` | boolean | `true` | Accept tokens of trusted issuers on the inference listener. `false`: every credential that is not a virtual key is malformed and no key of an issuer is ever fetched; read by `serve` only. See the [tokens guide](tokens.md) |
-| `tokens.max_token_bytes` | `PANDOKOS_TOKENS_MAX_TOKEN_BYTES` | integer | `8192` | Largest token accepted (1024 to 16384, and at most half of `listeners.inference.max_header_bytes`) |
-| `tokens.clock_skew` | `PANDOKOS_TOKENS_CLOCK_SKEW` | duration | `60s` | Tolerance on `exp`, `nbf` and `iat` of a token (0 to 5m) |
-| `tokens.max_lifetime` | `PANDOKOS_TOKENS_MAX_LIFETIME` | duration | `24h` | Longest lifetime (`exp` minus `iat`) a token may have (1m to 720h) |
-| `tokens.private_hosts` | `PANDOKOS_TOKENS_PRIVATE_HOSTS` | list | none | Host names, separated by commas in the environment, whose issuer and key URLs may resolve to private addresses (at most 32 lower-case DNS names, no address literal, no wildcard) |
-| `tokens.jwks.fetch_timeout` | `PANDOKOS_TOKENS_JWKS_FETCH_TIMEOUT` | duration | `5s` | Time allowed to fetch one document of an issuer (1s to 30s) |
-| `tokens.jwks.refresh_interval` | `PANDOKOS_TOKENS_JWKS_REFRESH_INTERVAL` | duration | `15m` | Time between background refreshes of the key set of an issuer (1m to 1h) |
-| `tokens.jwks.min_refetch_interval` | `PANDOKOS_TOKENS_JWKS_MIN_REFETCH_INTERVAL` | duration | `10s` | Shortest time between two fetches of a key set caused by an unknown key ID (1s to 5m) |
-| `tokens.jwks.max_stale` | `PANDOKOS_TOKENS_JWKS_MAX_STALE` | duration | `6h` | Time a key set is used after its last successful fetch, then calls are answered 503 (at least twice `tokens.jwks.refresh_interval`, at most 72h) |
-| `tokens.admin_listener` | `PANDOKOS_TOKENS_ADMIN_LISTENER` | boolean | `false` | Accept tokens of trusted issuers on the administration listener too; needs tokens.enabled |
-| `auth.public_origin` | `PANDOKOS_AUTH_PUBLIC_ORIGIN` | URL | none | Origin that browsers use to reach the administration API: https://host[:port], or http:// with a loopback host; required with auth.oidc.enabled |
-| `auth.local.enabled` | `PANDOKOS_AUTH_LOCAL_ENABLED` | boolean | `true` | Allow sign-in with a local account; false is refused unless auth.oidc.enabled |
-| `auth.local.password_min_length` | `PANDOKOS_AUTH_LOCAL_PASSWORD_MIN_LENGTH` | integer | `12` | Shortest password accepted, 8 to 128; below 12 warns |
-| `auth.local.generated_password_ttl` | `PANDOKOS_AUTH_LOCAL_GENERATED_PASSWORD_TTL` | duration | `72h` | Time a generated password stays valid until it is changed; 1h to 30d |
-| `auth.local.max_failures` | `PANDOKOS_AUTH_LOCAL_MAX_FAILURES` | integer | `10` | Failed sign-ins of one username in auth.local.failure_window that lock it; 3 to 100 |
-| `auth.local.failure_window` | `PANDOKOS_AUTH_LOCAL_FAILURE_WINDOW` | duration | `15m` | Window in which failed sign-ins are counted; 1m to 24h |
-| `auth.local.lock_duration` | `PANDOKOS_AUTH_LOCAL_LOCK_DURATION` | duration | `15m` | Time a username stays locked; 1m to 24h |
-| `auth.local.source_max_failures` | `PANDOKOS_AUTH_LOCAL_SOURCE_MAX_FAILURES` | integer | `50` | Failed sign-ins from one source address prefix in the window that delay it; at least auth.local.max_failures |
-| `auth.local.argon2.memory_kib` | `PANDOKOS_AUTH_LOCAL_ARGON2_MEMORY_KIB` | integer | `65536` | Argon2id memory cost of new password hashes, in KiB |
-| `auth.local.argon2.iterations` | `PANDOKOS_AUTH_LOCAL_ARGON2_ITERATIONS` | integer | `3` | Argon2id time cost of new password hashes |
-| `auth.local.argon2.parallelism` | `PANDOKOS_AUTH_LOCAL_ARGON2_PARALLELISM` | integer | `1` | Argon2id parallelism of new password hashes |
-| `auth.local.max_concurrent_hashes` | `PANDOKOS_AUTH_LOCAL_MAX_CONCURRENT_HASHES` | integer | `4` | Password hashes computed at the same time; more are answered 503; 1 to 64 |
-| `auth.session.idle_timeout` | `PANDOKOS_AUTH_SESSION_IDLE_TIMEOUT` | duration | `30m` | Time without use after which a session ends; 1m to 24h, at most auth.session.absolute_lifetime |
-| `auth.session.absolute_lifetime` | `PANDOKOS_AUTH_SESSION_ABSOLUTE_LIFETIME` | duration | `12h` | Longest life of a session; at most 168h |
-| `auth.session.max_per_user` | `PANDOKOS_AUTH_SESSION_MAX_PER_USER` | integer | `10` | Sessions a user may hold; the oldest end first; 1 to 100 |
-| `auth.oidc.enabled` | `PANDOKOS_AUTH_OIDC_ENABLED` | boolean | `false` | Allow sign-in through an OpenID Connect identity provider; needs issuer, client_id, client_secret_file and auth.public_origin |
-| `auth.oidc.issuer` | `PANDOKOS_AUTH_OIDC_ISSUER` | URL | none | Issuer of the identity provider; https |
-| `auth.oidc.client_id` | `PANDOKOS_AUTH_OIDC_CLIENT_ID` | string | none | Client ID registered at the identity provider |
-| `auth.oidc.client_secret_file` | `PANDOKOS_AUTH_OIDC_CLIENT_SECRET_FILE` | path | none | File with the client secret (at least 16 bytes); the value is a secret |
-| `auth.oidc.client_auth` | `PANDOKOS_AUTH_OIDC_CLIENT_AUTH` | basic, post | `basic` | How the client authenticates at the token endpoint |
-| `auth.oidc.scopes` | `PANDOKOS_AUTH_OIDC_SCOPES` | list | `openid profile email` | Scopes requested, separated by commas in the environment; contains openid |
-| `auth.oidc.algorithms` | `PANDOKOS_AUTH_OIDC_ALGORITHMS` | list | `RS256 ES256` | Signature algorithms accepted for the ID token, separated by commas in the environment |
-| `auth.oidc.display_name` | `PANDOKOS_AUTH_OIDC_DISPLAY_NAME` | string | `Single sign-on` | Name of the identity provider shown by the sign-in page |
-| `auth.oidc.name_claim` | `PANDOKOS_AUTH_OIDC_NAME_CLAIM` | string | `name` | Claim of the ID token that gives the display name |
-| `auth.oidc.email_claim` | `PANDOKOS_AUTH_OIDC_EMAIL_CLAIM` | string | `email` | Claim of the ID token that gives the e-mail address |
-| `auth.oidc.groups_claim` | `PANDOKOS_AUTH_OIDC_GROUPS_CLAIM` | string | `groups` | Claim of the ID token that gives the groups; a dotted path of at most four members |
-| `auth.oidc.group_mappings` | `PANDOKOS_AUTH_OIDC_GROUP_MAPPINGS` | list | none | Rules `<target>=<group>`, separated by commas in the environment; the target is `platform:<role>` or `tenant:<tenant name>:<role>` |
-| `auth.oidc.auto_provision` | `PANDOKOS_AUTH_OIDC_AUTO_PROVISION` | boolean | `false` | Create a user at the first sign-in of an unknown subject that the group rules give a role; refused without auth.oidc.group_mappings |
-| `auth.oidc.private_hosts` | `PANDOKOS_AUTH_OIDC_PRIVATE_HOSTS` | list | none | Host names, separated by commas in the environment, whose URLs may resolve to private addresses, as tokens.private_hosts |
-| `auth.oidc.post_sign_in_path` | `PANDOKOS_AUTH_OIDC_POST_SIGN_IN_PATH` | path | `/` | Where the browser goes after sign-in through the identity provider: starts with one /, no //, no \, no control character |
-| `idempotency.retention` | `PANDOKOS_IDEMPOTENCY_RETENTION` | duration | `24h` | Time an idempotency key is kept; 1h to 7d |
-| `support.enabled` | `PANDOKOS_SUPPORT_ENABLED` | boolean | `true` | Allow the platform to open support actions inside a tenant; `false`: none can be opened and none is honoured, and a tenant that loses its administrators cannot be recovered through the API (a warning at start) |
-| `support.max_duration` | `PANDOKOS_SUPPORT_MAX_DURATION` | duration | `1h` | Default and longest life of a support action; 1m to 24h |
-| `reports.rollup_interval` | `PANDOKOS_REPORTS_ROLLUP_INTERVAL` | duration | `1m` | How often the worker adds the new usage records to the rollup that reports and limit counters read; 10s to 1h; `serve` only ([usage guide](usage.md#13-rollup)) |
-| `retention.usage_months` | `PANDOKOS_RETENTION_USAGE_MONTHS` | integer | `0` | Months of usage kept besides the current UTC month: `0` keeps everything, otherwise 2 to 120; older monthly partitions are dropped and the rollup and default-partition rows of the tenants removed, for good; `serve` only ([usage guide](usage.md#7-partitions)) |
-| `retention.audit_months` | `PANDOKOS_RETENTION_AUDIT_MONTHS` | integer | `0` | Months of audit rows kept besides the current UTC month: `0` keeps everything, otherwise 1 to 1200; older rows are removed from the start of each chain and the anchor moves; a value below 12 is a start-up warning; `serve` only ([audit guide](audit.md#6-retention-of-the-logs)) |
-| `database.address` | `PANDOKOS_DATABASE_ADDRESS` | `host:port` | none, required | Address of PostgreSQL, or of the connection pooler in front of it |
-| `database.direct_address` | `PANDOKOS_DATABASE_DIRECT_ADDRESS` | `host:port` | none | Address of PostgreSQL itself, used only by the notification listener. Set it when `database.address` is a pooler in transaction mode |
-| `database.name` | `PANDOKOS_DATABASE_NAME` | name | `pandokos` | Database name |
-| `database.tls.mode` | `PANDOKOS_DATABASE_TLS_MODE` | `verify-full`, `disable` | `verify-full` | `verify-full`: TLS with verification of the certificate chain and of the host name. `disable`: no TLS |
-| `database.tls.ca_file` | `PANDOKOS_DATABASE_TLS_CA_FILE` | path | none | PEM file with the certificate authorities to trust; when empty the system roots are used |
-| `database.connect_timeout` | `PANDOKOS_DATABASE_CONNECT_TIMEOUT` | duration | `5s` | Time allowed to establish one database connection |
-| `database.gateway.user` | `PANDOKOS_DATABASE_GATEWAY_USER` | name | `pandokos_gateway` | Database user of the gateway role |
-| `database.gateway.password_file` | `PANDOKOS_DATABASE_GATEWAY_PASSWORD_FILE` | path | none, required by `serve` | File with that user's password |
-| `database.gateway.max_connections` | `PANDOKOS_DATABASE_GATEWAY_MAX_CONNECTIONS` | integer | `10` | Size limit of the gateway pool |
-| `database.admin.user` | `PANDOKOS_DATABASE_ADMIN_USER` | name | `pandokos_admin` | Database user of the admin role |
-| `database.admin.password_file` | `PANDOKOS_DATABASE_ADMIN_PASSWORD_FILE` | path | none, required by `serve` | File with that user's password |
-| `database.admin.max_connections` | `PANDOKOS_DATABASE_ADMIN_MAX_CONNECTIONS` | integer | `10` | Size limit of the admin pool |
-| `database.worker.user` | `PANDOKOS_DATABASE_WORKER_USER` | name | `pandokos_worker` | Database user of the worker role |
-| `database.worker.password_file` | `PANDOKOS_DATABASE_WORKER_PASSWORD_FILE` | path | none, required by `serve` | File with that user's password |
-| `database.worker.max_connections` | `PANDOKOS_DATABASE_WORKER_MAX_CONNECTIONS` | integer | `5` | Size limit of the worker pool |
-| `database.owner.user` | `PANDOKOS_DATABASE_OWNER_USER` | name | `pandokos_owner` | Database user of `pandokos migrate` |
-| `database.owner.password_file` | `PANDOKOS_DATABASE_OWNER_PASSWORD_FILE` | path | none, required by `migrate` | File with that user's password. Never read by `serve` |
-| `vault.kek.provider` | `PANDOKOS_VAULT_KEK_PROVIDER` | `local`, `transit` | `local` | Key-encryption key provider that wraps data keys: `local` (a key file) or `transit` (an OpenBao or HashiCorp Vault transit key) |
-| `vault.kek.local.key_file` | `PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE` | path | none, required by `serve` with the provider `local` | File with the key-encryption key: 32 random bytes in standard base64. Create it with `pandokos kek generate` ([vault guide](vault.md)) |
-| `vault.kek.local.unwrap_key_files` | `PANDOKOS_VAULT_KEK_LOCAL_UNWRAP_KEY_FILES` | list of paths | empty | Up to 8 more key-encryption key files the instance can unwrap with: a version being retired, or a new version that other instances already use. Each file is read as `key_file`; separated by commas in the environment; a key equal to `key_file` or to another entry is refused at start, whatever its path. `serve` only ([vault guide](vault.md), "Rotating the key") |
-| `vault.kek.transit.address` | `PANDOKOS_VAULT_KEK_TRANSIT_ADDRESS` | URL | empty | Address of the key service: `https`, or `http` for a loopback host only; with provider `local` it makes the service an unwrap-only provider. `serve` only |
-| `vault.kek.transit.namespace` | `PANDOKOS_VAULT_KEK_TRANSIT_NAMESPACE` | string | empty | Namespace of the key service, sent as `X-Vault-Namespace`. `serve` only |
-| `vault.kek.transit.mount` | `PANDOKOS_VAULT_KEK_TRANSIT_MOUNT` | string | `transit` | Mount path of the transit engine. `serve` only |
-| `vault.kek.transit.key_name` | `PANDOKOS_VAULT_KEK_TRANSIT_KEY_NAME` | string | empty | Name of the transit key, which must exist; required with an address. `serve` only |
-| `vault.kek.transit.tls.ca_file` | `PANDOKOS_VAULT_KEK_TRANSIT_TLS_CA_FILE` | path | empty | PEM file with the only certificate authorities trusted for the key service. `serve` only |
-| `vault.kek.transit.auth.method` | `PANDOKOS_VAULT_KEK_TRANSIT_AUTH_METHOD` | `token`, `approle` | empty | How Pandokos authenticates to the key service; required with an address. `serve` only |
-| `vault.kek.transit.auth.token_file` | `PANDOKOS_VAULT_KEK_TRANSIT_AUTH_TOKEN_FILE` | path | empty | File with the token; required with method `token`. `serve` only |
-| `vault.kek.transit.auth.approle.mount` | `PANDOKOS_VAULT_KEK_TRANSIT_AUTH_APPROLE_MOUNT` | string | `approle` | Mount path of the AppRole auth method. `serve` only |
-| `vault.kek.transit.auth.approle.role_id_file` | `PANDOKOS_VAULT_KEK_TRANSIT_AUTH_APPROLE_ROLE_ID_FILE` | path | empty | File with the AppRole role ID; required with method `approle`. `serve` only |
-| `vault.kek.transit.auth.approle.secret_id_file` | `PANDOKOS_VAULT_KEK_TRANSIT_AUTH_APPROLE_SECRET_ID_FILE` | path | empty | File with the AppRole secret ID; required with method `approle`. `serve` only |
-| `vault.kek.transit.request_timeout` | `PANDOKOS_VAULT_KEK_TRANSIT_REQUEST_TIMEOUT` | duration | `2s` | Time allowed to each request to the key service, `100ms` to `30s`. `serve` only |
-| `vault.kek.transit.max_concurrent_requests` | `PANDOKOS_VAULT_KEK_TRANSIT_MAX_CONCURRENT_REQUESTS` | integer | `32` | Requests in flight to the key service at most, 1 to 1024. `serve` only |
-| `vault.kek.transit.start_timeout` | `PANDOKOS_VAULT_KEK_TRANSIT_START_TIMEOUT` | duration | `0` | Time `serve` waits for the key service at start, up to `1h`; `0` waits without limit. `serve` only |
-| `vault.kek.transit.allow_exportable_key` | `PANDOKOS_VAULT_KEK_TRANSIT_ALLOW_EXPORTABLE_KEY` | boolean | `false` | Accept a key of the key service that was created exportable; without it such a key is refused at start. `serve` only |
-| `tenant_deletion.grace_period` | `PANDOKOS_TENANT_DELETION_GRACE_PERIOD` | duration | `168h` | Time between the request of a tenant deletion and its start; the tenant is suspended meanwhile. `0` to `2160h` (90 days); `0` starts the deletion at the worker's next tick. Read when a deletion is requested, `serve` only ([deletion guide](tenant-deletion.md)) |
-| `tenant_deletion.interval` | `PANDOKOS_TENANT_DELETION_INTERVAL` | duration | `1m` | Time between two runs of the deletion job of the worker (`10s` to `1h`), `serve` only |
-| `events.source` | `PANDOKOS_EVENTS_SOURCE` | string | `urn:pandokos` | The CloudEvents `source` of every event of this installation; a URI reference of 1 to 255 printable characters; `serve` only ([events guide](events.md)) |
-| `events.retention` | `PANDOKOS_EVENTS_RETENTION` | duration | `168h` | How long events are kept, delivered or not, and how far back a destination can be rewound; `24h` to `2160h`, whole hours; `serve` only |
-| `events.relay.interval` | `PANDOKOS_EVENTS_RELAY_INTERVAL` | duration | `1s` | Time between two passes of the event relay of the worker; `100ms` to `1m`; `serve` only |
-| `events.relay.workers` | `PANDOKOS_EVENTS_RELAY_WORKERS` | integer | `4` | Destinations that this process delivers to at once; 1 to 64; `serve` only |
-| `events.relay.batch_size` | `PANDOKOS_EVENTS_RELAY_BATCH_SIZE` | integer | `100` | Events read for one destination in one round; 1 to 1000; `serve` only |
-| `events.delivery.timeout` | `PANDOKOS_EVENTS_DELIVERY_TIMEOUT` | duration | `10s` | Time allowed to one delivery request; `1s` to `30s`; `serve` only |
-| `events.delivery.max_attempts` | `PANDOKOS_EVENTS_DELIVERY_MAX_ATTEMPTS` | integer | `10` | Attempts to deliver an event before it is parked as a dead letter; 1 to 100; `serve` only |
-| `events.delivery.backoff_max` | `PANDOKOS_EVENTS_DELIVERY_BACKOFF_MAX` | duration | `15m` | Longest wait between two attempts to deliver an event; `5s` to `24h`; `serve` only |
-| `events.webhook.private_hosts` | `PANDOKOS_EVENTS_WEBHOOK_PRIVATE_HOSTS` | list | none | Host names, separated by commas in the environment, whose webhook URLs may be `http` and resolve to private addresses, as `tokens.private_hosts`; at most 32 lower-case DNS names, no address literal, no wildcard; `serve` only. List only hosts you control |
-| `pricing.import_at_start` | `PANDOKOS_PRICING_IMPORT_AT_START` | boolean | `true` | Import the embedded price snapshot when `serve` starts, unless an identical or a newer import exists ([catalogue guide](catalogue.md)) |
-| `pricing.default_currency` | `PANDOKOS_PRICING_DEFAULT_CURRENCY` | ISO 4217 code | `USD` | The currency in which the costs of the tenants that have not chosen an active currency are computed, and in which their cost budgets apply; three capital letters. It must be the same on every instance, like `limits.time_zone`, and set before the first start of a release that has tenant price lists if your prices and budgets are not in USD ([database guide](database.md), section 17). It takes effect at restart, for every such tenant at once ([catalogue guide](catalogue.md), section 7) |
-| `pricing.refresh.enabled` | `PANDOKOS_PRICING_REFRESH_ENABLED` | boolean | `false` | Download the price dataset periodically: an outbound request to `pricing.refresh.url` |
-| `pricing.refresh.url` | `PANDOKOS_PRICING_REFRESH_URL` | URL | `https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json` | Address of the price dataset; `https` only, no user information. Pin it to a commit to control what is imported |
-| `pricing.refresh.interval` | `PANDOKOS_PRICING_REFRESH_INTERVAL` | duration | `24h` | Time between downloads (1h to 720h) |
-| `ledger.flush_interval` | `PANDOKOS_LEDGER_FLUSH_INTERVAL` | duration | `50ms` | Longest time a usage record waits in memory before it is written (1ms to 10s) |
-| `ledger.batch_size` | `PANDOKOS_LEDGER_BATCH_SIZE` | integer | `500` | Most usage records written in one transaction (1 to 5000) |
-| `ledger.buffer_size` | `PANDOKOS_LEDGER_BUFFER_SIZE` | integer | `10000` | Usage records held in memory, admitted requests included; when it is full the gateway answers 503 (100 to 1000000, at least `ledger.batch_size`) |
-| `ledger.shutdown_flush_timeout` | `PANDOKOS_LEDGER_SHUTDOWN_FLUSH_TIMEOUT` | duration | `10s` | Time allowed to write the records still in memory when the process stops (1s to 5m) |
-| `telemetry.otlp.endpoint` | `PANDOKOS_TELEMETRY_OTLP_ENDPOINT` | URL | none | Base URL of the OTLP/HTTP collector; `/v1/traces` and `/v1/metrics` are appended to its path; empty means no export |
-| `telemetry.otlp.protocol` | `PANDOKOS_TELEMETRY_OTLP_PROTOCOL` | `http/protobuf` | `http/protobuf` | Export protocol; only `http/protobuf` exists |
-| `telemetry.otlp.headers_file` | `PANDOKOS_TELEMETRY_OTLP_HEADERS_FILE` | path | none | File with the headers sent to the collector, one `Name: value` per line; the values are secrets |
-| `telemetry.otlp.timeout` | `PANDOKOS_TELEMETRY_OTLP_TIMEOUT` | duration | `10s` | Time allowed for one export (1s to 60s) |
-| `telemetry.traces.sample_ratio` | `PANDOKOS_TELEMETRY_TRACES_SAMPLE_RATIO` | decimal | `1` | Share of the traces started here that is sampled (0 to 1); the sampled flag of a caller's `traceparent` is followed |
-| `telemetry.traces.propagate` | `PANDOKOS_TELEMETRY_TRACES_PROPAGATE` | boolean | `false` | Send the trace context to the provider in a `traceparent` header |
-| `telemetry.resource.attributes` | `PANDOKOS_TELEMETRY_RESOURCE_ATTRIBUTES` | list | none | Resource attributes of the traces and the metrics: `key=value` pairs separated by commas, in YAML and in the environment |
-| `telemetry.metrics.otlp` | `PANDOKOS_TELEMETRY_METRICS_OTLP` | boolean | `true` | Export metrics over OTLP to `telemetry.otlp.endpoint` (`/v1/metrics` is appended), when that is set |
-| `telemetry.metrics.export_interval` | `PANDOKOS_TELEMETRY_METRICS_EXPORT_INTERVAL` | duration | `60s` | Time between two OTLP metric exports (5s to 10m) |
-| `telemetry.metrics.prometheus` | `PANDOKOS_TELEMETRY_METRICS_PROMETHEUS` | boolean | `false` | Serve `GET /metrics` on the administration listener, for a platform key holding `metrics:read` |
+| Key | Environment variable | Type | Default | Meaning | Scope |
+|---|---|---|---|---|---|
+| `log.level` | `PANDOKOS_LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` | Minimum level written | `instance` |
+| `listeners.inference.address` | `PANDOKOS_LISTENERS_INFERENCE_ADDRESS` | `host:port` | `0.0.0.0:8080` | Listen address of the inference API | `instance` |
+| `listeners.inference.read_header_timeout` | `PANDOKOS_LISTENERS_INFERENCE_READ_HEADER_TIMEOUT` | duration | `10s` | Time allowed to read request headers | `instance` |
+| `listeners.inference.idle_timeout` | `PANDOKOS_LISTENERS_INFERENCE_IDLE_TIMEOUT` | duration | `120s` | Keep-alive idle time | `instance` |
+| `listeners.inference.max_header_bytes` | `PANDOKOS_LISTENERS_INFERENCE_MAX_HEADER_BYTES` | integer | `65536` | Maximum size of request headers | `instance` |
+| `listeners.inference.tls.cert_file` | `PANDOKOS_LISTENERS_INFERENCE_TLS_CERT_FILE` | path | none | PEM file with the server certificate and any intermediate certificates. With `key_file`, turns TLS on for the listener | `instance` |
+| `listeners.inference.tls.key_file` | `PANDOKOS_LISTENERS_INFERENCE_TLS_KEY_FILE` | path | none | PEM file with the private key of the certificate | `instance` |
+| `listeners.inference.tls.min_version` | `PANDOKOS_LISTENERS_INFERENCE_TLS_MIN_VERSION` | `TLS1.2`, `TLS1.3` | `TLS1.2` | Lowest protocol version accepted | `instance` |
+| `listeners.admin.address` | `PANDOKOS_LISTENERS_ADMIN_ADDRESS` | `host:port` | `127.0.0.1:8081` | Listen address of the administration API | `instance` |
+| `listeners.admin.read_header_timeout` | `PANDOKOS_LISTENERS_ADMIN_READ_HEADER_TIMEOUT` | duration | `10s` | Time allowed to read request headers | `instance` |
+| `listeners.admin.idle_timeout` | `PANDOKOS_LISTENERS_ADMIN_IDLE_TIMEOUT` | duration | `120s` | Keep-alive idle time | `instance` |
+| `listeners.admin.max_header_bytes` | `PANDOKOS_LISTENERS_ADMIN_MAX_HEADER_BYTES` | integer | `65536` | Maximum size of request headers | `instance` |
+| `listeners.admin.tls.cert_file` | `PANDOKOS_LISTENERS_ADMIN_TLS_CERT_FILE` | path | none | PEM file with the server certificate and any intermediate certificates. With `key_file`, turns TLS on for the listener | `instance` |
+| `listeners.admin.tls.key_file` | `PANDOKOS_LISTENERS_ADMIN_TLS_KEY_FILE` | path | none | PEM file with the private key of the certificate | `instance` |
+| `listeners.admin.tls.min_version` | `PANDOKOS_LISTENERS_ADMIN_TLS_MIN_VERSION` | `TLS1.2`, `TLS1.3` | `TLS1.2` | Lowest protocol version accepted | `instance` |
+| `listeners.admin.allow_plaintext` | `PANDOKOS_LISTENERS_ADMIN_ALLOW_PLAINTEXT` | boolean | `false` | Acknowledges that the administration API is served without TLS on an address that is not loopback, because TLS ends in front of it | `instance` |
+| `listeners.admin.trusted_proxies` | `PANDOKOS_LISTENERS_ADMIN_TRUSTED_PROXIES` | list | none | CIDR prefixes, separated by commas in the environment, of the proxies in front of the administration listener whose X-Forwarded-For is believed | `instance` |
+| `limits.max_request_body_bytes` | `PANDOKOS_LIMITS_MAX_REQUEST_BODY_BYTES` | integer | `10485760` | Larger bodies get 413 `request_too_large` | `installation` |
+| `limits.request_body_read_timeout` | `PANDOKOS_LIMITS_REQUEST_BODY_READ_TIMEOUT` | duration | `30s` | Time allowed to read the request body | `instance` |
+| `limits.max_request_duration` | `PANDOKOS_LIMITS_MAX_REQUEST_DURATION` | duration | `10m` | Total time for one proxied request, stream included, measured from the end of the body read | `instance` |
+| `limits.default_output_tokens` | `PANDOKOS_LIMITS_DEFAULT_OUTPUT_TOKENS` | integer | `4096` | Output tokens reserved per choice for a request that sets no output limit; capped by the model's `max_output_tokens` when the catalogue has it (1 to 1000000) | `installation` |
+| `limits.time_zone` | `PANDOKOS_LIMITS_TIME_ZONE` | IANA zone name | `UTC` | The zone in which the days and months of quotas and budgets start for the tenants that have no time zone of their own (a tenant's zone is set through the administration API); a name known to the embedded time zone database whose offsets are whole minutes | `installation` |
+| `limits.on_unknown_price` | `PANDOKOS_LIMITS_ON_UNKNOWN_PRICE` | `refuse`, `allow` | `refuse` | What happens to a request that a budget applies to and cannot measure because the model has no price in the budget's currency: refused with 409 `no_price`, or admitted | `installation` |
+| `limits.on_store_failure` | `PANDOKOS_LIMITS_ON_STORE_FAILURE` | `refuse`, `allow` | `refuse` | What happens to a request whose quota and budget counters cannot be verified: refused with 503 `unavailable`, or admitted; `allow` is a start-up warning | `installation` |
+| `limits.reconcile_interval` | `PANDOKOS_LIMITS_RECONCILE_INTERVAL` | duration | `5m` | How often the period counters of quotas and budgets are folded into the usage ledger (10s to 1h) | `installation` |
+| `upstream.connect_timeout` | `PANDOKOS_UPSTREAM_CONNECT_TIMEOUT` | duration | `10s` | TCP connect timeout, and separately TLS handshake timeout, towards the provider | `instance` |
+| `upstream.tls.ca_file` | `PANDOKOS_UPSTREAM_TLS_CA_FILE` | path | none | PEM file whose certificates are added to the system roots for every outbound TLS connection of the server (providers, validation, price download, an `https` proxy); read by `serve` only | `instance` |
+| `upstream.proxy.url` | `PANDOKOS_UPSTREAM_PROXY_URL` | URL | none | Proxy for provider calls to public endpoints, credential validation and the price download; private endpoints go direct; `HTTPS_PROXY` and similar variables are never read; read by `serve` only | `instance` |
+| `shutdown.drain_timeout` | `PANDOKOS_SHUTDOWN_DRAIN_TIMEOUT` | duration | `30s` | Time in-flight requests get to finish after a termination signal | `instance` |
+| `cache.principal_ttl` | `PANDOKOS_CACHE_PRINCIPAL_TTL` | duration | `30s` | Lifetime of a cached principal in the gateway: the upper bound on the time a revocation or a suspension takes to reach the inference listener (1s to 60s) | `instance` |
+| `cache.credential_ttl` | `PANDOKOS_CACHE_CREDENTIAL_TTL` | duration | `30s` | Lifetime of a cached provider credential in the gateway: the upper bound on the time a disable, revocation or replacement takes to reach the inference listener when notifications are not delivered (1s to 60s) | `instance` |
+| `cache.data_key_ttl` | `PANDOKOS_CACHE_DATA_KEY_TTL` | duration | `5m` | Lifetime of an unwrapped data key in the gateway (1s to 15m) | `instance` |
+| `cache.catalog_ttl` | `PANDOKOS_CACHE_CATALOG_TTL` | duration | `30s` | Lifetime of the cached catalogue and of a tenant's model access, active currency and price lists in the gateway: the upper bound on the time a catalogue, price, model-access, tenant price or active-currency change takes to reach the inference listener when notifications are not delivered (1s to 5m); see the [catalogue guide](catalogue.md) | `instance` |
+| `cache.limits_ttl` | `PANDOKOS_CACHE_LIMITS_TTL` | duration | `30s` | Lifetime of a tenant's cached limit rules in the gateway: the upper bound on the time a changed rule or a changed active currency takes to apply when no notification arrives (1s to 5m) | `instance` |
+| `tokens.enabled` | `PANDOKOS_TOKENS_ENABLED` | boolean | `true` | Accept tokens of trusted issuers on the inference listener. `false`: every credential that is not a virtual key is malformed and no key of an issuer is ever fetched; read by `serve` only. See the [tokens guide](tokens.md) | `installation` |
+| `tokens.max_token_bytes` | `PANDOKOS_TOKENS_MAX_TOKEN_BYTES` | integer | `8192` | Largest token accepted (1024 to 16384, and at most half of `listeners.inference.max_header_bytes`) | `installation` |
+| `tokens.clock_skew` | `PANDOKOS_TOKENS_CLOCK_SKEW` | duration | `60s` | Tolerance on `exp`, `nbf` and `iat` of a token (0 to 5m) | `installation` |
+| `tokens.max_lifetime` | `PANDOKOS_TOKENS_MAX_LIFETIME` | duration | `24h` | Longest lifetime (`exp` minus `iat`) a token may have (1m to 720h) | `installation` |
+| `tokens.private_hosts` | `PANDOKOS_TOKENS_PRIVATE_HOSTS` | list | none | Host names, separated by commas in the environment, whose issuer and key URLs may resolve to private addresses (at most 32 lower-case DNS names, no address literal, no wildcard) | `installation` |
+| `tokens.jwks.fetch_timeout` | `PANDOKOS_TOKENS_JWKS_FETCH_TIMEOUT` | duration | `5s` | Time allowed to fetch one document of an issuer (1s to 30s) | `installation` |
+| `tokens.jwks.refresh_interval` | `PANDOKOS_TOKENS_JWKS_REFRESH_INTERVAL` | duration | `15m` | Time between background refreshes of the key set of an issuer (1m to 1h) | `installation` |
+| `tokens.jwks.min_refetch_interval` | `PANDOKOS_TOKENS_JWKS_MIN_REFETCH_INTERVAL` | duration | `10s` | Shortest time between two fetches of a key set caused by an unknown key ID (1s to 5m) | `installation` |
+| `tokens.jwks.max_stale` | `PANDOKOS_TOKENS_JWKS_MAX_STALE` | duration | `6h` | Time a key set is used after its last successful fetch, then calls are answered 503 (at least twice `tokens.jwks.refresh_interval`, at most 72h) | `installation` |
+| `tokens.admin_listener` | `PANDOKOS_TOKENS_ADMIN_LISTENER` | boolean | `false` | Accept tokens of trusted issuers on the administration listener too; needs tokens.enabled | `installation` |
+| `auth.public_origin` | `PANDOKOS_AUTH_PUBLIC_ORIGIN` | URL | none | Origin that browsers use to reach the administration API: https://host[:port], or http:// with a loopback host; required with auth.oidc.enabled | `installation` |
+| `auth.local.enabled` | `PANDOKOS_AUTH_LOCAL_ENABLED` | boolean | `true` | Allow sign-in with a local account; false is refused unless auth.oidc.enabled | `installation` |
+| `auth.local.password_min_length` | `PANDOKOS_AUTH_LOCAL_PASSWORD_MIN_LENGTH` | integer | `12` | Shortest password accepted, 8 to 128; below 12 warns | `installation` |
+| `auth.local.generated_password_ttl` | `PANDOKOS_AUTH_LOCAL_GENERATED_PASSWORD_TTL` | duration | `72h` | Time a generated password stays valid until it is changed; 1h to 30d | `installation` |
+| `auth.local.max_failures` | `PANDOKOS_AUTH_LOCAL_MAX_FAILURES` | integer | `10` | Failed sign-ins of one username in auth.local.failure_window that lock it; 3 to 100 | `installation` |
+| `auth.local.failure_window` | `PANDOKOS_AUTH_LOCAL_FAILURE_WINDOW` | duration | `15m` | Window in which failed sign-ins are counted; 1m to 24h | `installation` |
+| `auth.local.lock_duration` | `PANDOKOS_AUTH_LOCAL_LOCK_DURATION` | duration | `15m` | Time a username stays locked; 1m to 24h | `installation` |
+| `auth.local.source_max_failures` | `PANDOKOS_AUTH_LOCAL_SOURCE_MAX_FAILURES` | integer | `50` | Failed sign-ins from one source address prefix in the window that delay it; at least auth.local.max_failures | `installation` |
+| `auth.local.argon2.memory_kib` | `PANDOKOS_AUTH_LOCAL_ARGON2_MEMORY_KIB` | integer | `65536` | Argon2id memory cost of new password hashes, in KiB | `installation` |
+| `auth.local.argon2.iterations` | `PANDOKOS_AUTH_LOCAL_ARGON2_ITERATIONS` | integer | `3` | Argon2id time cost of new password hashes | `installation` |
+| `auth.local.argon2.parallelism` | `PANDOKOS_AUTH_LOCAL_ARGON2_PARALLELISM` | integer | `1` | Argon2id parallelism of new password hashes | `installation` |
+| `auth.local.max_concurrent_hashes` | `PANDOKOS_AUTH_LOCAL_MAX_CONCURRENT_HASHES` | integer | `4` | Password hashes computed at the same time; more are answered 503; 1 to 64 | `installation` |
+| `auth.session.idle_timeout` | `PANDOKOS_AUTH_SESSION_IDLE_TIMEOUT` | duration | `30m` | Time without use after which a session ends; 1m to 24h, at most auth.session.absolute_lifetime | `installation` |
+| `auth.session.absolute_lifetime` | `PANDOKOS_AUTH_SESSION_ABSOLUTE_LIFETIME` | duration | `12h` | Longest life of a session; at most 168h | `installation` |
+| `auth.session.max_per_user` | `PANDOKOS_AUTH_SESSION_MAX_PER_USER` | integer | `10` | Sessions a user may hold; the oldest end first; 1 to 100 | `installation` |
+| `auth.oidc.enabled` | `PANDOKOS_AUTH_OIDC_ENABLED` | boolean | `false` | Allow sign-in through an OpenID Connect identity provider; needs issuer, client_id, client_secret_file and auth.public_origin | `installation` |
+| `auth.oidc.issuer` | `PANDOKOS_AUTH_OIDC_ISSUER` | URL | none | Issuer of the identity provider; https | `installation` |
+| `auth.oidc.client_id` | `PANDOKOS_AUTH_OIDC_CLIENT_ID` | string | none | Client ID registered at the identity provider | `installation` |
+| `auth.oidc.client_secret_file` | `PANDOKOS_AUTH_OIDC_CLIENT_SECRET_FILE` | path | none | File with the client secret (at least 16 bytes); the value is a secret | `installation` |
+| `auth.oidc.client_auth` | `PANDOKOS_AUTH_OIDC_CLIENT_AUTH` | basic, post | `basic` | How the client authenticates at the token endpoint | `installation` |
+| `auth.oidc.scopes` | `PANDOKOS_AUTH_OIDC_SCOPES` | list | `openid profile email` | Scopes requested, separated by commas in the environment; contains openid | `installation` |
+| `auth.oidc.algorithms` | `PANDOKOS_AUTH_OIDC_ALGORITHMS` | list | `RS256 ES256` | Signature algorithms accepted for the ID token, separated by commas in the environment | `installation` |
+| `auth.oidc.display_name` | `PANDOKOS_AUTH_OIDC_DISPLAY_NAME` | string | `Single sign-on` | Name of the identity provider shown by the sign-in page | `installation` |
+| `auth.oidc.name_claim` | `PANDOKOS_AUTH_OIDC_NAME_CLAIM` | string | `name` | Claim of the ID token that gives the display name | `installation` |
+| `auth.oidc.email_claim` | `PANDOKOS_AUTH_OIDC_EMAIL_CLAIM` | string | `email` | Claim of the ID token that gives the e-mail address | `installation` |
+| `auth.oidc.groups_claim` | `PANDOKOS_AUTH_OIDC_GROUPS_CLAIM` | string | `groups` | Claim of the ID token that gives the groups; a dotted path of at most four members | `installation` |
+| `auth.oidc.group_mappings` | `PANDOKOS_AUTH_OIDC_GROUP_MAPPINGS` | list | none | Rules `<target>=<group>`, separated by commas in the environment; the target is `platform:<role>` or `tenant:<tenant name>:<role>` | `installation` |
+| `auth.oidc.auto_provision` | `PANDOKOS_AUTH_OIDC_AUTO_PROVISION` | boolean | `false` | Create a user at the first sign-in of an unknown subject that the group rules give a role; refused without auth.oidc.group_mappings | `installation` |
+| `auth.oidc.private_hosts` | `PANDOKOS_AUTH_OIDC_PRIVATE_HOSTS` | list | none | Host names, separated by commas in the environment, whose URLs may resolve to private addresses, as tokens.private_hosts | `installation` |
+| `auth.oidc.post_sign_in_path` | `PANDOKOS_AUTH_OIDC_POST_SIGN_IN_PATH` | path | `/` | Where the browser goes after sign-in through the identity provider: starts with one /, no //, no \, no control character | `installation` |
+| `idempotency.retention` | `PANDOKOS_IDEMPOTENCY_RETENTION` | duration | `24h` | Time an idempotency key is kept; 1h to 7d | `installation` |
+| `support.enabled` | `PANDOKOS_SUPPORT_ENABLED` | boolean | `true` | Allow the platform to open support actions inside a tenant; `false`: none can be opened and none is honoured, and a tenant that loses its administrators cannot be recovered through the API (a warning at start) | `installation` |
+| `support.max_duration` | `PANDOKOS_SUPPORT_MAX_DURATION` | duration | `1h` | Default and longest life of a support action; 1m to 24h | `installation` |
+| `reports.rollup_interval` | `PANDOKOS_REPORTS_ROLLUP_INTERVAL` | duration | `1m` | How often the worker adds the new usage records to the rollup that reports and limit counters read; 10s to 1h; `serve` only ([usage guide](usage.md#13-rollup)) | `installation` |
+| `retention.usage_months` | `PANDOKOS_RETENTION_USAGE_MONTHS` | integer | `0` | Months of usage kept besides the current UTC month: `0` keeps everything, otherwise 2 to 120; older monthly partitions are dropped and the rollup and default-partition rows of the tenants removed, for good; `serve` only ([usage guide](usage.md#7-partitions)) | `installation` |
+| `retention.audit_months` | `PANDOKOS_RETENTION_AUDIT_MONTHS` | integer | `0` | Months of audit rows kept besides the current UTC month: `0` keeps everything, otherwise 1 to 1200; older rows are removed from the start of each chain and the anchor moves; a value below 12 is a start-up warning; `serve` only ([audit guide](audit.md#6-retention-of-the-logs)) | `installation` |
+| `database.address` | `PANDOKOS_DATABASE_ADDRESS` | `host:port` | none, required | Address of PostgreSQL, or of the connection pooler in front of it | `installation` |
+| `database.direct_address` | `PANDOKOS_DATABASE_DIRECT_ADDRESS` | `host:port` | none | Address of PostgreSQL itself, used only by the notification listener. Set it when `database.address` is a pooler in transaction mode | `installation` |
+| `database.name` | `PANDOKOS_DATABASE_NAME` | name | `pandokos` | Database name | `installation` |
+| `database.tls.mode` | `PANDOKOS_DATABASE_TLS_MODE` | `verify-full`, `disable` | `verify-full` | `verify-full`: TLS with verification of the certificate chain and of the host name. `disable`: no TLS | `instance` |
+| `database.tls.ca_file` | `PANDOKOS_DATABASE_TLS_CA_FILE` | path | none | PEM file with the certificate authorities to trust; when empty the system roots are used | `instance` |
+| `database.connect_timeout` | `PANDOKOS_DATABASE_CONNECT_TIMEOUT` | duration | `5s` | Time allowed to establish one database connection | `instance` |
+| `database.gateway.user` | `PANDOKOS_DATABASE_GATEWAY_USER` | name | `pandokos_gateway` | Database user of the gateway role | `installation` |
+| `database.gateway.password_file` | `PANDOKOS_DATABASE_GATEWAY_PASSWORD_FILE` | path | none, required by `serve` | File with that user's password | `instance` |
+| `database.gateway.max_connections` | `PANDOKOS_DATABASE_GATEWAY_MAX_CONNECTIONS` | integer | `10` | Size limit of the gateway pool | `instance` |
+| `database.admin.user` | `PANDOKOS_DATABASE_ADMIN_USER` | name | `pandokos_admin` | Database user of the admin role | `installation` |
+| `database.admin.password_file` | `PANDOKOS_DATABASE_ADMIN_PASSWORD_FILE` | path | none, required by `serve` | File with that user's password | `instance` |
+| `database.admin.max_connections` | `PANDOKOS_DATABASE_ADMIN_MAX_CONNECTIONS` | integer | `10` | Size limit of the admin pool | `instance` |
+| `database.worker.user` | `PANDOKOS_DATABASE_WORKER_USER` | name | `pandokos_worker` | Database user of the worker role | `installation` |
+| `database.worker.password_file` | `PANDOKOS_DATABASE_WORKER_PASSWORD_FILE` | path | none, required by `serve` | File with that user's password | `instance` |
+| `database.worker.max_connections` | `PANDOKOS_DATABASE_WORKER_MAX_CONNECTIONS` | integer | `5` | Size limit of the worker pool | `instance` |
+| `database.owner.user` | `PANDOKOS_DATABASE_OWNER_USER` | name | `pandokos_owner` | Database user of `pandokos migrate` | `installation` |
+| `database.owner.password_file` | `PANDOKOS_DATABASE_OWNER_PASSWORD_FILE` | path | none, required by `migrate` | File with that user's password. Never read by `serve` | `instance` |
+| `vault.kek.provider` | `PANDOKOS_VAULT_KEK_PROVIDER` | `local`, `transit` | `local` | Key-encryption key provider that wraps data keys: `local` (a key file) or `transit` (an OpenBao or HashiCorp Vault transit key) | `installation` |
+| `vault.kek.local.key_file` | `PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE` | path | none, required by `serve` with the provider `local` | File with the key-encryption key: 32 random bytes in standard base64. Create it with `pandokos kek generate` ([vault guide](vault.md)) | `installation` |
+| `vault.kek.local.unwrap_key_files` | `PANDOKOS_VAULT_KEK_LOCAL_UNWRAP_KEY_FILES` | list of paths | empty | Up to 8 more key-encryption key files the instance can unwrap with: a version being retired, or a new version that other instances already use. Each file is read as `key_file`; separated by commas in the environment; a key equal to `key_file` or to another entry is refused at start, whatever its path. `serve` only ([vault guide](vault.md), "Rotating the key") | `installation` |
+| `vault.kek.transit.address` | `PANDOKOS_VAULT_KEK_TRANSIT_ADDRESS` | URL | empty | Address of the key service: `https`, or `http` for a loopback host only; with provider `local` it makes the service an unwrap-only provider. `serve` only | `installation` |
+| `vault.kek.transit.namespace` | `PANDOKOS_VAULT_KEK_TRANSIT_NAMESPACE` | string | empty | Namespace of the key service, sent as `X-Vault-Namespace`. `serve` only | `installation` |
+| `vault.kek.transit.mount` | `PANDOKOS_VAULT_KEK_TRANSIT_MOUNT` | string | `transit` | Mount path of the transit engine. `serve` only | `installation` |
+| `vault.kek.transit.key_name` | `PANDOKOS_VAULT_KEK_TRANSIT_KEY_NAME` | string | empty | Name of the transit key, which must exist; required with an address. `serve` only | `installation` |
+| `vault.kek.transit.tls.ca_file` | `PANDOKOS_VAULT_KEK_TRANSIT_TLS_CA_FILE` | path | empty | PEM file with the only certificate authorities trusted for the key service. `serve` only | `installation` |
+| `vault.kek.transit.auth.method` | `PANDOKOS_VAULT_KEK_TRANSIT_AUTH_METHOD` | `token`, `approle` | empty | How Pandokos authenticates to the key service; required with an address. `serve` only | `installation` |
+| `vault.kek.transit.auth.token_file` | `PANDOKOS_VAULT_KEK_TRANSIT_AUTH_TOKEN_FILE` | path | empty | File with the token; required with method `token`. `serve` only | `installation` |
+| `vault.kek.transit.auth.approle.mount` | `PANDOKOS_VAULT_KEK_TRANSIT_AUTH_APPROLE_MOUNT` | string | `approle` | Mount path of the AppRole auth method. `serve` only | `installation` |
+| `vault.kek.transit.auth.approle.role_id_file` | `PANDOKOS_VAULT_KEK_TRANSIT_AUTH_APPROLE_ROLE_ID_FILE` | path | empty | File with the AppRole role ID; required with method `approle`. `serve` only | `installation` |
+| `vault.kek.transit.auth.approle.secret_id_file` | `PANDOKOS_VAULT_KEK_TRANSIT_AUTH_APPROLE_SECRET_ID_FILE` | path | empty | File with the AppRole secret ID; required with method `approle`. `serve` only | `installation` |
+| `vault.kek.transit.request_timeout` | `PANDOKOS_VAULT_KEK_TRANSIT_REQUEST_TIMEOUT` | duration | `2s` | Time allowed to each request to the key service, `100ms` to `30s`. `serve` only | `installation` |
+| `vault.kek.transit.max_concurrent_requests` | `PANDOKOS_VAULT_KEK_TRANSIT_MAX_CONCURRENT_REQUESTS` | integer | `32` | Requests in flight to the key service at most, 1 to 1024. `serve` only | `installation` |
+| `vault.kek.transit.start_timeout` | `PANDOKOS_VAULT_KEK_TRANSIT_START_TIMEOUT` | duration | `0` | Time `serve` waits for the key service at start, up to `1h`; `0` waits without limit. `serve` only | `installation` |
+| `vault.kek.transit.allow_exportable_key` | `PANDOKOS_VAULT_KEK_TRANSIT_ALLOW_EXPORTABLE_KEY` | boolean | `false` | Accept a key of the key service that was created exportable; without it such a key is refused at start. `serve` only | `installation` |
+| `tenant_deletion.grace_period` | `PANDOKOS_TENANT_DELETION_GRACE_PERIOD` | duration | `168h` | Time between the request of a tenant deletion and its start; the tenant is suspended meanwhile. `0` to `2160h` (90 days); `0` starts the deletion at the worker's next tick. Read when a deletion is requested, `serve` only ([deletion guide](tenant-deletion.md)) | `installation` |
+| `tenant_deletion.interval` | `PANDOKOS_TENANT_DELETION_INTERVAL` | duration | `1m` | Time between two runs of the deletion job of the worker (`10s` to `1h`), `serve` only | `installation` |
+| `events.source` | `PANDOKOS_EVENTS_SOURCE` | string | `urn:pandokos` | The CloudEvents `source` of every event of this installation; a URI reference of 1 to 255 printable characters; `serve` only ([events guide](events.md)) | `installation` |
+| `events.retention` | `PANDOKOS_EVENTS_RETENTION` | duration | `168h` | How long events are kept, delivered or not, and how far back a destination can be rewound; `24h` to `2160h`, whole hours; `serve` only | `installation` |
+| `events.relay.interval` | `PANDOKOS_EVENTS_RELAY_INTERVAL` | duration | `1s` | Time between two passes of the event relay of the worker; `100ms` to `1m`; `serve` only | `installation` |
+| `events.relay.workers` | `PANDOKOS_EVENTS_RELAY_WORKERS` | integer | `4` | Destinations that this process delivers to at once; 1 to 64; `serve` only | `installation` |
+| `events.relay.batch_size` | `PANDOKOS_EVENTS_RELAY_BATCH_SIZE` | integer | `100` | Events read for one destination in one round; 1 to 1000; `serve` only | `installation` |
+| `events.delivery.timeout` | `PANDOKOS_EVENTS_DELIVERY_TIMEOUT` | duration | `10s` | Time allowed to one delivery request; `1s` to `30s`; `serve` only | `installation` |
+| `events.delivery.max_attempts` | `PANDOKOS_EVENTS_DELIVERY_MAX_ATTEMPTS` | integer | `10` | Attempts to deliver an event before it is parked as a dead letter; 1 to 100; `serve` only | `installation` |
+| `events.delivery.backoff_max` | `PANDOKOS_EVENTS_DELIVERY_BACKOFF_MAX` | duration | `15m` | Longest wait between two attempts to deliver an event; `5s` to `24h`; `serve` only | `installation` |
+| `events.webhook.private_hosts` | `PANDOKOS_EVENTS_WEBHOOK_PRIVATE_HOSTS` | list | none | Host names, separated by commas in the environment, whose webhook URLs may be `http` and resolve to private addresses, as `tokens.private_hosts`; at most 32 lower-case DNS names, no address literal, no wildcard; `serve` only. List only hosts you control | `installation` |
+| `pricing.import_at_start` | `PANDOKOS_PRICING_IMPORT_AT_START` | boolean | `true` | Import the embedded price snapshot when `serve` starts, unless an identical or a newer import exists ([catalogue guide](catalogue.md)) | `installation` |
+| `pricing.default_currency` | `PANDOKOS_PRICING_DEFAULT_CURRENCY` | ISO 4217 code | `USD` | The currency in which the costs of the tenants that have not chosen an active currency are computed, and in which their cost budgets apply; three capital letters. It must be the same on every instance, like `limits.time_zone`, and set before the first start of a release that has tenant price lists if your prices and budgets are not in USD ([database guide](database.md), section 17). It takes effect at restart, for every such tenant at once ([catalogue guide](catalogue.md), section 7) | `installation` |
+| `pricing.refresh.enabled` | `PANDOKOS_PRICING_REFRESH_ENABLED` | boolean | `false` | Download the price dataset periodically: an outbound request to `pricing.refresh.url` | `installation` |
+| `pricing.refresh.url` | `PANDOKOS_PRICING_REFRESH_URL` | URL | `https://raw.githubusercontent.com/pydantic/genai-prices/main/prices/new_data/v2/data.json` | Address of the price dataset; `https` only, no user information. Pin it to a commit to control what is imported | `installation` |
+| `pricing.refresh.interval` | `PANDOKOS_PRICING_REFRESH_INTERVAL` | duration | `24h` | Time between downloads (1h to 720h) | `installation` |
+| `ledger.flush_interval` | `PANDOKOS_LEDGER_FLUSH_INTERVAL` | duration | `50ms` | Longest time a usage record waits in memory before it is written (1ms to 10s) | `instance` |
+| `ledger.batch_size` | `PANDOKOS_LEDGER_BATCH_SIZE` | integer | `500` | Most usage records written in one transaction (1 to 5000) | `instance` |
+| `ledger.buffer_size` | `PANDOKOS_LEDGER_BUFFER_SIZE` | integer | `10000` | Usage records held in memory, admitted requests included; when it is full the gateway answers 503 (100 to 1000000, at least `ledger.batch_size`) | `instance` |
+| `ledger.shutdown_flush_timeout` | `PANDOKOS_LEDGER_SHUTDOWN_FLUSH_TIMEOUT` | duration | `10s` | Time allowed to write the records still in memory when the process stops (1s to 5m) | `instance` |
+| `telemetry.otlp.endpoint` | `PANDOKOS_TELEMETRY_OTLP_ENDPOINT` | URL | none | Base URL of the OTLP/HTTP collector; `/v1/traces` and `/v1/metrics` are appended to its path; empty means no export | `instance` |
+| `telemetry.otlp.protocol` | `PANDOKOS_TELEMETRY_OTLP_PROTOCOL` | `http/protobuf` | `http/protobuf` | Export protocol; only `http/protobuf` exists | `instance` |
+| `telemetry.otlp.headers_file` | `PANDOKOS_TELEMETRY_OTLP_HEADERS_FILE` | path | none | File with the headers sent to the collector, one `Name: value` per line; the values are secrets | `instance` |
+| `telemetry.otlp.timeout` | `PANDOKOS_TELEMETRY_OTLP_TIMEOUT` | duration | `10s` | Time allowed for one export (1s to 60s) | `instance` |
+| `telemetry.traces.sample_ratio` | `PANDOKOS_TELEMETRY_TRACES_SAMPLE_RATIO` | decimal | `1` | Share of the traces started here that is sampled (0 to 1); the sampled flag of a caller's `traceparent` is followed | `instance` |
+| `telemetry.traces.propagate` | `PANDOKOS_TELEMETRY_TRACES_PROPAGATE` | boolean | `false` | Send the trace context to the provider in a `traceparent` header | `instance` |
+| `telemetry.resource.attributes` | `PANDOKOS_TELEMETRY_RESOURCE_ATTRIBUTES` | list | none | Resource attributes of the traces and the metrics: `key=value` pairs separated by commas, in YAML and in the environment | `instance` |
+| `telemetry.metrics.otlp` | `PANDOKOS_TELEMETRY_METRICS_OTLP` | boolean | `true` | Export metrics over OTLP to `telemetry.otlp.endpoint` (`/v1/metrics` is appended), when that is set | `instance` |
+| `telemetry.metrics.export_interval` | `PANDOKOS_TELEMETRY_METRICS_EXPORT_INTERVAL` | duration | `60s` | Time between two OTLP metric exports (5s to 10m) | `instance` |
+| `telemetry.metrics.prometheus` | `PANDOKOS_TELEMETRY_METRICS_PROMETHEUS` | boolean | `false` | Serve `GET /metrics` on the administration listener, for a platform key holding `metrics:read` | `instance` |
 
 Durations are strings in Go syntax (`"30s"`, `"10m"`); a YAML number is rejected for a duration.
 Sizes are integers in bytes.
@@ -182,6 +182,36 @@ invite a password inside it). The address is one key, not a host and a port, on 
 named `database.port` would collide with the `PANDOKOS_DATABASE_PORT` variable that Kubernetes
 injects for a Service named `pandokos-database`. The database is described in the
 [database guide](database.md).
+
+## What makes an installation
+
+An **instance** is one running `pandokos serve` process; an **installation** is one database with its tenants, its
+key-encryption key and the instances that serve it. Every key has a scope, shown in the last column of the table
+of keys: `instance` means the value may differ between the instances of one installation (an address to listen
+on, a pool size, a timeout); `installation` means it must be the same on all of them, because it changes what
+the data means or how it is read (the time zone of the days of a quota, the key, the intervals the worker keeps
+state for). Nothing compares the instances yet: the scope is documentation until replicas exist, and it is the
+list that a later start-time check will compare.
+
+What distinguishes one installation from another is, in all, this configuration (a file or the environment), the
+database that `pandokos migrate` creates, the platform key that `pandokos init` issues, and the documents that
+`pandokos apply` applies ([declarative guide](declarative.md)). Tenants, people, credentials and every secret stay
+outside a document: they are made through the API and are in the database and its backups.
+
+## The ambient environment
+
+The process also reads a few variables that are not keys of this reference, and ignores the others. What each does:
+
+| Variable | What Pandokos does with it |
+|---|---|
+| `PGSERVICE`, `PGSERVICEFILE` | Refused: `serve` and `migrate` do not connect while either is set, because a libpq service file would change how the connection is made. Unset them |
+| the other `PG*` variables | Neutralised: every setting the driver would read from them has an explicit value, so none changes how Pandokos connects |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` | Never used for any connection; `config check` warns when one is set. The upstream proxy is the key `upstream.proxy.url` |
+| `OTEL_RESOURCE_ATTRIBUTES` | Merged into the resource of the telemetry, with a warning |
+| other `OTEL_` variables for metrics | Ignored, with a warning: the settings are the keys `telemetry.*` |
+| `SSL_CERT_FILE`, `SSL_CERT_DIR` | Read by the Go runtime for the system roots, where no CA file is configured and where the system roots are added to a pool |
+| `TZ` | Not used: the zone of a day is the key `limits.time_zone` or a tenant's own |
+| `GODEBUG` | Read by the Go runtime, as for any Go program; it is not a setting of Pandokos |
 
 ## Purposes
 

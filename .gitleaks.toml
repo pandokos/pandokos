@@ -54,3 +54,11 @@ description = "Algorithm names in the design of the external key-encryption key"
 paths = ['''^planning/epics/12-operability/12\.1-external-key-encryption-key/sprint\.md$''']
 regexTarget = "line"
 regexes = ['''`chacha20-poly1305` and for a derived key''']
+
+# False positive: a synthetic signing secret that the fake of the declarative tests returns once, so that a
+# test can prove it reaches the secret sink only (commit eae9526, already in history). Only that file and that constant.
+[[allowlists]]
+description = "Synthetic signing secret of the declarative fake"
+paths = ['''^internal/declare/fake_test\.go$''']
+regexTarget = "line"
+regexes = ['''^const canarySigningSecret = "whsec_c3ludGhldGljLWNhbmFyeS1zaWduaW5nLXNlY3JldC0wMDAx="$''']

@@ -48,3 +48,4 @@ with forced row-level security, which hides rows from the owner too.
 
 - 2026-11-18: recorded as accepted by the maintainer.
 - 2026-11-18: sprint 5.3: migration 0011 is a data migration that lifts forced row-level security on the tables it touches, inside its transaction, and puts it back before it ends ([ADR 0049](0049-limit-rules.md)).
+- 2026-11-25: the policy now exists: the supported upgrade is stop, migrate, start from any patch of the previous minor, tested on every pull request; the window for rolling upgrades still does not ([ADR 0075](0075-upgrade-policy-and-the-tested-upgrade.md)).

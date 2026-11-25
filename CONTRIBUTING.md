@@ -20,6 +20,8 @@ Significant design choices are recorded as short Architecture Decision Records i
 - Tests that need PostgreSQL fail when it is missing. `make db-up` starts a throwaway PostgreSQL and PgBouncer in Docker; `make test` uses them; `make test-nodb` runs the rest.
 - Keep the suite fast; it runs twice in CI (the floor and the release Go version, both with `-race`). A test that needs a migrated database calls `dbtest.NewMigrated`, which copies a template database made once per schema (`CREATE DATABASE ... TEMPLATE`) instead of running the migrations again; `dbtest.New` is for tests that need an empty database or that exercise the migrations themselves. A test whose database, ports, files and process are its own calls `t.Parallel()` first (the end-to-end tests all do; listeners bind port 0 and every test has its own database). Only a test that measures the process (goroutine counts, allocations, timing ratios) or changes a global (environment, a package-level hook) stays serial: serial tests run before the parallel ones resume, so they never overlap with them. Do not share a mutable package-level variable between tests; use `sync/atomic` or a per-test value.
 - `make test-idp` runs the trusted issuer tests against Keycloak, Ory Hydra and Authentik in Docker (`make db-up` and `make idp-up` first, `make idp-down` after). It needs several more containers (Authentik takes a few minutes to start), so `make check` does not run it; CI has its own job, `idp`.
+- `make test-upgrade` upgrades the previous release (pinned in `test/upgrade/PREVIOUS`, built by `make previous-binary`) to this tree under traffic (`make db-up` and `make previous-binary` first); CI has the job `upgrade`.
+- `make test-drill` runs the restore drill: it starts and destroys its own PostgreSQL servers and key service and executes the backup guide step by step (it needs Docker only); CI has the job `drill`.
 - `internal/adminapi/adminapi.gen.go` and `internal/store/queries/*.go` are generated (`make generate`: the API generator and `sqlc`). Never edit a generated file; change `api/openapi/admin.v1.yaml` or a query file under `internal/store/queries/sql/` and run `make generate`. CI fails when the committed code is not current.
 - Describe what changed and why.
 
@@ -54,9 +56,12 @@ minor release (from `main`) and a patch release (from the maintenance branch, af
    lose the page.
 4. **Merge, then tag immediately.** Check that the CI and the code scanning of the branch are green,
    that the last run of the `scheduled` workflow is green (fuzzing, the vulnerability checks of the
-   repository and of the released image, the repository's rulesets) and that a review record of the
+   repository and of the released image, the repository's rulesets), that the `upgrade` and `drill` jobs
+   are green on the commit, that a review record of the
    threat model exists for the release (`docs/architecture/threat-model-review-YYYY-MM.md`, a short one
-   when nothing changed; see [Reviews](docs/architecture/security-model.md#reviews) in the security model),
+   when nothing changed; see [Reviews](docs/architecture/security-model.md#reviews) in the security model)
+   and that the page links it and the drill record in force (`docs/operations/restore-drill-YYYY-MM.md`; a
+   page that relies on the previous record says so),
    then, on the commit that holds the page: `git tag -s -a vX.Y.Z -m "vX.Y.Z"` and
    `git push origin vX.Y.Z`. Between the merge and the push the quick start names a tag that does not
    exist yet, so the two are done together.
@@ -65,7 +70,12 @@ minor release (from `main`) and a patch release (from the maintenance branch, af
    GitHub release with the SBOM and the administration API description. Verify the image by its digest
    with the commands of [docs/operations/container.md](docs/operations/container.md#verifying-a-release) and
    paste or link the release page as the release text.
-6. **A release that fails is not retried with the same tag**: fix forward with the next patch
+6. **Move the pin of the upgrade test**: in the first pull request on `main` after a release, and after each
+   patch release of the minor before the one in development, `test/upgrade/PREVIOUS` moves to that release
+   (`version`, `commit` the tag points to, and `image` by digest: `git ls-remote --tags origin`,
+   `docker buildx imagetools inspect ghcr.io/pandokos/pandokos:X.Y.Z`); run `make previous-binary` and
+   `make test-upgrade` ([upgrade guide](docs/operations/upgrade.md)).
+7. **A release that fails is not retried with the same tag**: fix forward with the next patch
    (`v0.1.2`), or the next candidate (`v0.2.0-rc.2`).
 
 ## Sign-off

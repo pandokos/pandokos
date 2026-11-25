@@ -74,6 +74,14 @@ and a fuzzing service that reports privately (O-4) stay open. The review record 
 
 Requirements: OPS-10 (tested), OPS-13, VLT-16 (tested), OPS-08.
 
+*Deferred from 12.3:* rolling upgrades and a compatibility window for migrations (8.1 and 8.2); a start-time check
+that the instances of an installation agree on the `installation` settings (8.1, the scope of every key is the list
+to compare); the chart's wiring of `auth.public_origin`, the client secret and `support.*` and `init` as a job
+(8.2); restore figures at scale and failure injection during a restore (10.1); the drill and the upgrade test on
+the release candidate, with a new dated record (epic 10); the maintainer's manual walk of the corrected guide in a
+lab, before the tag of v0.3.0 (decision O-7); Kubernetes authentication to the key service (8.2); a script that
+moves the event sequences past a value kept outside after a restore (an issue for 10.1, decision O-3).
+
 Exit: a restore into an empty environment serves calls with the restored credentials; the drill's
 record states what cannot be recovered and what the owner must re-enter; the previous minor
 release upgrades with traffic.

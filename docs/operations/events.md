@@ -75,8 +75,8 @@ caller cannot supply one, and it is never shown again.
 - **Audit.** Every change is a row of the tenant's audit log: `event_destination.create`, `.update`,
   `.rotate_secret`, `.rewind`, `.replay`, `.delete`, with the name and the host of the URL, never a secret.
 
-Destinations are not part of `pandokos export` and `apply` or of the tenant data export; the first joins
-sprint 12.3.
+Destinations are part of `pandokos export` and `apply` (`event_destinations`, without their secrets; `apply`
+creates one only with `--secrets-out`, [declarative guide](declarative.md)) and not of the tenant data export.
 
 ## 3. Delivery: retries, dead letters, replay and rewind
 
@@ -282,7 +282,24 @@ a log of ten million events is sprint 10.1.
 
 - No platform webhook, no destination kind other than a webhook, no batching of events in one request, no
   automatic disabling of a failing destination.
-- Destinations and the external reference are not in `export`/`apply` (sprint 12.3).
+- A destination's signing secret is in no document: `apply` writes it once to a file with `--secrets-out`.
 - The next claim of the relay waits for the slowest round of a pass: a receiver that answers slowly, though it
   succeeds, holds back the destinations of other tenants until its round ends (a round's own time is bounded:
   no request starts after half the lease, counted from the start of that round). Sprint 10.1 measures it.
+
+## After a restore, and after a lost key
+
+A restore ([backup and restore guide](backup-and-restore.md), step 5.f) takes a tenant's log back to the backup:
+the events recorded after it are gone, and new events take sequence numbers that were already issued, with new
+identifiers. A destination's cursor is the backup's, so the events between the cursor and the backup are
+delivered again with identifiers the receiver has already seen: keep each identifier once, as the example
+receiver does. A system that pulls with `event export --after N` and kept a cursor past the restored head is
+answered `200` with no events; reset its cursor to the restored head.
+
+When the key-encryption key is lost, the signing secrets sealed under it cannot be opened. The recovery script
+(`deploy/postgres/recover-lost-kek.sql`) **disables** such a destination, keeping its URL, types and cursor, and
+prints how many it disabled. To bring one back, its owner runs `pandokos event-destination rotate-secret`, gives
+the receiver the new secret and enables it with `pandokos event-destination update --enabled`: the events the
+log still holds ([retention](configuration.md)) are then delivered, signed with the new secret. Without the
+script a destination in that state stays enabled and delivers nothing, and the relay logs `event relay failing`
+with `cause: secret` at most once a minute.

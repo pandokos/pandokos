@@ -148,8 +148,8 @@ accepted the field and ignored it would silently drop that property. It was veri
 - **A move back needs a new key file:** the service's key cannot be exported, and a replaced local version cannot be
   activated again.
 - **One provider of each name.** A direct move between two transit services goes through a key file.
-- Later sprints inherit: Kubernetes authentication (sprint 8.2), the parser fuzz target (12.2) and the restore drill
-  with a key service (12.3).
+- Later sprints inherit: Kubernetes authentication (sprint 8.2) and the parser fuzz target (12.2); the restore drill
+  with a key service was run ([ADR 0076](0076-the-restore-drill-its-record-and-recovery-after-a-lost-key.md)).
 
 ## Alternatives considered
 
@@ -198,3 +198,4 @@ without a key service.
 - 2026-11-24: proposed with sprint 12.1.
 - 2026-11-25: amended by sprint 12.2: an exportable key is refused unless `vault.kek.transit.allow_exportable_key` is set ([ADR 0074](0074-threat-model-review-and-continuous-fuzzing.md)).
 - 2026-11-25: point 5 states that an instance not restarted reads the description again for a version above the latest it described, so it opens the data keys another instance re-wrapped after a rotation (`TestTransitVersionAfterAnotherRestart`).
+- 2026-11-25: sprint 12.3: the service's backup is its storage snapshot, kept with the unseal shares and a way to authenticate ([ADR 0076](0076-the-restore-drill-its-record-and-recovery-after-a-lost-key.md)).

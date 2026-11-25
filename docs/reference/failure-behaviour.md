@@ -8,7 +8,7 @@ the default; the exceptions are named and configured (`limits.on_store_failure`)
 
 A repository test (T-R80) keeps this page true: every dependency and every job of the worker has a row, and
 every test, log line, instrument and configuration key a row cites exists. Failure injection for every
-dependency as a suite, and published figures, are sprint 10.1; the restore is sprint 12.3. Log lines are in
+dependency as a suite, and published figures, are sprint 10.1; the restore is drilled ([record](../operations/restore-drill-2026-11.md)). Log lines are in
 the [log reference](logs.md), instruments in the [metrics reference](metrics.md).
 
 ## 1. PostgreSQL

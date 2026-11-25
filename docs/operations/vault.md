@@ -85,14 +85,23 @@ version is **retired and every copy of its file destroyed**. See "Rotating the k
 ## 5. What its loss means
 
 If the key file is lost and no copy exists, the sealed secrets can never be opened again, so
-every tenant must re-enter its provider credentials. Nothing else is lost.
+every tenant must re-enter its provider credentials, and rotate the signing secret of each event destination.
+Nothing else is lost. The recovery is run by the drill of the [backup guide](backup-and-restore.md)
+([record](restore-drill-2026-11.md)).
 
-| Lost | Recoverable | Must be re-entered |
-|---|---|---|
-| Database, backup and key file exist | everything | nothing |
-| Key file (no copy) | tenants, identities, keys, audit, credential metadata | every provider credential |
-| One tenant's data key row | everything else | that tenant's credentials |
-| Database without backup | nothing | everything |
+| Lost | Comes back | Cannot be recovered | The owner (tenant) must | The operator must |
+|---|---|---|---|---|
+| Nothing but time: backup and its key | everything as of the backup | usage, audit rows, events and administration after the backup | redo administration done after the backup | request again the deletions completed after the backup; revoke again what was revoked after it; reset pull cursors |
+| The key of an old backup's version | everything else | the provider credentials and signing secrets sealed under that version | enter each provider credential again; rotate each destination's signing secret and enable it | run the recovery script for the version; activate a new key |
+| The key entirely | tenants, identities, keys, roles, limits, prices, usage, audit, credential metadata, destinations' configuration | every provider credential, every signing secret | the same, every tenant | the same, for every version |
+| One tenant's data key row | everything else | that tenant's credentials and signing secrets | the same, that tenant | nothing |
+| The key service's unseal shares, with a snapshot | as the key entirely | as the key entirely | as the key entirely | as the key entirely |
+| The database with no backup | nothing | everything | everything | install again |
+| The audit heads kept outside | the chains still verify internally | the proof that the restored chain is the one that existed | nothing | anchor the heads again from now |
+
+Inference keys, platform keys, passwords and sessions are stored as hashes and need no key: they come back with
+the database and are never entered again. Secrets that are files of the configuration (database passwords, the
+OIDC client secret, the key service's token) are the operator's and are in no backup of Pandokos.
 
 Procedure after the loss of the key file:
 
@@ -100,11 +109,15 @@ Procedure after the loss of the key file:
 2. As a database superuser, in the Pandokos database:
    `psql -v kek_version=local-0123456789abcdef -f deploy/postgres/recover-lost-kek.sql`.
    [The script](../../deploy/postgres/recover-lost-kek.sql) revokes the credentials sealed under that
-   version (state reason `key-encryption key lost`), and removes their data keys and the version. It
-   writes no audit row: it is an act of the database administrator outside the product, so record it
-   in your own log.
+   version (state reason `key-encryption key lost`), **disables the event destinations whose signing secret
+   was sealed under it** (their URL, types and cursor stay) and drops an affected previous secret, removes
+   the data keys and the version, and prints how many credentials it revoked, destinations it disabled and
+   previous secrets it dropped. It writes no audit row: it is an act of the database administrator outside the
+   product, so record it in your own log. Run for every lost version; run again it changes nothing.
 3. `pandokos kek generate --out ...` a new key, mount it and start `serve`.
-4. Tell the tenants: they register their credentials again.
+4. Tell the tenants: they register their credentials again, and the owner of each destination runs
+   `pandokos event-destination rotate-secret`, gives the receiver the new secret and enables the destination;
+   the events the log still holds are then delivered ([events guide](events.md)).
 
 ### Log lines when the key material fails
 
