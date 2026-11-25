@@ -18,20 +18,34 @@ updates:
       interval: weekly
   - package-ecosystem: docker-compose
     directory: /test/db
+    # The test database is the supported floor (PostgreSQL 16, ADR 0075): a new major is a decision, not an update.
+    # Patch and digest updates still come. PostgreSQL 18 is tested by test/db/pg18.yaml.
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: docker-compose
     directory: /test/idp
+    # Same floor as /test/db: the identity provider suite runs on PostgreSQL 16.
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: docker-compose
     directory: /test/transit
     schedule:
       interval: weekly
   - package-ecosystem: docker-compose
     directory: /test/drill
+    # Its source and target servers are the floor (16); its later major (18) is tied by test/repo to
+    # test/db/pg18.yaml. Patch and digest updates still come; a new major is made by hand.
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: pip
     directory: /test/sdk/python
     schedule:
