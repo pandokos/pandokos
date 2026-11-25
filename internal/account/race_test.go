@@ -75,6 +75,7 @@ func (e *env) newHash(t *testing.T, pw string) string {
 // TestSignInRacesWithAccountChange: a sign-in whose password check overlaps a password change, a
 // reset or a disable creates no session (design 5.4, 5.6).
 func TestSignInRacesWithAccountChange(t *testing.T) {
+	t.Parallel()
 	t.Run("password change", func(t *testing.T) {
 		e := newEnv(t)
 		u := e.d.PlatformUser(t, "race.change", nil)
@@ -127,6 +128,7 @@ func TestSignInRacesWithAccountChange(t *testing.T) {
 // TestChangePasswordRacesWithReset: a change with the old password does not overwrite a reset that
 // committed after the password was verified.
 func TestChangePasswordRacesWithReset(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	u := e.d.PlatformUser(t, "race.reset", nil)
 	first, err := e.signIn(t, "race.reset", u.Password, src1, "")

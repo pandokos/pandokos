@@ -19,6 +19,7 @@ func segs(n int) string {
 // reaches the token path; a token is recognized by its shape alone, with the limits of the
 // configuration; with tokens disabled nothing but a key is accepted.
 func TestCredentialShape(t *testing.T) {
+	t.Parallel()
 	const max = 64
 	idp := fakeidp.Start(t, fakeidp.Options{})
 	jwt := idp.Sign("ES256", idp.StandardAt(tokenNow, "workload", "aud", time.Minute))

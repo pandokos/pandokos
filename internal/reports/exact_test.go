@@ -74,6 +74,7 @@ func periodBounds(from, to time.Time, period string, loc *time.Location) []time.
 // and the report equals a sum in Go over the raw records, for random windows, groupings, periods and
 // zones.
 func TestExactReaderProperty(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	tid := d.SeedTenant(t, "exact")
 	rng := seed(t)

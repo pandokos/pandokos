@@ -16,6 +16,7 @@ import (
 // SubjectKind=key, Scope=model, the metric and the code of the rule and Level=tenant; a platform
 // ceiling gives Level=platform; no field holds the rule's ID, the subject's ID or the limit value.
 func TestRefusalObservation(t *testing.T) {
+	t.Parallel()
 	const limit = 7
 	const ruleID = "rule-id-canary-5b3e"
 	const providerID = "synthetic-provider-openai"

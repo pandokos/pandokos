@@ -14,6 +14,7 @@ import (
 // TestCSRF is T-798: a request that changes state with a session, or signs in, is refused unless it
 // carries the header, the Origin of the listener and no cross-site Sec-Fetch-Site.
 func TestCSRF(t *testing.T) {
+	t.Parallel()
 	w := &world{api: apitest.NewPeople(t, apitest.PeopleConfig{})}
 	w.fill(t, "csrf")
 	tid, _ := tenant.ParseID(w.tenant.ID)
@@ -90,6 +91,7 @@ func TestCSRF(t *testing.T) {
 // TestSignInTransport is T-800: a listener that is reachable in clear text outside loopback, and
 // whose HTTPS origin the operator did not name, signs nobody in.
 func TestSignInTransport(t *testing.T) {
+	t.Parallel()
 	plain := func(o *admin.Options) { o.Origin = admin.OriginOptions{} } // no TLS, not loopback, no auth.public_origin
 	p := newPeople(t, apitest.PeopleConfig{Admin: plain})
 	user := p.d.PlatformUser(t, "transport.person", []string{"platform-admin"})
@@ -139,6 +141,7 @@ func TestSignInTransport(t *testing.T) {
 
 // TestSecurityHeaders is T-801: every response, problems included, carries the headers of section 5.6.
 func TestSecurityHeaders(t *testing.T) {
+	t.Parallel()
 	w := &world{api: apitest.NewPeople(t, apitest.PeopleConfig{})}
 	w.fill(t, "headers")
 	want := map[string]string{

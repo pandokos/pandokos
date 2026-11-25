@@ -44,6 +44,7 @@ func dataKey(t testing.TB, raw []byte, tid tenant.ID, version int32) *vault.Data
 // TestSealOpen is T-302: the round trip, the freshness of every seal, and the binding of a
 // sealed value to its tenant, its credential and its data key version.
 func TestSealOpen(t *testing.T) {
+	t.Parallel()
 	raw := rawKey(t)
 	tid := tenantID(t, 1)
 	dk := dataKey(t, raw, tid, 1)
@@ -184,6 +185,7 @@ func TestSealOpen(t *testing.T) {
 
 // TestFingerprintAndHint is T-303.
 func TestFingerprintAndHint(t *testing.T) {
+	t.Parallel()
 	raw := rawKey(t)
 	tid := tenantID(t, 1)
 	dk := dataKey(t, raw, tid, 1)

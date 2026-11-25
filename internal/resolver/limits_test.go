@@ -116,6 +116,7 @@ func limitPrincipal(id tenant.ID, sa, key, issuer string) authz.Principal {
 
 // TestLimitsAdapter is T-637.
 func TestLimitsAdapter(t *testing.T) {
+	t.Parallel()
 	a := limitTenantID(1)
 	est := gateway.LimitEstimate{RequestID: "req-1", InputTokens: 100, OutputTokens: 400}
 
@@ -425,6 +426,7 @@ type unpricedMark interface{ Unpriced() bool }
 
 // TestLimitsAdapterPeriods is T-664.
 func TestLimitsAdapterPeriods(t *testing.T) {
+	t.Parallel()
 	a := limitTenantID(2)
 	start := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
 	est := gateway.LimitEstimate{RequestID: "req-2", InputTokens: 100, OutputTokens: 400, Provider: "openai", Model: "gpt-4o", ProviderID: "openai", ModelID: "gpt-4o", Start: start,
@@ -770,6 +772,7 @@ func dec(t *testing.T, s string) pricing.Decimal {
 
 // TestLimitState is T-706: the table of section 5.5, each row, with both values of both settings.
 func TestLimitState(t *testing.T) {
+	t.Parallel()
 	a := limitTenantID(7)
 	start := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
 	priced := gateway.LimitEstimate{RequestID: "req-7", InputTokens: 100, OutputTokens: 400, Provider: "openai", Model: "gpt-4o", ProviderID: "openai", ModelID: "gpt-4o", Start: start,

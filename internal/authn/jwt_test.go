@@ -22,6 +22,7 @@ func (r *tokenRig) check() JWTCheck {
 // TestVerifyJWT is T-824: the exported verifier gives the claims of a valid token and each
 // refusal reason of the checks 4 to 9 of sprint 4.1.
 func TestVerifyJWT(t *testing.T) {
+	t.Parallel()
 	r := newTokenRig(t)
 	ctx := context.Background()
 	verify := func(tok string, c JWTCheck) (map[string]json.RawMessage, error) {

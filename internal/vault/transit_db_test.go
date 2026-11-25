@@ -85,6 +85,7 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { retu
 
 // TestCheckAssociatedDataBound is T-1071.
 func TestCheckAssociatedDataBound(t *testing.T) {
+	t.Parallel()
 	t.Run("a service that ignores associated data is refused before any write", func(t *testing.T) {
 		w := newActivationWorld(t)
 		ts := newTransitService(t)
@@ -139,6 +140,7 @@ func TestCheckAssociatedDataBound(t *testing.T) {
 
 // TestCheckSeveralProviders is T-1072.
 func TestCheckSeveralProviders(t *testing.T) {
+	t.Parallel()
 	// setup makes a database in which versions of both providers are registered and a data key
 	// is wrapped under each: local (k0) first and the service after, or the other way round.
 	type setup struct {
@@ -291,6 +293,7 @@ func activationProvider(t *testing.T, d *dbtest.Database, version string) string
 
 // TestActivateTransit is T-1073.
 func TestActivateTransit(t *testing.T) {
+	t.Parallel()
 	t.Run("an empty database, then the same again", func(t *testing.T) {
 		w := newActivationWorld(t)
 		ts := newTransitService(t)
@@ -475,6 +478,7 @@ func (w *rotWorld) wrappedFormats(t *testing.T) map[int]int {
 // TestRewrapAcrossProviders is T-1074: moves between a key file and the service and between
 // versions of the service, with every credential opening before, during and after.
 func TestRewrapAcrossProviders(t *testing.T) {
+	t.Parallel()
 	const n = 6
 	w := newRotWorld(t, n)
 	ts := newTransitService(t)
@@ -604,6 +608,7 @@ func TestRewrapAcrossProviders(t *testing.T) {
 
 // TestOpenerWithTransit is T-1075: the gateway's caches in front of the service.
 func TestOpenerWithTransit(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	if _, err := d.Super(t).Exec(ctx(t), `DELETE FROM pandokos.kek_version`); err != nil {
 		t.Fatal(err)

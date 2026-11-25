@@ -30,6 +30,7 @@ func drainPayloads(t *testing.T, conn *pgx.Conn, quiet time.Duration) []string {
 // TestLimitNotifications is T-625: a change of a limit rule tells the instances which tenant's
 // rules changed, or that a default did, and nothing else.
 func TestLimitNotifications(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a, b := d.SeedTenant(t, "notify-a"), d.SeedTenant(t, "notify-b")
 	super := d.Super(t)

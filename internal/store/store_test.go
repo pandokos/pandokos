@@ -217,6 +217,7 @@ func TestConnConfig(t *testing.T) {
 
 // TestOpenValidatesOptions is T-108.
 func TestOpenValidatesOptions(t *testing.T) {
+	t.Parallel()
 	rows := []struct {
 		name string
 		edit func(o *Options)
@@ -281,6 +282,7 @@ func unreachable(t *testing.T, role Role) *DB {
 
 // TestWithTenantRequiresTenant is T-109.
 func TestWithTenantRequiresTenant(t *testing.T) {
+	t.Parallel()
 	for _, role := range []Role{RoleGateway, RoleAdmin, RoleWorker} {
 		db := unreachable(t, role)
 		called := false
@@ -300,6 +302,7 @@ func TestWithTenantRequiresTenant(t *testing.T) {
 
 // TestPlatformRefusedForGateway is T-110.
 func TestPlatformRefusedForGateway(t *testing.T) {
+	t.Parallel()
 	db := unreachable(t, RoleGateway)
 	called := false
 	start := time.Now()
@@ -317,6 +320,7 @@ func TestPlatformRefusedForGateway(t *testing.T) {
 
 // TestRoleNames is T-111.
 func TestRoleNames(t *testing.T) {
+	t.Parallel()
 	var got []string
 	for _, r := range []Role{RoleGateway, RoleAdmin, RoleWorker} {
 		got = append(got, r.DatabaseRole())

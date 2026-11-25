@@ -13,6 +13,7 @@ import (
 // support action, and a refused grant, are counted once the work is done; a request that is refused
 // or fails changes nothing; the counts agree with the log lines `grant refused`.
 func TestSupportAndGrantStats(t *testing.T) {
+	t.Parallel()
 	w := newSW(t)
 	valid := []string{authz.MemberRead, authz.ServiceAccountRead}
 	want := apitest.AdminCounts{SupportEnded: map[string]int64{}, OIDC: map[string]int64{}}
@@ -93,6 +94,7 @@ func TestSupportAndGrantStats(t *testing.T) {
 // the method oidc, ok when it opened a session and refused when the state, the token or the mapping
 // was refused, disabled when the user is disabled.
 func TestOIDCSignInStats(t *testing.T) {
+	t.Parallel()
 	api, o := apitest.NewPeopleOIDC(t, apitest.PeopleConfig{}, apitest.OIDCConfig{Users: idpPeople})
 	p := peopleOn(t, api)
 	issuer := o.IDP.Issuer()

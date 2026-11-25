@@ -37,6 +37,7 @@ func priceAt(t *testing.T, id string, from time.Time, in, out string) pricing.Ve
 
 // TestEstimate is T-628: each line of the formula of section 5.3 at its boundary.
 func TestEstimate(t *testing.T) {
+	t.Parallel()
 	start := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
 	oa, aa := openai.Adapter(), anthropic.Adapter()
 	chat := operationOf(t, oa, openai.OperationChatCompletions)
@@ -133,6 +134,7 @@ func TestEstimate(t *testing.T) {
 // currency, version ID and source; unknown when neither list prices the model in the active currency;
 // an amount that does not fit keeps currency, version and source.
 func TestEstimateTenantPrice(t *testing.T) {
+	t.Parallel()
 	start := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
 	oa := openai.Adapter()
 	chat := operationOf(t, oa, openai.OperationChatCompletions)
@@ -213,6 +215,7 @@ func TestEstimateTenantPrice(t *testing.T) {
 // TestEstimateModelDefault is T-663: the formula of section 5.10 at each branch, and what the
 // estimate carries for the period limits.
 func TestEstimateModelDefault(t *testing.T) {
+	t.Parallel()
 	start := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
 	chat := operationOf(t, openai.Adapter(), openai.OperationChatCompletions)
 	oa := openai.Adapter()

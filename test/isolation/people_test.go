@@ -19,6 +19,7 @@ var peopleTables = []string{"app_user", "local_account", "user_identity", "user_
 // TestMembershipTables is T-777: the harness's negative tests on the two tenant-scoped tables of
 // sprint 4.2, for every runtime role, and the lint with nothing to report.
 func TestMembershipTables(t *testing.T) {
+	t.Parallel()
 	spec := DefaultSpec()
 	d := dbtest.NewMigrated(t)
 	findings, err := Lint(ctx(t), d.Super(t), spec)
@@ -155,6 +156,7 @@ func affected(t *testing.T, conn *pgx.Conn, s session, sql string, args ...any) 
 // TestPeopleTablesAreAdminOnly is T-778: the gateway and the worker role have no privilege on the
 // tables and functions of migration 0013, whatever the session; neither has any role on the directory.
 func TestPeopleTablesAreAdminOnly(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a := d.SeedTenant(t, "tenant-a")
 	super := d.Super(t)
@@ -212,6 +214,7 @@ func TestPeopleTablesAreAdminOnly(t *testing.T) {
 
 // TestUserVisibility is T-779: who sees and writes which rows, as the admin role, and the two guards.
 func TestUserVisibility(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	p := seedPeople(t, d)
 	conn := d.Connect(t, "admin")
@@ -307,6 +310,7 @@ func TestUserVisibility(t *testing.T) {
 
 // TestPeopleFunctions is T-780: the definer functions return only what they are given a name for.
 func TestPeopleFunctions(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	p := seedPeople(t, d)
 	conn := d.Connect(t, "admin")

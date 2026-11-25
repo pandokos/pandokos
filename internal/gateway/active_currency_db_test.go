@@ -213,6 +213,7 @@ var _ = http.StatusOK
 // catalogue/USD; the ledger holds exactly the amounts counted. A default USD ceiling does not apply
 // to A; A's own EUR ceiling does and counts the tenant's price.
 func TestActiveCurrencyBudget(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	w := newPriceWorld(t, d)
 	estUSD, estEUR := estimates()

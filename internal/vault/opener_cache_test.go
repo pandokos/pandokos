@@ -255,6 +255,7 @@ func (w *uworld) mustOpen(p authz.Principal, provider, wantSecret string) Opened
 
 // TestOpenerCache is T-305.
 func TestOpenerCache(t *testing.T) {
+	t.Parallel()
 	a, b := uid(1), uid(2)
 
 	t.Run("an entry lives for the lifetime from its creation however often it is read", func(t *testing.T) {

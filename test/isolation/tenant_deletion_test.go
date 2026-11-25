@@ -13,6 +13,7 @@ import (
 // TestTenantDeletionTable is T-978: who may write and read the request of a deletion, and what the
 // table refuses to everybody.
 func TestTenantDeletionTable(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	active, suspended, running := d.SeedTenant(t, "active-one"), d.SeedTenant(t, "suspended-one"), d.SeedTenant(t, "running-one")
 	admin, worker, gateway := d.Connect(t, "admin"), d.Connect(t, "worker"), d.Connect(t, "gateway")

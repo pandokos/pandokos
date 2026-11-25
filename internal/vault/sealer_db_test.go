@@ -68,6 +68,7 @@ func count(t *testing.T, w *vworld, sql string, args ...any) int {
 
 // TestSealerDB is T-324.
 func TestSealerDB(t *testing.T) {
+	t.Parallel()
 	w := newVWorld(t)
 	version := activeVersion(t, w.prov)
 
@@ -339,6 +340,7 @@ func (f *failingProvider) Unwrap(c context.Context, version string, wrapped, aad
 
 // TestCheck is T-328.
 func TestCheck(t *testing.T) {
+	t.Parallel()
 	w := newVWorld(t)
 	version := activeVersion(t, w.prov)
 
@@ -449,6 +451,7 @@ var rePsqlVar = regexp.MustCompile(`(^|[^:]):('?)[A-Za-z_][A-Za-z0-9_]*('?)`)
 
 // TestLostKeyRecovery is T-329.
 func TestLostKeyRecovery(t *testing.T) {
+	t.Parallel()
 	w := newVWorld(t) // the provider "lost"
 	lostVersion := activeVersion(t, w.prov)
 	kept := vaulttest.NewKeyProvider(t)

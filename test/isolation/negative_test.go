@@ -15,6 +15,7 @@ import (
 // TestCrossTenantNegative is T-143: with tenant A's session or with none, no runtime role can
 // read or change tenant B's rows, in every tenant-scoped table, directly and through the pooler.
 func TestCrossTenantNegative(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		a, b := d.SeedTenant(t, "tenant-a"), d.SeedTenant(t, "tenant-b")
 		super := d.Super(t)
@@ -50,6 +51,7 @@ func TestCrossTenantNegative(t *testing.T) {
 
 // TestPositiveControls is T-144: the matrix above cannot pass because nothing works at all.
 func TestPositiveControls(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a, b := d.SeedTenant(t, "tenant-a"), d.SeedTenant(t, "tenant-b")
 	super := d.Super(t)
@@ -124,6 +126,7 @@ func TestPositiveControls(t *testing.T) {
 
 // TestRuntimeRolesCannotEscape is T-147.
 func TestRuntimeRolesCannotEscape(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a := d.SeedTenant(t, "tenant-a")
 	super := d.Super(t)
@@ -186,6 +189,7 @@ func TestRuntimeRolesCannotEscape(t *testing.T) {
 
 // TestOwnerIsSubjectToPolicies is T-148: forced row-level security applies to the owner too.
 func TestOwnerIsSubjectToPolicies(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a := d.SeedTenant(t, "tenant-a")
 	super := d.Super(t)
@@ -224,6 +228,7 @@ func TestOwnerIsSubjectToPolicies(t *testing.T) {
 
 // TestMalformedTenantSetting is T-149.
 func TestMalformedTenantSetting(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a := d.SeedTenant(t, "tenant-a")
 	insertRow(t, d.Super(t), DefaultSpec().Fixtures["service_account"], a)
@@ -248,6 +253,7 @@ func TestMalformedTenantSetting(t *testing.T) {
 
 // TestCompositeForeignKey is T-150.
 func TestCompositeForeignKey(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a, b := d.SeedTenant(t, "tenant-a"), d.SeedTenant(t, "tenant-b")
 	super := d.Super(t)
@@ -304,6 +310,7 @@ func asPg(err error, target **pgconn.PgError) bool {
 
 // TestServiceAccountRules is T-151.
 func TestServiceAccountRules(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a, b := d.SeedTenant(t, "tenant-a"), d.SeedTenant(t, "tenant-b")
 	super := d.Super(t)

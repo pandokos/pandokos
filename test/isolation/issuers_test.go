@@ -63,6 +63,7 @@ var noSession = session{name: "none"}
 // of the harness for every runtime role, in every kind of session, and the schema lint reports
 // nothing with the migration applied.
 func TestIssuerTables(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	super := d.Super(t)
 	spec := DefaultSpec()
@@ -197,6 +198,7 @@ func TestIssuerTables(t *testing.T) {
 // TestIssuerFunctions is T-586: what the three functions the gateway role may execute return and
 // refuse; the other roles cannot execute them.
 func TestIssuerFunctions(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	super := d.Super(t)
 	a, b := d.SeedTenant(t, "fn-a"), d.SeedTenant(t, "fn-b")
@@ -511,6 +513,7 @@ func TestIssuerFunctions(t *testing.T) {
 // TestPlatformIssuerVisibility is T-587: what a tenant's session sees of the global tables of
 // platform-level issuers, and who can write them.
 func TestPlatformIssuerVisibility(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		super := d.Super(t)
 		a, b := d.SeedTenant(t, "vis-a"), d.SeedTenant(t, "vis-b")
@@ -671,6 +674,7 @@ func TestPlatformIssuerVisibility(t *testing.T) {
 // that lacks the permission, and with a tenant key on a platform operation; what a mapping may name;
 // and what a tenant sees of platform-level registrations.
 func TestIssuerAPI(t *testing.T) {
+	t.Parallel()
 	w := newAPIWorld(t)
 	apiA, apiB := w.a, w.b
 	tenantOps := map[string]bool{"listTokenIssuers": true, "createTokenIssuer": true, "getTokenIssuer": true, "updateTokenIssuer": true, "deleteTokenIssuer": true,
@@ -943,6 +947,7 @@ func expect403Op(t *testing.T, r *apitest.Response) {
 // in the named tenants and nothing else, writes one audit row per rule in the log of its tenant,
 // restores the tenant setting and returns a number.
 func TestDeletePlatformIssuerLimitRules(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		super := d.Super(t)
 		a, b, c := d.SeedTenant(t, "dpi-a"), d.SeedTenant(t, "dpi-b"), d.SeedTenant(t, "dpi-c")

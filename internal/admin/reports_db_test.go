@@ -127,6 +127,7 @@ func costOf(r reportRow) string {
 // zone), currencies and price sources kept apart, no cost, requests refused for a limit apart,
 // filters, the bounds of the window and of the report, and a tenant with no records.
 func TestUsageReport(t *testing.T) {
+	t.Parallel()
 	w := newPW(t)
 	d := w.api.DB
 	rome, kathmandu, empty := w.idA, w.idB, "" // tenants A and B, and a third without records
@@ -369,6 +370,7 @@ func TestUsageReport(t *testing.T) {
 // TestLimitUsage is T-956: what a day or month rule has used in its current period, equal to the sum
 // over the ledger that limits.Sum makes; a per-minute rule is 409; another tenant's rule is 404.
 func TestLimitUsage(t *testing.T) {
+	t.Parallel()
 	w := newPW(t)
 	d := w.api.DB
 	d.SeedModel(t, "openai", "lu-m1")
@@ -493,6 +495,7 @@ func TestLimitUsage(t *testing.T) {
 // auditor) is refused on every tenant operation, also with a support action that carries every
 // permission a support action may carry; a tenant key is refused on the platform operations.
 func TestReportAndAuditRoutes(t *testing.T) {
+	t.Parallel()
 	w := newPW(t)
 	tenantOps := []string{"getUsageReport", "exportUsageRecords", "getLimitUsage", "listAuditEvents", "getAuditHead", "exportAuditEvents", "getMetadataKeys", "setMetadataKeys", "clearMetadataKeys"}
 	platformOps := []string{"listPlatformAuditEvents", "getPlatformAuditHead", "exportPlatformAuditEvents"}

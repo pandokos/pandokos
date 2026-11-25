@@ -33,6 +33,7 @@ func fixtureBytes(t testing.TB, name string) []byte {
 // TestPriceOverrides is T-403: operator prices, versions and imports that leave an overridden
 // model alone.
 func TestPriceOverrides(t *testing.T) {
+	t.Parallel()
 	c := newCat(t)
 	p := c.createProvider(t, nil)
 	c.createEndpoint(t, p.Name, nil)
@@ -302,6 +303,7 @@ func atoi(s string) int {
 // TestPriceImportAPI is T-404: runPriceImport with the embedded snapshot and with a download, its
 // report, and its refusals.
 func TestPriceImportAPI(t *testing.T) {
+	t.Parallel()
 	t.Run("embedded", func(t *testing.T) {
 		c := newCat(t)
 		models := func() int {
@@ -544,6 +546,7 @@ func TestPriceImportAPI(t *testing.T) {
 // TestCatalogueUntouched is T-760: an import and an override for a model leave a tenant's versions and their
 // precedence as they were; the import report and price_override do not mention tenant lists.
 func TestCatalogueUntouched(t *testing.T) {
+	t.Parallel()
 	w := newPW(t)
 	prov, model := w.cat.Provider.Name, w.cat.All
 	own := w.createPrice(t, priceBody(model, prov, "USD", tpRates("input", "0", "42"), nil))

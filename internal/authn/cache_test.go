@@ -24,6 +24,7 @@ func keyIDFor(i int) string { return fmt.Sprintf("t%016d", i) }
 // principal, whatever it names; and in sprint 2.2 (T-381): `catalog` and `catalog:<tenant>`
 // remove none either.
 func TestCache(t *testing.T) {
+	t.Parallel()
 	const tenantA, tenantB = "0192f0f0-0000-7000-8000-00000000000a", "0192f0f0-0000-7000-8000-00000000000b"
 
 	t.Run("an entry lives for the lifetime from its creation however often it is read", func(t *testing.T) {

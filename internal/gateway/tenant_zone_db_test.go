@@ -27,6 +27,7 @@ func near(got, want, slack time.Duration) bool {
 
 // TestTenantZoneQuota is T-710: the periods of a quota or a budget are those of the tenant's zone.
 func TestTenantZoneQuota(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	const slack = 30 * time.Second // the stack's clock runs at the speed of the real one from its start
 

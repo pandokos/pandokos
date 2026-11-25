@@ -21,6 +21,7 @@ func constraintOf(err error) (code, constraint string) {
 
 // TestIssuerSchema is T-584: the constraints of migration 0008.
 func TestIssuerSchema(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	super := d.Super(t)
 	c := ctx(t)

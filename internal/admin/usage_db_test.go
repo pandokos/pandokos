@@ -274,6 +274,7 @@ func ids(items []adminapi.UsageRecord) []string {
 // TestListUsageRecords is T-546: records written by the ledger writer come back newest first,
 // every member equal to its record, in pages, filtered, bounded.
 func TestListUsageRecords(t *testing.T) {
+	t.Parallel()
 	u := newUsageWorld(t)
 	c := u.c
 	now := time.Now()
@@ -546,6 +547,7 @@ func TestListUsageRecords(t *testing.T) {
 // TestListUsageRecordsIsolation is T-547: another tenant's key sees nothing of the tenant, the
 // platform key and the inference role are refused.
 func TestListUsageRecordsIsolation(t *testing.T) {
+	t.Parallel()
 	u := newUsageWorld(t)
 	c := u.c
 	now := time.Now()
@@ -619,6 +621,7 @@ func ids2(recs []usage.Record) string {
 // TestUsageLimitState is T-721: listUsageRecords shows the limit state of a record, empty for a row
 // written before the column, and filters on each value.
 func TestUsageLimitState(t *testing.T) {
+	t.Parallel()
 	u := newUsageWorld(t)
 	c := u.c
 	now := time.Now()
@@ -720,6 +723,7 @@ func TestUsageLimitState(t *testing.T) {
 // version, reads catalogue; for records of both sources the cost computed again from the version the
 // record names equals the recorded cost.
 func TestUsagePriceSource(t *testing.T) {
+	t.Parallel()
 	u := newUsageWorld(t)
 	c := u.c
 	tid := tenantID(t, c.a.ID)

@@ -79,6 +79,7 @@ func ceil4(n int) int64 { return int64((n + 3) / 4) }
 // estimate and the principal; refusals of steps 2 to 7 never call it; a refusal of step 7b opens
 // no credential and sends nothing.
 func TestReserveStep(t *testing.T) {
+	t.Parallel()
 	for _, f := range limFamilies() {
 		t.Run(f.name, func(t *testing.T) {
 			t.Run("once, after Resolve and before Open, with the estimate and the principal", func(t *testing.T) {
@@ -210,6 +211,7 @@ func TestReserveStep(t *testing.T) {
 
 // TestRateLimited is T-631: the 429 of section 5.8 for both families and each metric.
 func TestRateLimited(t *testing.T) {
+	t.Parallel()
 	for _, f := range limFamilies() {
 		for _, metric := range []string{"requests_per_minute", "tokens_per_minute", "concurrent_requests"} {
 			t.Run(f.name+"/"+metric, func(t *testing.T) {
@@ -297,6 +299,7 @@ func TestRateLimited(t *testing.T) {
 
 // TestRejectedLimitRecord is T-632.
 func TestRejectedLimitRecord(t *testing.T) {
+	t.Parallel()
 	for _, f := range limFamilies() {
 		for _, over := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/over limit %v", f.name, over), func(t *testing.T) {
@@ -385,6 +388,7 @@ func onlySettle(t *testing.T, lim *testutil.StaticLimits) gateway.LimitUsage {
 
 // TestSettleEqualsRecord is T-633.
 func TestSettleEqualsRecord(t *testing.T) {
+	t.Parallel()
 	type sc struct {
 		name   string
 		model  string
@@ -481,6 +485,7 @@ func (b *blockingCreds) Open(ctx context.Context, _ authz.Principal, _, _ string
 // reservation is released once and never settled (sprint 5.2, D-2: what counts is the credential,
 // see TestCountedWithCredential for the cases after it).
 func TestReleaseWhenNotForwarded(t *testing.T) {
+	t.Parallel()
 	for _, f := range limFamilies() {
 		release := func(t *testing.T, lim *testutil.StaticLimits) {
 			t.Helper()
@@ -538,6 +543,7 @@ func TestReleaseWhenNotForwarded(t *testing.T) {
 // TestEveryEndSettles is T-635: however a request ends, its reservation is settled or released,
 // exactly once and never both.
 func TestEveryEndSettles(t *testing.T) {
+	t.Parallel()
 	exactlyOne := func(t *testing.T, lim *testutil.StaticLimits) {
 		t.Helper()
 		testutil.Eventually(t, 3*time.Second, "the reservation to end", func() bool { return lim.Admitted() == 1 && lim.Open() == 0 })
@@ -707,6 +713,7 @@ func TestEveryEndSettles(t *testing.T) {
 
 // TestLimiterFailures is T-636.
 func TestLimiterFailures(t *testing.T) {
+	t.Parallel()
 	for _, f := range limFamilies() {
 		t.Run(f.name+"/Reserve returns an error", func(t *testing.T) {
 			lim := testutil.NewStaticLimits().Fail(errors.New("synthetic limits failure"))
@@ -822,6 +829,7 @@ func (c cancelAfterOpen) Open(ctx context.Context, p authz.Principal, provider, 
 // TestCountedWithCredential is T-667 (sprint 5.2, D-2): a request counts, as a request, exactly
 // when a credential was opened for it.
 func TestCountedWithCredential(t *testing.T) {
+	t.Parallel()
 	for _, f := range limFamilies() {
 		t.Run(f.name+"/the caller goes before the credential: released, the record has none", func(t *testing.T) {
 			lim := testutil.NewStaticLimits()
@@ -964,6 +972,7 @@ func (m *mutableRules) load(_ context.Context, id tenant.ID) (limits.RuleSet, er
 // TestStoreFailure is T-668: counters that cannot be verified, with each value of
 // limits.on_store_failure.
 func TestStoreFailure(t *testing.T) {
+	t.Parallel()
 	for _, f := range limFamilies() {
 		build := func(t *testing.T, setting string, rules []limits.Rule) (*harness, *failingLedger, *mutableRules, *limits.RuleCache) {
 			t.Helper()

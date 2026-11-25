@@ -17,6 +17,7 @@ import (
 // custom role give them at sign-in; an inactive or missing custom role is skipped with a line that
 // names no tenant, role or group; a rule that names inference, or an unknown role, stops the start.
 func TestGroupRulesWithRoles(t *testing.T) {
+	t.Parallel()
 	var captured admin.Options
 	mappings := []string{
 		"tenant:acme:usage-viewer=eng", "tenant:acme:team-lead=eng", "tenant:acme:gone-role=eng", "tenant:acme:sleeping=eng",
@@ -154,6 +155,7 @@ func TestGroupRulesWithRoles(t *testing.T) {
 // read in the transaction that assigns them, FOR SHARE, so that a role deleted meanwhile is not
 // assigned, and all of them are found, whatever the number of roles of the tenant.
 func TestGroupRulesResolveInTheTransaction(t *testing.T) {
+	t.Parallel()
 	api, o := apitest.NewPeopleOIDC(t, apitest.PeopleConfig{},
 		apitest.OIDCConfig{Users: idpPeople, Mappings: []string{"tenant:acme:aa-raced=eng", "tenant:acme:zzz-last=eng"}})
 	p := peopleOn(t, api)

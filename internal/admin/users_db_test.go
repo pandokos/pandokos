@@ -26,6 +26,7 @@ func oneOf(t testing.TB, what string, r *apitest.Response, statuses ...int) {
 
 // TestUsers is T-802, the platform's half: every operation on users.
 func TestUsers(t *testing.T) {
+	t.Parallel()
 	p := newPeople(t, apitest.PeopleConfig{})
 	d := p.d
 
@@ -268,6 +269,7 @@ func TestUsers(t *testing.T) {
 
 // TestOidcUsers is the part of T-802 that needs the identity provider: a user linked by an administrator.
 func TestOidcUsers(t *testing.T) {
+	t.Parallel()
 	api, _ := apitest.NewPeopleOIDC(t, apitest.PeopleConfig{}, apitest.OIDCConfig{})
 	p := peopleOn(t, api)
 	out := decode[adminapi.UserCreated](t, p.platform(t, "POST", "/v1/users", map[string]any{"sign_in": "oidc", "subject": "person-1", "display_name": "Linked", "platform_roles": []string{"platform-admin"}}), 201)
@@ -290,6 +292,7 @@ func TestOidcUsers(t *testing.T) {
 
 // TestMembers is T-802, the tenant's half: every operation on members.
 func TestMembers(t *testing.T) {
+	t.Parallel()
 	p := newPeople(t, apitest.PeopleConfig{})
 	d := p.d
 	shared := d.PlatformUser(t, "shared.person", nil, dbtest.Display("Shared", "shared@example.test"))

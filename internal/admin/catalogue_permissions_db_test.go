@@ -13,6 +13,7 @@ import (
 // TestCatalogPermissions is T-406: the five permissions of section 5.9, each tried with a key that
 // holds it and keys that hold the others.
 func TestCatalogPermissions(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t, "catperm")
 	api := w.api
 

@@ -21,6 +21,7 @@ import (
 // with the permissions of the role, is refused in the shape of the family with one of the two, and
 // is refused at the next request after the role is deactivated.
 func TestCustomRoleInvokes(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	tid := d.SeedTenant(t, "custom-invoke")
 	logs := &testutil.LogBuffer{}

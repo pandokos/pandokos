@@ -11,6 +11,7 @@ import (
 // TestProviderStreamUsageOption is T-542: create, update, get and list carry stream_usage_option;
 // omit is refused for a provider of family anthropic; the audit detail holds it.
 func TestProviderStreamUsageOption(t *testing.T) {
+	t.Parallel()
 	c := newCat(t)
 	seen := seenIDs(t, c.api)
 

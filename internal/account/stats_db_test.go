@@ -21,6 +21,7 @@ func signIns(svc *account.Service) map[string]int64 {
 // passwords (ok, failed, locked, disabled, unavailable) and counted by method and result, the locks
 // are counted, and the snapshot holds nothing of a user.
 func TestSignInStats(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t, func(o *account.Options) { o.MaxFailures = 3 })
 	ada := e.d.PlatformUser(t, "ada.lovelace", []string{"platform-admin"})
 	off := e.d.PlatformUser(t, "disabled.user", nil, dbtest.Disabled())

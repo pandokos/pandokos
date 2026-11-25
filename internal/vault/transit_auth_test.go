@@ -32,6 +32,7 @@ func settle() { time.Sleep(300 * time.Millisecond) }
 
 // TestTransitTokenAuth is T-1064.
 func TestTransitTokenAuth(t *testing.T) {
+	t.Parallel()
 	aad := vault.DataAAD(testTenant(10), 1)
 	dek := dataKeyBytes(29)
 
@@ -296,6 +297,7 @@ func lastLookupFile(t *testing.T, r *transitRig) string {
 
 // TestTransitAppRoleAuth is T-1065.
 func TestTransitAppRoleAuth(t *testing.T) {
+	t.Parallel()
 	aad := vault.DataAAD(testTenant(11), 1)
 	dek := dataKeyBytes(31)
 

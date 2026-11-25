@@ -96,6 +96,7 @@ func resolveFresh(t *testing.T, db *store.DB, p authz.Principal, provider, name 
 // to tenant A resolves for A's principal and is refused to B's with the same error; `all` makes it
 // visible to both; A's restriction and a key's list narrow it.
 func TestResolveDB(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	w := newWorld(t, d, d)
 	e := w.env
@@ -216,6 +217,7 @@ func TestResolveDB(t *testing.T) {
 // TestCacheDB is T-397: changes of the catalogue reach the cache through the listener within two
 // seconds, and, where there is no listener (a transaction pooler), within the lifetime.
 func TestCacheDB(t *testing.T) {
+	t.Parallel()
 	t.Run("direct: by notification", func(t *testing.T) {
 		d := dbtest.NewMigrated(t)
 		w := newWorld(t, d, d)
@@ -297,9 +299,8 @@ func TestCacheDB(t *testing.T) {
 	})
 
 	t.Run("through the pooler: by lifetime", func(t *testing.T) {
-		d := dbtest.New(t)
+		d := dbtest.NewMigrated(t)
 		pooled := d.Pooled(t)
-		d.Migrate(t)
 		w := newWorld(t, d, pooled)
 		var mu sync.Mutex
 		clock := time.Now()

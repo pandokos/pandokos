@@ -28,6 +28,7 @@ import (
 // TestTokenValid is T-569: for each of the ten algorithms a token signed by the fake issuer yields
 // its verified claims, with and without a key ID, with the audience as a string and as an array.
 func TestTokenValid(t *testing.T) {
+	t.Parallel()
 	r := newTokenRig(t)
 	for _, alg := range fakeidp.Algorithms {
 		for _, withKID := range []bool{true, false} {
@@ -91,6 +92,7 @@ func b64s(s string) string { return base64.RawURLEncoding.EncodeToString([]byte(
 
 // TestTokenMalformed is T-570: what is not a well-formed token is refused, whatever the signature.
 func TestTokenMalformed(t *testing.T) {
+	t.Parallel()
 	r := newTokenRig(t)
 	good := r.idp.Sign("ES256", r.claims("w"))
 	h, p, s := pieces(t, good)
@@ -197,6 +199,7 @@ func TestTokenMalformed(t *testing.T) {
 // TestTokenAlgorithmAttacks is T-571: every way of making a verifier use the wrong algorithm or the
 // wrong key is refused, and nothing in the header is read as key material.
 func TestTokenAlgorithmAttacks(t *testing.T) {
+	t.Parallel()
 	r := newTokenRig(t)
 	other := fakeidp.Start(t, fakeidp.Options{}) // an issuer of the attacker's
 	pay := r.claims("workload")
@@ -428,6 +431,7 @@ func (f *forced) Key(_ context.Context, _ jwks.Source, _, _ string) (crypto.Publ
 
 // TestTokenClaims is T-572: each row of checks 7 to 12 at its boundary, with a fixed clock.
 func TestTokenClaims(t *testing.T) {
+	t.Parallel()
 	r := newTokenRig(t)
 	now := tokenNow.Unix()
 	skew := int64(testSkew / time.Second)
@@ -630,6 +634,7 @@ func TestTokenClaims(t *testing.T) {
 // TestSignatureOnEveryRequest is T-573: a token accepted once and then altered is refused, and
 // what the token path keeps in memory has no member that could hold a token or a digest of one.
 func TestSignatureOnEveryRequest(t *testing.T) {
+	t.Parallel()
 	r := newTokenRig(t)
 	tok := r.idp.Sign("ES256", r.claims("workload"))
 	for i := 0; i < 3; i++ {

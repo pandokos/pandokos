@@ -128,6 +128,7 @@ func seedVault(t *testing.T, d *dbtest.Database, a, b tenant.ID) (credA, credB s
 // session; only the gateway role can, in its tenant's session; platform scope and no scope see
 // nothing of the vault tables; kek_version is for reading, and for the admin role to add to.
 func TestVaultColumnPrivileges(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		a, b := d.SeedTenant(t, "tenant-a"), d.SeedTenant(t, "tenant-b")
 		credA, credB := seedVault(t, d, a, b)
@@ -406,6 +407,7 @@ FROM pandokos.provider_credential WHERE id = $1::uuid`, id).Scan(&c.state, &c.by
 // TestCredentialGuards is T-322: the lifecycle of section 5.3 as the database enforces it, for the
 // admin role and for the owner, and the notifications the changes send.
 func TestCredentialGuards(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a, b := d.SeedTenant(t, "tenant-a"), d.SeedTenant(t, "tenant-b")
 	super := d.Super(t)

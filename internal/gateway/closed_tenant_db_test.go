@@ -22,6 +22,7 @@ import (
 // of a tenant that is being deleted is refused (403 tenant_suspended) and no usage record of the
 // tenant is written; the same listener records a call of the tenant before its deletion began.
 func TestInferenceRefusesAClosedTenant(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	tid := d.SeedTenant(t, "closed-inference")
 	logs := &testutil.LogBuffer{}

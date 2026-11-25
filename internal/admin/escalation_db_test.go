@@ -25,6 +25,7 @@ func escalation(t *testing.T, what string, r *apitest.Response) {
 
 // TestNoEscalationRoles is T-862.
 func TestNoEscalationRoles(t *testing.T) {
+	t.Parallel()
 	w := newRW(t)
 	w.role(t, "role-manager", "role:read", "role:write", "role:delete")
 	w.role(t, "has-usage", "member:read", "usage:read")
@@ -127,6 +128,7 @@ func newGrantWorld(t *testing.T) *grantWorld {
 // TestNoEscalationAssignments is T-863, the exit condition of the rule: nobody hands out, or takes
 // over, a role with a permission it does not hold.
 func TestNoEscalationAssignments(t *testing.T) {
+	t.Parallel()
 	g := newGrantWorld(t)
 	w := g.rw
 	k := g.k
@@ -271,6 +273,7 @@ func rolesHolding(permission string, scope authz.Scope) []string {
 
 // TestNoEscalationCredentials is T-864.
 func TestNoEscalationCredentials(t *testing.T) {
+	t.Parallel()
 	g := newGrantWorld(t)
 	w := g.rw
 	k := g.k
@@ -408,6 +411,7 @@ const (
 // TestGrantSurfaceIsClosed is T-865: every operation of the document is classified by what it does to
 // somebody's power, and each one that confers or removes refuses a weaker caller.
 func TestGrantSurfaceIsClosed(t *testing.T) {
+	t.Parallel()
 	g := newGrantWorld(t)
 	w := g.rw
 	k := g.k
@@ -522,6 +526,7 @@ func TestGrantSurfaceIsClosed(t *testing.T) {
 
 // TestSeparationOfDuties is T-895.
 func TestSeparationOfDuties(t *testing.T) {
+	t.Parallel()
 	w := newRW(t)
 	identityPerms := []string{authz.ServiceAccountRead, authz.ServiceAccountWrite, authz.VirtualKeyRead, authz.VirtualKeyWrite, authz.VirtualKeyRevoke, authz.MemberRead, authz.MemberWrite, authz.RoleRead}
 	w.role(t, "identity-only", identityPerms...)
@@ -602,6 +607,7 @@ func mustRole(t *testing.T, name string) []string {
 // user's memberships on the transaction that holds the lock of the user, not on a second connection
 // of the pool, so it completes with database.admin.max_connections 1.
 func TestResetPasswordOfAMemberOnOneConnection(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	one := d.OpenSized(t, store.RoleAdmin, 1)
 	api := apitest.NewPeopleOn(t, d, apitest.PeopleConfig{Admin: func(o *admin.Options) { o.DB = one }})

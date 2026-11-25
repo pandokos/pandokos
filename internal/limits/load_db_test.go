@@ -15,6 +15,7 @@ import (
 
 // TestLoadRules is T-624.
 func TestLoadRules(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -149,6 +150,7 @@ func find(ls []limits.Limit, kind limits.SubjectKind, id string, m limits.Metric
 // TestLoadRulesColumns is T-662: the loader maps the scope, the currency, the enforcement and the
 // thresholds of both tables, and skips a row this version does not know.
 func TestLoadRulesColumns(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
@@ -246,6 +248,7 @@ func TestLoadRulesColumns(t *testing.T) {
 // identifiers and the names, the key ID of a virtual key through the join, and the calendar of the
 // tenant for no zone, a zone, a pending change and one that took effect.
 func TestLoadRulesTyped(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
@@ -394,6 +397,7 @@ func zonesOf(tb testing.TB) *limits.Zones {
 // TestLoadRulesCurrency is T-729: the loader reads the active currency of the tenant in the transaction
 // of the rules and resolves the default; both tables hold two currencies for one scope and metric.
 func TestLoadRulesCurrency(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()

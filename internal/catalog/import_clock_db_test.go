@@ -16,6 +16,7 @@ import (
 // larger than the JSON text; a report of any number of models is cut to fit and the import row is
 // written (finding 1 of the review).
 func TestStoredReportFitsTheColumn(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	e.sql(`INSERT INTO pandokos.model (provider_id, name, upstream_id)
 	       SELECT p.id, 'synthetic-unmatched-model-with-a-rather-long-name-' || g, 'x-' || g
@@ -56,6 +57,7 @@ func TestStoredReportFitsTheColumn(t *testing.T) {
 // version, but took the import lock after it, must not insert a version that starts before it: the
 // clock of the new version is read after the lock (finding 2 of the review).
 func TestImportVersionStartsAfterTheLock(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t, "synthetic-chat")
 	var modelID string
 	if err := e.scan(`SELECT id::text FROM pandokos.model WHERE name = 'synthetic-chat'`)(&modelID); err != nil {

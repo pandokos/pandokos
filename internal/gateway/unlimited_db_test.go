@@ -126,6 +126,7 @@ func dayIn(t *testing.T, zone string, at time.Time) string {
 // next day of the tenant's zone writes one; a tenant with a rule that matches writes none; two
 // gateways on one database write one.
 func TestUnlimitedTrafficAudit(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a, b, c := d.SeedTenant(t, "unl-a"), d.SeedTenant(t, "unl-b"), d.SeedTenant(t, "unl-c")
 	d.SeedLimitRule(t, b, "tenant", "", "requests_per_day", 1_000_000) // B is limited

@@ -189,6 +189,7 @@ func (p *curProp) run(ops int) {
 // admission is within the limit of the old currency's budget over its whole period; from it within the
 // new one's; no budget stops applying inside one of its periods.
 func TestCurrencyChangeNeverFrees(t *testing.T) {
+	t.Parallel()
 	seed := seedOf(t)
 	bases := []time.Time{
 		at(2026, 1, 31, 20, 0, 0), at(2026, 2, 28, 22, 0, 0), at(2026, 3, 28, 22, 0, 0), at(2026, 10, 24, 22, 0, 0),

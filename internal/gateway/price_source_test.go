@@ -47,6 +47,7 @@ func listVersion(t *testing.T, id, currency, source string, from time.Time, in, 
 // catalogue's price, a catalogue price in another currency (unknown, no_price) and an end; a version
 // that starts while a request runs does not change that request.
 func TestRecordPriceSource(t *testing.T) {
+	t.Parallel()
 	hourAgo := time.Now().Add(-time.Hour)
 	usd, eur := pricing.Active{Current: "USD"}, pricing.Active{Current: "EUR"}
 

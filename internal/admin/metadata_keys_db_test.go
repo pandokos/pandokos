@@ -14,6 +14,7 @@ import (
 // TestMetadataKeys is T-965: get, set and clear the keys a tenant accepts, each change with its audit
 // row and atomic with it; refusals of the shape of the list; the permissions; a platform principal.
 func TestMetadataKeys(t *testing.T) {
+	t.Parallel()
 	w := newPW(t)
 	path := "/v1/tenants/" + w.a.ID + "/metadata-keys"
 	seen := seenIDs(t, w.api)

@@ -363,6 +363,7 @@ func scopeOf(t *testing.T, op adminapi.Operation) authz.Scope {
 // TestCrossTenantIndistinguishable is T-270: a caller of tenant A that names a resource of
 // tenant B gets the same response as for a resource that does not exist.
 func TestCrossTenantIndistinguishable(t *testing.T) {
+	t.Parallel()
 	w := newAPIWorld(t)
 	rows := w.api.SnapshotTenant(t, w.b.tenant.ID)
 	checked := 0
@@ -607,6 +608,7 @@ func chat(t *testing.T, srv *httptest.Server, key string, hdr http.Header, query
 
 // TestKeyOfOneTenantCannotAddressAnother is T-271.
 func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
+	t.Parallel()
 	w := newAPIWorld(t)
 	c := w.api.Client(w.a.adminKey)
 	n := 0
@@ -656,6 +658,7 @@ func TestKeyOfOneTenantCannotAddressAnother(t *testing.T) {
 
 // TestPlatformKeyHasNoTenantPermission is T-272.
 func TestPlatformKeyHasNoTenantPermission(t *testing.T) {
+	t.Parallel()
 	w := newAPIWorld(t)
 	for _, op := range apiOperations() {
 		if scopeOf(t, op) != authz.ScopeTenant {
@@ -683,6 +686,7 @@ func TestPlatformKeyHasNoTenantPermission(t *testing.T) {
 // TestTenantAdminIsEnoughAndNoMore is T-273 (changed in sprint 4.3: it runs for the owner, and the
 // tenant-admin is enough for everything but endSupportAction, which is kept for owners).
 func TestTenantAdminIsEnoughAndNoMore(t *testing.T) {
+	t.Parallel()
 	for _, who := range []struct {
 		name string
 		key  func(w *apiWorld) string
@@ -734,6 +738,7 @@ func TestTenantAdminIsEnoughAndNoMore(t *testing.T) {
 // operation declares a permission or is one of exactly four public operations; without a credential
 // every operation that is not public is 401.
 func TestRoutesArePublicOrPermitted(t *testing.T) {
+	t.Parallel()
 	w := newAPIWorld(t)
 	catalogue := map[string]bool{}
 	for _, p := range authz.Catalogue() {
@@ -791,6 +796,7 @@ func TestRoutesArePublicOrPermitted(t *testing.T) {
 
 // TestCallerCannotNameTheTenant is T-275.
 func TestCallerCannotNameTheTenant(t *testing.T) {
+	t.Parallel()
 	w := newAPIWorld(t)
 	hdr := http.Header{"X-Tenant-Id": {w.b.tenant.ID}, "X-Pandokos-Tenant": {w.b.tenant.ID}, "X-Pandokos-Tenant-Id": {w.b.tenant.ID}}
 	path := "/v1/tenants/" + w.a.tenant.ID + "/service-accounts"
@@ -842,6 +848,7 @@ func TestCallerCannotNameTheTenant(t *testing.T) {
 // gets the 404 of a tenant that does not exist, and changes nothing of A; its own zone it reads and
 // sets.
 func TestTimeZoneAPI(t *testing.T) {
+	t.Parallel()
 	w := newAPIWorld(t)
 	before := w.api.SnapshotTenant(t, w.a.tenant.ID)
 	missing := randomUUID(t, w)
@@ -888,6 +895,7 @@ var priceListOperations = []string{"listPriceLists", "listPriceListVersions", "c
 // TestTenantPriceAPI is T-748: a key of tenant B on the seven operations of A gets the 404 of a tenant
 // that does not exist; a price ID of B in A's path is the 404 of an unknown ID.
 func TestTenantPriceAPI(t *testing.T) {
+	t.Parallel()
 	w := newAPIWorld(t)
 	byID := map[string]adminapi.Operation{}
 	for _, op := range apiOperations() {

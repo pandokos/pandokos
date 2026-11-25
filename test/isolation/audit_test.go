@@ -19,6 +19,7 @@ import (
 // rows in platform scope, because the price importer and its refresh job audit what they change,
 // D-17).
 func TestAuditIsAppendOnly(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a := d.SeedTenant(t, "tenant-a")
 	super := d.Super(t)
@@ -177,6 +178,7 @@ func TestAuditIsAppendOnly(t *testing.T) {
 // TestRecordAuthFailure is T-443: the function through which the gateway role writes one kind of
 // audit row (migration 0005, sprint 3.1 section 5.10).
 func TestRecordAuthFailure(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a := d.SeedTenant(t, "tenant-a")
 	b := d.SeedTenant(t, "tenant-b")
@@ -341,6 +343,7 @@ func TestRecordAuthFailure(t *testing.T) {
 // tenant and day is left in each log; arguments are checked; the gateway role still has no
 // privilege on either log; the owner's policy on the platform log admits this one action only.
 func TestRecordUnlimitedTraffic(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		super := d.Super(t)
 		a, b := d.SeedTenant(t, "unl-a"), d.SeedTenant(t, "unl-b")

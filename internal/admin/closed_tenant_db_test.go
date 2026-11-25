@@ -89,6 +89,7 @@ func bodyNamesTenant(t *testing.T) map[string]bool {
 // the specification that name a tenant in their path or in their body; the call of the inference
 // listener is TestInferenceRefusesAClosedTenant (internal/gateway).
 func TestWritesRefusedForAClosedTenant(t *testing.T) {
+	t.Parallel()
 	api := apitest.New(t)
 	plat := api.PlatformCaller()
 	cat := api.Catalog(t)

@@ -108,6 +108,7 @@ func rawJSON(status int, body string) http.HandlerFunc {
 // TestUsageSources is T-486: each row of the first table of section 5.4, with each cause of the
 // last row.
 func TestUsageSources(t *testing.T) {
+	t.Parallel()
 	type srcCase struct {
 		name   string
 		op     opSpec
@@ -285,6 +286,7 @@ func TestUsageSources(t *testing.T) {
 
 // TestResponsesAndEmbeddings is T-494.
 func TestResponsesAndEmbeddings(t *testing.T) {
+	t.Parallel()
 	t.Run("both operations reach base plus native path with the body unchanged", func(t *testing.T) {
 		for _, op := range []opSpec{opResponses, opEmbeddings} {
 			h := newHarness(t, nil)

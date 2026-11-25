@@ -27,6 +27,7 @@ type wantRow struct {
 // 5.11 with the request ID of its response; an operation that changes nothing writes none; a
 // failing audit insert rolls the change back.
 func TestCatalogAudit(t *testing.T) {
+	t.Parallel()
 	c := newCat(t)
 	api := c.api
 	seen := seenIDs(t, api)

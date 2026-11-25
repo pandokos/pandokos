@@ -101,6 +101,7 @@ func scalarInt(c context.Context, t *testing.T, tx store.Tx, q string, args ...a
 
 // TestCheckAcceptsMigratedDatabase is T-130.
 func TestCheckAcceptsMigratedDatabase(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		for _, role := range []store.Role{store.RoleGateway, store.RoleAdmin, store.RoleWorker} {
 			db := d.Open(t, role)
@@ -116,6 +117,7 @@ func TestCheckAcceptsMigratedDatabase(t *testing.T) {
 
 // TestCheckRefusesSchemaMismatch is T-131.
 func TestCheckRefusesSchemaMismatch(t *testing.T) {
+	t.Parallel()
 	check := func(t *testing.T, d *dbtest.Database, ms []migrate.Migration) error {
 		t.Helper()
 		db, err := store.Open(store.Options{Conn: d.ConnOptions("gateway"), Role: store.RoleGateway, MaxConns: 2, Migrations: ms})
@@ -171,6 +173,7 @@ func TestCheckRefusesSchemaMismatch(t *testing.T) {
 
 // TestCheckRefusesWrongUser is T-132.
 func TestCheckRefusesWrongUser(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	super := d.Super(t)
 	check := func(o store.ConnOptions) error {
@@ -222,6 +225,7 @@ func TestCheckRefusesWrongUser(t *testing.T) {
 
 // TestCheckCannotConnect is T-133.
 func TestCheckCannotConnect(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	real := d.Passwords()[1]
 	wrong := "wrong-" + fmt.Sprint(time.Now().UnixNano())
@@ -248,6 +252,7 @@ func TestCheckCannotConnect(t *testing.T) {
 
 // TestWithTenant is T-134.
 func TestWithTenant(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		a, b := seed(t, d)
 		gw := d.Open(t, store.RoleGateway)
@@ -318,6 +323,7 @@ func TestWithTenant(t *testing.T) {
 
 // TestWithTenantRollsBack is T-135.
 func TestWithTenantRollsBack(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a := d.SeedTenant(t, "tenant-a")
 	db := openSized(t, d, store.RoleAdmin, 1)
@@ -394,6 +400,7 @@ func TestWithTenantRollsBack(t *testing.T) {
 
 // TestPlatform is T-136.
 func TestPlatform(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		seed(t, d)
 		adm := openSized(t, d, store.RoleAdmin, 1)
@@ -453,6 +460,7 @@ func TestPlatform(t *testing.T) {
 
 // TestTenantContextDoesNotLeak is T-137.
 func TestTenantContextDoesNotLeak(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		a, b := seed(t, d)
 		db := openSized(t, d, store.RoleAdmin, 8)
@@ -498,6 +506,7 @@ func TestTenantContextDoesNotLeak(t *testing.T) {
 
 // TestReady is T-138.
 func TestReady(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	db := d.Open(t, store.RoleGateway)
 	if err := db.Ready(ctx(t)); err != nil {
@@ -525,6 +534,7 @@ func TestReady(t *testing.T) {
 
 // TestNoSessionState is T-139.
 func TestNoSessionState(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		a, _ := seed(t, d)
 		db := openSized(t, d, store.RoleAdmin, 1)
@@ -562,6 +572,7 @@ func TestNoSessionState(t *testing.T) {
 
 // TestUnscopedAndProvision is T-231.
 func TestUnscopedAndProvision(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		a, _ := seed(t, d)
 		super := d.Super(t)
@@ -758,6 +769,7 @@ func (r *listenerRig) connected(n int) bool {
 
 // TestListener is T-265.
 func TestListener(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	super := d.Super(t)
 	r := startListener(t, d.ConnOptions("gateway"))
@@ -815,10 +827,10 @@ func TestListener(t *testing.T) {
 
 // TestListenerAndPooler is T-266.
 func TestListenerAndPooler(t *testing.T) {
+	t.Parallel()
 	t.Run("through the pooler without a direct address", func(t *testing.T) {
-		d := dbtest.New(t)
+		d := dbtest.NewMigrated(t)
 		p := d.Pooled(t)
-		d.Migrate(t)
 		r := startListener(t, p.ConnOptions("gateway"))
 		testutil.Eventually(t, 25*time.Second, "the warning that notifications do not arrive", func() bool {
 			return len(r.logs.Find(t, "cache invalidation unavailable")) >= 1
@@ -837,9 +849,8 @@ func TestListenerAndPooler(t *testing.T) {
 	})
 
 	t.Run("with the direct address", func(t *testing.T) {
-		d := dbtest.New(t)
+		d := dbtest.NewMigrated(t)
 		p := d.Pooled(t)
-		d.Migrate(t)
 		// Queries go through the pooler; the listener goes to PostgreSQL itself.
 		r := startListener(t, d.ConnOptions("gateway"))
 		testutil.Eventually(t, 10*time.Second, "the listener to connect", func() bool { return r.connected(1) })
@@ -861,6 +872,7 @@ func TestListenerAndPooler(t *testing.T) {
 }
 
 func TestErrorClasses(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		a, _ := seed(t, d)
 		admin := d.Open(t, store.RoleAdmin)

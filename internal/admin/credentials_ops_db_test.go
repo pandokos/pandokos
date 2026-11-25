@@ -27,6 +27,7 @@ func tenantPath(tenantID string, parts ...string) string {
 // TestPlatformOversight is T-342: a platform administrator sees metadata and can disable or
 // revoke with a reason, and can do nothing else (AZ-08).
 func TestPlatformOversight(t *testing.T) {
+	t.Parallel()
 	w := newCW(t, "oversight")
 	other := newCWOn(t, w.api, "oversight-other")
 	c := w.create(t, "openai", "main", fixtures.CanaryCredential)
@@ -226,6 +227,7 @@ func TestPlatformOversight(t *testing.T) {
 // TestCredentialAudit is T-343, with T-281 and T-282 of audit_db_test.go: the data key of a
 // tenant that has none is created, and audited, at its first credential write.
 func TestCredentialAudit(t *testing.T) {
+	t.Parallel()
 	w := newCW(t, "audit-lazy")
 	api := w.api
 	kek := kekVersion(t, api)
@@ -380,6 +382,7 @@ func TestCredentialAudit(t *testing.T) {
 
 // TestValidationAtWrite is T-344: with the fake provider as the validator's destination.
 func TestValidationAtWrite(t *testing.T) {
+	t.Parallel()
 	fake := fakeprovider.New(t)
 	fake.Accept(fixtures.CanaryCredential)
 	w := newCW(t, "validated", withValidator(t, 700*time.Millisecond))
@@ -582,6 +585,7 @@ func TestValidationAtWrite(t *testing.T) {
 
 // TestPinnedKey is T-345, with TestPrincipalCarriesThePin of package authn.
 func TestPinnedKey(t *testing.T) {
+	t.Parallel()
 	w := newCW(t, "pinned")
 	other := newCWOn(t, w.api, "pinned-other")
 	c := w.create(t, "openai", "main", fixtures.CanaryCredential)
@@ -710,6 +714,7 @@ func TestPinnedKey(t *testing.T) {
 
 // TestCredentialPermissions is T-346: the five tenant permissions of credentials are distinct.
 func TestCredentialPermissions(t *testing.T) {
+	t.Parallel()
 	w := newCW(t, "permissions")
 	sa, err := w.c.CreateServiceAccount(ctx(t), adminapi.CreateServiceAccountInput{Tenant: w.tenant.ID, Body: adminapi.ServiceAccountCreate{Name: "scoped", Roles: []string{"tenant-admin"}}})
 	if err != nil {
@@ -880,6 +885,7 @@ func (w *cw) newProvider(t *testing.T, family, baseURL string, private bool) str
 
 // TestValidationUsesTheCatalogue is T-445: the target of a validation comes from the catalogue.
 func TestValidationUsesTheCatalogue(t *testing.T) {
+	t.Parallel()
 	first, second, claude := fakeprovider.New(t), fakeprovider.New(t), fakeprovider.New(t)
 	for _, f := range []*fakeprovider.Server{first, second, claude} {
 		f.Accept(fixtures.CanaryCredential)

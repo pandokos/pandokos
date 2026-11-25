@@ -233,6 +233,7 @@ func (p *zoneProp) run(ops int) {
 // period in progress at a change ends before its old end; the bound of 5.2 section 5.5 holds per
 // period.
 func TestZoneChangeNeverFrees(t *testing.T) {
+	t.Parallel()
 	seed := seedOf(t)
 	bases := []time.Time{
 		at(2026, 1, 31, 20, 0, 0), at(2026, 2, 28, 22, 0, 0), at(2026, 3, 28, 22, 0, 0), at(2026, 10, 24, 22, 0, 0),

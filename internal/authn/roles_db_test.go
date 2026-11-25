@@ -30,6 +30,7 @@ func keyOf(t *testing.T, d *dbtest.Database, tid tenant.ID, sa string) string {
 // the principal of a key and of a token, an inactive role and a name without a role give none, and a
 // change of the role drops the cached principal through the notification.
 func TestCustomRolePrincipal(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	logs := &testutil.LogBuffer{}
 	r := newTokenRig(t, d, time.Minute)

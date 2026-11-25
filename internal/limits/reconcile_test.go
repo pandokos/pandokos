@@ -66,6 +66,7 @@ func (e *recEnv) cut(t *testing.T) time.Time {
 
 // TestLoadFoldRebase is T-651.
 func TestLoadFoldRebase(t *testing.T) {
+	t.Parallel()
 	bg := context.Background()
 
 	t.Run("load: base and seed from groups, existing counters untouched", func(t *testing.T) {
@@ -436,6 +437,7 @@ func TestLoadFoldRebase(t *testing.T) {
 // lies inside every counter it is added to; after a change of zone the counters of the old and of
 // the new zone both equal the ledger over their ranges; the reconciler takes no calendar.
 func TestReconcilerTwoZones(t *testing.T) {
+	t.Parallel()
 	clk := newClock()
 	clk.t = at(2026, 11, 30, 15, 30, 30)
 	model := &refModel{}
@@ -532,6 +534,7 @@ func TestReconcilerTwoZones(t *testing.T) {
 // the period (design 5.7: the counter receives the usage of its first minutes when the cut passes
 // them). The fold is refused and read again with the new cut points.
 func TestReconcilerCounterCreatedMidFold(t *testing.T) {
+	t.Parallel()
 	clk := newClock()
 	clk.t = at(2026, 11, 30, 15, 20, 30)
 	model := &refModel{}

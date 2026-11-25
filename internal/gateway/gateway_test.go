@@ -262,6 +262,7 @@ func (h *harness) lastUsage(t *testing.T) usage.Record {
 }
 
 func TestForwardNonStreaming(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	body := chat("fake-basic", false)
 	resp, got := h.call(t, body)
@@ -282,6 +283,7 @@ func TestForwardNonStreaming(t *testing.T) {
 }
 
 func TestStreamingEventByEvent(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	ctx := ctx5(t)
 	resp, err := h.request(ctx, t, http.MethodPost, route, chat(fakeprovider.ModelGatedStream, true), authed())
@@ -308,6 +310,7 @@ func TestStreamingEventByEvent(t *testing.T) {
 }
 
 func TestStreamUsageInjectedAndStripped(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	body := chat("fake-basic", true)
 	resp, got := h.call(t, body)
@@ -344,6 +347,7 @@ func TestStreamUsageInjectedAndStripped(t *testing.T) {
 }
 
 func TestStreamUsageRequestedByCaller(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	body := []byte(`{"model":"fake-basic","stream":true,"stream_options":{"include_usage":true}}`)
 	_, got := h.call(t, body)
@@ -363,6 +367,7 @@ func TestStreamUsageRequestedByCaller(t *testing.T) {
 }
 
 func TestClientDisconnectCancelsUpstream(t *testing.T) {
+	t.Parallel()
 	run := func(t *testing.T, h *harness) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -392,6 +397,7 @@ func TestClientDisconnectCancelsUpstream(t *testing.T) {
 }
 
 func TestClientDisconnectBeforeResponse(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -415,6 +421,7 @@ func TestClientDisconnectBeforeResponse(t *testing.T) {
 }
 
 func TestMaxRequestDuration(t *testing.T) {
+	t.Parallel()
 	t.Run("before_headers", func(t *testing.T) {
 		h := newHarness(t, func(o *gateway.Options) { o.MaxRequestDuration = 200 * time.Millisecond })
 		resp, body := h.call(t, chat(fakeprovider.ModelHang, false))
@@ -490,6 +497,7 @@ func TestNothingLeaksAfterCancel(t *testing.T) {
 }
 
 func TestUnauthenticated(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	cases := map[string]http.Header{
 		"no header":    {},
@@ -527,6 +535,7 @@ func TestUnauthenticated(t *testing.T) {
 }
 
 func TestCredentialSwap(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	h.call(t, chat("fake-basic", false))
 	reqs := h.up.Requests()
@@ -544,6 +553,7 @@ func TestCredentialSwap(t *testing.T) {
 }
 
 func TestResponseHeaderAllowList(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	resp, _ := h.call(t, chat("fake-basic", false))
 	for _, n := range []string{"Set-Cookie", "Server", "X-Pandokos-Error"} {
@@ -566,6 +576,7 @@ func TestResponseHeaderAllowList(t *testing.T) {
 }
 
 func TestQueryNotForwarded(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	resp, err := h.request(ctx5(t), t, http.MethodPost, route+"?a=b&token=zzz", chat("fake-basic", false), authed())
 	if err != nil {
@@ -583,6 +594,7 @@ func TestQueryNotForwarded(t *testing.T) {
 }
 
 func TestEndpointNotSupported(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	cases := []struct{ method, path string }{
 		{"GET", route},
@@ -630,6 +642,7 @@ func TestEndpointNotSupported(t *testing.T) {
 }
 
 func TestRequestTooLarge(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, func(o *gateway.Options) { o.MaxRequestBodyBytes = 100 })
 	body := bytes.Repeat([]byte("a"), 200)
 	check := func(t *testing.T, resp *http.Response, err error) {
@@ -662,6 +675,7 @@ func TestRequestTooLarge(t *testing.T) {
 }
 
 func TestProviderErrorPassesThrough(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	resp, body := h.call(t, chat("fake-error-429", false))
 	if resp.StatusCode != 429 || !bytes.Equal(body, fixtures.Read("error_429.json")) || resp.Header.Get("Retry-After") != "7" {
@@ -680,6 +694,7 @@ func TestProviderErrorPassesThrough(t *testing.T) {
 }
 
 func TestRequestID(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	hexID := regexp.MustCompile(`^[0-9a-f]{32}$`)
 	seen := map[string]bool{}
@@ -722,6 +737,7 @@ func (panicTransport) RoundTrip(*http.Request) (*http.Response, error) {
 }
 
 func TestPanicRecovered(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, func(o *gateway.Options) { o.Private = panicTransport{} })
 	resp, body := h.call(t, chat("fake-basic", false))
 	if resp.StatusCode != 500 || resp.Header.Get("X-Pandokos-Error") != "internal" || !bytes.Contains(body, []byte(`"code":"internal"`)) {
@@ -740,6 +756,7 @@ func TestPanicRecovered(t *testing.T) {
 }
 
 func TestInformationalResponsesAreDropped(t *testing.T) {
+	t.Parallel()
 	h := newRaw(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		w.Header().Set("Set-Cookie", "early=1")
@@ -784,6 +801,7 @@ func TestInformationalResponsesAreDropped(t *testing.T) {
 }
 
 func TestProviderTrailersAreDropped(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"json", "stream", "error"} {
 		t.Run(mode, func(t *testing.T) {
 			h := newRaw(t, func(w http.ResponseWriter, r *http.Request) {
@@ -843,6 +861,7 @@ func (r reasoned) Detail() struct{ Reason, KeyID, TenantID, IssuerID, IssuerScop
 
 // TestAuthorization is T-267.
 func TestAuthorization(t *testing.T) {
+	t.Parallel()
 	active := testutil.InferencePrincipal()
 	noRole := active
 	noRole.Roles = nil
@@ -1001,6 +1020,7 @@ func (c countingAuth) Authenticate(context.Context, string) (authz.Principal, er
 
 // TestNewValidatesOptions is the validation of the options of sprint 3.1, section 5.4.
 func TestNewValidatesOptions(t *testing.T) {
+	t.Parallel()
 	logs := &testutil.LogBuffer{}
 	cat := testutil.StaticCatalogue(map[string]string{"openai": "openai"}, nil)
 	creds := testutil.StaticCredentials(nil)
@@ -1063,6 +1083,7 @@ func TestNewValidatesOptions(t *testing.T) {
 
 // TestUpstreamUnreachable is T-46: a closed port on a private target.
 func TestUpstreamUnreachable(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	closed, _ := url.Parse("http://127.0.0.1:1")
 	tgt := h.targets["openai/fake-basic"]
@@ -1089,6 +1110,7 @@ func TestUpstreamUnreachable(t *testing.T) {
 
 // TestRouteDeclaresAPermission is T-274: the routes of the gateway name both permissions.
 func TestRouteDeclaresAPermission(t *testing.T) {
+	t.Parallel()
 	routes := gateway.Routes()
 	want := map[string]bool{}
 	for _, a := range []family.Adapter{openai.Adapter(), anthropic.Adapter()} {

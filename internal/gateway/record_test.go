@@ -120,6 +120,7 @@ type endCase struct {
 // one Admit and one Record, with the outcome and code of the table of section 5.5; requests that
 // are not authenticated have neither.
 func TestOneRecordPerOutcome(t *testing.T) {
+	t.Parallel()
 	post := func(o opSpec, model string, stream bool) func(t *testing.T, h *harness) {
 		return func(t *testing.T, h *harness) { h.sendOp(t, o, model, stream) }
 	}
@@ -302,6 +303,7 @@ func TestOneRecordPerOutcome(t *testing.T) {
 // TestRecordFields is T-485: every field of the record of section 5.5, for a plain and a streamed
 // success, with the price in force at the start of the request, and for refusals.
 func TestRecordFields(t *testing.T) {
+	t.Parallel()
 	check := func(t *testing.T, c captured, r usage.Record, stream bool, reqBody []byte) {
 		t.Helper()
 		if !reUUIDv7.MatchString(r.ID) {
@@ -481,6 +483,7 @@ func TestRecordFields(t *testing.T) {
 // TestAdmissionRefused is T-487: with no room in the ledger the request is refused with 503
 // right after authentication and before any other work.
 func TestAdmissionRefused(t *testing.T) {
+	t.Parallel()
 	full := &testutil.MemoryRecorder{Capacity: 1}
 	full.Admit()
 	spy := &readSpy{t: t}
@@ -529,6 +532,7 @@ func TestAdmissionRefused(t *testing.T) {
 // usage.Record.Validate whatever the caller or the provider sends. Bounded values are saturated at
 // the source, so no call is answered without its row.
 func TestRecordsAlwaysValidate(t *testing.T) {
+	t.Parallel()
 	rawChat := func(status int, body string) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			_, _ = io.Copy(io.Discard, r.Body)

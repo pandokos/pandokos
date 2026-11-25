@@ -89,6 +89,7 @@ func gcmOf(t *testing.T, key []byte) cipher.AEAD {
 // TestFormatsAreFrozen is T-301: what is stored today must open in every later version. The
 // associated data, the two HKDF info strings, the sealed value and the wrapped key are literals.
 func TestFormatsAreFrozen(t *testing.T) {
+	t.Parallel()
 	tid := mustTenant(t)
 
 	t.Run("associated data", func(t *testing.T) {
