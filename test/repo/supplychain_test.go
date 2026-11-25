@@ -158,27 +158,10 @@ func TestEverythingPinned(t *testing.T) {
 			if base != "Dockerfile" && !strings.HasPrefix(base, "Dockerfile.") && !strings.HasSuffix(base, ".Dockerfile") {
 				continue
 			}
-			stages := map[string]bool{"scratch": true}
-			for _, line := range strings.Split(read(t, f), "\n") {
-				fields := strings.Fields(line)
-				if len(fields) < 2 || !strings.EqualFold(fields[0], "FROM") {
-					continue
-				}
-				i := 1
-				for strings.HasPrefix(fields[i], "--") {
-					i++
-				}
-				img := fields[i]
-				if len(fields) > i+2 && strings.EqualFold(fields[i+1], "AS") {
-					defer func(name string) { stages[strings.ToLower(name)] = true }(fields[i+2])
-				}
-				if stages[strings.ToLower(img)] {
-					continue
-				}
-				froms++
-				if !pinnedImageRE.MatchString(img) {
-					t.Errorf("%s: FROM %s is not name:tag@sha256:<digest>", f, img)
-				}
+			n, bad := unpinnedFroms(read(t, f))
+			froms += n
+			for _, img := range bad {
+				t.Errorf("%s: FROM %s is not name:tag@sha256:<digest>", f, img)
 			}
 		}
 		if froms == 0 {
@@ -507,5 +490,51 @@ func TestScheduledChecks(t *testing.T) {
 		if g[1] != want[1] {
 			t.Errorf("scheduled.yml runs govulncheck %s, the Makefile %s", g[1], want[1])
 		}
+	}
+}
+
+// unpinnedFroms counts the FROM lines of a Dockerfile that name an external image and returns the
+// images that are not pinned by tag and digest. A FROM of a stage defined earlier in the file (and
+// scratch) is not an external image.
+func unpinnedFroms(dockerfile string) (froms int, unpinned []string) {
+	stages := map[string]bool{"scratch": true}
+	for _, line := range strings.Split(dockerfile, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || !strings.EqualFold(fields[0], "FROM") {
+			continue
+		}
+		i := 1
+		for i < len(fields)-1 && strings.HasPrefix(fields[i], "--") {
+			i++
+		}
+		img := fields[i]
+		external := !stages[strings.ToLower(img)]
+		if len(fields) > i+2 && strings.EqualFold(fields[i+1], "AS") {
+			stages[strings.ToLower(fields[i+2])] = true
+		}
+		if !external {
+			continue
+		}
+		froms++
+		if !pinnedImageRE.MatchString(img) {
+			unpinned = append(unpinned, img)
+		}
+	}
+	return froms, unpinned
+}
+
+// TestUnpinnedFroms checks the helper of T-R93 on a multi-stage fragment: a stage name used by a
+// later FROM is not an image, an unpinned external image is reported, and the name of a stage is
+// case-insensitive.
+func TestUnpinnedFroms(t *testing.T) {
+	const digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+	pinned := "golang:1.26@" + digest
+	n, bad := unpinnedFroms("FROM " + pinned + " AS build\nRUN x\nFROM scratch\nFROM Build AS test\nFROM --platform=linux/amd64 " + pinned + "\nCOPY --from=build /a /a\n")
+	if n != 2 || len(bad) != 0 {
+		t.Errorf("a pinned multi-stage file: %d external FROM, unpinned %v", n, bad)
+	}
+	n, bad = unpinnedFroms("FROM alpine:3 AS base\nFROM base\nFROM debian\n")
+	if n != 2 || len(bad) != 2 || bad[0] != "alpine:3" || bad[1] != "debian" {
+		t.Errorf("an unpinned file: %d external FROM, unpinned %v", n, bad)
 	}
 }
