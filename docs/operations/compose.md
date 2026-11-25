@@ -1,6 +1,6 @@
 # Docker Compose reference
 
-A reference deployment of Pandokos with Docker Compose: one instance and PostgreSQL 16, both with
+A reference deployment of Pandokos with Docker Compose: one instance and PostgreSQL 18, both with
 TLS, on one host. It is the shortest way to see a streamed call to OpenAI and to Anthropic go through
 Pandokos with a tenant's own key, and to read the usage record it leaves. It is **not** a production
 deployment: one instance, no backups of the key-encryption key, a self-signed certificate and one host
@@ -154,10 +154,10 @@ docker compose -f compose.yaml -f observability/compose.yaml up -d --wait
 | Concern | Choice |
 |---|---|
 | Listeners | `0.0.0.0:8080` (inference) and `0.0.0.0:8081` (administration) inside the container, both with TLS from the generated certificate, published on `127.0.0.1` only. Do not set `allow_plaintext` |
-| Database | PostgreSQL 16, pinned by digest, on a network marked `internal` (no route out, not published); TLS on and `database.tls.mode: verify-full` with the generated certificate as the authority |
+| Database | PostgreSQL 18, pinned by digest, on a network marked `internal` (no route out, not published); TLS on and `database.tls.mode: verify-full` with the generated certificate as the authority |
 | Egress | `pandokos` is also on a second, ordinary network, to reach the providers; `migrate` and PostgreSQL are not |
 | Hardening | `read_only`, `cap_drop: [ALL]`, `no-new-privileges`, the image's user (65532); secrets are files under `/run/secrets`, never environment values |
-| State | the volumes `pgdata` (the database) and `cli` (the home of the image user, where the CLI writes keys) |
+| State | the volumes `pgdata` (the database, mounted at `/var/lib/postgresql` as the PostgreSQL 18 image wants) and `cli` (the home of the image user, where the CLI writes keys) |
 | Order | `migrate` after PostgreSQL is healthy; `pandokos` after `migrate` finished successfully |
 | Stop | `stop_grace_period: 45s`: the drain of 30 s plus the flush of the usage ledger |
 
@@ -175,7 +175,7 @@ expected `configuration warning` about the permissions of `vault.kek.local.key_f
   credentials in it. Keep the key apart from the database backup ([vault guide](vault.md)): the
   database without the key cannot be read, and the key without the database is useless. Losing the key
   loses every stored credential.
-- **Upgrade.** Use the new image (`PANDOKOS_IMAGE`) and run `docker compose up -d --wait`: `migrate`
+- **Upgrade.** From an installation that runs PostgreSQL 16, first [move the database to 18](#moving-an-installation-from-postgresql-16-to-18). Use the new image (`PANDOKOS_IMAGE`) and run `docker compose up -d --wait`: `migrate`
   runs first and `pandokos` starts after it.
 - **Stop.** `docker compose stop` drains requests and writes the ledger; `docker compose start` resumes.
 - **Remove everything.** `docker compose down -v` removes the containers and the volumes: the
@@ -192,3 +192,101 @@ exercised by CI (`go test -tags compose ./test/compose/`, which needs `PANDOKOS_
 ## Upgrading
 
 An installation moves to a newer version by stop, migrate, start: back up, `docker compose stop`, run `migrate` of the new image once, `docker compose up -d`. The procedure, the supported upgrades, the measured interval and the way back are in the [upgrade guide](upgrade.md).
+
+## Moving an installation from PostgreSQL 16 to 18
+
+Releases before v0.3.0 ran the reference deployment on PostgreSQL 16; this one runs it on 18. PostgreSQL 16 stays
+supported by Pandokos (the minimum is 16, [database guide](database.md)): the move is only for this reference
+deployment.
+
+> **Warning.** Do not pull the new `compose.yaml` and run `docker compose up` on an installation that has a
+> `pgdata` volume made by PostgreSQL 16. The data directory of one major version cannot be opened by another, and
+> the 18 image mounts the volume one level up (`/var/lib/postgresql`, not `/var/lib/postgresql/data`): it finds
+> the old data there, refuses to start (the log of `postgres` says so), and `docker compose up --wait` fails. Nothing is lost, because nothing is written; put
+> the old file back and the installation starts as it was. Do the steps below instead, in order, **with the
+> old `compose.yaml` still in place until step 4**.
+
+It is a logical dump with the 16 server and a restore into a new 18 server: the restore of a dump into a later
+major is the case the restore drill ran and verified, with both audit chains
+(`TestRestoreOnLaterMajor`, [drill record](restore-drill-2026-11.md); a physical backup cannot be restored on
+another major). The commands run in `deploy/compose`, and the dump and restore follow the
+[backup and restore guide](backup-and-restore.md) (steps 1.a, 4.2 and 4.6). Expect an interval without service
+that grows with the size of the database.
+
+1. **Keep the audit heads.** While the installation runs, record the head of every tenant's chain and of the
+   platform's, with their `seq` (the commands of the [audit guide](audit.md#7-anchoring-the-head-elsewhere); the
+   platform's chain with the bootstrap key of the quick start, a tenant's with the key of its administrator,
+   `demo-admin.key` for the tenant of the quick start):
+
+   ```sh
+   docker compose exec -e PANDOKOS_CLI_KEY_FILE=/home/nonroot/bootstrap.key pandokos /pandokos platform-audit head -o json
+   docker compose exec -e PANDOKOS_CLI_KEY_FILE=/home/nonroot/demo-admin.key pandokos /pandokos audit head --tenant <tenant ID> -o json
+   ```
+
+   Also keep `secrets/` (it is not touched by the move; `pandokos_kek` is still the key of the credentials) and
+   note the version of the Pandokos image.
+2. **Stop Pandokos and dump with the 16 server**, which keeps running:
+
+   ```sh
+   docker compose stop pandokos
+   docker compose exec -T postgres pg_dump -U postgres -d pandokos -Fc > pandokos-pg16.dump
+   docker compose exec -T postgres pg_restore -U postgres --list < pandokos-pg16.dump > /dev/null
+   ls -l pandokos-pg16.dump
+   ```
+
+   The dump is made by the superuser, in the custom format, as in step 1.a of the backup guide; the second command
+   reads it back as a check. Copy it off the host: it is your way back.
+3. **Remove the 16 server and its volume.** The volume is the one this deployment creates, `pandokos_pgdata`
+   (`docker volume ls` lists it). Once the dump is checked and kept:
+
+   ```sh
+   docker compose down
+   docker volume rm pandokos_pgdata
+   ```
+
+   `docker compose down` does not remove volumes; the `cli` volume (the CLI's keys) stays. To keep the old
+   volume too, copy it before removing it: `docker run --rm -v pandokos_pgdata:/from -v "$PWD":/to alpine tar czf
+   /to/pgdata-pg16.tar.gz -C /from .`.
+4. **Take the new files** (the new `compose.yaml` and, with it, the new image of Pandokos if you move to this
+   release at the same time; the migration of an upgrade is a separate, later step: [upgrade guide](upgrade.md)),
+   and start only the new database:
+
+   ```sh
+   docker compose up -d --wait postgres
+   ```
+
+   It creates a new, empty volume, and `initdb/10-pandokos.sh` runs once on it: the privilege roles with the
+   passwords of `secrets/`, and the empty database `pandokos` with its grants (the work of steps 4.1 and 4.2 of the
+   backup guide).
+5. **Restore** the dump into that database, stopping at the first error. Do not use `--data-only`,
+   `--disable-triggers`, `--no-owner` or `--no-acl` (step 4.2 of the backup guide says why):
+
+   ```sh
+   docker compose exec -T postgres pg_restore -U postgres -d pandokos --exit-on-error < pandokos-pg16.dump
+   ```
+
+6. **Start Pandokos.** The schema comes back as it was, so `migrate` has nothing to apply when the image is the same:
+
+   ```sh
+   docker compose up -d --wait
+   ```
+
+7. **Verify** as step 4.6 of the backup guide does: `curl --cacert secrets/tls_cert https://localhost:8080/readyz`
+   answers 200; `docker compose logs pandokos` has `vault ready` with the `kek_version` you had; and the chains
+   verify against the heads of step 1:
+
+   ```sh
+   docker compose exec -e PANDOKOS_CLI_KEY_FILE=/home/nonroot/demo-admin.key pandokos \
+     /pandokos audit export --tenant <tenant ID> --to-seq <seq kept with the head> --out /home/nonroot/tenant.ndjson
+   docker compose exec -e PANDOKOS_CLI_KEY_FILE=/home/nonroot/demo-admin.key pandokos \
+     /pandokos audit verify --tenant <tenant ID> --file /home/nonroot/tenant.ndjson --expect-head <hash kept outside>
+   docker compose exec -e PANDOKOS_CLI_KEY_FILE=/home/nonroot/bootstrap.key pandokos \
+     /pandokos platform-audit export --to-seq <seq kept with the head> --out /home/nonroot/platform.ndjson
+   docker compose exec -e PANDOKOS_CLI_KEY_FILE=/home/nonroot/bootstrap.key pandokos \
+     /pandokos platform-audit verify --file /home/nonroot/platform.ndjson --expect-head <hash kept outside>
+   ```
+
+   Then a call with a tenant's key reaches the provider and `pdk usage list` shows the records of before the move.
+
+**Going back** is the same with the old file: remove the 18 server and its volume, put the old `compose.yaml` back
+and restore the dump into a 16 server the same way (the dump of a 16 server restores into 16).

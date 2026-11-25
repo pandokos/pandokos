@@ -982,13 +982,14 @@ func TestLimitRuleIntegrity(t *testing.T) {
 
 		t.Run("a subject, a provider or a model that a rule names cannot be deleted", func(t *testing.T) {
 			// Referential checks ignore row-level security: the deletes also run in sessions that cannot see
-			// the rule. (PostgreSQL reports ON DELETE RESTRICT as foreign_key_violation, 23503; 23001 is what
-			// the deferred trigger of a revoked key raises.)
+			// the rule. (PostgreSQL 16 and 17 report ON DELETE RESTRICT as foreign_key_violation, 23503, and
+			// PostgreSQL 18 as restrict_violation, 23001, which is also what the deferred trigger of a revoked
+			// key raises.)
 			refused := func(what, constraint string, err error) {
 				t.Helper()
 				var pe *pgconn.PgError
-				if !errors.As(err, &pe) || pe.Code != foreignKey || pe.ConstraintName != constraint {
-					t.Errorf("%s: %v, want SQLSTATE %s on %s", what, err, foreignKey, constraint)
+				if !errors.As(err, &pe) || !deleteRefused(pe.Code) || pe.ConstraintName != constraint {
+					t.Errorf("%s: %v, want SQLSTATE %s or %s on %s", what, err, foreignKey, restrictViolation, constraint)
 				}
 			}
 			refused("delete the mapping", "limit_rule_subject_mapping_fkey", errOf(execIn(t, ad, sessA, `DELETE FROM pandokos.subject_mapping WHERE id = $1::uuid`, smA)))

@@ -387,8 +387,8 @@ func TestTenantPriceRules(t *testing.T) {
 		t.Run("a model with a version cannot be deleted, also from the platform scope", func(t *testing.T) {
 			for _, ac := range []actor{{"admin, platform scope", admin, platform}, {"superuser", super, platform}} {
 				_, err := execIn(t, ac.conn, ac.s, `DELETE FROM pandokos.model WHERE id = $1::uuid`, model)
-				if got := sqlstate(err); got != foreignKey && (ac.name == "superuser" || got != insufficientPrivilege) {
-					t.Errorf("%s: SQLSTATE %q (%v), want 23503 (the foreign key of the versions)", ac.name, got, err)
+				if got := sqlstate(err); !deleteRefused(got) && (ac.name == "superuser" || got != insufficientPrivilege) {
+					t.Errorf("%s: SQLSTATE %q (%v), want 23503 or 23001 (the foreign key of the versions)", ac.name, got, err)
 				}
 			}
 			if n := scalar(t, super, `SELECT count(*)::text FROM pandokos.model WHERE id = $1::uuid`, model); n != "1" {

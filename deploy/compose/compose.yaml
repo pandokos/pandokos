@@ -1,4 +1,4 @@
-# Pandokos reference deployment: one instance and PostgreSQL 16 (OPS-02). Prepare with ./setup.sh,
+# Pandokos reference deployment: one instance and PostgreSQL 18 (OPS-02). Prepare with ./setup.sh,
 # then docker compose up -d --wait. Guide: docs/operations/compose.md.
 name: pandokos
 
@@ -10,7 +10,7 @@ x-database: &database
 
 services:
   postgres:
-    image: postgres:16-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139
+    image: postgres:18-alpine@sha256:0115267ab5a509022df9319c77be365cef335adb71556c75f60f5360ee247e71
     entrypoint:
       - sh
       - -c
@@ -26,7 +26,9 @@ services:
       POSTGRES_PASSWORD_FILE: /run/secrets/db_superuser
     secrets: [db_superuser, db_owner, db_gateway, db_admin, db_worker, tls_cert, tls_key]
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # PostgreSQL 18 images keep the cluster in /var/lib/postgresql/18/docker: mount the parent, not data.
+      # A pgdata volume made by PostgreSQL 16 does not start: docs/operations/compose.md#moving-an-installation-from-postgresql-16-to-18
+      - pgdata:/var/lib/postgresql
       - ./initdb:/docker-entrypoint-initdb.d:ro
       - ../postgres/roles.sql:/pandokos/roles.sql:ro
     networks: [database]

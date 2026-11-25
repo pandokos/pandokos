@@ -1145,8 +1145,8 @@ func TestDeletePlatformIssuerLimitRules(t *testing.T) {
 
 		t.Run("an issuer with a rule that stays cannot be deleted; without one it can", func(t *testing.T) {
 			// The other issuer's rule in A was not part of the calls above: the issuer cannot go.
-			if _, err := execIn(t, d.Connect(t, "admin"), platform, `DELETE FROM pandokos.platform_issuer WHERE id = $1::uuid`, other); sqlstate(err) != foreignKey {
-				t.Errorf("delete of an issuer whose mapping has a rule: %v, want SQLSTATE %s", err, foreignKey)
+			if _, err := execIn(t, d.Connect(t, "admin"), platform, `DELETE FROM pandokos.platform_issuer WHERE id = $1::uuid`, other); !deleteRefused(sqlstate(err)) {
+				t.Errorf("delete of an issuer whose mapping has a rule: %v, want SQLSTATE %s or %s", err, foreignKey, restrictViolation)
 			}
 			n, err := call(platform, "admin", other, []string{a.String()})
 			if err != nil || n != 1 {
@@ -1156,8 +1156,8 @@ func TestDeletePlatformIssuerLimitRules(t *testing.T) {
 				t.Errorf("delete of the issuer after its rules went: %v", err)
 			}
 			// A tenant that is not named keeps its rule, which keeps its mapping (and so the issuer).
-			if _, err := execIn(t, d.Connect(t, "admin"), platform, `DELETE FROM pandokos.platform_issuer WHERE id = $1::uuid`, pi); sqlstate(err) != foreignKey {
-				t.Errorf("delete of the issuer while C's rule stays: %v, want SQLSTATE %s", err, foreignKey)
+			if _, err := execIn(t, d.Connect(t, "admin"), platform, `DELETE FROM pandokos.platform_issuer WHERE id = $1::uuid`, pi); !deleteRefused(sqlstate(err)) {
+				t.Errorf("delete of the issuer while C's rule stays: %v, want SQLSTATE %s or %s", err, foreignKey, restrictViolation)
 			}
 			if n, err := call(platform, "admin", pi, nil); err != nil || n != 0 {
 				t.Errorf("no tenant named: %d %v", n, err)

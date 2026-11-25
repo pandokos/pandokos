@@ -22,6 +22,11 @@ const (
 	invalidText           = "22P02"
 )
 
+// deleteRefused reports whether code is the SQLSTATE of a delete that an ON DELETE RESTRICT foreign key
+// refuses: PostgreSQL 16 and 17 raise foreign_key_violation (23503) and PostgreSQL 18 raises
+// restrict_violation (23001) for it. The tests run on both (job "test (pg18)").
+func deleteRefused(code string) bool { return code == foreignKey || code == restrictViolation }
+
 var runtimeRoles = []string{"gateway", "admin", "worker"}
 
 // sqlstate returns the SQLSTATE of err, or "" when err is nil or not a database error.
