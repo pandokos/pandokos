@@ -420,7 +420,7 @@ func TestTokenIssuerOutage(t *testing.T) {
 // from the list each refuse the next call within the bounds of section 5.6: with notifications, and through
 // PgBouncer in transaction mode without the direct address, within cache.principal_ttl.
 func TestTokenRevocation(t *testing.T) {
-	t.Parallel()
+	// Serial on purpose: each change must refuse the next call within 2 s, or 2.5 s through the pooler, plus 500 ms, a wall-clock window that a loaded machine misses.
 	cases := []struct {
 		name     string
 		setup    func(t *testing.T) (*dbtest.Database, []string)

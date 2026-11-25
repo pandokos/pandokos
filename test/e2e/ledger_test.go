@@ -332,7 +332,7 @@ func tenantOfKey(t *testing.T, p *proc) string {
 
 // TestLedgerAtShutdown is T-510.
 func TestLedgerAtShutdown(t *testing.T) {
-	t.Parallel()
+	// Serial on purpose: the process must exit within the drain and the flush timeout plus 1 s, a wall-clock window that a loaded machine misses.
 	t.Run("streams in flight at SIGTERM leave a row each", func(t *testing.T) {
 		up := fakeprovider.New(t)
 		p := startBinary(t, opts{level: "info", up: up})

@@ -358,7 +358,7 @@ func TestMoveBetweenProviders(t *testing.T) {
 // TestTransitOutage is T-1084, an exit test of the sprint (serves nothing, recovers alone): the
 // service away while running, a restart during the outage and its recovery.
 func TestTransitOutage(t *testing.T) {
-	t.Parallel()
+	// Serial on purpose: a tenant is served from a cache of 1 s after the service stops, and a refusal must come within 3 s, a wall-clock window that a loaded machine misses.
 	up := fakeprovider.New(t)
 	d := freshDB(t)
 	w := newTransitWorld(t, vaulttest.TransitSetup{})

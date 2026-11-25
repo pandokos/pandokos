@@ -1358,7 +1358,7 @@ func TestExitScenario(t *testing.T) {
 
 // TestRevocationAndSuspensionEndToEnd is T-291.
 func TestRevocationAndSuspensionEndToEnd(t *testing.T) {
-	t.Parallel()
+	// Serial on purpose: each change must take effect within its bound plus 500 ms, a wall-clock window that a loaded machine misses.
 	cases := []struct {
 		name     string
 		setup    func(t *testing.T) (*dbtest.Database, []string)

@@ -453,7 +453,7 @@ func TestMetricsOverOTLP(t *testing.T) {
 // taking at most three times the first plus 500 ms; the scrapes keep working; and the process exits 0
 // within ledger.shutdown_flush_timeout plus 5 s.
 func TestCollectorStoppedLatencyUnchanged(t *testing.T) {
-	t.Parallel()
+	// Serial on purpose: it compares the time of 20 calls measured before and after the collector goes away, and bounds the exit, a wall-clock window that a loaded machine misses.
 	for _, mode := range []string{"closed", "stalled"} {
 		t.Run(mode, func(t *testing.T) {
 			up := fakeprovider.New(t)

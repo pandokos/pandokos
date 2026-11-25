@@ -74,7 +74,7 @@ func assertLimitHeaders(t *testing.T, what, text string, limit int) {
 
 // TestRateLimit is T-643: the binary, both families.
 func TestRateLimit(t *testing.T) {
-	t.Parallel()
+	// Serial on purpose: a raised limit must admit within 2 s of the change, a wall-clock window that a loaded machine misses.
 	p, _, boot := limitsProc(t, "info")
 
 	t.Run("openai: the sixth call of five is the 429, the ledger has six rows, a raised limit admits within 2 s", func(t *testing.T) {
@@ -294,7 +294,7 @@ func (p *proc) priceFake(t *testing.T, boot, provider string) {
 // the process is stopped and started and the next call is refused at once; raising the budget with
 // the CLI admits the next call within 2 s; the audit log holds the two changes.
 func TestMonthlyBudget(t *testing.T) {
-	t.Parallel()
+	// Serial on purpose: a raised budget must admit within 2 s of the change, a wall-clock window that a loaded machine misses.
 	p, up, boot := limitsProc(t, "info")
 	p.priceFake(t, boot, "openai")
 	tn := p.newLimitsTenant(t, boot, "budget")

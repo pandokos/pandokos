@@ -106,7 +106,7 @@ func (p *proc) waitStatus(t *testing.T, key string, want int) {
 
 // TestGatewayExitScenario is T-451: the exit scenario of the epic on the built binary.
 func TestGatewayExitScenario(t *testing.T) {
-	t.Parallel()
+	// Serial on purpose: a suspended tenant must be refused within 3 s of the command, a wall-clock window that a loaded machine misses.
 	up := fakeprovider.New(t)
 	p := startBinary(t, opts{level: "info", up: up})
 	boot := p.bootstrap(t)
