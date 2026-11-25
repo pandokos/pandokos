@@ -99,6 +99,10 @@ func PrepareRequest(body []byte) (out []byte, stream, strip bool) {
 	if err != nil {
 		return body, false, false
 	}
+	if memberCaseConflict(body, members) {
+		sm, ok := family.LastMember(members, memberStream)
+		return body, ok && bytes.Equal(body[sm.Start:sm.End], []byte("true")), false
+	}
 	e, stream := usageEdit(body, members, closeIdx)
 	if e == nil {
 		return body, stream, false
