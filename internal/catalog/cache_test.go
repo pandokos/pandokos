@@ -86,6 +86,7 @@ func newTestCache(t *testing.T, ttl time.Duration) (*Cache, *fakeLoader, *clock)
 
 // TestCache is T-380: the gateway cache over an injected clock and a fake loader.
 func TestCache(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	a, b := tid(1), tid(2)
 

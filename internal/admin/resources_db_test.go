@@ -31,6 +31,7 @@ func me(t *testing.T, a *apitest.API, key string) *adminapi.Me {
 
 // TestTenants is T-236.
 func TestTenants(t *testing.T) {
+	t.Parallel()
 	api := apitest.New(t)
 	plat := api.Client(api.PlatformKey())
 	soon := time.Now().Add(3 * time.Hour).UTC().Truncate(time.Second)
@@ -184,6 +185,7 @@ func TestTenants(t *testing.T) {
 
 // TestServiceAccounts is T-237.
 func TestServiceAccounts(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t, "accounts")
 	c := w.api.Client(w.adminKey)
 	t0 := time.Now().UTC().Truncate(time.Second)
@@ -309,6 +311,7 @@ func isPrivilegeError(err error) bool { return err != nil && store.SQLState(err)
 
 // TestVirtualKeys is T-238.
 func TestVirtualKeys(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t, "keys")
 	c := w.api.Client(w.adminKey)
 
@@ -486,6 +489,7 @@ func decodeSecret(t *testing.T, key string) []byte {
 
 // TestPlatformKeys is T-239.
 func TestPlatformKeys(t *testing.T) {
+	t.Parallel()
 	api := apitest.New(t)
 	boot := api.PlatformKey()
 	c := api.Client(boot)
@@ -577,6 +581,7 @@ func mustJSON(t *testing.T, v any) string {
 
 // TestSuspensionBlocksAdministration is T-264.
 func TestSuspensionBlocksAdministration(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t, "suspended-admin")
 	if _, err := w.api.SuspendTenant(t, w.platform, w.tenant.ID); err != nil {
 		t.Fatal(err)
@@ -628,6 +633,7 @@ func authenticated(api *apitest.API, t *testing.T, key string) bool {
 // TestTenantShowsActiveCurrency is T-761: getTenant and listTenants show the three members of the active
 // currency; createTenant and updateTenant refuse a currency member (400).
 func TestTenantShowsActiveCurrency(t *testing.T) {
+	t.Parallel()
 	api := apitest.New(t)
 	ten, _ := api.Tenant(t, "shows-currency")
 	id, err := tenant.ParseID(ten.ID)

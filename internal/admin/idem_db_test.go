@@ -66,6 +66,7 @@ func auditCount(w *world) int {
 
 // TestIdempotencyEveryCreate is T-819.
 func TestIdempotencyEveryCreate(t *testing.T) {
+	t.Parallel()
 	w := &world{api: apitest.NewPeople(t, apitest.PeopleConfig{})}
 	w.fill(t, "idem")
 	n := 0
@@ -139,6 +140,7 @@ func TestIdempotencyEveryCreate(t *testing.T) {
 
 // TestIdempotencyFailures is T-820.
 func TestIdempotencyFailures(t *testing.T) {
+	t.Parallel()
 	p := newPeople(t, apitest.PeopleConfig{})
 	d := p.d
 	rows := func() int { return d.Count(t, "SELECT count(*) FROM pandokos.idempotency_key") }
@@ -215,6 +217,7 @@ func TestIdempotencyFailures(t *testing.T) {
 
 // TestIdempotencyStoresNoSecret is T-821.
 func TestIdempotencyStoresNoSecret(t *testing.T) {
+	t.Parallel()
 	w := &world{api: apitest.NewPeople(t, apitest.PeopleConfig{})}
 	w.fill(t, "nosecret")
 	canary := apitest.Canary("body")

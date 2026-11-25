@@ -37,6 +37,7 @@ func monthEnd(t *testing.T, zone string, now time.Time) time.Time {
 // TestTenantTimeZone is T-717: the routes of both scopes, the change rule of section 5.7, the audit
 // rows and the notification of the rule cache.
 func TestTenantTimeZone(t *testing.T) {
+	t.Parallel()
 	w := newIW(t)
 	api := w.api
 	path := "/v1/tenants/" + w.a.ID + "/time-zone"
@@ -283,6 +284,7 @@ func TestTenantTimeZone(t *testing.T) {
 // inference key, to a key scoped without it and to a platform key; updateTenant with a zone needs
 // tenant:write.
 func TestTimeZonePermissions(t *testing.T) {
+	t.Parallel()
 	w := newIW(t)
 	api := w.api
 	path := "/v1/tenants/" + w.a.ID + "/time-zone"

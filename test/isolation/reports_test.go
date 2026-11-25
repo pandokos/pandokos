@@ -20,6 +20,7 @@ import (
 // read or change B's rollup; the gateway has no privilege on the rollup; the admin role reads it and
 // cannot write it.
 func TestRollupAccessMatrix(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a, b := d.SeedTenant(t, "rollup-a"), d.SeedTenant(t, "rollup-b")
 	super := d.Super(t)
@@ -108,6 +109,7 @@ func partitionNames(t *testing.T, super *pgx.Conn) []string {
 // default-partition rows and rollup rows before the cut, in that tenant's session, and writes
 // usage.retention in that tenant's log.
 func TestUsageRetention(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a, b := d.SeedTenant(t, "usage-a"), d.SeedTenant(t, "usage-b")
 	super := d.Super(t)
@@ -263,6 +265,7 @@ func TestUsageRetention(t *testing.T) {
 // run from the fixture in Spec): the check refuses 65 keys and a key of the wrong format; one row per
 // tenant; a change notifies catalog:<tenant>.
 func TestMetadataKeyPolicyTable(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a, b := d.SeedTenant(t, "keys-a"), d.SeedTenant(t, "keys-b")
 	admin := d.Connect(t, "admin")

@@ -69,6 +69,7 @@ func arrangeCatalogue(t *testing.T, super *pgx.Conn, a, b tenant.ID) {
 // is written. The expectations are the matrix of section 5.1 and the verified matrix of section
 // 12, written here; none is derived from the catalogue of the database.
 func TestCatalogPolicies(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a, b := d.SeedTenant(t, "tenant-a"), d.SeedTenant(t, "tenant-b")
 	super := d.Super(t)
@@ -392,6 +393,7 @@ func TestCatalogPolicies(t *testing.T) {
 // TestPriceGuards is T-392: the guards of the migration, as seen by the roles that can reach
 // them and by the owner of the data (a superuser, who bypasses privileges and row-level security).
 func TestPriceGuards(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a := d.SeedTenant(t, "tenant-a")
 	super := d.Super(t)

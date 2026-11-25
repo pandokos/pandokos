@@ -15,6 +15,7 @@ import (
 
 // TestTenantTablePolicies is T-145: the visibility table of sprint.md section 5.6.
 func TestTenantTablePolicies(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		a := d.SeedTenant(t, "tenant-a")
 		d.SeedTenant(t, "tenant-b")
@@ -110,6 +111,7 @@ func walk(to tenant.State) []tenant.State {
 
 // TestTenantLifecycle is T-146: the database and tenant.CanTransition agree on all 25 pairs.
 func TestTenantLifecycle(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	super := d.Super(t)
 	n := 0
@@ -280,6 +282,7 @@ func notifications(conn *pgx.Conn, quiet time.Duration) []string {
 // that would move a boundary that has not been reached; the platform scope changes any tenant; the
 // gateway and worker roles cannot; a change notifies limits:<tenant>.
 func TestTenantTimeZonePolicies(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		super := d.Super(t)
 		a, b := d.SeedTenant(t, "zone-a"), d.SeedTenant(t, "zone-b")
@@ -454,6 +457,7 @@ func TestTenantTimeZonePolicies(t *testing.T) {
 // instant, a wrong previous currency); the format; a tenant is created with the default; the two
 // notifications.
 func TestActiveCurrencyPolicies(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		super := d.Super(t)
 		a, b := d.SeedTenant(t, "cur-a"), d.SeedTenant(t, "cur-b")

@@ -106,6 +106,7 @@ func problemWith(t *testing.T, r *apitest.Response, status int, code adminapi.Pr
 
 // TestCredentialLifecycle is T-340.
 func TestCredentialLifecycle(t *testing.T) {
+	t.Parallel()
 	w := newCW(t, "lifecycle")
 	other := newCWOn(t, w.api, "lifecycle-other")
 	exp := time.Now().Add(48 * time.Hour).UTC().Truncate(time.Second)
@@ -589,6 +590,7 @@ func parseURL(t *testing.T, s string) *url.URL {
 // TestNoResponseHoldsASecret is T-341: every response of every credential operation, success and
 // each error, holds neither the canary nor the sealed bytes of the database.
 func TestNoResponseHoldsASecret(t *testing.T) {
+	t.Parallel()
 	fake := fakeprovider.New(t)
 	fake.Accept() // nothing is accepted: the provider answers 401 and echoes the key
 	w := newCW(t, "no-secret", withValidator(t, 2*time.Second))

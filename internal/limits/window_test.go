@@ -7,6 +7,7 @@ import (
 
 // TestWindow is T-610.
 func TestWindow(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
 
 	t.Run("an amount is counted for at least 60 s and less than 61 s at every sub-second offset", func(t *testing.T) {

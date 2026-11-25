@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -70,6 +71,13 @@ func ident(parts ...string) string { return pgx.Identifier(parts).Sanitize() }
 // It fails or skips the test according to the gate.
 func New(tb testing.TB) *Database {
 	tb.Helper()
+	return create(tb, false)
+}
+
+// create is New; with migrated it copies the database from the template that holds the schema of
+// every embedded migration (see template.go) instead of leaving it empty.
+func create(tb testing.TB, migrated bool) *Database {
+	tb.Helper()
 	switch act, msg := gate(EnvDatabaseURL, EnvNoDatabase, os.Getenv(EnvDatabaseURL), os.Getenv(EnvNoDatabase), os.Getenv("CI")); act {
 	case skip:
 		tb.Skip(msg)
@@ -101,8 +109,12 @@ func New(tb testing.TB) *Database {
 	}
 
 	name := "pdk_t_" + randHex(tb, 4)
+	createDB := "CREATE DATABASE " + ident(name) + " OWNER pandokos_owner"
+	if migrated {
+		createDB += " TEMPLATE " + ident(migratedTemplate(tb, cfg, string(rolesSQL)))
+	}
 	for _, q := range []string{
-		"CREATE DATABASE " + ident(name) + " OWNER pandokos_owner",
+		createDB,
 		"REVOKE ALL ON DATABASE " + ident(name) + " FROM PUBLIC",
 		"GRANT CONNECT ON DATABASE " + ident(name) + " TO pandokos_gateway, pandokos_admin, pandokos_worker",
 	} {
@@ -150,21 +162,32 @@ func New(tb testing.TB) *Database {
 	return d
 }
 
-// NewMigrated is New followed by Migrate.
+// NewMigrated is New followed by Migrate. The schema is not built by running the migrations in
+// every test: the database is a copy of a template database that holds the schema of the embedded
+// migrations (CREATE DATABASE ... TEMPLATE, see template.go); Migrate then finds nothing pending,
+// checks the ledger against the embedded migrations, and activates the key of the database.
 func NewMigrated(tb testing.TB) *Database {
 	tb.Helper()
-	d := New(tb)
+	d := create(tb, true)
 	d.Migrate(tb)
 	return d
 }
 
+// loadedMigrations holds the embedded migrations, parsed once per test process: parsing them takes
+// regular expressions over every file, which is slow under the race detector, and every Open asks.
+var loadedMigrations struct {
+	once sync.Once
+	ms   []migrate.Migration
+	err  error
+}
+
 func embedded(tb testing.TB) []migrate.Migration {
 	tb.Helper()
-	ms, err := migrations.Load()
-	if err != nil {
-		tb.Fatal(err)
+	loadedMigrations.once.Do(func() { loadedMigrations.ms, loadedMigrations.err = migrations.Load() })
+	if loadedMigrations.err != nil {
+		tb.Fatal(loadedMigrations.err)
 	}
-	return ms
+	return slices.Clone(loadedMigrations.ms) // a caller may reslice or reorder its own copy
 }
 
 // Migrate applies the embedded migrations with the owner user (store.Migrate) and activates the
@@ -240,7 +263,7 @@ func EachMode(t *testing.T, fn func(t *testing.T, d *Database)) {
 		fn(t, NewMigrated(t))
 	})
 	t.Run("pooler", func(t *testing.T) {
-		d := New(t)
+		d := create(t, true)
 		p := d.Pooled(t)
 		d.Migrate(t)
 		fn(t, p)
@@ -358,6 +381,24 @@ func (d *Database) Super(tb testing.TB) *pgx.Conn {
 	cfg := d.s.admin.Copy()
 	cfg.Database = d.Name
 	return d.connect(tb, cfg)
+}
+
+// WithSuper calls fn with a superuser connection to this database (always direct) and closes the
+// connection when fn returns. Super keeps its connection until the test ends, which is too long
+// for a helper that a test calls in a polling loop: thousands of calls would hold thousands of
+// connections of a server that has a few hundred.
+func (d *Database) WithSuper(tb testing.TB, fn func(ctx context.Context, c *pgx.Conn)) {
+	tb.Helper()
+	ctx, cancel := ctx30()
+	defer cancel()
+	cfg := d.s.admin.Copy()
+	cfg.Database = d.Name
+	conn, err := pgx.ConnectConfig(ctx, cfg)
+	if err != nil {
+		tb.Fatalf("connect as %s: %v", cfg.User, err)
+	}
+	defer func() { _ = conn.Close(ctx) }()
+	fn(ctx, conn)
 }
 
 // CreateLogin creates one more login user "<database>_<suffix>" with the given attribute

@@ -36,6 +36,7 @@ func failedRedirect(h apitest.Hop, post, reason string) bool {
 
 // TestOidcSignIn is T-814.
 func TestOidcSignIn(t *testing.T) {
+	t.Parallel()
 	api, o := apitest.NewPeopleOIDC(t, apitest.PeopleConfig{}, apitest.OIDCConfig{Users: idpPeople})
 	p := peopleOn(t, api)
 	d := p.d
@@ -152,6 +153,7 @@ func TestOidcSignIn(t *testing.T) {
 
 // TestGroupReconciliation is T-815.
 func TestGroupReconciliation(t *testing.T) {
+	t.Parallel()
 	var captured admin.Options
 	api, o := apitest.NewPeopleOIDC(t,
 		apitest.PeopleConfig{Admin: func(a *admin.Options) { captured = *a }},
@@ -287,6 +289,7 @@ func TestGroupReconciliation(t *testing.T) {
 
 // TestAutoProvision is T-816.
 func TestAutoProvision(t *testing.T) {
+	t.Parallel()
 	mappings := []string{"platform:platform-admin=admins"}
 	t.Run("on", func(t *testing.T) {
 		api, o := apitest.NewPeopleOIDC(t, apitest.PeopleConfig{}, apitest.OIDCConfig{Users: idpPeople, Mappings: mappings, AutoProvision: true})
@@ -353,6 +356,7 @@ func TestAutoProvision(t *testing.T) {
 
 // TestOidcRateBound is T-817: the table of sign-in transactions is bounded.
 func TestOidcRateBound(t *testing.T) {
+	t.Parallel()
 	api, o := apitest.NewPeopleOIDC(t, apitest.PeopleConfig{}, apitest.OIDCConfig{Users: idpPeople})
 	d := api.DB
 	if _, err := d.Super(t).Exec(ctx(t), `INSERT INTO pandokos.oidc_login (state_hash, created_at, expires_at)

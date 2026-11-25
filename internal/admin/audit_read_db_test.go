@@ -104,6 +104,7 @@ func auditWorld(t *testing.T) (w *pw, supportAction string) {
 // to its filters; the rows written under a support action; the failures of both listeners with
 // their listener; every member of the schema present.
 func TestListAuditEvents(t *testing.T) {
+	t.Parallel()
 	w, support := auditWorld(t)
 	path := auditPath(w.a)
 	all := auditPages(t, w, w.ka, path, "")
@@ -260,6 +261,7 @@ func TestListAuditEvents(t *testing.T) {
 // currency is withheld from a reader without price_list:read, with its digest, so that the chain
 // still verifies.
 func TestAuditDetailWithheld(t *testing.T) {
+	t.Parallel()
 	w, _ := auditWorld(t)
 	path := auditPath(w.a)
 	withheldActions := []string{"tenant_price.create", "tenant_price.delete", "tenant.active_currency_update"}
@@ -364,6 +366,7 @@ func TestAuditDetailWithheld(t *testing.T) {
 // TestAuditHead is T-946: the head equals the last row; after retention the anchor is the first row
 // kept and the hash of the last row removed.
 func TestAuditHead(t *testing.T) {
+	t.Parallel()
 	w, _ := auditWorld(t)
 	path := "/v1/tenants/" + w.a.ID + "/audit-head"
 	head := decodeInto[adminapi.AuditHead](t, w.do(t, w.ka, "GET", path, nil), 200)

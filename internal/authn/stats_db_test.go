@@ -23,6 +23,7 @@ func attempts(a *authn.Authenticator) map[string]int64 {
 // unavailable database are counted by kind, result and reason; one count per call; the snapshot
 // holds no key, tenant, issuer or subject value.
 func TestStats(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	r := newTokenRig(t, d, 0)
 	f := newFixture(t, d, "stats")

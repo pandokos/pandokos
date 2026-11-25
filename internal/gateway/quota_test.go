@@ -89,6 +89,7 @@ func quotaRefusal(metric string) gateway.LimitRefusal {
 // TestQuotaExceeded is T-665: the 429 quota_exceeded of section 5.8, for both families and each of
 // the six period metrics, with every header at its exact value.
 func TestQuotaExceeded(t *testing.T) {
+	t.Parallel()
 	type want struct {
 		limit, remaining, currency string // "" currency: the header is absent
 	}
@@ -213,6 +214,7 @@ func limitsOf(t *testing.T, r *limitstest.Real, o limitstest.Options, provider, 
 
 // TestNoPrice is T-666: a budget applies and the model has no price it can be measured with.
 func TestNoPrice(t *testing.T) {
+	t.Parallel()
 	for _, f := range limFamilies() {
 		unpriced := func(h *harness) {
 			tgt := h.targets[f.provider+"/fake-basic"]
@@ -303,6 +305,7 @@ func TestNoPrice(t *testing.T) {
 // TestDayInZone is T-674: a daily quota in Europe/Rome resets at local midnight, on a day of 23
 // hours and on a day of 25, and Retry-After is the time to that instant.
 func TestDayInZone(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name       string
 		start      time.Time // the clock, UTC

@@ -45,6 +45,7 @@ func count(t *testing.T, d *dbtest.Database, query string, args ...any) int {
 // empty database; the CLI makes a provider, a model and a grant; a file import that changes one
 // price adds one version and its audit rows; a restart skips the import it must not repeat.
 func TestCatalogue(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	d := dbtest.New(t)
 	importAtStart := []string{"PANDOKOS_PRICING_IMPORT_AT_START=true"}
@@ -216,6 +217,7 @@ func TestCatalogue(t *testing.T) {
 // the child trusts through SSL_CERT_FILE; a failing server is logged with its class and the
 // process stays ready.
 func TestPriceRefresh(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	ca := testutil.SSLCertFile(t)
 	// The download is a public one, made by the egress guard: it refuses a loopback address, so

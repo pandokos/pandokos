@@ -39,6 +39,7 @@ func provider(t testing.TB, raw []byte) *vault.LocalProvider {
 // TestLocalProvider is T-300: the key file, the version identifier, wrap and unwrap, and every
 // way an unwrap must fail.
 func TestLocalProvider(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	t.Run("GenerateLocalKey makes a line of 44 characters that decodes to 32 bytes", func(t *testing.T) {

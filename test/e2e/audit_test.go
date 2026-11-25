@@ -88,6 +88,7 @@ func (w *auditWorld) seqs(t *testing.T, scope string) []int {
 // touched verifies; each way of changing it with write access to the tables is found, and the first
 // broken sequence number and its reason are named; the same for the platform's log.
 func TestAuditVerifyDetectsTampering(t *testing.T) {
+	t.Parallel()
 	w := newAuditWorld(t)
 	p := w.p
 	d := p.db
@@ -200,6 +201,7 @@ func TestAuditVerifyDetectsTampering(t *testing.T) {
 // interventions and the close, the authentication failures of both listeners are listed, and an
 // export verifies offline.
 func TestAuditReadEndToEnd(t *testing.T) {
+	t.Parallel()
 	w := newAuditWorld(t)
 	p := w.p
 	out := p.mustCLI(t, w.ops, "tenant-support", "open", "--tenant", w.tenant, "--reason", "e2e support", "--permission", "service_account:write", "--permission", "service_account:read")

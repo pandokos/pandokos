@@ -12,6 +12,7 @@ import (
 // TestSubjectMappings is T-589 (the mappings): creation for both kinds of registration, each rule
 // with its field, what a mapping may name, the conflicts, pagination, filters, delete.
 func TestSubjectMappings(t *testing.T) {
+	t.Parallel()
 	w := newIW(t)
 	base := "/v1/tenants/" + w.a.ID + "/subject-mappings"
 	ti := decodeInto[adminapi.TokenIssuer](t, w.do(t, w.ka, "POST", "/v1/tenants/"+w.a.ID+"/token-issuers", uniqueIssuer(nil)), 201)

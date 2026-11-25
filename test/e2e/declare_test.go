@@ -68,6 +68,7 @@ func heads(t *testing.T, p *proc) string {
 // the document of the tenant applied to a second, empty tenant creates it, and the export of the
 // second equals the first.
 func TestExportApplyRoundTrip(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	p := startBinary(t, opts{level: "info", up: up})
 	boot := p.bootstrap(t)

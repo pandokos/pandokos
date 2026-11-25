@@ -96,6 +96,7 @@ func sameCosts(t *testing.T, what string, got map[string]*big.Rat, want map[stri
 // unknown tenant's; B's viewer sees only B's; a platform key gets 403; the answer is the same before
 // and after the rollup caught up.
 func TestReportLastMonthByModel(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	p := startBinary(t, opts{level: "info", up: up, rollupInterval: "10s"})
 	boot := p.bootstrap(t)
@@ -176,6 +177,7 @@ func TestReportLastMonthByModel(t *testing.T) {
 // TestExportsHoldNoForeignData is T-959: what tenant A can read and export holds nothing of tenant
 // B, and the platform's document holds no tenant secret and no usage figure.
 func TestExportsHoldNoForeignData(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	p := startBinary(t, opts{level: "info", up: up})
 	boot := p.bootstrap(t)
@@ -243,9 +245,9 @@ func TestExportsHoldNoForeignData(t *testing.T) {
 // partitions are gone, the logs say so, both chains verify, a report of the dropped months is empty and
 // the log of the process says retention applied.
 func TestRetentionEndToEnd(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
-	d := dbtest.New(t)
-	d.Migrate(t)
+	d := dbtest.NewMigrated(t)
 	first := startBinary(t, opts{level: "info", up: up, db: d})
 	boot := first.bootstrap(t)
 	idT, admin := first.newTenant(t, boot, "retained")

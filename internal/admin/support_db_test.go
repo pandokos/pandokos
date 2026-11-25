@@ -68,6 +68,7 @@ func tenantOps() []adminapi.Operation {
 
 // TestSupportOpen is T-870.
 func TestSupportOpen(t *testing.T) {
+	t.Parallel()
 	w := newSW(t)
 	reasonOf := func() string { return apitest.Reason("recover") }
 	valid := []string{authz.MemberRead, authz.ServiceAccountRead}
@@ -307,6 +308,7 @@ func TestSupportOpen(t *testing.T) {
 
 // TestSupportPrincipal is T-871.
 func TestSupportPrincipal(t *testing.T) {
+	t.Parallel()
 	w := newSW(t)
 	otherTenant, _ := w.api.Tenant(t, "support-other")
 	p := probeParams(t, w.api, w.tenant.ID)
@@ -519,6 +521,7 @@ func mustOp(t testing.TB, id string) adminapi.Operation {
 // TestSupportNeverReadsUsage is T-872, the exit condition: no support action reaches usage, limits,
 // prices, credentials, models, issuers, mappings or the settings of a tenant.
 func TestSupportNeverReadsUsage(t *testing.T) {
+	t.Parallel()
 	w := newSW(t)
 	p := probeParams(t, w.api, w.tenant.ID)
 	forbidden := map[string]bool{}
@@ -635,6 +638,7 @@ func resourceOf(permission string) string { return permission[:strings.IndexByte
 
 // TestSupportAudit is T-873.
 func TestSupportAudit(t *testing.T) {
+	t.Parallel()
 	w := newSW(t)
 	action := w.open(t, w.key, apitest.Reason("audit"), []string{authz.ServiceAccountRead, authz.ServiceAccountWrite, authz.MemberRead, authz.MemberWrite, authz.VirtualKeyWrite, authz.RoleWrite, authz.RoleRead}, nil)
 	// A write of the tenant's own principal has no action ID.
@@ -749,6 +753,7 @@ func TestSupportAudit(t *testing.T) {
 // TestSupportRecovery is T-874: a tenant that lost its administrators is recovered by the platform
 // under a support action, and its own log tells how.
 func TestSupportRecovery(t *testing.T) {
+	t.Parallel()
 	for _, route := range []string{"a key for the owner's account", "a member that is an owner"} {
 		t.Run(route, func(t *testing.T) {
 			w := newSW(t)

@@ -15,6 +15,7 @@ import (
 // TestKEKVersions is T-999: the list of the versions of the key-encryption key during and after a
 // rotation, with what each still holds up: the backups of deleted tenants.
 func TestKEKVersions(t *testing.T) {
+	t.Parallel()
 	api := apitest.NewPeople(t, apitest.PeopleConfig{})
 	plat := api.PlatformCaller()
 	auditor, _ := api.PlatformAs(t, authz.RolePlatformAuditor)

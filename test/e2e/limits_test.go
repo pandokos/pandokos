@@ -74,6 +74,7 @@ func assertLimitHeaders(t *testing.T, what, text string, limit int) {
 
 // TestRateLimit is T-643: the binary, both families.
 func TestRateLimit(t *testing.T) {
+	t.Parallel()
 	p, _, boot := limitsProc(t, "info")
 
 	t.Run("openai: the sixth call of five is the 429, the ledger has six rows, a raised limit admits within 2 s", func(t *testing.T) {
@@ -155,6 +156,7 @@ func TestRateLimit(t *testing.T) {
 
 // TestLimitsPerTenant is T-644.
 func TestLimitsPerTenant(t *testing.T) {
+	t.Parallel()
 	p, _, boot := limitsProc(t, "info")
 	admitted := func(t *testing.T, tn limitsTenant, n int) int {
 		t.Helper()
@@ -214,6 +216,7 @@ func TestLimitsPerTenant(t *testing.T) {
 // TestLimitCanary is T-645: at log level debug nothing of a refused and a settled request leaks:
 // not the body, not the provider credential, not the virtual key.
 func TestLimitCanary(t *testing.T) {
+	t.Parallel()
 	p, _, boot := limitsProc(t, "debug")
 	tn := p.newLimitsTenant(t, boot, "limit-canary")
 	p.db.SeedLimitRule(t, tn.id, "tenant", "", "requests_per_minute", 2)
@@ -291,6 +294,7 @@ func (p *proc) priceFake(t *testing.T, boot, provider string) {
 // the process is stopped and started and the next call is refused at once; raising the budget with
 // the CLI admits the next call within 2 s; the audit log holds the two changes.
 func TestMonthlyBudget(t *testing.T) {
+	t.Parallel()
 	p, up, boot := limitsProc(t, "info")
 	p.priceFake(t, boot, "openai")
 	tn := p.newLimitsTenant(t, boot, "budget")
@@ -349,6 +353,7 @@ func TestMonthlyBudget(t *testing.T) {
 // platform default, a soft rule; list, change, delete; `capability check` says exhausted; `limit
 // events` shows the threshold.
 func TestLimitAdministration(t *testing.T) {
+	t.Parallel()
 	p, _, boot := limitsProc(t, "info")
 	p.priceFake(t, boot, "openai")
 	tn := p.newLimitsTenant(t, boot, "admin-limits")
@@ -443,6 +448,7 @@ func TestLimitAdministration(t *testing.T) {
 // TestQuotaCanary is T-688: at log level debug, with canaries in the body, the provider credential and
 // the virtual key, no log line, record, event, audit row, header or error body holds them.
 func TestQuotaCanary(t *testing.T) {
+	// Serial on purpose: it asserts the effect of a change within a short window, which a loaded machine misses.
 	p, _, boot := limitsProc(t, "debug")
 	p.priceFake(t, boot, "openai")
 	tn := p.newLimitsTenant(t, boot, "quota-canary")

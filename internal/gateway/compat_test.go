@@ -42,6 +42,7 @@ func compatOp(o opSpec) opSpec {
 // TestCompatibleProvider is T-539: a provider "compat" of family openai with a base path serves
 // every profile through all three operations, and its records carry its name and family.
 func TestCompatibleProvider(t *testing.T) {
+	t.Parallel()
 	const base = "/compat-base"
 	for _, model := range compatModels {
 		for _, op := range allOps {

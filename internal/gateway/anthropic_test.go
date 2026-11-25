@@ -145,6 +145,7 @@ func assertAnthropicContract(t *testing.T, name string, c captured, code family.
 // allow-listed headers and the tenant's secret in X-Api-Key, the body unchanged but for the model,
 // and come back with the filtered response headers.
 func TestAnthropicPassthrough(t *testing.T) {
+	t.Parallel()
 	adapter := anthropic.Adapter()
 	allowed := map[string][]string{}
 	for _, n := range adapter.RequestHeaders() {
@@ -451,6 +452,7 @@ func anthropicScenarios() []scenario {
 // TestAnthropicErrors is T-531: each Pandokos refusal on an anthropic route has the Anthropic
 // shape; the sweep fails on a code without a scenario; provider errors pass unchanged.
 func TestAnthropicErrors(t *testing.T) {
+	t.Parallel()
 	seen := map[string]bool{}
 	for _, s := range anthropicScenarios() {
 		seen[string(s.code)] = true
@@ -594,6 +596,7 @@ func TestAnthropicErrors(t *testing.T) {
 
 // TestAnthropicUsageRecord is T-533: one record per case of section 5.4.
 func TestAnthropicUsageRecord(t *testing.T) {
+	t.Parallel()
 	costAt := func(t *testing.T, h *harness, model string, u family.Usage) pricing.Cost {
 		t.Helper()
 		v, ok := pricing.VersionAt(h.targets["anthropic/"+model].Prices, time.Now())
@@ -814,6 +817,7 @@ func countDeltas(stream []byte) int64 {
 // TestAnthropicNoBuffering is T-534: with the gate, event n+1 is not sent by the provider until
 // the caller has read event n, and the bytes are the provider's.
 func TestAnthropicNoBuffering(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name    string
 		fixture string
@@ -899,6 +903,7 @@ func TestAnthropicCancellation(t *testing.T) {
 // TestAnthropicMetadataAndTrace is T-536: metadata is recorded and never forwarded; the caller's
 // traceparent parents the span; with propagation on, Pandokos's own context reaches the provider.
 func TestAnthropicMetadataAndTrace(t *testing.T) {
+	t.Parallel()
 	const p = "X-Pandokos-Metadata-"
 	t.Run("metadata is on the record and never at the provider", func(t *testing.T) {
 		h := newFamilies(t, nil)
@@ -966,6 +971,7 @@ func TestAnthropicMetadataAndTrace(t *testing.T) {
 // TestAnthropicGuard is T-537: a private-address endpoint of an anthropic provider that is not
 // marked private is refused; redirects are not followed; there is no retry.
 func TestAnthropicGuard(t *testing.T) {
+	t.Parallel()
 	t.Run("a private address on a public endpoint", func(t *testing.T) {
 		for _, host := range []string{"127.0.0.1", "localhost", "[::1]"} {
 			up := fakeprovider.NewTLS(t)
@@ -1061,6 +1067,7 @@ func TestAnthropicGuard(t *testing.T) {
 // TestAnthropicPipelineOrder is T-426 on an anthropic route: a refusal at a step stops every later
 // step, as on an openai route.
 func TestAnthropicPipelineOrder(t *testing.T) {
+	t.Parallel()
 	active := testutil.InferencePrincipal()
 	with := func(mutate func(*authz.Principal)) authz.Principal {
 		p := active

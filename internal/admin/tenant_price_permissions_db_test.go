@@ -1,6 +1,7 @@
 package admin_test
 
 import (
+	"sync/atomic"
 	"testing"
 
 	"github.com/pandokos/pandokos/internal/adminapi"
@@ -10,6 +11,7 @@ import (
 // TestTenantPricePermissions is T-752: each of the seven operations needs its permission (setActiveCurrency: tenant_setting:write since sprint 4.3): refused to an
 // inference key, to a key scoped without it and to a platform key; tenant-admin needs nothing else.
 func TestTenantPricePermissions(t *testing.T) {
+	t.Parallel()
 	w := newPW(t)
 	api := w.api
 	tn := w.a.ID
@@ -68,7 +70,7 @@ func TestTenantPricePermissions(t *testing.T) {
 	_ = snap
 }
 
-var priceCounter int
+var priceCounter atomic.Int64 // tests run in parallel
 
 // apitestN returns a number that differs per call, to space the starts of scheduled versions.
-func apitestN() int64 { priceCounter++; return int64(priceCounter) * 7 }
+func apitestN() int64 { return priceCounter.Add(1) * 7 }

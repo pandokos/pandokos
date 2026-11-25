@@ -61,6 +61,7 @@ func (f *fakeProvider) calls() (wraps, unwraps, avails int) {
 
 // TestRouter is T-1069.
 func TestRouter(t *testing.T) {
+	t.Parallel()
 	local := &fakeProvider{name: "local", version: "local-0123456789abcdef"}
 	transit := &fakeProvider{name: "transit", version: "transit-0123456789abcdef-v1"}
 	r, err := vault.NewRouter(transit, local)

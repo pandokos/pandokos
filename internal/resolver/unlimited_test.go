@@ -79,6 +79,7 @@ func reqID(n int) string { return fmt.Sprintf("%032x", n) }
 
 // TestUnlimitedAuditor is T-707: one call per tenant and day, off the request path.
 func TestUnlimitedAuditor(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	clk := &stepClock{t: time.Now().UTC().Truncate(time.Second)}
 	today := clk.now().Format("2006-01-02")

@@ -19,6 +19,7 @@ import (
 // TestNoDataKeyForAClosedTenant is T-992: a tenant that is being deleted or is deleted takes no
 // data key (2.1 R-9), and an instance whose key-encryption key was replaced cannot create one.
 func TestNoDataKeyForAClosedTenant(t *testing.T) {
+	t.Parallel()
 	w := newVWorld(t)
 	worker := w.d.Open(t, store.RoleWorker)
 

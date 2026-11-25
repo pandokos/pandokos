@@ -90,6 +90,7 @@ func rollupTotals(t testing.TB, d *dbtest.Database, tid tenant.ID) (requests, ro
 // rollup and the watermark as they were; workers on one tenant never count a record twice; a tenant
 // with no record gets a state and no row.
 func TestRollupAtomicAndConcurrent(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	super := d.SharedSuper(t)
 	c := ctx(t)
@@ -215,6 +216,7 @@ func TestRollupAtomicAndConcurrent(t *testing.T) {
 // its old hour by the pass that follows its minute, and is in the report from the start; a record
 // recorded less than a minute ago is not yet in the rollup but is in the report.
 func TestRollupLateRecords(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a := d.SeedTenant(t, "late")
 	c := ctx(t)
@@ -276,6 +278,7 @@ func TestRollupLateRecords(t *testing.T) {
 // reports.sql) is longer than what a ledger insert transaction can last: the writer's timeout plus
 // the bound of a commit.
 func TestRollupDelayExceedsWriterTimeout(t *testing.T) {
+	t.Parallel()
 	read := func(path string) string {
 		b, err := os.ReadFile(path)
 		if err != nil {
@@ -320,6 +323,7 @@ func TestRollupDelayExceedsWriterTimeout(t *testing.T) {
 // tenant of every write); a tenant whose pass fails does not stop the others; the counters M42 and
 // M43 and the two log lines.
 func TestRollupTenantLoop(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	c := ctx(t)
 	super := d.SharedSuper(t)

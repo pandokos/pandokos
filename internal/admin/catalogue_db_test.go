@@ -19,6 +19,7 @@ import (
 // TestCatalogLifecycle is T-400: providers, endpoints and models, from creation to deletion, with
 // every conflict, invalid_state and invalid_request of section 5.8.
 func TestCatalogLifecycle(t *testing.T) {
+	t.Parallel()
 	c := newCat(t)
 
 	t.Run("the seed", func(t *testing.T) {
@@ -427,6 +428,7 @@ func mustJSON2(p adminapi.Problem) []byte {
 // TestConcurrentDefaultEndpoints: writes that move the default endpoint of a provider serialize
 // on the provider row; none of them fails with a constraint error, and one default remains.
 func TestConcurrentDefaultEndpoints(t *testing.T) {
+	t.Parallel()
 	c := newCat(t)
 	p := c.createProvider(t, nil)
 	first := c.createEndpoint(t, p.Name, nil)
@@ -463,6 +465,7 @@ func TestConcurrentDefaultEndpoints(t *testing.T) {
 // 5.10): created, changed, cleared, bounded, audited, and carried by the catalogue snapshot to the
 // target of the gateway.
 func TestModelDefaultOutput(t *testing.T) {
+	t.Parallel()
 	c := newCat(t)
 	p := c.createProvider(t, nil)
 	c.createEndpoint(t, p.Name, nil)

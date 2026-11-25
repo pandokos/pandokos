@@ -13,6 +13,7 @@ import (
 // holds the old rule set does not limit the new model, and a new rule on the new model starts from
 // the new model's usage.
 func TestScopeByIdentifier(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	tn := d.SeedTenant(t, "scope-id")
 	m1 := d.SeedModel(t, "openai", "fake-basic")

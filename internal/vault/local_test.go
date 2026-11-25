@@ -20,6 +20,7 @@ import (
 // the active one and unwraps each by its version, refuses what a rotation must never allow, and
 // prints no key on any path.
 func TestLocalProviderSeveralKeys(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	keys := vaulttest.Keys(t, 3)
 	p, err := vault.NewLocalProvider(keys[0].Secret, keys[1].Secret, keys[2].Secret)

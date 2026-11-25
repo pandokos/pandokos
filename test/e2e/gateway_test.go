@@ -106,6 +106,7 @@ func (p *proc) waitStatus(t *testing.T, key string, want int) {
 
 // TestGatewayExitScenario is T-451: the exit scenario of the epic on the built binary.
 func TestGatewayExitScenario(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	p := startBinary(t, opts{level: "info", up: up})
 	boot := p.bootstrap(t)
@@ -221,6 +222,7 @@ func TestGatewayExitScenario(t *testing.T) {
 
 // TestEgressAttacks is T-452: a crafted endpoint and a redirect do not reach an internal address.
 func TestEgressAttacks(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	f := startFront(t, up)
 	p := startBinary(t, opts{level: "info", up: up, env: []string{"PANDOKOS_UPSTREAM_TLS_CA_FILE=" + f.caFile}})
@@ -300,6 +302,7 @@ func TestEgressAttacks(t *testing.T) {
 // TestGatewayCanaries is T-453: nothing of a prompt, a completion, a key or a credential is
 // written anywhere it must not be.
 func TestGatewayCanaries(t *testing.T) {
+	t.Parallel()
 	for _, level := range []string{"info", "debug"} {
 		t.Run(level, func(t *testing.T) {
 			up := fakeprovider.New(t)
@@ -391,6 +394,7 @@ func TestGatewayCanaries(t *testing.T) {
 
 // TestUpstreamCAAndProxy is T-454.
 func TestUpstreamCAAndProxy(t *testing.T) {
+	t.Parallel()
 	t.Run("a private CA for a private endpoint", func(t *testing.T) {
 		up := fakeprovider.NewTLS(t)
 		d := dbtest.New(t)
@@ -531,6 +535,7 @@ func TestUpstreamCAAndProxy(t *testing.T) {
 
 // TestAuthFailureAudit is T-455: attributable failures of the inference listener are audited, once.
 func TestAuthFailureAudit(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	p := startBinary(t, opts{level: "info", up: up})
 	tn := p.newCaller(t, "audited")

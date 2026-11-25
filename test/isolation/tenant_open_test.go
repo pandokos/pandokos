@@ -87,6 +87,7 @@ func attemptInsert(t *testing.T, conn *pgx.Conn, s session, settings map[string]
 // any table that takes a tenant's rows, from any runtime role, whatever the session says about the
 // erasure; a tenant that is only suspended with a scheduled deletion, and another tenant, do.
 func TestTenantOpenGuard(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	deleting, deleted := closedTenants(t, d)
 	scheduled, other := d.PopulatedTenant(t), d.PopulatedTenant(t)
@@ -214,6 +215,7 @@ func TestTenantOpenGuard(t *testing.T) {
 // TestTenantOpenLintRule is the second half of T-977: the lint rule L-21 reports a table that takes
 // a tenant's rows and has no tenant_open trigger, and one whose trigger is of the wrong kind.
 func TestTenantOpenLintRule(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name string
 		ddl  string
@@ -294,6 +296,7 @@ var definerCalls = map[string]definerCall{
 // row of either tenant changes. tenant_erasure_step is called for the deleted tenant only: for the
 // one being deleted it is the deletion itself.
 func TestTenantOpenDefinerFunctions(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	deleting, deleted := closedTenants(t, d)
 	kek := dbText(t, d, `SELECT id FROM pandokos.kek_version WHERE state = 'active'`)

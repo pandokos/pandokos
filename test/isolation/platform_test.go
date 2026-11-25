@@ -67,6 +67,7 @@ func usageTables(t *testing.T, super *pgx.Conn) []string {
 // test pins, and the body of none names one of these tables except ensure_usage_partitions (partitions,
 // no row).
 func TestPlatformSeesNoTenantUsage(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		a, b := d.SeedTenant(t, "blind-a"), d.SeedTenant(t, "blind-b")
 		model := seedModel(t, d, "blind-model")
@@ -240,6 +241,7 @@ func TestPlatformSeesNoTenantUsage(t *testing.T) {
 // path names a tenant: no answer and no row of the platform's audit log contains a canary; every
 // tenant-scoped operation on A answers 403.
 func TestPlatformAPISeesNoTenantUsage(t *testing.T) {
+	t.Parallel()
 	w := newAPIWorld(t)
 	idA, err := tenant.ParseID(w.a.tenant.ID)
 	if err != nil {

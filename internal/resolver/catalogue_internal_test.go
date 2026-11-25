@@ -60,6 +60,7 @@ func testPrincipal() authz.Principal {
 // URL that fails the validation of the catalogue. It is ErrProviderUnavailable, logged at error
 // with the names of the provider and the endpoint, never the URL.
 func TestCatalogueEndpointUnusable(t *testing.T) {
+	t.Parallel()
 	const secretHost = "synthetic-host-marker.invalid"
 	bad := map[string]struct {
 		url     string
@@ -134,6 +135,7 @@ func TestCatalogueEndpointUnusable(t *testing.T) {
 // TestCatalogueDefaultOutput is part of T-628 and T-682: the default output reservation of a model
 // is carried to the target (sprint 5.2, section 5.10), 0 when the model has none.
 func TestCatalogueDefaultOutput(t *testing.T) {
+	t.Parallel()
 	snap := catalog.NewSnapshot(catalog.SnapshotData{
 		Providers: []catalog.Provider{{ID: "p1", Name: "synth", Family: "openai", Enabled: true}},
 		Endpoints: map[string][]catalog.Endpoint{"synth": {{Name: "main", BaseURL: "http://10.0.0.5:8000/v1", Private: true, Enabled: true, Default: true}}},
@@ -157,6 +159,7 @@ func TestCatalogueDefaultOutput(t *testing.T) {
 // TestCatalogueLimitsValues is T-629: the two values the estimate needs come from the catalogue
 // model, 0 when it has none.
 func TestCatalogueLimitsValues(t *testing.T) {
+	t.Parallel()
 	snap := catalog.NewSnapshot(catalog.SnapshotData{
 		Providers: []catalog.Provider{{ID: "p1", Name: "synth", Family: "openai", Enabled: true}},
 		Endpoints: map[string][]catalog.Endpoint{"synth": {{Name: "main", BaseURL: "http://10.0.0.5:8000/v1", Private: true, Enabled: true, Default: true}}},
@@ -184,6 +187,7 @@ func TestCatalogueLimitsValues(t *testing.T) {
 // TestCatalogueTenantPrices is T-733: the target carries the currency of the tenant, the catalogue's
 // versions of the model and the tenant's versions of the resolved model only.
 func TestCatalogueTenantPrices(t *testing.T) {
+	t.Parallel()
 	from := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
 	catVersion := pricing.Version{ID: "cat-1", ModelID: "m1", ValidFrom: from, Currency: "USD", Source: "import"}
 	catOther := pricing.Version{ID: "cat-2", ModelID: "m2", ValidFrom: from, Currency: "USD", Source: "import"}

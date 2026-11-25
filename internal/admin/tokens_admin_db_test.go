@@ -92,6 +92,7 @@ func (w *tokenWorld) get(t *testing.T, token, path string) *apitest.Response {
 
 // TestTokensOnAdminListener is T-823.
 func TestTokensOnAdminListener(t *testing.T) {
+	t.Parallel()
 	w := newTokenWorld(t, true)
 	mine, theirs := "/v1/tenants/"+w.tenant.ID+"/service-accounts", "/v1/tenants/"+w.other.ID+"/service-accounts"
 
@@ -171,6 +172,7 @@ func TestTokensOnAdminListener(t *testing.T) {
 
 // TestTokensOffOnAdminListener is the other half of T-823: with the switch off a token is a 401.
 func TestTokensOffOnAdminListener(t *testing.T) {
+	t.Parallel()
 	w := newTokenWorld(t, false)
 	for name, tok := range map[string]string{"tenant-bound": w.tenantTok, "platform-level": w.sharedTok} {
 		r := w.get(t, tok, "/v1/me")

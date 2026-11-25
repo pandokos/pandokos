@@ -22,6 +22,7 @@ import (
 // tenant are written through the second definer function, with their own suppression key, in the
 // same bounds as the failures of keys.
 func TestTokenFailureAuditor(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	gw := d.Open(t, store.RoleGateway)
 	a, b := d.SeedTenant(t, "tenant-a"), d.SeedTenant(t, "tenant-b")

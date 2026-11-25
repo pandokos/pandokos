@@ -20,6 +20,7 @@ var (
 
 // TestGenerateAndParse is T-205.
 func TestGenerateAndParse(t *testing.T) {
+	t.Parallel()
 	seen := map[string]bool{}
 	for i := 0; i < 1000; i++ {
 		kind := KindTenant
@@ -71,6 +72,7 @@ func TestGenerateAndParse(t *testing.T) {
 
 // TestParseRejects is T-206.
 func TestParseRejects(t *testing.T) {
+	t.Parallel()
 	key, _, _, err := Generate(KindTenant)
 	if err != nil {
 		t.Fatal(err)

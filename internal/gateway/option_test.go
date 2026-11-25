@@ -14,6 +14,7 @@ import (
 // received, a stream is forwarded in observe mode and recorded with estimated usage unless the
 // server reports usage anyway; the same request to an add provider gets the provider's own 400.
 func TestStreamUsageOption(t *testing.T) {
+	t.Parallel()
 	compatChat := compatOp(opChat)
 	openaiChat := opChat
 

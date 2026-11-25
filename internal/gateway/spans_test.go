@@ -98,6 +98,7 @@ var clientAttrs = []string{"gen_ai.operation.name", "gen_ai.provider.name"}
 
 // TestSpans is T-495, with the attributes of ADR 0055.
 func TestSpans(t *testing.T) {
+	t.Parallel()
 	seen := map[string]bool{}
 	note := func(s sdktrace.ReadOnlySpan) {
 		for k := range attrs(s) {
@@ -323,6 +324,7 @@ var reTraceparent = regexp.MustCompile(`^00-([0-9a-f]{32})-([0-9a-f]{16})-0[01]$
 
 // TestPropagation is T-496.
 func TestPropagation(t *testing.T) {
+	t.Parallel()
 	hdr := withHeaders(http.Header{"Traceparent": {callerTP}, "Tracestate": {"vendor=value"}, "Baggage": {"k=" + fixtures.CanaryPrompt}})
 
 	t.Run("off: nothing of the caller's context reaches the provider", func(t *testing.T) {
@@ -378,6 +380,7 @@ func TestPropagation(t *testing.T) {
 
 // TestTelemetryCanaries is T-497.
 func TestTelemetryCanaries(t *testing.T) {
+	t.Parallel()
 	const unresolved = "synthetic-unresolved-model-canary"
 	h := newHarness(t, nil)
 	meta := http.Header{"X-Pandokos-Metadata-Note": {metaCanary}, "Traceparent": {callerTP}}

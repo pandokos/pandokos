@@ -15,6 +15,7 @@ import (
 // empty string clears, and null for a member that is not nullable is a 400 that names it. The
 // sentinel of sprint 2.1 no longer exists.
 func TestUpdateBodies(t *testing.T) {
+	t.Parallel()
 	c := newCat(t)
 	api := c.api
 	sa, err := api.Client(c.ka).CreateServiceAccount(ctx(t), adminapi.CreateServiceAccountInput{Tenant: c.a.ID, Body: adminapi.ServiceAccountCreate{Name: "updates", Roles: []string{"inference"}}})

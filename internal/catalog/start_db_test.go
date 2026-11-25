@@ -16,6 +16,7 @@ import (
 // newer file or download, a failure is reported and not returned, and two instances starting
 // together import once.
 func TestImportAtStart(t *testing.T) {
+	t.Parallel()
 	logger := func() (*slog.Logger, *testutil.LogBuffer) {
 		logs := &testutil.LogBuffer{}
 		return telemetry.NewLogger(logs, "debug"), logs

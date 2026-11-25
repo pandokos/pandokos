@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/pandokos/pandokos/internal/store"
 	"github.com/pandokos/pandokos/internal/vault"
 	"github.com/pandokos/pandokos/test/dbtest"
@@ -28,9 +30,11 @@ var fastEvents = eventOpts{interval: "100ms", timeout: "1s", attempts: "3", back
 // was killed held its lease for a minute.
 func expireLeases(t *testing.T, p *proc) {
 	t.Helper()
-	if _, err := p.db.Super(t).Exec(context.Background(), `UPDATE pandokos.event_destination SET lease_until = now() - interval '1 second' WHERE lease_token IS NOT NULL`); err != nil {
-		t.Fatal(err)
-	}
+	p.db.WithSuper(t, func(ctx context.Context, c *pgx.Conn) { // tests poll this: no connection is kept
+		if _, err := c.Exec(ctx, `UPDATE pandokos.event_destination SET lease_until = now() - interval '1 second' WHERE lease_token IS NOT NULL`); err != nil {
+			t.Fatal(err)
+		}
+	})
 }
 
 // TestEventsExactlyOncePerCall is T-1052, an exit test of the sprint: 300 calls through the gateway
@@ -39,6 +43,7 @@ func expireLeases(t *testing.T, p *proc) {
 // at the end the receiver's store has exactly one entry per call, each with the request ID of a call,
 // duplicates were seen and absorbed, and no dead letter remains after a replay.
 func TestEventsExactlyOncePerCall(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	o := opts{level: "info", up: up, events: fastEvents}
 	p := startBinary(t, o)
@@ -190,6 +195,7 @@ func TestEventsExactlyOncePerCall(t *testing.T) {
 // ready, the lag grows and the destination is failing; the outbox holds the 200 events; when the
 // receiver answers, all 200 arrive.
 func TestEventsReceiverDown(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	e := fastEvents
 	e.attempts = "100"
@@ -289,6 +295,7 @@ func TestEventsReceiverDown(t *testing.T) {
 // TestEventsPull is T-1054: a consumer that pulls by sequence across two restarts of the binary reads
 // each event once, and `pandokos event export` gives the same lines.
 func TestEventsPull(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	o := opts{level: "info", up: up}
 	p := startBinary(t, o)
@@ -373,6 +380,7 @@ func TestEventsPull(t *testing.T) {
 // deletion no destination, event or secret of the tenant remains; `platform-event export` shows
 // requested and deleted with the external reference; the sealed secret cannot be opened any more.
 func TestEventsAndDeletion(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	d := dbtest.NewMigrated(t)
 	e := fastEvents
@@ -470,6 +478,7 @@ func TestEventsAndDeletion(t *testing.T) {
 // destination ID, no URL, no host and no secret; every line is in the log reference (the check runs
 // when the process ends, for every process of every test).
 func TestEventsTelemetryCanary(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	name := fixtures.CanaryLabel("tenant")
 	p := startBinary(t, opts{level: "debug", up: up, events: fastEvents, gracePeriod: "0s", deletionInterval: "10s", metricsPrometheus: true})
@@ -489,9 +498,11 @@ func TestEventsTelemetryCanary(t *testing.T) {
 	testutil.Eventually(t, 90*time.Second, "a dead letter", func() bool {
 		due := destinationDelivery(t, p, a.adminFile, a.id, destID)
 		if due.DeadLetters == 0 {
-			if _, err := p.db.Super(t).Exec(context.Background(), `UPDATE pandokos.event_destination SET next_attempt_at = now() - interval '1 second'`); err != nil {
-				t.Fatal(err)
-			}
+			p.db.WithSuper(t, func(ctx context.Context, c *pgx.Conn) {
+				if _, err := c.Exec(ctx, `UPDATE pandokos.event_destination SET next_attempt_at = now() - interval '1 second'`); err != nil {
+					t.Fatal(err)
+				}
+			})
 		}
 		return due.DeadLetters > 0
 	})

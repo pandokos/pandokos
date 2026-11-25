@@ -15,6 +15,7 @@ import (
 // a tenant is in the answer; once the rule is deleted the deletion succeeds; a model with a price is
 // still refused as before.
 func TestCatalogueDeleteRefused(t *testing.T) {
+	t.Parallel()
 	w := newLW(t)
 	api := w.api
 	seen := seenIDs(t, api)
@@ -131,6 +132,7 @@ func TestCatalogueDeleteRefused(t *testing.T) {
 // TestModelDeleteTenantPrices is T-759: a model with a tenant version is not deleted: 409 invalid_state with
 // the errors entry of 5.8, nothing audited, no tenant, currency or rate in the answer.
 func TestModelDeleteTenantPrices(t *testing.T) {
+	t.Parallel()
 	w := newPW(t)
 	api := w.api
 	model := decodeInto[adminapi.Model](t, w.do(t, w.plat, "POST", "/v1/models", map[string]any{"provider": w.cat.Provider.Name, "name": apitest.UniqueName("m"), "availability": "all"}), 201)

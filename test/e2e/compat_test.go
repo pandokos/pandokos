@@ -14,6 +14,7 @@ import (
 // openai with a private endpoint that has a base path, a model, a grant and a credential serves
 // a streamed chat call; the stream usage option then takes effect.
 func TestCompatibleProviderByConfiguration(t *testing.T) {
+	t.Parallel()
 	const basePath = "/compat-base"
 	up := fakeprovider.New(t)
 	up.SetBasePath(basePath)

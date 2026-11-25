@@ -29,6 +29,7 @@ func (u unwrapDown) Unwrap(context.Context, string, []byte, []byte) ([]byte, err
 // the associated data binds the kind, the tenant and the object, so that a credential's ciphertext,
 // another destination's and another tenant's do not open; printing gives the marker.
 func TestSealNamed(t *testing.T) {
+	t.Parallel()
 	w := newVWorld(t)
 	a, b := w.d.SeedTenant(t, "named-a"), w.d.SeedTenant(t, "named-b")
 	const plaintext = "whsec_CANARYsecretCANARYsecretCANARYsecret12="

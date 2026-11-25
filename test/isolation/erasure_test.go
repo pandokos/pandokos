@@ -56,6 +56,7 @@ func rowsOf(t *testing.T, d *dbtest.Database, tbl string, id tenant.ID) int64 {
 // the effect of each step, and what a deletion leaves of the tenant, of another tenant and of the
 // global tables.
 func TestTenantErasureSteps(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 
 	// Every table of the database with a tenant column is in exactly one group.
@@ -307,6 +308,7 @@ func stepOrder(group string) int {
 // TestTenantErasureIdempotent is T-980: a step that ran is not run again, whoever calls and
 // however the call ends; the answers that do nothing change nothing; and what the function refuses.
 func TestTenantErasureIdempotent(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	worker := d.Connect(t, "worker")
 
@@ -581,6 +583,7 @@ func seedLedger(t *testing.T, d *dbtest.Database, id tenant.ID, n int, principal
 // TestErasurePseudonymizesLedger is T-981: the ledger of a deleted tenant is kept with its
 // identifiers replaced by pseudonyms and its metadata emptied, in batches, across partitions.
 func TestErasurePseudonymizesLedger(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	now := time.Now().UTC()
 	for _, m := range []int{1, 2, 3} {
@@ -719,6 +722,7 @@ func auditRowsOf(t *testing.T, d *dbtest.Database, id tenant.ID) []auditRow {
 // TestErasureResealsAuditChain is T-982: the log of a deleted tenant is closed, pseudonymized and
 // sealed again as an ordinary chain, and the platform's chain, which records it, is not rewritten.
 func TestErasureResealsAuditChain(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	tid := d.PopulatedTenant(t)
 	id := tid.String()
@@ -912,6 +916,7 @@ func TestErasureResealsAuditChain(t *testing.T) {
 // TestAppendOnlyUnderErasure is T-983: the two settings of the erasure and the retention are the
 // only ways round the append-only triggers, each admits one statement, and no runtime role has any.
 func TestAppendOnlyUnderErasure(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	tid := d.PopulatedTenant(t)
 	id := tid.String()
@@ -1088,6 +1093,7 @@ func TestAppendOnlyUnderErasure(t *testing.T) {
 // TestDeletedTenantRetention is T-984: the records kept for a deleted tenant leave with the
 // installation's retention, which is recorded in the platform's log and never in the closed chain.
 func TestDeletedTenantRetention(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	worker := d.Connect(t, "worker")
 	now := time.Now().UTC()
@@ -1217,6 +1223,7 @@ func TestDeletedTenantRetention(t *testing.T) {
 // same pseudonyms), seals the log again behind a new closing row and runs a second pass; the
 // deletion completes with no row that holds an identifier.
 func TestErasureLateRows(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	tid := d.PopulatedTenant(t)
 	id := tid.String()

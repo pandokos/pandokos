@@ -43,6 +43,7 @@ func (e *periodsEnv) loadMonth(ls ...Limit) { e.m.Load(e.tn, e.mon, ls, nil) }
 
 // TestPeriodCounters is T-648.
 func TestPeriodCounters(t *testing.T) {
+	t.Parallel()
 	bg := context.Background()
 
 	t.Run("reserve, settle below and above, release, expiry", func(t *testing.T) {
@@ -309,6 +310,7 @@ func TestPeriodCounters(t *testing.T) {
 
 // TestBudgetCounters is T-649.
 func TestBudgetCounters(t *testing.T) {
+	t.Parallel()
 	bg := context.Background()
 
 	t.Run("costs with eighteen fraction digits sum exactly", func(t *testing.T) {
@@ -418,6 +420,7 @@ func settleTokens(t *testing.T, e *periodsEnv, l Limit, reserve, actual int64) {
 
 // TestMarks is T-653.
 func TestMarks(t *testing.T) {
+	t.Parallel()
 	m80 := Mark{At: 80, Percent: 80, RuleID: "r-ten", Level: LevelTenant, Value: 100}
 
 	t.Run("a threshold follows what was used, not what was reserved", func(t *testing.T) {
@@ -586,6 +589,7 @@ func TestMarks(t *testing.T) {
 
 // TestSweepPeriods is T-656.
 func TestSweepPeriods(t *testing.T) {
+	t.Parallel()
 	bg := context.Background()
 
 	t.Run("a counter is dropped a horizon after its period ended", func(t *testing.T) {

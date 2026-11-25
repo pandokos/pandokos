@@ -36,6 +36,7 @@ func failingRules(t *testing.T) *limits.RuleCache {
 // TestLimitStateRecorded is T-708: each state of section 5.5 reaches the usage record and the
 // field limit_state of the request line.
 func TestLimitStateRecorded(t *testing.T) {
+	t.Parallel()
 	type tc struct {
 		name   string
 		setup  func(t *testing.T) (*limitstest.Real, func(*harness)) // limits, and a change of the harness

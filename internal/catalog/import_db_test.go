@@ -169,6 +169,7 @@ func item(r catalog.Report, provider, model string) (catalog.ReportItem, bool) {
 // TestImportDB is T-394 (exit condition 3): an import that changes a price adds a version and an
 // audit record, and nothing else.
 func TestImportDB(t *testing.T) {
+	t.Parallel()
 	base, changed := fixtureFile(t, "base.json"), fixtureFile(t, "changed.json")
 
 	t.Run("base, again, changed", func(t *testing.T) {

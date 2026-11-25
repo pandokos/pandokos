@@ -12,6 +12,7 @@ import (
 // whole request's Duration; FirstChunk is at least 200 ms for a stream and 0 for a plain answer; a
 // request refused before step 9 has Forwarded false and zero times.
 func TestObservationCallTimes(t *testing.T) {
+	t.Parallel()
 	t.Run("a plain answer", func(t *testing.T) {
 		ob := &observer{}
 		h := newHarness(t, observed(ob, nil))

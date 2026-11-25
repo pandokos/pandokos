@@ -21,6 +21,7 @@ import (
 // 5.2): the rollup makes the reads faster and never different. The reconciler, rebase and
 // capability tests of earlier sprints run unchanged beside this one and must stay green.
 func TestLedgerReaderUnchanged(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	type result struct {
 		groups   []string

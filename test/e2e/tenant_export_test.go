@@ -16,6 +16,7 @@ import (
 // may read and nothing else: no canary, no secret of a key or a credential, no password hash, and
 // nothing of another tenant; and a key that may not read everything stops it, naming the permission.
 func TestTenantExportHoldsNoSecretOrForeignData(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	p := startBinary(t, opts{level: "info", up: up})
 	boot := p.bootstrap(t)

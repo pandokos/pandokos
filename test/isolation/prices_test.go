@@ -85,6 +85,7 @@ var baseRate = [3]any{"input", 0, 1}
 // its tenant's rows only; the gateway reads its tenant's only and writes nothing; the worker holds
 // nothing; the platform scope and a session without scope see no row and write none.
 func TestTenantPricePolicies(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		a, b := d.SeedTenant(t, "price-a"), d.SeedTenant(t, "price-b")
 		model := seedModel(t, d, "isolation-price-model")
@@ -215,6 +216,7 @@ func TestTenantPricePolicies(t *testing.T) {
 // rate, without a base rate, an end with a rate, a rate added to an existing version, a rate for another
 // tenant's version; a model with a version cannot be deleted, also from the platform scope.
 func TestTenantPriceRules(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		a, b := d.SeedTenant(t, "rule-a"), d.SeedTenant(t, "rule-b")
 		model := seedModel(t, d, "isolation-rule-model")

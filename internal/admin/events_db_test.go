@@ -34,6 +34,7 @@ func lines(t *testing.T, r *apitest.Response) [][]byte {
 // type; a consumer that follows sequence while writers commit gets every event once; the export of
 // the platform's log.
 func TestEventExport(t *testing.T) {
+	t.Parallel()
 	w := newEW(t)
 	tid := parseTenant(t, w.tid)
 	if _, err := w.api.Super(t).Exec(ctx(t), `UPDATE pandokos.tenant SET external_reference = external_reference WHERE id = $1::uuid`, w.tid); err != nil {
@@ -230,6 +231,7 @@ func TestEventExport(t *testing.T) {
 // platform principal gets 403 without a support action and, with one, only what
 // event_destination:read allows; exportEvents never under a support action.
 func TestEventPermissions(t *testing.T) {
+	t.Parallel()
 	w := newEW(t)
 	other := newEW(t)
 	dest := w.api.SeedEventDestination(t, w.tid)

@@ -19,6 +19,7 @@ import (
 // uncounted with `allow`, and recorded with an unknown cost without one; a rule cache and a catalogue
 // cache that disagree on the currency refuse.
 func TestInactiveBudgets(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	w := newPriceWorld(t, d)
 

@@ -29,6 +29,7 @@ func byID(vs []pricing.Version) map[string]pricing.Version {
 // hour ago is not loaded; rates in category order; End; the default currency resolved; another
 // tenant's never; a new version, a deletion and a currency change reach a running cache within 2 s.
 func TestLoadTenantPrices(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		w := newWorld(t, d, d)
 		now := time.Now()

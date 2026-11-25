@@ -65,6 +65,7 @@ func (p *proc) serviceAccountID(t *testing.T, adminFile, tenantID string) string
 // rule is; a tenant's time zone is set and read; the usage records show how the limits treated each
 // request; the audit log holds the rules deleted and one row of unlimited traffic.
 func TestRuleIntegrity(t *testing.T) {
+	t.Parallel()
 	p, _, boot := limitsProc(t, "info")
 	tn := p.newLimitsTenant(t, boot, "integrity")
 	keyID, _ := p.newInferenceKey(t, tn.admin, tn.idStr)

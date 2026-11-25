@@ -44,6 +44,7 @@ func countEvents(t *testing.T, d *dbtest.Database, a tenant.ID) int {
 
 // TestEventWriter is T-660.
 func TestEventWriter(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
@@ -279,6 +280,7 @@ func TestEventWriter(t *testing.T) {
 // redefines it: a recorded event writes no line (the event is the tenant's), and the line of an event
 // the database refuses names its kind and the error, never the tenant, the rule or the metric.
 func TestEventLinesHoldNoTenantData(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	a := d.SeedTenant(t, "event-lines")
 	logs := &safeBuf{}

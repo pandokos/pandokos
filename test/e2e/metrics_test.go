@@ -107,6 +107,7 @@ func (p *proc) keyWithRole(t *testing.T, ownerFile, tenantID, role string) strin
 // scopes), so the keys that hold the permission are one of the role platform-auditor and one of the
 // role platform-admin (the bootstrap key); the key "scoped to catalog:read" cannot exist.
 func TestScrapeEndpoint(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	p := startBinary(t, opts{level: "info", up: up, metricsPrometheus: true})
 	boot := p.bootstrap(t)
@@ -265,6 +266,7 @@ func exportedAttributes(c *otlptest.Collector) map[string][]string {
 // service-account IDs, metadata canaries or fixtures.Canaries(); credential IDs appear only on
 // pandokos_provider_rate_limited_total (pandokos.provider.rate_limited over OTLP).
 func TestMetricsHoldNoTenantData(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	col := otlptest.New(t)
 	p := startBinary(t, opts{level: "debug", up: up, collector: col, otlpEndpoint: col.URL().String(), exportInterval: metricsInterval, otlpTimeout: "2s", metricsPrometheus: true})
@@ -384,6 +386,7 @@ func TestMetricsHoldNoTenantData(t *testing.T) {
 // gen_ai.request.model equal to the catalogue names and the cost with the currency of the catalogue;
 // the resource names the service.
 func TestMetricsOverOTLP(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	col := otlptest.New(t)
 	p := startBinary(t, opts{level: "info", up: up, collector: col, otlpEndpoint: col.URL().String(), exportInterval: metricsInterval, otlpTimeout: "2s", otlpHeader: collectorHeaderCanary})
@@ -450,6 +453,7 @@ func TestMetricsOverOTLP(t *testing.T) {
 // taking at most three times the first plus 500 ms; the scrapes keep working; and the process exits 0
 // within ledger.shutdown_flush_timeout plus 5 s.
 func TestCollectorStoppedLatencyUnchanged(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"closed", "stalled"} {
 		t.Run(mode, func(t *testing.T) {
 			up := fakeprovider.New(t)

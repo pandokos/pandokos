@@ -74,6 +74,7 @@ func requestsOf(s *transittest.Server, method, pathSub string) []transittest.Req
 // the ones of the design and no other, the key version is pinned, the format and the answers are
 // checked.
 func TestTransitWrapUnwrap(t *testing.T) {
+	t.Parallel()
 	tid := testTenant(1)
 	aad := vault.DataAAD(tid, 1)
 	dek := dataKeyBytes(3)
@@ -270,6 +271,7 @@ func TestTransitWrapUnwrap(t *testing.T) {
 // TestTransitAssociatedData is T-1058: the associated data are bound through a digest and the raw
 // value reaches nobody.
 func TestTransitAssociatedData(t *testing.T) {
+	t.Parallel()
 	tid := testTenant(9)
 	aad := vault.DataAAD(tid, 1)
 	dek := dataKeyBytes(11)
@@ -377,6 +379,7 @@ func idFor(s *transittest.Server, mount, key string, version int) string {
 
 // TestTransitVersionIdentifier is T-1059.
 func TestTransitVersionIdentifier(t *testing.T) {
+	t.Parallel()
 	aad := vault.DataAAD(testTenant(2), 1)
 	dek := dataKeyBytes(5)
 
@@ -556,6 +559,7 @@ func TestTransitVersionIdentifier(t *testing.T) {
 
 // TestTransitKeyRequirements is T-1060.
 func TestTransitKeyRequirements(t *testing.T) {
+	t.Parallel()
 	const keyName = "very-secret-key-name"
 	fail := func(t *testing.T, r *transitRig) {
 		t.Helper()
@@ -761,6 +765,7 @@ func fixedText(err error) bool {
 
 // TestTransitErrorClasses is T-1061: the table of the design, per operation.
 func TestTransitErrorClasses(t *testing.T) {
+	t.Parallel()
 	aad := vault.DataAAD(testTenant(3), 1)
 	dek := dataKeyBytes(9)
 
@@ -994,6 +999,7 @@ func (b *bufferSpy) RoundTrip(req *http.Request) (*http.Response, error) {
 
 // TestTransitOneAttempt is T-1062.
 func TestTransitOneAttempt(t *testing.T) {
+	t.Parallel()
 	aad := vault.DataAAD(testTenant(4), 1)
 	dek := dataKeyBytes(13)
 
@@ -1095,6 +1101,7 @@ func (r readerOf) Read(p []byte) (int, error) { return r.rc.Read(p) }
 
 // TestTransitRefusal is T-1063.
 func TestTransitRefusal(t *testing.T) {
+	t.Parallel()
 	aad := vault.DataAAD(testTenant(5), 1)
 	dek := dataKeyBytes(17)
 	start := time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)
@@ -1272,6 +1279,7 @@ func TestTransitRefusal(t *testing.T) {
 
 // TestTransitNamespace is T-1066.
 func TestTransitNamespace(t *testing.T) {
+	t.Parallel()
 	aad := vault.DataAAD(testTenant(6), 1)
 	dek := dataKeyBytes(19)
 	nsOf := func(s *transittest.Server) (with, without int) {
@@ -1340,6 +1348,7 @@ func TestTransitNamespace(t *testing.T) {
 // TestTransitCanary is T-1068: nothing secret reaches a log line, an error or the statistics, and
 // nothing about a tenant reaches the service.
 func TestTransitCanary(t *testing.T) {
+	t.Parallel()
 	tid := testTenant(7)
 	aad := vault.DataAAD(tid, 1)
 	dek := dataKeyBytes(23)

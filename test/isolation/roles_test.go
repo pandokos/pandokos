@@ -16,6 +16,7 @@ import (
 // TestTenantRoleTable is T-854: the harness's negative tests on tenant_role for every runtime role,
 // the grants of the matrix of appendix A1, and the lint with nothing to report.
 func TestTenantRoleTable(t *testing.T) {
+	t.Parallel()
 	spec := DefaultSpec()
 	d := dbtest.NewMigrated(t)
 	findings, err := Lint(ctx(t), d.Super(t), spec)
@@ -119,6 +120,7 @@ func TestTenantRoleTable(t *testing.T) {
 
 // TestSupportActionVisibility is T-855: support_action per session.
 func TestSupportActionVisibility(t *testing.T) {
+	t.Parallel()
 	dbtest.EachMode(t, func(t *testing.T, d *dbtest.Database) {
 		a, b := d.SeedTenant(t, "tenant-a"), d.SeedTenant(t, "tenant-b")
 		actionA := d.SupportAction(t, a, "platform", "pabcdefghijklmnop", "recover A", time.Hour, "member:read")
@@ -245,6 +247,7 @@ func TestSupportActionVisibility(t *testing.T) {
 
 // TestRolesAndSupportAPI is T-888: the operations of sprint 4.3 across tenants.
 func TestRolesAndSupportAPI(t *testing.T) {
+	t.Parallel()
 	w := newAPIWorld(t)
 	api := w.api
 	plat := &apitest.Caller{API: api, Key: api.PlatformKey(), Name: "platform"}

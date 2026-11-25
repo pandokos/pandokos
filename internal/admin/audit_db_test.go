@@ -619,6 +619,7 @@ func (f *fixt) steps(t *testing.T) []step {
 // TestEveryChangeIsAudited is T-281, extended in sprint 2.1 (T-343): the ten mutating operations
 // on credentials write the rows of section 5.10, and createTenant writes data_key.create.
 func TestEveryChangeIsAudited(t *testing.T) {
+	t.Parallel()
 	f := newFixtures(t)
 	api := f.w.api
 	f.catalogue(t) // writes platform audit rows: before the rows that exist are marked seen
@@ -775,6 +776,7 @@ func TestEveryChangeIsAudited(t *testing.T) {
 // every mutating operation, the credential operations too, answers 500 and leaves every table
 // as it was.
 func TestAuditIsAtomic(t *testing.T) {
+	t.Parallel()
 	f := newFixtures(t)
 	api := f.w.api
 	w := f.w
@@ -959,6 +961,7 @@ func TestAuditIsAtomic(t *testing.T) {
 // TestCorrelation is T-283: the response header, the log line and the audit row of one change
 // hold the same request ID.
 func TestCorrelation(t *testing.T) {
+	t.Parallel()
 	f := newFixtures(t)
 	api := f.w.api
 	seen := seenIDs(t, api)
@@ -1012,6 +1015,7 @@ func TestCorrelation(t *testing.T) {
 
 // TestAuthenticationFailuresAreAudited is T-284.
 func TestAuthenticationFailuresAreAudited(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	freeze := func(o *admin.Options) { o.Now = func() time.Time { return now } }
 	t.Run("one row per kind of failure", func(t *testing.T) {

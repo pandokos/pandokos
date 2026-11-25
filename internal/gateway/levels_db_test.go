@@ -125,6 +125,7 @@ func (e *levelsEnv) admits(t *testing.T, who string, n int) (admitted int, refus
 // TestLevels is T-639: rules written to the database through the admin role, the real rule cache
 // and the real store, behind the gateway.
 func TestLevels(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 
 	t.Run("a platform ceiling below the tenant rule wins", func(t *testing.T) {
@@ -605,6 +606,7 @@ func estimateMicro(body []byte, out int64) int64 { return ceil4(len(body))*3 + o
 // TestMonthlyBudget is T-669: the exit condition of the sprint, with the real store, reconciler,
 // ledger writer and database.
 func TestMonthlyBudget(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	const out = 1000
 
@@ -694,6 +696,7 @@ func TestMonthlyBudget(t *testing.T) {
 
 // TestRestartMatchesLedger is T-670: after a restart the counters hold what the ledger holds.
 func TestRestartMatchesLedger(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	d.SeedModel(t, "openai", "fake-basic") // a rule names its scope by foreign key
 	d.SeedModel(t, "openai", "fake-details")
@@ -818,6 +821,7 @@ func TestRestartMatchesLedger(t *testing.T) {
 
 // TestScopedRules is T-672: rules with a scope, behind the gateway.
 func TestScopedRules(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	d.SeedModel(t, "openai", "fake-basic") // a rule names its scope by foreign key
 	d.SeedModel(t, "openai", "fake-details")
@@ -910,6 +914,7 @@ func TestScopedRules(t *testing.T) {
 
 // TestThresholdEvents is T-673: thresholds and exhaustion are recorded once per rule and period.
 func TestThresholdEvents(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	const out = 10
 	est := estimateMicro(chat("fake-basic", false), out)

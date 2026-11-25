@@ -150,6 +150,7 @@ func carry(n, p *proc) {
 // TestTransitFreshInstall is T-1082, an exit test of the sprint (no key on the hosts): the binary
 // with provider transit, AppRole and no key of its own, from the first start to a credential used.
 func TestTransitFreshInstall(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	d := freshDB(t)
 	w := newTransitWorld(t, vaulttest.TransitSetup{Method: "approle"})
@@ -227,6 +228,7 @@ func TestTransitFreshInstall(t *testing.T) {
 // key file to the service and back, with calls succeeding throughout and every sealed row
 // untouched.
 func TestMoveBetweenProviders(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	d := dbtest.NewMigrated(t)
 	keys := vaulttest.Keys(t, 2)
@@ -356,6 +358,7 @@ func TestMoveBetweenProviders(t *testing.T) {
 // TestTransitOutage is T-1084, an exit test of the sprint (serves nothing, recovers alone): the
 // service away while running, a restart during the outage and its recovery.
 func TestTransitOutage(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	d := freshDB(t)
 	w := newTransitWorld(t, vaulttest.TransitSetup{})
@@ -491,6 +494,7 @@ func TestTransitOutage(t *testing.T) {
 
 // TestTransitStartRefusals is T-1085: the causes that only a person can repair end the start at once.
 func TestTransitStartRefusals(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	run := func(t *testing.T, d *dbtest.Database, extra ...string) (code int, out, errs string, took time.Duration) {
 		t.Helper()
@@ -745,6 +749,7 @@ func tokensSeen(s *transittest.Server) []string {
 // expired token and a refused login; then every output is searched for the secrets of the service
 // and the requests the service received for anything of the tenants.
 func TestTransitCanary(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	d := dbtest.NewMigrated(t)
 	keys := vaulttest.Keys(t, 1)
@@ -864,6 +869,7 @@ func digestAll(t *testing.T, d *dbtest.Database, sql string) string { return dig
 // TestTransitRotation is T-1087: a rotation in the service is the operator's act and takes effect
 // at a restart.
 func TestTransitRotation(t *testing.T) {
+	// Serial on purpose: it asserts the effect of a change within a short window, which a loaded machine misses.
 	up := fakeprovider.New(t)
 	d := freshDB(t)
 	w := newTransitWorld(t, vaulttest.TransitSetup{})
@@ -937,6 +943,7 @@ func TestTransitRotation(t *testing.T) {
 
 // TestTransitTokenLifetime is T-1088: tokens that live a few seconds never fail a call.
 func TestTransitTokenLifetime(t *testing.T) {
+	t.Parallel()
 	for name, setup := range map[string]vaulttest.TransitSetup{
 		"AppRole tokens of 3 s":  {Method: "approle", TTL: 3 * time.Second},
 		"a renewable token file": {Method: "token", TTL: 3 * time.Second, Renewable: true},
@@ -976,6 +983,7 @@ func TestTransitTokenLifetime(t *testing.T) {
 
 // TestTransitTelemetry is T-1089: M59 to M62 and the seven lines of the key service.
 func TestTransitTelemetry(t *testing.T) {
+	t.Parallel()
 	up := fakeprovider.New(t)
 	short := withEnv("PANDOKOS_CACHE_CREDENTIAL_TTL=1s", "PANDOKOS_CACHE_DATA_KEY_TTL=1s")
 

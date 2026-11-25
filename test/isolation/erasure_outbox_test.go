@@ -17,6 +17,7 @@ import (
 // writer that began before it, writes the event "tenant deleted" with the reference of the request
 // and counts destinations, not events, in the completion record.
 func TestErasureRemovesEvents(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	victim, bystander := d.PopulatedTenant(t), d.PopulatedTenant(t)
 	id := victim.String()

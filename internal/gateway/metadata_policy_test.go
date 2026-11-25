@@ -15,6 +15,7 @@ import (
 // tenant's view is in hand records no metadata and counts its entries as dropped; a change of the
 // policy is seen by the next request after the notification.
 func TestMetadataKeyPolicy(t *testing.T) {
+	t.Parallel()
 	const p = "X-Pandokos-Metadata-"
 	d := dbtest.NewMigrated(t)
 	tn := d.SeedTenant(t, "policy")

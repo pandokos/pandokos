@@ -106,6 +106,7 @@ func (w *world) provider(t *testing.T, name, baseURL string, private bool, model
 
 // TestCatalogue is T-440: the gateway's view of the catalogue, on a migrated database.
 func TestCatalogue(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	tn, _ := w.api.Tenant(t, "tenant-a")
 	nickID := w.provider(t, "synth-main", "http://10.1.2.3:8080/api/prefix", true, "nick", "up/nick", "all")
@@ -219,6 +220,7 @@ func (w *world) credentials(t *testing.T) *resolver.Credentials {
 
 // TestCredentials is T-441: the credential a call is made with, and tenant isolation.
 func TestCredentials(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	a, keyA := w.api.Tenant(t, "tenant-a")
 	b, keyB := w.api.Tenant(t, "tenant-b")
@@ -346,6 +348,7 @@ func keyIDFor(i int) string {
 // TestFailureAuditor is T-442: the bounded record of authentication failures of the inference
 // listener.
 func TestFailureAuditor(t *testing.T) {
+	t.Parallel()
 	d := dbtest.NewMigrated(t)
 	gw := d.Open(t, store.RoleGateway)
 	a := d.SeedTenant(t, "tenant-a")
@@ -535,6 +538,7 @@ func TestFailureAuditor(t *testing.T) {
 // resolved it; a model without a price returns none; versions changed in the database appear
 // after the cache refresh.
 func TestTargetPrices(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	tn, _ := w.api.Tenant(t, "tenant-prices")
 	priced := w.provider(t, "synth-priced", "http://10.1.2.3:8080", true, "priced", "up/priced", "all")
@@ -597,6 +601,7 @@ func TestTargetPrices(t *testing.T) {
 // TestStreamUsageTarget is T-540: Target.StreamUsage follows the provider row, and a change is seen
 // after the catalogue cache expires.
 func TestStreamUsageTarget(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	tn, _ := w.api.Tenant(t, "tenant-stream-usage")
 	w.provider(t, "synth-add", "http://10.1.2.3:8080", true, "m", "m", "all")

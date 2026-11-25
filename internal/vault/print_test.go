@@ -44,6 +44,7 @@ func byteForms(b []byte) []string {
 // TestNothingPrints is T-304: a data key, a provider, a sealed value, an opened credential and a
 // use cannot be made to show a key, a secret or a sealed byte by any formatting path.
 func TestNothingPrints(t *testing.T) {
+	t.Parallel()
 	kek := rawKey(t)
 	dek := rawKey(t)
 	tid := tenantID(t, 7)
@@ -153,6 +154,7 @@ func decimalList(b []byte) string {
 // TestTransitPrint is T-1067: the transit provider, its options, the router and the unwrap cache
 // print the redaction marker with every verb, as a log value, as JSON and as text.
 func TestTransitPrint(t *testing.T) {
+	t.Parallel()
 	r := newTransitRig(t, vaulttest.TransitSetup{Method: "approle"})
 	local := vaulttest.Provider(t, vaulttest.Keys(t, 1)[0])
 	router, err := vault.NewRouter(r.p, local)
