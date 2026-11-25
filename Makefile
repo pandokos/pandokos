@@ -15,7 +15,7 @@ FUZZTIME ?= 30s
 # Loads local/testdb/env (written by make db-up) unless the variable is already set.
 DBENV = set -a; if [ -z "$$PANDOKOS_TEST_DATABASE_URL" ] && [ -f local/testdb/env ]; then . ./local/testdb/env; fi; set +a;
 
-.PHONY: help build test test-sdk test-sdk-python sdk-python-env test-sdk-ts test-compose test-container test-browser fuzz bench fmt fmt-check vet lint tidy vuln image check clean db-up db-down idp-up idp-down test-idp transit-up transit-down test-transit test-nodb migrations-sum generate generate-check secrets
+.PHONY: help build test test-sdk test-sdk-python sdk-python-env test-sdk-ts test-compose test-container test-browser fuzz bench fmt fmt-check vet lint tidy vuln image check clean db-up db-down idp-up idp-down test-idp transit-up transit-down test-transit test-nodb previous-binary test-upgrade test-drill migrations-sum generate generate-check secrets
 
 help: ## Show the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -77,6 +77,20 @@ transit-down: ## Stop it and discard its data
 
 test-transit: ## Key service conformance and exit tests against the running service (needs make db-up and make transit-up)
 	@$(DBENV) set -a; . ./local/transit/env; set +a; go test -tags transit -count=1 -timeout 20m ./test/transit/...
+
+previous-binary: ## Build the previous release named by test/upgrade/PREVIOUS into local/previous (for make test-upgrade)
+	@set -eu; . ./test/upgrade/PREVIOUS; rm -rf local/previous; mkdir -p local/previous/src; \
+	git fetch --quiet origin "$$commit"; git archive "$$commit" | tar -x -C local/previous/src; \
+	cd local/previous/src && CGO_ENABLED=0 GOFLAGS=-mod=readonly go build -trimpath \
+	  -ldflags "-s -w -buildid= -X $(PKG)/internal/buildinfo.Version=$${version#v} -X $(PKG)/internal/buildinfo.Commit=$$commit" \
+	  -o ../pandokos ./cmd/pandokos; \
+	cd ../.. && rm -rf previous/src
+
+test-upgrade: ## Upgrade from the previous release, with traffic (needs make db-up and make previous-binary)
+	@$(DBENV) go test -tags upgrade -count=1 -timeout 20m ./test/upgrade/...
+
+test-drill: ## The restore drill: starts and destroys its own PostgreSQL and key service (needs Docker)
+	go test -tags drill -count=1 -timeout 30m -parallel 4 ./test/drill/...
 
 migrations-sum: ## Rewrite the checksum file of the migrations
 	@cd internal/store/migrations/sql && for f in *.sql; do printf '%s %s\n' "$$f" "$$(sha256sum "$$f" | cut -d' ' -f1)"; done > ../migrations.sum

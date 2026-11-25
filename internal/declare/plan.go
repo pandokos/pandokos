@@ -42,7 +42,7 @@ func (p *planner) notInDocument(resource string)    { p.add("not in document", r
 // absent is created, a mutable field that differs is updated, an immutable one is a conflict,
 // price versions are only added, and what exists but is not in the document is reported. It makes
 // no call that changes anything.
-func Diff(ctx context.Context, c *adminapi.Client, target Target, doc *Document) (Plan, error) {
+func Diff(ctx context.Context, c *adminapi.Client, target Target, doc *Document, opts ...Options) (Plan, error) {
 	if err := doc.Validate(target); err != nil {
 		return Plan{}, err
 	}
@@ -56,7 +56,11 @@ func Diff(ctx context.Context, c *adminapi.Client, target Target, doc *Document)
 	if err != nil {
 		return Plan{}, err
 	}
-	return Plan{Target: target, Changes: p.changes, refs: p.refs}, nil
+	plan := Plan{Target: target, Changes: p.changes, refs: p.refs}
+	if len(opts) > 0 {
+		plan.opts = opts[0]
+	}
+	return plan, nil
 }
 
 // Preview is the result of the plan as it stands, with no call made: what a dry run prints.

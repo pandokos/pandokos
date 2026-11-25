@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -120,6 +121,18 @@ func (d *Document) Validate(target Target) error {
 		return invalidf("the document is of kind %s, and --platform needs a document of kind platform", d.Kind)
 	case !target.Platform && d.Kind != KindTenant:
 		return invalidf("the document is of kind %s, and --tenant needs a document of kind tenant", d.Kind)
+	}
+	// The sections of sprint 12.3 are parsed and typed; planning them is part C1 and C2.
+	for name, present := range map[string]bool{"platform_issuers": len(d.PlatformIssuers) > 0, "tenants": len(d.Tenants) > 0,
+		"token_issuers": len(d.TokenIssuers) > 0, "subject_mappings": len(d.SubjectMappings) > 0, "event_destinations": len(d.EventDestinations) > 0} {
+		if present {
+			return invalidf("the section %s is not supported yet", name)
+		}
+	}
+	for _, l := range append(slices.Clone(d.Limits), d.PlatformLimits...) {
+		if l.Mapping != nil {
+			return invalidf("a limit on a subject mapping is not supported yet")
+		}
 	}
 	if d.Kind == KindPlatform {
 		for name, present := range map[string]bool{"settings": d.Settings != nil, "model_restriction": d.ModelRestriction != nil, "roles": len(d.Roles) > 0,
