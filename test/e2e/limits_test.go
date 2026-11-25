@@ -448,7 +448,7 @@ func TestLimitAdministration(t *testing.T) {
 // TestQuotaCanary is T-688: at log level debug, with canaries in the body, the provider credential and
 // the virtual key, no log line, record, event, audit row, header or error body holds them.
 func TestQuotaCanary(t *testing.T) {
-	t.Parallel()
+	// Serial on purpose: it asserts the effect of a change within a short window, which a loaded machine misses.
 	p, _, boot := limitsProc(t, "debug")
 	p.priceFake(t, boot, "openai")
 	tn := p.newLimitsTenant(t, boot, "quota-canary")

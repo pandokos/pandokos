@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/pandokos/pandokos/examples/webhook-receiver/receiver"
 	"github.com/pandokos/pandokos/test/fixtures"
 )
@@ -234,19 +236,21 @@ func quietCall(client *http.Client, url, key, model string) int {
 // ledgerOf returns the usage records of the tenant: record ID to request ID.
 func ledgerOf(t *testing.T, p *proc, tenantID string) map[string]string {
 	t.Helper()
-	rows, err := p.db.Super(t).Query(context.Background(), `SELECT id::text, request_id FROM pandokos.usage_record WHERE tenant_id = $1::uuid`, tenantID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
 	out := map[string]string{}
-	for rows.Next() {
-		var id, req string
-		if err := rows.Scan(&id, &req); err != nil {
+	p.db.WithSuper(t, func(ctx context.Context, c *pgx.Conn) { // tests poll this: no connection is kept
+		rows, err := c.Query(ctx, `SELECT id::text, request_id FROM pandokos.usage_record WHERE tenant_id = $1::uuid`, tenantID)
+		if err != nil {
 			t.Fatal(err)
 		}
-		out[id] = req
-	}
+		defer rows.Close()
+		for rows.Next() {
+			var id, req string
+			if err := rows.Scan(&id, &req); err != nil {
+				t.Fatal(err)
+			}
+			out[id] = req
+		}
+	})
 	return out
 }
 

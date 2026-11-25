@@ -778,7 +778,7 @@ func digestAll(t *testing.T, d *dbtest.Database, sql string) string { return dig
 // TestTransitRotation is T-1087: a rotation in the service is the operator's act and takes effect
 // at a restart.
 func TestTransitRotation(t *testing.T) {
-	t.Parallel()
+	// Serial on purpose: it asserts the effect of a change within a short window, which a loaded machine misses.
 	up := fakeprovider.New(t)
 	d := freshDB(t)
 	w := newTransitWorld(t, vaulttest.TransitSetup{})

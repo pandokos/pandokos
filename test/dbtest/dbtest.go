@@ -383,6 +383,24 @@ func (d *Database) Super(tb testing.TB) *pgx.Conn {
 	return d.connect(tb, cfg)
 }
 
+// WithSuper calls fn with a superuser connection to this database (always direct) and closes the
+// connection when fn returns. Super keeps its connection until the test ends, which is too long
+// for a helper that a test calls in a polling loop: thousands of calls would hold thousands of
+// connections of a server that has a few hundred.
+func (d *Database) WithSuper(tb testing.TB, fn func(ctx context.Context, c *pgx.Conn)) {
+	tb.Helper()
+	ctx, cancel := ctx30()
+	defer cancel()
+	cfg := d.s.admin.Copy()
+	cfg.Database = d.Name
+	conn, err := pgx.ConnectConfig(ctx, cfg)
+	if err != nil {
+		tb.Fatalf("connect as %s: %v", cfg.User, err)
+	}
+	defer func() { _ = conn.Close(ctx) }()
+	fn(ctx, conn)
+}
+
 // CreateLogin creates one more login user "<database>_<suffix>" with the given attribute
 // clause (for example "SUPERUSER" or "") and memberships, removed at cleanup, and returns
 // connection options for it.
