@@ -130,6 +130,9 @@ type tenantState struct {
 	serviceAccounts []adminapi.ServiceAccount
 	limits          []adminapi.LimitRule
 	prices          []adminapi.TenantPriceVersion
+	tokenIssuers    []adminapi.TokenIssuer
+	platformIssuers []adminapi.TenantPlatformIssuer // the platform-level issuers that list the tenant
+	mappings        []adminapi.SubjectMapping
 }
 
 func readTenant(ctx context.Context, c *adminapi.Client, id string) (*tenantState, error) {
@@ -171,6 +174,33 @@ func readTenant(ctx context.Context, c *adminapi.Client, id string) (*tenantStat
 	}); err != nil {
 		return nil, err
 	}
+	if s.tokenIssuers, err = drain(func(cur string) ([]adminapi.TokenIssuer, string, error) {
+		l, err := c.ListTokenIssuers(ctx, adminapi.ListTokenIssuersInput{Tenant: id, Cursor: cur})
+		if err != nil {
+			return nil, "", err
+		}
+		return l.Items, l.NextCursor, nil
+	}); err != nil {
+		return nil, err
+	}
+	if s.platformIssuers, err = drain(func(cur string) ([]adminapi.TenantPlatformIssuer, string, error) {
+		l, err := c.ListTenantPlatformIssuers(ctx, adminapi.ListTenantPlatformIssuersInput{Tenant: id, Cursor: cur})
+		if err != nil {
+			return nil, "", err
+		}
+		return l.Items, l.NextCursor, nil
+	}); err != nil {
+		return nil, err
+	}
+	if s.mappings, err = drain(func(cur string) ([]adminapi.SubjectMapping, string, error) {
+		l, err := c.ListSubjectMappings(ctx, adminapi.ListSubjectMappingsInput{Tenant: id, Cursor: cur})
+		if err != nil {
+			return nil, "", err
+		}
+		return l.Items, l.NextCursor, nil
+	}); err != nil {
+		return nil, err
+	}
 	tz, err := soft(c.GetTenantTimeZone(ctx, adminapi.GetTenantTimeZoneInput{Tenant: id}))
 	if err != nil {
 		return nil, err
@@ -202,28 +232,80 @@ func readTenant(ctx context.Context, c *adminapi.Client, id string) (*tenantStat
 	return s, nil
 }
 
-// limitSubject is the subject of a rule as a document writes it; ok is false for a rule that a
-// document cannot express (a rule on a subject mapping).
-func (s *tenantState) limitSubject(r adminapi.LimitRule) (subject string, ok bool) {
-	switch r.SubjectKind {
-	case adminapi.LimitSubjectKindTenant:
-		return "tenant", true
-	case adminapi.LimitSubjectKindServiceAccount:
-		for _, a := range s.serviceAccounts {
-			if a.ID == r.SubjectID {
-				return "service_account: " + a.Name, true
+// issuerName is the name of the registration a mapping belongs to: the answer names it, or it is
+// found by ID among the issuers the tenant knows.
+func (s *tenantState) issuerName(m adminapi.SubjectMapping) (string, bool) {
+	if m.Issuer.Name != "" {
+		return m.Issuer.Name, true
+	}
+	switch m.Issuer.Scope {
+	case adminapi.IssuerScopeTenant:
+		for _, i := range s.tokenIssuers {
+			if i.ID == m.Issuer.ID {
+				return i.Name, true
 			}
 		}
-	case adminapi.LimitSubjectKindKey:
-		if reKeyID.MatchString(r.SubjectID) {
-			return "key: " + r.SubjectID, true
+	case adminapi.IssuerScopePlatform:
+		for _, i := range s.platformIssuers {
+			if i.ID == m.Issuer.ID {
+				return i.Name, true
+			}
 		}
 	}
 	return "", false
 }
 
-func limitOf(r adminapi.LimitRule, subject string) Limit {
-	return Limit{Subject: subject, Provider: r.Provider, Model: r.Model, Metric: string(r.Metric), Limit: r.Limit, Amount: r.Amount, Currency: r.Currency,
+// serviceAccountName is the name of the service account of a mapping.
+func (s *tenantState) serviceAccountName(m adminapi.SubjectMapping) (string, bool) {
+	if m.ServiceAccountName != "" {
+		return m.ServiceAccountName, true
+	}
+	for _, a := range s.serviceAccounts {
+		if a.ID == m.ServiceAccountID {
+			return a.Name, true
+		}
+	}
+	return "", false
+}
+
+// mappingKey is the portable name of a mapping: its issuer's scope and name, and its subject.
+func (s *tenantState) mappingKey(m adminapi.SubjectMapping) (MappingSubject, bool) {
+	name, ok := s.issuerName(m)
+	if !ok {
+		return MappingSubject{}, false
+	}
+	return MappingSubject{Scope: string(m.Issuer.Scope), Issuer: name, Subject: m.Subject}, true
+}
+
+// limitSubject is the subject of a rule as a document writes it: a string, or a mapping; ok is
+// false for a rule that a document cannot express (a rule on a subject that cannot be named).
+func (s *tenantState) limitSubject(r adminapi.LimitRule) (subject string, mapping *MappingSubject, ok bool) {
+	switch r.SubjectKind {
+	case adminapi.LimitSubjectKindTenant:
+		return "tenant", nil, true
+	case adminapi.LimitSubjectKindServiceAccount:
+		for _, a := range s.serviceAccounts {
+			if a.ID == r.SubjectID {
+				return "service_account: " + a.Name, nil, true
+			}
+		}
+	case adminapi.LimitSubjectKindKey:
+		if reKeyID.MatchString(r.SubjectID) {
+			return "key: " + r.SubjectID, nil, true
+		}
+		for _, m := range s.mappings {
+			if m.ID == r.SubjectID {
+				if k, found := s.mappingKey(m); found {
+					return "", &k, true
+				}
+			}
+		}
+	}
+	return "", nil, false
+}
+
+func limitOf(r adminapi.LimitRule, subject string, mapping *MappingSubject) Limit {
+	return Limit{Subject: subject, Mapping: mapping, Provider: r.Provider, Model: r.Model, Metric: string(r.Metric), Limit: r.Limit, Amount: r.Amount, Currency: r.Currency,
 		Enforce: r.Enforce, Thresholds: nonEmptyInts(r.Thresholds)}
 }
 
@@ -238,7 +320,7 @@ func sortLimits(in []Limit, key func(Limit) string) {
 	slices.SortFunc(in, func(a, b Limit) int { return cmp.Compare(key(a), key(b)) })
 }
 
-func subjectKey(l Limit) string { return limitKey(l.Subject, l) }
+func subjectKey(l Limit) string { return limitKey(l.subjectText(), l) }
 
 // document builds the document of a tenant, sorted by natural key. Left-out notes are returned with it.
 func (s *tenantState) document() *Document {
@@ -269,12 +351,12 @@ func (s *tenantState) document() *Document {
 	}
 	slices.SortFunc(d.ServiceAccounts, func(a, b ServiceAccount) int { return cmp.Compare(a.Name, b.Name) })
 	for _, r := range s.limits {
-		subject, ok := s.limitSubject(r)
+		subject, mapping, ok := s.limitSubject(r)
 		if !ok {
-			d.LeftOut = append(d.LeftOut, fmt.Sprintf("a limit rule on a subject mapping (%s) is not in the document: a mapping has no portable name", r.Metric))
+			d.LeftOut = append(d.LeftOut, fmt.Sprintf("a limit rule (%s) on a subject that has no portable name is not in the document", r.Metric))
 			continue
 		}
-		d.Limits = append(d.Limits, limitOf(r, subject))
+		d.Limits = append(d.Limits, limitOf(r, subject, mapping))
 	}
 	sortLimits(d.Limits, subjectKey)
 	byCurrency := map[string][]PriceVersion{}
@@ -292,8 +374,32 @@ func (s *tenantState) document() *Document {
 		d.PriceLists = append(d.PriceLists, PriceList{Currency: cur, Versions: vs})
 	}
 	slices.SortFunc(d.PriceLists, func(a, b PriceList) int { return cmp.Compare(a.Currency, b.Currency) })
+	for _, i := range s.tokenIssuers {
+		d.TokenIssuers = append(d.TokenIssuers, TokenIssuer{Name: i.Name, Description: i.Description, Issuer: i.Issuer, Audience: i.Audience, JWKSURI: i.JwksUri,
+			Algorithms: nonEmptyStrings(sorted(i.Algorithms)), SubjectClaim: i.SubjectClaim, RequiredClaims: nonEmptyClaims(i.RequiredClaims), Enabled: i.Enabled})
+	}
+	slices.SortFunc(d.TokenIssuers, func(a, b TokenIssuer) int { return cmp.Compare(a.Name, b.Name) })
+	for _, m := range s.mappings {
+		key, ok := s.mappingKey(m)
+		sa, okSA := s.serviceAccountName(m)
+		if !ok || !okSA {
+			d.LeftOut = append(d.LeftOut, "a subject mapping whose issuer or service account is not known is not in the document")
+			continue
+		}
+		d.SubjectMappings = append(d.SubjectMappings, SubjectMapping{Issuer: MappingIssuer{Scope: key.Scope, Name: key.Issuer}, Subject: key.Subject, ServiceAccount: sa, Description: m.Description})
+	}
+	slices.SortFunc(d.SubjectMappings, func(a, b SubjectMapping) int {
+		return cmp.Or(cmp.Compare(a.Issuer.Scope, b.Issuer.Scope), cmp.Compare(a.Issuer.Name, b.Issuer.Name), cmp.Compare(a.Subject, b.Subject))
+	})
 	slices.Sort(d.LeftOut)
 	return d
+}
+
+func nonEmptyClaims(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	return in
 }
 
 func nonNilStrings(in []string) []string {
@@ -320,12 +426,15 @@ type platformState struct {
 	overrides map[string][]adminapi.PriceVersion
 	limits    []adminapi.PlatformLimitRule
 	tenants   []adminapi.Tenant
+	issuers   []adminapi.PlatformIssuer
+	listed    map[string][]adminapi.PlatformIssuerTenant // the tenants of an issuer, by issuer ID
 }
 
 // readPlatform reads the platform. Grants and overrides are read for the models that can have
 // them (selected availability, an override in force) and for those in want, by reference.
 func readPlatform(ctx context.Context, c *adminapi.Client, want map[string]bool) (*platformState, error) {
-	s := &platformState{endpoints: map[string][]adminapi.Endpoint{}, grants: map[string][]adminapi.ModelGrant{}, overrides: map[string][]adminapi.PriceVersion{}}
+	s := &platformState{endpoints: map[string][]adminapi.Endpoint{}, grants: map[string][]adminapi.ModelGrant{}, overrides: map[string][]adminapi.PriceVersion{},
+		listed: map[string][]adminapi.PlatformIssuerTenant{}}
 	var err error
 	if s.tenants, err = drain(func(cur string) ([]adminapi.Tenant, string, error) {
 		l, err := c.ListTenants(ctx, adminapi.ListTenantsInput{Cursor: cur})
@@ -410,6 +519,29 @@ func readPlatform(ctx context.Context, c *adminapi.Client, want map[string]bool)
 	}); err != nil {
 		return nil, err
 	}
+	if s.issuers, err = drain(func(cur string) ([]adminapi.PlatformIssuer, string, error) {
+		l, err := c.ListPlatformIssuers(ctx, adminapi.ListPlatformIssuersInput{Cursor: cur})
+		if err != nil {
+			return nil, "", err
+		}
+		return l.Items, l.NextCursor, nil
+	}); err != nil {
+		return nil, err
+	}
+	for _, i := range s.issuers {
+		id := i.ID
+		ts, err := drain(func(cur string) ([]adminapi.PlatformIssuerTenant, string, error) {
+			l, err := c.ListPlatformIssuerTenants(ctx, adminapi.ListPlatformIssuerTenantsInput{Issuer: id, Cursor: cur})
+			if err != nil {
+				return nil, "", err
+			}
+			return l.Items, l.NextCursor, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		s.listed[id] = ts
+	}
 	return s, nil
 }
 
@@ -465,6 +597,20 @@ func (s *platformState) document() *Document {
 			Currency: r.Currency, Enforce: r.Enforce, Thresholds: nonEmptyInts(r.Thresholds)})
 	}
 	sortLimits(d.PlatformLimits, func(l Limit) string { return limitKey(l.tenantRef(), l) })
+	for _, i := range s.issuers {
+		pi := PlatformIssuer{Name: i.Name, Description: i.Description, Issuer: i.Issuer, Audience: i.Audience, JWKSURI: i.JwksUri, Algorithms: nonEmptyStrings(sorted(i.Algorithms)),
+			SubjectClaim: i.SubjectClaim, TenantClaim: i.TenantClaim, RequiredClaims: nonEmptyClaims(i.RequiredClaims), Enabled: i.Enabled}
+		for _, t := range s.listed[i.ID] {
+			it := IssuerTenant{Tenant: t.TenantName}
+			if t.ClaimValue != t.TenantID {
+				it.ClaimValue = t.ClaimValue
+			}
+			pi.Tenants = append(pi.Tenants, it)
+		}
+		slices.SortFunc(pi.Tenants, func(a, b IssuerTenant) int { return cmp.Compare(a.Tenant, b.Tenant) })
+		d.PlatformIssuers = append(d.PlatformIssuers, pi)
+	}
+	slices.SortFunc(d.PlatformIssuers, func(a, b PlatformIssuer) int { return cmp.Compare(a.Name, b.Name) })
 	slices.Sort(d.LeftOut)
 	return d
 }

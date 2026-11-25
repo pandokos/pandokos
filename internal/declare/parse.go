@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -29,7 +28,7 @@ func invalidf(format string, args ...any) error {
 // forbidden are the members no document holds: a document carries no secret.
 var forbidden = map[string]bool{
 	"secret": true, "password": true, "token": true, "api_key": true, "apikey": true, "key_secret": true,
-	"secret_key": true, "credential": true, "credentials": true, "private_key": true,
+	"secret_key": true, "credential": true, "credentials": true, "private_key": true, "signing_secret": true,
 }
 
 var reBackticked = regexp.MustCompile("`[^`]*`")
@@ -122,28 +121,23 @@ func (d *Document) Validate(target Target) error {
 	case !target.Platform && d.Kind != KindTenant:
 		return invalidf("the document is of kind %s, and --tenant needs a document of kind tenant", d.Kind)
 	}
-	// The sections of sprint 12.3 are parsed and typed; planning them is part C1 and C2.
-	for name, present := range map[string]bool{"platform_issuers": len(d.PlatformIssuers) > 0, "tenants": len(d.Tenants) > 0,
-		"token_issuers": len(d.TokenIssuers) > 0, "subject_mappings": len(d.SubjectMappings) > 0, "event_destinations": len(d.EventDestinations) > 0} {
-		if present {
-			return invalidf("the section %s is not supported yet", name)
-		}
-	}
-	for _, l := range append(slices.Clone(d.Limits), d.PlatformLimits...) {
+	for _, l := range d.PlatformLimits {
 		if l.Mapping != nil {
-			return invalidf("a limit on a subject mapping is not supported yet")
+			return invalidf("a platform ceiling has no subject: a mapping subject belongs to a limit of a tenant")
 		}
 	}
 	if d.Kind == KindPlatform {
 		for name, present := range map[string]bool{"settings": d.Settings != nil, "model_restriction": d.ModelRestriction != nil, "roles": len(d.Roles) > 0,
-			"service_accounts": len(d.ServiceAccounts) > 0, "limits": len(d.Limits) > 0, "price_lists": len(d.PriceLists) > 0} {
+			"service_accounts": len(d.ServiceAccounts) > 0, "limits": len(d.Limits) > 0, "price_lists": len(d.PriceLists) > 0,
+			"token_issuers": len(d.TokenIssuers) > 0, "subject_mappings": len(d.SubjectMappings) > 0, "event_destinations": len(d.EventDestinations) > 0} {
 			if present {
 				return invalidf("the section %s belongs to a document of kind tenant", name)
 			}
 		}
 	} else {
 		for name, present := range map[string]bool{"providers": len(d.Providers) > 0, "models": len(d.Models) > 0, "model_grants": len(d.ModelGrants) > 0,
-			"price_overrides": len(d.PriceOverrides) > 0, "platform_limits": len(d.PlatformLimits) > 0} {
+			"price_overrides": len(d.PriceOverrides) > 0, "platform_limits": len(d.PlatformLimits) > 0,
+			"tenants": len(d.Tenants) > 0, "platform_issuers": len(d.PlatformIssuers) > 0} {
 			if present {
 				return invalidf("the section %s belongs to a document of kind platform", name)
 			}
@@ -236,10 +230,71 @@ func (d *Document) Validate(target Target) error {
 		if l.Metric == "" {
 			return invalidf("a limit has no metric")
 		}
-		if _, _, ok := subjectOf(l.Subject); !ok {
-			return invalidf("the subject %q of a limit is not tenant, service_account: NAME or key: KEY-ID", l.Subject)
+		if l.Mapping != nil {
+			m := l.Mapping
+			switch {
+			case l.Subject != "":
+				return invalidf("a limit has a subject and a mapping subject")
+			case m.Scope != IssuerScopeTenant && m.Scope != IssuerScopePlatform:
+				return invalidf("the scope of a mapping subject is tenant or platform")
+			case m.Issuer == "" || m.Subject == "":
+				return invalidf("a mapping subject needs scope, issuer and subject")
+			}
+		} else if _, _, ok := subjectOf(l.Subject); !ok {
+			return invalidf("the subject %q of a limit is not tenant, service_account: NAME, key: KEY-ID or a mapping", l.Subject)
 		}
-		if err := once("limit", limitKey(l.Subject, l)); err != nil {
+		if err := once("limit", limitKey(l.subjectText(), l)); err != nil {
+			return err
+		}
+	}
+	for _, t := range d.Tenants {
+		if t.Name == "" {
+			return invalidf("a tenant of the document has no name")
+		}
+		if err := once("tenant", t.Name); err != nil {
+			return err
+		}
+	}
+	for _, i := range d.PlatformIssuers {
+		if i.Name == "" || i.Issuer == "" || i.Audience == "" {
+			return invalidf("a platform issuer needs name, issuer and audience")
+		}
+		if err := once("platform issuer", i.Name); err != nil {
+			return err
+		}
+		for _, t := range i.Tenants {
+			if t.Tenant == "" {
+				return invalidf("a tenant of platform issuer %s has no name", i.Name)
+			}
+			if err := once("tenant of platform issuer "+i.Name, t.Tenant); err != nil {
+				return err
+			}
+		}
+	}
+	for _, i := range d.TokenIssuers {
+		if i.Name == "" || i.Issuer == "" || i.Audience == "" {
+			return invalidf("a token issuer needs name, issuer and audience")
+		}
+		if err := once("token issuer", i.Name); err != nil {
+			return err
+		}
+	}
+	for _, m := range d.SubjectMappings {
+		switch {
+		case m.Issuer.Scope != IssuerScopeTenant && m.Issuer.Scope != IssuerScopePlatform:
+			return invalidf("the scope of the issuer of a subject mapping is tenant or platform")
+		case m.Issuer.Name == "" || m.Subject == "" || m.ServiceAccount == "":
+			return invalidf("a subject mapping needs the scope and name of its issuer, a subject and a service account")
+		}
+		if err := once("subject mapping", m.Issuer.Scope+"/"+m.Issuer.Name+"/"+m.Subject); err != nil {
+			return err
+		}
+	}
+	for _, e := range d.EventDestinations {
+		if e.Name == "" || e.URL == "" {
+			return invalidf("an event destination needs a name and a url")
+		}
+		if err := once("event destination", e.Name); err != nil {
 			return err
 		}
 	}
@@ -263,6 +318,15 @@ func (d *Document) Validate(target Target) error {
 		}
 	}
 	return nil
+}
+
+// subjectText is the subject of a rule as a text: the string form, or the mapping form written
+// "mapping: SCOPE/ISSUER/SUBJECT" (the order of the rules of an export is the order of this text).
+func (l Limit) subjectText() string {
+	if l.Mapping != nil {
+		return "mapping: " + l.Mapping.Scope + "/" + l.Mapping.Issuer + "/" + l.Mapping.Subject
+	}
+	return l.Subject
 }
 
 func (l Limit) tenantRef() string {
