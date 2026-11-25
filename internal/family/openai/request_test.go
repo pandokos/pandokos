@@ -25,7 +25,7 @@ var prepareCases = []prepareCase{
 	{`{"model":"m","stream":false}`, "", false, false},
 	{`{"model":"m", "stream": true }`, `{"model":"m", "stream": true ,"stream_options":{"include_usage":true}}`, true, true},
 	{`{"stream":true,"stream_options":{"include_usage":true},"x":1}`, "", true, false},
-    {`{"stream":true,"stream_options":{"include_usage":true,"include_usAge":false}}`, "", true, false},
+	{`{"stream":true,"stream_options":{"include_usage":true,"include_usAge":false}}`, "", true, false},
 	{`{"stream":true,"stream_options":{"include_usAge":false,"include_usage":true}}`, "", true, false},
 	{`{"stream":true,"stream_options":{"include_usage": false},"x":1}`, `{"stream":true,"stream_options":{"include_usage": true},"x":1}`, true, true},
 	{`{"stream":true,"stream_options": {"include_obfuscation":false},"x":1}`, `{"stream":true,"stream_options": {"include_usage":true,"include_obfuscation":false},"x":1}`, true, true},
