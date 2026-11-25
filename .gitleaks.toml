@@ -48,10 +48,14 @@ regexTarget = "line"
 regexes = ['''pandokos\.record_auth_failure\('tabcdefghijklmnop', 'bad_secret', '0123456789abcdef0123456789abcdef'\)''']
 
 # False positive: the generic rule reads the name of an encryption algorithm in the design of sprint 12.1
-# as a key (commit 736fa02, already in history). Only that file and that statement are allowed.
+# as a key (commit 736fa02, already in history). Only that file, its frozen copy in the history of epic 12,
+# and that statement are allowed.
 [[allowlists]]
 description = "Algorithm names in the design of the external key-encryption key"
-paths = ['''^planning/epics/12-operability/12\.1-external-key-encryption-key/sprint\.md$''']
+paths = [
+  '''^planning/epics/12-operability/12\.1-external-key-encryption-key/sprint\.md$''',
+  '''^docs/history/epic-12-operability/12\.1-external-key-encryption-key/sprint\.md$''',
+]
 regexTarget = "line"
 regexes = ['''`chacha20-poly1305` and for a derived key''']
 
