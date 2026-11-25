@@ -348,21 +348,32 @@ func TestRelayTwoWorkers(t *testing.T) {
 	inRound := map[string]int{}
 	rounds := map[string]int{}
 	overlap := atomic.Int64{}
+	// A round holds its destination from the claim to the settle, whose transaction releases the
+	// lease: the other relay may claim the destination as soon as it commits, before afterRound
+	// runs. A round is therefore counted from beforeRound to beforeSettle, or to afterRound when
+	// it ends without a settle.
 	hooks := func(rl *Relay) {
+		open := map[string]bool{} // the rounds of this relay that are counted; one per destination at a time
+		end := func(dest string) {
+			mu.Lock()
+			defer mu.Unlock()
+			if open[dest] {
+				open[dest] = false
+				inRound[dest]--
+			}
+		}
 		rl.beforeRound = func(dest string) {
 			mu.Lock()
 			defer mu.Unlock()
+			open[dest] = true
 			inRound[dest]++
 			rounds[dest]++
 			if inRound[dest] > 1 {
 				overlap.Add(1)
 			}
 		}
-		rl.afterRound = func(dest string) {
-			mu.Lock()
-			defer mu.Unlock()
-			inRound[dest]--
-		}
+		rl.beforeSettle = end
+		rl.afterRound = end
 	}
 	one, two := newRig(t, d, hooks), newRig(t, d, hooks)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
