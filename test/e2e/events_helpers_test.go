@@ -68,7 +68,7 @@ type faultReceiver struct {
 	srv      *http.Server
 	mode     atomic.Value
 	store    *dupStore
-	handler  *receiver.Handler
+	handler  atomic.Pointer[receiver.Handler] // replaced whole by setSecret: a delivery may be in flight
 	stop     chan struct{}
 	requests atomic.Int64
 	late     atomic.Int64 // requests answered late whose event was then stored
@@ -100,7 +100,7 @@ func newFaultReceiver(t *testing.T, path string) *faultReceiver {
 	}
 	f := &faultReceiver{t: t, ln: ln, conns: make(chan net.Conn, 64), stop: make(chan struct{}), store: &dupStore{got: map[string]receiver.Event{}}, lateWait: 2500 * time.Millisecond}
 	f.mode.Store("ok")
-	f.handler = &receiver.Handler{Store: f.store}
+	f.handler.Store(&receiver.Handler{Store: f.store})
 	cl := &chanListener{conns: f.conns, addr: ln.Addr(), done: f.stop}
 	f.srv = &http.Server{Handler: http.HandlerFunc(f.serve), ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = f.srv.Serve(cl) }()
@@ -152,16 +152,18 @@ func (f *faultReceiver) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		req := r.Clone(context.Background())
 		req.Body = io.NopCloser(bytes.NewReader(body))
-		f.handler.ServeHTTP(httptest.NewRecorder(), req)
+		f.handler.Load().ServeHTTP(httptest.NewRecorder(), req)
 		f.late.Add(1)
 	default:
-		f.handler.ServeHTTP(w, r)
+		f.handler.Load().ServeHTTP(w, r)
 	}
 }
 
 func (f *faultReceiver) setMode(m string) { f.mode.Store(m) }
 
-func (f *faultReceiver) setSecret(secret string) { f.handler.Secrets = []string{secret} }
+func (f *faultReceiver) setSecret(secret string) {
+	f.handler.Store(&receiver.Handler{Store: f.store, Secrets: []string{secret}})
+}
 
 // url is the address the destination is given: the host localhost, which the binary lists as private.
 func (f *faultReceiver) url(path string) string {
