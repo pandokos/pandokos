@@ -5,7 +5,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -337,11 +336,11 @@ func TestCatalogPolicies(t *testing.T) {
 		if _, err := listener.Exec(ctx(t), "LISTEN pandokos_cache"); err != nil {
 			t.Fatal(err)
 		}
-		drain(t, listener, 200*time.Millisecond)
+		drain(t, listener, super)
 		re := regexp.MustCompile(`^catalog(:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$`)
 		check := func(what string, want ...string) {
 			t.Helper()
-			got := drain(t, listener, 500*time.Millisecond)
+			got := drain(t, listener, super)
 			for p := range got {
 				if !re.MatchString(p) {
 					t.Errorf("%s: the payload %q is not catalog or catalog:<tenant>", what, p)

@@ -11,8 +11,8 @@ is not built yet is in [Limits of this pre-release](#limits-of-this-pre-release)
 
 ## The image
 
-- Name: `ghcr.io/pandokos/pandokos`. Tags on release: the version without `v` (`0.2.0`); for a
-  release that is not a pre-release also `0.2` and `latest`.
+- Name: `ghcr.io/pandokos/pandokos`. Tags on release: the version without `v` (`0.3.0`); for a
+  release that is not a pre-release also `0.3` and `latest`.
 - Platforms: `linux/amd64` and `linux/arm64`, one image index.
 - Base: `gcr.io/distroless/static-debian13:nonroot`. The image holds one file, `/pandokos`. No shell
   and no package manager.
@@ -246,7 +246,7 @@ gh attestation verify oci://ghcr.io/pandokos/pandokos@sha256:<digest> --repo pan
 
 **Run by digest in production.** Name the image `ghcr.io/pandokos/pandokos@sha256:<digest>` in the
 container command, the Compose file or the manifest, so that what runs is what you verified. The
-tags (`0.2.0`, `0.2`, `latest`) are for a first trial: `0.2` moves at each patch release, which is
+tags (`0.3.0`, `0.3`, `latest`) are for a first trial: `0.3` moves at each patch release, which is
 what the [Compose reference](compose.md) follows on purpose.
 
 **The attested SBOM is the authoritative one.** The SBOM file on the release page is an unsigned copy

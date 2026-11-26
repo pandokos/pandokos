@@ -272,7 +272,7 @@ func TestTransitDocuments(t *testing.T) {
 	})
 
 	t.Run("the release notes name the provider", func(t *testing.T) {
-		has(t, "the draft release notes", read(t, "docs/releases/v0.3.0-draft.md"), "external key-encryption key", "transit", "OpenBao", "HashiCorp Vault", "kek check", "no migration")
+		has(t, "the release notes", read(t, "docs/releases/v0.3.0.md"), "external key-encryption key", "transit", "OpenBao", "HashiCorp Vault", "kek check", "no migration")
 	})
 }
 

@@ -471,7 +471,8 @@ func TestDrillRecord(t *testing.T) {
 
 // TestUpgradePolicy is T-R102: the upgrade guide exists with the points of sprint.md 5.8; PREVIOUS
 // has three well-formed lines and its version is the newest patch of the minor before the one in
-// development; the Makefile has previous-binary, test-upgrade and test-drill; ci.yml has the jobs
+// development (the draft's, or, between the page of a release and the draft of the next, the newest
+// page's); the Makefile has previous-binary, test-upgrade and test-drill; ci.yml has the jobs
 // upgrade and drill running them with no continue-on-error and no upload step; "Releasing" names the
 // two jobs, the record and the move of PREVIOUS; and every release page from v0.3.0 on, the draft
 // included, links a review record that exists.
@@ -502,13 +503,22 @@ func TestUpgradePolicy(t *testing.T) {
 				t.Errorf("line %d of PREVIOUS is %q, want it to match %s", i+1, lines[i], re)
 			}
 		}
-		// The minor in development is the one of the draft page; the newest patch of the minor before it.
+		// The minor in development is the one of the draft page; with no draft, the release is being cut
+		// and the minor "in development" is the one of the newest release page. PREVIOUS is the newest
+		// patch of the minor before it. More than one draft is an error.
 		draft, err := filepath.Glob(filepath.Join(root(t), "docs", "releases", "v*-draft.md"))
-		if err != nil || len(draft) != 1 {
-			t.Fatalf("docs/releases has %d draft pages, want 1", len(draft))
+		if err != nil || len(draft) > 1 {
+			t.Fatalf("docs/releases has %d draft pages (%v), want at most 1", len(draft), err)
 		}
-		m := regexp.MustCompile(`v(\d+)\.(\d+)\.\d+-draft\.md`).FindStringSubmatch(filepath.Base(draft[0]))
-		major, minor := m[1], mustAtoi(t, m[2])
+		var major string
+		var minor int
+		if len(draft) == 1 {
+			m := regexp.MustCompile(`v(\d+)\.(\d+)\.\d+-draft\.md`).FindStringSubmatch(filepath.Base(draft[0]))
+			major, minor = m[1], mustAtoi(t, m[2])
+		} else {
+			parts := strings.Split(latestRelease(t), ".")
+			major, minor = parts[0], mustAtoi(t, parts[1])
+		}
 		pages, _ := filepath.Glob(filepath.Join(root(t), "docs", "releases", "v"+major+"."+strconv.Itoa(minor-1)+".*.md"))
 		best := -1
 		for _, p := range pages {

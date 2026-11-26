@@ -1,6 +1,6 @@
 # 0073. The transit key provider: associated data, version identifiers, authentication, several providers and behaviour on failure
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-24
 
 Refines [ADR 0008](0008-vault-envelope-encryption.md) (the external provider), [ADR 0033](0033-vault-formats-and-key-identifiers.md)
@@ -199,3 +199,4 @@ without a key service.
 - 2026-11-25: amended by sprint 12.2: an exportable key is refused unless `vault.kek.transit.allow_exportable_key` is set ([ADR 0074](0074-threat-model-review-and-continuous-fuzzing.md)).
 - 2026-11-25: point 5 states that an instance not restarted reads the description again for a version above the latest it described, so it opens the data keys another instance re-wrapped after a rotation (`TestTransitVersionAfterAnotherRestart`).
 - 2026-11-25: sprint 12.3: the service's backup is its storage snapshot, kept with the unseal shares and a way to authenticate ([ADR 0076](0076-the-restore-drill-its-record-and-recovery-after-a-lost-key.md)).
+- 2026-11-26: accepted by the maintainer after review.

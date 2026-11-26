@@ -312,6 +312,32 @@ func TestReleaseVerifiesWhatItPublishes(t *testing.T) {
 		}
 	})
 
+	t.Run("the tag's signature is verified", func(t *testing.T) {
+		job := jobBlock(t, "release.yml", release, "check-tag")
+		if !strings.Contains(job, "gpg.ssh.allowedSignersFile=.github/allowed_signers verify-tag \"$TAG\"") {
+			t.Error("check-tag does not verify the tag against .github/allowed_signers (git verify-tag)")
+		}
+		if i, j := strings.Index(job, "merge-base --is-ancestor"), strings.Index(job, "verify-tag"); i < 0 || j < i {
+			t.Error("check-tag verifies the signature before it checks that the commit is on a protected branch, which is what makes the file trustworthy")
+		}
+		// Each entry names a principal before the key; a line copied from a .pub file (key first) is
+		// read by ssh-keygen as an invalid key and no tag would verify.
+		entry := regexp.MustCompile(`^\S+@\S+ (?:namespaces="git" )?(?:ssh-ed25519|ecdsa-sha2-nistp256|sk-ssh-ed25519@openssh\.com) [A-Za-z0-9+/]+=*$`)
+		var keys int
+		for _, line := range strings.Split(read(t, ".github/allowed_signers"), "\n") {
+			if line = strings.TrimSpace(line); line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			keys++
+			if !entry.MatchString(line) {
+				t.Errorf(".github/allowed_signers has an entry that is not \"principal [namespaces=\\\"git\\\"] type key\": %q", line)
+			}
+		}
+		if keys == 0 {
+			t.Error(".github/allowed_signers has no key")
+		}
+	})
+
 	t.Run("every command names the digest", func(t *testing.T) {
 		commands := verifyCommandRE.FindAllString(release, -1)
 		if len(commands) < 4 {

@@ -38,6 +38,13 @@ jobs:
             if git merge-base --is-ancestor "$GITHUB_SHA" "$ref"; then ok=true; fi
           done
           if [ "$ok" != true ]; then echo "the tagged commit is not on main or a release branch"; exit 1; fi
+          # The signature of the tag (O-2): a key of .github/allowed_signers, read from the tagged commit,
+          # which is on a protected branch. The tag object is fetched again because the checkout of a tag
+          # push can leave a lightweight ref locally.
+          git fetch --force --no-tags origin "refs/tags/$TAG:refs/tags/$TAG"
+          if ! git -c gpg.ssh.allowedSignersFile=.github/allowed_signers verify-tag "$TAG"; then
+            echo "the tag is not signed by a key of .github/allowed_signers: $TAG"; exit 1
+          fi
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
           case "$TAG" in
             *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;

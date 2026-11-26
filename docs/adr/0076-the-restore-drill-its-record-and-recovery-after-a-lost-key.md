@@ -1,6 +1,6 @@
 # 0076. The restore drill, its record, and recovery after a lost key
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-25
 
 **Amends** [ADR 0068](0068-key-encryption-key-versions-rotation-and-erasure-in-backups.md) (the rule for a key
@@ -60,3 +60,4 @@ under the same data keys as the credentials, and the script did not touch destin
 ## History
 
 - 2026-11-25: proposed with sprint 12.3.
+- 2026-11-26: accepted by the maintainer after review.

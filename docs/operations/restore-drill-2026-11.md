@@ -153,5 +153,31 @@ operations), and anything on the host that is not Docker.
 The suite, run by the implementer of the sprint on 2026-11-25 on the machine above. The only check that is not
 made by the authors' own automation is a manual walk: by the maintainer's decision of 2026-11-25 it is a full
 run in a lab, backup and restore included, following the corrected guide, **after epic 12 closes and before the
-tag of v0.3.0**; its date and outcome are recorded here when it has been made. Until then this record is of the
-automated drill alone.
+tag of v0.3.0**.
+
+**The manual walk, 2026-11-26.** Made by the maintainer, by hand, on a laptop with Docker, on the Compose
+reference (PostgreSQL 18) with the image built from the release candidate (`make image`,
+`PANDOKOS_IMAGE=pandokos:dev`) and a real OpenAI credential. Two scenarios:
+
+- **A logical restore.** A quota of five requests a day and three calls; the audit heads of the tenant and of the
+  platform kept with their `seq`, the list of completed deletions and a dump (step 1.a), the key file kept apart;
+  one more call after the backup; the database volume destroyed; the empty server started (its first start creates
+  the roles and the database, steps 4.1 and 4.2), the dump restored, Pandokos started. Then: `vault ready` with the
+  same version and `kek_activation: unchanged`; both chains verified against the heads kept outside (step 4.6);
+  the three records of before the backup and not the one after it (step 5.c); the quota refused the third call
+  after the restore, at the count the restored ledger gave.
+- **A lost key** (rows 3 and 4 with a key file). The key file replaced by a new one: `serve` refused naming the
+  lost version; the recovery script revoked the credential and printed its counts; Pandokos started with the new
+  key (`kek_activation: activated`); the tenant registered its credential again and a call reached the provider;
+  both chains verified again.
+
+Outcome: every step passed. Two things a reader of the guides would have tripped on, both fixed in the guides on
+the same day:
+
+1. With a key of the tenant, `--tenant demo` (a name) was answered with `forbidden`: a name is resolved by listing
+   the tenants, which needs a platform permission. The CLI's variables in the [configuration reference](configuration.md#variables-of-the-api-commands)
+   and the [limits guide](limits.md#13-managing-rules) now say to omit `--tenant` or to give the ID.
+2. After the recovery, the revoked credential stayed the default of its provider, and calls were answered with
+   `409 no_credential` until the new credential was made the default (`pandokos credential set-default`). Step 6.3
+   of the [backup guide](backup-and-restore.md#step-6-3) and the recovery in the [vault guide](vault.md) now say
+   so.

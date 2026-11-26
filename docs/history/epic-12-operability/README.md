@@ -1,6 +1,6 @@
 # Epic 12 — Operability: record
 
-Completed 2026-11-25 for v0.3.0 ([draft notes](../../releases/v0.3.0-draft.md)), together with sprint 6.4 of
+Completed 2026-11-25 for v0.3.0 ([release page](../../releases/v0.3.0.md); the draft notes became the page), together with sprint 6.4 of
 epic 6. Epic file as closed: [epic.md](epic.md).
 
 ## Outcome
@@ -104,7 +104,7 @@ by 12.2), 0038 (amended by 12.2), 0062, 0063, 0066, 0068, 0071 and 0072. See the
   outside after a restore (an issue, decision O-3 of 12.3).
 - **10.2 (assessment and privacy).** The review record is the assessor's map; it inherits F-20 (the scraper's
   `platform-auditor` credential reads more than metrics), the pending-password gap, the decision on forbidding
-  every link-local address for every class (O-3 of 12.2), the tag's signature if O-2 is still open, and a fuzzing
+  every link-local address for every class (O-3 of 12.2), and a fuzzing
   service with private reports (O-4 of 12.2). The assessment reads the drill record's "what was not drilled".
 - **Epic 10 (release candidate).** `make test-drill` and `make test-upgrade` on the candidate, with a new dated
   record.
@@ -125,15 +125,15 @@ by 12.2), 0038 (amended by 12.2), 0062, 0063, 0066, 0068, 0071 and 0072. See the
 
 ## Maintainer actions
 
-- Review and accept ADRs 0073 to 0077.
+- Review and accept ADRs 0073 to 0077 (done on 2026-11-26).
 - Run `scheduled.yml` once by hand and check that its `settings` job can read the rulesets of the branch and tag
   protection.
 - Make `fuzz` a required check after a week of green runs; consider making `transit`, `upgrade` and `drill`
   required checks too.
 - O-2 (12.2): commit the maintainer's public signing key to the repository so that the release workflow can
-  verify the signature of the tag.
+  verify the signature of the tag (done on 2026-11-26: `.github/allowed_signers`, verified by `check-tag`).
 - O-7 (12.3): the maintainer's own full run of the corrected guides in a lab, backup and restore included, after
-  this epic and before tagging v0.3.0.
+  this epic and before tagging v0.3.0 (done on 2026-11-26: passed, two findings fixed in the guides; [drill record](../../operations/restore-drill-2026-11.md#who-ran-it)).
 - Recreate the local test database (`make db-down && make db-up`) after #84, which changed it to use template
   databases.
 - The container image tests (`make image && make test-container`) were not runnable in the sandbox of the

@@ -276,13 +276,22 @@ and removes those data keys and the version. It prints the number of credentials
 disabled and of previous secrets dropped; run again, or for a version that does not exist, it changes nothing.
 It writes no audit row: it is an act of the database administrator outside the product, so record it in your own
 log. Then start with a new key (step 6.4). Tenants whose data keys were under another version are not touched (proved by `TestLostKeyRecovery`, `internal/vault/sealer_db_test.go`; every tenant of a drill world is under the lost version).
-The tenant **enters its credentials again**; the owner of each destination runs `pandokos event-destination
-rotate-secret`, gives the receiver the new secret and enables the destination. Everything else restores.
+The tenant **enters its credentials again** and **makes the new credential the default** of its provider:
+a revoked credential stays the default, and until another is chosen every call to that provider is answered with
+`409 no_credential`:
+
+```sh
+pandokos credential create --provider openai --secret-file <file> openai-recovered
+pandokos credential set-default <ID of the new credential> --reason "recovery after a lost key"
+```
+
+The owner of each destination runs `pandokos event-destination rotate-secret`, gives the receiver the new secret
+and enables the destination. Everything else restores.
 
 <a id="step-6-4"></a>
 **6.4 The key lost entirely.** The same, for every version in the database: the recovery script for each, then
-a new key, and every tenant enters its credentials again and rotates its destinations' secrets. Nothing else is
-lost.
+a new key, and every tenant enters its credentials again, makes each new one the default as in 6.3, and rotates
+its destinations' secrets. Nothing else is lost.
 
 ```sh
 pandokos kek generate --out <new key file>
@@ -303,8 +312,8 @@ worker re-wraps.
 <a id="step-6-3s"></a>
 **6.3s The old version trimmed.** The identifier of a version of a key service is `transit-…`; take it from the
 refusal or from `pandokos kek-version list` kept before the loss. Run the script with it, then start Pandokos on
-the service (it already has a newer version): tenants enter their credentials again, destinations are rotated as
-in 6.3.
+the service (it already has a newer version): tenants enter their credentials again and make them the default, and
+destinations are rotated, as in 6.3.
 
 ```sh
 psql -U postgres -d <database> -v kek_version=<transit-version> -f deploy/postgres/recover-lost-kek.sql
@@ -316,7 +325,7 @@ the policy of Pandokos does not delete or create keys), the service lost with no
 new key, policy and token), and a snapshot older than a rotation with a database backup taken after the re-wrap
 (the service holds only the older version; `serve` refuses with `the configured key-encryption key version … was
 replaced by …`). In all three, run the script of 6.3s for every version the database names, start Pandokos on
-the service, and every tenant enters its credentials again.
+the service, and every tenant enters its credentials again and makes them the default, as in 6.3.
 
 Choosing whether to keep an old key is a choice about erasure: an old backup with its old key keeps the
 credentials of tenants deleted before the rotation recoverable. See

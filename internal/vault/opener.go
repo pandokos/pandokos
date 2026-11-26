@@ -164,6 +164,34 @@ type Opener struct {
 	nCreds  int
 	nDeks   int
 	epoch   uint64 // bumped by every invalidation, so a read that raced one is not cached
+
+	fmu        sync.Mutex // guards dekFlights and the refs of its flights; never held with mu
+	dekFlights map[dekFlightKey]*dekFlight
+}
+
+// dekFlightKey names the load of one data key. The epoch is part of it: a load that started
+// before an invalidation is never joined by a call that starts after it.
+type dekFlightKey struct {
+	tid     tenant.ID
+	version int32
+	epoch   uint64
+}
+
+// dekResult is what dataKey returns, kept as one value so that every waiter of a flight gets
+// the same answer. The key is derived material shared read-only, as the cache shares it; no
+// copy is made, and nothing here holds the raw data key.
+type dekResult struct {
+	dk         *DataKey
+	kek, cause string
+	err        error
+}
+
+// dekFlight is the load of a data key in progress and the callers that wait for it.
+type dekFlight struct {
+	done   chan struct{}
+	cancel context.CancelFunc
+	refs   int // the callers that wait for the answer; guarded by Opener.fmu
+	res    dekResult
 }
 
 // NewOpener returns an Opener that reads through o.DB. It refuses a nil database, provider or
@@ -191,7 +219,7 @@ func newOpener(o OpenerOptions, src source) (*Opener, error) {
 		now = time.Now
 	}
 	return &Opener{p: o.Provider, src: src, log: o.Logger, now: now, credTTL: o.CredentialTTL, dekTTL: o.DataKeyTTL,
-		tenants: map[tenant.ID]*tenantCache{}}, nil
+		tenants: map[tenant.ID]*tenantCache{}, dekFlights: map[dekFlightKey]*dekFlight{}}, nil
 }
 
 // Open returns the credential a call is made with. It requires a request ID and a provider,
@@ -276,10 +304,70 @@ func (o *Opener) openRow(ctx context.Context, u Use, r credRow, pinned bool, ali
 // dataKey returns the derived data key of a tenant, from the cache or from the database. cause
 // is set, and err is one of the errors of Open, when the key material is at fault; it is empty
 // when the database is out of reach.
+//
+// Concurrent calls for the same tenant, data key version and cache epoch share one load: the
+// read of the row, the unwrap and the caching. The flight outlives the caller that started it
+// and is cancelled when no caller waits for it; a caller whose context ends leaves with
+// ErrUnavailable and does not stop the others.
 func (o *Opener) dataKey(ctx context.Context, tid tenant.ID, version int32, epoch uint64, start time.Time) (dk *DataKey, kek, cause string, err error) {
 	if e, ok := o.cachedDataKey(tid, version); ok {
 		return e.key, e.kekVersion, "", nil
 	}
+	key := dekFlightKey{tid: tid, version: version, epoch: epoch}
+	o.fmu.Lock()
+	f := o.dekFlights[key]
+	if f == nil {
+		fctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+		f = &dekFlight{done: make(chan struct{}), cancel: cancel}
+		o.dekFlights[key] = f
+		go func() {
+			defer cancel()
+			res := o.loadDataKey(fctx, tid, version, epoch, start)
+			o.fmu.Lock()
+			f.res = res
+			close(f.done)
+			if o.dekFlights[key] == f {
+				delete(o.dekFlights, key)
+			}
+			o.fmu.Unlock()
+		}()
+	}
+	f.refs++
+	o.fmu.Unlock()
+
+	select {
+	case <-f.done:
+		return f.res.dk, f.res.kek, f.res.cause, f.res.err
+	case <-ctx.Done():
+		o.fmu.Lock()
+		defer o.fmu.Unlock()
+		f.refs--
+		if f.refs == 0 {
+			select {
+			case <-f.done:
+			default:
+				// Nobody waits for it any more: no caller can join a flight that is being ended.
+				if o.dekFlights[key] == f {
+					delete(o.dekFlights, key)
+				}
+				f.cancel()
+			}
+		}
+		return nil, "", "", fmt.Errorf("%w: %w", ErrUnavailable, ctx.Err())
+	}
+}
+
+// loadDataKey is the work of a flight. It looks in the cache again: the flight that put the
+// key may have ended after the caller's first look.
+func (o *Opener) loadDataKey(ctx context.Context, tid tenant.ID, version int32, epoch uint64, start time.Time) dekResult {
+	if e, ok := o.cachedDataKey(tid, version); ok {
+		return dekResult{dk: e.key, kek: e.kekVersion}
+	}
+	dk, kek, cause, err := o.readDataKey(ctx, tid, version, epoch, start)
+	return dekResult{dk: dk, kek: kek, cause: cause, err: err}
+}
+
+func (o *Opener) readDataKey(ctx context.Context, tid tenant.ID, version int32, epoch uint64, start time.Time) (dk *DataKey, kek, cause string, err error) {
 	row, err := o.src.dataKey(ctx, tid, version)
 	switch {
 	case errors.Is(err, store.ErrNoRows):

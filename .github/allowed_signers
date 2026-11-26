@@ -1,0 +1,4 @@
+# The keys that sign the release tags (O-2 of sprint 12.2): the check-tag job of release.yml runs
+# git verify-tag against this file. Format: principal, options, key type and key (man ssh-keygen,
+# "ALLOWED SIGNERS"). Change it in a pull request when the maintainer's signing key changes.
+70644544+mmastrorilli@users.noreply.github.com namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICrKD1Jl7gEzLOLgj7nwYJ+rUeHRW0bra49Tn5+Y7OZq

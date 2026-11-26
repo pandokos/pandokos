@@ -1,6 +1,6 @@
 # 0074. Threat model review and continuous fuzzing
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-25
 
 **Amends** [ADR 0018](0018-supply-chain.md) (what a release is and how it is verified),
@@ -103,8 +103,8 @@ and a pipeline that did not check the thing it published.
     `verify` job scans the pushed digest with the thresholds of the scan in `ci.yml` before `publish`, which needs
     it. The tag must be an annotated tag object. The attested SBOM is the authoritative one; the file attached to
     the release is an unsigned copy. No binary is a release artefact: the artefacts are the image, its SBOM and
-    the API description. Verifying the signature of the tag in the workflow needs the maintainer's public key
-    committed in the repository; until then the maintainer checks it (O-2). **Amends ADR 0018.**
+    the API description. The workflow verifies the signature of the tag against the maintainer's public key in
+    `.github/allowed_signers` (O-2, done on 2026-11-26). **Amends ADR 0018.**
 11. **Every pinned reference is under one test and under automated update; every secret shape that the log
     redacts is a rule of the secret scan (D-11).** One test reads every Compose file, every Dockerfile, every
     `go run` and `go install` and every workflow for what is not pinned; one test finds every directory that pins
@@ -163,3 +163,5 @@ holds the model itself.
   Dependabot security updates enabled by the maintainer the same day).
 - 2026-11-25: proposed with sprint 12.2.
 - 2026-11-25: sprint 12.3: the threat model is reviewed at every release as part of the upgrade policy ([ADR 0075](0075-upgrade-policy-and-the-tested-upgrade.md)).
+- 2026-11-26: accepted by the maintainer after review.
+- 2026-11-26: O-2 done: the maintainer's public signing key is in `.github/allowed_signers` and `check-tag` runs `git verify-tag` against it.

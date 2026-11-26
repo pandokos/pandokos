@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -636,14 +637,14 @@ VALUES ($1::uuid, $2::uuid, 't' || translate(substr(md5(random()::text), 1, 16),
 		if _, err := listener.Exec(ctx(t), "LISTEN pandokos_cache"); err != nil {
 			t.Fatal(err)
 		}
-		drain(t, listener, 200*time.Millisecond)
+		drain(t, listener, super)
 		if err := exec("admin", `DELETE FROM pandokos.provider_credential WHERE id = $1::uuid`, credA); err != nil {
 			t.Fatalf("delete the credential: %v", err)
 		}
 		if p := pinOf(again); p != nil {
 			t.Errorf("the pin survived the deletion of its credential: %s", *p)
 		}
-		got := drain(t, listener, 500*time.Millisecond)
+		got := drain(t, listener, super)
 		if !got["vault:"+a.String()] || !got["tenant:"+a.String()] {
 			t.Errorf("the deletion sent %v, want vault:<tenant> and tenant:<tenant>", keys(got))
 		}
@@ -655,11 +656,11 @@ VALUES ($1::uuid, $2::uuid, 't' || translate(substr(md5(random()::text), 1, 16),
 		if _, err := listener.Exec(ctx(t), "LISTEN pandokos_cache"); err != nil {
 			t.Fatal(err)
 		}
-		drain(t, listener, 200*time.Millisecond)
+		drain(t, listener, super)
 		rePayload := regexp.MustCompile(`^((vault|tenant):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|platform)$`)
 		check := func(what string, wantVault map[tenant.ID]bool) {
 			t.Helper()
-			got := drain(t, listener, 500*time.Millisecond)
+			got := drain(t, listener, super)
 			for p := range got {
 				if !rePayload.MatchString(p) {
 					t.Errorf("%s: the payload %q is not a kind and a tenant", what, p)
@@ -732,21 +733,34 @@ VALUES ($1::uuid, $2::uuid, 't' || translate(substr(md5(random()::text), 1, 16),
 	})
 }
 
-// drain collects the payloads of the notifications that arrive on the connection until nothing
-// arrives for quiet.
-func drain(t *testing.T, conn *pgx.Conn, quiet time.Duration) map[string]bool {
+// drain returns the payloads of pandokos_cache that listener has been sent up to now. It does
+// not wait for a time: it sends a payload of its own through notifier, after the change under
+// test has committed, and reads until that payload comes back. The notifications of one database
+// are delivered in the order of their commits, so every payload the change sent precedes it, and
+// a payload that is missing was not sent, however slow the machine.
+func drain(t *testing.T, listener, notifier *pgx.Conn) map[string]bool {
 	t.Helper()
+	barrier := fmt.Sprintf("probe:drain-%d", drainSeq.Add(1))
+	if _, err := notifier.Exec(ctx(t), `SELECT pg_notify('pandokos_cache', $1)`, barrier); err != nil {
+		t.Fatalf("the barrier of the notifications: %v", err)
+	}
 	got := map[string]bool{}
 	for {
-		c, cancel := context.WithTimeout(context.Background(), quiet)
-		n, err := conn.WaitForNotification(c)
+		c, cancel := context.WithTimeout(ctx(t), 30*time.Second)
+		n, err := listener.WaitForNotification(c)
 		cancel()
 		if err != nil {
+			t.Fatalf("the barrier %s did not come back: %v (got %v)", barrier, err, keys(got))
+		}
+		if n.Payload == barrier {
 			return got
 		}
 		got[n.Payload] = true
 	}
 }
+
+// drainSeq numbers the barriers, so that no two are alike.
+var drainSeq atomic.Int64
 
 func keys(m map[string]bool) []string {
 	var out []string

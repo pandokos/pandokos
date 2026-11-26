@@ -9,7 +9,7 @@ depends_on: [EPIC-3]
 # Epic 6 — Observability, reports and lifecycle
 
 *State:* done. Sprints 6.1, 6.2 and 6.3 are part of release [v0.2.0](../../../docs/releases/v0.2.0.md);
-sprint 6.4 belongs to v0.3.0 ([draft notes](../../../docs/releases/v0.3.0-draft.md)). The epic is complete;
+sprint 6.4 belongs to v0.3.0 ([release page](../../../docs/releases/v0.3.0.md); the draft notes became the page). The epic is complete;
 its record is in [docs/history](../../../docs/history/epic-06-observability-reports-lifecycle/README.md).
 
 ## Outcome

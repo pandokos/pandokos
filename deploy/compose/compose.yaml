@@ -40,7 +40,7 @@ services:
     restart: unless-stopped
 
   migrate:
-    image: ${PANDOKOS_IMAGE:-ghcr.io/pandokos/pandokos:0.2}
+    image: ${PANDOKOS_IMAGE:-ghcr.io/pandokos/pandokos:0.3}
     command: [migrate]
     read_only: true
     cap_drop: [ALL]
@@ -56,7 +56,7 @@ services:
     restart: "no"
 
   pandokos:
-    image: ${PANDOKOS_IMAGE:-ghcr.io/pandokos/pandokos:0.2}
+    image: ${PANDOKOS_IMAGE:-ghcr.io/pandokos/pandokos:0.3}
     command: [serve]
     read_only: true
     cap_drop: [ALL]
