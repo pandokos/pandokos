@@ -1,6 +1,6 @@
 # Epic 12 — Operability: record
 
-Completed 2026-11-25 for v0.3.0 ([draft notes](../../releases/v0.3.0-draft.md)), together with sprint 6.4 of
+Completed 2026-11-25 for v0.3.0 ([release page](../../releases/v0.3.0.md); the draft notes became the page), together with sprint 6.4 of
 epic 6. Epic file as closed: [epic.md](epic.md).
 
 ## Outcome

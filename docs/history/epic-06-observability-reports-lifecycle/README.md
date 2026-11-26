@@ -2,7 +2,7 @@
 
 Sprints 6.1 to 6.3 were completed 2026-11-22 and 2026-11-23 and released in
 [v0.2.0](../../releases/v0.2.0.md); sprint 6.4 was completed 2026-11-23 for v0.3.0
-([draft notes](../../releases/v0.3.0-draft.md)), which closes the epic. Epic file as closed:
+([release page](../../releases/v0.3.0.md); the draft notes became the page), which closes the epic. Epic file as closed:
 [epic.md](epic.md).
 
 ## Outcome
