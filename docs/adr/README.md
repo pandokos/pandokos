@@ -78,11 +78,11 @@ A record is *proposed* until the maintainer accepts it, by merging its pull requ
 | [0070](0070-the-outbox-as-a-log-relay-by-destination-and-retention.md) | The outbox as a log: relay by destination, and retention | accepted |
 | [0071](0071-webhook-destinations-signature-secrets-and-egress.md) | Webhook destinations: the signature, the signing secrets and egress | accepted |
 | [0072](0072-event-types-the-envelope-the-external-reference-and-platform-events.md) | Event types, the envelope, the external reference and the platform's events | accepted |
-| [0073](0073-the-transit-key-provider.md) | The transit key provider: associated data, version identifiers, authentication, several providers and behaviour on failure | proposed |
-| [0074](0074-threat-model-review-and-continuous-fuzzing.md) | Threat model review and continuous fuzzing | proposed |
-| [0075](0075-upgrade-policy-and-the-tested-upgrade.md) | Upgrade policy and the tested upgrade | proposed |
-| [0076](0076-the-restore-drill-its-record-and-recovery-after-a-lost-key.md) | The restore drill, its record, and recovery after a lost key | proposed |
-| [0077](0077-an-instance-defined-by-configuration-alone.md) | An instance defined by configuration alone | proposed |
+| [0073](0073-the-transit-key-provider.md) | The transit key provider: associated data, version identifiers, authentication, several providers and behaviour on failure | accepted |
+| [0074](0074-threat-model-review-and-continuous-fuzzing.md) | Threat model review and continuous fuzzing | accepted |
+| [0075](0075-upgrade-policy-and-the-tested-upgrade.md) | Upgrade policy and the tested upgrade | accepted |
+| [0076](0076-the-restore-drill-its-record-and-recovery-after-a-lost-key.md) | The restore drill, its record, and recovery after a lost key | accepted |
+| [0077](0077-an-instance-defined-by-configuration-alone.md) | An instance defined by configuration alone | accepted |
 
 ## Questions from SOW 0.1 and where they were decided
 

@@ -1,6 +1,6 @@
 # 0074. Threat model review and continuous fuzzing
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-25
 
 **Amends** [ADR 0018](0018-supply-chain.md) (what a release is and how it is verified),
@@ -163,3 +163,4 @@ holds the model itself.
   Dependabot security updates enabled by the maintainer the same day).
 - 2026-11-25: proposed with sprint 12.2.
 - 2026-11-25: sprint 12.3: the threat model is reviewed at every release as part of the upgrade policy ([ADR 0075](0075-upgrade-policy-and-the-tested-upgrade.md)).
+- 2026-11-26: accepted by the maintainer after review.

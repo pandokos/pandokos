@@ -1,6 +1,6 @@
 # 0075. Upgrade policy and the tested upgrade
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-25
 
 **Amends** [ADR 0026](0026-schema-migrations.md) ("Consequences": the policy now exists; the window for rolling
@@ -60,3 +60,4 @@ not known. "Upgrades work" was a sentence.
   PostgreSQL 18 (job `test (pg18)`), and the Compose reference deployment runs PostgreSQL 18 from v0.3.0, with
   the logical dump and restore of the drill as the way to move an existing installation
   ([Compose guide](../operations/compose.md#moving-an-installation-from-postgresql-16-to-18)).
+- 2026-11-26: accepted by the maintainer after review.

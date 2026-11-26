@@ -1,6 +1,6 @@
 # 0077. An instance defined by configuration alone
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-25
 
 **Amends** [ADR 0066](0066-declarative-export-and-apply.md) (point 3 delivered and extended) and
@@ -44,3 +44,4 @@ carry issuers, mappings or destinations.
 ## History
 
 - 2026-11-25: proposed with sprint 12.3.
+- 2026-11-26: accepted by the maintainer after review.

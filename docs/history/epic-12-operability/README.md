@@ -125,7 +125,7 @@ by 12.2), 0038 (amended by 12.2), 0062, 0063, 0066, 0068, 0071 and 0072. See the
 
 ## Maintainer actions
 
-- Review and accept ADRs 0073 to 0077.
+- Review and accept ADRs 0073 to 0077 (done on 2026-11-26).
 - Run `scheduled.yml` once by hand and check that its `settings` job can read the rulesets of the branch and tag
   protection.
 - Make `fuzz` a required check after a week of green runs; consider making `transit`, `upgrade` and `drill`
