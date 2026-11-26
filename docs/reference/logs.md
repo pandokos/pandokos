@@ -87,7 +87,7 @@ This page is a contract checked by tests: a message or a field that is not liste
 | `on_unknown_price` | string | The setting limits.on_unknown_price. |
 | `operation` | string | The operation of the administration API, or of the gateway route. |
 | `outage_seconds` | integer | The seconds the key service did not answer. |
-| `outcome` | string | How the request ended: ok, pandokos_error, client_error, client_cancelled, shutdown_aborted, timeout or upstream_aborted. |
+| `outcome` | string | How the request ended: ok, pandokos_error, client_error, client_cancelled, shutdown_aborted, timeout or upstream_aborted. A caller that goes away after the answer was written completely does not make a request client_cancelled. |
 | `overridden` | integer | Rows overridden. |
 | `panic_type` | string | The Go type of a recovered panic, never its value. |
 | `partitions` | integer | Usage partitions dropped by a retention run, in total over the installation. |

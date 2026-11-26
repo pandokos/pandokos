@@ -1437,3 +1437,51 @@ func asErr(v any) error {
 	err, _ := v.(error)
 	return err
 }
+
+// cancelAfterBody is a response writer that ends the caller's context once the whole body is
+// written, as net/http does when the caller closes the connection after reading a complete answer.
+type cancelAfterBody struct {
+	*httptest.ResponseRecorder
+	want   int
+	cancel context.CancelFunc
+}
+
+func (w *cancelAfterBody) Write(p []byte) (int, error) {
+	n, err := w.ResponseRecorder.Write(p)
+	if w.Body.Len() >= w.want {
+		w.cancel()
+	}
+	return n, err
+}
+
+// TestCallerGoneAfterCompleteAnswer: a caller whose context ends after the answer was written
+// completely, while the handler records and settles, still got what it asked for: the request is
+// ok, not cancelled.
+func TestCallerGoneAfterCompleteAnswer(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, nil)
+	// The size of the answer, from a first call, so the writer knows when it is complete.
+	_, ref := h.call(t, chat("fake-basic", false))
+	h.awaitOutcome(t, "ok")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := httptest.NewRequest(http.MethodPost, route, bytes.NewReader(chat("fake-basic", false))).WithContext(ctx)
+	req.Header.Set("Authorization", "Bearer "+testKey)
+	req.Header.Set("Content-Type", "application/json")
+	w := &cancelAfterBody{ResponseRecorder: httptest.NewRecorder(), want: len(ref), cancel: cancel}
+	h.handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || w.Body.Len() != len(ref) {
+		t.Fatalf("the caller got %d with %d bytes, want 200 with %d", w.Code, w.Body.Len(), len(ref))
+	}
+	if ctx.Err() == nil {
+		t.Fatal("the caller's context did not end")
+	}
+	lines := h.requestLines(t, 2)
+	if got := lines[1]["outcome"]; got != "ok" {
+		t.Errorf("the log line outcome is %v, want ok", got)
+	}
+	if recs := h.records(t, 2); recs[1].Outcome != usage.OutcomeOK {
+		t.Errorf("the record outcome is %v, want ok", recs[1].Outcome)
+	}
+}

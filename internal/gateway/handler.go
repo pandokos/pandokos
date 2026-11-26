@@ -201,6 +201,7 @@ type reqState struct {
 	clientError bool
 
 	answered          bool
+	delivered         bool // the proxy returned: the answer was copied to the caller completely
 	upstreamStatus    int
 	upstreamErr       string
 	egressReason      string
@@ -388,6 +389,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	req.TransferEncoding = nil
 	req.GetBody = nil
 	h.proxy.ServeHTTP(st.sw, req)
+	// The proxy aborts the handler by panic when the copy of the answer fails, the caller's side
+	// included: a normal return means the caller was sent the whole answer.
+	st.delivered = true
 }
 
 // route runs step 2: the path is /<provider>/<native path>. It answers and returns false when
@@ -556,7 +560,10 @@ func logMethod(m string) string {
 	return "OTHER"
 }
 
-// outcome applies the table of sprint.md section 5.8, first match wins.
+// outcome applies the table of sprint.md section 5.8, first match wins. A caller that goes away
+// after the answer was completely written (the proxy returned) does not change the outcome:
+// net/http ends the context of a request when the caller closes the connection, which a client
+// may do as soon as it has read a complete answer, while the handler still records and settles.
 func (st *reqState) outcome(rec any) string {
 	aborted := rec != nil && errors.Is(asError(rec), http.ErrAbortHandler)
 	switch {
@@ -564,11 +571,11 @@ func (st *reqState) outcome(rec any) string {
 		return "pandokos_error"
 	case st.clientError:
 		return "client_error"
-	case errors.Is(context.Cause(st.callerCx), ErrShutdown):
+	case !st.delivered && errors.Is(context.Cause(st.callerCx), ErrShutdown):
 		return "shutdown_aborted"
-	case st.callerCx.Err() != nil:
+	case !st.delivered && st.callerCx.Err() != nil:
 		return "client_cancelled"
-	case st.answered && st.outCx != nil && errors.Is(st.outCx.Err(), context.DeadlineExceeded):
+	case !st.delivered && st.answered && st.outCx != nil && errors.Is(st.outCx.Err(), context.DeadlineExceeded):
 		return "timeout"
 	case aborted:
 		return "upstream_aborted"
