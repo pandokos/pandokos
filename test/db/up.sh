@@ -12,11 +12,11 @@ pw=$(cat "$dir/postgres_password")
 # PgBouncer runs as a non-root user and must be able to read its user list.
 (umask 022 && printf '"postgres" "%s"\n' "$pw" > "$dir/userlist.txt")
 go run ./test/testcert/cmd/testcert -dir "$dir/tls" -dns pandokos-test-db -ip 127.0.0.1 -days 30
-# PANDOKOS_TEST_PG=18 runs the server on PostgreSQL 18 (test/db/pg18.yaml); the default is the floor, 16.
+# PANDOKOS_TEST_PG=18 runs the server on PostgreSQL 18 (test/db/compose.pg18.yaml); the default is the floor, 16.
 files="-f test/db/compose.yaml"
 case "${PANDOKOS_TEST_PG:-16}" in
     16) ;;
-    18) files="$files -f test/db/pg18.yaml" ;;
+    18) files="$files -f test/db/compose.pg18.yaml" ;;
     *) echo "up.sh: PANDOKOS_TEST_PG must be 16 or 18" >&2; exit 2 ;;
 esac
 # shellcheck disable=SC2086

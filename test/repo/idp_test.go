@@ -42,19 +42,8 @@ func TestIDPImagesPinned(t *testing.T) {
 	}
 
 	t.Run("Dependabot covers the directory", func(t *testing.T) {
-		var d struct {
-			Updates []struct {
-				Ecosystem string `yaml:"package-ecosystem"`
-				Directory string `yaml:"directory"`
-			} `yaml:"updates"`
-		}
-		if err := yaml.Unmarshal([]byte(read(t, ".github/dependabot.yml")), &d); err != nil {
-			t.Fatal(err)
-		}
-		for _, u := range d.Updates {
-			if u.Ecosystem == "docker-compose" && u.Directory == "/test/idp" {
-				return
-			}
+		if dependabotEntries(t)[[2]string{"docker-compose", "/test/idp"}] {
+			return
 		}
 		t.Error(`dependabot.yml has no entry "docker-compose /test/idp"`)
 	})

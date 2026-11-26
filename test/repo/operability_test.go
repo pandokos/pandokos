@@ -734,8 +734,7 @@ func TestDrillComposePins(t *testing.T) {
 			}
 		}
 	}
-	dependabot := read(t, ".github/dependabot.yml")
-	if !regexp.MustCompile(`(?s)package-ecosystem: docker-compose\s+directory: /test/drill\b`).MatchString(dependabot) {
+	if !dependabotEntries(t)[[2]string{"docker-compose", "/test/drill"}] {
 		t.Error("dependabot.yml has no entry for /test/drill")
 	}
 }
@@ -750,7 +749,7 @@ func TestTestDatabaseLaterMajor(t *testing.T) {
 			Tmpfs []string `yaml:"tmpfs"`
 		} `yaml:"services"`
 	}
-	if err := yaml.Unmarshal([]byte(read(t, "test/db/pg18.yaml")), &next); err != nil {
+	if err := yaml.Unmarshal([]byte(read(t, "test/db/compose.pg18.yaml")), &next); err != nil {
 		t.Fatal(err)
 	}
 	var drill struct {
@@ -763,16 +762,16 @@ func TestTestDatabaseLaterMajor(t *testing.T) {
 	}
 	got := next.Services["postgres"].Image
 	if !regexp.MustCompile(`^postgres:18[\w.-]*@sha256:[0-9a-f]{64}$`).MatchString(got) {
-		t.Errorf("test/db/pg18.yaml image %q: want postgres 18 pinned by digest", got)
+		t.Errorf("test/db/compose.pg18.yaml image %q: want postgres 18 pinned by digest", got)
 	}
 	if want := drill.Services["target-next"].Image; got != want {
-		t.Errorf("test/db/pg18.yaml image %q differs from the later major of the drill %q: move both together", got, want)
+		t.Errorf("test/db/compose.pg18.yaml image %q differs from the later major of the drill %q: move both together", got, want)
 	}
 	if tmpfs := next.Services["postgres"].Tmpfs; len(tmpfs) != 1 || tmpfs[0] != "/var/lib/postgresql" {
 		t.Errorf("tmpfs %v: the 18 image keeps its data under /var/lib/postgresql", tmpfs)
 	}
 	up := read(t, "test/db/up.sh")
-	if !strings.Contains(up, "PANDOKOS_TEST_PG") || !strings.Contains(up, "test/db/pg18.yaml") {
+	if !strings.Contains(up, "PANDOKOS_TEST_PG") || !strings.Contains(up, "test/db/compose.pg18.yaml") {
 		t.Error("test/db/up.sh does not start the later major for PANDOKOS_TEST_PG=18")
 	}
 	var ci struct {

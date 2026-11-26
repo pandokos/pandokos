@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"go.yaml.in/yaml/v3"
 )
 
 var composeImageRE = regexp.MustCompile(`(?m)^\s*image:\s*(\S.*?)\s*$`)
@@ -206,18 +208,26 @@ func TestEverythingPinned(t *testing.T) {
 	})
 }
 
-// dependabotEntries returns the (ecosystem, directory) pairs of dependabot.yml.
+// dependabotEntries returns the (ecosystem, directory) pairs of dependabot.yml, of an entry's
+// directory or of each item of its directories.
 func dependabotEntries(t *testing.T) map[[2]string]bool {
 	t.Helper()
+	var d struct {
+		Updates []struct {
+			Ecosystem   string   `yaml:"package-ecosystem"`
+			Directory   string   `yaml:"directory"`
+			Directories []string `yaml:"directories"`
+		} `yaml:"updates"`
+	}
+	if err := yaml.Unmarshal([]byte(read(t, ".github/dependabot.yml")), &d); err != nil {
+		t.Fatal(err)
+	}
 	out := map[[2]string]bool{}
-	var eco string
-	for _, line := range strings.Split(read(t, ".github/dependabot.yml"), "\n") {
-		l := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "- "))
-		if v, ok := strings.CutPrefix(l, "package-ecosystem:"); ok {
-			eco = strings.TrimSpace(v)
-		}
-		if v, ok := strings.CutPrefix(l, "directory:"); ok {
-			out[[2]string{eco, strings.TrimSpace(v)}] = true
+	for _, u := range d.Updates {
+		for _, dir := range append([]string{u.Directory}, u.Directories...) {
+			if dir != "" {
+				out[[2]string{u.Ecosystem, dir}] = true
+			}
 		}
 	}
 	return out
@@ -536,5 +546,70 @@ func TestUnpinnedFroms(t *testing.T) {
 	n, bad = unpinnedFroms("FROM alpine:3 AS base\nFROM base\nFROM debian\n")
 	if n != 2 || len(bad) != 2 || bad[0] != "alpine:3" || bad[1] != "debian" {
 		t.Errorf("an unpinned file: %d external FROM, unpinned %v", n, bad)
+	}
+}
+
+// TestDependabotPostgresGroup: the PostgreSQL servers of the test database, of the identity provider
+// suite and of the restore drill share their digests (TestDrillComposePins, TestTestDatabaseLaterMajor),
+// so one entry of dependabot.yml covers the three directories, groups the postgres image in one pull
+// request and ignores its new majors (the floor is 16, ADR 0075).
+func TestDependabotPostgresGroup(t *testing.T) {
+	var d struct {
+		Updates []struct {
+			Ecosystem   string   `yaml:"package-ecosystem"`
+			Directory   string   `yaml:"directory"`
+			Directories []string `yaml:"directories"`
+			Ignore      []struct {
+				Name  string   `yaml:"dependency-name"`
+				Types []string `yaml:"update-types"`
+			} `yaml:"ignore"`
+			Groups map[string]struct {
+				Patterns []string `yaml:"patterns"`
+			} `yaml:"groups"`
+		} `yaml:"updates"`
+	}
+	if err := yaml.Unmarshal([]byte(read(t, ".github/dependabot.yml")), &d); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/test/db", "/test/drill", "/test/idp"}
+	found := 0
+	for _, u := range d.Updates {
+		dirs := append([]string(nil), u.Directories...)
+		if u.Directory != "" {
+			dirs = append(dirs, u.Directory)
+		}
+		sort.Strings(dirs)
+		covers := false
+		for _, dir := range dirs {
+			for _, w := range want {
+				covers = covers || (u.Ecosystem == "docker-compose" && dir == w)
+			}
+		}
+		if !covers {
+			continue
+		}
+		found++
+		if strings.Join(dirs, " ") != strings.Join(want, " ") {
+			t.Errorf("the entry of %v: want one entry with exactly %v", dirs, want)
+		}
+		ignored := false
+		for _, i := range u.Ignore {
+			ignored = ignored || (i.Name == "postgres" && len(i.Types) == 1 && i.Types[0] == "version-update:semver-major")
+		}
+		if !ignored {
+			t.Error("the entry does not ignore new majors of postgres")
+		}
+		grouped := false
+		for _, g := range u.Groups {
+			for _, p := range g.Patterns {
+				grouped = grouped || p == "postgres"
+			}
+		}
+		if !grouped {
+			t.Error("the entry does not group the postgres image")
+		}
+	}
+	if found != 1 {
+		t.Errorf("%d docker-compose entries cover %v, want one", found, want)
 	}
 }
