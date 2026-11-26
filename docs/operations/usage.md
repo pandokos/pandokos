@@ -115,7 +115,7 @@ and the price it names.
 | `timeout` | `request_timeout`, `upstream_timeout`, or `limits.max_request_duration` passed after the provider's headers |
 | `upstream_error` | `upstream_unreachable`, the provider cut its answer, or the provider answered 4xx or 5xx (`upstream_status` says which) |
 | `internal_error` | `unavailable` while resolving the model, the limit rules or the credential, or `internal` |
-| `cancelled` | the caller went away, or the server was forced down at shutdown |
+| `cancelled` | the caller went away before it was sent the whole answer, or the server was forced down at shutdown before then; a caller that goes away after the answer was written completely does not change the outcome |
 | `ok` | everything else |
 
 A `rejected_limit` row is written for every request refused in step 7b, since sprint 5.1; it holds the
