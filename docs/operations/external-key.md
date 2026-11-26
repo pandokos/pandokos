@@ -321,7 +321,8 @@ which are configuration:
   5 s.
 - **At most 32 requests in flight** (`vault.kek.transit.max_concurrent_requests`, 1 to 1024). A call that
   gets no slot before its deadline fails as unavailable. Identical concurrent unwraps (same version, wrapped
-  key and associated data) share one request.
+  key and associated data) share one request, and concurrent first calls of one tenant share one load of its
+  data key, so that they make one unwrap even when one of them reaches the provider after another has finished.
 - **A refusal.** After five consecutive requests that ended as unavailable the provider refuses every call
   at once for 5 s without sending anything, then lets one request through. A success ends the refusal; a
   failure renews it. Answers that are not about availability (`400`, `403`, `404`) do not count.
