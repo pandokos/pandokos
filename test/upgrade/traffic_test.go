@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -30,6 +31,7 @@ type upgraded struct {
 	inFlight []Outcome
 	started  time.Time // when the traffic started
 	migrated time.Time // when migrate finished
+	cross    crossing  // the schema step of this upgrade, derived (schema_test.go)
 }
 
 // runUpgrade is the exit scenario of sprint 12.3 (5.9): the world on the previous release, traffic on
@@ -40,7 +42,7 @@ func runUpgrade(t *testing.T) *upgraded {
 	t.Helper()
 	w := newWorld(t)
 	newBin := instance.Build(t)
-	u := &upgraded{w: w}
+	u := &upgraded{w: w, cross: schemaCrossing(t)}
 	u.proc = &Procedure{Old: w.inst.Bin, New: newBin, DB: w.db, Env: w.env, Canaries: w.inst.Canaries}
 
 	tr := NewTraffic(w.url)
@@ -103,8 +105,11 @@ func stepMillis(steps []StepRecord) map[string]int64 {
 	return out
 }
 
-// TestUpgradeWithTraffic is T-1130, the exit test of the upgrade: v0.2.x with traffic is upgraded by
-// the procedure of the guide, and what happened to every request is asserted (sprint 12.3, 5.9).
+// TestUpgradeWithTraffic is T-1130, the exit test of the upgrade: the previous release (PREVIOUS) with
+// traffic is upgraded by the procedure of the guide, and what happened to every request is asserted
+// (sprint 12.3, 5.9). The schema step is derived, not assumed (schema_test.go): the assertions about
+// migrate and about the events follow the migrations the upgrade crosses, and hold for a pair of
+// releases with the same schema as well (a patch release, ADR 0075 point 3).
 //
 // The quota is the one of requests per day. The installation's time zone is a fixed-offset zone
 // (zoneNoMidnight) in which it is mid-morning to mid-afternoon, so that no start of a tenant's day, and
@@ -118,10 +123,19 @@ func TestUpgradeWithTraffic(t *testing.T) {
 		if u.proc.OldExited != 0 {
 			t.Errorf("the previous release exited %d on SIGTERM, want 0 within its deadline", u.proc.OldExited)
 		}
-		for _, want := range []string{"applied 0017_events", "schema is at version 17"} {
-			if !strings.Contains(u.migrate, want) {
-				t.Errorf("migrate printed no %q:\n%s", want, u.migrate)
+		// migrate says "applied <id>" for each migration crossed, in order, and then the version it
+		// leaves; with none to cross it applies nothing and only says the version.
+		var applied []string
+		for _, line := range strings.Split(u.migrate, "\n") {
+			if id, ok := strings.CutPrefix(line, "applied "); ok {
+				applied = append(applied, id)
 			}
+		}
+		if !slices.Equal(applied, u.cross.Crossed) {
+			t.Errorf("migrate applied %v, the upgrade crosses %v:\n%s", applied, u.cross.Crossed, u.migrate)
+		}
+		if want := fmt.Sprintf("schema is at version %d\n", u.cross.This); !strings.Contains(u.migrate, want) {
+			t.Errorf("migrate printed no %q:\n%s", strings.TrimSpace(want), u.migrate)
 		}
 		if gap := u.proc.Gap(); gap <= 0 || gap > 60*time.Second {
 			t.Errorf("the interval without service is %v, want a positive time under the ceiling of 60 s", gap)
@@ -308,20 +322,39 @@ func TestUpgradeWithTraffic(t *testing.T) {
 		}
 	})
 
-	t.Run("events exist for the usage after the migration and for none before it", func(t *testing.T) {
+	// The usage events (0017_events). A usage record written by a release that has the migration has
+	// its event; one written before the migration has none, and the migration does not invent it. So when
+	// the upgrade crosses 0017_events the events are those of the usage written after migrate; when it
+	// does not, the previous release wrote events already and every usage record of the installation,
+	// before the stop and after the start alike, has its event.
+	t.Run("usage events: as the crossing says", func(t *testing.T) {
+		crossed := u.cross.Crosses("0017_events")
 		for name, tn := range w.tenants {
-			var events, after int
+			var events, records int
 			testutil.Eventually(t, 30*time.Second, "the events of tenant "+name, func() bool {
-				if err := w.db.Super(t).QueryRow(testCtx(), `SELECT count(*)::int FROM pandokos.usage_record WHERE tenant_id = $1::uuid AND recorded_at > $2`, tn.ID, u.migrated).Scan(&after); err != nil {
+				q := `SELECT count(*)::int FROM pandokos.usage_record WHERE tenant_id = $1::uuid`
+				args := []any{tn.ID}
+				if crossed {
+					q += ` AND recorded_at > $2`
+					args = append(args, u.migrated)
+				}
+				if err := w.db.Super(t).QueryRow(testCtx(), q, args...).Scan(&records); err != nil {
 					t.Fatal(err)
 				}
 				if err := w.db.Super(t).QueryRow(testCtx(), `SELECT count(*)::int FROM pandokos.outbox_event WHERE tenant_id = $1::uuid AND type = 'io.pandokos.usage.recorded.v1'`, tn.ID).Scan(&events); err != nil {
 					t.Fatal(err)
 				}
-				return events >= after
+				return events >= records
 			})
-			if events != after {
-				t.Errorf("tenant %s: %d usage events and %d usage records written after the migration", name, events, after)
+			if events != records {
+				if crossed {
+					t.Errorf("tenant %s: %d usage events and %d usage records written after the migration", name, events, records)
+				} else {
+					t.Errorf("tenant %s: %d usage events and %d usage records: the previous release has events, every record has its event", name, events, records)
+				}
+			}
+			if !crossed && records == 0 {
+				t.Errorf("tenant %s: no usage record to compare the events with", name)
 			}
 		}
 	})
