@@ -133,7 +133,7 @@ by 12.2), 0038 (amended by 12.2), 0062, 0063, 0066, 0068, 0071 and 0072. See the
 - O-2 (12.2): commit the maintainer's public signing key to the repository so that the release workflow can
   verify the signature of the tag (done on 2026-11-26: `.github/allowed_signers`, verified by `check-tag`).
 - O-7 (12.3): the maintainer's own full run of the corrected guides in a lab, backup and restore included, after
-  this epic and before tagging v0.3.0.
+  this epic and before tagging v0.3.0 (done on 2026-11-26: passed, two findings fixed in the guides; [drill record](../../operations/restore-drill-2026-11.md#who-ran-it)).
 - Recreate the local test database (`make db-down && make db-up`) after #84, which changed it to use template
   databases.
 - The container image tests (`make image && make test-container`) were not runnable in the sandbox of the

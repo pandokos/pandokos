@@ -115,7 +115,9 @@ Procedure after the loss of the key file:
    previous secrets it dropped. It writes no audit row: it is an act of the database administrator outside the
    product, so record it in your own log. Run for every lost version; run again it changes nothing.
 3. `pandokos kek generate --out ...` a new key, mount it and start `serve`.
-4. Tell the tenants: they register their credentials again, and the owner of each destination runs
+4. Tell the tenants: they register their credentials again and make each new one the default of its provider
+   (`pandokos credential set-default ID`): the revoked credential stays the default, and until another is chosen
+   every call to that provider is answered with `409 no_credential`. The owner of each destination runs
    `pandokos event-destination rotate-secret`, gives the receiver the new secret and enables the destination;
    the events the log still holds are then delivered ([events guide](events.md)).
 

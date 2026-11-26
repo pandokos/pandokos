@@ -647,6 +647,10 @@ pandokos limit events   --tenant T [--kind K] [--rule ID]
 pandokos platform-limit list|get|create|update|delete [RULE_ID]
 ```
 
+The examples name the tenant (`--tenant acme`), as a platform administrator would. With a key of the tenant
+itself, omit `--tenant` or give the tenant's ID: a name is resolved by listing the tenants, which a tenant's key
+may not do, and is answered with `forbidden` ([the CLI's variables](configuration.md#variables-of-the-api-commands)).
+
 `create` takes `--metric` (required), `--limit N` for a count or `--amount DECIMAL --currency CCC`
 for a budget, `--subject tenant|service-account|key` with `--service-account ID_OR_NAME` or
 `--key KEY_ID` (the tenant by default), `--provider`, `--model`, `--soft` (never refuse) and

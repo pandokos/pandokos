@@ -433,3 +433,8 @@ upstream:
 administration API. They read `PANDOKOS_CLI_SERVER` (default `http://127.0.0.1:8081`),
 `PANDOKOS_CLI_KEY_FILE` (required) and `PANDOKOS_CLI_CA_FILE`. These variables are not part of the
 server configuration and cause no warning. No key of the server configuration starts with `cli`.
+
+**`--tenant` with a tenant's key.** A command that acts on a tenant takes `--tenant` with the tenant's ID or name.
+A name is resolved by listing the tenants, which needs the platform permission `tenant:read`: with a key of the
+tenant itself (a tenant administrator's key) a name is answered with `forbidden`. With such a key, omit `--tenant`
+(the command acts on the key's tenant) or give the tenant's ID.
