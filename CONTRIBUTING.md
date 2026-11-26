@@ -62,7 +62,8 @@ minor release (from `main`) and a patch release (from the maintenance branch, af
    when nothing changed; see [Reviews](docs/architecture/security-model.md#reviews) in the security model)
    and that the page links it and the drill record in force (`docs/operations/restore-drill-YYYY-MM.md`; a
    page that relies on the previous record says so),
-   then, on the commit that holds the page: `git tag -s -a vX.Y.Z -m "vX.Y.Z"` and
+   then, on the commit that holds the page: `git tag -s -a vX.Y.Z -m "vX.Y.Z"` (signed with a key of
+   `.github/allowed_signers`: the release workflow verifies the signature and refuses any other) and
    `git push origin vX.Y.Z`. Between the merge and the push the quick start names a tag that does not
    exist yet, so the two are done together.
 5. **The release workflow does the rest** (`release.yml`): it checks the tag and runs the CI, then
