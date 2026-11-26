@@ -286,9 +286,39 @@ func previousPin(t *testing.T) (version, commit, image string) {
 	return version, commit, image
 }
 
+// migrationsAfter returns the ids of the migrations of this tree after the schema version previous, in
+// order, and the version of the newest migration: what the image of this tree must apply on a database of
+// the previous release.
+func migrationsAfter(t *testing.T, previous int) (ids []string, newest int) {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(testutil.RepoRoot(t), "internal", "store", "migrations", "sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries { // ReadDir sorts by name, and the names start with the version
+		id, ok := strings.CutSuffix(e.Name(), ".sql")
+		if !ok {
+			continue
+		}
+		n, _, _ := strings.Cut(id, "_")
+		v, err := strconv.Atoi(n)
+		if err != nil {
+			t.Fatalf("the migration %q has no version number", id)
+		}
+		if v > previous {
+			ids = append(ids, id)
+		}
+		newest = max(newest, v)
+	}
+	if newest < previous {
+		t.Fatalf("the previous release's schema is %d, newer than this tree's %d", previous, newest)
+	}
+	return ids, newest
+}
+
 // TestUpgradeFromPreviousImage is T-1134: the artefact that operators run. The previous release's
 // image, pulled by the digest of test/upgrade/PREVIOUS, creates the schema, serves a tenant with a
-// credential and a call; the image of this tree then migrates the same database (one migration) and
+// credential and a call; the image of this tree then migrates the same database (the migrations after the previous schema, none when it is the same) and
 // serves the same call with the same key; and the digest of the image that ran is the pinned one.
 func TestUpgradeFromPreviousImage(t *testing.T) {
 	image := os.Getenv("PANDOKOS_TEST_IMAGE")
@@ -353,9 +383,15 @@ func TestUpgradeFromPreviousImage(t *testing.T) {
 	}
 
 	// The previous image: the schema, the bootstrap key, a server.
-	if out := run(previous, []string{"--rm"}, "migrate"); !strings.Contains(out, "schema is at version 16") {
+	// The schema the previous release creates is read from its own migrate, not written here: the pin
+	// moves after every release, and the step to this tree may cross no migration at all.
+	out := run(previous, []string{"--rm"}, "migrate")
+	pm := regexp.MustCompile(`(?m)^schema is at version (\d+)$`).FindStringSubmatch(out)
+	if pm == nil {
 		t.Fatalf("the previous image's migrate: %q", out)
 	}
+	previousVersion, _ := strconv.Atoi(pm[1])
+	crossed, thisVersion := migrationsAfter(t, previousVersion)
 	initOut := run(previous, []string{"--rm"}, "init")
 	m := regexp.MustCompile(`(?m)^key: +(pdk_p[a-z2-7]{16}_[a-z2-7]{59})$`).FindStringSubmatch(initOut)
 	if m == nil {
@@ -382,7 +418,7 @@ func TestUpgradeFromPreviousImage(t *testing.T) {
 		return docker(t, append([]string{"exec", "-e", "PANDOKOS_CLI_SERVER=http://" + admin, "-e", "PANDOKOS_CLI_KEY_FILE=/run/secrets/" + keyFile, id, "/pandokos"}, args...)...)
 	}
 	reTenantKey := regexp.MustCompile(`(?m)^key: +(pdk_t[a-z2-7]{16}_[a-z2-7]{59})$`)
-	out := cli("platform.key", "tenant", "create", "acme")
+	out = cli("platform.key", "tenant", "create", "acme")
 	tm, tid := reTenantKey.FindStringSubmatch(out), regexp.MustCompile(`(?m)^id: ([0-9a-f-]{36})$`).FindStringSubmatch(out)
 	if tm == nil || tid == nil {
 		t.Fatalf("tenant create output: %q", out)
@@ -418,9 +454,17 @@ func TestUpgradeFromPreviousImage(t *testing.T) {
 		t.Errorf("the previous image exited %s on SIGTERM", code)
 	}
 
-	// The image of this tree: one migration, the same key and credential.
-	if out := run(image, []string{"--rm"}, "migrate"); !strings.Contains(out, "applied 0017_events") || !strings.Contains(out, "schema is at version 17") {
-		t.Fatalf("the migrate of this image on the database of the previous one: %q", out)
+	// The image of this tree: the migrations after the previous schema (none for a release with the same
+	// schema), the same key and credential.
+	out = run(image, []string{"--rm"}, "migrate")
+	applied := regexp.MustCompile(`(?m)^applied (\S+)$`).FindAllStringSubmatch(out, -1)
+	var got []string
+	for _, a := range applied {
+		got = append(got, a[1])
+	}
+	if strings.Join(got, ",") != strings.Join(crossed, ",") || !regexp.MustCompile(`(?m)^schema is at version `+strconv.Itoa(thisVersion)+`$`).MatchString(out) {
+		t.Fatalf("the migrate of this image on the database of the previous one (schema %d) applied %v and said %q, want %v and schema version %d",
+			previousVersion, got, out, crossed, thisVersion)
 	}
 	id = serve(image)
 	testutil.Eventually(t, 30*time.Second, "the same call on the image of this tree", func() bool { return call() == 200 })

@@ -6,13 +6,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pandokos/pandokos/test/dbtest"
 	"github.com/pandokos/pandokos/test/instance"
 )
 
 // TestPreviousBinary is T-1129: the binary built from test/upgrade/PREVIOUS reports that version and
-// that commit, its migrate status on an empty database needs schema version 16, and this tree needs
-// 17 (the one migration an upgrade from the previous release crosses: 0017_events).
+// that commit, and its migrate status on an empty database needs the schema version it is derived to
+// need; this tree's binary needs the number of migrations of this tree. The migrations an upgrade
+// crosses are the ones after the previous version up to this tree's (none for a patch release).
 func TestPreviousBinary(t *testing.T) {
 	t.Parallel()
 	pin := ReadPin(t)
@@ -28,16 +28,15 @@ func TestPreviousBinary(t *testing.T) {
 		t.Errorf("the previous binary says %q, want it to start with %q", strings.TrimSpace(out), want)
 	}
 
-	d := dbtest.New(t) // empty
-	for _, c := range []struct {
-		name string
-		bin  instance.Binary
-		want string
-	}{{"the previous binary", old, "version 16"}, {"this tree", instance.Build(t), "version 17"}} {
-		code, out, errs := c.bin.Run(t, d.Env(t), "migrate", "status")
-		text := out + errs
-		if code == 0 || !strings.Contains(text, c.want) {
-			t.Errorf("%s: migrate status on an empty database exits %d and says %q, want it to say it needs %s", c.name, code, strings.TrimSpace(text), c.want)
-		}
+	c := schemaCrossing(t) // the previous version is what the previous binary says; this tree's, the migration files
+	t.Logf("the upgrade crosses %s", c)
+	if got := neededVersion(t, instance.Build(t)); got != c.This {
+		t.Errorf("this tree's binary needs schema version %d, its migration files make %d", got, c.This)
+	}
+	if want := c.This - c.Previous; len(c.Crossed) != want {
+		t.Errorf("%d migrations crossed (%v), want %d", len(c.Crossed), c.Crossed, want)
+	}
+	if !c.None() && c.Previous != migrationVersion(t, c.Crossed[0])-1 {
+		t.Errorf("the first migration crossed is %s but the previous release needs schema %d", c.Crossed[0], c.Previous)
 	}
 }

@@ -1,3 +1,3 @@
-version=v0.2.0
-commit=0d3fb5dd2fdb5c82b1e28efb04b30984deb30c96
-image=ghcr.io/pandokos/pandokos@sha256:ab33bc5853077cce504e40177d4c7da686362d874c5bef4b46d4089b8bbc3e58
+version=v0.3.0
+commit=3043ce223e29b4caafc2f49fabebbb550172dfd5
+image=ghcr.io/pandokos/pandokos@sha256:9b045a6774e1d16bfa202e77c1dd2af530992c97f7468a187020d33a1f4ab113

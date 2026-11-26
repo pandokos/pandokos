@@ -17,6 +17,10 @@ tested on every pull request, from the newest patch of the previous minor, whose
 pinned in `test/upgrade/PREVIOUS`: a binary built from that commit is upgraded under traffic, and the released
 image runs once through the same path.
 
+The suite takes the schema versions from the binaries and the migration files, not from a fixed pair of
+releases: it asserts the migrations the upgrade crosses, and when there is none (the same schema, as for a patch)
+that `migrate` applies nothing and that the previous and the new binary both run on the schema.
+
 From an older minor, upgrade through each minor in turn, running the newest patch of each. The migrations would
 apply in one run, but the breaking changes and the start checks of the versions in between are not tested
 together, so it is not supported.

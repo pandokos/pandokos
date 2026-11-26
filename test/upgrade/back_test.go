@@ -58,10 +58,12 @@ func fingerprint(t *testing.T, d *dbtest.Database) string {
 // TestGoingBackIsARestore is T-1132: going back from a minor is a restore of the backup taken before
 // migrate, run by the old binary. The dump taken before migrate, restored into an empty database, is
 // served by the previous binary and the credentials of its tenants open; and the upgraded database is
-// unchanged by it.
+// unchanged by it. The schema it is restored to is the one the previous binary needs, derived from it
+// (the one before and after the upgrade alike when no migration is crossed).
 func TestGoingBackIsARestore(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
+	prev := neededVersion(t, w.inst.Bin)
 	_, dump, newProc := quietUpgrade(t, w)
 	if status := w.call(t, newProc, "c"); status != 200 {
 		t.Fatalf("the upgraded installation: %d", status)
@@ -79,8 +81,8 @@ func TestGoingBackIsARestore(t *testing.T) {
 	Restore(t, dump, back)
 	env := append(back.Env(t), "PANDOKOS_VAULT_KEK_LOCAL_KEY_FILE="+w.db.KEKFile(t), "PANDOKOS_LOG_LEVEL=info", "PANDOKOS_LIMITS_TIME_ZONE="+w.zone)
 	old := w.inst.Bin
-	if code, out, errs := old.Run(t, env, "migrate", "status"); code != 0 || !strings.Contains(out, "schema is at version 16") {
-		t.Fatalf("migrate status of the restored database by the previous binary: exit %d\n%s%s", code, out, errs)
+	if code, out, errs := old.Run(t, env, "migrate", "status"); code != 0 || !strings.Contains(out, fmt.Sprintf("schema is at version %d;", prev)) {
+		t.Fatalf("migrate status of the restored database by the previous binary, want schema version %d: exit %d\n%s%s", prev, code, out, errs)
 	}
 	proc := old.Serve(t, env)
 	proc.Ready(t)
