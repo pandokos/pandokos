@@ -148,13 +148,13 @@ Pandokos is deliberately not an identity provider, an agent or workflow framewor
 
 ## Roadmap
 
-| Release | Theme |
-|---|---|
-| v0.1 | Core BYOK: tenants, virtual keys, vault, OpenAI and Anthropic passthrough with streaming, usage ledger |
-| v0.2 | Governance: rate limits and budgets, sign-in with local accounts or OIDC, roles, reports, tenant deletion |
-| v0.3 | Ready to operate: usage events, external key-encryption key, threat model review, restore drill, upgrade policy |
-| v0.4 | Scale-out and providers: replicas, Kubernetes, Gemini, Azure OpenAI |
-| v1.0 | Hardening: independent security assessment, measured performance, dedicated cells, mutual TLS |
+| Release | Theme | Status |
+|---|---|---|
+| v0.1 | Core BYOK: tenants, virtual keys, vault, OpenAI and Anthropic passthrough with streaming, usage ledger | released ([v0.1.0](docs/releases/v0.1.0.md), [v0.1.1](docs/releases/v0.1.1.md)) |
+| v0.2 | Governance: rate limits and budgets, sign-in with local accounts or OIDC, roles, reports, tenant deletion | released ([v0.2.0](docs/releases/v0.2.0.md)) |
+| v0.3 | Ready to operate: usage events, external key-encryption key, threat model review, restore drill, upgrade policy | **current release** ([v0.3.0](docs/releases/v0.3.0.md)) |
+| v0.4 | Scale-out and providers: replicas, Kubernetes, Gemini, Azure OpenAI | in development on `main` ([draft notes](docs/releases/v0.4.0-draft.md)) |
+| v1.0 | Hardening: independent security assessment, measured performance, dedicated cells, mutual TLS | planned |
 
 Details are in the [roadmap](planning/roadmap.md).
 
