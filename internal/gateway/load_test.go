@@ -263,9 +263,16 @@ func TestParallelLoad(t *testing.T) {
 			o.Credentials = &sometimesNoCredential{inner: o.Credentials, n: &opens}
 		})
 		c := &http.Client{Transport: &http.Transport{MaxIdleConnsPerHost: 128}}
+		givesUp := func(i int) bool { return i%3 == 0 }
+		patient := 0 // the requests that have no short timeout: they always reach the handler
+		for i := 0; i < total; i++ {
+			if !givesUp(i) {
+				patient++
+			}
+		}
 		fire(total, workers, func(i int) int {
-			switch i % 3 {
-			case 0: // the caller gives up
+			switch {
+			case givesUp(i): // the caller gives up
 				ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
 				defer cancel()
 				req, _ := http.NewRequestWithContext(ctx, http.MethodPost, h.srv.URL+route, bytesReader(chat(fakeprovider.ModelHang, false)))
@@ -274,7 +281,7 @@ func TestParallelLoad(t *testing.T) {
 					resp.Body.Close()
 				}
 				return 0
-			case 1: // the provider fails
+			case i%3 == 1: // the provider fails
 				return postChat(h, c, chat(fakeprovider.ModelError500Echo, false))
 			}
 			return postChat(h, c, chat("fake-basic", false))
@@ -283,11 +290,13 @@ func TestParallelLoad(t *testing.T) {
 		if n := real.Outstanding(); n != 0 {
 			t.Fatalf("%d reservations outstanding after the last handler returned", n)
 		}
-		// A caller that gives up before its connection is set up never reaches the handler, on a
-		// loaded machine: every request the handler saw has a record, the others none.
+		// A caller that gives up after 40 ms may do so before its connection is set up, and then it
+		// never reaches the handler: on a loaded machine that can be any number of them, up to all.
+		// Every request the handler saw has a record, the others none; the requests that do not give
+		// up always reach it (#100).
 		seen := len(h.logs.Find(t, "request"))
-		if got := len(h.rec.Records()); got != seen || seen > total || seen < total*9/10 {
-			t.Errorf("%d records for %d requests that reached the handler (%d sent)", got, seen, total)
+		if got := len(h.rec.Records()); got != seen || seen > total || seen < patient {
+			t.Errorf("%d records for %d requests that reached the handler (%d sent, at least %d expected)", got, seen, total, patient)
 		}
 		real.Advance(61 * time.Second)
 		real.Sweep()
