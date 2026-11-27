@@ -167,6 +167,7 @@ type Opener struct {
 
 	fmu        sync.Mutex // guards dekFlights and the refs of its flights; never held with mu
 	dekFlights map[dekFlightKey]*dekFlight
+	loads      sync.WaitGroup // the goroutines of the flights, which outlive their removal from dekFlights; tests wait on it
 }
 
 // dekFlightKey names the load of one data key. The epoch is part of it: a load that started
@@ -320,7 +321,9 @@ func (o *Opener) dataKey(ctx context.Context, tid tenant.ID, version int32, epoc
 		fctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 		f = &dekFlight{done: make(chan struct{}), cancel: cancel}
 		o.dekFlights[key] = f
+		o.loads.Add(1)
 		go func() {
+			defer o.loads.Done()
 			defer cancel()
 			res := o.loadDataKey(fctx, tid, version, epoch, start)
 			o.fmu.Lock()
@@ -388,6 +391,11 @@ func (o *Opener) readDataKey(ctx context.Context, tid tenant.ID, version int32, 
 	dk, err = NewDataKey(raw, tid, row.Version)
 	if err != nil {
 		return nil, row.KekVersion, "data_key_unwrap", fmt.Errorf("%w: the data key is not usable", ErrUndecryptable)
+	}
+	// A load nobody waits for any more is cancelled and must not populate the cache, whether or
+	// not the source and the provider honoured the cancellation (#98).
+	if cerr := ctx.Err(); cerr != nil {
+		return nil, "", "", fmt.Errorf("%w: %w", ErrUnavailable, cerr)
 	}
 	o.putDataKey(tid, row.Version, dekEntry{key: dk, kekVersion: row.KekVersion}, epoch, start)
 	return dk, row.KekVersion, "", nil

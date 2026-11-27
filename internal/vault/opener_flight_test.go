@@ -167,11 +167,15 @@ func TestOpenerDataKeyFlight(t *testing.T) {
 			t.Errorf("Open: %v, want ErrUnavailable", r.err)
 		}
 		close(w.src.release)
-		waitFor(t, "the flight to end", func() bool {
-			w.o.fmu.Lock()
-			defer w.o.fmu.Unlock()
-			return len(w.o.dekFlights) == 0
-		})
+		// The flight leaves dekFlights as soon as its last waiter does, while its goroutine is
+		// still held at the read: wait for the goroutine itself, or the check below races it (#98).
+		w.o.loads.Wait()
+		w.o.fmu.Lock()
+		flights := len(w.o.dekFlights)
+		w.o.fmu.Unlock()
+		if flights != 0 {
+			t.Errorf("%d flights left", flights)
+		}
 		if _, ok := w.o.cachedDataKey(w.tid, 1); ok {
 			t.Error("the data key was cached by a load that was cancelled")
 		}
