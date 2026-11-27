@@ -26,6 +26,14 @@ func lastWrapToken(s *transittest.Server) string {
 	return reqs[len(reqs)-1].Header.Get("X-Vault-Token")
 }
 
+// renewalApplied waits until the provider has applied a renewal that granted want: the double counts
+// the request before the provider has read the answer, and a clock advanced in between would make the
+// provider count the new lifetime from the later time.
+func renewalApplied(t *testing.T, r *transitRig, want time.Duration) {
+	t.Helper()
+	testutil.Eventually(t, 2*time.Second, "the provider to apply the renewal", func() bool { return r.p.Stats().TokenTTL == want })
+}
+
 // settle gives the lifecycle goroutine time to act on a clock it was told about, for a test that
 // asserts that nothing happens.
 func settle() { time.Sleep(300 * time.Millisecond) }
@@ -91,6 +99,7 @@ func TestTransitTokenAuth(t *testing.T) {
 		r.start(t, true)
 		r.advance(21 * time.Second)
 		testutil.Eventually(t, 2*time.Second, "the first renewal", func() bool { return r.s.Count(transittest.OpRenew) == 1 })
+		renewalApplied(t, r, 15*time.Second)
 		// 15 s are left of the 36 s the token may live: the renewal at two thirds of that grants no more.
 		r.advance(11 * time.Second)
 		testutil.Eventually(t, 2*time.Second, "the renewal that extends nothing", func() bool { return r.s.Count(transittest.OpRenew) >= 2 })
@@ -329,6 +338,7 @@ func TestTransitAppRoleAuth(t *testing.T) {
 		r.start(t, true)
 		r.advance(6 * time.Second)
 		testutil.Eventually(t, 2*time.Second, "the renewal", func() bool { return r.s.Count(transittest.OpRenew) == 1 })
+		renewalApplied(t, r, 6*time.Second) // 6 s are left of the 12 s the token may live
 		if n := r.s.Count(transittest.OpLogin); n != 1 {
 			t.Errorf("%d logins before the lifetime shrank", n)
 		}
@@ -417,6 +427,7 @@ func TestTransitAppRoleAuth(t *testing.T) {
 		newSecret := sc.NewSecretID(r.f.AppRoleMount, r.f.RoleID) // the one of the file stops working
 		r.advance(6 * time.Second)
 		testutil.Eventually(t, 2*time.Second, "the renewal", func() bool { return r.s.Count(transittest.OpRenew) == 1 })
+		renewalApplied(t, r, 6*time.Second) // 6 s are left of the 12 s the token may live
 		r.advance(4 * time.Second)
 		testutil.Eventually(t, 2*time.Second, "the refused login", func() bool { return r.s.Count(transittest.OpLogin) == 2 })
 		testutil.Eventually(t, 2*time.Second, "the line key provider authentication failing", func() bool {

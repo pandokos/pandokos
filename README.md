@@ -34,10 +34,11 @@ isolation, custody of tenants' keys and federated identity in the open-source co
 | Calls authenticated with tokens from your IdP (JWT) | ✅ tested on Keycloak, Ory Hydra, Authentik | 💼 | 💼 OIDC and JWT (SSO) |
 | People sign in with SSO or OIDC | ✅ local accounts and any OpenID Connect provider, with group rules | 💼 free up to 5 users | 💼 |
 | Roles (RBAC) | ✅ ten built-in roles, custom roles per tenant, support actions with a stated reason | 💼 | 💼 |
-| Audit log of administrative changes | ✅ atomic, append-only, sealed in a hash chain per tenant that `pandokos audit verify` checks | 💼 | 💼 |
+| Audit log of administrative changes | ✅ atomic, append-only, sealed in a hash chain per tenant and one for the platform, which `pandokos audit verify` checks | 💼 | 💼 |
 | **Spend** | | | |
 | Usage and cost of every call | ✅ without prompts or completions, in the tenant's own currency with its own price lists, readable by the tenant only | ✅ | ✅ |
 | Rate limits, quotas, budgets | ✅ per instance, in the tenant's time zone and active currency · 🗓️ v0.4 shared across replicas | ✅ | ✅ |
+| Usage and limit events to external systems | ✅ signed webhooks and a pull API, CloudEvents 1.0, at least once with retries, dead letters and replay | ✅ logging integrations · 💼 some destinations (Pub/Sub, GCS) | ✅ Prometheus and OpenTelemetry · 💼 log exports |
 | **Providers and traffic** | | | |
 | Providers | OpenAI, Anthropic, any OpenAI-compatible API · 🗓️ v0.4 Gemini, Azure OpenAI | 100+ | 23+ |
 | Fallbacks, load balancing, routing | ➖ a transparent proxy by design | ✅ | ✅ · 💼 adaptive |
@@ -47,13 +48,16 @@ isolation, custody of tenants' keys and federated identity in the open-source co
 | **Operations** | | | |
 | Administration | API and CLI · ➖ web UI | ✅ web UI | ✅ web UI |
 | Replicas behind a load balancer | 🗓️ v0.4 | ✅ | 💼 clustering |
+| Restore and upgrade | ✅ a restore drill in CI, the loss of the key included; the upgrade from the previous minor tested on every change | a version support policy (the four latest minor lines) | migration guides |
 | Ready for production | not yet (v0.3) | ✅ | ✅ |
 
 Compared from the public documentation in November 2026: LiteLLM [enterprise
-features](https://docs.litellm.ai/docs/enterprise) and [multi-tenancy](https://docs.litellm.ai/docs/proxy/multi_tenant_architecture);
+features](https://docs.litellm.ai/docs/enterprise), [multi-tenancy](https://docs.litellm.ai/docs/proxy/multi_tenant_architecture) and
+[logging](https://docs.litellm.ai/docs/proxy/logging);
 Bifrost [repository](https://github.com/maximhq/bifrost), [governance](https://docs.getbifrost.ai/features/governance),
 [enterprise governance](https://docs.getbifrost.ai/enterprise/advanced-governance) and
-[secret management](https://docs.getbifrost.ai/deployment-guides/helm/secret-management). If a cell is
+[secret management](https://docs.getbifrost.ai/deployment-guides/helm/secret-management) and
+[log exports](https://docs.getbifrost.ai/enterprise/log-exports). If a cell is
 wrong or out of date, please open an issue. What Pandokos will not become is in
 [What it is not](#what-it-is-not).
 
@@ -148,13 +152,13 @@ Pandokos is deliberately not an identity provider, an agent or workflow framewor
 
 ## Roadmap
 
-| Release | Theme |
-|---|---|
-| v0.1 | Core BYOK: tenants, virtual keys, vault, OpenAI and Anthropic passthrough with streaming, usage ledger |
-| v0.2 | Governance: rate limits and budgets, sign-in with local accounts or OIDC, roles, reports, tenant deletion |
-| v0.3 | Ready to operate: usage events, external key-encryption key, threat model review, restore drill, upgrade policy |
-| v0.4 | Scale-out and providers: replicas, Kubernetes, Gemini, Azure OpenAI |
-| v1.0 | Hardening: independent security assessment, measured performance, dedicated cells, mutual TLS |
+| Release | Theme | Status |
+|---|---|---|
+| v0.1 | Core BYOK: tenants, virtual keys, vault, OpenAI and Anthropic passthrough with streaming, usage ledger | released ([v0.1.0](docs/releases/v0.1.0.md), [v0.1.1](docs/releases/v0.1.1.md)) |
+| v0.2 | Governance: rate limits and budgets, sign-in with local accounts or OIDC, roles, reports, tenant deletion | released ([v0.2.0](docs/releases/v0.2.0.md)) |
+| v0.3 | Ready to operate: usage events, external key-encryption key, threat model review, restore drill, upgrade policy | **current release** ([v0.3.0](docs/releases/v0.3.0.md)) |
+| v0.4 | Scale-out and providers: replicas, Kubernetes, Gemini, Azure OpenAI | in development on `main` ([draft notes](docs/releases/v0.4.0-draft.md)) |
+| v1.0 | Hardening: independent security assessment, measured performance, dedicated cells, mutual TLS | planned |
 
 Details are in the [roadmap](planning/roadmap.md).
 
